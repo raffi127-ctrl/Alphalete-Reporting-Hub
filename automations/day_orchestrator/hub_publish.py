@@ -156,9 +156,22 @@ _HUB_CARD = {
 }
 
 
+def _resolve_card(report_id: str, report_name: str = "", *, create: bool = True):
+    """Resolve a report_id to its Hub card id via the self-registering resolver
+    (curated _HUB_CARD -> slug-match an existing card -> auto-create a library
+    card). Falls back to the curated map alone if hub_coverage can't import, so a
+    resolver hiccup can never stop a run from reporting itself. create=False makes
+    it read-only (no card is invented)."""
+    try:
+        from automations.day_orchestrator import hub_coverage
+        return hub_coverage.resolve_card(report_id, report_name, create=create)
+    except Exception:
+        return _HUB_CARD.get(report_id)
+
+
 def hub_card_id(report_id: str):
-    """The Hub card id for an orchestrator report_id, or None."""
-    return _HUB_CARD.get(report_id)
+    """The Hub card id for an orchestrator report_id, or None (read-only)."""
+    return _resolve_card(report_id, create=False)
 
 
 def _ws():
@@ -171,7 +184,7 @@ def publish_running(report_id: str, report_name: str):
     (_hub_active_runs) with a 2h staleness guard. Returns the RunID to hand to
     publish_done (which flips this same row running->done in place), or None if the
     report has no Hub card / the write failed. Best-effort — never raises."""
-    card = _HUB_CARD.get(report_id)
+    card = _resolve_card(report_id, report_name)
     if not card:
         return None
     run_id = uuid.uuid4().hex[:12]
@@ -244,7 +257,7 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
     flips running->done and doesn't leave a dangling yellow pill. Otherwise append a
     fresh finished row (the reverify / no-prior-start path). Returns True if the Hub
     was touched, False if the report has no Hub card. Best-effort — never raises."""
-    card = _HUB_CARD.get(report_id)
+    card = _resolve_card(report_id, report_name)
     if not card:
         return False
     now = dt.datetime.now().isoformat(timespec="seconds")

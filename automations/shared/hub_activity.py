@@ -53,6 +53,17 @@ def log_completed(report_id: str, report_name: str, *,
         except _gs.WorksheetNotFound:
             return False        # the Hub creates it; don't invent one here
 
+        # Self-register: if this card id has no Hub card yet, create a shared
+        # Report Library card so a standalone LaunchAgent report (which reports
+        # here, not through the orchestrator) is never invisible. Best-effort —
+        # a card-creation hiccup must not stop the run row from landing.
+        try:
+            from automations.day_orchestrator import hub_coverage
+            if report_id not in hub_coverage.existing_card_ids():
+                hub_coverage.ensure_library_card(report_id, report_name)
+        except Exception:
+            pass
+
         now = dt.datetime.now()
         started = (started_at or now).isoformat(timespec="seconds")
         _retry(lambda: ws.append_row(
