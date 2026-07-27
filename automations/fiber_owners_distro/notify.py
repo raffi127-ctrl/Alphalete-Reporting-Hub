@@ -97,11 +97,9 @@ def post_departures(departures: List[dict], roster_date: str,
             channel=channel, thread_ts=parent_ts,
             text=f"*{clean_name(d['name'])}* — removed tomorrow if not ✅")
         ts = reply["ts"]
-        for emoji in (KEEP_EMOJI, REMOVE_EMOJI):
-            try:
-                cli.reactions_add(channel=channel, timestamp=ts, name=emoji)
-            except Exception:
-                pass
+        # Do NOT pre-seed ✅/❌: the poster's identity would count as an approver
+        # vote (the laptop token is Megan), and a pre-filled reaction reads as if
+        # someone already decided. Approvers add their own from a clean slate.
         cands.append({"name": d["name"], "emails": d.get("emails") or [],
                       "resourceName": d["resourceName"], "reply_ts": ts})
     return {"parent_ts": parent_ts, "candidates": cands}
