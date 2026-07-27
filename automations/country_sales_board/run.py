@@ -47,6 +47,31 @@ OUT_DIR = Path("output")
 CENTRAL = ZoneInfo("America/Chicago")   # [[project_central-time-for-texas-reports]]
 
 
+def _verify(ws, today, dry_run: bool, skip: bool) -> int:
+    """Post-write check: does the board actually carry numbers for the day this
+    report is about? Returns the process exit code.
+
+    This is the report's ONLY correctness gate. The orchestrator has no `verify`
+    manifest for this one, so without it a run that completed having written
+    nothing exits 0, is recorded DONE, and nobody is alerted. Re-reads the sheet
+    rather than trusting the plan — that proves the write LANDED, not just that
+    it was computed."""
+    if dry_run:
+        print("  (dry-run — skipping the yesterday check, nothing was written)")
+        return 0
+    if skip:
+        print("  ⚠ --no-verify: skipping the yesterday check")
+        return 0
+    from automations.recruiting_report.fill import _retry as _r
+    grid = _r(ws.get_all_values)
+    ok, msg = cf.verify_yesterday(grid, today)
+    if ok:
+        print(f"  verify: {msg}")
+        return 0
+    print(f"  ❌ VERIFY FAILED — {msg}")
+    return 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Country Sales Board daily fill")
     ap.add_argument("--dry-run", action="store_true",
@@ -65,6 +90,9 @@ def main() -> int:
                     help="Allow the Tuesday rollover to run before the fill.")
     ap.add_argument("--force-rollover", action="store_true",
                     help="Roll even when the week check says not to (repair).")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="skip the post-write check that yesterday carries "
+                         "numbers on the board.")
     ap.add_argument("--today", metavar="YYYY-MM-DD",
                     help="Override today's date (testing/backfill).")
     args = ap.parse_args()
@@ -124,9 +152,12 @@ def main() -> int:
         except cp.NoDataYet as e:
             # Not a failure: Tableau hides an empty worksheet, so this is the
             # normal state before the week's first sales land.
+            # Not necessarily fine: 'no worksheet' is the normal state only
+            # before a week's first sales land. If YESTERDAY is already blank on
+            # the board, this is a silent outage, so let the check decide.
             print(f"  ⏸ {e}")
-            print("=== nothing to fill yet — done ===")
-            return 0
+            print("=== nothing to fill — checking the board anyway ===")
+            return _verify(ws, today, args.dry_run, args.no_verify)
 
     # ---- plan ----
 
@@ -141,8 +172,8 @@ def main() -> int:
     if not plan.updates:
         for line in plan.log:      # apply_plan prints the log; short-circuit here
             print(line)
-        print("=== no writes planned — done ===")
-        return 0
+        print("=== no writes planned — checking the board anyway ===")
+        return _verify(ws, today, args.dry_run, args.no_verify)
 
     # ---- apply ----
     apply_plan(ws, plan, dry_run=args.dry_run)
@@ -165,7 +196,7 @@ def main() -> int:
               f"pull and were filled 0 — expected for inactive reps, but a "
               f"PRODUCING rep here means a name drift (add an ICD Aliases "
               f"row): {plan.unmatched}")
-    return 0
+    return _verify(ws, today, args.dry_run, args.no_verify)
 
 
 if __name__ == "__main__":

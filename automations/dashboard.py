@@ -3610,6 +3610,13 @@ AUTOMATED_REPORTS = [
             "Two rollovers on the same Tuesday shift the leaderboard one column "
             "too far and push a duplicate week into the history. If it happens, "
             "restore from the pre-rollover backup tab.\n\n"
+            "IT CHECKS ITSELF\n"
+            "After writing, it re-reads the sheet and confirms **yesterday** — "
+            "the day it reports on — actually carries numbers. If that day is "
+            "blank or zero, the run **fails on purpose** so you get the alert "
+            "instead of a silently empty board. A country-wide zero is never a "
+            "quiet day: the board does ~7,000 units a week and even Sunday runs "
+            "~190.\n\n"
             "NAMES THAT DON'T MATCH\n"
             "A board row absent from Tableau is filled **0** and flagged in the "
             "log. That's expected for inactive reps — but a rep who IS selling "
@@ -3724,6 +3731,90 @@ AUTOMATED_REPORTS = [
                 "help": "Builds the PNG into output/country_sales_board/ and resolves the recipients, but sends nothing.",
                 "module": "automations.country_sales_board.slack_post",
                 "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
+        "id": "sci-campaigns",
+        "name": "SCI Campaigns",
+        "creator": "Eve & Claude",
+        "emoji": "📡",
+        "color": "#B91C1C",
+        "category": "📊 Metrics",
+        "description": "Fills the SCI Campaigns tab from Adriana Nowrouzi's weekly 'Residential Telecom Tracker – RANKED' email — one column per week ending, 13 campaign rows. Currently writing the SANDBOX tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads **alphaletereporting@gmail.com** for Adriana's "
+            "**'Residential Telecom Tracker – RANKED • Week Ending M.D.YYYY'** "
+            "email and pulls its **two PDF attachments**.\n"
+            "**•** Fills that week's **MM/DD/YY column** on the SCI Campaigns "
+            "tab — all 13 campaign rows. **Total Units** is a sheet formula and "
+            "is never written.\n"
+            "**•** The 13 rows come from **BOTH** PDFs: the fiber/DTV/B2B rows "
+            "from **Campaign Totals By Day**, and **AT&T NDS** plus the four "
+            "**'Selling … Wireless'** rows from the **RANKED** PDF's footer. "
+            "Either PDF alone would leave rows at a false 0.\n\n"
+            "WHEN IT RUNS\n"
+            "**Friday and Saturday.** It reads the week off the **email "
+            "subject**, never the calendar — Adriana's email for a Saturday "
+            "week-ending arrives the FOLLOWING Friday, and has slipped to a "
+            "Sunday more than once. So the run simply fills **every tracker "
+            "week not yet on the tab**: re-running is a no-op, and a missed "
+            "Friday heals itself on the next run.\n\n"
+            "IF A PDF IS MISSING\n"
+            "Both PDFs restate the **prior week in full**, so a week whose own "
+            "email is unusable is rebuilt from the FOLLOWING week's "
+            "'Previous Week Ending' column — automatically, and per-half, so a "
+            "missing RANKED PDF doesn't discard a good by-day one. Every week "
+            "is reconciled against the by-day **Grand Total** before it's "
+            "written; a mismatch is logged loudly rather than filled quietly.\n\n"
+            "KNOWN GAP\n"
+            "**Weeks 4/4/26 → 5/23/26 have no email at all** — Adriana changed "
+            "employers (personal Gmail → aptel.com) and the tracker paused for "
+            "8 weeks. Those columns stay blank until someone gets the numbers "
+            "from her.\n\n"
+            "SANDBOX FOR NOW\n"
+            "Writes **'SCI Campaigns (sandbox)'** and sends **no** Slack DM "
+            "until Eve approves the cutover to the real tab."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=1118523233#gid=1118523233"),
+        "assignees": ["Lucy 1"],
+        "run_rerun_id": "sci_campaigns",
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [4, 5],   # Friday + Saturday (a late send gets a 2nd shot)
+            "time": "5:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ SCI Campaigns filled — every tracker week in the inbox is on the tab.",
+            "message_failed": "❌ Run failed. Check the log above — a missing PDF attachment is the usual cause.",
+        },
+        "actions": [
+            {
+                "label": "Run Weekly Fill",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills every tracker week that isn't on the sandbox tab yet. Safe to re-run — already-filled weeks are skipped.",
+                "module": "automations.sci_campaigns.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "help": "Same read and parse, but prints the planned cells instead of writing them. Safe any time.",
+                "module": "automations.sci_campaigns.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "What's in the inbox?",
+                "icon": "📥",
+                "help": "Lists every tracker week Adriana has sent, the tab column it maps to, and whether it's filled yet.",
+                "module": "automations.sci_campaigns.run",
+                "args_fn": lambda: ["--list"],
             },
         ],
     },

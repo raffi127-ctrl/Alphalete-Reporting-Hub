@@ -97,6 +97,69 @@ def audit_aggregate_coverage(formula_grid: List[List[str]],
     return warn
 
 
+def verify_yesterday(grid: List[List[str]], today: dt.date,
+                     block_label: str = BLOCK_LABEL) -> tuple[bool, str]:
+    """Assert the board actually CARRIES NUMBERS for the day it reports on.
+
+    The orchestrator only knows 'exit 0 = fine', so a run that completed but
+    wrote nothing — a pull that came back empty, a write that silently didn't
+    land — was indistinguishable from a healthy one and nobody was told
+    (Eve 2026-07-27). This closes that: re-read the sheet AFTER the write and
+    check the day block's Totals row for YESTERDAY.
+
+    Yesterday, because the fill only writes COMPLETED days, so it is always the
+    newest column with data. And it is always ON the board: the week rolls
+    TUESDAY, so on Monday the board still shows the week that just closed and
+    yesterday (Sunday) sits in it — there is no day of the week where the
+    reported day falls outside the displayed week. That makes this check
+    universal rather than a pile of special cases.
+
+    Reads the TOTALS ROW, not individual reps: it is a =SUM over the day cells
+    we just wrote, so a non-zero there proves both that the numbers arrived and
+    that they landed inside the ranges the board's own aggregates cover.
+
+    Returns (ok, message). A zero or blank total is a real signal — this board
+    does ~7,000 units a week and its quietest day (Sunday) still runs ~190, so
+    a country-wide 0 means missing data, not a quiet day."""
+    yesterday = today - dt.timedelta(days=1)
+    try:
+        anchor = find_daily_section(grid, block_label)
+    except Exception as e:
+        return False, f"couldn't locate the {block_label!r} day block: {e}"
+    try:
+        board_dates = wk.sheet_week(anchor.day_col_by_daynum, today)
+    except ValueError as e:
+        return False, f"couldn't resolve the board's week: {e}"
+
+    if yesterday not in board_dates:
+        return False, (
+            f"the board is showing "
+            f"{board_dates[0].isoformat()}..{board_dates[-1].isoformat()}, which "
+            f"does NOT contain yesterday ({yesterday.isoformat()}) — the roll is "
+            f"out of step with the calendar, so today's numbers have nowhere "
+            f"correct to land")
+
+    col = anchor.day_col_by_daynum[yesterday.day]
+    row = anchor.totals_row
+    raw = ""
+    if 0 < row <= len(grid):
+        line = grid[row - 1]
+        raw = str(line[col - 1]).strip() if col - 1 < len(line) else ""
+    try:
+        total = int(float(raw.replace(",", ""))) if raw else 0
+    except ValueError:
+        return False, (f"the Totals cell for {yesterday.isoformat()} reads "
+                       f"{raw!r}, which isn't a number")
+    if total <= 0:
+        return False, (
+            f"the board shows {total} units for {yesterday.isoformat()} "
+            f"({yesterday.strftime('%A')}) — the day it reports on. A "
+            f"country-wide zero means the pull came back empty or the write "
+            f"didn't land, not a quiet day")
+    return True, (f"{yesterday.isoformat()} ({yesterday.strftime('%A')}) carries "
+                  f"{total} units on the board ✓")
+
+
 def plan_day_fill(
     grid: List[List[str]],
     pull: Dict[str, Dict[str, Dict[dt.date, int]]],

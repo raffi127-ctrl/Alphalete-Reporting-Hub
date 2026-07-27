@@ -1484,7 +1484,7 @@
     "country_sales_board": {
       "order": 11.5,
       "on_scheduler": true,
-      "_note": "Fills the 'Country Sales Board' tab's per-ICD daily block ('Fiber - All Units') and runs its TUESDAY rollover. Modelled on all_campaigns_board and slotted right after it, i.e. after the 'Copy of Alphalete ORG Sales Board' block (Eve 2026-07-27). SOURCE IS TABLEAU, NOT THE COPY TAB — unlike all_campaigns_board this one does its own crosstab download: ATT Tracker 2.1 - D2D / D2D 1-PAGERV4, worksheet 'Sales By ICD (ATT) (V2)', which is the 'D2D Page 1 - This Week' tracker (its header row literally reads 'This Week'). One crosstab in, seven day columns out; the leaderboard =SUMIF, Totals =SUM, Product Summary and Current-vs-Prior all derive themselves, so the fill writes ONLY the Mon-Sun day cells. The view's two windows are relative and NOT filterable by week, so pull.pull_icd_days_aligned checks which week came back and falls back to the '(LW2)' worksheet if 'This Week' doesn't cover the board — a source that ever rolls a day early can never smear one week into another week's columns. TUESDAY ROLLOVER (base_args '--enable-rollover'): keyed off week.reporting_sunday, so it fires on the first run of the new reporting week and is a no-op every other day; a missed Tuesday rolls Wednesday. MONDAY never rolls (Monday's fill writes SUNDAY into the closing week). Snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything. VALIDATED 2026-07-27 (Eve): fill engine reproduced the VAs' own frozen WE 07.19 leaderboard column 75/75 EXACT off the 7/20 crosstab, 0 differences — the only delta was Blue Mendoza, blank on the VA column because her row postdates that freeze and correctly 50 from the automation. Rollover run live end-to-end on the sandbox (WE 07.26 -> WE 08.02): leaderboard grows right, WE stack insert + Current-vs-Prior re-anchor, per-rep J->K->L, day cells clear, and it is a no-op on every later day of the week. Unmatched board ICDs are WARNED, never a non-zero exit — 5 rows (Edgar Muniz II, Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) are inactive reps absent from the view sitting at a correct 0.",
+      "_note": "Fills the 'Country Sales Board' tab's per-ICD daily block ('Fiber - All Units') and runs its TUESDAY rollover. Modelled on all_campaigns_board and slotted right after it, i.e. after the 'Copy of Alphalete ORG Sales Board' block (Eve 2026-07-27). SOURCE IS TABLEAU, NOT THE COPY TAB — unlike all_campaigns_board this one does its own crosstab download: ATT Tracker 2.1 - D2D / D2D 1-PAGERV4, worksheet 'Sales By ICD (ATT) (V2)', which is the 'D2D Page 1 - This Week' tracker (its header row literally reads 'This Week'). One crosstab in, seven day columns out; the leaderboard =SUMIF, Totals =SUM, Product Summary and Current-vs-Prior all derive themselves, so the fill writes ONLY the Mon-Sun day cells. The view's two windows are relative and NOT filterable by week, so pull.pull_icd_days_aligned checks which week came back and falls back to the '(LW2)' worksheet if 'This Week' doesn't cover the board — a source that ever rolls a day early can never smear one week into another week's columns. TUESDAY ROLLOVER (base_args '--enable-rollover'): keyed off week.reporting_sunday, so it fires on the first run of the new reporting week and is a no-op every other day; a missed Tuesday rolls Wednesday. MONDAY never rolls (Monday's fill writes SUNDAY into the closing week). Snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything. VALIDATED 2026-07-27 (Eve): fill engine reproduced the VAs' own frozen WE 07.19 leaderboard column 75/75 EXACT off the 7/20 crosstab, 0 differences — the only delta was Blue Mendoza, blank on the VA column because her row postdates that freeze and correctly 50 from the automation. Rollover run live end-to-end on the sandbox (WE 07.26 -> WE 08.02): leaderboard grows right, WE stack insert + Current-vs-Prior re-anchor, per-rep J->K->L, day cells clear, and it is a no-op on every later day of the week. POST-WRITE VERIFICATION (Eve 2026-07-27): the run re-reads the sheet and asserts the day block's Totals row carries NUMBERS for YESTERDAY — the day it reports on, and always the newest column with data. A zero or blank there exits 1, so the orchestrator marks it FAILED and the failure alert fires. This exists because there is no `verify` manifest for this report, so a run that completed having written nothing used to exit 0 and be recorded DONE with nobody told. It reads the TOTALS row (a =SUM over the cells just written), which proves both that the numbers arrived AND that they landed inside the ranges the board's own aggregates cover. Every early-return path is gated by it too, including the 'no data yet' one. A country-wide 0 is a real signal: this board does ~7,000 units a week and its quietest day still runs ~190. Escape hatch: --no-verify. Unmatched board ICDs, by contrast, are WARNED, never a non-zero exit — 5 rows (Edgar Muniz II, Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) are inactive reps absent from the view sitting at a correct 0.",
       "_warn": "LIVE ON THE REAL TAB since 2026-07-27 (Eve, after the sandbox validation in _note) — base_args carries '--real --i-mean-it', so this writes 'Country Sales Board', the tab the country reads and the one the VAs used to key BY HAND. THE VAs MUST NOT ALSO ROLL IT: two rollovers on one tab in one Tuesday double-shift the leaderboard (every frozen week lands one column too far right) and push a second WE row into the history stack. The Tuesday roll snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything — that is the tab to restore from if it ever happens. To back out, drop '--real --i-mean-it' from base_args and it returns to 'Country Sales Board (sandbox)'; nothing else changes.",
       "display_name": "Country Sales Board",
       "source_type": "tableau",
@@ -4226,6 +4226,31 @@
         "type": "not_configured"
       },
       "machine": "Lucy 2"
+    },
+    "sci_campaigns": {
+      "order": 4.65,
+      "on_scheduler": true,
+      "display_name": "SCI Campaigns",
+      "source_type": "email",
+      "data_sources": [],
+      "_note": "Auto-ingest: Adriana Nowrouzi (anowrouzi@aptel.com) emails 'Residential Telecom Tracker - RANKED - Week Ending M.D.YYYY' to alphaletereporting@gmail.com most Fridays, with a RANKED PDF + a 'Campaign Totals By Day' PDF. Fills the 'SCI Campaigns' tab of the Alphalete Org/Captainship workbook (13 campaign rows x the week's MM/DD/YY column; 'Total Units' is a sheet formula). The week comes from the SUBJECT, not the clock - the email for a Saturday week-ending lands the FOLLOWING Friday and has slipped to Sunday, so the run fills every tracker week not yet on the tab and is idempotent + self-healing after a missed Friday. Fri+Sat cadence gives a late send one more shot. readiness._probe_email gates on an unfilled week actually being in the inbox. SANDBOX FOR NOW: base_args is empty, so the scheduled run writes the 'SCI Campaigns (sandbox)' tab and sends NO Slack DM. PROD CUTOVER (needs Eve's OK) = set base_args to ['--real','--i-mean-it','--notify'], which writes the live tab and DMs 'WE <m.d.yyyy> complete' to Rafael/Maud/Megan under the 'SCI Campaigns' thread. Same staging country_sales_board used.",
+      "command": [
+        "automations.sci_campaigns.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          4,
+          5
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": "friday_am",
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "_onboarded": true
     }
   },
   "read_only_standalone": {
