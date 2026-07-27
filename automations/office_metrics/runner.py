@@ -634,6 +634,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
+    # Thread Builder: reorder / subset the sections per this office's saved plan
+    # (thread_plans.json). No plan -> metrics_for order unchanged (exact no-op).
+    from automations.shared import thread_plans as _tp
+    metrics = _tp.resolve_sections("d2d", args.office, metrics, metrics,
+                                   id_key="slug")
     target_chan = args.channel or o.channel_id
 
     # dry-run WINS if both are passed: `lucy rerun <id> --dry-run` appends

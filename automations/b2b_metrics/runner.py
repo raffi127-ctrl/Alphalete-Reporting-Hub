@@ -179,12 +179,19 @@ def header_text(o: B2BOffice, day: dt.date) -> str:
 
 def expected_items(o: B2BOffice) -> list:
     """The sections this office's parent post ENUMERATES — the completeness
-    contract. Exactly what header_text() lists: every ITEM except the ones this
-    office gates out (`skip_views`). Items that post even when blank
+    contract. Used both to build the header and to reconcile expected-vs-actual,
+    so the two can never drift. Items that post even when blank
     (`post_when_blank`, e.g. Out of Bounds) ARE expected — an empty-but-posted
-    section still lands in the thread, so it's never a miss. Used both to build
-    the header and to reconcile expected-vs-actual, so the two can never drift."""
-    return [i for i in ITEMS if i["id"] not in o.skip_views]
+    section still lands in the thread, so it's never a miss.
+
+    Order + inclusion come from the office's Thread Builder plan
+    (thread_plans.json) when one exists — a saved plan lists exactly the included
+    section ids in post order and may even re-add a section skip_views drops. With
+    NO plan (the default), this is byte-for-byte the old behavior: every ITEM
+    except the ones this office gates out via `skip_views`."""
+    from automations.shared import thread_plans as tp
+    default = [i for i in ITEMS if i["id"] not in o.skip_views]
+    return tp.resolve_sections("b2b", o.key, ITEMS, default, id_key="id")
 
 
 def expected_ids(o: B2BOffice) -> list:
@@ -205,7 +212,7 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
     u = (user or "").strip()
     if not u.upper().startswith("U"):
         raise ValueError("refusing: {!r} is not a user id".format(u))
-    for item in ITEMS:
+    for item in expected_items(o):
         path = captured.get(item["id"])
         if not path:
             continue
@@ -221,8 +228,9 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
-    items = [i for i in ITEMS
-             if (not only or i["id"] == only) and i["id"] not in o.skip_views]
+    # Capture/post in the SAME resolved order the header enumerates (plan-aware,
+    # or today's ITEMS-minus-skip_views default). --only narrows to one section.
+    items = [i for i in expected_items(o) if not only or i["id"] == only]
 
     log("B2B Metrics — {} — {}  ({})".format(
         o.label, today, "POST" if post else "DRY-RUN"))
