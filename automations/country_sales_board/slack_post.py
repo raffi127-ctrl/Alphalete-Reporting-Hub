@@ -40,13 +40,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 from pathlib import Path
 
 from automations.recruiting_report.fill import open_by_key
 from automations.org_sales_board.screenshot_email import _export_png, _access_token
 from automations.shared import slack_metrics_post as smp
-from automations.country_sales_board.run import SHEET_ID, PROD_TAB
+from automations.country_sales_board.run import SHEET_ID, PROD_TAB, CENTRAL
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -54,7 +55,7 @@ except Exception:
     pass
 
 TARGET_TAB = PROD_TAB                 # 'Country Sales Board' — the real tab
-TITLE = "Country Sales Board"
+TITLE_PREFIX = "Country Sales Board"
 HISTORY_WEEKS = 7                     # frozen leaderboard weeks shown beside the live one
 STITCH_GAP_PX = 28                    # white gutter between the two stitched blocks
 
@@ -68,6 +69,25 @@ RECIPIENTS = [
     "U088E2KJEV8",   # Evelyn Sobrino
 ]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "country_sales_board"
+
+
+def report_date(today: dt.date | None = None) -> dt.date:
+    """The day the DM is REPORTING ON — yesterday.
+
+    The fill only writes COMPLETED days (strictly before today), so the last day
+    carrying numbers is always yesterday. Titling the message with the run date
+    would date it a day ahead of the sales it shows (Eve 2026-07-27). Anchored to
+    America/Chicago, not the machine clock — the mini and Eve's box are in
+    different zones and a UTC-evening run would otherwise title itself with the
+    wrong day. [[project_central-time-for-texas-reports]]"""
+    today = today or dt.datetime.now(CENTRAL).date()
+    return today - dt.timedelta(days=1)
+
+
+def title_for(day: dt.date) -> str:
+    """'Country Sales Board 7.26' — month.day, unpadded, matching the WE labels
+    the board itself uses in column A ('WE 7.19')."""
+    return f"{TITLE_PREFIX} {day.month}.{day.day}"
 
 
 def _find_ws(sh, title: str = TARGET_TAB):
@@ -199,8 +219,16 @@ def main(argv=None) -> int:
     ap.add_argument("--range", dest="rng", default=None,
                     help="comma-separated A1 range(s) to capture, overriding "
                          "the label-driven board + delta-chart pair")
+    ap.add_argument("--date", metavar="YYYY-MM-DD",
+                    help="override the RUN date; the title still reports the "
+                         "day before it (testing/backfill)")
     args = ap.parse_args(argv)
     dry = not args.post
+
+    # The DM is titled with the day it REPORTS ON — yesterday — because the fill
+    # only writes completed days.
+    today = dt.date.fromisoformat(args.date) if args.date else None
+    title = title_for(report_date(today))
 
     recipients = ([r.strip() for r in args.only.split(",") if r.strip()]
                   if args.only else RECIPIENTS)
@@ -220,10 +248,10 @@ def main(argv=None) -> int:
     _, as_bot = _pick_client(prefer_bot=args.as_bot)
     print(f"  sending as {'the Slack bot app' if as_bot else 'Lucy (user token)'}")
     print(f"{'DRY-RUN (no send)' if dry else 'SENDING group DM'} to {recipients} "
-          f"— title {TITLE!r}")
+          f"— title {title!r}")
     resp = smp.dm_users_with_file(
-        png, users=recipients, comment=TITLE,
-        file_name=f"{TITLE}.png", dry_run=dry, as_bot=as_bot)
+        png, users=recipients, comment=title,
+        file_name=f"{title}.png", dry_run=dry, as_bot=as_bot)
     print(f"  result: {resp}")
     if not dry and resp.get("mode") == "individual_dms":
         print("  ⚠ fell back to INDIVIDUAL DMs — the group-DM open failed. A "
