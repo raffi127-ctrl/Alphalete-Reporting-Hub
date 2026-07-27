@@ -558,7 +558,7 @@ def health_check(page) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
-        headed: bool = False, max_actions: int = None) -> int:
+        headed: bool = False, max_actions: int = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -721,6 +721,19 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         _log("[oat] AppStream session busy (another run holds Carlos's "
              "session) — stepping aside; try again shortly")
         return 3
+    except RuntimeError as e:
+        # The patchright session intermittently gets a Cloudflare re-challenge
+        # ("console never rendered #searchMC"). A fresh session launch self-heals
+        # it (every retry has worked), so retry the whole run up to 3x before
+        # giving up. This failure happens during session setup, BEFORE any
+        # applicant is touched, so retrying never double-acts.
+        msg = str(e).lower()
+        if (("never rendered" in msg or "searchmc" in msg) and _attempt < 3):
+            _log(f"[oat] session didn't establish (Cloudflare re-challenge?) — "
+                 f"retry {_attempt + 1}/3 with a fresh session")
+            return run(live=live, limit=limit, debug=debug, headed=headed,
+                       max_actions=max_actions, _attempt=_attempt + 1)
+        raise
     return 0
 
 
