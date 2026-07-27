@@ -1,0 +1,11 @@
+# Streamlit Community Cloud deps for the Metrics Onboarding app
+# (entry point: office_onboarding/app.py). Mirrors the sibling pay_structure
+# Cloud app (same Sheets-backed pattern) + streamlit-sortables for the Thread
+# Builder admin editor's drag-and-drop. If sortables is ever unavailable the
+# editor degrades to a checkbox+order fallback, so this is the only extra dep.
+streamlit>=1.30
+pandas>=2.0
+gspread>=5.10
+google-auth>=2.20
+streamlit-sortables>=0.3.1
+# rebuild 2026-07-27: add streamlit-sortables for the Thread Builder admin editor.
