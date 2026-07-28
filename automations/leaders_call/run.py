@@ -167,8 +167,15 @@ CAMPAIGNS: dict[str, Campaign] = {
         # (URL filter params and interactive clicks both fail; see memory). The
         # relative "This Week" auto-rolls each week, so no weekly re-save (Maud
         # created it 2026-06-29).
+        # 2026-07-27: the base "B2B Leader Recognition" view's Sales.Quality Metrics
+        # worksheet went OWNER-LEVEL (no Rep column) — the deck showed rep COUNTS
+        # ('25','12') instead of rep names. The 'CarloslastweekEXP' sheet renders the
+        # SAME worksheet with a per-rep 'Rep' column (Owner Name | Rep | Sales | …),
+        # which is what parse_rows needs. NOTE: 'last week' in the sheet name — confirm
+        # it's a RELATIVE last-week (not a pinned date range) before next Monday's run.
         url=("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-             "B2BATTSalesMetrics?:customView=B2B%20Leader%20Recognition"),
+             "B2BATTSalesMetrics/879d4412-796f-438b-8b27-135a86a01659/CarloslastweekEXP"
+             "?:customView=B2B%20Leader%20Recognition"),
         crosstab_sheet="Sales.Quality Metrics",
         threshold=12,
         section_title="B2B",
@@ -826,6 +833,19 @@ def _polish_note(raw: str) -> str:
         return _light_clean(raw)
 
 
+# Tier ranking for promotion ordering — canonical labels, ascending prestige.
+# normalize_level() maps the messy sheet text ('LVL 1', 'level 2', 'Mastermind')
+# to one of these; anything unknown ranks 99 and sinks to the end.
+_PROMO_TIER_RANK = {"Level 1": 1, "Level 2": 2, "Level 3": 3,
+                    "Mastermind": 4, "Partner": 5, "Ownership": 6}
+
+
+def _promo_rank(promo: tuple) -> int:
+    from automations.leaders_call.build_pdf import normalize_level
+    lab, _ = normalize_level(promo[3])
+    return _PROMO_TIER_RANK.get(lab, 99)      # unknown tiers sink to the end
+
+
 def _fetch_promotions() -> list:
     """This week's promotions from Maud's recognition sheet tab: (rep, trainer, owner,
     level, cleaned note). Best-effort — returns [] on any error so the deck still builds."""
@@ -852,6 +872,11 @@ def _fetch_promotions() -> list:
             owner = (r[2] if len(r) > 2 else "").strip()
             note = (r[4] if len(r) > 4 else "").strip()
             promos.append((rep, trainer, owner, level, _polish_note(note)))
+        # Sheet-row order interleaves the tiers (L1, L2, L3, L1…), which reads as
+        # "sorted weird" on the slide. Group by tier ascending — Level 1 first, then
+        # up (…Mastermind → Partner → Ownership); stable within a tier so same-level
+        # reps keep their sheet order. Unknown tiers sink to the end.
+        promos.sort(key=_promo_rank)
         print(f"[promotions] {len(promos)} promotion(s) from {name!r}", flush=True)
         return promos
     except Exception as e:  # noqa: BLE001

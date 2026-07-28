@@ -73,12 +73,45 @@ MAX_PER_COL = max(1, int(USABLE_H // MIN_RH))
 PER_SLIDE = 2 * MAX_PER_COL                      # reps per slide before splitting (18)
 
 
+_ROMAN = {"II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"}
+
+
+def _recase_word(w):
+    """Capitalize the first letter of each alpha run (after space/hyphen/apostrophe/
+    paren/period) and lowercase the rest: 'adairus'→'Adairus', "o'brien"→"O'Brien"."""
+    out, cap_next = [], True
+    for ch in w:
+        if ch.isalpha():
+            out.append(ch.upper() if cap_next else ch.lower())
+            cap_next = False
+        else:
+            out.append(ch)
+            cap_next = True
+    return "".join(out)
+
+
+def titlecase_name(s):
+    """Fix punctuation/capitalization on people's names from messy sources
+    (all-lowercase 'basit', ALL-CAPS 'AMJAD MALHAS'), WITHOUT clobbering names that
+    are intentionally mixed-case (McClain, LeRoy, DePaz) or suffixes (II, III)."""
+    words = str(s).split()
+    res = []
+    for w in words:
+        letters = [c for c in w if c.isalpha()]
+        if not letters:
+            res.append(w)
+        elif w.upper().strip(".") in _ROMAN:          # keep roman-numeral suffixes upper
+            res.append(w.upper())
+        elif all(c.isupper() for c in letters) or all(c.islower() for c in letters):
+            res.append(_recase_word(w))               # single-case → recase it
+        else:
+            res.append(w)                             # intentional mixed case → leave
+    return " ".join(res)
+
+
 def clean_owner(owner):
     b = str(owner).split("\n")[0].split("[")[0].strip()
-    letters = [c for c in b if c.isalpha()]
-    if letters and all(c.isupper() for c in letters):
-        b = b.title()
-    return b
+    return titlecase_name(b)
 
 
 def _fit(text, font, size, max_w, min_size):
@@ -124,6 +157,7 @@ def _bar(value, vmax, base, width, height=13, top=False):
 def rep_para(rep, owner, big, avail_w, rs0=None, os0=None, lead=None):
     rs0 = rs0 if rs0 is not None else (16 if big else 14)
     os0 = os0 if os0 is not None else (12 if big else 11.5)
+    rep = titlecase_name(rep)
     owner = clean_owner(owner)
     rs = _fit(str(rep), "Helvetica-Bold", rs0, avail_w, 8.5)   # floor low enough that even
     os_ = _fit(owner, "Helvetica-Bold", os0, avail_w, 8.5)     # a 30+ char name stays one line
@@ -353,8 +387,9 @@ def _promo_col(rows, col_w, rh):
     ]
     for idx, (rep, trainer, owner, level, note) in enumerate(rows):
         lab, col = normalize_level(level)
+        rep = titlecase_name(rep)
         rp = _fit(str(rep), "Helvetica-Bold", 16, w_name - 10, 10)
-        subraw = f"Trained by {str(trainer).strip()}  ·  {clean_owner(owner)}"
+        subraw = f"Trained by {titlecase_name(trainer)}  ·  {clean_owner(owner)}"
         ss = _fit(subraw, "Helvetica", 11.5, w_name - 10, 8.5)   # auto-fit → ICD never wraps
         lines = [f'<font name="Helvetica-Bold" size="{rp}" color="#F3F6FC">{rep}</font>',
                  f'<font name="Helvetica" size="{ss}" color="#B4B7C2">{subraw}</font>']
