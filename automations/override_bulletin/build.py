@@ -516,6 +516,13 @@ def build_html(week_labels, combined, regular, captainship, program) -> str:
   .foot {{ text-align:center; margin-top:30px; }}
   .foot .tag {{ color:{GOLD}; letter-spacing:5px; font-size:15px; font-weight:bold; }}
   .foot .dt {{ color:#6f6b60; font-size:11px; letter-spacing:1px; margin-top:8px; }}
+  /* PDF (print) renderer doesn't honor -webkit-background-clip:text, so the
+     gradient title/headers print as a solid gold BAR (Raf 2026-07-25 "header is
+     messed up"). Screen/PNG keeps the gradient; print falls back to solid gold. */
+  @media print {{
+    .title, .sec-h {{ background:none; -webkit-text-fill-color:{GOLD_LT};
+      color:{GOLD_LT}; }}
+  }}
 </style></head><body>
   <div class="head">
     <img src="{logo}" alt="Alphalete">
