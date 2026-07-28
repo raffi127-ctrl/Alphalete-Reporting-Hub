@@ -177,6 +177,14 @@ def main() -> int:
 
     # ---- apply ----
     apply_plan(ws, plan, dry_run=args.dry_run)
+
+    # Delta box: grow the 'Total for week -> Last week' formula to the days
+    # completed so far (Tue = Monday, Wed = Mon+Tue, …) so it compares against
+    # the same stretch of last week that 'Total this week' covers of this one.
+    # The Tuesday rollover resets it to Monday; this walks it forward daily.
+    from automations.org_sales_board.rollover import apply_delta_lastweek
+    apply_delta_lastweek(ws, today=today, dry_run=args.dry_run)
+
     if rollover_summary and rollover_summary.get("rolled"):
         print(f"  rolled {rollover_summary['closed']} -> "
               f"{rollover_summary['new_label']}")

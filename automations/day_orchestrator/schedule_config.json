@@ -1461,7 +1461,8 @@
     },
     "all_campaigns_board_slack": {
       "order": 11,
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_suspended_note": "SUSPENDED 2026-07-28 (Eve): the daily Slack DM is OFF — the board is to be FILLED day by day only, with no automatic send. Suspended in two places so nothing sends by accident: on_scheduler:false keeps it out of the daily batch, and '--post' is out of base_args so even `lucy rerun all_campaigns_board_slack` only builds the PNG (dry-run). The fill job 'all_campaigns_board' is untouched and still runs daily. To resume: on_scheduler:true + put '--post' back in base_args.",
       "_note": "Screenshots the whole 'All Campaigns Org Sales Board' tab (exact-sheet PDF-export render, no browser — same path as org_board_slack) and sends it as ONE shared Slack GROUP DM (all recipients in a single mpim thread, needs the bot's mpim:write scope) under the title 'All Campaigns Org Sales Board'. Full recipient list (in slack_post.RECIPIENTS): Rafael Hidalgo, Carlos Hidalgo, Maud Miller, Megan Hidalgo, Evelyn Sobrino. Sends AS LUCY via the provisioned 'Lucy Reporting' USER token (slack-user-token, the xoxp token every metrics post and leaders_call already use) — CORRECTED 2026-07-27: this note used to claim a bot-app token, but SLACK_BOT_TOKEN was never created on the mini, so every run since go-live logged '(no Lucy bot token here — SlackPostError)' and fell through to the user token. The DMs were always arriving from Lucy; the module now names the user token outright instead of apologising for it. Run it from a machine whose slack-user-token is NOT Lucy's (e.g. Eve's laptop) and it sends from that account instead. LIVE to all 5 (Eve 2026-07-25): Evelyn proving-send confirmed, so base_args is now just '--post' → DMs the full RECIPIENTS list (Rafael/Carlos Hidalgo, Maud Miller, Megan Hidalgo, Evelyn Sobrino) daily. RECIPIENTS are hard-coded Slack user IDs (no users:read dependency). `--post` = LIVE send; without it the run is a dry-run. On-demand: `lucy rerun all_campaigns_board_slack` (uses base_args, so it sends).",
       "display_name": "All Campaigns Board — Slack DM",
       "source_type": "tableau",
@@ -1469,9 +1470,7 @@
       "command": [
         "automations.all_campaigns_board.slack_post"
       ],
-      "base_args": [
-        "--post"
-      ],
+      "base_args": [],
       "cadence": {
         "weekdays": [
           0,
@@ -1538,7 +1537,8 @@
     },
     "country_sales_board_slack": {
       "order": 11.6,
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_suspended_note": "SUSPENDED 2026-07-28 (Eve): the daily Slack DM is OFF — the board is to be FILLED day by day only, with no automatic send. Suspended in two places so nothing sends by accident: on_scheduler:false keeps it out of the daily batch, and '--post' is out of base_args so even `lucy rerun country_sales_board_slack` only builds the PNG (dry-run). The fill job 'country_sales_board' is untouched and still runs daily. The Hub card's 'Post Now' button still sends — that one is a deliberate human click. To resume: on_scheduler:true + put '--post' back in base_args.",
       "_note": "Screenshots the 'Country Sales Board' tab (exact-sheet PDF-export render, no browser — same path as org_board_slack / all_campaigns_board_slack) and sends it as ONE shared Slack GROUP DM (all recipients in a single mpim thread, needs the bot's mpim:write scope) under a DATED title — 'Country Sales Board 7.26' on a 7/27 run. The date is YESTERDAY, not the run date (Eve 2026-07-27): the fill only writes COMPLETED days, so the last day carrying numbers is always the day before, and titling it with the run date would date the message a day ahead of the sales it shows. Anchored to America/Chicago, and correct across month/year boundaries (a 8/1 run titles 7.31). RECIPIENTS ARE THREE, deliberately fewer than the All Campaigns DM's five (Eve 2026-07-27): Rafael Hidalgo, Maud Miller, Evelyn Sobrino — no Carlos, no Megan. Hard-coded Slack user IDs in slack_post.RECIPIENTS (no users:read dependency). NOT A WHOLE-TAB SHOT, AND NOT ONE RANGE: this tab runs to row 310 x column BC (52 frozen leaderboard weeks), so a full render is an unreadable postage stamp and a single contiguous range spanning both blocks would drag in ~135 rows of day block and WE history between them. It renders TWO blocks and stitches them into one image: (1) the BOARD — row 1 through the leaderboard TOTALS row, cols A..J = title + Product Summary + Current vs Prior through Grand Total + the full rep ranking with 7 weeks of trend; (2) the DELTA UNITS CHART — cols B..Z, the per-rep 'Total for week' triplet plus ALL SEVEN DAYS as This week / Last week / Delta, down to and including the country-wide TOTALS row. Eve asked for the delta chart with every day after seeing the first version without it (2026-07-27). Both blocks are located BY LABEL each run (leaderboard header + org_sales_board.find_delta_tables), so an inserted row or a new rep can't silently crop the image; find_delta_tables stops at the first nameless row, which is the TOTALS row itself, so slack_post pulls that one back in deliberately. Sends AS LUCY via the provisioned 'Lucy Reporting' USER token (slack-user-token) — NOT a bot app; SLACK_BOT_TOKEN was never created on the mini, so `--as-bot` is only for a runner where one has been seeded (Lucy 2). Run it from a machine whose slack-user-token is NOT Lucy's (e.g. Eve's laptop) and it sends from that account instead. `--post` = LIVE send; without it the run is a dry-run that still builds the PNG. Proving send to one person: `--only U088E2KJEV8 --post`. On-demand: `lucy rerun country_sales_board_slack` (uses base_args, so it sends).",
       "display_name": "Country Sales Board — Slack DM",
       "source_type": "tableau",
@@ -1546,9 +1546,7 @@
       "command": [
         "automations.country_sales_board.slack_post"
       ],
-      "base_args": [
-        "--post"
-      ],
+      "base_args": [],
       "cadence": {
         "weekdays": [
           0,

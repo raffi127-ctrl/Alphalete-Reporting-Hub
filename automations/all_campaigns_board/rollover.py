@@ -29,7 +29,10 @@ Structures rolled (all found by LABEL, never row index — [[feedback_no_hardcod
      top window after the insert.
 
   4. DELTA box ('Total this week'/'Last week'/'Delta' triplets): freeze each 'This
-     week' value into its 'Last week' cell (reuses the ORG rollover's engine).
+     week' value into its 'Last week' cell (reuses the ORG rollover's engine), then
+     reset the 'Total for week → Last week' column (col D) to MONDAY ONLY — it's an
+     enumerated sum grown a day at a time to match the elapsed days on 'Total this
+     week', so the closed week's days must come out of it (Megan 2026-07-28).
 
   5. DAILY CLEAR + DATE ANCHOR: blank the day cells C-I so the formula-driven
      current cells drop to 0, and advance the static day-of-month anchor to the
@@ -47,7 +50,7 @@ from typing import List, Optional
 
 from automations.org_sales_board.rollover import (
     a1col, we_label, target_week_label,
-    find_delta_tables, plan_delta_rollover,
+    find_delta_tables, plan_delta_rollover, plan_delta_lastweek_reset,
 )
 from automations.org_sales_board import fill_section as fs
 from automations.org_sales_board import week as _wk
@@ -246,13 +249,23 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     # its live values intact; the insert only moves the (already-frozen) rows.
     tables = find_delta_tables(grid)
     dcount = 0
+    lw_updates = []
     for t in tables:
         upd = plan_delta_rollover(ws, t)
         if upd and not dry_run:
             ws.batch_update(upd, value_input_option="USER_ENTERED")
         if upd:
             dcount += 1
-    logfn(f"  3/6 {dcount} delta table(s) frozen (this week → last week)")
+        # 'Total for week → Last week' (col D) back to MONDAY ONLY. It's an
+        # enumerated sum (=G+J+M+…) grown one day at a time so it spans the same
+        # elapsed days as 'Total this week'; the new week has a single completed
+        # day, so every day carried over from the closed week comes out.
+        lw_updates += plan_delta_lastweek_reset(grid, t)
+    if lw_updates and not dry_run:
+        ws.batch_update(lw_updates, value_input_option="USER_ENTERED")
+    logfn(f"  3/6 {dcount} delta table(s) frozen (this week → last week); "
+          f"'Last week' week-total reset to Monday only "
+          f"({len(lw_updates)} cell(s))")
 
     # 4) WE-history: INSERT the just-closed week at the TOP of the stack and GROW
     # DOWN — nothing dropped, same as the Copy tab (Megan 2026-07-24). Reuses the

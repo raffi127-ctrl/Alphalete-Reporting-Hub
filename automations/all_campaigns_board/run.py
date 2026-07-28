@@ -102,6 +102,14 @@ def run(*, dry_run: bool = True, today: dt.date = None,
               + ", ".join(f"{n} ({w})" for n, w in sorted(missing)))
 
     fs.apply_plan(tgt_ws, plan, dry_run=dry_run, logfn=logfn)
+
+    # Delta box: grow the 'Total for week → Last week' formula to the days
+    # completed so far (Tue = Monday, Wed = Mon+Tue, …) so it compares against
+    # the same stretch of last week that 'Total this week' covers of this one.
+    # The Tuesday rollover resets it to Monday; this walks it forward daily.
+    from automations.org_sales_board.rollover import apply_delta_lastweek
+    apply_delta_lastweek(tgt_ws, today=today, dry_run=dry_run, logfn=logfn)
+
     return {"filled_section": TARGET_SECTION,
             "reps_on_board": len(anchor.icd_rows),
             "reps_pulled": len(pull),

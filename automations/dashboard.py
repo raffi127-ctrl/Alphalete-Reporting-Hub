@@ -3765,8 +3765,15 @@ AUTOMATED_REPORTS = [
         "emoji": "📸",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "Posts the daily Country Sales Board image as Lucy into ONE shared group DM with Rafael Hidalgo, Maud Miller and Evelyn Sobrino.",
+        "description": "SUSPENDED — the automatic daily DM is off (Eve 2026-07-28); the board is filled day by day only. 'Post Now' still sends it by hand: one shared group DM as Lucy to Rafael Hidalgo, Maud Miller and Evelyn Sobrino.",
         "breakdown": (
+            "SUSPENDED (Eve 2026-07-28)\n"
+            "The **automatic daily send is OFF** — the Country Sales Board is "
+            "filled day by day and nothing is DM'd on its own. This card's "
+            "**Post Now** button still sends, on purpose: it's a deliberate "
+            "click, not the scheduler. To turn the daily DM back on, flip "
+            "`country_sales_board_slack` to `on_scheduler: true` and put "
+            "`--post` back in its `base_args`.\n\n"
             "WHAT IT DOES\n"
             "**•** Renders the Country Sales Board exactly as it looks on the "
             "sheet (same colors, fonts, borders) via the Sheets PDF export — "
@@ -3804,9 +3811,10 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "country_sales_board_slack",
+        # Suspended 2026-07-28 — off the scheduler, run by hand from this card.
         "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
+            "frequency": "manual",
+            "time": None,
             "estimated_minutes": 2,
         },
         "checklist": [],

@@ -598,6 +598,76 @@ def plan_delta_rollover(ws, table: dict):
     return updates
 
 
+def plan_delta_lastweek_reset(grid, table: dict, days: int = 1) -> List[dict]:
+    """Size each delta row's 'Total for week -> Last week' cell (col D) to the
+    first `days` days of the week — MONDAY ONLY by default, which is what the
+    rollover wants.
+
+    That cell is an enumerated sum of the per-day 'Last week' sub-columns
+    (=G+J+M+P+S+V+Y) which grows one day at a time so the comparison spans the
+    SAME elapsed days as 'Total this week'. The new week starts over with a
+    single completed day, so on rollover every day carried over from the closed
+    week has to come OUT of the formula — leave it at seven and Tuesday's board
+    compares one day of this week against a full week of last (Megan
+    2026-07-28). The daily fill then calls this again with the days completed so
+    far, so Wednesday's board is Mon+Tue against Mon+Tue. Col C ('Total this
+    week') is left alone: its per-day cells are =SUMIFs that read 0 for days not
+    yet entered, so summing all seven is already elapsed-correct.
+
+    Rows covered: the table's data rows PLUS the totals row underneath them.
+    That totals row carries no col-B label on these boards, so
+    `find_delta_tables` stops one row short of it — it's the totals row when the
+    next row's 'Total this week' cell is non-empty.
+
+    Both columns come off the header row by label: the FIRST 'Last week' is the
+    week total, the ones after it are the per-day cells, so Monday's is the
+    second ([[feedback_no_hardcoded_columns]])."""
+    rows = list(table["data_rows"])
+    hdr = table["header_row"] - 1                       # 0-based
+    lw_cols = [c + 1 for c in range(len(grid[hdr]))
+               if _cell(grid, hdr, c).strip().lower() == "last week"]
+    tw_col = next((c + 1 for c in range(len(grid[hdr]))
+                   if _cell(grid, hdr, c).strip().lower() == "total this week"),
+                  None)
+    if len(lw_cols) < 2 or not rows:
+        return []
+    total_col = a1col(lw_cols[0])
+    elapsed = [a1col(c) for c in lw_cols[1:][:max(1, days)]]
+    tail = rows[-1] + 1                                 # label-less totals row
+    if tw_col and _cell(grid, tail - 1, tw_col - 1):
+        rows.append(tail)
+    return [{"range": f"{total_col}{r}",
+             "values": [["=" + "+".join(f"{c}{r}" for c in elapsed)]]}
+            for r in rows]
+
+
+def apply_delta_lastweek(ws, today: Optional[dt.date] = None,
+                         dry_run: bool = False, logfn=print) -> List[dict]:
+    """Size the delta box's 'Last week' week-total to the days COMPLETED so far.
+
+    Called by the daily fill so the formula grows Mon -> Mon+Tue -> … on its own
+    instead of a VA extending it by hand; the Tuesday rollover resets it back to
+    Monday. Day count comes from the board's reporting week (Monday counts all 7
+    of the week that's closing), same source the ORG board's elapsed totals use.
+    """
+    from automations.org_sales_board.elapsed_totals import elapsed_day_count
+
+    today = today or dt.date.today()
+    grid = ws.get_all_values()
+    n = elapsed_day_count(today)
+    updates: List[dict] = []
+    for t in find_delta_tables(grid):
+        updates += plan_delta_lastweek_reset(grid, t, days=n)
+    if updates:
+        sample = updates[0]["values"][0][0]
+        logfn(f"  delta 'Last week' total -> {n} day(s) elapsed ({sample}): "
+              f"{len(updates)} cell(s)"
+              f"{' [dry-run]' if dry_run else ''}")
+        if not dry_run:
+            ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return updates
+
+
 _ORG_WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday",
                  "friday", "saturday", "sunday"}
 

@@ -271,6 +271,8 @@ def run_rollover(sh, ws, *, today: Optional[dt.date] = None,
       1  leaderboard: shift the week columns right, new label in col C
       2  delta chart: freeze each per-day 'This week' into 'Last week'
          (org_sales_board.plan_delta_rollover, reused verbatim)
+     2b  delta chart: reset the 'Total for week -> Last week' column to Monday
+         only (org_sales_board.plan_delta_lastweek_reset)
       3  day block: PREVIOUS <- LAST <- RUNNING weekly totals per rep
       4  WE stack: insert the closed week at the top, then re-anchor the
          Current-vs-Prior formulas that Sheets just shifted off it
@@ -312,9 +314,17 @@ def run_rollover(sh, ws, *, today: Optional[dt.date] = None,
 
     # 2 — the delta chart. org's finder + planner apply unchanged here.
     delta_updates: List[dict] = []
+    lastweek_updates: List[dict] = []
     for t in org_ro.find_delta_tables(grid):
         delta_updates += org_ro.plan_delta_rollover(ws, t)
+        lastweek_updates += org_ro.plan_delta_lastweek_reset(grid, t)
     push("delta-freeze", delta_updates)
+
+    # 2b — the delta box's 'Total for week -> Last week' column back to MONDAY
+    #      ONLY. It's an enumerated sum (=G+J+M+…) grown a day at a time to keep
+    #      the comparison on the same elapsed days as 'Total this week'; the new
+    #      week has one completed day, so the closed week's days come out.
+    push("delta-lastweek-reset", lastweek_updates)
 
     # 3 — per-rep weekly-total columns.
     push("weekly-total-shift", plan_kl_shift(grid, anchor))
