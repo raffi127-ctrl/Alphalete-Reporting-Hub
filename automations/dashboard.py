@@ -11584,8 +11584,10 @@ else:  # st.session_state.view == "user"
             # force its pill PURPLE so it reads at a glance as "not running / manual"
             # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
             "[class*='sales-board-screenshot-email__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            # Captainship Activation Rate (Eve's, in progress) — force its pill
-            # PURPLE so Megan can spot it to revisit with Eve. (Megan 2026-07-28)
+            # Eve's two per-captain cards (in progress) — force their pills PURPLE
+            # so Megan can spot them to revisit with Eve. Two near-identical names:
+            # 'Captainship Activations' AND 'Captainship Activation Rate'. (7/28)
+            "[class*='captainship-activations__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "[class*='captainship-activation-rate__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Captainship Report Drafts (12) — draft-only (a human sends), so pin
             # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
