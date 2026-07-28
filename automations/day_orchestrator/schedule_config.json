@@ -1389,8 +1389,8 @@
     },
     "org_sales_board_email": {
       "order": 9,
-      "on_scheduler": true,
-      "_note": "Emails the Org Sales Board as exact-sheet screenshots (copy tab, Sheets PDF-export render — no browser). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). PROVING (Megan 2026-07-04): base_args '' (no --preview) sends to the proving list — Maud + Rafael + Megan — off the COPY tab; at go-live swap to '--distro' (Alphalete Org Owners / Carlos' / Raf's Captain Team). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
+      "on_scheduler": false,
+      "_note": "OFF the scheduler (Megan 2026-07-28): handed to Eve, who now owns this automation. It was still emailing only the proving list (Rafael + Megan), so the daily send is stopped. Manual Hub button + module stay intact for Eve to pick up. Re-enable by flipping on_scheduler true (and set base_args '--distro' at go-live). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email",
       "source_type": "tableau",
       "data_sources": [],
@@ -1921,6 +1921,28 @@
       "data_sources": [],
       "command": [
         "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "oat-processing"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "disable_oat_processing_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "PAUSE the live OAT: `lucy rerun disable_oat_processing_agent --machine \"Lucy 2\"` race-free boots out + stashes com.alphalete.oat-processing.plist -> .disabled on Lucy 2, so the every-5-min runs stop (used to free Carlos's AppStream session for building/testing re-text, or to pause OAT). REVERSIBLE: re-run install_oat_processing_agent to re-create + bootstrap it. Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable/Pause: OAT Processing LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
       ],
       "base_args": [
         "oat-processing"
