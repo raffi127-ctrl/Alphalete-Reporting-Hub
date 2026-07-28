@@ -2541,7 +2541,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 5,
         },
         "checklist": [
-            {"text": "Upload financial .xlsx files recieved via email",
+            {"text": "Upload financial .xlsx files received via email",
              "uploader": {
                  "target_dir": "automations/uploaded/financial",
                  "accept": [".xlsx"],
@@ -2653,7 +2653,6 @@ AUTOMATED_REPORTS = [
                        "Leadership Promotions finale) and posts it to "
                        "#top-leaders-alphalete-org + #alphalete-gp-sales as Lucy — "
                        "finished before the 8pm call.",
-        # NOTE (Claude): draft 'How it works' — Megan/Maud to review/edit.
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills the **Leader's Call** tab with the week's recognition "
