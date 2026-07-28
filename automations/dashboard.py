@@ -2191,11 +2191,11 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "carlos_captainship_headcount",
         # Self-running weekly launchd job: it doesn't report a per-day completion
         # to the Hub, so keep it out of the "due today / not completed" tallies.
-        "self_scheduled": True,
+        "self_scheduled": False,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "7:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 3,
         },
         # Tableau login is unattended (ownerville SSO via patchright) — no
