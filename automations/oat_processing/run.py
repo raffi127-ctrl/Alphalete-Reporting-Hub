@@ -499,28 +499,24 @@ def _close_sms_panel(page) -> None:
             continue
 
 
-def _sms_widget_frame(page, timeout_ms: int = 15000, reopen=None):
-    """Find the frame (main page or an iframe) that actually holds the Bandwidth
-    SMS widget — identified by its Name filter (detected the same way the probe
-    does: fr.evaluate). If not seen mid-way and `reopen` is given, re-click the
-    SMS button once (in case the first open missed/toggled). Returns
+def _sms_widget_frame(page, timeout_ms: int = 30000):
+    """Find the frame that holds the Bandwidth SMS widget — identified by its Name
+    filter. The widget injects SLOWLY (~15-20s after the SMS click), so poll
+    patiently (detected via fr.evaluate, same as the probe). Returns
     (frame_or_None, diag)."""
-    tries = max(1, timeout_ms // 500)
-    for k in range(tries):
+    last_exc = ""
+    for k in range(max(1, timeout_ms // 500)):
         for fr in page.frames:
             try:
                 if fr.evaluate("() => !!document.querySelector("
                                "\"input[name='sms_name_filter']\")"):
+                    _log(f"    [retext] widget appeared at ~{k * 0.5:.0f}s")
                     return fr, ""
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                last_exc = type(e).__name__
                 continue
-        if reopen and k == tries // 2:
-            try:
-                reopen(page)
-            except Exception:  # noqa: BLE001
-                pass
         page.wait_for_timeout(500)
-    diag = []
+    diag = [f"lastExc={last_exc}"] if last_exc else []
     for fr in page.frames:
         try:
             names = fr.evaluate(
@@ -561,7 +557,7 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "sms_panel_fail", "could not open SMS widget"
     # The Bandwidth widget injects its DOM asynchronously and may live in a child
     # iframe — resolve the actual frame that holds it before driving anything.
-    w, diag = _sms_widget_frame(page, 18000, reopen=_open_sms_panel)
+    w, diag = _sms_widget_frame(page, 30000)
     if w is None:
         _log(f"    [retext] widget frame not found — frames: {diag}")
         _close_sms_panel(page)
