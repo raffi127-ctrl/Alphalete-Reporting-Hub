@@ -598,11 +598,65 @@ def health_check(page) -> None:
          f"rows={len(info.get('rows',[]))})")
 
 
+def probe_sms(page) -> None:
+    """Open the always-on SMS panel (top-right 'SMS' button — a Bandwidth widget)
+    and dump its structure (frames, inputs, buttons, textareas) so we can wire the
+    re-text send flow: search phone -> Load Template 'FOR LUCY' -> fill -> Send."""
+    clicked = False
+    for xp in ("xpath=//button[normalize-space(.)='SMS']",
+               "xpath=//a[normalize-space(.)='SMS']",
+               "xpath=//*[@role='button'][normalize-space(.)='SMS']",
+               "xpath=(//*[normalize-space(.)='SMS'][not(self::li) and not(self::ul)])[last()]"):
+        try:
+            loc = page.locator(xp).first
+            if loc.count() > 0:
+                loc.click(timeout=6000, no_wait_after=True)
+                clicked = True
+                _log(f"[sms] clicked SMS via {xp}")
+                break
+        except Exception:  # noqa: BLE001
+            continue
+    if not clicked:
+        try:
+            cands = page.evaluate(
+                "() => [...document.querySelectorAll('a,button,div,span')]"
+                ".filter(e=>/^SMS/i.test((e.innerText||'').trim()))"
+                ".map(e=>e.tagName+\":'\"+(e.innerText||'').trim().slice(0,20)+\"'\").slice(0,20)")
+            _log(f"[sms] SMS button not found; candidates: {cands}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"[sms] SMS button not found; probe err {e}")
+        return
+    page.wait_for_timeout(4500)
+    _log(f"[sms] frames after open: {len(page.frames)}")
+    for i, fr in enumerate(page.frames):
+        try:
+            info = fr.evaluate(
+                """() => ({
+                    url: (location.href||'').slice(0,90),
+                    inputs: [...document.querySelectorAll('input')]
+                        .map(e=>(e.name||e.id||e.placeholder||e.type||'?')).slice(0,30),
+                    buttons: [...document.querySelectorAll('button,input[type=button],input[type=submit],a')]
+                        .map(e=>(e.innerText||e.value||'').trim()).filter(t=>t&&t.length<28).slice(0,30),
+                    textareas: [...document.querySelectorAll('textarea')]
+                        .map(e=>(e.name||e.id||e.placeholder||'?')),
+                })""")
+            if info.get("inputs") or info.get("textareas") or (
+                    info.get("buttons") and any("Send" in b or "Template" in b
+                                                for b in info.get("buttons", []))):
+                _log(f"SMS FRAME {i} url={info.get('url')}")
+                _log(f"SMS FRAME {i} inputs={info.get('inputs')}")
+                _log(f"SMS FRAME {i} buttons={info.get('buttons')}")
+                _log(f"SMS FRAME {i} textareas={info.get('textareas')}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"SMS FRAME {i} err: {type(e).__name__}")
+
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
-        headed: bool = False, max_actions: int = None, _attempt: int = 1) -> int:
+        headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
+        _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -627,6 +681,11 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 _log(f"[oat] FATAL: office switch to {config.OFFICE_ID} failed")
                 return 2
             _log(f"[oat] on office {config.OFFICE_ID} ({config.OFFICE_HINT})")
+
+            if probe_sms_flag:
+                open_oat(page)
+                probe_sms(page)
+                return 0
 
             if debug:
                 # Dump the LANDING console first (shows the real nav anchors),
@@ -875,11 +934,13 @@ def main(argv=None) -> int:
     p.add_argument("--max-actions", type=int, default=None, dest="max_actions",
                    help="Cap live mutations (send/overwrite-send/remove) this run "
                         "(safety throttle; use --max-actions 1 for a controlled test)")
+    p.add_argument("--probe-sms", action="store_true", dest="probe_sms",
+                   help="Open the SMS panel and dump its structure (for re-text), stop")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
-               max_actions=args.max_actions)
+               max_actions=args.max_actions, probe_sms_flag=args.probe_sms)
 
 
 if __name__ == "__main__":
