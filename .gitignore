@@ -28,6 +28,16 @@ automations/shared/.ownerville_storage_state.json
 .credico_storage_state.json
 automations/shared/.credico_storage_state.json
 output/_credico_profile/
+# Sara Plus scrape (b2b_sales_board) — the browser profile and the storage_state
+# both hold Carlos's live SESSION cookies (auth). The repo is PUBLIC, and 661
+# profile files were sitting untracked one `git add .` away. Never commit.
+.saraplus_profile/
+automations/b2b_sales_board/.saraplus_profile/
+.saraplus_storage_state.json
+automations/b2b_sales_board/.saraplus_storage_state.json
+# Probe screenshots — throwaway debug captures written beside the _probe_*.py
+# scripts (ignored below). They show live account data.
+automations/*/_probe_*.png
 *.app/
 # Build artifacts + Claude Code local state
 build/
