@@ -466,12 +466,215 @@ def do_remove_duplicate(page, a: Applicant, live: bool) -> str:
     return "left"
 
 
+_TEMPLATE_NAME = "FOR LUCY"
+
+
+def _digits(s: str) -> str:
+    return re.sub(r"\D", "", s or "")
+
+
+def _role_from_position(position: str) -> str:
+    """Short role for the template's 'xxxx' slot, e.g.
+    'Event Marketing & Sales Assistant (Spanish Needed), 2 locations'
+    -> 'Event Marketing & Sales Assistant'."""
+    p = (position or "").strip()
+    for cut in ("(", ",", " - ", " – "):
+        i = p.find(cut)
+        if i > 3:
+            p = p[:i].strip()
+    return p or "open"
+
+
+def _close_sms_panel(page) -> None:
+    for xp in ("xpath=(//*[normalize-space(.)='Close'])[1]",
+               "xpath=//a[normalize-space(.)='×']",
+               "xpath=//*[normalize-space(.)='×'][1]"):
+        try:
+            loc = page.locator(xp).first
+            if loc.count() > 0:
+                loc.click(timeout=2000, no_wait_after=True)
+                page.wait_for_timeout(500)
+                return
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def retext_applicant(page, first, last, phone, role, *, do_send: bool):
+    """Send the 'FOR LUCY' re-engagement text to ONE applicant through the Bandwidth
+    SMS widget, then report (status, detail). Choreography confirmed with Megan
+    2026-07-28 (screenshots): open SMS widget -> Date filter 'This Month' -> type
+    applicant NAME in the widget Name box -> Search -> click the matching
+    conversation (binds the recipient) -> Load Template -> Search 'FOR LUCY' ->
+    Select -> replace NAME/xxxx in the compose box -> (Send).
+
+    Fails SAFE: never sends unless do_send=True; if the recipient thread can't be
+    uniquely matched (no thread that far back, or ambiguous), returns 'no_thread'
+    WITHOUT sending so the caller flags it for a human instead of guessing."""
+    name = f"{first} {last}".strip()
+    want = _digits(phone)[-10:]
+    if not _open_sms_panel(page):
+        return "sms_panel_fail", "could not open SMS widget"
+    page.wait_for_timeout(1500)
+
+    # 1) Date filter -> 'This Month' (reach back as far as the widget allows).
+    try:
+        page.select_option("select[name='sms_date_filter']", label="This Month",
+                           timeout=4000)
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [retext] date filter set failed: {type(e).__name__}")
+
+    # 2) Name search, then click the widget's own Search (scoped so we don't hit
+    #    the page's global search box).
+    try:
+        page.fill("input[name='sms_name_filter']", last or name, timeout=4000)
+    except Exception as e:  # noqa: BLE001
+        _close_sms_panel(page)
+        return "retext_err", f"name field: {type(e).__name__}"
+    searched = False
+    for xp in (
+        "xpath=//input[@name='sms_name_filter']/ancestor::*[self::div or self::form]"
+        "[1]//*[normalize-space(.)='Search' or @value='Search']",
+        "xpath=//input[@name='sms_name_filter']/following::*"
+        "[normalize-space(.)='Search' or @value='Search'][1]",
+    ):
+        try:
+            b = page.locator(xp).first
+            if b.count() > 0:
+                b.click(timeout=4000, no_wait_after=True)
+                searched = True
+                break
+        except Exception:  # noqa: BLE001
+            continue
+    if not searched:
+        try:
+            page.press("input[name='sms_name_filter']", "Enter")
+        except Exception:  # noqa: BLE001
+            pass
+    page.wait_for_timeout(2600)
+
+    # 3) Pick the conversation: prefer the row whose number matches the applicant's
+    #    phone; else a single result; else the single name match. Never guess among
+    #    several.
+    picked = page.evaluate(
+        r"""(args) => {
+            const want = args[0], name = (args[1]||'').toLowerCase();
+            const norm = s => (s||'').replace(/\D/g,'');
+            const all = [...document.querySelectorAll('div,li,a,tr')];
+            const rows = all.filter(e => {
+                const t = e.innerText || '';
+                return t.length < 200 && norm(t).length >= 10 &&
+                       /\+?1?\d{10}/.test(norm(t)) &&
+                       e.querySelectorAll('*').length < 25;
+            });
+            const cand = rows.filter(e => !rows.some(o => o !== e && e.contains(o)));
+            window.__oat_rows = cand;
+            const scored = cand.map((e, i) => {
+                const t = e.innerText || '', d = norm(t);
+                return { i, hasPhone: !!(want && d.includes(want)),
+                         hasName: !!(name && t.toLowerCase().includes(name)),
+                         text: t.replace(/\s+/g,' ').slice(0,60) };
+            });
+            const byPhone = scored.find(s => s.hasPhone);
+            const named = scored.filter(s => s.hasName);
+            const choice = byPhone || (named.length === 1 ? named[0]
+                         : (cand.length === 1 ? scored[0] : null));
+            return { count: cand.length, choice, sample: scored.slice(0, 6) };
+        }""", [want, name])
+    _log(f"    [retext] search '{last or name}' -> results={picked.get('count')} "
+         f"sample={[s.get('text') for s in picked.get('sample', [])]}")
+    choice = picked.get("choice")
+    if not choice:
+        _close_sms_panel(page)
+        return "no_thread", f"no unique thread for {name} ({want or 'no-phone'})"
+    try:
+        page.evaluate("(i) => window.__oat_rows[i].click()", choice["i"])
+        page.wait_for_timeout(1800)
+    except Exception as e:  # noqa: BLE001
+        _close_sms_panel(page)
+        return "retext_err", f"thread click: {type(e).__name__}"
+    _log(f"    [retext] bound thread: {choice.get('text')} "
+         f"(byPhone={choice.get('hasPhone')})")
+
+    # 4) Load Template -> modal -> filter to 'FOR LUCY' -> Select.
+    if not _click_first(page, ["Load Template"]):
+        _close_sms_panel(page)
+        return "retext_err", "Load Template button not found"
+    page.wait_for_timeout(1500)
+    try:
+        page.fill("xpath=//*[contains(normalize-space(.),'Loading SMS Template')]"
+                  "/following::input[@type='text'][1]", _TEMPLATE_NAME, timeout=4000)
+        page.wait_for_timeout(800)
+    except Exception as e:  # noqa: BLE001
+        _log(f"    [retext] template search fill failed: {type(e).__name__}")
+    sel = page.locator(
+        "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]//a[normalize-space(.)='Select']"
+        " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']").first
+    if sel.count() == 0:
+        _close_sms_panel(page)
+        return "retext_err", "FOR LUCY Select link not found"
+    sel.click(timeout=4000, no_wait_after=True)
+    page.wait_for_timeout(1200)
+
+    # 5) Replace NAME + xxxx in the compose box.
+    filled = page.evaluate(
+        r"""(args) => {
+            const first = args[0], role = args[1];
+            const tas = [...document.querySelectorAll('textarea')];
+            const ta = tas.find(t => /NAME|Vantura/.test(t.value||'')) ||
+                       tas.find(t => /Write message/i.test(t.placeholder||'')) ||
+                       tas.pop();
+            if (!ta) return '';
+            let v = (ta.value || '').replace(/\bNAME\b/g, first).replace(/xxxx/g, role);
+            ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
+            return v;
+        }""", [first, role])
+    if not filled:
+        _close_sms_panel(page)
+        return "retext_err", "compose box not found after template load"
+    _log(f"    [retext] composed -> {filled[:130]!r}")
+    if "NAME" in filled or "xxxx" in filled:
+        _log("    [retext] WARN: placeholder still present after fill")
+
+    if not do_send:
+        _close_sms_panel(page)
+        return "retext_dry", filled
+
+    # 6) Send.
+    try:
+        page.locator("#btn-sms-send").first.click(timeout=5000, no_wait_after=True)
+        page.wait_for_timeout(2200)
+    except Exception as e:  # noqa: BLE001
+        _close_sms_panel(page)
+        return "retext_err", f"send click: {type(e).__name__}"
+    _close_sms_panel(page)
+    return "retext_sent", filled
+
+
 def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
-    """Re-text (>1wk) — FLAG only for now (sends a real message; validate first)."""
-    _would(live, "flag re-text")
-    if live:
-        _flag_retext(a, None)
-        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name}")
+    """Re-text a quiet applicant (>1wk) via the SMS widget, then remove them
+    ('re-texted & removed'). Real sends stay gated behind config.RETEXT_ARMED until
+    validated live; until then this FLAGS to output/oat-retext-queue.csv."""
+    armed = live and getattr(config, "RETEXT_ARMED", False)
+    if not armed:
+        _would(live, "flag re-text (send not armed)")
+        if live:
+            _flag_retext(a, None)
+            _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name}")
+        return "flag_retext"
+    role = _role_from_position(a.position)
+    phone = a.cell_phone or a.phone
+    status, detail = retext_applicant(page, a.first_name, a.last_name, phone, role,
+                                      do_send=True)
+    if status == "retext_sent":
+        _log(f"    \U0001f4f2 re-texted: {a.first_name} {a.last_name} -> {detail[:80]}")
+        if _perform_remove(page):
+            _log(f"    \U0001f5d1 re-texted & removed: {a.first_name} {a.last_name}")
+            return "retext_removed"
+        return "retext_sent"
+    # couldn't uniquely reach them — flag for a human, don't guess/spam.
+    _flag_retext(a, None)
+    _log(f"    ⚑ re-text fell back to FLAG ({status}: {detail}): "
+         f"{a.first_name} {a.last_name}")
     return "flag_retext"
 
 
@@ -708,7 +911,7 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
-        _attempt: int = 1) -> int:
+        retext_test: str = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -737,6 +940,22 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             if probe_sms_flag:
                 open_oat(page)
                 probe_sms(page)
+                return 0
+
+            if retext_test:
+                # Validate the FULL re-text chain on ONE named person WITHOUT
+                # sending: 'First Last', or 'First Last|Role|Phone' to override.
+                parts = [p.strip() for p in retext_test.split("|")]
+                nm = parts[0].split()
+                first = nm[0] if nm else ""
+                last = " ".join(nm[1:]) if len(nm) > 1 else ""
+                role = parts[1] if len(parts) > 1 and parts[1] else "Event Marketing"
+                phone = parts[2] if len(parts) > 2 else ""
+                _log(f"[oat] RETEXT-TEST (no send) name={first} {last!r} "
+                     f"role={role!r} phone={phone!r}")
+                status, detail = retext_applicant(page, first, last, phone, role,
+                                                  do_send=False)
+                _log(f"[oat] RETEXT-TEST result: {status} :: {detail[:160]!r}")
                 return 0
 
             if debug:
@@ -988,11 +1207,16 @@ def main(argv=None) -> int:
                         "(safety throttle; use --max-actions 1 for a controlled test)")
     p.add_argument("--probe-sms", action="store_true", dest="probe_sms",
                    help="Open the SMS panel and dump its structure (for re-text), stop")
+    p.add_argument("--retext-test", default=None, dest="retext_test",
+                   metavar="'First Last[|Role|Phone]'",
+                   help="Validate the full re-text chain on one named person "
+                        "WITHOUT sending (Load Template -> FOR LUCY -> compose), stop")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
-               max_actions=args.max_actions, probe_sms_flag=args.probe_sms)
+               max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
+               retext_test=args.retext_test)
 
 
 if __name__ == "__main__":
