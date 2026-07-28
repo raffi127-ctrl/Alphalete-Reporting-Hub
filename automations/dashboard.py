@@ -2949,8 +2949,7 @@ AUTOMATED_REPORTS = [
         "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales: Daily Production, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, an Energy-only sales board, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Screenshots the Sales Board tab into clean PNGs — off a hidden, "
-            "auto-deleted copy tab, so the live sheet is never touched — and posts "
+            "Takes screenshots the Sales Board tab into clean PNGs and posts "
             "them as Lucy in one threaded post.\n\n"
             "IMAGES\n"
             "1. Daily Production\n"
