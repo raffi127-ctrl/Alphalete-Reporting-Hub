@@ -516,40 +516,38 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "sms_panel_fail", "could not open SMS widget"
     page.wait_for_timeout(1500)
 
-    # 1) Date filter -> 'This Month' (reach back as far as the widget allows).
-    try:
-        page.select_option("select[name='sms_date_filter']", label="This Month",
-                           timeout=4000)
-    except Exception as e:  # noqa: BLE001
-        _log(f"    [retext] date filter set failed: {type(e).__name__}")
-
-    # 2) Name search, then click the widget's own Search (scoped so we don't hit
-    #    the page's global search box).
-    try:
-        page.fill("input[name='sms_name_filter']", last or name, timeout=4000)
-    except Exception as e:  # noqa: BLE001
+    # 1)+2) Set Date='This Month' and the Name filter via JS (page.fill/select
+    #    timed out on these mid-animation even though they're visible), then click
+    #    the widget's own Search button (#sms_filter_search).
+    set_ok = page.evaluate(
+        r"""(nm) => {
+            const out = {date:false, name:false};
+            const d = document.querySelector("select[name='sms_date_filter']");
+            if (d) { const o = [...d.options].find(o => /this month/i.test(o.text));
+                     if (o) { d.value = o.value;
+                              d.dispatchEvent(new Event('change',{bubbles:true}));
+                              out.date = true; } }
+            const n = document.querySelector("input[name='sms_name_filter']");
+            if (n) { n.value = nm;
+                     n.dispatchEvent(new Event('input',{bubbles:true}));
+                     n.dispatchEvent(new Event('change',{bubbles:true}));
+                     out.name = true; }
+            return out;
+        }""", (last or name))
+    if not set_ok.get("name"):
         _close_sms_panel(page)
-        return "retext_err", f"name field: {type(e).__name__}"
+        return "retext_err", "sms name/date filter not found in widget"
     searched = False
-    for xp in (
-        "xpath=//input[@name='sms_name_filter']/ancestor::*[self::div or self::form]"
-        "[1]//*[normalize-space(.)='Search' or @value='Search']",
-        "xpath=//input[@name='sms_name_filter']/following::*"
-        "[normalize-space(.)='Search' or @value='Search'][1]",
-    ):
-        try:
-            b = page.locator(xp).first
-            if b.count() > 0:
-                b.click(timeout=4000, no_wait_after=True)
-                searched = True
-                break
-        except Exception:  # noqa: BLE001
-            continue
-    if not searched:
-        try:
-            page.press("input[name='sms_name_filter']", "Enter")
-        except Exception:  # noqa: BLE001
-            pass
+    try:
+        page.locator("#sms_filter_search").first.click(timeout=4000,
+                                                       no_wait_after=True)
+        searched = True
+    except Exception:  # noqa: BLE001
+        searched = page.evaluate(
+            "() => { const b = document.querySelector('#sms_filter_search');"
+            " if (b) { b.click(); return true; } return false; }")
+    _log(f"    [retext] filters set date={set_ok.get('date')} "
+         f"name={set_ok.get('name')} searched={searched}")
     page.wait_for_timeout(2600)
 
     # 3) Pick the conversation: prefer the row whose number matches the applicant's
@@ -619,10 +617,11 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     filled = page.evaluate(
         r"""(args) => {
             const first = args[0], role = args[1];
-            const tas = [...document.querySelectorAll('textarea')];
-            const ta = tas.find(t => /NAME|Vantura/.test(t.value||'')) ||
-                       tas.find(t => /Write message/i.test(t.placeholder||'')) ||
-                       tas.pop();
+            const ta = document.querySelector("textarea[name='ta_smsChat'], #ta_smsChat")
+                    || [...document.querySelectorAll('textarea')]
+                         .find(t => /Write message/i.test(t.placeholder||''))
+                    || [...document.querySelectorAll('textarea')]
+                         .find(t => /NAME|Vantura/.test(t.value||''));
             if (!ta) return '';
             let v = (ta.value || '').replace(/\bNAME\b/g, first).replace(/xxxx/g, role);
             ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
