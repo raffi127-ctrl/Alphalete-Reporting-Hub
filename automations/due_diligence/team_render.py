@@ -101,17 +101,22 @@ def _format_reqs(nid: int, tid: int, n: int) -> list:
     per = n + 4
     bases = {"ni": 1, "wl": per + 2, "ts": 2 * per + 3}    # 1-based first row of each table
     reqs = []
+
+    def cp(sr0, sr1, dr0, dr1):                            # 0-indexed row spans
+        reqs.append({"copyPaste": {
+            "source": {"sheetId": tid, "startRowIndex": sr0, "endRowIndex": sr1,
+                       "startColumnIndex": 0, "endColumnIndex": NCOLS},
+            "destination": {"sheetId": nid, "startRowIndex": dr0, "endRowIndex": dr1,
+                            "startColumnIndex": 0, "endColumnIndex": NCOLS},
+            "pasteType": "PASTE_NORMAL"}})
+
     for side, base in bases.items():
-        thdr, twe, tdata, ttot, tavg = _TPL[side]
+        thdr, twe, tdata, ttot, tavg = _TPL[side]         # thdr, twe are consecutive
         b0 = base - 1
-        for src, dst0, cnt in [(thdr, b0, 1), (twe, b0 + 1, 1), (tdata, b0 + 2, n),
-                               (ttot, b0 + 2 + n, 1), (tavg, b0 + 3 + n, 1)]:
-            reqs.append({"copyPaste": {
-                "source": {"sheetId": tid, "startRowIndex": src - 1, "endRowIndex": src,
-                           "startColumnIndex": 0, "endColumnIndex": NCOLS},
-                "destination": {"sheetId": nid, "startRowIndex": dst0, "endRowIndex": dst0 + cnt,
-                                "startColumnIndex": 0, "endColumnIndex": NCOLS},
-                "pasteType": "PASTE_NORMAL"}})
+        cp(thdr - 1, twe, b0, b0 + 2)                     # header + WE together -> vertical merges survive
+        cp(tdata - 1, tdata, b0 + 2, b0 + 2 + n)          # data (1-row source tiled to n)
+        cp(ttot - 1, ttot, b0 + 2 + n, b0 + 3 + n)        # Total
+        cp(tavg - 1, tavg, b0 + 3 + n, b0 + 4 + n)        # Per rep AVG
     return reqs
 
 
