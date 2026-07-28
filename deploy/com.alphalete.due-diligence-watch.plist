@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.due-diligence-watch</string>
+
+    <!-- GO-LIVE ONLY: 'Jiraiya' DMs DD replies + writes the DD tab. Do NOT load
+         until Megan confirms go-live. Set DD_DM_USERS (who it answers) and
+         DD_BOT_TOKEN (Jiraiya's app token) below first. Path is the laptop's; on
+         the mini regenerate the path via the usual lucy install flow. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/due_diligence_watch.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+        <!-- REQUIRED: who Jiraiya answers (comma list of Slack ids/emails/names). -->
+        <key>DD_DM_USERS</key>
+        <string></string>
+        <!-- Jiraiya's Slack app token (xoxb-…); empty = use the Lucy bot token. -->
+        <key>DD_BOT_TOKEN</key>
+        <string></string>
+    </dict>
+
+    <!-- Every 60s = near-instant. Each tick is a no-op unless a request waits. -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/due-diligence-watch.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/due-diligence-watch.launchd.err.log</string>
+</dict>
+</plist>
