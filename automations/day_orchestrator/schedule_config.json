@@ -50,6 +50,13 @@
         "_todo": "wire before cutover"
       }
     },
+    "tableau:metrics": {
+      "label": "Metrics / Metrics Call Last week data (Internet)",
+      "probe": {
+        "type": "not_configured",
+        "_todo": "wire before cutover"
+      }
+    },
     "tableau:product_sales": {
       "label": "OPT Product Sales Summary",
       "probe": {
@@ -1341,6 +1348,42 @@
       "verify": {
         "type": "manifest",
         "report_id": "captainship-new-internet-wireless-churn"
+      }
+    },
+    "captainship_cancel_rate": {
+      "order": 13.5,
+      "on_scheduler": true,
+      "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) — same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. --real is required for the live workbook; without it the run writes to the sandbox duplicate.",
+      "display_name": "Captainship - Cancel Rate (ATT Fiber)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:metrics"
+      ],
+      "command": [
+        "automations.captainship_cancel_rate.run"
+      ],
+      "base_args": [
+        "--real"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "captainship_churn"
+      ],
+      "verify": {
+        "type": "manifest",
+        "report_id": "captainship-cancel-rate"
       }
     },
     "owners_metrics_churn": {

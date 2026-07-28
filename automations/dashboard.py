@@ -3242,6 +3242,78 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-cancel-rate",
+        "name": "Captainship - Cancel Rate (ATT Fiber)",
+        "creator": "Eve",
+        "emoji": "🚫",
+        "color": "#F59E0B",
+        "category": "📊 Metrics",
+        "description": "Daily 0-30 and 30-60 day New Internet CANCEL rates per ICD owner, one tab per ATT Fiber captain (Wayne / Starr / Chan / Tony / Sahil). Runs right after the Captainship Churn fill. Cancel rate is a different metric from churn rate — this fills the Cancel Rate workbook, not the churn tabs. No Slack post — sheet fill only.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fills each ATT Fiber captain's tab on the \"Captainship Metrics "
+            "Report - Cancel Rate\" Google Sheet with today's cancel rates — "
+            "the Captainship Avg plus one row per ICD owner. Today's column "
+            "is inserted at B; the history shifts right.\n\n"
+            "TABS FILLED\n"
+            "• Cancel Rate - Wayne (ATT Fiber)\n"
+            "• Cancel Rate - Starr (ATT Fiber)\n"
+            "• Cancel Rate - Chan (ATT Fiber)\n"
+            "• Cancel Rate - Tony (ATT Fiber)\n"
+            "• Cancel Rate - Sahil (ATT Fiber)\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "Tableau → ATT TRACKER 2_1 - D2D → view \"Metrics\" → worksheet "
+            "\"Metrics Call Last week data (Internet)\", rows grouped by "
+            "\"Captain's Bonus Teams\" and expanded to ICD-owner level.\n"
+            "• CANCEL RATE 0-30 DAYS = column \"0-30 day New Internet cancel "
+            "rate\", copied as-is.\n"
+            "• CANCEL RATE 30-60 DAYS = 100% − column \"30-60 day New Internet "
+            "activation rate\". The workbook has no 30-60 cancel column, so "
+            "the report inverts the activation rate. A blank activation rate "
+            "stays blank (no data is not a 100% cancel).\n\n"
+            "NAME MATCHING\n"
+            "Tableau owner names run through the shared ICD Aliases sheet "
+            "before matching (e.g. 'JC Gerard Pascual' → 'JC Pascual', "
+            "'Blue Mendoza' → 'Audrey Mendoza'). An owner Tableau has but the "
+            "tab doesn't gets a row appended; an owner who had recent data "
+            "and stops filling is flagged — the run does NOT go green.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, right after the Captainship Churn fill."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1P95BxzlmLKkuvcL0gqjD9EfEHPLniGN-m4eE9UsPe_E/edit"
+                      "?gid=2129685820#gid=2129685820"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Cancel Rate done — all 5 captain tabs filled with today's column.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Cancel Rate (all 5 captains)",
+                "icon": "▶",
+                "primary": True,
+                "help": "One Tableau session, one Metrics crosstab, all 5 captain tabs. Re-running the same day refreshes today's column instead of adding a second one.",
+                "module": "automations.captainship_cancel_rate.run",
+                "args_fn": lambda: ["--real"],
+            },
+            {
+                "label": "Practice run (sandbox copy)",
+                "icon": "🧪",
+                "primary": False,
+                "help": "Same fill, but writes to the SANDBOX duplicate of the workbook instead of the captains' live tabs. Safe to click any time.",
+                "module": "automations.captainship_cancel_rate.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "owners-metrics-churn",
         "name": "Captainship Churn - Owners Metrics Report",
         "creator": "Megan",
