@@ -64,7 +64,11 @@ L_TRAINING = "Total Training"
 L_TRAINING_SHOWED = "Training Showed Up"
 
 N_CALL_COLS = 7   # Call List tab -> B..H
-N_2R_COLS = 9     # 2R tab -> AU..BC
+# The "Total Second Interviews" detail table has 10 data cols (First, Last,
+# Email, Phone, Rating, 1STR, 2ND, Job Board, Date and Time, Ad). 9 stopped at
+# Date and Time and dropped the Ad (BD) — every 2R Retention row imported with a
+# blank Ad. 10 captures through the Ad; paste starts at AU so this fills AU..BD.
+N_2R_COLS = 10    # 2R tab -> AU..BD
 
 
 def date_header_for(target: dt.date) -> str:
