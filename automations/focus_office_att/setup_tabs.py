@@ -51,7 +51,6 @@ OWNERS = sorted([
     "Salik Mallick",
     "Cyrus Wade",
     "Muhammad Haque",
-    "Edgar Muniz II",
     "Jacob Morgan",
     "Steve McElwee",
     "German Lopez",

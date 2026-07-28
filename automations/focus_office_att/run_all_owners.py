@@ -645,6 +645,23 @@ def main() -> int:
     if skip:
         owner_tabs = [t for t in owner_tabs if t not in skip]
 
+    # Skip TERMINATED ICDs — their tab stays (data frozen, per the 'flag, never
+    # delete' policy), but we don't waste an impersonation + scrape on an office
+    # that no longer exists (e.g. Edgar Muniz II, terminated 2026-07-22, who kept
+    # timing out the whole run). An explicit --only overrides, in case a terminated
+    # owner's last week still needs a one-off backfill.
+    if not only:
+        try:
+            from automations.shared import terminated_icds as _ti
+            _is_terminated = _ti.terminated_lookup()
+            _term = [t for t in owner_tabs if _is_terminated(t)]
+            if _term:
+                owner_tabs = [t for t in owner_tabs if t not in _term]
+                print(f"  ⏭ Skipping {len(_term)} terminated ICD(s) "
+                      f"(tab kept, not scraped): {', '.join(_term)}")
+        except Exception as e:  # noqa: BLE001 — advisory skip must never break a run
+            print(f"  ⚠ terminated-ICD skip check skipped ({e})", flush=True)
+
     today = dt.date.today()
     backfill_lastweek = bool(args.backfill_lastweek)
     if backfill_lastweek:
