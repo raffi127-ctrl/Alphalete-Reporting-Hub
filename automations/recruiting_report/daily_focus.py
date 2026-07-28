@@ -1330,6 +1330,28 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001 — manifest is best-effort
             log.warning("run manifest write failed (run still OK): %s", e)
 
+        # Slack any skipped / unmapped ICD to #claudecorrections-and-requests so
+        # the gap is SEEN even though the pill goes green (Megan 2026-07-28 —
+        # replaces the on-card "IF AN ICD IS SKIPPED" prompt). Best-effort: a
+        # Slack hiccup never fails the run.
+        _gap = sorted(set(skipped) | set(unmapped))
+        if _gap:
+            try:
+                from automations.day_orchestrator import notify
+                from automations.day_orchestrator.registry import load_config
+                _lines = ["☀️ *Daily Recruiting Focus — {} ICD(s) not pulled "
+                          "today*".format(len(_gap))]
+                if set(skipped):
+                    _lines.append("• No AppStream access ({}): {}".format(
+                        len(set(skipped)), ", ".join(sorted(set(skipped)))))
+                if set(unmapped):
+                    _lines.append("• Unmapped — needs an office id ({}): {}".format(
+                        len(set(unmapped)), ", ".join(sorted(set(unmapped)))))
+                notify._post_corrections(load_config(), None, _lines,
+                                         dry_run=False, tag="daily-focus-skips")
+            except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+                log.warning("corrections post (skips) failed: %s", e)
+
     # Canonical success sentinel the Hub scans for to classify the run
     # (dashboard.py: '=== done ===' in the log => success, BEFORE the
     # full-log traceback scan). Without it, a benign caught-and-logged
@@ -1347,6 +1369,7 @@ def main() -> int:
     if not args.dry_run and not args.only and not args.no_slack:
         from automations.recruiting_report import focus_render, focus_slack
         sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
+        _dm_failures: List[str] = []
         for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
             if cs not in targets:
                 continue
@@ -1370,6 +1393,22 @@ def main() -> int:
                          len(pngs), cs, ", ".join(res["recipients"]))
             except Exception as e:  # noqa: BLE001 — post is best-effort
                 log.warning("%s screenshot DM failed (run still OK): %s", cs, e)
+                _dm_failures.append("{} ({})".format(cs, e))
+
+        # A group-DM that didn't send is a real miss even though the fill
+        # succeeded — Slack it to #claudecorrections-and-requests (Megan
+        # 2026-07-28). Best-effort; never fails the run.
+        if _dm_failures:
+            try:
+                from automations.day_orchestrator import notify
+                from automations.day_orchestrator.registry import load_config
+                _lines = ["☀️ *Daily Recruiting Focus — {} Slack DM(s) didn't "
+                          "send*".format(len(_dm_failures))]
+                _lines += ["• " + f for f in _dm_failures]
+                notify._post_corrections(load_config(), None, _lines,
+                                         dry_run=False, tag="daily-focus-dm-fail")
+            except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+                log.warning("corrections post (DM fail) failed: %s", e)
 
     if rc == 0:
         log.info("=== done ===")

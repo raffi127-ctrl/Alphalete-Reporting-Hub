@@ -2459,9 +2459,9 @@ AUTOMATED_REPORTS = [
             "**rcaptain** AppStream access + an exact-match name).\n"
             "• **Deletes** the section for any name removed from col V.\n"
             "• **Reorders** the sections to match col V's order.\n\n"
-            "IF AN ICD IS SKIPPED\n"
-            "If a new ICD has no AppStream office mapped yet, the card "
-            "prompts you to map it at the top — confirm the match, then re-run."
+            "IF SOMETHING MISSES\n"
+            "If an ICD can't be pulled or a Slack DM doesn't send, the gap is "
+            "posted to **#claudecorrections-and-requests** so it's caught."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Lucy 1"],
