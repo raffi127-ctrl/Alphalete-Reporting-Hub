@@ -83,6 +83,13 @@ def _dummy_session(verbose=False):
 
 class ExitCodeSemantics(unittest.TestCase):
 
+    def setUp(self):
+        # These module globals persist across main() calls; a value set by one
+        # test would leak into the next (unittest shares one process). Reset both
+        # so each test starts from a known state.
+        omc._ALLTEAMS_PULL_OK.clear()
+        omc._ALLTEAMS_PARSE_CACHE.clear()
+
     def _patches(self, fill_phase):
         """Common patches: one fake report, no real Tableau/aliases/terminated
         check. `fill_phase` is the stand-in for _run_fill_phase."""
@@ -129,6 +136,38 @@ class ExitCodeSemantics(unittest.TestCase):
                       "the manifest note must explain the finding")
         self.assertFalse(mc.called,
                          "a run with a finding must not mark itself clean")
+
+    def test_backfill_flake_remediation_says_rerun(self):
+        """A rep left dark because her all-teams backfill pull FLAKED to empty
+        (program marked pull-not-ok) must get the re-run remediation + retry_args
+        to re-pull, NOT a 'go fix Tableau' message."""
+        omc._ALLTEAMS_PULL_OK["fiber"] = False   # the backfill pull didn't load
+        went_dark = {"0-30": ["Blue Mendoza"]}
+        rc, wm, mc = self._run(lambda *a, **k: went_dark)
+        self.assertEqual(rc, 0)
+        self.assertTrue(wm.called)
+        kwargs = wm.call_args.kwargs
+        self.assertEqual(list(kwargs.get("retry_args") or []), ["--only", "fake"],
+                         "a flaked backfill pull IS re-pullable — offer the retry")
+        rem = kwargs.get("remediation") or {}
+        blob = (str(rem.get("fix", "")) + " " + str(rem.get("message", ""))).lower()
+        self.assertIn("re-run", blob)
+        self.assertNotIn("almost always a tableau-side change", blob,
+                         "a flake must not be blamed on a Tableau filter/rename")
+
+    def test_genuinely_absent_remediation_says_tableau(self):
+        """A rep dark while her all-teams backfill pull LOADED fine (program
+        marked pull-ok) is genuinely gone from the view: keep the Tableau
+        filter/rename remediation and NO retry_args (a re-pull won't help)."""
+        omc._ALLTEAMS_PULL_OK["fiber"] = True   # the backfill pull loaded fine
+        went_dark = {"0-30": ["Blue Mendoza"]}
+        rc, wm, mc = self._run(lambda *a, **k: went_dark)
+        self.assertEqual(rc, 0)
+        kwargs = wm.call_args.kwargs
+        self.assertEqual(list(kwargs.get("retry_args") or []), [],
+                         "genuinely absent -> a re-pull won't fix it")
+        rem = kwargs.get("remediation") or {}
+        self.assertIn("Tableau-side change", str(rem.get("fix", "")))
 
     def test_real_exception_exits_nonzero(self):
         """(b) A genuine crash (here: the fill phase raising an IO/scrape-style

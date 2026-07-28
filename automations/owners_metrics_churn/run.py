@@ -102,6 +102,13 @@ REPORTS = [
 # process). Reps who moved captainships are backfilled from here so their old
 # captain's tab keeps filling instead of silently going dark.
 _ALLTEAMS_PARSE_CACHE: dict = {}
+# program -> did this run's all-teams backfill pull actually LOAD reps. Set by
+# _backfill_moved_owners. False means the pull flaked to empty after every retry,
+# so a rep left went-dark for that program can't be judged gone — a re-run usually
+# refills her. True means the pull loaded fine, so a still-dark rep is genuinely
+# absent from the view (a real Tableau filter/rename). Drives which remediation
+# the run-manifest shows: re-run vs. fix the Tableau view.
+_ALLTEAMS_PULL_OK: dict = {}
 # The all-teams backfill crosstab is as flake-prone as any Tableau download; retry
 # it so a transient flake doesn't falsely flag a moved rep as gone.
 BACKFILL_PULL_TRIES = 3
@@ -149,6 +156,10 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
                       f"{type(e).__name__}: {str(e).splitlines()[0][:80]})")
         _ALLTEAMS_PARSE_CACHE[program] = parsed_all
     allreps = _ALLTEAMS_PARSE_CACHE[program].get("reps", {})
+    # Record whether the pull loaded so the manifest can tell a transient
+    # backfill-pull flake (re-run clears it) apart from a rep genuinely gone
+    # from the view (needs a Tableau fix). Empty reps here = all retries flaked.
+    _ALLTEAMS_PULL_OK[program] = bool(allreps)
     low = {k.lower(): k for k in allreps}
     got: dict = {}
     for nm in dark_names:
@@ -347,6 +358,7 @@ def main(argv=None) -> int:
 
     all_reps: set = set()
     went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
+    went_dark_program: dict = {}  # {tab label: program} — for the manifest remediation
     for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
@@ -375,10 +387,12 @@ def main(argv=None) -> int:
                 print(f"  (diag: dumped {len(_raw_names)} raw rep name(s) to Inspect Out)")
             except Exception as _e:  # noqa: BLE001 — diag must never fail the run
                 print(f"  (diag dump failed: {type(_e).__name__}: {str(_e)[:80]})")
+        _prog = _program_of(parse_fn)
         _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args,
-                              program=_program_of(parse_fn), aliases=aliases)
+                              program=_prog, aliases=aliases)
         if _wd:
             went_dark_all[label] = _wd
+            went_dark_program[label] = _prog
         all_reps.update(parsed.get("reps", {}).keys())
 
     # No Slack post — sheet-only (matches existing Captainship pattern).
@@ -445,30 +459,62 @@ def main(argv=None) -> int:
                                 f"a flaky load."))
             elif _dark_note:
                 # Pull succeeded for every captainship, but a rep silently went
-                # dark → INCOMPLETE, not clean. Retry won't fix a filter/rename,
-                # so the remediation points at the Tableau view + alias, not a
-                # re-pull.
+                # dark → INCOMPLETE, not clean. The RIGHT fix depends on WHY she's
+                # dark: a rep whose only fill path is the all-teams backfill (she's
+                # absent from her captain's own view) shows dark when THAT pull
+                # flakes to empty — and a re-run refills her. But a rep dark while
+                # the backfill pull loaded fine is genuinely gone from the view (a
+                # real Tableau filter/rename) and a re-run won't help. Tell them
+                # apart by whether any dark rep's program had a flaked backfill
+                # pull this run, so the remediation doesn't send someone editing
+                # Tableau when a re-run is all it needs.
+                _backfill_flaked = any(
+                    _ALLTEAMS_PULL_OK.get(went_dark_program.get(_lbl)) is False
+                    for _lbl in went_dark_all)
+                if _backfill_flaked:
+                    _slug_by_label = {label: slug for slug, label, *_ in selected}
+                    _dslugs = [_slug_by_label[l] for l in went_dark_all
+                               if l in _slug_by_label]
+                    _fix = ("A re-run almost always clears this. The rep's data "
+                            "comes from the org-wide all-teams churn view (she's "
+                            "not on her captain's own saved view), and that pull "
+                            "didn't load today after every retry — a flaky Tableau "
+                            "download, not a removed rep. Re-run the report. ONLY "
+                            "if she's still dark after a clean re-run is it a real "
+                            "Tableau change (removed from the view's filter, or "
+                            "renamed — then re-add her / add the alias via "
+                            "focus_office_att.aliases.save_alias).")
+                    _msg = ("Heads up — the Owners Metrics Churn report filled "
+                            "every captainship, but a rep didn't show up because "
+                            "the all-teams churn view didn't load today: "
+                            + _dark_note + ". This is usually a flaky Tableau "
+                            "load — a re-run should refill her.")
+                    _retry = (["--only", ",".join(_dslugs)] if _dslugs else [])
+                else:
+                    _fix = ("This is almost always a Tableau-side change, not a "
+                            "flaky pull: the rep was removed from that view's "
+                            "filter, or renamed so the pull no longer matches her "
+                            "sheet row. Re-add her to the captain's view filter "
+                            "(and, if renamed, add the alias via "
+                            "focus_office_att.aliases.save_alias), then re-run.")
+                    _msg = ("Heads up — the Owners Metrics Churn report filled "
+                            "every captainship, but a rep stopped showing up: "
+                            + _dark_note + ". Usually she was dropped from her "
+                            "captain's Tableau view filter or renamed. Can "
+                            "someone check the view?")
+                    _retry = []
                 _rm.write_manifest(
                     "owners-metrics-churn", failed=list(went_dark_all.keys()),
-                    retry_args=[], kind="captainship",
+                    retry_args=_retry, kind="captainship",
                     note="⚠ " + _dark_note
                          + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason="A rep on a churn tab stopped filling while every "
                                "captainship pulled fine: " + _dark_note,
-                        fix="This is almost always a Tableau-side change, not a "
-                            "flaky pull: the rep was removed from that view's "
-                            "filter, or renamed so the pull no longer matches her "
-                            "sheet row. Re-add her to the captain's view filter "
-                            "(and, if renamed, add the alias via "
-                            "focus_office_att.aliases.save_alias), then re-run.",
+                        fix=_fix,
                         link="https://us-east-1.online.tableau.com/#/site/sci/"
                              "views/ATTTRACKER-B2B/CHURNRATES",
-                        message="Heads up — the Owners Metrics Churn report filled "
-                                "every captainship, but a rep stopped showing up: "
-                                + _dark_note + ". Usually she was dropped from her "
-                                "captain's Tableau view filter or renamed. Can "
-                                "someone check the view?"))
+                        message=_msg))
             elif _term_note:
                 _rm.write_manifest("owners-metrics-churn", failed=[],
                                    kind="captainship", note="⚠ " + _term_note)
