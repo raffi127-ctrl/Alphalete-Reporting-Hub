@@ -31,38 +31,67 @@ st.set_page_config(page_title="Tracker Onboarding", page_icon="📊",
                    layout="centered")
 
 
-def _inject_gs_client() -> None:
+def _inject_gs_client() -> dict:
+    """Wire the Sheets client from secrets. Returns a KEYS-ONLY diagnostic (never
+    secret values) so `?debug=1` can show WHY it fell back to a local draft."""
+    diag = {"local_only": os.environ.get("TRACKER_ONBOARDING_LOCAL_ONLY"),
+            "gspread_import": False, "secret_keys": None, "has_gcp_oauth": False,
+            "has_gcp_service_account": False, "oauth_field_keys": None,
+            "client_set": False, "error": ""}
     if os.environ.get("TRACKER_ONBOARDING_LOCAL_ONLY") == "1":
-        return
+        diag["error"] = "TRACKER_ONBOARDING_LOCAL_ONLY=1 forces local draft"
+        return diag
     try:
         import gspread
-    except Exception:
-        return
+        diag["gspread_import"] = True
+    except Exception as e:                       # noqa: BLE001
+        diag["error"] = f"gspread import failed: {type(e).__name__}: {e}"
+        return diag
+    try:
+        diag["secret_keys"] = sorted(list(st.secrets.keys()))
+    except Exception as e:                       # noqa: BLE001
+        diag["error"] = f"st.secrets unreadable: {type(e).__name__}: {e}"
     try:
         sa = st.secrets.get("gcp_service_account")
     except Exception:
         sa = None
+    diag["has_gcp_service_account"] = bool(sa)
     if sa:
-        store.set_client(gspread.service_account_from_dict(dict(sa)))
-        return
+        try:
+            store.set_client(gspread.service_account_from_dict(dict(sa)))
+            diag["client_set"] = True
+        except Exception as e:                   # noqa: BLE001
+            diag["error"] = f"service_account client failed: {type(e).__name__}: {e}"
+        return diag
     try:
         o = st.secrets.get("gcp_oauth")
     except Exception:
         o = None
+    diag["has_gcp_oauth"] = bool(o)
+    if o:
+        try:
+            diag["oauth_field_keys"] = sorted(list(dict(o).keys()))
+        except Exception:
+            pass
     if not o:
         tok = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
         if tok.exists():
             import json
             o = json.loads(tok.read_text())
     if o:
-        from google.oauth2.credentials import Credentials
-        creds = Credentials(
-            token=o.get("token"), refresh_token=o.get("refresh_token"),
-            token_uri=o.get("token_uri", "https://oauth2.googleapis.com/token"),
-            client_id=o.get("client_id"), client_secret=o.get("client_secret"),
-            scopes=list(o.get("scopes") or
-                        ["https://www.googleapis.com/auth/spreadsheets"]))
-        store.set_client(gspread.authorize(creds))
+        try:
+            from google.oauth2.credentials import Credentials
+            creds = Credentials(
+                token=o.get("token"), refresh_token=o.get("refresh_token"),
+                token_uri=o.get("token_uri", "https://oauth2.googleapis.com/token"),
+                client_id=o.get("client_id"), client_secret=o.get("client_secret"),
+                scopes=list(o.get("scopes") or
+                            ["https://www.googleapis.com/auth/spreadsheets"]))
+            store.set_client(gspread.authorize(creds))
+            diag["client_set"] = True
+        except Exception as e:                   # noqa: BLE001 — report, don't crash
+            diag["error"] = f"oauth client build failed: {type(e).__name__}: {e}"
+    return diag
 
 
 def form_view() -> None:
@@ -179,5 +208,15 @@ def _show_result(catalog) -> None:
 
 
 # --------------------------------------------------------------------------
-_inject_gs_client()
+_diag = _inject_gs_client()
+# ?debug=1 shows a KEYS-ONLY readout of what the app can see in its secrets
+# (never any secret value) — so a "why is it still a local draft?" is answerable
+# without guessing. Safe to leave in; invisible unless the query param is set.
+try:
+    _dbg = str(st.query_params.get("debug", "")).lower() in ("1", "true", "yes")
+except Exception:
+    _dbg = False
+if _dbg:
+    st.warning("🔧 secrets diagnostic (keys only, no values):")
+    st.json(_diag)
 form_view()
