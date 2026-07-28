@@ -34,7 +34,10 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.new_internet_churn.fill import _date_label, _col_index_to_letter
 
 SHEET_ID = os.environ.get("ABP_SHEET_ID", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8")
-TAB = "Local Office - New Internet ABP%"
+# ABP_TAB lets an office whose sheet uses the "Lucy ..." template name its ABP
+# tab (mirrors CHURN_NI_TAB/_WL_TAB). Empty/unset = the original name, so every
+# existing office is byte-identical. The tab is bootstrapped from empty on run 1.
+TAB = os.environ.get("ABP_TAB", "").strip() or "Local Office - New Internet ABP%"
 
 SECTION_LABEL = "NEW INTERNET ABP %"
 HEADER_ROW = 1        # section label + date-pair headers

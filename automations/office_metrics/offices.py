@@ -110,6 +110,15 @@ class Office:
     # Structure; business_name is the office's own brand for displays.
     website: str = ""
     business_name: str = ""
+    # Per-office metrics-tab labels. Empty = the original D2D "Local Office - ..."
+    # convention baked into the churn/ABP fills (so every existing office is
+    # byte-identical). An office whose sheet uses the newer "Lucy ..." template
+    # (onboarded offices) sets these to its own tab labels, so the fill writes to
+    # the tab that actually exists. Passed to the fills as CHURN_NI_TAB /
+    # CHURN_WL_TAB / ABP_TAB; an empty value there falls back to the default name.
+    churn_ni_tab: str = ""
+    churn_wl_tab: str = ""
+    abp_tab: str = ""
 
     @property
     def views(self) -> dict:
@@ -240,7 +249,10 @@ def _merge_onboarded() -> None:
             channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
             knocks_office=r.get("knocks_office", "") or r.get("owner", ""),
             header_label=r.get("header_label", ""),
-            website=r.get("website", ""), business_name=r.get("business_name", ""))
+            website=r.get("website", ""), business_name=r.get("business_name", ""),
+            churn_ni_tab=r.get("churn_ni_tab", ""),
+            churn_wl_tab=r.get("churn_wl_tab", ""),
+            abp_tab=r.get("abp_tab", ""))
         for rk, url in (r.get("per_office_views") or {}).items():
             fld = _VIEW_FIELD.get(rk)
             if fld and url:

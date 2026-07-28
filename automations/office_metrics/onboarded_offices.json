@@ -43,6 +43,9 @@
       "tableau_shot": 11
     },
     "per_office_views": {},
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
     "machine": "Lucy 1",
     "notes": ""
   }

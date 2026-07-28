@@ -146,14 +146,19 @@ def metrics_for(o: Office) -> list[dict]:
              # Once proven, churn pulls the two shared ALL-OFFICE views and slices
              # to this office's owner (CHURN_SLICE_OWNER) — no per-office churn
              # views needed. Else the office's own INT<Office>/Wireless<Office>.
+             # CHURN_NI_TAB/_WL_TAB: the office's own tab labels when its sheet
+             # uses the "Lucy ..." template; empty for the "Local Office - ..."
+             # offices, where the fill falls back to its default name.
              env=({"CHURN_NI_VIEW_URL": _off.ALL_OFFICE_CHURN_NI,
                    "CHURN_WL_VIEW_URL": _off.ALL_OFFICE_CHURN_WL,
                    "CHURN_SLICE_OWNER": o.owner,
-                   "CHURN_SHEET_ID": o.sheet_id}
+                   "CHURN_SHEET_ID": o.sheet_id,
+                   "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}
                   if _off.CHURN_USE_ALL_OFFICE else
                   {"CHURN_NI_VIEW_URL": o.view_churn_ni,
                    "CHURN_WL_VIEW_URL": o.view_churn_wl,
-                   "CHURN_SHEET_ID": o.sheet_id}),
+                   "CHURN_SHEET_ID": o.sheet_id,
+                   "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}),
              dry_flag="--dry-run", post_flag=None),
         dict(slug="knocks_gaps", label="🚪 Total Knocks + 🕐 Time Gaps",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
@@ -177,7 +182,10 @@ def metrics_for(o: Office) -> list[dict]:
              env={"ABP_NI_VIEW_URL": (_off.ALL_OFFICE_ABP_VIEW
                                       if _off.ABP_USE_ALL_OFFICE else o.view_abp),
                   "ABP_SHEET_ID": o.sheet_id,
-                  "ABP_OWNER": o.owner.upper(), "ABP_SUBTITLE": o.label},
+                  "ABP_OWNER": o.owner.upper(), "ABP_SUBTITLE": o.label,
+                  # office's own ABP tab label ("Lucy ..." template); empty →
+                  # the fill's default "Local Office - New Internet ABP%".
+                  "ABP_TAB": o.abp_tab},
              dry_flag="--dry-run", post_flag=None),
         dict(slug="tableau_shot", label="📸 Tableau Metrics",
              module="automations.office_metrics.metrics_shot",
