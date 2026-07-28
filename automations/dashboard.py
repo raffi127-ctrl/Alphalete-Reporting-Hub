@@ -1452,10 +1452,10 @@ def _tableau_trackers_card() -> dict:
     missed. That's what makes one card safe here: a single red light would hide
     a lone channel failing.
 
-    B2B Box is NOT on this card — its data isn't in at 5:00, so it posts hours
-    later on its own card (_tableau_box_card). Two runs, two pills: one card
-    covering both would go red at 5:00 every morning for a board that simply
-    hasn't landed yet."""
+    B2B Box IS listed on this card's thread but posts LATER on its own run
+    (_tableau_box_card) — its Tableau data isn't in during the 4am run, so its
+    image follows ~7am. Two runs, two pills, so a board that simply hasn't
+    landed yet doesn't turn the 4am card red."""
     from automations.tableau_screenshots import slack_post as _sp
     from automations.tableau_screenshots import pages as _pages
     # Org-wide boards = every channel gets them. EXCLUDE opt_in_only boards: those
@@ -1465,12 +1465,10 @@ def _tableau_trackers_card() -> dict:
     morning = [p for p in _pages.PAGES
                if not _pages.is_late(p) and not _pages.is_opt_in_only(p)]
     late = [p for p in _pages.PAGES if _pages.is_late(p)]
-    # Channels that get a CUSTOM subset instead of the org-wide set (Domin8 7/23).
-    _custom_lines = []
-    for _o, _ids in _sp.ORG_TRACKERS.items():
-        _titles = [_pages.by_id(t)["title"] for t in _ids if _pages.by_id(t)]
-        _custom_lines.append(f"• {_sp.ORG_LABEL.get(_o, _o)}: {', '.join(_titles)}")
-    _custom_block = "\n".join(_custom_lines)
+    # Every tracker that shows in the thread (org-wide + late), in board order —
+    # excludes only opt-in-only boards. Late boards (B2B Box) are LISTED here from
+    # the start; their image just follows once the data refreshes. (Megan 7/28)
+    _display = [p for p in _pages.PAGES if not _pages.is_opt_in_only(p)]
     # Boards TODAY's run left out because their source wasn't in yet (an email
     # tracker's .xlsx hadn't landed) — read from the status file so the success
     # line reports exactly what posted, not a blanket "all N". Stale/absent → none.
@@ -1484,7 +1482,8 @@ def _tableau_trackers_card() -> dict:
     except Exception:
         _omitted_today = []
     trackers = "\n".join(
-        f"{i}. {p['title']}" for i, p in enumerate(morning, 1))
+        f"{i}. {p['title']}" + ("  — posts ~7am" if _pages.is_late(p) else "")
+        for i, p in enumerate(_display, 1))
     late_names = ", ".join(p["title"] for p in late)
     # Prose form (one line, for the card description sentence).
     channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
@@ -1503,28 +1502,23 @@ def _tableau_trackers_card() -> dict:
         "color": "#1F4E79",
         "category": "📊 Metrics",
         "description": (
-            f"Captures {len(morning)} Tableau country sales trackers as images "
-            "and posts them daily into a 'Tableau Country Trackers M/D/YYYY' "
-            f"thread in every sales channel: {channels}. The boards are "
-            "country-wide, so all channels get identical images from a single "
-            "capture (one Tableau login). Replaces Jolie's manual tracker post. "
-            f"{late_names} posts later, on its own card — its data isn't in "
-            "this early."),
+            f"Posts {len(_display)} Tableau country sales trackers as images "
+            "daily into a 'Tableau Country Trackers M/D/YYYY' thread in every "
+            f"sales channel: {channels}. The boards are country-wide, so all "
+            "channels get identical images from a single capture (one Tableau "
+            f"login) in the 4am run. Replaces Jolie's manual tracker post. "
+            f"{late_names} is listed in the thread from the start; its image "
+            "follows once its data refreshes (~7am)."),
         "breakdown": (
             "WHAT IT DOES\n"
-            f"Grabs each of these {len(morning)} Tableau country trackers as an "
-            "image and posts them into today's dated thread in every channel "
-            "below.\n\n"
+            f"Grabs these {len(_display)} Tableau country trackers as images and "
+            "posts them into today's dated thread in every channel below (the "
+            f"first {len(morning)} in the 4am run; {late_names} follows ~7am).\n\n"
             f"TRACKERS\n{trackers}\n\n"
             f"CHANNELS\n{channel_bullets}\n\n"
-            + (f"CHANNEL-SPECIFIC (a custom subset, not the org-wide set)\n"
-               f"{_custom_block}\n\n" if _custom_block else "")
-            + "WHY BOX ISN'T HERE\n"
+            "B2B BOX (POSTS ~7AM)\n"
             f"{late_names}'s numbers don't settle until its Tableau data "
-            "refreshes (~7am), so posting it at 5:00 posted yesterday's "
-            "figures. It's listed in the Slack thread's header from 5:00 — "
-            "marked as still coming — and its image is added to that same "
-            "thread by the 'Box (late)' card as soon as the data is real.\n\n"
+            "refreshes (~7am) — that tracker is posted then.\n\n"
             "IF A CHANNEL MISSES\n"
             "The card shows a per-channel checklist after the run. Use "
             "'Retry failed only' to re-post just the channels that missed, or "
@@ -1532,7 +1526,7 @@ def _tableau_trackers_card() -> dict:
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "5:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 12,
         },
         "checklist": [],
