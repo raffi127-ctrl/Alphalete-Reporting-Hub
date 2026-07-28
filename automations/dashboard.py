@@ -3223,22 +3223,6 @@ AUTOMATED_REPORTS = [
             "• Cancel Rate - Chan (ATT Fiber)\n"
             "• Cancel Rate - Tony (ATT Fiber)\n"
             "• Cancel Rate - Sahil (ATT Fiber)\n\n"
-            "WHERE THE NUMBERS COME FROM\n"
-            "Tableau → ATT TRACKER 2_1 - D2D → view \"Metrics\" → worksheet "
-            "\"Metrics Call Last week data (Internet)\", rows grouped by "
-            "\"Captain's Bonus Teams\" and expanded to ICD-owner level.\n"
-            "• CANCEL RATE 0-30 DAYS = column \"0-30 day New Internet cancel "
-            "rate\", copied as-is.\n"
-            "• CANCEL RATE 30-60 DAYS = 100% − column \"30-60 day New Internet "
-            "activation rate\". The workbook has no 30-60 cancel column, so "
-            "the report inverts the activation rate. A blank activation rate "
-            "stays blank (no data is not a 100% cancel).\n\n"
-            "NAME MATCHING\n"
-            "Tableau owner names run through the shared ICD Aliases sheet "
-            "before matching (e.g. 'JC Gerard Pascual' → 'JC Pascual', "
-            "'Blue Mendoza' → 'Audrey Mendoza'). An owner Tableau has but the "
-            "tab doesn't gets a row appended; an owner who had recent data "
-            "and stops filling is flagged — the run does NOT go green.\n\n"
             "WHEN IT RUNS\n"
             "Daily, right after the Captainship Churn fill."
         ),
@@ -3248,7 +3232,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "7:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 4,
         },
         "checklist": [],
@@ -3264,14 +3248,6 @@ AUTOMATED_REPORTS = [
                 "help": "One Tableau session, one Metrics crosstab, all 5 captain tabs. Re-running the same day refreshes today's column instead of adding a second one.",
                 "module": "automations.captainship_cancel_rate.run",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Practice run (sandbox copy)",
-                "icon": "🧪",
-                "primary": False,
-                "help": "Same fill, but writes to a SANDBOX duplicate of the workbook instead of the captains' live tabs. Safe to click any time.",
-                "module": "automations.captainship_cancel_rate.run",
-                "args_fn": lambda: ["--sandbox"],
             },
         ],
     },
