@@ -1,0 +1,10 @@
+# Streamlit Community Cloud deps for the Tracker Onboarding app
+# (entry point: tracker_onboarding/app.py). Without this file the Cloud deploy
+# never installs gspread/google-auth, so _inject_gs_client() bails at
+# `import gspread` and every submission falls back to a LOCAL DRAFT instead of
+# writing the "Tracker Onboarding" tab. Mirrors office_onboarding/requirements.txt
+# (same Sheets-backed pattern), minus the Thread Builder's sortables.
+streamlit>=1.30
+pandas>=2.0
+gspread>=5.10
+google-auth>=2.20
