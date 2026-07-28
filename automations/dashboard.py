@@ -2255,7 +2255,7 @@ AUTOMATED_REPORTS = [
             "same week refreshes in place (no duplicate column)."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=450789281#gid=450789281"),
         "assignees": ["Lucy 1"],
         # Self-running weekly launchd job on Lucy 1 (Tue 10am CST), not the 4am
         # batch — show the run time on the tile and keep it out of the
@@ -2690,7 +2690,7 @@ AUTOMATED_REPORTS = [
             "deck posts; if the day ends short it reads **orange**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=1296972441#gid=1296972441"),
         "assignees": ["Lucy 1"],
         # Monday flow fires 4 times: 3 reminder emails (11am/4pm/7:15pm) + the
         # 7:30pm deck post. daily_runs=4 makes the pill climb grey → amber "X/4"
@@ -4072,7 +4072,7 @@ AUTOMATED_REPORTS = [
             "double-email) and **holds if the week isn\u2019t filled**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=930186902#gid=930186902"),
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "override_bulletin",
@@ -4256,7 +4256,7 @@ AUTOMATED_REPORTS = [
             "the board credits who posted nothing."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit?gid=1898586497#gid=1898586497"),
         # Lucy 2 — #alphalete-gp-sales is Carlos's channel and it's his board.
         "assignees": ["Lucy 2"],
         "run_machine": "Lucy 2",
