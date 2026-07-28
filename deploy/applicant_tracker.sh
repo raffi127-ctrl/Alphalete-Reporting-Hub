@@ -42,6 +42,15 @@ fi
 
 LOG_FILE="$LOG_DIR/applicant-${PHASE}-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] applicant/${PHASE} starting (args: ${EXTRA_ARGS[*]:-})" > "$LOG_FILE"
-"$VENV_PY" -u -m automations.applicant_tracker.run "$PHASE" "${EXTRA_ARGS[@]:-}" >> "$LOG_FILE" 2>&1
+# Build argv explicitly. Do NOT inline "${EXTRA_ARGS[@]:-}": under `set -u`, an
+# EMPTY array expands to a single stray "" arg, which argparse rejects as an
+# unrecognized positional (exit 2) — that silently killed EVERY scheduled run
+# (no extra args), so run.py never started and neither 2R Retention nor
+# First-Day ever wrote. Forward EXTRA_ARGS only when there actually are some.
+CMD=("$VENV_PY" -u -m automations.applicant_tracker.run "$PHASE")
+if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
+    CMD+=("${EXTRA_ARGS[@]}")
+fi
+"${CMD[@]}" >> "$LOG_FILE" 2>&1
 echo "[$(date)] applicant/${PHASE} finished exit=$?" >> "$LOG_FILE"
 exit 0
