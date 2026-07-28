@@ -1703,7 +1703,11 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
                  f"unknown action {action!r}; allowed: {', '.join(ACTIONS)}", finished=True)
             acted += 1
             continue
-        if cap_used >= DAILY_AUTORUN_CAP:
+        # The cap bounds runaway REPORT churn only. PLUMBING actions (update,
+        # restart_poller, ping, …) must ALWAYS run — else a cap-hit freezes the
+        # deploy/recovery channel itself (incl. the very command that clears it).
+        if (action.strip().lower() not in PLUMBING_ACTIONS
+                and cap_used >= DAILY_AUTORUN_CAP):
             print(f"[mini_control] daily cap ({DAILY_AUTORUN_CAP}) reached — "
                   f"leaving {action} {args} queued for a human")
             continue
