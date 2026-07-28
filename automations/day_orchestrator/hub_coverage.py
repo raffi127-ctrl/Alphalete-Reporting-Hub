@@ -224,7 +224,12 @@ def _schedule_meta(weekdays: List[int], est_minutes: Optional[int]) -> dict:
 
 def ensure_library_card(report_id: str, report_name: str, *,
                         module: Optional[str] = None,
-                        dry_run: bool = False) -> Tuple[bool, str]:
+                        dry_run: bool = False,
+                        category: Optional[str] = None,
+                        emoji: Optional[str] = None,
+                        description: Optional[str] = None,
+                        schedule_ov: Optional[dict] = None,
+                        machine_ov: Optional[str] = None) -> Tuple[bool, str]:
     """Create a Report Library card for a report that has none. Idempotent —
     keyed by the underscore report_id, so a second call updates in place, never
     dupes. Auto-created cards carry a delegating launcher script (so they render
@@ -247,8 +252,10 @@ def ensure_library_card(report_id: str, report_name: str, *,
         est = r.get("timeout_minutes")
     except Exception:
         name = name or report_id.replace("_", " ").title()
+    if machine_ov:
+        machine = machine_ov
     script = _launcher_script(cid, real_module, base_args)
-    schedule = _schedule_meta(weekdays, est)
+    schedule = schedule_ov or _schedule_meta(weekdays, est)
     meta = {
         "id": cid,
         "name": name,
@@ -258,10 +265,10 @@ def ensure_library_card(report_id: str, report_name: str, *,
         "auto_registered": True,
         "auto_registered_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "source_report_id": report_id,
-        "emoji": "🗂",
-        "description": ("Auto-registered from a scheduled run so it's visible on "
-                        "the Hub. Rename / add detail any time."),
-        "category": "🗂 Auto-registered",
+        "emoji": emoji or "🗂",
+        "description": description or ("Auto-registered from a scheduled run so "
+                        "it's visible on the Hub. Rename / add detail any time."),
+        "category": category or "🗂 Auto-registered",
         "assignees": [machine],       # profile grouping
         "schedule": schedule,         # calendar days + time chip
     }
