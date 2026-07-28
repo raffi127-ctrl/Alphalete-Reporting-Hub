@@ -1826,14 +1826,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.sara_down.run",
                 "args_fn": (lambda: []),
             },
-            {
-                "label": "Preview (no emails)",
-                "icon": "👁",
-                "primary": False,
-                "help": "Shows what it would send, without emailing anyone.",
-                "module": "automations.sara_down.run",
-                "args_fn": (lambda: ["--dry-run"]),
-            },
         ],
     },
     {
