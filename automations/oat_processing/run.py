@@ -514,7 +514,16 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     want = _digits(phone)[-10:]
     if not _open_sms_panel(page):
         return "sms_panel_fail", "could not open SMS widget"
-    page.wait_for_timeout(1500)
+    # The Bandwidth widget injects its DOM asynchronously after the click — wait
+    # for the Name filter to exist (attached; we drive it via JS so visibility
+    # isn't required) before doing anything.
+    try:
+        page.wait_for_selector("input[name='sms_name_filter']", timeout=15000,
+                               state="attached")
+        page.wait_for_timeout(800)
+    except Exception:  # noqa: BLE001
+        _close_sms_panel(page)
+        return "sms_panel_fail", "SMS widget did not load (no name filter after 15s)"
 
     # 1)+2) Set Date='This Month' and the Name filter via JS (page.fill/select
     #    timed out on these mid-animation even though they're visible), then click
