@@ -196,5 +196,33 @@ class ExitCodeSemantics(unittest.TestCase):
         self.assertFalse(mc.called)
 
 
+class DropAliasedPresent(unittest.TestCase):
+    """The guard that stops an orphaned alias row (a rep filling under her
+    canonical name, but with a stale old-label row still on the tab) from
+    flagging went-dark forever. Blue Mendoza -> Audrey Mendoza."""
+
+    ALIASES = {"Audrey Mendoza": ["Blue Mendoza"]}
+
+    def test_orphan_alias_row_is_not_dark(self):
+        # Pull is already canonicalized: it filled "Audrey Mendoza".
+        parsed = {"reps": {"Audrey Mendoza": {"0-30": {"pct": "0.00%"}}}}
+        went_dark = {"0-30": ["Blue Mendoza"]}
+        out = omc._drop_aliased_present(went_dark, parsed, self.ALIASES)
+        self.assertEqual(out, {}, "Blue -> Audrey (present) must not read as dark")
+
+    def test_genuinely_dark_rep_still_flagged(self):
+        # A different rep, not present under any canonical name, stays dark.
+        parsed = {"reps": {"Audrey Mendoza": {"0-30": {"pct": "0.00%"}}}}
+        went_dark = {"0-30": ["Blue Mendoza", "Real Missing"]}
+        out = omc._drop_aliased_present(went_dark, parsed, self.ALIASES)
+        self.assertEqual(out, {"0-30": ["Real Missing"]},
+                         "a truly-absent rep must remain flagged")
+
+    def test_no_aliases_is_passthrough(self):
+        went_dark = {"0-30": ["Blue Mendoza"]}
+        self.assertEqual(
+            omc._drop_aliased_present(went_dark, {"reps": {}}, {}), went_dark)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,29 @@ def _apply_aliases(parsed: dict, aliases: dict) -> dict:
     return parsed
 
 
+def _drop_aliased_present(went_dark: dict, parsed: dict, aliases: dict) -> dict:
+    """Drop went-dark rows that are just a stale alias of a rep who IS filling.
+
+    `parsed["reps"]` is already alias-canonicalized, so its keys are the
+    canonical names present in today's pull. A dark row carries the tab's RAW
+    display label (e.g. "Blue Mendoza"); resolve it through the same aliases and,
+    if the canonical it points to is present, the rep isn't dark — she's filling
+    under her correct name and this is an orphaned duplicate row (a cleanup, not
+    a missing-data finding). Returns went_dark with those names removed; a period
+    that empties out is dropped."""
+    if not went_dark or not aliases:
+        return went_dark
+    present_canon = {alias_to_canonical(nm, aliases).lower()
+                     for nm in parsed.get("reps", {})}
+    out: dict = {}
+    for period, names in went_dark.items():
+        keep = [n for n in names
+                if alias_to_canonical(n, aliases).lower() not in present_canon]
+        if keep:
+            out[period] = keep
+    return out
+
+
 REPORTS = [
     # (slug, label, fetch_fn, open_ws_fn, csv_filename, parse_fn, periods)
     # ----- ATT Fiber (Phase 1) -----
@@ -200,6 +223,15 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     went_dark: dict = {}
     try:
         went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
+        # An old-label row whose canonical (alias-resolved) name is ALREADY
+        # filling under its correct name isn't dark — it's the same rep under a
+        # stale label. E.g. a "Blue Mendoza" row left over after the rep was
+        # aliased to "Audrey Mendoza": the pull relabels her data to Audrey, that
+        # row fills, and the orphaned Blue row would otherwise flag went-dark
+        # every run forever. The stale duplicate row is a cleanup, not a
+        # missing-data finding — so don't flag it (and don't waste a backfill
+        # pull chasing a rep who's already filling).
+        went_dark = _drop_aliased_present(went_dark, parsed, aliases)
         if went_dark:
             for p, names in went_dark.items():
                 print(f"  ⚠ {p}-day WENT DARK (on tab + recent data, absent from "
