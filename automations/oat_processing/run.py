@@ -737,6 +737,9 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 _log("[oat] FATAL: could not open the One-App-at-a-time page")
                 return 2
 
+            _start_total = getattr(read_current_applicant(page, today), "_total", None)
+            _log(f"[oat] QUEUE at start: {_start_total} emails")
+
             processed = 0
             actions = 0                 # live mutations (sent/removed) this run
             MUTATIONS = ("sent", "sent_override", "removed")
@@ -805,7 +808,13 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 page.wait_for_timeout(1200 if outcome in MUTATIONS else 400)
 
             _flush_queues()
-            _log(f"\n[oat] done — {processed} applicant(s) this run: "
+            try:
+                _end_total = getattr(read_current_applicant(page, today), "_total", None)
+            except Exception:  # noqa: BLE001
+                _end_total = None
+            _log(f"[oat] QUEUE at end: {_end_total} emails "
+                 f"(was {_start_total} — a persisted send/remove drops this)")
+            _log(f"[oat] done — {processed} applicant(s) this run: "
                  + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     except AppStreamBusy:
         _log("[oat] AppStream session busy (another run holds Carlos's "
