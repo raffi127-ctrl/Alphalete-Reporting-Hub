@@ -129,6 +129,10 @@ def existing_registry(exclude_key: Optional[str] = None) -> Dict[str, object]:
 
     def _scan_offices(mod_offices):
         for k, o in getattr(mod_offices, "OFFICES", {}).items():
+            # An office already applied into OFFICES must not collide with ITSELF
+            # on a re-apply (idempotent onboard_apply / a Post-now re-click).
+            if exclude_key and k == exclude_key:
+                continue
             keys.append(k)
             cid = getattr(o, "channel_id", "")
             if cid:

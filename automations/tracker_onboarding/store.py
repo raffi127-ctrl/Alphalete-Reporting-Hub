@@ -101,6 +101,10 @@ def existing_registry(exclude_key: Optional[str] = None) -> "Dict[str, object]":
     try:
         from automations.tableau_screenshots import slack_post as _sp
         for k, cids in getattr(_sp, "ORG_CHANNELS", {}).items():
+            # An office already applied into ORG_CHANNELS must not collide with
+            # ITSELF on a re-apply (idempotent onboard_apply / a Post-now re-click).
+            if exclude_key and k == exclude_key:
+                continue
             keys.append(k)
             for cid in cids:
                 channels.setdefault(cid, k)
