@@ -727,6 +727,33 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     return "retext_sent", filled
 
 
+def _name_matches(a: Applicant, first: str, last: str) -> bool:
+    who = f"{a.first_name} {a.last_name}".strip().lower()
+    tgt = f"{first} {last}".strip().lower()
+    return who == tgt or (bool(first) and bool(last)
+                          and first.lower() in who and last.lower() in who)
+
+
+def _walk_to_and_remove(page, first, last, max_hops: int = 80) -> str:
+    """Walk the OAT queue to the applicant matching (first,last) and remove them
+    (Duplicate reason). Used to finish a re-texted applicant when we're not already
+    sitting on their record. Returns 'removed' / 'not_found' / 'left'."""
+    seen: set = set()
+    for _ in range(max_hops):
+        a = read_current_applicant(page)
+        who = f"{a.first_name} {a.last_name}".strip().lower()
+        if _name_matches(a, first, last):
+            _log(f"    [remove-one] found {a.first_name} {a.last_name} — removing")
+            return "removed" if _perform_remove(page) else "left"
+        key = f"{a.email}|{who}"
+        if key in seen and not advance_to_next(page):
+            break
+        seen.add(key)
+        if not advance_to_next(page):
+            break
+    return "not_found"
+
+
 def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
     """Re-text a quiet applicant (>1wk) via the SMS widget, then remove them
     ('re-texted & removed'). Real sends stay gated behind config.RETEXT_ARMED until
@@ -1024,7 +1051,8 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
-        retext_test: str = None, retext_send: str = None, _attempt: int = 1) -> int:
+        retext_test: str = None, retext_send: str = None,
+        remove_applicant: str = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -1074,6 +1102,21 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 status, detail = retext_applicant(page, first, last, phone, role,
                                                   do_send=do_send)
                 _log(f"[oat] RETEXT result: {status} :: {detail[:160]!r}")
+                # Mirror the real flow: after a live send, remove that applicant
+                # (walk to their record — the SMS widget left us elsewhere).
+                if do_send and status == "retext_sent":
+                    rr = _walk_to_and_remove(page, first, last)
+                    _log(f"[oat] RETEXT post-send remove: {rr}")
+                return 0
+
+            if remove_applicant:
+                # Utility: walk OAT to a named applicant and remove them (no text).
+                open_oat(page)
+                nm = remove_applicant.split()
+                first = nm[0] if nm else ""
+                last = " ".join(nm[1:]) if len(nm) > 1 else ""
+                rr = _walk_to_and_remove(page, first, last)
+                _log(f"[oat] REMOVE-APPLICANT {first} {last!r} -> {rr}")
                 return 0
 
             if debug:
@@ -1331,14 +1374,18 @@ def main(argv=None) -> int:
                         "WITHOUT sending (Load Template -> FOR LUCY -> compose), stop")
     p.add_argument("--retext-send-live", default=None, dest="retext_send",
                    metavar="'First Last[|Role|Phone]'",
-                   help="ACTUALLY SEND one real re-text to the named person "
-                        "(controlled Send-button validation). Sends an SMS.")
+                   help="ACTUALLY SEND one real re-text to the named person, then "
+                        "remove them (mirrors text-then-remove). Sends an SMS.")
+    p.add_argument("--remove-applicant", default=None, dest="remove_applicant",
+                   metavar="'First Last'",
+                   help="Walk OAT to the named applicant and remove them (no text)")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
                max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
-               retext_test=args.retext_test, retext_send=args.retext_send)
+               retext_test=args.retext_test, retext_send=args.retext_send,
+               remove_applicant=args.remove_applicant)
 
 
 if __name__ == "__main__":
