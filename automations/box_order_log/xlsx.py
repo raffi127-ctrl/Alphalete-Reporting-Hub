@@ -337,6 +337,73 @@ def build(sales: Sequence, out_path: Path, *,
             psh.column_dimensions[get_column_letter(c)].width = 12
         psh.freeze_panes = "B5"
 
+    # ---- pending orders --------------------------------------------------
+    # Every deal still in flight — not yet accepted, not dead — in one tab, so
+    # Carlos has a single worklist to chase (his ask, 2026-07-22: "a tab with
+    # all of the pending orders like ATT has"). "Pending" is exactly the
+    # payout image's "Still Open": status is neither Accepted by Supplier nor a
+    # terminal cancel/reject/drop.
+    from . import payout as _payout
+    pend = [s for s in ordered
+            if s.status not in _payout.POSTED_STATUSES
+            and s.status not in _payout.CANCEL_STATUSES]
+
+    def _next_step(s) -> str:
+        """Plain, action-focused — what has to happen next, no color-speak."""
+        submitted = any(h.startswith(clean.SUBMITTED) for h in s.history)
+        if s.status == "Ready For Booking":
+            return "Send the bill copy / ETF document"
+        if s.status == "Incomplete":
+            return "Fix the missing contract data"
+        if s.status == clean.SUBMITTED:
+            return "Waiting on the supplier — nothing for us to do"
+        if s.status == "Verification":
+            return ("Waiting on the supplier" if submitted
+                    else "Submit a bill or ETF document")
+        return clean.STATUS_MEANING.get(s.status, "")
+
+    # Oldest first — this is a chase list, so the stalest deal is the one that
+    # most needs a call. Secondary sort keeps a rep's rows together on ties.
+    pend.sort(key=lambda s: (s.sale_date or dt.date.max,
+                             _fmt(s.fields.get("Rep Name"))))
+    P_COLS = ("Rep Name", "Sale Date", "Days Waiting", "Business Name",
+              "Contract ID", "Status", "Next step")
+    psh = wb.create_sheet(_safe_title("Pending Orders", used))
+    psh.cell(row=1, column=1, value="Pending orders — not yet accepted").font = \
+        _font(bold=True)
+    psh.cell(row=2, column=1,
+             value="Every deal still in flight (cancelled and rejected are "
+                   "excluded). {} as of {}.".format(
+                       "{} pending".format(len(pend)) if pend else "none pending",
+                       today.strftime("%m/%d/%Y"))).font = _font(italic=True)
+    _write_header(psh, 4, P_COLS)
+    r = 5
+    for s in pend:
+        waited = (today - s.sale_date).days if s.sale_date else ""
+        note = _next_step(s)
+        vals = [_fmt(s.fields.get("Rep Name")), s.sale_date or "", waited,
+                _fmt(s.fields.get("Business Name")),
+                _fmt(s.fields.get("Contract ID")), s.status, note]
+        fill_hex = clean.color_for(s.status, s.history)
+        fill = PatternFill("solid", fgColor=fill_hex) if fill_hex else None
+        for c, v in enumerate(vals, start=1):
+            cell = psh.cell(row=r, column=c, value=v)
+            cell.font = _font()
+            cell.alignment = LEFT if c in (1, 4, 7) else CENTER
+            cell.border = _border()
+            if fill is not None:
+                cell.fill = fill
+            if c == 2:
+                cell.number_format = "mm/dd/yyyy"
+        r += 1
+    if not pend:
+        psh.cell(row=5, column=1, value="Nothing pending — every deal is "
+                 "accepted or closed.").font = _font(italic=True)
+    widths = [22, 12, 13, 30, 12, 22, 40]
+    for c, w in enumerate(widths, start=1):
+        psh.column_dimensions[get_column_letter(c)].width = w
+    psh.freeze_panes = "A5"
+
     # ---- one tab per rep -------------------------------------------------
     by_rep: Dict[str, List] = {}
     for s in ordered:
