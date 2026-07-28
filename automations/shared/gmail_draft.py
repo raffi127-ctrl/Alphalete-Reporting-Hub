@@ -77,6 +77,46 @@ def create_draft(msg: EmailMessage, *, dry_run: bool = False,
     return result
 
 
+def send_message(msg: EmailMessage, *, dry_run: bool = False,
+                 logfn=print) -> dict:
+    """Send `msg` straight from the authorized mailbox — no draft round-trip.
+
+    Use this instead of create_draft + "a human opens it and hits Send" for
+    any mail with INLINE IMAGES. Proven on 2026-07-27: opening an
+    API-created draft in the Gmail compose window makes Gmail hoist the
+    inline images out into its own attachment store, and the mail that then
+    goes out carries no image parts at all — the recipient sees body text
+    and broken icons, with nothing attached. The identical message sent
+    through this function arrives with every image intact.
+
+    The gmail.compose scope covers sending, so no re-auth is needed.
+
+    Returns {'message_id', 'thread_id'}, or a preview dict when dry_run.
+    """
+    if not isinstance(msg, EmailMessage):
+        raise TypeError("send_message expects an email.message.EmailMessage")
+
+    to = msg.get("To", "")
+    subject = msg.get("Subject", "")
+    if not str(to).strip():
+        # Sending to nobody silently 400s deep inside the API client; say so
+        # in the caller's terms instead.
+        raise ValueError(f"refusing to send {subject!r} with an empty To")
+
+    raw = base64.urlsafe_b64encode(bytes(msg)).decode("ascii")
+    if dry_run:
+        logfn(f"  (dry-run) would SEND: subj={subject!r} to={to!r} "
+              f"({len(raw)} b64 chars)")
+        return {"dry_run": True, "subject": subject, "to": to,
+                "raw_len": len(raw)}
+
+    sent = _service().users().messages().send(
+        userId="me", body={"raw": raw}).execute()
+    result = {"message_id": sent.get("id"), "thread_id": sent.get("threadId")}
+    logfn(f"  ✓ SENT to {to}: id={result['message_id']} subj={subject!r}")
+    return result
+
+
 def list_drafts(query: str | None = None) -> list[dict]:
     """Return [{'draft_id', 'message_id', 'subject'}] for the authorized
     mailbox's drafts, newest-API-order, optionally narrowed by a Gmail

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import datetime as dt
 from email.message import EmailMessage
-from email.utils import make_msgid
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -50,14 +49,49 @@ def _pending(what: str) -> str:
             f'(re-run after fixing the source) —</div>')
 
 
-class _Images:
-    """Collects (cid, path) as blocks are built, so add_related runs once."""
-    def __init__(self) -> None:
-        self.pairs: List[Tuple[str, Path]] = []
+def _slug_slot(s: str) -> str:
+    """Content-ID / filename safe: lowercase alnum + single dashes."""
+    out = "".join(c if c.isalnum() else "-" for c in s.lower())
+    return "-".join(p for p in out.split("-") if p) or "img"
 
-    def img(self, path, *, caption: Optional[str] = None) -> str:
-        cid = make_msgid()
-        self.pairs.append((cid, Path(path)))
+
+class _Images:
+    """Collects (cid, path, filename) as blocks are built, so add_related runs
+    once.
+
+    Content-IDs are SHORT and SEMANTIC ("03-churn-ni-1@captainship.report"),
+    never make_msgid(). This is not cosmetic — it's the 2026-07-27 fix for
+    Eve's "the images swapped places and got mixed up, even in the mails
+    already sent":
+
+      make_msgid() emits <centisecond.pid.random64@THIS-HOSTNAME>, so every
+      image in one mail shared a ~14-char prefix (same centisecond, same pid)
+      and a machine-name domain, differing only in the random tail. What WE
+      generate is always correct (verified: unique cids, HTML order == MIME
+      order, every captain, every batch) — but when a draft is opened in the
+      Gmail web UI, Gmail hoists the inline images into its own attachment
+      store and re-anchors each <img> to an attachment. On those near-identical
+      cids that re-anchor collided: Luis' 7/26 draft came back with its images
+      bound in the order 1,2,7,5,8,4,3,6, with one cid used TWICE (so one
+      chart rendered twice and another vanished). Sending the draft bakes the
+      scramble in, which is why already-sent mail was wrong too.
+
+    Gmail reorders the parts either way — that is NOT the bug and can't be
+    stopped. The goal is only that every cid survives a reorder, which distinct
+    Content-IDs achieve on their own. Naming the parts was tried as a "second
+    half" of the fix and had to be reverted: see the warning in build()."""
+
+    _DOMAIN = "captainship.report"
+
+    def __init__(self) -> None:
+        self.pairs: List[Tuple[str, Path, str]] = []
+
+    def img(self, path, *, slot: str, caption: Optional[str] = None) -> str:
+        # The NN- prefix is what guarantees uniqueness (a slot name could
+        # legitimately repeat); the slot name is what makes it unambiguous.
+        token = f"{len(self.pairs) + 1:02d}-{_slug_slot(slot)}"
+        cid = f"<{token}@{self._DOMAIN}>"
+        self.pairs.append((cid, Path(path), f"{token}.png"))
         cap = (f'<div style="font-size:13px;font-weight:bold;margin:12px 0 4px">'
                f'{caption}</div>' if caption else "")
         # display:block so consecutive images STACK vertically (one per row).
@@ -74,29 +108,33 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
     body = ""
     if kind == "product_summary":
         ps = bundle.get("product_summary")
-        body += imgs.img(ps) if ps else _pending("Product Summary screenshot")
+        body += (imgs.img(ps, slot="product-summary") if ps
+                 else _pending("Product Summary screenshot"))
         units = bundle.get("units") or []
         body += ('<div style="font-size:14px;font-weight:bold;margin:14px 0 4px">'
                  'CAPTAINSHIP UNITS:</div>')
         if units:
-            for caption, path in units:
-                body += imgs.img(path, caption=caption)
+            for i, (caption, path) in enumerate(units):
+                body += imgs.img(path, slot=f"units-{i}", caption=caption)
         else:
             body += _pending("Captainship Units screenshot")
     elif kind == "fiber_activation":
         fa = bundle.get("fiber_activation")
-        body += imgs.img(fa) if fa else _pending("Fiber Activations PNG")
+        body += (imgs.img(fa, slot="fiber-activations") if fa
+                 else _pending("Fiber Activations PNG"))
     elif kind == "cancel_tableau":
         ct = bundle.get("cancel_tableau")
-        body += imgs.img(ct) if ct else _pending("Cancel-Rates Tableau shot")
+        body += (imgs.img(ct, slot="cancel-rates") if ct
+                 else _pending("Cancel-Rates Tableau shot"))
     elif kind == "teamstats_tableau":
         ts = bundle.get("teamstats_tableau")
-        body += imgs.img(ts) if ts else _pending("Team Stats Breakout Tableau shot")
+        body += (imgs.img(ts, slot="team-stats") if ts
+                 else _pending("Team Stats Breakout Tableau shot"))
     elif kind in ("churn_ni", "churn_wireless"):
         items = bundle.get(kind) or []
         if items:
-            for _caption, path in items:
-                body += imgs.img(path)
+            for i, (_caption, path) in enumerate(items):
+                body += imgs.img(path, slot=f"{kind.replace('_', '-')}-{i}")
         else:
             body += _pending("churn images")
     return head + body
@@ -158,7 +196,9 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
         _section_html(captain, heading, kind, n, bundle, imgs)
         for n, (heading, kind) in enumerate(captain.sections, 1))
 
-    cid_photo = make_msgid()
+    # Same short/semantic scheme as the section images (see _Images) — the
+    # signature photo is just the last part in the same related bundle.
+    cid_photo = f"<{len(imgs.pairs) + 1:02d}-signature@{_Images._DOMAIN}>"
     html = (
         f'<div style="font-family:{_FONT_STACK};color:#000">'
         f'{_intro_html(captain)}'
@@ -170,7 +210,17 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     msg.add_alternative(html, subtype="html")
 
     html_part = msg.get_payload()[1]
-    for cid, path in imgs.pairs:
+    # NEVER pass filename= here, and never set a disposition by hand. Tried it
+    # on 2026-07-27 and it silently broke SENDING: a named part reads to Gmail
+    # as a real file attachment, so its draft rewrite moved all 9 images out of
+    # multipart/related into a multipart/mixed as "attachment". The compose
+    # window still looked right (Gmail renders those from its own store), but
+    # the mail that went out had cid: refs pointing at parts no longer inside
+    # the related container — Eve got the body text and nine broken images.
+    # Bare add_related (inline, unnamed) is what Gmail keeps as a real inline
+    # image. The scramble this module exists to fix is cured by the Content-IDs
+    # above, not by naming the parts.
+    for cid, path, _filename in imgs.pairs:
         html_part.add_related(Path(path).read_bytes(),
                               maintype="image", subtype="png", cid=cid)
     html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),

@@ -77,7 +77,14 @@ _SIGNED_OUT_MSG = ("Google signed the screenshot profile out — re-run ON THE "
 
 _DEFAULT_VIEWPORT = {"width": 1600, "height": 1100}
 _VIEWPORT_PAD = 80               # room for scrollbars beyond the range
+# Extra viewport height BELOW the range. Sheets virtualizes rows near the fold:
+# with the range ending flush at the viewport bottom the last rows paint late (or
+# not at all) and the selection overlay collapses above them, so the shot loses
+# its tail (Luis 2026-07-27: the PS lost Totals + all 4 WE history rows). Grown
+# per attempt so a retry pushes the fold further away.
+_TAIL_HEADROOM = 240
 _MAX_VIEWPORT = (4400, 12000)    # sanity cap on auto-grown viewport
+_ATTEMPTS = 3                    # capture attempts before giving up (raising)
 
 
 def _launch(p, headless: bool, viewport: dict | None = None,
@@ -247,28 +254,50 @@ def _png_height(png: bytes) -> int:
     return Image.open(io.BytesIO(png)).height
 
 
-def _shoot_when_painted(page, rng: str, *, settle_ms: int,
-                        timeout_s: int) -> bytes:
+def _union_rect(a: dict | None, b: dict | None) -> dict | None:
+    """Smallest rect containing both (either may be None)."""
+    if a is None or b is None:
+        return a or b
+    x0, y0 = min(a["x"], b["x"]), min(a["y"], b["y"])
+    x1 = max(a["x"] + a["width"], b["x"] + b["width"])
+    y1 = max(a["y"] + a["height"], b["y"] + b["height"])
+    return {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+
+
+def _shoot_when_painted(page, rng: str, *, settle_ms: int, timeout_s: int,
+                        full_rect: dict | None = None) -> bytes:
     """Screenshot the selection clip once consecutive frames stop changing.
     The canvas keeps painting (backgrounds first, then text once the row
     data arrives) for seconds AFTER the selection rect is stable — only
-    frame-comparison catches that."""
+    frame-comparison catches that.
+
+    `full_rect` is the settled whole-range rect measured by the caller's grow
+    loop, and it does two things a live re-read can't:
+      • the clip never shrinks below it (a COLLAPSED overlay would otherwise
+        crop the shot's tail — the bug that cut Luis's PS on 2026-07-27), and
+      • a collapsed overlay counts as "still painting", so the frame-settle
+        loop keeps waiting for the tail rows instead of freezing a short shot.
+    Falling back to the union on timeout keeps the old best-effort behaviour;
+    the caller's height gate decides whether that shot is usable."""
     page.wait_for_timeout(settle_ms)
     deadline = time.time() + timeout_s
     prev, same = None, 0
     while True:
         rect = _selection_rect(page)
-        if rect is None:
+        if rect is None and full_rect is None:
             raise RuntimeError(f"range {rng}: selection overlay vanished")
-        cur = page.screenshot(clip=rect)
-        if prev is not None and cur == prev:
+        clip = _union_rect(full_rect, rect)
+        covered = (full_rect is None or rect is not None
+                   and rect["height"] >= full_rect["height"] * 0.97)
+        cur = page.screenshot(clip=clip)
+        if covered and prev is not None and cur == prev:
             same += 1
             if same >= 2:          # 3 identical frames ≈ 2.4s of no painting
                 return cur
         else:
             same = 0
         if time.time() > deadline:
-            return cur             # best effort — ink gate below still guards
+            return cur             # best effort — height gate below still guards
         prev = cur
         page.wait_for_timeout(1200)
 
@@ -277,7 +306,8 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
                      settle_ms: int, timeout_s: int,
                      edit_url: str | None = None, gid: int | None = None) -> Path:
     png = None
-    for attempt in (1, 2):
+    short: tuple[int, int] | None = None     # (got_px, wanted_px) of the last try
+    for attempt in range(1, _ATTEMPTS + 1):
         rect = _goto_range(page, rng, timeout_s, edit_url, gid)
         # Grow the viewport so the WHOLE range is on screen (rect.x/y is the
         # grid origin below the toolbar + headers), re-navigating so the editor
@@ -286,9 +316,12 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         # can still fall short on a tall range (the rect reads taller only after
         # the viewport can show more). Re-measure and re-grow until the whole
         # rect fits — else the bottom rows (e.g. PS last weeks) get cut off.
-        for _ in range(6):
+        # The height target carries _TAIL_HEADROOM ON TOP of the range so the
+        # last rows never sit at the fold, where Sheets paints them late.
+        tail = _VIEWPORT_PAD + _TAIL_HEADROOM * attempt
+        for _ in range(8):
             need_w = math.ceil(rect["x"] + rect["width"]) + _VIEWPORT_PAD
-            need_h = math.ceil(rect["y"] + rect["height"]) + _VIEWPORT_PAD
+            need_h = math.ceil(rect["y"] + rect["height"]) + tail
             if need_w > _MAX_VIEWPORT[0] or need_h > _MAX_VIEWPORT[1]:
                 raise RuntimeError(
                     f"range {rng} needs a {need_w}x{need_h} viewport, over the "
@@ -302,7 +335,7 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         grown_h = rect["height"]        # settled full-range height (all rows)
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
         png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
-                                  timeout_s=timeout_s)
+                                  timeout_s=timeout_s, full_rect=rect)
         has_ink = _ink_pixels(png) >= _MIN_INK_PX
         # Guard against a vertically-clipped shot. On a very tall range Sheets can
         # paint only part of it before _shoot returns, so the selection overlay
@@ -310,16 +343,24 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         # Rafael's PS 4th week). Compare the shot height to the GROWN rect height
         # (× devicePixelRatio) — not the possibly-collapsed one — and retry.
         dpr = page.evaluate("() => window.devicePixelRatio") or 1
-        tall_enough = _png_height(png) >= math.floor(grown_h * dpr * 0.97)
-        if has_ink and tall_enough:
+        want_h = math.floor(grown_h * dpr * 0.97)
+        if has_ink and _png_height(png) >= want_h:
             break                  # text painted AND full height — good shot
-        if has_ink and attempt == 2:
-            break                  # best effort: text present, accept if short
-        # Text missing (row data never arrived) or shot clipped short —
-        # a fresh navigation re-requests + repaints at full size; retry once.
+        short = (_png_height(png), want_h) if has_ink else None
+        # Text missing (row data never arrived) or shot clipped short — a fresh
+        # navigation with more tail headroom re-requests + repaints; retry.
     else:
+        # Never ship a truncated shot: a PS missing its last rows reads as real
+        # data (Eve, 2026-07-27 — Luis' draft silently lost the 4 WE history
+        # rows). Raise instead, so run.py degrades that section to the honest
+        # 'pending' note.
+        if short:
+            raise RuntimeError(
+                f"range {rng}: shot came back {short[0]}px tall, short of the "
+                f"{short[1]}px range after {_ATTEMPTS} attempts — its bottom "
+                f"rows would be cut off")
         raise RuntimeError(f"range {rng}: cells never painted text "
-                           f"(2 attempts) — sheet slow or range empty?")
+                           f"({_ATTEMPTS} attempts) — sheet slow or range empty?")
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(png)
@@ -464,4 +505,13 @@ if __name__ == "__main__":
         for caption, path in shots["units"]:
             print(f"✓ units [{caption}]: {path}")
     else:
-        sys.exit(0 if login() else 1)
+        # python -m ...sheet_shot login [timeout_s]   (default 300)
+        # The timeout is the window a HUMAN has to finish the Google sign-in.
+        # 300s is tight when the browser opens on a REMOTE machine's screen
+        # (mini_control's `sheets_login`), so let the caller widen it.
+        try:
+            timeout_s = int(sys.argv[2]) if len(sys.argv) > 2 else 300
+        except ValueError:
+            print(f"login timeout must be a number of seconds, got {sys.argv[2]!r}")
+            sys.exit(2)
+        sys.exit(0 if login(timeout_s) else 1)

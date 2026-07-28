@@ -7,7 +7,19 @@ churn images, assembles each draft, and creates it in Gmail.
   python -m automations.captainship_drafts.run --only wayne --dry-run
   python -m automations.captainship_drafts.run --dry-run     # all 12, no send
   python -m automations.captainship_drafts.run --only wayne  # live: create draft
+  python -m ...run --only wayne --send                       # live: SEND it
   python -m ...run --only wayne --dry-run --skip-sheets      # churn-only preview
+
+!! DO NOT OPEN THESE DRAFTS IN GMAIL TO SEND THEM. !!
+Proven 2026-07-27, after Eve got a whole batch of mangled reports: opening an
+API-created draft in the Gmail compose window makes Gmail pull the inline
+images out of the message into its own attachment store. What then goes out
+has NO image parts at all — the recipient gets the body text, broken icons and
+nothing attached. Gmail also reorders the parts on the way, which is what made
+the first batch look "shuffled and mixed up". The same message sent through the
+API arrives perfect, so `--send` is the supported way to deliver these:
+review the .html preview in output/, then send with --send. Recipients live in
+config.py (Captain.to), NOT in Gmail's To box.
 
 --dry-run writes each assembled email to output/ as a .eml you can open
 in any mail client to preview (images embedded) — nothing touches Gmail.
@@ -99,6 +111,54 @@ def _delete_prior_drafts(captain: config.Captain, today: dt.date,
         logfn(f"  ⚠ prior-draft sweep failed for {captain.key} "
               f"({type(e).__name__}: {e}) — a duplicate may result")
     return n
+
+
+def _preview_eml(captain: config.Captain, today: dt.date) -> Path:
+    """Where --dry-run parks this captain's built email for review."""
+    return _OUTPUT_DIR / f"captainship_draft_{captain.key}_{today:%Y%m%d}.eml"
+
+
+def _send_reviewed(selected, today: dt.date, *, to_override=None,
+                   logfn=print) -> int:
+    """Send the .eml files --dry-run already wrote for `today`, untouched.
+
+    This is the approval gate. It deliberately does NOT rebuild: re-reading the
+    Sales Board could pick up a number that changed since Eve looked, and the
+    whole point is that what lands in people's inboxes is byte-identical to
+    what she approved. A captain with no preview on disk is skipped loudly
+    rather than silently rebuilt."""
+    from email import policy
+    from email.parser import BytesParser
+    from automations.shared.gmail_draft import send_message
+
+    failures = 0
+    for captain in selected:
+        eml = _preview_eml(captain, today)
+        if not eml.exists():
+            failures += 1
+            logfn(f"  ✗ {captain.key}: no preview for {today} at {eml.name} "
+                  f"— run with --dry-run first, then review it")
+            continue
+        recipient = to_override or captain.to
+        if not recipient.strip():
+            failures += 1
+            logfn(f"  ✗ {captain.key}: no recipient in config.py "
+                  f"(RECIPIENTS[{captain.key!r}]) — skipped")
+            continue
+        msg = BytesParser(policy=policy.default).parsebytes(eml.read_bytes())
+        if msg["To"] is None:
+            msg["To"] = recipient
+        else:
+            msg.replace_header("To", recipient)
+        n_to = len([a for a in recipient.split(",") if a.strip()])
+        logfn(f"  sending {captain.key}: {msg['Subject']!r} -> {n_to} "
+              f"recipient(s)")
+        try:
+            send_message(msg, logfn=logfn)
+        except Exception as e:
+            failures += 1
+            logfn(f"  ✗ {captain.key}: send failed: {type(e).__name__}: {e}")
+    return failures
 
 
 def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
@@ -211,6 +271,21 @@ def main(argv=None) -> int:
     ap.add_argument("--no-replace", action="store_true",
                     help="Keep any existing draft for the same captain+date "
                          "instead of deleting it first (default: replace).")
+    ap.add_argument("--send", action="store_true",
+                    help="SEND each report to the captain's configured "
+                         "recipient instead of leaving a draft. Use this "
+                         "rather than opening the draft in Gmail — opening it "
+                         "strips the inline images out of the sent mail.")
+    ap.add_argument("--send-reviewed", action="store_true",
+                    help="Send the previews already sitting in output/ for "
+                         "this date — the EXACT files you reviewed. Builds "
+                         "nothing, re-reads no sheet, so what goes out cannot "
+                         "differ from what you approved. This is the approval "
+                         "gate: --dry-run first, look, then this.")
+    ap.add_argument("--to", default=None, metavar="ADDR",
+                    help="With --send: send to ADDR instead of the captains' "
+                         "real distribution lists. Use this to test a real "
+                         "report on yourself before mailing 145 people.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -223,9 +298,20 @@ def main(argv=None) -> int:
               f"Valid: {[c.key for c in config.CAPTAINS]}")
         return 1
 
-    mode = "DRY-RUN (preview .eml)" if args.dry_run else "LIVE (create drafts)"
+    mode = ("SEND REVIEWED" if args.send_reviewed else
+            "DRY-RUN (preview .eml)" if args.dry_run else
+            "LIVE SEND" if args.send else "LIVE (create drafts)")
     print(f"=== Captainship Drafts — {today.isoformat()} ({mode}) ===")
     print(f"Captains: {[c.key for c in selected]}")
+
+    if args.send_reviewed:
+        # Nothing to capture — this path only mails what's already on disk.
+        n = _send_reviewed(selected, today, to_override=args.to)
+        if n:
+            print(f"\n✗ {n} captain(s) not sent.")
+            return 1
+        print("\n=== done ===")
+        return 0
 
     render_dir = Path(tempfile.gettempdir()) / "captainship_drafts_render"
     failures = 0
@@ -255,10 +341,33 @@ def main(argv=None) -> int:
     for captain, bundle in built:
         try:
             msg = email_build.build(captain, bundle, today)
+            recipient = args.to or captain.to
+            if args.send:
+                msg.replace_header("To", recipient)
             print(f"  built draft: subj={msg['Subject']!r}, "
                   f"{bundle['_n_imgs']} image(s)")
 
-            if args.dry_run:
+            if args.send and not args.dry_run:
+                if not recipient.strip():
+                    failures += 1
+                    print(f"  ✗ {captain.key}: --send but no recipient in "
+                          f"config.py (Captain.to is blank) — skipped")
+                    continue
+                # Always leave the reviewable .html next to the sent mail, so
+                # there's a record of exactly what went out.
+                _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                eml = _OUTPUT_DIR / (
+                    f"captainship_sent_{captain.key}_{today:%Y%m%d}.eml")
+                eml.write_bytes(bytes(msg))
+                preview.eml_to_html(eml)
+                from automations.shared.gmail_draft import send_message
+                # Sweep any leftover draft for this captain+date first, so a
+                # sent report doesn't leave a stale draft someone might open
+                # and re-send (which is exactly how the images get stripped).
+                if not args.no_replace:
+                    _delete_prior_drafts(captain, today)
+                send_message(msg)
+            elif args.dry_run:
                 _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
                 eml = _OUTPUT_DIR / (
                     f"captainship_draft_{captain.key}_{today:%Y%m%d}.eml")
@@ -285,6 +394,15 @@ def main(argv=None) -> int:
             # stdout, not stderr — the orchestrator log tail only keeps stdout,
             # which is why this failure showed up as a bare "exit 1".
             traceback.print_exc(file=sys.stdout)
+
+    if args.dry_run:
+        # One page linking today's previews, so review means opening ONE file
+        # instead of picking 12 out of a folder full of older dates.
+        try:
+            from automations.captainship_drafts import review_index
+            review_index.build_index(today)
+        except Exception as e:
+            print(f"  ⚠ review index not written ({type(e).__name__}: {e})")
 
     if failures:
         print(f"\n✗ {failures} captain(s) failed.")
