@@ -568,26 +568,40 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     _log(f"    [retext] widget frame ok (url …{(w.url or '')[-30:]})")
     page.wait_for_timeout(800)
 
-    # 1)+2) Set Date='This Month' and the Name filter via JS (fill/select timed out
+    # 1)+2) Set Date='This Month' + a search term via JS (fill/select timed out
     #    mid-animation even though visible), then click Search (#sms_filter_search).
+    #    Prefer the PHONE filter when we have a number (exact, unlike a messy
+    #    multi-word last name); otherwise the Name filter (Megan's manual method).
     set_ok = w.evaluate(
-        r"""(nm) => {
-            const out = {date:false, name:false};
+        r"""(args) => {
+            const nm = args[0], phone = args[1];
+            const out = {date:false, term:false, by:''};
             const d = document.querySelector("#sms_date_filter, [name='sms_date_filter']");
             if (d) { const o = [...d.options].find(o => /this month/i.test(o.text));
                      if (o) { d.value = o.value;
                               d.dispatchEvent(new Event('change',{bubbles:true}));
                               out.date = true; } }
-            const n = document.querySelector("#sms_name_filter, [name='sms_name_filter']");
-            if (n) { n.value = nm;
-                     n.dispatchEvent(new Event('input',{bubbles:true}));
-                     n.dispatchEvent(new Event('change',{bubbles:true}));
-                     out.name = true; }
+            const setF = (sel, val) => {
+                const e = document.querySelector(sel);
+                if (!e) return false;
+                e.value = val;
+                e.dispatchEvent(new Event('input',{bubbles:true}));
+                e.dispatchEvent(new Event('change',{bubbles:true}));
+                return true;
+            };
+            // clear both, then set the one we're searching by
+            setF("#sms_name_filter, [name='sms_name_filter']", "");
+            setF("#sms_phone_filter, [name='sms_phone_filter']", "");
+            if (phone && setF("#sms_phone_filter, [name='sms_phone_filter']", phone)) {
+                out.term = true; out.by = 'phone';
+            } else if (setF("#sms_name_filter, [name='sms_name_filter']", nm)) {
+                out.term = true; out.by = 'name';
+            }
             return out;
-        }""", (last or name))
-    if not set_ok.get("name"):
+        }""", [last or name, want])
+    if not set_ok.get("term"):
         _close_sms_panel(page)
-        return "retext_err", "sms name/date filter not found in widget frame"
+        return "retext_err", "sms name/phone/date filter not found in widget frame"
     searched = False
     try:
         w.locator("#sms_filter_search").first.click(timeout=4000, no_wait_after=True)
@@ -597,7 +611,7 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
             "() => { const b = document.querySelector('#sms_filter_search');"
             " if (b) { b.click(); return true; } return false; }")
     _log(f"    [retext] filters set date={set_ok.get('date')} "
-         f"name={set_ok.get('name')} searched={searched}")
+         f"by={set_ok.get('by')} searched={searched}")
     page.wait_for_timeout(2600)
 
     # 3) Pick the conversation: prefer the row whose number matches the applicant's
