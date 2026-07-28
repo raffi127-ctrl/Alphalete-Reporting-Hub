@@ -320,10 +320,19 @@ def _perform_remove(page) -> bool:
     Fails safe (returns False, logs why) if the Duplicate reason or Save button
     isn't found."""
     try:
-        # 1) set the checkbox + reason in JS (reliable), report if the reason exists.
+        # 1) CHECK "Remove Applicant?" — a real check so the ATS reveals the Remove
+        #    Reason dropdown + the "Remove Applicant" button (Megan 7/27).
+        cb = page.locator("[name='removApp']").first
+        if cb.count() == 0:
+            _log("    [remove] FAIL: no 'Remove Applicant?' checkbox")
+            return False
+        try:
+            cb.check(timeout=4000)
+        except Exception:  # noqa: BLE001
+            cb.click(force=True, timeout=4000)
+        page.wait_for_timeout(700)
+        # 2) pick the '…Duplicate…' remove reason.
         picked = page.evaluate(r"""() => {
-            const cb = document.querySelector("[name='removApp']");
-            if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change',{bubbles:true})); }
             const s = document.querySelector("select[name='rmvReason']");
             if (!s) return '';
             const o = [...s.options].find(o => /duplicate/i.test(o.text));
@@ -334,30 +343,29 @@ def _perform_remove(page) -> bool:
         if not picked:
             _log("    [remove] FAIL: no '…Duplicate…' reason on the page")
             return False
-        # 2) REAL Playwright click on Save so the ColdFusion form actually POSTS
-        #    (a JS .click() inside evaluate doesn't submit/navigate, which is why
-        #    removes logged done but the count never dropped). A confirm() on submit
-        #    is caught by the page 'dialog' handler (accept). Verify the POST via a
-        #    navigation wait; force-click if the button isn't strictly actionable.
-        btn = page.locator("[name='submitSaveApplicant']").first
+        # 3) Click the "REMOVE APPLICANT" button — NOT "Save Applicant" (that one is
+        #    BLOCKED for dupes: "Cannot Save this Applicant"). Real click + nav wait
+        #    so the form actually POSTs; the dialog handler accepts any confirm.
+        btn = page.locator(
+            "[name='submitRemoveApplicant'], input[value='Remove Applicant']").first
         if btn.count() == 0:
             btn = page.locator(
-                "xpath=//input[@type='submit'][contains(@value,'Save Applicant')]"
-                " | //button[contains(normalize-space(.),'Save Applicant')]").first
+                "xpath=//input[@type='submit'][contains(@value,'Remove Applicant')]"
+                " | //button[contains(normalize-space(.),'Remove Applicant')]").first
         if btn.count() == 0:
-            _log("    [remove] FAIL: no Save Applicant button")
+            _log("    [remove] FAIL: no 'Remove Applicant' button")
             return False
         try:
             with page.expect_navigation(timeout=8000):
                 btn.click(timeout=6000)
-        except Exception:  # noqa: BLE001 — retry force, then accept no-nav
+        except Exception:  # noqa: BLE001
             try:
                 btn.click(timeout=6000, force=True, no_wait_after=True)
             except Exception as e2:  # noqa: BLE001
-                _log(f"    [remove] FAIL: Save click ({type(e2).__name__})")
+                _log(f"    [remove] FAIL: Remove click ({type(e2).__name__})")
                 return False
         page.wait_for_timeout(2500)
-        _log(f"    [remove] submitted (reason: {picked})")
+        _log(f"    [remove] REMOVED (reason: {picked})")
         return True
     except Exception as e:  # noqa: BLE001
         _log(f"    remove error: {type(e).__name__}: {e}")
