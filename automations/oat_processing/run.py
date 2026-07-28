@@ -509,7 +509,7 @@ def _sms_widget_frame(page, timeout_ms: int = 30000):
         for fr in page.frames:
             try:
                 if fr.evaluate("() => !!document.querySelector("
-                               "\"input[name='sms_name_filter']\")"):
+                               "\"#sms_name_filter, [name='sms_name_filter']\")"):
                     _log(f"    [retext] widget appeared at ~{k * 0.5:.0f}s")
                     return fr, ""
             except Exception as e:  # noqa: BLE001
@@ -570,12 +570,12 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     set_ok = w.evaluate(
         r"""(nm) => {
             const out = {date:false, name:false};
-            const d = document.querySelector("select[name='sms_date_filter']");
+            const d = document.querySelector("#sms_date_filter, [name='sms_date_filter']");
             if (d) { const o = [...d.options].find(o => /this month/i.test(o.text));
                      if (o) { d.value = o.value;
                               d.dispatchEvent(new Event('change',{bubbles:true}));
                               out.date = true; } }
-            const n = document.querySelector("input[name='sms_name_filter']");
+            const n = document.querySelector("#sms_name_filter, [name='sms_name_filter']");
             if (n) { n.value = nm;
                      n.dispatchEvent(new Event('input',{bubbles:true}));
                      n.dispatchEvent(new Event('change',{bubbles:true}));
@@ -671,12 +671,12 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     page.wait_for_timeout(1300)
 
     # 5) Replace NAME + xxxx in the compose box (search frames for ta_smsChat).
-    cf, _ = _xframe(page, "textarea[name='ta_smsChat'], #ta_smsChat")
+    cf, _ = _xframe(page, "#ta_smsChat, textarea[name='ta_smsChat']")
     cf = cf or w
     filled = cf.evaluate(
         r"""(args) => {
             const first = args[0], role = args[1];
-            const ta = document.querySelector("textarea[name='ta_smsChat'], #ta_smsChat")
+            const ta = document.querySelector("#ta_smsChat, textarea[name='ta_smsChat']")
                     || [...document.querySelectorAll('textarea')]
                          .find(t => /Write message/i.test(t.placeholder||''))
                     || [...document.querySelectorAll('textarea')]
