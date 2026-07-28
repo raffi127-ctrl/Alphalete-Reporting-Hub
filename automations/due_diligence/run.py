@@ -51,8 +51,18 @@ def main(argv=None) -> int:
                     help="actually POST replies to Slack (default: print only)")
     ap.add_argument("--write", action="store_true",
                     help="actually WRITE the DD tab (default: preview only)")
+    ap.add_argument("--harvest", action="store_true",
+                    help="nightly: pull the shared crosstabs into today's cache "
+                         "so /dd is instant")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.harvest:
+        from .pull import harvest_dd
+        out = harvest_dd(verbose=args.verbose)
+        print(f"harvest -> {out['dir']} complete={out['complete']}"
+              + (f" gaps={out['gaps']}" if out.get("gaps") else ""))
+        return 0 if out["complete"] else 1
 
     if args.rep:
         return _one_rep(args.rep, args.icd, write=args.write, verbose=args.verbose)

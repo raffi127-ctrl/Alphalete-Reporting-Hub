@@ -314,77 +314,112 @@ def _match_name(typed: str, roster_norm: dict):
     return close[0] if close else None
 
 
-def gather_team(names, *, icd: str = "", weeks: int = None, recent: int = None,
-                anchor=None, page=None, verbose: bool = False):
-    """Pull a whole team: download the shared crosstabs ONCE, then slice each
-    named rep. Returns (people: List[RepDD], misses: List[str]). Names are
-    matched loosely (short names -> Tableau names); unresolved names are
-    returned in `misses` so the caller can ask for a spelling fix."""
-    weeks = weeks or C.WEEKS
-    recent = recent or C.RECENT_WEEKS
-    C.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    if page is None:
-        from automations.shared.tableau_patchright import tableau_session
-        with tableau_session(headless=True, verbose=verbose) as p:
-            return _gather_team_over_page(names, icd, weeks, recent, anchor, p, verbose)
-    return _gather_team_over_page(names, icd, weeks, recent, anchor, page, verbose)
+def _cache_dir(anchor=None) -> Path:
+    """Today's harvest cache dir. A nightly harvest_dd() populates it; gather_team
+    reads it when complete so a /dd is instant instead of an 8-min live pull."""
+    return C.OUTPUT_DIR / "cache" / dt.date.today().isoformat()
 
 
-def _gather_team_over_page(names, icd, weeks, recent, anchor, page, verbose):
+def _team_paths(d: Path, wk_order) -> dict:
+    return {"product": {s: d / f"product_{s.isoformat()}.csv" for s in wk_order},
+            "mni": d / "metrics_ni.csv", "mwl": d / "metrics_wl.csv",
+            "cni": d / "churn_ni.csv", "cwl": d / "churn_wl.csv"}
+
+
+def _cache_complete(d: Path, wk_order) -> bool:
+    p = _team_paths(d, wk_order)
+    files = list(p["product"].values()) + [p["mni"], p["mwl"], p["cni"], p["cwl"]]
+    return all(f.exists() and f.stat().st_size > 0 for f in files)
+
+
+def _download_team_files(d: Path, wk_order, page, verbose, gaps) -> dict:
+    """Download the shared crosstabs (8 weekly product + metrics + churn) to `d`."""
+    d.mkdir(parents=True, exist_ok=True)
     opt = _opt()
-    tmp = C.OUTPUT_DIR
-    gaps = []
-    wk_order = recent_sundays(weeks, anchor)          # newest-first
     product_url, product_sheet = C.product_source()
-
-    # Pull the shared crosstabs once.
-    week_reps = {}
-    roster = {}                                       # norm -> display
+    p = _team_paths(d, wk_order)
     for sun in wk_order:
-        out = tmp / f"team_product_{sun.isoformat()}.csv"
-        if not _dl(opt._week_url(product_url, sun), product_sheet, out, page,
-                   verbose, gaps, f"product {sun.isoformat()}"):
+        _dl(opt._week_url(product_url, sun), product_sheet, p["product"][sun],
+            page, verbose, gaps, f"product {sun.isoformat()}")
+    _dl(*C.metrics_ni_source(), p["mni"], page, verbose, gaps, "NI metrics")
+    _dl(*C.metrics_wl_source(), p["mwl"], page, verbose, gaps, "WL metrics")
+    _dl(*C.churn_ni_source(), p["cni"], page, verbose, gaps, "NI churn")
+    _dl(*C.churn_wl_source(), p["cwl"], page, verbose, gaps, "WL churn")
+    return p
+
+
+def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
+    """Build a RepDD per named rep from already-downloaded crosstab files."""
+    opt = _opt()
+    week_reps, roster = {}, {}
+    for sun in wk_order:
+        f = paths["product"][sun]
+        if not (f.exists() and f.stat().st_size > 0):
             week_reps[sun] = {}
             continue
-        reps = opt.parse_personal_production(out)
+        reps = opt.parse_personal_production(f)
         week_reps[sun] = reps
         for k, v in reps.items():
             roster.setdefault(k, v.get("owner", k))
-
-    ni_metrics = tmp / "team_metrics_ni.csv"
-    _dl(*C.metrics_ni_source(), ni_metrics, page, verbose, gaps, "NI metrics")
-    wl_metrics = tmp / "team_metrics_wl.csv"
-    _dl(*C.metrics_wl_source(), wl_metrics, page, verbose, gaps, "WL metrics")
-    ni_churn = tmp / "team_churn_ni.csv"
-    _dl(*C.churn_ni_source(), ni_churn, page, verbose, gaps, "NI churn")
-    wl_churn = tmp / "team_churn_wl.csv"
-    _dl(*C.churn_wl_source(), wl_churn, page, verbose, gaps, "WL churn")
-
     people, misses = [], []
     for name in names:
         key = _match_name(name, roster)
         if key is None:
             misses.append(name)
             continue
-        rep_norm = key
         display = roster.get(key, name)
         dd = RepDD(rep=display, matched_rep=display, icd=icd)
         dd.weeks = wk_order
         for sun in wk_order:
-            e = week_reps.get(sun, {}).get(rep_norm)
+            e = week_reps.get(sun, {}).get(key)
             dd.new_int.weekly[sun] = _sum_products(e["values"], C.NI_PRODUCT_MATCH) if e else 0
             dd.wireless.weekly[sun] = _sum_products(e["values"], C.WL_PRODUCT_MATCH) if e else 0
         rset = set(wk_order[:recent])
         for t in (dd.new_int, dd.wireless):
             t.avg_8wk = _avg(list(t.weekly.values()))
             t.avg_recent = _avg([t.weekly[s] for s in wk_order if s in rset])
-        m = _parse_metrics_rep(ni_metrics, rep_norm, C.METRIC_NI_CANCEL_0_30,
-                               C.METRIC_NI_ACT_30_60) or {}
+        m = _parse_metrics_rep(paths["mni"], key, C.METRIC_NI_CANCEL_0_30, C.METRIC_NI_ACT_30_60) or {}
         dd.new_int.cancel_0_30 = m.get("0-30", ""); dd.new_int.cancel_30_60 = m.get("30-60", "")
-        mw = _parse_metrics_rep(wl_metrics, rep_norm, C.METRIC_WL_CANCEL_0_30,
-                                C.METRIC_WL_ACT_30_60) or {}
+        mw = _parse_metrics_rep(paths["mwl"], key, C.METRIC_WL_CANCEL_0_30, C.METRIC_WL_ACT_30_60) or {}
         dd.wireless.cancel_0_30 = mw.get("0-30", ""); dd.wireless.cancel_30_60 = mw.get("30-60", "")
-        dd.new_int.churn = _rep_churn(ni_churn, rep_norm)
-        dd.wireless.churn = _rep_churn(wl_churn, rep_norm)
+        dd.new_int.churn = _rep_churn(paths["cni"], key)
+        dd.wireless.churn = _rep_churn(paths["cwl"], key)
         people.append(dd)
     return people, misses
+
+
+def harvest_dd(*, weeks: int = None, anchor=None, page=None, verbose: bool = False) -> dict:
+    """Nightly job: pull the shared crosstabs ONCE into today's cache dir so any
+    same-day /dd request is instant (reads the cache, no live pull)."""
+    weeks = weeks or C.WEEKS
+    wk_order = recent_sundays(weeks, anchor)
+    d = _cache_dir(anchor)
+    gaps = []
+    if page is None:
+        from automations.shared.tableau_patchright import tableau_session
+        with tableau_session(headless=True, verbose=verbose) as p:
+            _download_team_files(d, wk_order, p, verbose, gaps)
+    else:
+        _download_team_files(d, wk_order, page, verbose, gaps)
+    return {"dir": str(d), "complete": _cache_complete(d, wk_order), "gaps": gaps}
+
+
+def gather_team(names, *, icd: str = "", weeks: int = None, recent: int = None,
+                anchor=None, page=None, verbose: bool = False) -> tuple:
+    """Pull a whole team and slice each named rep. Uses today's harvest cache if
+    it's complete (instant); otherwise pulls live. Returns (people, misses)."""
+    weeks = weeks or C.WEEKS
+    recent = recent or C.RECENT_WEEKS
+    wk_order = recent_sundays(weeks, anchor)
+    cache = _cache_dir(anchor)
+    if _cache_complete(cache, wk_order):              # fresh harvest -> no session needed
+        return _slice_team(names, icd, recent, wk_order, _team_paths(cache, wk_order))
+    live = C.OUTPUT_DIR / "live"
+    gaps = []
+    if page is None:
+        from automations.shared.tableau_patchright import tableau_session
+        with tableau_session(headless=True, verbose=verbose) as p:
+            paths = _download_team_files(live, wk_order, p, verbose, gaps)
+    else:
+        paths = _download_team_files(live, wk_order, page, verbose, gaps)
+    return _slice_team(names, icd, recent, wk_order, paths)

@@ -1752,6 +1752,48 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        "id": "due-diligence-bot",
+        "name": "Due Diligence Bot — Jiraiya (24/7)",
+        "creator": "Raf & Claude",
+        "emoji": "🐸",
+        # Amber = ongoing self-running job, like the other continuous Ops bots.
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        # The card's link opens the DD log sheet (one tab per ICD).
+        "sheet_url": "https://docs.google.com/spreadsheets/d/1RB07z5xmXBzFgKPRmbvqsvbFJ4yymrsk2z0tkMeCbpQ/edit",
+        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Any leader types **/dd** in Slack → a popup opens (ICD / Leader "
+            "/ Team) → hit **Summon Jiraiya**.\n"
+            "**•** Jiraiya pulls the team's **last 8 weeks** of New Internet + "
+            "Wireless sales, cancel rates, and churn from Tableau, and **DMs back "
+            "a 3-chart image** (New INT / Wireless / Total Sales) for review.\n"
+            "**•** Logs the block to that **ICD's tab** in the DD sheet — newest on "
+            "top, older pulls scroll down (a running log, never erased).\n"
+            "**•** Names are matched loosely (short → Tableau names); any it can't "
+            "match are flagged so you can fix the spelling.\n"
+            "**•** Replies only to **you** in a DM — never posts in the channel.\n\n"
+            "WHEN IT RUNS\n"
+            "**Continuously, 24/7** on Lucy 1 (its own LaunchAgent, separate from "
+            "the 4 AM orchestrator). A nightly **3 AM** pre-harvest caches the data "
+            "so requests come back in seconds. A quiet card is the normal, healthy "
+            "state."
+        ),
+        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own Socket Mode service, independent of the 4 AM orchestrator. Triggered by /dd in Slack — nothing to run from here.",
+        # Continuous service: keep it out of the 4am batch + time/DUE pills.
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "3:00 AM",
+            "time_label": "24/7 · 3 AM harvest",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
+    {
         "id": "sara-plus-issues",
         # Cadence in the name, same as the RingCentral Auto-Read card. The
         #   are non-breaking spaces so "(Q 5 Min)" wraps as ONE clean unit
