@@ -332,7 +332,7 @@ def main(argv=None) -> int:
     # the CDP Chrome on Lucy 2 dies mid-run intermittently, so isolating each pull
     # keeps one death from stranding the rest), then slice every office's owner out
     # of that single pull IN CODE. 3 pulls total for N offices; no per-office view.
-    with sync_playwright() as p:
+    with cdp_pull._cdp_lock(label="att_order_log churn", log=log), sync_playwright() as p:
         for pkey, pv in products.items():
             log("")
             log("=== {} ({}) ===".format(pv["label"], pkey))

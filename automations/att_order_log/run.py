@@ -62,35 +62,36 @@ def _pull(today: dt.date, dest: Path, log=print) -> Path:
     from automations.shared import tableau_patchright as tp
     from automations.vantura_churn import cdp_pull
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            log("  [cdp] auth OK")
-            r = page.context.request.get(_csv_url(today), timeout=300_000)
-            body = r.body() or b""
-            log("  [csv] status={} bytes={:,}".format(r.status, len(body)))
-            if r.status != 200 or len(body) < 1000:
-                raise RuntimeError(
-                    "order-log export failed: status={} bytes={}".format(
-                        r.status, len(body)))
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(body)
-            return dest
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
+    with cdp_pull._cdp_lock(label="att_order_log orderlog", log=log):
         cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+        time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                log("  [cdp] auth OK")
+                r = page.context.request.get(_csv_url(today), timeout=300_000)
+                body = r.body() or b""
+                log("  [csv] status={} bytes={:,}".format(r.status, len(body)))
+                if r.status != 200 or len(body) < 1000:
+                    raise RuntimeError(
+                        "order-log export failed: status={} bytes={}".format(
+                            r.status, len(body)))
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(body)
+                return dest
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
 
 
 def _report(lines, stats, log=print) -> None:

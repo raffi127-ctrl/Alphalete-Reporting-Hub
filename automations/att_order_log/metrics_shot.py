@@ -168,44 +168,45 @@ def main(argv=None) -> int:
     from automations.shared import tableau_patchright as tp
     from automations.vantura_churn import cdp_pull
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            log("  [cdp] auth OK")
-            png = capture(page, out_dir=out_dir, verbose=True)
-        size_kb = png.stat().st_size // 1024
-        log("  wrote {} ({} KB)".format(png, size_kb))
-        if size_kb < 20:
-            # A near-empty PNG is the signature of a filter that matched
-            # nothing or a viz that never hydrated. Say so rather than hand a
-            # blank image to the thread builder.
-            log("  !! image is suspiciously small — the view may not have "
-                "rendered, or a filter matched nothing")
-            return 1
-        if args.dm:
-            _dm_preview(png, args.dm, log=log)
-        return 0
-    except Exception:  # noqa: BLE001
-        log("")
-        log("FAILED:")
-        for ln in traceback.format_exc().splitlines()[-14:]:
-            log("  " + ln[:200])
-        return 1
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
+    with cdp_pull._cdp_lock(label="att_order_log metrics_shot"):
         cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+        time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                log("  [cdp] auth OK")
+                png = capture(page, out_dir=out_dir, verbose=True)
+            size_kb = png.stat().st_size // 1024
+            log("  wrote {} ({} KB)".format(png, size_kb))
+            if size_kb < 20:
+                # A near-empty PNG is the signature of a filter that matched
+                # nothing or a viz that never hydrated. Say so rather than hand a
+                # blank image to the thread builder.
+                log("  !! image is suspiciously small — the view may not have "
+                    "rendered, or a filter matched nothing")
+                return 1
+            if args.dm:
+                _dm_preview(png, args.dm, log=log)
+            return 0
+        except Exception:  # noqa: BLE001
+            log("")
+            log("FAILED:")
+            for ln in traceback.format_exc().splitlines()[-14:]:
+                log("  " + ln[:200])
+            return 1
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
 
 
 if __name__ == "__main__":

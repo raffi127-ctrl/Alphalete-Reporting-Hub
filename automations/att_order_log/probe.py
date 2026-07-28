@@ -314,50 +314,51 @@ def main(argv=None) -> int:
     from automations.shared import tableau_patchright as tp
     from automations.vantura_churn import cdp_pull
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    rec("[cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    _time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            rec("[cdp] auth OK")
-
-            if args.cancel_only:
-                stage("cancel rates", _probe_cancel, page, rec)
-                return _finish(buf, rec, args, rc)
-            if not args.churn_only:
-                stage("order log", _probe_orderlog, page, rec)
-                stage("cancel rates", _probe_cancel, page, rec)
-            for key, spec in CHURN_VIEWS.items():
-                # Crosstab FIRST — it is the one that decides whether the churn
-                # fills are buildable at all. The direct-.csv probe stays as
-                # the contrast case (it is what proved the custom view is
-                # ignored there), but it must not gate the crosstab result.
-                stage("crosstab:{}".format(key), _probe_churn_crosstab,
-                      page, rec, key, spec)
-                if not args.churn_only:
-                    stage("csv:{}".format(key), _probe_churn,
-                          page, rec, key, spec)
-            if args.list_views:
-                stage("view listing", _list_views, page, rec)
-    except Exception:  # noqa: BLE001
-        rec("")
-        rec("SESSION FAILED:")
-        for ln in traceback.format_exc().splitlines()[-12:]:
-            rec("   " + ln[:200])
-        rc = 1
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
+    with cdp_pull._cdp_lock(label="att_order_log probe"):
         cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        rec("[cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+        _time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                rec("[cdp] auth OK")
+
+                if args.cancel_only:
+                    stage("cancel rates", _probe_cancel, page, rec)
+                    return _finish(buf, rec, args, rc)
+                if not args.churn_only:
+                    stage("order log", _probe_orderlog, page, rec)
+                    stage("cancel rates", _probe_cancel, page, rec)
+                for key, spec in CHURN_VIEWS.items():
+                    # Crosstab FIRST — it is the one that decides whether the churn
+                    # fills are buildable at all. The direct-.csv probe stays as
+                    # the contrast case (it is what proved the custom view is
+                    # ignored there), but it must not gate the crosstab result.
+                    stage("crosstab:{}".format(key), _probe_churn_crosstab,
+                          page, rec, key, spec)
+                    if not args.churn_only:
+                        stage("csv:{}".format(key), _probe_churn,
+                              page, rec, key, spec)
+                if args.list_views:
+                    stage("view listing", _list_views, page, rec)
+        except Exception:  # noqa: BLE001
+            rec("")
+            rec("SESSION FAILED:")
+            for ln in traceback.format_exc().splitlines()[-12:]:
+                rec("   " + ln[:200])
+            rc = 1
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
 
     return _finish(buf, rec, args, rc)
 
@@ -703,27 +704,28 @@ def _run_list_views(rec) -> None:
     from automations.shared import tableau_patchright as tp
     from automations.vantura_churn import cdp_pull
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    rec("[cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            for key, spec in CHURN_VIEWS.items():
-                _probe_churn(page, rec, key, spec)
-            _list_views(page, rec)
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
+    with cdp_pull._cdp_lock(label="att_order_log probe"):
         cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        rec("[cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+        time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                for key, spec in CHURN_VIEWS.items():
+                    _probe_churn(page, rec, key, spec)
+                _list_views(page, rec)
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
 
 
 def _upload(lines) -> None:

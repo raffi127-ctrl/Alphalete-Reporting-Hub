@@ -25,6 +25,60 @@ from pathlib import Path
 
 CDP_PROFILE = "/tmp/vantura_cdp_profile"
 CDP_PORT = "9246"
+
+import contextlib as _contextlib
+import os as _os
+import tempfile as _tempfile
+try:
+    import fcntl as _fcntl
+except ImportError:                       # non-Unix (Windows) — no CDP here anyway
+    _fcntl = None
+
+# One real cross-process lock for EVERY user of debug port 9246 (vantura_churn +
+# att_order_log churn/orderlog + the freshness selftest). Previously they were
+# only staggered by not_before clocks, so a long-running pull could still overlap
+# and one's _kill_ours() would murder the other's Chrome mid-pull. The lock
+# serialises them for real; the OS releases it automatically on process exit
+# (even a crash), so there is no stale-lock risk. (2026-07-28)
+_CDP_LOCK_FILE = _os.path.join(_tempfile.gettempdir(), "alphalete-cdp-9246.lock")
+
+
+@_contextlib.contextmanager
+def _cdp_lock(label: str = "", timeout: int = 1800, log=print):
+    """Hold the CDP-9246 lock for the duration of a pull. Blocks up to `timeout`
+    seconds for another pull to finish; no-op where fcntl is unavailable."""
+    if _fcntl is None:
+        yield
+        return
+    f = open(_CDP_LOCK_FILE, "w")
+    start = time.monotonic()
+    announced = False
+    while True:
+        try:
+            _fcntl.flock(f.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.monotonic() - start > timeout:
+                f.close()
+                raise TimeoutError(
+                    "CDP port 9246 lock held >%ds (%s) — another pull stuck?"
+                    % (timeout, label))
+            if not announced:
+                try:
+                    log("[cdp-lock] port 9246 busy — waiting for the other CDP "
+                        "pull to finish first…")
+                except Exception:
+                    pass
+                announced = True
+            time.sleep(3)
+    try:
+        yield
+    finally:
+        try:
+            _fcntl.flock(f.fileno(), _fcntl.LOCK_UN)
+        except Exception:
+            pass
+        f.close()
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 

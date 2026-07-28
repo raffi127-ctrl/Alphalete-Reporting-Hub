@@ -56,7 +56,7 @@ def fetch_narrow_csv(target: dt.date, dest: Path, *, log=lambda *_: None) -> Pat
     from automations.vantura_churn import cdp_pull
 
     port = cdp_pull.CDP_PORT
-    with sync_playwright() as p:
+    with cdp_pull._cdp_lock(label="att_order_log freshness"), sync_playwright() as p:
         def _connect():
             try:
                 return p.chromium.connect_over_cdp(

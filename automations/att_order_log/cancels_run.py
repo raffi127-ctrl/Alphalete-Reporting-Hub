@@ -132,28 +132,29 @@ def main(argv=None) -> int:
             from automations.shared import tableau_patchright as tp
             from automations.vantura_churn import cdp_pull
 
-            cdp_pull._kill_ours()
-            proc = cdp_pull._launch()
-            log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-            time.sleep(20)
-            try:
-                with sync_playwright() as p:
-                    browser = p.chromium.connect_over_cdp(
-                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-                    ctx = (browser.contexts[0] if browser.contexts
-                           else browser.new_context())
-                    page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                    tp._ensure_tableau_authenticated(page, verbose=False,
-                                                     allow_form_login=True)
-                    log("  [cdp] auth OK")
-                    path = _pull(page, log=log)
-                grid = churn_shape.read_crosstab(path)
-            finally:
-                try:
-                    proc.terminate()
-                except Exception:  # noqa: BLE001
-                    pass
+            with cdp_pull._cdp_lock(label="att_order_log cancels"):
                 cdp_pull._kill_ours()
+                proc = cdp_pull._launch()
+                log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+                time.sleep(20)
+                try:
+                    with sync_playwright() as p:
+                        browser = p.chromium.connect_over_cdp(
+                            "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                        ctx = (browser.contexts[0] if browser.contexts
+                               else browser.new_context())
+                        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                        tp._ensure_tableau_authenticated(page, verbose=False,
+                                                         allow_form_login=True)
+                        log("  [cdp] auth OK")
+                        path = _pull(page, log=log)
+                    grid = churn_shape.read_crosstab(path)
+                finally:
+                    try:
+                        proc.terminate()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    cdp_pull._kill_ours()
 
         parsed = cancels.parse(grid)
         s = cancels.summary(parsed)

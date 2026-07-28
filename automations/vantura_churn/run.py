@@ -160,8 +160,9 @@ def _probe(today: dt.date, log) -> int:
     try:
         from automations.vantura_churn import cdp_pull
         out = Path("/tmp/vantura_probe_carlos.xlsx")
-        info = cdp_pull.probe(pull.orderlog_url("carlos", today),
-                              pull.ORDERLOG_SHEET, out, today, log=rec)
+        with cdp_pull._cdp_lock(label="vantura probe", log=rec):
+            info = cdp_pull.probe(pull.orderlog_url("carlos", today),
+                                  pull.ORDERLOG_SHEET, out, today, log=rec)
         rec(f"RESULT: {info}")
     except Exception as e:  # noqa: BLE001
         import traceback
@@ -224,8 +225,9 @@ def main(argv=None) -> int:
         return _probe(today, log)
     if args.probe_activations:
         from automations.vantura_churn import cdp_pull
-        cdp_pull.probe_activation_rates(log=log,
-                                        view_url=args.probe_activations_url)
+        with cdp_pull._cdp_lock(label="vantura activation-rates", log=log):
+            cdp_pull.probe_activation_rates(log=log,
+                                            view_url=args.probe_activations_url)
         return 0
     if args.theme:
         ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
@@ -300,8 +302,9 @@ def main(argv=None) -> int:
                 csv_fetches.append((_ar.CSV_URL, op))
                 ar_paths[k] = (rp, op)
                 log(f"▶ Activation Rates ({k}: per-rep + office totals)…")
-        cdp_pull.download_views(specs, today=today, verbose=False, log=log,
-                                csv_fetches=csv_fetches)
+        with cdp_pull._cdp_lock(label="vantura download_views", log=log):
+            cdp_pull.download_views(specs, today=today, verbose=False, log=log,
+                                    csv_fetches=csv_fetches)
 
     # ------------------------------------------------- compute + reconcile
     results = {}
