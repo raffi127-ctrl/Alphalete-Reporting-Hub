@@ -1946,7 +1946,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
         # Fully unattended via patchright (rcaptain AppStream + ownerville
@@ -2037,7 +2037,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 45,
         },
         # Fully unattended via patchright (rcaptain AppStream + ownerville
@@ -2447,7 +2447,7 @@ AUTOMATED_REPORTS = [
             # 7 days a week on the calendar.)
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4],  # Mon–Fri (Megan 2026-06-07)
-            "time": "7:00 AM",  # 7am CST (Eve)
+            "time": "4 AM flow (when data's ready)",  # 7am CST (Eve)
             "estimated_minutes": 10,
         },
         # Fully unattended via patchright (rcaptain AppStream) — no pre-flight
@@ -2531,7 +2531,7 @@ AUTOMATED_REPORTS = [
                                 # email-ingest. All 3 senders land by Wed
                                 # midday, so Thursday's 4am run has the full
                                 # week with a day of buffer.
-            "time": "4:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [
@@ -2824,7 +2824,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "9:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
         # Fully unattended via patchright (ownerville Tableau session) — no
@@ -2882,7 +2882,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "5:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -2986,7 +2986,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "4:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 8,
         },
         "checklist": [],
@@ -3069,7 +3069,7 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
         "assignees": ["Lucy 1"],
-        "schedule": {"frequency": "daily", "time": "9:00 AM", "estimated_minutes": 6},
+        "schedule": {"frequency": "daily", "time": "4 AM flow (when data's ready)", "estimated_minutes": 6},
         "checklist": [],
         "post_run": {
             "message_success": "✅ Captainship Activations done — 5 tabs filled (violet + country) and 6 PNGs uploaded to the Drive folder.",
@@ -3135,7 +3135,7 @@ AUTOMATED_REPORTS = [
                       "1IpDs2_iCFDdmBBLPQNQ8x8xLQPTUOJcxHOMRj5RWu6E/edit"),
         "assignees": ["Lucy 1"],
         "schedule": {"frequency": "daily", "weekdays": [1, 2, 3, 4, 5, 6],
-                     "time": "9:30 AM", "estimated_minutes": 12},
+                     "time": "4 AM flow (when data's ready)", "estimated_minutes": 12},
         "checklist": [],
         "post_run": {
             "message_success": "✅ Step 1 done — the 12 reports are in output/ as .html. Open them, check the numbers, then press 'Send the reviewed reports'.",
@@ -3196,7 +3196,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "7:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3249,7 +3249,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "7:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3308,7 +3308,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 10,
         },
         "checklist": [],
@@ -3363,7 +3363,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4],   # Mon–Fri only
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 4,
         },
         "checklist": [],
@@ -3407,7 +3407,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],  # Thursday
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3461,7 +3461,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            "time": "8:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3532,7 +3532,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "6:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 20,
         },
         "checklist": [],
@@ -3579,7 +3579,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "6:30 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3724,7 +3724,7 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "country_sales_board",
         "schedule": {
             "frequency": "daily",
-            "time": "6:45 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3898,7 +3898,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [4, 5],   # Friday + Saturday (a late send gets a 2nd shot)
-            "time": "5:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 3,
         },
         "checklist": [],
