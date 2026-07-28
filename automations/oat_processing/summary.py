@@ -274,6 +274,9 @@ def main(argv=None) -> int:
     ap.add_argument("--emit", action="store_true",
                     help="print per-applicant bucket lines to stdout (lets a remote "
                          "caller rebuild the scorecard without pulling the PDF); no post")
+    ap.add_argument("--emit-tab", default=None, dest="emit_tab",
+                    metavar="<sheetId>:<tabName>",
+                    help="write full bucketed data to a Google Sheet tab (no post)")
     args = ap.parse_args(argv)
     date = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
 
@@ -283,6 +286,29 @@ def main(argv=None) -> int:
     print(f"[scorecard] {date} — {t['processed']} rows: sent={len(t['sent'])} "
           f"removed={len(t['removed'])} retext={len(t['retext'])} "
           f"nophone={len(t['nophone'])} blocked={len(t['blocked'])}", flush=True)
+    if args.emit_tab:
+        # Write the full bucketed data to a Google Sheet tab (no truncation) so a
+        # remote caller can rebuild the scorecard. Format "<sheetId>:<tabName>".
+        sid, _, tabn = args.emit_tab.partition(":")
+        tabn = tabn or "OAT Scorecard Data"
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(sid)
+        try:
+            wsx = sh.worksheet(tabn)
+            wsx.clear()
+        except Exception:  # noqa: BLE001
+            wsx = sh.add_worksheet(title=tabn, rows=200, cols=8)
+        out = [["bucket", "name", "source", "reason", "position", "via"]]
+        for b in ("sent", "removed", "retext", "nophone", "blocked"):
+            for it in t[b]:
+                out.append([b, it.get("name", ""), it.get("source", ""),
+                            it.get("reason", ""), it.get("position", ""),
+                            it.get("via", "")])
+        out.append(["__meta__", f"processed={t['processed']}",
+                    f"last_scan={last_scan}", f"date={date.isoformat()}", "", ""])
+        wsx.update(out, "A1", value_input_option="RAW")
+        print(f"[scorecard] wrote {len(out)-1} rows to tab {tabn!r}", flush=True)
+        return 0
     if args.emit:
         # Tab-separated, one applicant per line, short + greppable via logtail.
         for b in ("sent", "removed", "retext", "nophone", "blocked"):
