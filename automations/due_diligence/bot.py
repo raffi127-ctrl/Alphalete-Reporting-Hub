@@ -110,7 +110,7 @@ def _process(web, user_id: str, icd: str, leader: str, names: list,
         from . import team_render
         res = team_render.write_and_render(people, icd=icd, leader=leader)
         tab_link = f"{link}#gid={res['gid']}"
-        cap = (f":scroll: *Due Diligence — {icd}*  ({len(people)} rep"
+        cap = (f":scroll: *Due Diligence — {res['tab']}*  ({len(people)} rep"
                f"{'s' if len(people) != 1 else ''}) — logged to the "
                f"<{tab_link}|{res['tab']} tab>.")
         if misses:

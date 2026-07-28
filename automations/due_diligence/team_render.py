@@ -140,11 +140,22 @@ def _copy_col_widths(sh, tid: int, nid: int) -> None:
         _retry(sh.batch_update, {"requests": reqs})
 
 
+def _canonical_icd(icd: str) -> str:
+    """Resolve the ICD name through the shared ICD alias list so spelling
+    variants ('Raf Hidalgo' vs 'Rafael Hidalgo') land on ONE tab."""
+    try:
+        from automations.focus_office_att import aliases
+        return aliases.alias_to_canonical(icd, aliases.load_aliases()) or icd
+    except Exception:
+        return icd
+
+
 def write_and_render(people: List[RepDD], *, icd: str, leader: str = "") -> dict:
     """Insert the formatted 3-table block at the TOP of the ICD tab (creating it
     if new), then render it to a PNG. Returns {png, gid, range, tab, created}."""
     from automations.recruiting_report.fill import open_by_key, _retry
     from .fill import _find_icd_ws, _col_letter
+    icd = _canonical_icd(icd)                          # Raf Hidalgo -> Rafael Hidalgo
     sh = open_by_key(C.DD_SHEET_ID)
     tid = sh.worksheet("Template").id
     ws = _find_icd_ws(sh, icd)
