@@ -70,31 +70,28 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
     link = f"https://docs.google.com/spreadsheets/d/{C.DD_SHEET_ID}/edit"
     try:
         n = len(names)
-        est = max(2, round(1.5 + 0.6 * n))     # ~rough minutes, scales with team size
+        # The pull is 8 weekly crosstabs + shared metrics/churn — a fixed ~8 min,
+        # NOT per-rep (a whole team costs the same as one rep).
         web.chat_postMessage(channel=user_id, text=(
             f":frog: On it — pulling *{icd}* ({n} rep{'s' if n != 1 else ''}). "
-            f"This takes about *{est} min*; I'll drop the numbers here and log them "
-            f"to the <{link}|Due Diligence sheet>."))
+            f"This takes about *8 min* (8 weeks of data); I'll send back an image "
+            f"of the 3 charts and log them to the sheet."))
         people, misses = gather_team(names, icd=icd)
         if not people:
             web.chat_postMessage(channel=user_id, text=(
                 f":warning: Couldn't find any of those reps under *{icd}*: "
                 f"{', '.join(names)}. Check the spelling and try `/dd` again."))
             return
-        res = dd_fill.write_team_block(people, icd=icd, leader=leader, dry_run=False)
-        lines = [f":scroll: *Due Diligence — {icd}*  ({len(people)} rep"
-                 f"{'s' if len(people) != 1 else ''})"]
-        for p in people:
-            lines.append(f"• {p.matched_rep} — fiber 8wk *{p.new_int.avg_8wk}* · "
-                         f"wireless 8wk *{p.wireless.avg_8wk}*")
-        if res.get("wrote"):
-            newtab = " (new tab)" if res.get("created_tab") else ""
-            lines.append(f":pencil2: Logged to the *{res.get('tab')}* tab{newtab} — <{link}|open sheet>.")
-        else:
-            lines.append(f":warning: Not logged: {res.get('error')}.")
+        from . import team_render
+        res = team_render.write_and_render(people, icd=icd, leader=leader)
+        tab_link = f"{link}#gid={res['gid']}"
+        cap = (f":scroll: *Due Diligence — {icd}*  ({len(people)} rep"
+               f"{'s' if len(people) != 1 else ''}) — logged to the "
+               f"<{tab_link}|{res['tab']} tab>.")
         if misses:
-            lines.append(f":warning: Couldn't match (check spelling): {', '.join(misses)}")
-        web.chat_postMessage(channel=user_id, text="\n".join(lines))
+            cap += f"\n:warning: Couldn't match (check spelling): {', '.join(misses)}"
+        web.files_upload_v2(channel=user_id, file=str(res["png"]),
+                            filename=f"{icd} Due Diligence.png", initial_comment=cap)
     except Exception as e:                       # noqa: BLE001 — never crash the listener
         try:
             web.chat_postMessage(channel=user_id,
