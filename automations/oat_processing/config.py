@@ -27,6 +27,12 @@ REISSUE_WINDOW_DAYS = int(os.environ.get("OAT_REISSUE_WINDOW_DAYS", "30"))
 # good to text them again ... within the week, we just remove them."
 RETEXT_MIN_DAYS = int(os.environ.get("OAT_RETEXT_MIN_DAYS", "7"))
 
+# ARM auto re-text: when True, a quiet (>RETEXT_MIN_DAYS) applicant is auto-texted
+# the FOR LUCY re-engagement message via the SMS widget, then removed
+# ('re-texted & removed'). When False, they're only FLAGGED (no send). Armed full
+# by Megan 2026-07-28 after the real-send validation (Stephany). Sends real SMS.
+RETEXT_ARMED = os.environ.get("OAT_RETEXT_ARMED", "1") == "1"
+
 # --- Phone-lookup branch (PARKED for v1) ----------------------------------- #
 # The no-phone applicants (Octo Browser → the source's Indeed account → search
 # name → grab phone) are NOT automated in v1. When False, no-phone applicants
