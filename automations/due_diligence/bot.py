@@ -55,10 +55,10 @@ def _modal() -> dict:
             {"type": "section", "text": {"type": "mrkdwn",
              "text": ":scroll: I'll pull the team's last 8 weeks of fiber, "
                      "wireless, cancel & churn and log it to the ICD's tab."}},
-            _inp("icd", "ICD", "Tony Chavez"),
-            _inp("leader", "Leader", "Baraquiel Fimbres", optional=True),
+            _inp("icd", "ICD", "Kakashi Hatake"),
+            _inp("leader", "Leader", "Might Guy", optional=True),
             _inp("team", "Team (one rep per line)",
-                 "Isaac Torres\nDavid Becerra\nEmilio Fimbres", multiline=True),
+                 "Naruto Uzumaki\nSasuke Uchiha\nSakura Haruno", multiline=True),
         ],
     }
 
@@ -68,17 +68,22 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
     ack'd). DMs the requester progress + the result."""
     from .pull import gather_team
     link = f"https://docs.google.com/spreadsheets/d/{C.DD_SHEET_ID}/edit"
+    # files_upload_v2 needs the DM *channel* id (not the user id), so open it once.
+    try:
+        chan = web.conversations_open(users=user_id)["channel"]["id"]
+    except Exception:
+        chan = user_id
     try:
         n = len(names)
         # The pull is 8 weekly crosstabs + shared metrics/churn — a fixed ~8 min,
         # NOT per-rep (a whole team costs the same as one rep).
-        web.chat_postMessage(channel=user_id, text=(
+        web.chat_postMessage(channel=chan, text=(
             f":frog: On it — pulling *{icd}* ({n} rep{'s' if n != 1 else ''}). "
             f"This takes about *8 min* (8 weeks of data); I'll send back an image "
             f"of the 3 charts and log them to the sheet."))
         people, misses = gather_team(names, icd=icd)
         if not people:
-            web.chat_postMessage(channel=user_id, text=(
+            web.chat_postMessage(channel=chan, text=(
                 f":warning: Couldn't find any of those reps under *{icd}*: "
                 f"{', '.join(names)}. Check the spelling and try `/dd` again."))
             return
@@ -90,11 +95,11 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
                f"<{tab_link}|{res['tab']} tab>.")
         if misses:
             cap += f"\n:warning: Couldn't match (check spelling): {', '.join(misses)}"
-        web.files_upload_v2(channel=user_id, file=str(res["png"]),
+        web.files_upload_v2(channel=chan, file=str(res["png"]),
                             filename=f"{icd} Due Diligence.png", initial_comment=cap)
     except Exception as e:                       # noqa: BLE001 — never crash the listener
         try:
-            web.chat_postMessage(channel=user_id,
+            web.chat_postMessage(channel=chan,
                                  text=f":x: Jiraiya hit an error: {type(e).__name__}: {str(e)[:200]}")
         except Exception:
             pass
