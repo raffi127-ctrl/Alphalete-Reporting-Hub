@@ -113,6 +113,7 @@ KNOWN_USERS = {
     "U0BC8RU30MC": "Aaron Tovar",
     "U0AUH09AHHP": "Diego Borres",
     "U0B35CK1U8Z": "Josue Lozoya",
+    "U0BJFCN6FM3": "Rafael Zapiain",   # posts as "falzapiain"; on the B2B board
     # Not reps, but they post here — named so a mis-parse points at a person.
     "U0BCG8F9B5Z": "Lucy Reporting",
     "U046G04P5LG": "Carlos Hidalgo",
