@@ -209,10 +209,25 @@ PROGRAM_SUMMARY_VIEW_URL = (
 # Fractional (x, y) of the viz iframe to click — the DOWNLINE table's header
 # row ("Account.Name") — so 'Download -> Data' targets that worksheet (the
 # dashboard's top table is a 1-row owner summary; the downline table is the
-# full org). Recalibrated 2026-07-07 from a live screenshot of DOWNLINEVIEW:
-# the downline header sits ~47% down (the old 0.539 + ±0.03 sweep landed below
-# it in dead space, so activation never enabled Download->Data).
-PROGRAM_SUMMARY_XY = (0.05, 0.47)
+# full org).
+#
+# 2026-07-28: back to 0.539 after the 2026-07-07 move to 0.47 turned out to
+# land on the ORGANIZATION table's FILTER row, one band above the grid. That
+# doesn't error — it activates the top summary worksheet, so the scrape
+# "succeeds" with a single row ("ICD.Full Name / Rafael Hidalgo"),
+# parse_program_summary returns {}, and _dd_value leaves every cell untouched.
+# Net effect: Direct Deposit silently stopped filling on the ATT report from
+# WE 07-05 through 07-26 (verified blank on all tabs; 06-21 and earlier hold
+# real dollars).
+#
+# Re-measured 2026-07-28 at a 1664x949 window: viz iframe box y=38 h=909,
+# downline header row at page y≈529 -> (529-38)/909 ≈ 0.539.
+# download_program_summary sweeps these in order and rejects any scrape that
+# comes back under PROGRAM_SUMMARY_MIN_ROWS, so the next layout shift costs a
+# retry and then a loud failure instead of four silent weeks.
+PROGRAM_SUMMARY_XY = (0.033, 0.539)
+PROGRAM_SUMMARY_XY_CANDIDATES = ((0.033, 0.539), (0.033, 0.560), (0.05, 0.47))
+PROGRAM_SUMMARY_MIN_ROWS = 5   # real grid is ~76-86 rows; 1 = wrong worksheet
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
 # Direct Deposit roster — the set of ICD owners ever seen in the DD view
@@ -1251,17 +1266,35 @@ def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
                              we_sunday: Optional[dt.date] = None) -> Path:
     """Scrape the Program Summary View Data and save it tab-delimited so the
     parse step (and --skip-download) can reuse it. Pinned to `we_sunday`'s week
-    via the view's 'Processed Week' filter when given."""
+    via the view's 'Processed Week' filter when given.
+
+    Sweeps PROGRAM_SUMMARY_XY_CANDIDATES and keeps the first scrape that
+    returns a real grid. RAISES if none do — clicking the wrong worksheet on
+    this dashboard yields a valid-looking 1-row result, so without this guard
+    the caller marks the source OK and the DD column just quietly stops
+    filling (see PROGRAM_SUMMARY_XY)."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fields, records = scrape_view_data(_program_summary_url(we_sunday),
-                                       verbose=verbose, page=page,
-                                       activate_xy=PROGRAM_SUMMARY_XY)
-    lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
-    out_path.write_text("\n".join(lines), encoding="utf-8")
-    if verbose:
-        print(f"saved Program Summary view-data: {out_path} "
-              f"({len(records)} rows)", flush=True)
-    return out_path
+    url = _program_summary_url(we_sunday)
+    last_n = None
+    for xy in PROGRAM_SUMMARY_XY_CANDIDATES:
+        fields, records = scrape_view_data(url, verbose=verbose, page=page,
+                                           activate_xy=xy)
+        last_n = len(records)
+        if last_n < PROGRAM_SUMMARY_MIN_ROWS:
+            if verbose:
+                print(f"  Program Summary: click {xy} gave {last_n} row(s) — "
+                      f"wrong worksheet, trying the next point", flush=True)
+            continue
+        lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        if verbose:
+            print(f"saved Program Summary view-data: {out_path} "
+                  f"({len(records)} rows, click {xy})", flush=True)
+        return out_path
+    raise RuntimeError(
+        f"Program Summary: no click point hit the downline grid "
+        f"(best was {last_n} row(s)) — the dashboard layout moved, "
+        f"re-measure PROGRAM_SUMMARY_XY_CANDIDATES")
 
 
 def _fiber_overview(fields: List[str], records: List[List[str]]
