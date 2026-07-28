@@ -85,6 +85,10 @@ echo "[$(date)] B2B churn refresh finished exit=$ST" >> "$LOG_FILE"
 if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
 "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('att_churn','B2B Churn (Carlos)','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 
+# Done-marker for the orchestrator's no-show watch (post_watch): a clean fill
+# leaves this so a silently-dropped launchd entry (no error row) is caught.
+[ "$ST" -eq 0 ] && touch "output/logs/.att-churn-done-$(date +%Y-%m-%d)" 2>/dev/null || true
+
 # Failure email — churn_run has no reconcile-or-fail gate of its own and posts
 # nothing, so without this a failed pull is silent. Megan + the reporting inbox
 # (matches vantura_churn's FAILURE_TO; Raf deliberately off).

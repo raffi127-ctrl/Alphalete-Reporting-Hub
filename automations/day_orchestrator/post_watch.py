@@ -97,6 +97,40 @@ WATCH_TARGETS: List[WatchTarget] = [
              "(the 5:10 Sales Boards post may have used stale counts)",
         rerun_hint="on Lucy 2: bash deploy/vantura_slack_sales.sh",
     ),
+    # Standalone Lucy 2 LaunchAgents that run UNCONDITIONALLY (a no-show is a real
+    # miss, not a legitimate "nothing to post"). Each wrapper touches its marker on
+    # a clean exit; a dropped launchd entry leaves no error row, so only this watch
+    # catches a silent no-fire. (2026-07-27)
+    WatchTarget(
+        report_id="att_churn",
+        display_name="B2B Churn — Carlos (post watch)",
+        machine="Lucy 2",
+        deadline="08:30",   # fires 07:15 but hard-waits for vantura_churn (07:00) first
+        marker_glob="output/logs/.att-churn-done-{date}",
+        note="the 07:15 B2B churn refresh left no done-marker by 8:30 — the Lucy "
+             "Wireless / New INT / AIR Churn tabs may not have updated today",
+        rerun_hint="on Lucy 2: bash deploy/att_churn_daily.sh",
+    ),
+    WatchTarget(
+        report_id="carlos_captainship_headcount",
+        display_name="Carlos Captainship Headcount (post watch)",
+        machine="Lucy 2",
+        deadline="08:00",
+        marker_glob="output/logs/.carlos-captainship-headcount-done-{date}",
+        weekdays=[0],       # Mondays only (07:20)
+        note="the Monday Carlos Captainship Headcount left no done-marker by 8:00",
+        rerun_hint="on Lucy 2: bash deploy/carlos_captainship_headcount_mon.sh",
+    ),
+    WatchTarget(
+        report_id="carlos_captainship_bonus",
+        display_name="Carlos B2B Captainship Bonus (post watch)",
+        machine="Lucy 2",
+        deadline="10:45",
+        marker_glob="output/logs/.carlos-captainship-bonus-done-{date}",
+        weekdays=[1],       # Tuesdays only (10:00)
+        note="the Tuesday Carlos B2B Captainship Bonus left no done-marker by 10:45",
+        rerun_hint="on Lucy 2: bash deploy/carlos_captainship_bonus_tue.sh",
+    ),
 ]
 
 

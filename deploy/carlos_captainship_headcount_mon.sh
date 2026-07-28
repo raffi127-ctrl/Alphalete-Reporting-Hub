@@ -63,6 +63,8 @@ case " $* " in
   *)
     if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('carlos_captainship_headcount','Carlos Captainship Headcount','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    # Done-marker for the orchestrator's no-show watch (post_watch).
+    [ "$ST" -eq 0 ] && touch "output/logs/.carlos-captainship-headcount-done-$(date +%Y-%m-%d)" 2>/dev/null || true
     ;;
 esac
 if [ "$ST" -ne 0 ]; then
