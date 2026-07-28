@@ -2664,22 +2664,10 @@ AUTOMATED_REPORTS = [
             "- **Fiber / NDS / B2B / BOX** — reps with **12+** apps\n"
             "- **Costco** — reps with **8+** (ATV+DTV+Internet+AIA+New/Port, "
             "no Up)\n"
-            "- **Revenue over 2K** — reps at **$2,000+** (local-office owners)\n"
-            "- **Frontier** — reps with **8+** from the uploaded scorecard\n\n"
+            "- **Revenue over 2K** — reps at **$2,000+** (local-office owners)\n\n"
             "WHEN IT RUNS\n"
             "**Mondays.** Each campaign view's 'This Week' = the just-"
             "completed week, so the run recognizes the finished week.\n\n"
-            "FRONTIER — AUTO-PULLED FROM EMAIL\n"
-            "Frontier isn't in Tableau, so it's read automatically from the "
-            "**'Frontier - Sales Verification' email** that lands in Lucy's "
-            "inbox Monday ~2pm — **no upload needed**. (Backup: if that email "
-            "hasn't arrived yet, it uses the last uploaded file; you can upload "
-            "one below.) The other 7 campaigns pull from Tableau (no login "
-            "needed).\n\n"
-            "DATA SOURCES\n"
-            "Each section comes from its own Tableau crosstab (pulled "
-            "unattended via the saved ownerville session), filtered to the "
-            "local-office owners + that section's threshold.\n\n"
             "DELIVERY — the pill climbs through Monday (4 steps)\n"
             "1. **11:00am** — emails the owners to fill the recognition sheet.\n"
             "2. **4:00pm** — second reminder email.\n"
@@ -2705,16 +2693,7 @@ AUTOMATED_REPORTS = [
             "time": "7:30 PM",
             "estimated_minutes": 8,
         },
-        "checklist": [
-            {"text": "Backup only — Frontier auto-pulls from Lucy's Monday "
-                     "email. Upload the 'Sales Verification' file here ONLY if "
-                     "that email hasn't arrived yet.",
-             "uploader": {
-                 "target_dir": "automations/uploaded/leaders_call_frontier",
-                 "accept": [".xlsx", ".csv", ".pdf"],
-                 "multiple": True,
-             }},
-        ],
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Done — check the log above. (2pm 'Pull "
                                "campaigns' writes the tab; 7:30pm 'Build + post "
@@ -2739,6 +2718,15 @@ AUTOMATED_REPORTS = [
                         "+ #alphalete-gp-sales as Lucy.",
                 "module": "automations.leaders_call.run",
                 "args_fn": lambda: ["--finalize"],
+            },
+            {
+                "label": "Add promos → re-post to thread",
+                "icon": "🔄",
+                "help": "For last-minute promotions: pull the latest promos, rebuild "
+                        "the deck, and re-post the updated PDF as a reply in today's "
+                        "existing Leader's Call thread (not a new post).",
+                "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--repost"],
             },
             {
                 "label": "Preview deck (no post)",
@@ -2769,9 +2757,7 @@ AUTOMATED_REPORTS = [
             "clears, or deletes anything, and skips if the week's tab already "
             "exists.\n\n"
             "WHEN IT RUNS\n"
-            "**Sundays 8:00am CST**, before Maud's Monday reminders — so ICDs can "
-            "fill in their promotions during the week. Those promotions feed the "
-            "Monday Leader's Call deck."
+            "**Sundays 8:00am CST**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1lgYjfpCwYbeeGAdx7FEyI9PIqFk-W57X7HaZ4nsuoFM/edit"),
@@ -2797,13 +2783,6 @@ AUTOMATED_REPORTS = [
                         "(skips if it already exists — never overwrites).",
                 "module": "automations.leaders_call.recognition_tab",
                 "args_fn": lambda: ["--write"],
-            },
-            {
-                "label": "Preview (no write)",
-                "icon": "👁",
-                "help": "Show which tab it would create, without touching the sheet.",
-                "module": "automations.leaders_call.recognition_tab",
-                "args_fn": lambda: [],
             },
         ],
     },
@@ -11629,6 +11608,9 @@ else:  # st.session_state.view == "user"
             # force its pill PURPLE so it reads at a glance as "not running / manual"
             # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
             "[class*='sales-board-screenshot-email__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Captainship Activation Rate (Eve's, in progress) — force its pill
+            # PURPLE so Megan can spot it to revisit with Eve. (Megan 2026-07-28)
+            "[class*='captainship-activation-rate__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )

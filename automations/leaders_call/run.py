@@ -1009,6 +1009,74 @@ def _finalize(dry_run: bool = False) -> int:
     return 0
 
 
+def _find_deck_ts(client, cid: str, today: dt.date):
+    """Find today's Leader's Call deck post in channel `cid` — Lucy's top-level
+    post whose comment carries the recognition header — so a re-post can land as a
+    REPLY in that SAME thread. Returns the ts, or None if it isn't found (caller
+    then posts fresh). Same 'search, don't store' approach as
+    slack_metrics_post.find_metrics_thread_ts."""
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(channel=cid, oldest=str(oldest), limit=100)
+    except Exception as e:  # noqa: BLE001
+        print(f"  (thread lookup failed for {cid}: {type(e).__name__}) — posting fresh",
+              flush=True)
+        return None
+    for msg in resp.get("messages", []):
+        if "Leader's Call — Weekly Recognition" in (msg.get("text") or ""):
+            return msg.get("thread_ts") or msg.get("ts")
+    return None
+
+
+def _repost(dry_run: bool = False) -> int:
+    """Quick re-post for last-minute promos: pull the LATEST promotions from Maud's
+    recognition sheet, rebuild the deck from the already-written tab (no Tableau
+    pull), and post the updated PDF as a REPLY in today's existing Leader's Call
+    thread — so a late promo lands in place instead of a new top-level post and
+    the back-and-forth that caused (Megan 2026-07-28). Falls back to a fresh post
+    in any channel whose original post can't be found."""
+    from automations.leaders_call import build_pdf as pdf
+    results = _results_from_tab()
+    n = sum(len(v) for v in results.values())
+    sun = _target_week()[1]
+    out = OUTPUT_DIR / f"alphalete_leaders_call_{sun.isoformat()}.pdf"
+    promos = _fetch_promotions()
+    pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns(), promotions=promos)
+    print(f"📄 Updated deck rebuilt ({n} rows, {len(promos)} promotions): {out.name}",
+          flush=True)
+    name = out.name
+    comment = ("🔄 Updated Leader's Call deck — added the latest recognition "
+               "promotions.")
+    today = dt.date.today()
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    any_ok = False
+    for chan, cid in FINAL_CHANNELS:
+        if dry_run:
+            print(f"  [dry-run] WOULD re-post {name} into #{chan}'s existing deck thread",
+                  flush=True)
+            any_ok = True
+            continue
+        ts = _find_deck_ts(client, cid, today)
+        try:
+            kw = {"channel": cid, "file": str(out), "filename": name,
+                  "initial_comment": comment}
+            if ts:
+                kw["thread_ts"] = ts
+            resp = client.files_upload_v2(**kw)
+            ok = bool(resp.get("ok"))
+            where = "in the existing thread" if ts else "as a NEW post (no thread found)"
+            print(f"  #{chan}: {('re-posted ✓ ' + where) if ok else 'ok=false'}",
+                  flush=True)
+            any_ok = any_ok or ok
+        except Exception as e:  # noqa: BLE001
+            print(f"  #{chan}: FAILED — {type(e).__name__}: {str(e)[:140]}", flush=True)
+    if not any_ok:
+        print("❌ Re-post failed on every channel — check the log above.", flush=True)
+        return 1
+    return 0
+
+
 def _results_from_tab() -> dict:
     """Read the live Leader's Call tab into {section_title: [(rep, owner, value)]} —
     the inverse of write_report. Lets --pdf-only rebuild the deck from already-written
@@ -1062,8 +1130,15 @@ def main() -> int:
                     help="the 7:30pm pass — rebuild the deck from the tab + final "
                          "promotions and POST it to the leadership Slack channels. "
                          "Add --dry-run to build + preview without posting.")
+    ap.add_argument("--repost", action="store_true",
+                    help="pull the latest promotions, rebuild the deck, and re-post "
+                         "the updated PDF as a reply in today's existing Leader's "
+                         "Call thread (for last-minute promos). Add --dry-run to "
+                         "preview without posting.")
     args = ap.parse_args()
 
+    if args.repost:
+        return _repost(dry_run=args.dry_run)
     if args.finalize:
         return _finalize(dry_run=args.dry_run)
     if args.pdf_only:
