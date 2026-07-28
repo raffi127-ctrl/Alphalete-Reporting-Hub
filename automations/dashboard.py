@@ -11611,6 +11611,9 @@ else:  # st.session_state.view == "user"
             # Captainship Activation Rate (Eve's, in progress) — force its pill
             # PURPLE so Megan can spot it to revisit with Eve. (Megan 2026-07-28)
             "[class*='captainship-activation-rate__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Captainship Report Drafts (12) — draft-only (a human sends), so pin
+            # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
+            "[class*='captainship-drafts__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
