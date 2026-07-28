@@ -66,8 +66,12 @@ if [ "$(date +%u)" = "1" ]; then
   echo "[$(date)] MONDAY: full board fill + email (afternoon — Sunday has landed)" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships --skip-compare "$@" >> "$LOG_FILE" 2>&1
   ST=$?
-  echo "[$(date)] MONDAY: sending board email" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
+  # Board email STOPPED 2026-07-28 (Megan): handed to Eve; it was still only going to
+  # the proving list (Rafael + Megan), so don't auto-send. Module + Hub button stay for
+  # Eve. Re-enable by uncommenting the line below (and flip org_sales_board_email
+  # on_scheduler true in schedule_config.json for the Tue-Sun morning path).
+  echo "[$(date)] MONDAY: board email NOT sent (stopped 2026-07-28 — handed to Eve)" >> "$LOG_FILE"
+  # "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
   # Captainship Report drafts: REMOVED 2026-07-28 (Eve). This used to build them
   # live here on Monday (creating 12 Gmail drafts), which was the last thing about
   # the Captainship Reports that touched Gmail without a human asking. They are now
