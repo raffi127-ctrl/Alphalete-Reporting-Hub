@@ -4370,7 +4370,16 @@
       "freshness_target": "friday_am",
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "cells_nonblank",
+        "sheet": "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E",
+        "tab": "SCI Campaigns",
+        "checks": [
+          {
+            "row_label": "AT&T Fiber",
+            "min_nonblank": 1,
+            "start_col": 2
+          }
+        ]
       },
       "_onboarded": true,
       "machine": "Lucy 1"
