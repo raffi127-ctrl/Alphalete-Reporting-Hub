@@ -11,6 +11,7 @@ Tokens:
 """
 from __future__ import annotations
 
+import json
 import os
 import ssl
 import threading
@@ -20,6 +21,24 @@ from . import config as C
 from . import fill as dd_fill
 
 CALLBACK = "dd_form"
+_CTX_PATH = C.OUTPUT_DIR / "bot_context.json"
+# Trivial replies that should NOT trigger a re-pull.
+_ACKS = {"thanks", "thank you", "ty", "thx", "ok", "okay", "cool", "nice",
+         "great", "perfect", "👍", "🙏", "got it"}
+
+
+def _load_ctx() -> dict:
+    try:
+        return json.loads(_CTX_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_ctx(user_id: str, icd: str, leader: str, names: list) -> None:
+    d = _load_ctx()
+    d[user_id] = {"icd": icd, "leader": leader, "names": names}
+    C.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    _CTX_PATH.write_text(json.dumps(d), encoding="utf-8")
 
 
 def _app_token() -> str:
@@ -97,6 +116,9 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
             cap += f"\n:warning: Couldn't match (check spelling): {', '.join(misses)}"
         web.files_upload_v2(channel=chan, file=str(res["png"]),
                             filename=f"{icd} Due Diligence.png", initial_comment=cap)
+        # Remember this request so a plain DM reply (a corrected name) can
+        # re-pull without re-entering the ICD/leader/team.
+        _save_ctx(user_id, icd, leader, names)
     except Exception as e:                       # noqa: BLE001 — never crash the listener
         try:
             web.chat_postMessage(channel=chan,
@@ -116,6 +138,24 @@ def _handler(client, req):
             print(f"[modal] opened ok={r.get('ok')}", flush=True)
         except Exception as e:                # noqa: BLE001
             print(f"[modal] FAILED {type(e).__name__}: {e}", flush=True)
+        return
+    if req.type == "events_api":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        ev = req.payload.get("event", {})
+        if (ev.get("type") == "message" and ev.get("channel_type") == "im"
+                and not ev.get("bot_id") and not ev.get("subtype")):
+            user = ev.get("user")
+            text = (ev.get("text") or "").strip()
+            ctx = _load_ctx().get(user or "")
+            # Only re-pull when the user has a recent request AND the reply looks
+            # like a name (not a "thanks"). Adds the corrected name(s) and re-runs.
+            if ctx and text and text.lower() not in _ACKS:
+                new_names = list(dict.fromkeys(
+                    ctx["names"] + [l.strip() for l in text.splitlines() if l.strip()]))
+                threading.Thread(
+                    target=_process,
+                    args=(client.web_client, user, ctx["icd"], ctx["leader"], new_names),
+                    daemon=True).start()
         return
     if req.type == "interactive" and req.payload.get("type") == "view_submission" \
             and req.payload.get("view", {}).get("callback_id") == CALLBACK:
