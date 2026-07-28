@@ -499,6 +499,38 @@ def _close_sms_panel(page) -> None:
             continue
 
 
+def _sms_widget_frame(page, timeout_ms: int = 15000):
+    """Find the frame (main page or an iframe) that actually holds the Bandwidth
+    SMS widget — identified by its Name filter. Returns (frame_or_None, diag)."""
+    for _ in range(max(1, timeout_ms // 500)):
+        for fr in page.frames:
+            try:
+                if fr.query_selector("input[name='sms_name_filter']"):
+                    return fr, ""
+            except Exception:  # noqa: BLE001
+                continue
+        page.wait_for_timeout(500)
+    diag = []
+    for fr in page.frames:
+        try:
+            diag.append(f"{(fr.url or '')[-34:]}|inp={len(fr.query_selector_all('input'))}")
+        except Exception as e:  # noqa: BLE001
+            diag.append(f"err:{type(e).__name__}")
+    return None, " ; ".join(diag)
+
+
+def _xframe(page, selector):
+    """First (frame, locator) across all frames where `selector` matches >=1."""
+    for fr in page.frames:
+        try:
+            loc = fr.locator(selector).first
+            if loc.count() > 0:
+                return fr, loc
+        except Exception:  # noqa: BLE001
+            continue
+    return None, None
+
+
 def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     """Send the 'FOR LUCY' re-engagement text to ONE applicant through the Bandwidth
     SMS widget, then report (status, detail). Choreography confirmed with Megan
@@ -514,21 +546,19 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     want = _digits(phone)[-10:]
     if not _open_sms_panel(page):
         return "sms_panel_fail", "could not open SMS widget"
-    # The Bandwidth widget injects its DOM asynchronously after the click — wait
-    # for the Name filter to exist (attached; we drive it via JS so visibility
-    # isn't required) before doing anything.
-    try:
-        page.wait_for_selector("input[name='sms_name_filter']", timeout=15000,
-                               state="attached")
-        page.wait_for_timeout(800)
-    except Exception:  # noqa: BLE001
+    # The Bandwidth widget injects its DOM asynchronously and may live in a child
+    # iframe — resolve the actual frame that holds it before driving anything.
+    w, diag = _sms_widget_frame(page, 16000)
+    if w is None:
+        _log(f"    [retext] widget frame not found — frames: {diag}")
         _close_sms_panel(page)
-        return "sms_panel_fail", "SMS widget did not load (no name filter after 15s)"
+        return "sms_panel_fail", f"SMS widget did not load; frames=[{diag[:180]}]"
+    _log(f"    [retext] widget frame ok (url …{(w.url or '')[-30:]})")
+    page.wait_for_timeout(800)
 
-    # 1)+2) Set Date='This Month' and the Name filter via JS (page.fill/select
-    #    timed out on these mid-animation even though they're visible), then click
-    #    the widget's own Search button (#sms_filter_search).
-    set_ok = page.evaluate(
+    # 1)+2) Set Date='This Month' and the Name filter via JS (fill/select timed out
+    #    mid-animation even though visible), then click Search (#sms_filter_search).
+    set_ok = w.evaluate(
         r"""(nm) => {
             const out = {date:false, name:false};
             const d = document.querySelector("select[name='sms_date_filter']");
@@ -545,14 +575,13 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         }""", (last or name))
     if not set_ok.get("name"):
         _close_sms_panel(page)
-        return "retext_err", "sms name/date filter not found in widget"
+        return "retext_err", "sms name/date filter not found in widget frame"
     searched = False
     try:
-        page.locator("#sms_filter_search").first.click(timeout=4000,
-                                                       no_wait_after=True)
+        w.locator("#sms_filter_search").first.click(timeout=4000, no_wait_after=True)
         searched = True
     except Exception:  # noqa: BLE001
-        searched = page.evaluate(
+        searched = w.evaluate(
             "() => { const b = document.querySelector('#sms_filter_search');"
             " if (b) { b.click(); return true; } return false; }")
     _log(f"    [retext] filters set date={set_ok.get('date')} "
@@ -562,7 +591,7 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     # 3) Pick the conversation: prefer the row whose number matches the applicant's
     #    phone; else a single result; else the single name match. Never guess among
     #    several.
-    picked = page.evaluate(
+    picked = w.evaluate(
         r"""(args) => {
             const want = args[0], name = (args[1]||'').toLowerCase();
             const norm = s => (s||'').replace(/\D/g,'');
@@ -594,7 +623,7 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         _close_sms_panel(page)
         return "no_thread", f"no unique thread for {name} ({want or 'no-phone'})"
     try:
-        page.evaluate("(i) => window.__oat_rows[i].click()", choice["i"])
+        w.evaluate("(i) => window.__oat_rows[i].click()", choice["i"])
         page.wait_for_timeout(1800)
     except Exception as e:  # noqa: BLE001
         _close_sms_panel(page)
@@ -602,28 +631,40 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     _log(f"    [retext] bound thread: {choice.get('text')} "
          f"(byPhone={choice.get('hasPhone')})")
 
-    # 4) Load Template -> modal -> filter to 'FOR LUCY' -> Select.
-    if not _click_first(page, ["Load Template"]):
+    # 4) Load Template -> modal -> filter to 'FOR LUCY' -> Select. The modal can
+    #    render in the widget frame OR the main page, so locate across frames.
+    _, lt = _xframe(page,
+                    "xpath=//button[contains(normalize-space(.),'Load Template')]"
+                    " | //a[contains(normalize-space(.),'Load Template')]"
+                    " | //input[@type='button'][contains(@value,'Load Template')]")
+    if lt is None:
         _close_sms_panel(page)
         return "retext_err", "Load Template button not found"
-    page.wait_for_timeout(1500)
-    try:
-        page.fill("xpath=//*[contains(normalize-space(.),'Loading SMS Template')]"
-                  "/following::input[@type='text'][1]", _TEMPLATE_NAME, timeout=4000)
-        page.wait_for_timeout(800)
-    except Exception as e:  # noqa: BLE001
-        _log(f"    [retext] template search fill failed: {type(e).__name__}")
-    sel = page.locator(
-        "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]//a[normalize-space(.)='Select']"
-        " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']").first
-    if sel.count() == 0:
+    lt.click(timeout=4000, no_wait_after=True)
+    page.wait_for_timeout(1600)
+    mf, msearch = _xframe(page,
+                          "xpath=//*[contains(normalize-space(.),'Loading SMS "
+                          "Template')]/following::input[@type='text'][1]")
+    if msearch is not None:
+        try:
+            msearch.fill(_TEMPLATE_NAME, timeout=4000)
+            page.wait_for_timeout(800)
+        except Exception as e:  # noqa: BLE001
+            _log(f"    [retext] template search fill failed: {type(e).__name__}")
+    _, sel = _xframe(page,
+                     "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]"
+                     "//a[normalize-space(.)='Select']"
+                     " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']")
+    if sel is None:
         _close_sms_panel(page)
         return "retext_err", "FOR LUCY Select link not found"
     sel.click(timeout=4000, no_wait_after=True)
-    page.wait_for_timeout(1200)
+    page.wait_for_timeout(1300)
 
-    # 5) Replace NAME + xxxx in the compose box.
-    filled = page.evaluate(
+    # 5) Replace NAME + xxxx in the compose box (search frames for ta_smsChat).
+    cf, _ = _xframe(page, "textarea[name='ta_smsChat'], #ta_smsChat")
+    cf = cf or w
+    filled = cf.evaluate(
         r"""(args) => {
             const first = args[0], role = args[1];
             const ta = document.querySelector("textarea[name='ta_smsChat'], #ta_smsChat")
@@ -648,8 +689,10 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "retext_dry", filled
 
     # 6) Send.
+    sfr, sbtn = _xframe(page, "#btn-sms-send")
     try:
-        page.locator("#btn-sms-send").first.click(timeout=5000, no_wait_after=True)
+        (sbtn or w.locator("#btn-sms-send").first).click(timeout=5000,
+                                                         no_wait_after=True)
         page.wait_for_timeout(2200)
     except Exception as e:  # noqa: BLE001
         _close_sms_panel(page)
