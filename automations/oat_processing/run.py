@@ -696,6 +696,34 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                         _log(f"HC REMOVE hasRemovApp={rm.get('hasRemovApp')} controls={rm.get('controls')}")
                     except Exception as e:  # noqa: BLE001
                         _log(f"HC RMVREASON failed: {e}")
+                    # Re-text/await MESSAGE templates — the exact copy that would go
+                    # out, for Megan to confirm before re-text auto-send is armed.
+                    try:
+                        msg = page.evaluate(r"""() => {
+                          const v = n => { const e=document.querySelector(`[name='${n}']`);
+                            return e ? (e.value||e.innerText||'').trim() : ''; };
+                          const optsOf = n => { const s=document.querySelector(`[name='${n}']`);
+                            return s && s.options ? [...s.options].map(o=>o.text.trim()) : []; };
+                          // 'Await Call Email' + Quick Notes may be selects; the
+                          // Email-Applicant compose holds the message body.
+                          const await_ = document.querySelector("[name='emailType'],[name='awaitType'],[name='awaitCallEmail']");
+                          return {
+                            subject: v('emailApplicantSubject'),
+                            message: v('emailApplicantMessage'),
+                            qNotes: optsOf('qNotes'),
+                            awaitName: await_ ? (await_.name||await_.id) : '',
+                            awaitOpts: await_ && await_.options ? [...await_.options].map(o=>o.text.trim()) : [],
+                            sendEmail: (document.querySelector("[name='sendEmail']")||{}).checked,
+                            sendSMS: (document.querySelector("[name='sendSMS']")||{}).checked,
+                          };
+                        }""")
+                        _log(f"HC MSG subject={msg.get('subject')!r}")
+                        _log(f"HC MSG body={msg.get('message')!r}")
+                        _log(f"HC MSG await={msg.get('awaitName')!r} opts={msg.get('awaitOpts')}")
+                        _log(f"HC MSG qNotes={msg.get('qNotes')}")
+                        _log(f"HC MSG sendEmail={msg.get('sendEmail')} sendSMS={msg.get('sendSMS')}")
+                    except Exception as e:  # noqa: BLE001
+                        _log(f"HC MSG failed: {e}")
                 return 0
 
             if not open_oat(page):
