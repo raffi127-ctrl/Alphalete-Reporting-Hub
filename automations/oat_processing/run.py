@@ -657,6 +657,48 @@ def probe_sms(page) -> None:
                 _log(f"SMS FRAME {i} inputs={info.get('inputs')}")
                 _log(f"SMS FRAME {i} buttons={info.get('buttons')}")
                 _log(f"SMS FRAME {i} textareas={info.get('textareas')}")
+                # Focused, short-line dump of the send-flow controls (logtail
+                # caps ~470 chars/read, so keep each line small & greppable).
+                try:
+                    # Try to expand a "Load Template" control first so the
+                    # template list (where 'FOR LUCY' lives) enters the DOM.
+                    for tsel in ("a", "button"):
+                        el = fr.query_selector(
+                            f"xpath=//{tsel}[contains(translate(.,"
+                            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
+                            "'template')]")
+                        if el:
+                            try:
+                                el.click(timeout=2500)
+                                page.wait_for_timeout(1200)
+                            except Exception:  # noqa: BLE001
+                                pass
+                            break
+                    focus = fr.evaluate(
+                        """() => {
+                            const g = s => (s.name||s.id||s.placeholder||'?');
+                            return {
+                              sels: [...document.querySelectorAll('select')].map(s =>
+                                g(s)+':['+[...s.options].map(o=>(o.text||'').trim())
+                                .filter(Boolean).slice(0,15).join('|')+']').slice(0,8),
+                              tmpl: [...document.querySelectorAll('a,button,li,option,div')]
+                                .map(e=>(e.innerText||e.value||'').trim())
+                                .filter(t=>/lucy|template/i.test(t)&&t.length<40).slice(0,15),
+                              send: [...document.querySelectorAll(
+                                'a,button,input[type=submit],input[type=button]')]
+                                .filter(e=>/^send/i.test((e.innerText||e.value||'').trim()))
+                                .map(e=>e.tagName+':'+(e.name||e.id||'')+':'
+                                  +(e.innerText||e.value||'').trim()).slice(0,8),
+                              msg: [...document.querySelectorAll('textarea,[contenteditable]')]
+                                .map(e=>(e.name||e.id||e.placeholder||e.tagName||'?')).slice(0,8),
+                            };
+                        }""")
+                    _log(f"SMSF sels={focus.get('sels')}")
+                    _log(f"SMSF tmpl={focus.get('tmpl')}")
+                    _log(f"SMSF send={focus.get('send')}")
+                    _log(f"SMSF msg={focus.get('msg')}")
+                except Exception as e:  # noqa: BLE001
+                    _log(f"SMSF focus err: {type(e).__name__}")
         except Exception as e:  # noqa: BLE001
             _log(f"SMS FRAME {i} err: {type(e).__name__}")
 
