@@ -119,6 +119,15 @@ _HUB_CARD = {
     "kash_metrics": "office-metrics",
     "salik_metrics": "office-metrics",
     "cody_metrics": "office-metrics",
+    # Rashad's other office-metrics variants (review post / order-log / churn pull)
+    # — all consolidate under the single office-metrics card, not their own cards
+    # (Megan 2026-07-27: "all metrics → 1 hub card like it was").
+    "rashad_metrics_review": "office-metrics",
+    "rashad_orderlog": "office-metrics",
+    "rashad_churn": "office-metrics",
+    # Churn variants that belong to an existing card, not their own.
+    "vantura_churn_daily": "vantura-churn",
+    "churn_eveliz_fix": "owners-metrics-churn",
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",

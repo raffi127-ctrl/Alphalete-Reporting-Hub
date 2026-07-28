@@ -256,6 +256,11 @@ def ensure_library_card(report_id: str, report_name: str, *,
         machine = machine_ov
     script = _launcher_script(cid, real_module, base_args)
     schedule = schedule_ov or _schedule_meta(weekdays, est)
+    # Section placement on the schedule page: a card with its OWN fixed clock time
+    # is a Time-Set report (self_scheduled -> ⏰ TIME SET divider + a "· HH:MM" chip
+    # on the tile); a "4 AM flow" / on-demand card rides the ☀️ MORNING BATCH.
+    _t = str(schedule.get("time", "")).strip().lower()
+    is_timed = bool(_t) and "flow" not in _t and "demand" not in _t
     meta = {
         "id": cid,
         "name": name,
@@ -271,6 +276,7 @@ def ensure_library_card(report_id: str, report_name: str, *,
         "category": category or "🗂 Auto-registered",
         "assignees": [machine],       # profile grouping
         "schedule": schedule,         # calendar days + time chip
+        "self_scheduled": is_timed,   # ⏰ Time Set (fixed clock) vs ☀️ Morning Batch
     }
     if dry_run:
         return True, "DRY-RUN: would create library card %r (%s)" % (cid, name)
