@@ -171,6 +171,23 @@ def _machine_badge(machine: str) -> str:
             f"border-radius:12px;font-weight:700;font-size:.95rem'>{machine}</span>")
 
 
+def _enqueue_onboard(key: str, machine: str, *, post: bool) -> "tuple":
+    """Drop a mini_control `onboard_apply metrics <key>` job on `machine`'s queue
+    (Lucy 1 for D2D, Lucy 2 for B2B) so the office wires (apply --write → joins the
+    morning run) and, with --post, posts to its channel now. Reuses the form's own
+    Sheets client (the queue is a tab on this same master sheet). Returns (ok, note)."""
+    gc = store.get_client()
+    if gc is None:
+        return False, "no Sheets client (local-draft mode)"
+    try:
+        from automations.day_orchestrator import queue_enqueue as qenq
+        args = f"metrics {key}" + (" --post" if post else "")
+        tab = qenq.enqueue(gc, "onboard_apply", args, by="Megan", machine=machine)
+        return True, tab
+    except Exception as e:                           # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 # --------------------------------------------------------------------------
 def form_view() -> None:
     st.markdown("## 🏢 Metrics Onboarding")
@@ -363,6 +380,10 @@ def form_view() -> None:
             st.error(f"Couldn't save: {e}")
             return
         result = {"rec": rec.to_json(), "where": where}
+        # Auto-wire: hand the office's machine an apply job so it joins the morning
+        # run with no manual apply/commit. Only when the submission hit the Sheet.
+        if where == "sheet":
+            result["wired"] = _enqueue_onboard(rec.key, rec.machine(), post=False)
         # Welcome email: pre-stage the pay code, then send.
         if send_welcome and rec.owner_email:
             code_ok, code_note = register_pay_code(rec)
@@ -397,13 +418,36 @@ def _show_result() -> None:
         f"- Hub card **Office Daily Metrics** + **Pay Structure** pick this office "
         f"up automatically once applied (both read the registry).",
         unsafe_allow_html=True)
-    st.markdown("#### Apply it")
-    st.caption("Run on the machine shown above (or from the laptop and let the "
-               "sync ship it). Dry-run first; review `git diff`; then commit + "
-               "push. Nothing is auto-pushed.")
-    st.code(f"python -m automations.office_onboarding.apply --only {d['key']}\n"
-            f"python -m automations.office_onboarding.apply --only {d['key']} --write",
-            language="bash")
+    if res["where"] == "sheet":
+        wired_ok, wired_note = res.get("wired", (False, ""))
+        machine = dv.get("machine", "Lucy 1")
+        if wired_ok:
+            st.success(f"✅ Auto-wiring into the morning run — {machine} is applying "
+                       "it now (joins the 4am flow; live in ~1–2 min). No commands "
+                       "to run.")
+        else:
+            st.warning(f"Saved to the Sheet, but couldn't auto-wire ({wired_note}). "
+                       "Use the fallback command below.")
+        st.markdown("#### Post it to the channel now")
+        st.caption(f"Runs this office's metrics on {machine} and posts them to "
+                   f"{d['channel_name']} immediately (otherwise they first appear "
+                   "in tomorrow's 4am run).")
+        if st.button(f"▶️ Post to {d['channel_name']} now", type="primary"):
+            ok, note = _enqueue_onboard(d["key"], machine, post=True)
+            if ok:
+                st.success(f"Queued — {machine} will post to {d['channel_name']} in "
+                           "~1–2 min. Watch the channel.")
+            else:
+                st.error(f"Couldn't queue the post: {note}")
+        with st.expander("Prefer to run it by hand? (fallback command)"):
+            st.code(f"python -m automations.office_onboarding.apply --only {d['key']} --write",
+                    language="bash")
+    else:
+        st.markdown("#### Apply it")
+        st.caption("No Google creds here, so it saved locally. Run this where the "
+                   "repo lives, review `git diff`, then commit + push.")
+        st.code(f"python -m automations.office_onboarding.apply --only {d['key']} --write",
+                language="bash")
 
     # ---- welcome email outcome ----
     w = res.get("welcome")

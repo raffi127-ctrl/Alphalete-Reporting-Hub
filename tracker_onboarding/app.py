@@ -94,6 +94,24 @@ def _inject_gs_client() -> dict:
     return diag
 
 
+def _enqueue_onboard(key: str, *, post: bool) -> "tuple":
+    """Drop a mini_control `onboard_apply tracker <key>` job so the mini wires the
+    office (apply --write into its working tree → joins the daily tracker run) and,
+    with --post, runs the tracker post now. Trackers run on the default machine
+    (Lucy 1). Reuses the form's own Sheets client (the queue is a tab on this same
+    master sheet). Best-effort; returns (ok, note)."""
+    gc = store.get_client()
+    if gc is None:
+        return False, "no Sheets client (local-draft mode)"
+    try:
+        from automations.day_orchestrator import queue_enqueue as qenq
+        args = f"tracker {key}" + (" --post" if post else "")
+        tab = qenq.enqueue(gc, "onboard_apply", args, by="Megan")
+        return True, tab
+    except Exception as e:                           # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 def form_view() -> None:
     st.markdown("## 📊 Tracker Onboarding")
     st.caption("Add an office to the daily Tableau tracker screenshots. The "
@@ -174,7 +192,11 @@ def form_view() -> None:
         except Exception as e:                       # noqa: BLE001
             st.error(f"Couldn't save: {e}")
             return
-        st.session_state["_last_submit"] = {"rec": rec.to_json(), "where": where}
+        # Auto-wire: hand the mini an apply job so this office joins the daily
+        # tracker run with no manual apply/commit. Only when it hit the Sheet.
+        wired = _enqueue_onboard(rec.key, post=False) if where == "sheet" else (False, "local")
+        st.session_state["_last_submit"] = {"rec": rec.to_json(), "where": where,
+                                            "wired": wired}
         st.rerun()
 
     _show_result(catalog)
@@ -195,13 +217,36 @@ def _show_result(catalog) -> None:
                             for i, tid in enumerate(d.get("trackers", [])))
     st.markdown(f"**{d['channel_name']}** will post these trackers, in order:")
     st.markdown(order_lines)
-    st.markdown("#### Apply it")
-    st.caption("Run it, review `git diff`, then commit + push. The next daily "
-               "tracker run posts to this channel; the Hub card lists it too. "
-               "Nothing is auto-pushed.")
-    st.code(f"python -m automations.tracker_onboarding.apply --only {d['key']}\n"
-            f"python -m automations.tracker_onboarding.apply --only {d['key']} --write",
-            language="bash")
+
+    if res["where"] == "sheet":
+        wired_ok, wired_note = res.get("wired", (False, ""))
+        if wired_ok:
+            st.success("✅ Auto-wiring into the daily tracker run — the mini is "
+                       "applying it now (live in the next run, ~1–2 min). "
+                       "No commands to run.")
+        else:
+            st.warning(f"Saved to the Sheet, but couldn't auto-wire ({wired_note}). "
+                       "Use the fallback commands below.")
+        st.markdown("#### Post it to the channel now")
+        st.caption(f"Runs the trackers for {d['channel_name']} and posts them "
+                   "immediately (otherwise they first appear in tomorrow's run).")
+        if st.button(f"▶️ Post to {d['channel_name']} now", type="primary"):
+            ok, note = _enqueue_onboard(d["key"], post=True)
+            if ok:
+                st.success(f"Queued — the mini will post to {d['channel_name']} in "
+                           "~1–2 min. Watch the channel.")
+            else:
+                st.error(f"Couldn't queue the post: {note}")
+        with st.expander("Prefer to run it by hand? (fallback commands)"):
+            st.code(f"python -m automations.tracker_onboarding.apply --only {d['key']} --write",
+                    language="bash")
+    else:
+        st.markdown("#### Apply it")
+        st.caption("No Google creds here, so it saved locally. Run this where the "
+                   "repo lives, review `git diff`, then commit + push.")
+        st.code(f"python -m automations.tracker_onboarding.apply --only {d['key']} --write",
+                language="bash")
+
     if st.button("Onboard another office"):
         del st.session_state["_last_submit"]
         st.rerun()

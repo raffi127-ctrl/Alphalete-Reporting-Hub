@@ -28,6 +28,12 @@ def set_client(gspread_client) -> None:
     _CLIENT = gspread_client
 
 
+def get_client():
+    """The injected gspread client (None if unset). Lets the form reuse the same
+    client to enqueue a mini_control job (the queue is a tab on this same sheet)."""
+    return _CLIENT
+
+
 def _ws():
     if _CLIENT is None:
         return None

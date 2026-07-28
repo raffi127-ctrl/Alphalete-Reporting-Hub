@@ -274,6 +274,86 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     return ok, result
 
 
+def _action_onboard_apply(args: str) -> tuple[bool, str]:
+    """onboard_apply <kind> <key> [--post] [--dry-run]: materialize a pending
+    enrollment from the onboarding Sheet into the working tree (apply --write) so
+    the office joins the morning run — and, with --post, immediately run its
+    report so it posts to its channel.
+
+    <kind> = 'metrics' (D2D/B2B office metrics) | 'tracker' (Tableau trackers).
+    The onboarding forms enqueue this on submit (wire only) and from their 'Post
+    now' button (--post). apply reads the 'Office/Tracker Onboarding' tab (the
+    source of truth), so the office need not be committed yet — this is the same
+    apply Megan runs by hand, on the mini where the Tableau/Slack sessions live.
+    Durability (commit to origin) stays a laptop step; the working-tree apply is
+    enough for the mini's own morning run, and `update` autostashes it."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    post = "--post" in parts
+    dry = "--dry-run" in parts
+    parts = [p for p in parts if not p.startswith("--")]
+    if len(parts) < 2:
+        return False, "onboard_apply needs '<kind> <key>' (kind=metrics|tracker)"
+    kind, key = parts[0].strip().lower(), parts[1].strip()
+
+    try:
+        from automations.recruiting_report.fill import _client
+        gc = _client()
+    except Exception as e:  # noqa: BLE001
+        return False, f"no Sheets client: {type(e).__name__}: {str(e)[:120]}"
+
+    if kind in ("metrics", "office", "d2d", "b2b"):
+        from automations.office_onboarding import store as _st, apply as _ap
+        _st.set_client(gc)
+    elif kind in ("tracker", "trackers"):
+        from automations.tracker_onboarding import store as _st, apply as _ap
+        _st.set_client(gc)
+    else:
+        return False, f"unknown kind {kind!r} (expected metrics|tracker)"
+
+    rc = _ap.main(["--only", key, "--write"])
+    if rc != 0:
+        return False, f"apply({kind}) failed for {key!r} (rc={rc}) — not posting"
+    if not post:
+        return True, f"wired {key} ({kind}) into the working tree — joins the next run"
+
+    # Build the post command. Metrics resolves the freshly-written schedule entry
+    # so D2D (office_metrics.runner) AND B2B (its own runner) each post exactly as
+    # the 4am flow would. Trackers post via the org filter (no per-office entry).
+    if kind in ("tracker", "trackers"):
+        run_cmd = [sys.executable, "-u", "-m",
+                   "automations.tableau_screenshots.run", "--orgs", key]
+        if dry:
+            run_cmd.append("--dry-run")
+    else:
+        report_id = f"{key}_metrics"
+        r = registry.resolve_report(registry.load_config(), report_id)
+        if not r:
+            return False, (f"wired {key}, but no schedule entry {report_id!r} to "
+                           "post from — run it from the office's card")
+        run_cmd = ([sys.executable, "-m", r.command[0]] + list(r.command[1:])
+                   + list(r.base_args))
+        if dry:
+            run_cmd = [a for a in run_cmd if a != "--live"] + ["--dry-run"]
+
+    # --post: run the office's report now so it lands in its channel. Close a
+    # stray human Chrome first (same guard as rerun) so a browser report doesn't
+    # collide. [[reference_chrome_collision_guard]]
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, result = _run_cmd(run_cmd, 60 * 60,
+                          log_name=f"onboard-{stamp}-{kind}-{key}.log")
+    verb = "dry-ran" if dry else ("posted" if ok else "post FAILED for")
+    return ok, f"wired + {verb} {key} → {result}"
+
+
 def _action_restart_holder(args: str) -> tuple[bool, str]:
     """Relaunch the ownerville session-holder LaunchAgent on the mini."""
     cmd = ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{SESSION_HOLDER_LABEL}"]
@@ -912,15 +992,18 @@ def _action_update(args: str) -> tuple[bool, str]:
 
     Both steps are safe: `git checkout main` refuses if there are uncommitted
     changes (never discards them), and the pull is --ff-only (never a merge, no
-    force). A poller-code change still needs a restart_poller after. Read the
+    force). `--autostash` parks any working-tree edits (e.g. onboard_apply's
+    Sheet-materialized onboarded_offices.json before the laptop commits it) around
+    the pull and re-applies them after, so an unpushed enrollment never blocks a
+    deploy. A poller-code change still needs a restart_poller after. Read the
     result with `lucy status`."""
     co = subprocess.run(["git", "-C", str(REPO_ROOT), "checkout", "main"],
                         capture_output=True, text=True)
     if co.returncode != 0:
         return False, ("couldn't switch to main (uncommitted changes on the "
                        f"current branch?): {(co.stderr or co.stdout).strip()[:150]}")
-    return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
-                    timeout_s=120)
+    return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only",
+                     "--autostash"], timeout_s=120)
 
 
 def _action_git_status(args: str) -> tuple[bool, str]:
@@ -1612,6 +1695,7 @@ ACTIONS = {
     "set_applicant_service_account": _action_set_applicant_service_account,
     "applicant_key": _action_applicant_key,
     "rerun": _action_rerun,
+    "onboard_apply": _action_onboard_apply,
     "update": _action_update,
     "git_status": _action_git_status,
     "git_stash": _action_git_stash,
