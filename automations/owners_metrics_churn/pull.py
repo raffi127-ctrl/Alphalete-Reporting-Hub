@@ -107,6 +107,220 @@ fmt_units = _shared.fmt_units
 parse = _shared.parse
 
 
+# ----- Fiber WIRELESS (same captains, 'Wireless Churn - …' tabs) ------
+# Eve 2026-07-28: the fiber captains wanted their WIRELESS churn filled the same
+# way as their New Internet churn. There is NO per-captain wireless custom view
+# in Tableau (Megan only ever saved per-captain NEW INTERNET views), so instead
+# of asking her to build five more, we pull the ORG-WIDE wireless view ONCE and
+# slice it per captainship in Python on the `Captain's Bonus Teams` column — the
+# same SFDC team filter the per-captain NI views apply server-side.
+#
+# The view is AUTOMATION-WirelessChurn: the churn dashboard with
+# `Churn View = Wireless Churn View` baked in (that parameter — not a
+# Product Type override — is what drives the wireless formula; see
+# wireless_churn/pull.py for the bug that taught us this). It is already proven
+# in production by recruiting_report.opt_phase, which pulls it every week for
+# the OPT wireless-churn rows, so we reuse its view id + worksheet rather than
+# minting a sixth custom view.
+#
+# Its worksheet is "ICD Churn (Wireless)" — distinct from the "ICD Churn" sheet
+# the New Internet views export — and it carries owner-level rows PLUS the
+# `Captain's Bonus Teams` column we slice on.
+FIBER_WIRELESS_ORG_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "67ab7e84-5a66-43c9-a6e5-df2edcaf95e6/AUTOMATION-WirelessChurn?:iid=1"
+)
+WIRELESS_WORKSHEET = "ICD Churn (Wireless)"
+
+# Report slug -> the `Captain's Bonus Teams` cell value for that captainship.
+# Sourced from the live crosstab (2026-07-28), NOT guessed: the column carries
+# "Wayne's Team" etc. with a curly-free apostrophe. Aron is absent (his tab is
+# retired to 'x - Churn - Aron Corral'), so only the five active fiber captains
+# are here — matching the five fiber entries in run.REPORTS.
+FIBER_WIRELESS_TEAM = {
+    "wayne": "Wayne's Team",
+    "starr": "Starr's Team",
+    "chan":  "Chan's Team",
+    "tony":  "Tony's Team",
+    "sahil": "Sahil's Team",
+}
+
+# One download per PROCESS, shared by all five wireless reports. run.py calls
+# fetch_fn once per selected report; without this cache the identical org view
+# would be scraped five times (~1 min each) for byte-identical bytes.
+_WIRELESS_ORG_CSV: Optional[Path] = None
+
+
+def fetch_fiber_wireless_org(out_path: Optional[Path] = None,
+                             verbose: bool = False, page=None) -> Path:
+    """Download the ORG-WIDE wireless churn crosstab (all captainships).
+
+    Cached per process — the second..fifth caller gets the first pull's file.
+    """
+    global _WIRELESS_ORG_CSV
+    out_path = out_path or (Path(tempfile.gettempdir())
+                            / "owners_fiber_wireless_org.csv")
+    if _WIRELESS_ORG_CSV is not None and _WIRELESS_ORG_CSV.exists():
+        return _WIRELESS_ORG_CSV
+    _dl(FIBER_WIRELESS_ORG_URL, WIRELESS_WORKSHEET, out_path,
+        verbose=verbose, page=page)
+    _WIRELESS_ORG_CSV = out_path
+    return out_path
+
+
+def _fmt_pct(num: float, denom: float, decimals: int = 2) -> Optional[str]:
+    """Format a churn % the way Tableau's crosstab does: percentage to
+    `decimals` places, round-half-up, trailing '%'. None when denom is 0."""
+    from decimal import Decimal, ROUND_HALF_UP
+    if not denom:
+        return None
+    pct = (Decimal(str(num)) / Decimal(str(denom))) * Decimal(100)
+    q = pct.quantize(Decimal("1." + "0" * decimals) if decimals else Decimal("1"),
+                     rounding=ROUND_HALF_UP)
+    return f"{q}%"
+
+
+def _team_col(header) -> int:
+    """Index of the `Captain's Bonus Teams` column. Matched by PREFIX because
+    the header carries a 'v2' suffix on some views and none on others."""
+    return next(i for i, h in enumerate(header)
+                if h.startswith("Captain's Bonus Teams"))
+
+
+def parse_wireless_team(csv_path: Path, team_value: Optional[str] = None) -> dict:
+    """Pivot the ORG-WIDE wireless crosstab, keeping only `team_value`'s rows.
+
+    Same output shape as parse() so the shared fill helpers consume it unchanged.
+
+    Two differences from the per-captain New Internet pulls:
+      * The rows are sliced HERE (on the `Captain's Bonus Teams` column) instead
+        of server-side by a saved view.
+      * Tableau's own 'Grand Total' row is ORG-WIDE, so it is dropped and the
+        Captainship Avg is RECOMPUTED from the sliced owners:
+        num/denom = column sums, pct = num/denom in Tableau's format. Keeping
+        Tableau's Grand Total would print the whole company's wireless churn on
+        every captain's tab.
+
+    team_value=None keeps every team (used for the moved-owner backfill, which
+    looks a rep up by name regardless of which captainship she sits on now).
+    """
+    import csv as _csv
+    with open(csv_path, "r", encoding="utf-16-le") as f:
+        rows = list(_csv.reader(f, delimiter="\t"))
+    if not rows:
+        return {"office_total": {}, "reps": {}}
+
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    rep_i = header.index("ICD Owner Name (rep)")
+    team_i = _team_col(header)
+    color_col = next((c for c in header if c.startswith("30-60 Color Churn")), None)
+    if color_col is None:
+        raise ValueError(f"No '30-60 Color Churn ...' column found in {header}.")
+    color_i = header.index(color_col)
+    metric_i = header.index("0-30 Day Churn") - 1
+    period_cols = {p: header.index(f"{p} Day Churn") for p in PERIODS}
+
+    reps: dict = {}
+    matched_rows = 0
+
+    for r in rows[1:]:
+        if len(r) <= max(period_cols.values()):
+            continue
+        raw_name = r[rep_i].strip()
+        if raw_name == "Grand Total":
+            continue                       # org-wide total — recomputed below
+        team = r[team_i].strip() if len(r) > team_i else ""
+        if team_value is not None and team != team_value:
+            continue
+        matched_rows += 1
+        color = r[color_i].strip()
+        metric = r[metric_i].strip()
+        display_name = _shared._smart_title(raw_name)
+
+        for period, col_i in period_cols.items():
+            cell = r[col_i].strip()
+            if not cell:
+                continue
+            slot = reps.setdefault(display_name, {}).setdefault(period, {})
+            if color and color != "Total":
+                slot.setdefault("color", color)
+            # ACCUMULATE, never overwrite. One owner can appear under two
+            # `Captain's Bonus Teams` values when his reps span captainships
+            # (William Sassenberg sits on both Pat's and Starr's teams,
+            # 2026-07-28). Within one team the color dimension also splits an
+            # owner across rows, but each period lands in exactly one color row,
+            # so a per-team slice never collides — only the all-teams parse
+            # does, and overwriting there silently dropped his units.
+            if metric == "Churn Rate (Unit vs Order)":
+                if "pct" in slot:
+                    slot["_multi"] = True   # two source rows → recompute below
+                else:
+                    slot["pct"] = cell
+            elif metric == "Disconnect count (SPE/SP)":
+                slot["num"] = (slot.get("num") or 0) + _ni_shared._to_num(cell)
+            elif metric == "Activated SPE/SP":
+                slot["denom"] = (slot.get("denom") or 0) + _ni_shared._to_num(cell)
+            # Calculation1 (1) is a tableau normalizer — skip.
+
+    # Any period fed by more than one source row needs its % recomputed from the
+    # summed units; Tableau's per-row % only covers that row's slice.
+    for periods_data in reps.values():
+        for slot in periods_data.values():
+            if slot.pop("_multi", False):
+                recomputed = _fmt_pct(slot.get("num") or 0, slot.get("denom") or 0)
+                if recomputed is not None:
+                    slot["pct"] = recomputed
+
+    if team_value is not None and not matched_rows:
+        # A silent empty slice is the dangerous failure here: the fill would run
+        # clean and write nothing. Almost always the team was renamed in SFDC
+        # (e.g. "Wayne's Team" -> "Wayne's Team v2"), which FIBER_WIRELESS_TEAM
+        # must then follow.
+        raise ValueError(
+            f"No rows for Captain's Bonus Teams == {team_value!r} in "
+            f"{csv_path.name}. Teams present: "
+            f"{sorted({(r[team_i] or '').strip() for r in rows[1:] if len(r) > team_i})}"
+        )
+
+    return {"office_total": _recompute_office_total(reps), "reps": reps}
+
+
+def _recompute_office_total(reps: dict) -> dict:
+    """Captainship Avg per period from the sliced owner rows: num/denom are
+    column sums, pct is the Tableau-formatted ratio. Only emits a period some
+    owner actually reports."""
+    total: dict = {}
+    for p in PERIODS:
+        present = [d[p] for d in reps.values() if p in d]
+        if not present:
+            continue
+        num = sum(c.get("num") or 0 for c in present)
+        denom = sum(c.get("denom") or 0 for c in present)
+        pct = _fmt_pct(num, denom)
+        if pct is None:
+            continue
+        total[p] = {"num": num, "denom": denom, "pct": pct}
+    return total
+
+
+def make_wireless_parser(slug: str):
+    """A parse_fn bound to one captainship's team value, for run.REPORTS."""
+    team_value = FIBER_WIRELESS_TEAM[slug]
+
+    def _parse(csv_path: Path) -> dict:
+        return parse_wireless_team(csv_path, team_value)
+
+    _parse.__name__ = f"parse_wireless_{slug}"
+    _parse.is_wireless = True          # read by run._program_of
+    return _parse
+
+
+def parse_wireless_allteams(csv_path: Path) -> dict:
+    """Every team's wireless rows — the moved-owner backfill source."""
+    return parse_wireless_team(csv_path, None)
+
+
 def fetch_fiber_wayne(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_wayne.csv"
@@ -430,4 +644,9 @@ ALLTEAMS_CHURN_SOURCE = {
     "b2b": (B2B_ALLTEAM_URL, WORKSHEET, parse_b2b),
     "fiber": (FIBER_ALLTEAM_URL, WORKSHEET, parse),      # wired 2026-07-23 (Blue Mendoza absent from Starr's saved view)
     "nds": (NDS_ALLTEAM_URL, NDS_WORKSHEET, parse_nds),   # wired 2026-07-23 (Jimmy Bonilla moved teams)
+    # Fiber wireless already pulls org-wide and slices per team, so a rep who
+    # moved captainships IS in the file — just under a different team value.
+    # Re-reading it with no team filter finds her by name (2026-07-28).
+    "fiber_wireless": (FIBER_WIRELESS_ORG_URL, WIRELESS_WORKSHEET,
+                       parse_wireless_allteams),
 }

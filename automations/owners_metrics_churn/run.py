@@ -16,6 +16,14 @@ when megan sends those URLs.
   python -m automations.owners_metrics_churn.run --skip-download
   python -m automations.owners_metrics_churn.run --only wayne
   python -m automations.owners_metrics_churn.run --only wayne,starr
+  python -m automations.owners_metrics_churn.run --only wireless
+
+Fiber WIRELESS (added 2026-07-28): the same five fiber captains also get their
+WIRELESS churn on 'Wireless Churn - <captain> (ATT Fiber)' tabs in the same
+workbook. Tableau has no per-captain wireless custom views, so all five share
+ONE org-wide pull (AUTOMATION-WirelessChurn, Churn View = Wireless Churn View)
+that is sliced per captainship in Python on the `Captain's Bonus Teams` column,
+with the Captainship Avg recomputed from the sliced owners.
 """
 from __future__ import annotations
 
@@ -98,6 +106,31 @@ REPORTS = [
     ("sahil", "Sahil Multani (ATT Fiber)",
      pull.fetch_fiber_sahil, fill.open_ws_fiber_sahil,
      "owners_fiber_sahil.csv", pull.parse, pull.PERIODS),
+    # ----- ATT Fiber WIRELESS (2026-07-28) -----
+    # Same five captains, their 'Wireless Churn - … (ATT Fiber)' tabs. All five
+    # share ONE org-wide pull (fetch_fiber_wireless_org caches per process) and
+    # are sliced apart in Python by the Captain's Bonus Teams column, because
+    # Tableau has no per-captain WIRELESS custom views.
+    ("wayne-wl", "Wayne (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_wayne,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("wayne"),
+     pull.PERIODS),
+    ("starr-wl", "Starr Rodenhurst (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_starr,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("starr"),
+     pull.PERIODS),
+    ("chan-wl", "Chan Park (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_chan,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("chan"),
+     pull.PERIODS),
+    ("tony-wl", "Tony Chavez (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_tony,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("tony"),
+     pull.PERIODS),
+    ("sahil-wl", "Sahil Multani (ATT Fiber) — Wireless",
+     pull.fetch_fiber_wireless_org, fill.open_ws_wl_sahil,
+     "owners_fiber_wireless_org.csv", pull.make_wireless_parser("sahil"),
+     pull.PERIODS),
     # ----- B2B (Phase 2) -----
     ("carlos", "Carlos Hidalgo (B2B)",
      pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,
@@ -143,6 +176,13 @@ def _program_of(parse_fn) -> str:
         return "b2b"
     if parse_fn is pull.parse_nds:
         return "nds"
+    if getattr(parse_fn, "is_wireless", False):
+        # Fiber WIRELESS parsers are per-captain closures, not a single shared
+        # function, so they carry a flag instead of being compared by identity.
+        # They must NOT fall through to "fiber": that would backfill a dark
+        # wireless rep from the NEW INTERNET all-teams view and print her NI
+        # churn on a wireless tab.
+        return "fiber_wireless"
     return "fiber"
 
 
@@ -314,10 +354,26 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     return went_dark
 
 
+# Shorthand groups for --only, so nobody has to type five slugs.
+# ("7-year-old-simple": one obvious word per set of tabs.)
+ONLY_GROUPS = {
+    "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
+    "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
+    "b2b":      ["carlos", "eveliz", "luis"],
+    "nds":      ["khalil", "colten", "jairo"],
+}
+
+
 def _parse_only(arg: str | None) -> set[str] | None:
     if not arg:
         return None
-    return {s.strip().lower() for s in arg.split(",") if s.strip()}
+    out: set[str] = set()
+    for s in arg.split(","):
+        s = s.strip().lower()
+        if not s:
+            continue
+        out.update(ONLY_GROUPS.get(s, [s]))
+    return out or None
 
 
 def main(argv=None) -> int:
@@ -333,8 +389,11 @@ def main(argv=None) -> int:
                          "label is already present.")
     ap.add_argument("--only", default=None,
                     help="Comma-separated slugs to run. Fiber: wayne, "
-                         "starr, chan, tony, sahil. B2B: carlos, eveliz. "
-                         "NDS: khalil, colten, jairo. Defaults to all.")
+                         "starr, chan, tony, sahil. Fiber wireless: "
+                         "wayne-wl, starr-wl, chan-wl, tony-wl, sahil-wl. "
+                         "B2B: carlos, eveliz, luis. NDS: khalil, colten, "
+                         "jairo. Group shorthands: fiber, wireless, b2b, nds. "
+                         "Defaults to all.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()

@@ -45,6 +45,40 @@ def open_ws_fiber_sahil():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_SAHIL)
 
 
+# ----- Fiber WIRELESS tabs (2026-07-28) ------------------------------
+# Same captains, same workbook, second set of tabs. Structurally identical to
+# the New Internet fiber tabs except (a) the section headers read
+# 'WIRELESS CHURN … DAYS' and (b) there is no CHURN TIERS reference block at
+# the top, so the first section starts at row 2 instead of row 8 —
+# find_sections handles both (it matches on 'CHURN' + 'DAY', never on a row
+# number) and insert_two_cols_at_b auto-detects the preserved top rows.
+TAB_WL_WAYNE = "Wireless Churn - Wayne (ATT Fiber)"
+TAB_WL_STARR = "Wireless Churn - Starr Rodenhurst (ATT Fiber)"
+TAB_WL_CHAN  = "Wireless Churn - Chan Park (ATT Fiber)"
+TAB_WL_TONY  = "Wireless Churn - Tony Chavez (ATT Fiber)"
+TAB_WL_SAHIL = "Wireless Churn - Sahil Multani (ATT Fiber)"
+
+
+def open_ws_wl_wayne():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_WAYNE)
+
+
+def open_ws_wl_starr():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_STARR)
+
+
+def open_ws_wl_chan():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_CHAN)
+
+
+def open_ws_wl_tony():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_TONY)
+
+
+def open_ws_wl_sahil():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_WL_SAHIL)
+
+
 # ----- B2B tabs (Phase 2) --------------------------------------------
 TAB_B2B_CARLOS = "Churn - Carlos Hidalgo (B2B)"
 TAB_B2B_EVELIZ = "Churn - Eveliz Wright (B2B)"
