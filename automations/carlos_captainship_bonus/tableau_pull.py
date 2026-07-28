@@ -177,5 +177,20 @@ def pull_carlos(today: dt.date, scratch_dir: Optional[Path] = None,
     return _pull(today, scratch_dir or CACHE_DIR, verbose, use_cache=False)
 
 
+def probe_ready(today: dt.date, scratch_dir: Optional[Path] = None,
+                verbose: bool = False) -> tuple[int, int]:
+    """LIGHT readiness pull for the 4am orchestrator (Lucy 2): download ONLY the
+    week-filtered **CB-Owner Sales** crosstab and return (grand_total, n_reps).
+    A 0-activation week still lists reps, so grand_total > 0 is the real signal
+    that the just-ended week's activations are in the extract. One small
+    crosstab; used by readiness._probe_captainship_bonus (fail-open at 10am)."""
+    scratch = scratch_dir or CACHE_DIR
+    scratch.mkdir(parents=True, exist_ok=True)
+    out = scratch / "cb_owner_sales_probe.csv"
+    download_crosstab_patchright(_act_url(today), "CB-Owner Sales", out, verbose=verbose)
+    reps = parse_activations(out)
+    return sum(reps.values()), len(reps)
+
+
 def parse_cached(scratch_dir: Optional[Path] = None) -> CarlosPull:
     return _pull(dt.date.today(), scratch_dir or CACHE_DIR, False, use_cache=True)

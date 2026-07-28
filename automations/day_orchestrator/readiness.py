@@ -207,7 +207,51 @@ class ReadinessCache:
         if ptype == "att_orderlog":
             return self._probe_att_orderlog(source_id, probe)
 
+        if ptype == "captainship_bonus":
+            return self._probe_captainship_bonus(source_id, probe)
+
         return Readiness(False, f"unknown probe type {ptype!r}")
+
+    def _probe_captainship_bonus(self, source_id: str, probe: dict) -> Readiness:
+        """Is the just-ended week's CaptainsBonus / Captain Team activation data
+        in the Tableau extract yet? These weekly per-rep crosstabs have NO per-day
+        date column (already week-filtered), and a 0-activation week still LISTS
+        every roster rep — so the real 'week is populated' signal is the Grand
+        Total activations > 0. Pull the light activations crosstab (the report's
+        own `probe_ready`) and gate on that.
+
+        FAIL-OPEN at `fallback_hhmm` (default 10:00 — the old send time): past it,
+        or on an import/pull error, RUN ANYWAY so a bonus report is never later
+        than it used to be. The report's own zero-rep abort is the final net.
+        `team` selects raf (Lucy 1) vs carlos (Lucy 2)."""
+        team = str(probe.get("team", "raf")).lower()
+        fallback = str(probe.get("fallback_hhmm", "10:00"))
+        try:
+            fb_h, fb_m = (int(x) for x in fallback.split(":"))
+            now = dt.datetime.now()
+            if (now.hour, now.minute) >= (fb_h, fb_m):
+                return Readiness(True, f"past {fallback} fallback — running "
+                                       "(bonus never held past its old send time)")
+        except Exception:  # noqa: BLE001 — a bad fallback string must not break the gate
+            pass
+        try:
+            if team == "carlos":
+                from automations.carlos_captainship_bonus import tableau_pull as _tp
+            else:
+                from automations.raf_captainship_bonus import tableau_pull as _tp
+        except Exception as e:  # noqa: BLE001 — code problem, not data: fail-open
+            return Readiness(True, f"{team} bonus probe import failed ({e}) — running")
+        try:
+            grand, nreps = _tp.probe_ready(self.target_date)
+        except Exception as e:  # noqa: BLE001 — not pullable yet: re-probe (floor backstops)
+            line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+            return Readiness(False, f"{team} CaptainsBonus not pullable yet ({line})")
+        min_grand = int(probe.get("min_grand", 1))
+        if grand >= min_grand:
+            return Readiness(True, f"{team} week populated (grand activations "
+                                   f"{grand}, {nreps} reps)")
+        return Readiness(False, f"{team} week not in yet (grand activations {grand} "
+                                f"< {min_grand}, {nreps} reps) — extract not refreshed")
 
     def _probe_att_orderlog(self, source_id: str, probe: dict) -> Readiness:
         """Is Carlos's ATT B2B ORDERLOG extract in for the target day? Fetches a

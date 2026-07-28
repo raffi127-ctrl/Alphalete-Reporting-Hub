@@ -95,6 +95,24 @@ def pull_raf(today: dt.date, scratch_dir: Optional[Path] = None,
     return RafPull(reps=reps, grand_total=grand, churn=churn, rolling=rolling)
 
 
+def probe_ready(today: dt.date, scratch_dir: Optional[Path] = None,
+                verbose: bool = False) -> tuple[int, int]:
+    """LIGHT readiness pull for the 4am orchestrator: download ONLY the
+    week-filtered **CB Activations (Raf)** crosstab and return
+    (grand_total, n_reps). CB Activations lists every roster rep even in a
+    0-activation week, so n_reps alone can't tell a populated week from an
+    unrefreshed one — grand_total > 0 is the real signal that the just-ended
+    week's activations are in the extract. Downloads one small crosstab; used by
+    readiness._probe_captainship_bonus (fail-open at its 10am floor)."""
+    scratch = scratch_dir or CACHE_DIR
+    scratch.mkdir(parents=True, exist_ok=True)
+    url = P.build_cb_url(today)
+    act = scratch / "cb_act_raf_probe.csv"
+    download_crosstab_patchright(url, "CB Activations (Raf)", act, verbose=verbose)
+    reps, grand = parse_activations(act)
+    return grand, len(reps)
+
+
 def parse_cached(scratch_dir: Optional[Path] = None) -> RafPull:
     """Reuse already-downloaded CSVs (no live pull) — for --skip-download."""
     scratch = scratch_dir or CACHE_DIR

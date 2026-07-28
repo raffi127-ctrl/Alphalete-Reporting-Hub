@@ -92,6 +92,26 @@
         "min_rows": 5,
         "fallback_hhmm": "08:00"
       }
+    },
+    "tableau:captainship_bonus_raf": {
+      "label": "Raf CaptainsBonus activations (weekly per-rep, no date col)",
+      "_note": "Readiness for the Tuesday Raf Captainship Bonus 4am move (Megan 2026-07-28). The CaptainsBonus crosstab is week-filtered per rep with NO date column, and a 0-activation week still lists every roster rep, so 'week populated' = Grand Total activations > 0. type captainship_bonus -> readiness._probe_captainship_bonus, which calls raf_captainship_bonus.tableau_pull.probe_ready (one light patchright crosstab). fallback_hhmm 10:00 = the old send time: past then it RUNS ANYWAY, and the report's own zero-rep abort is the final net.",
+      "probe": {
+        "type": "captainship_bonus",
+        "team": "raf",
+        "min_grand": 1,
+        "fallback_hhmm": "10:00"
+      }
+    },
+    "tableau:captainship_bonus_carlos": {
+      "label": "Carlos Captain Team activations (weekly per-rep, no date col)",
+      "_note": "Readiness for the Tuesday Carlos B2B Captainship Bonus 4am move on Lucy 2. Same shape as the Raf probe: Grand Total activations > 0 = the just-ended week is in the extract. type captainship_bonus, team carlos -> readiness._probe_captainship_bonus -> carlos_captainship_bonus.tableau_pull.probe_ready. fallback_hhmm 10:00 floor.",
+      "probe": {
+        "type": "captainship_bonus",
+        "team": "carlos",
+        "min_grand": 1,
+        "fallback_hhmm": "10:00"
+      }
     }
   },
   "reports": {
@@ -1353,7 +1373,7 @@
     "captainship_cancel_rate": {
       "order": 13.5,
       "on_scheduler": true,
-      "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) — same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. Writes the LIVE workbook — no flag needed (Eve 2026-07-28: these tabs were built from scratch for this report, so there is nothing to protect). --sandbox is the opt-in for a practice run.",
+      "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) \u2014 same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. Writes the LIVE workbook \u2014 no flag needed (Eve 2026-07-28: these tabs were built from scratch for this report, so there is nothing to protect). --sandbox is the opt-in for a practice run.",
       "display_name": "Captainship - Cancel Rate (ATT Fiber)",
       "source_type": "tableau",
       "data_sources": [
@@ -1418,7 +1438,7 @@
     "captainship_activation_rate": {
       "order": 15.1,
       "on_scheduler": true,
-      "_note": "Eve 2026-07-28: fills the two activation boxes on each fiber captain's 'Activation Rate - <captain> (ATT Fiber)' tab in the Captainship Metrics Report workbook. ORDER 15.1 puts it directly after the other per-captain metrics (captainship_activations 12, captainship_churn 13, owners_metrics_churn 15) and before int_wow_penetration (15.5). ONE Metrics crosstab feeds all five captains — it is grouped by Captain's Bonus Teams, so the run downloads once and slices per captainship in Python; there are no per-captain views in this workbook. data_sources is [] on purpose: the Metrics workbook has no readiness probe mapped, and both metrics are ROLLING windows (Rolling 4 Weeks / 30-60 day activation rate) rather than 'today's data', so the tableau warm-session gate is the only gate that applies. Sheet-only, no Slack.",
+      "_note": "Eve 2026-07-28: fills the two activation boxes on each fiber captain's 'Activation Rate - <captain> (ATT Fiber)' tab in the Captainship Metrics Report workbook. ORDER 15.1 puts it directly after the other per-captain metrics (captainship_activations 12, captainship_churn 13, owners_metrics_churn 15) and before int_wow_penetration (15.5). ONE Metrics crosstab feeds all five captains \u2014 it is grouped by Captain's Bonus Teams, so the run downloads once and slices per captainship in Python; there are no per-captain views in this workbook. data_sources is [] on purpose: the Metrics workbook has no readiness probe mapped, and both metrics are ROLLING windows (Rolling 4 Weeks / 30-60 day activation rate) rather than 'today's data', so the tableau warm-session gate is the only gate that applies. Sheet-only, no Slack.",
       "display_name": "Captainship Activation Rate (per-captain)",
       "source_type": "tableau",
       "data_sources": [],
@@ -2142,11 +2162,36 @@
       "_note": "Carlos B2B Captainship Bonus \u2014 Maud's weekly Tuesday fill of the 'Carlos B2B Captainship' tab in *All In One - CARLOS* (each active rep's Total Activations for Carlos' B2B team + team 0-30 churn %, Carlos' personal 0-30 churn %, 31-60 activation %, non-payment %, from Tableau ATTTRACKER-B2B / Captain Team; Money Made recomputes, chart re-points, PDF to Downloads). cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it \u2014 its real schedule is the Tuesday 10am launchd job (com.alphalete.carlos-captainship-bonus-tue, installed via install_carlos_captainship_bonus_agent) on Lucy 2. This handle exists so `lucy rerun carlos_captainship_bonus --dry-run` (safe probe) and `lucy rerun carlos_captainship_bonus` (LIVE fill) work, and matches the Hub card's Dry Run / Run Live buttons. source_type 'tableau' so rerun runs the chrome-guard + readiness gate. Runs off Lucy 2's warm Tableau session.",
       "display_name": "Carlos B2B Captainship Bonus",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:captainship_bonus_carlos"
+      ],
       "command": [
         "automations.carlos_captainship_bonus.run"
       ],
       "base_args": [],
+      "cadence": {
+        "weekdays": [
+          1
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
+    },
+    "disable_carlos_captainship_bonus_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",
+      "display_name": "Retire: Carlos Captainship Bonus 10am LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "carlos-captainship-bonus-tue"
+      ],
       "cadence": {
         "weekdays": []
       },
@@ -2154,7 +2199,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 5,
+      "machine": "Lucy 2"
     },
     "install_carlos_captainship_bonus_agent": {
       "on_scheduler": true,
@@ -2182,11 +2228,36 @@
       "_note": "Raf Captainship Bonus \u2014 Maud's weekly Tuesday fill of the 'Captainship Bonuses' tab in the *Alphalete Org/Captainship Reports* sheet (each active rep's Total Activations for Raf's team from Tableau CaptainsBonus, current cycle + team New Internet 60-day churn % and Activation % rolling 4 weeks; Total Sales / Money Made / TOTAL MONEY MADE recompute, chart re-points, PDF DM'd to Raf, Dylan + Maud on Slack as Lucy \u2014 nothing saved to Downloads). No 'machine' key = Lucy 1 (the mini). cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it \u2014 its real schedule is the Tuesday 10:00am launchd job (com.alphalete.raf-captainship-bonus-tue, installed via install_raf_captainship_bonus_agent) on Lucy 1. This handle exists so `lucy rerun raf_captainship_bonus --dry-run` (safe probe) and `lucy rerun raf_captainship_bonus` (LIVE fill) work, and matches the Hub card's run buttons. source_type 'tableau' so rerun runs the chrome-guard + readiness gate. Runs off the mini's warm Tableau session.",
       "display_name": "Raf Captainship Bonus",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:captainship_bonus_raf"
+      ],
       "command": [
         "automations.raf_captainship_bonus.run"
       ],
       "base_args": [],
+      "cadence": {
+        "weekdays": [
+          1
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
+    },
+    "disable_raf_captainship_bonus_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Raf Captainship Bonus runs in the Lucy 1 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_raf, 10am fail-open floor). `lucy rerun disable_raf_captainship_bonus_agent --machine \"Lucy 1\"` boots out + stashes com.alphalete.raf-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_raf_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",
+      "display_name": "Retire: Raf Captainship Bonus 10am LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "raf-captainship-bonus-tue"
+      ],
       "cadence": {
         "weekdays": []
       },
@@ -2194,7 +2265,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 5,
+      "machine": "Lucy 1"
     },
     "install_raf_captainship_bonus_agent": {
       "on_scheduler": true,

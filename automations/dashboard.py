@@ -2278,15 +2278,13 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=450789281#gid=450789281"),
         "assignees": ["Lucy 1"],
-        # Self-running weekly launchd job on Lucy 1 (Tue 10am CST), not the 4am
-        # batch — show the run time on the tile and keep it out of the
-        # "due today / not completed" tallies.
-        "self_scheduled": True,
+        # Runs in Lucy 1's Tuesday 4am orchestrator flow, readiness-gated on the
+        # CaptainsBonus week (grand activations > 0) with a 10am fail-open floor
+        # so it's never later than its old send time (Megan 2026-07-28).
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            # No "CST" here — the tile appends it (this read "10:00 AM CST CST").
-            "time": "10:00 AM",
+            "time": "4 AM flow (out by 10am)",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -2398,14 +2396,13 @@ AUTOMATED_REPORTS = [
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"
                       "?gid=310459982#gid=310459982"),
         "assignees": ["Lucy 2"],
-        # Self-running weekly launchd job on Lucy 2 (Tue 10am), not the 4am
-        # batch — show the run time on the tile and keep it out of the
-        # "due today / not completed" tallies.
-        "self_scheduled": True,
+        # Runs in Lucy 2's Tuesday 4am orchestrator flow, readiness-gated on the
+        # Captain Team week (grand activations > 0) with a 10am fail-open floor
+        # so it's never later than its old send time (Megan 2026-07-28).
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            "time": "10:00 AM",
+            "time": "4 AM flow (out by 10am)",
             "estimated_minutes": 5,
         },
         "checklist": [],
