@@ -739,18 +739,23 @@ def _walk_to_and_remove(page, first, last, max_hops: int = 80) -> str:
     (Duplicate reason). Used to finish a re-texted applicant when we're not already
     sitting on their record. Returns 'removed' / 'not_found' / 'left'."""
     seen: set = set()
-    for _ in range(max_hops):
+    hops = 0
+    for hops in range(max_hops):
         a = read_current_applicant(page)
         who = f"{a.first_name} {a.last_name}".strip().lower()
+        _log(f"    [remove-one] hop {hops}: {a.first_name!r} {a.last_name!r}")
         if _name_matches(a, first, last):
             _log(f"    [remove-one] found {a.first_name} {a.last_name} — removing")
             return "removed" if _perform_remove(page) else "left"
         key = f"{a.email}|{who}"
-        if key in seen and not advance_to_next(page):
+        if key in seen:
+            _log(f"    [remove-one] re-seen {who!r} — treating as end of queue")
             break
         seen.add(key)
         if not advance_to_next(page):
+            _log("    [remove-one] no next control — end of queue")
             break
+    _log(f"    [remove-one] not found after {hops + 1} hops")
     return "not_found"
 
 
