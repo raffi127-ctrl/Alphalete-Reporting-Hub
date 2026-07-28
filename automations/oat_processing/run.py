@@ -602,17 +602,21 @@ def _open_sms_panel(page) -> bool:
     """Click the always-on 'SMS' button (top-right). Its text is 'SMS' + an unread
     badge number ('SMS\\n13'), so match the anchor whose text is 'SMS' once digits
     are stripped — excludes 'SMS/Email', 'SMS Templates', 'SMS List Report'."""
-    for xp in ("xpath=//a[normalize-space(translate(.,'0123456789',''))='SMS']",
-               "xpath=//span[normalize-space(translate(.,'0123456789',''))='SMS']/ancestor::a[1]",
-               "xpath=//*[@role='button'][normalize-space(translate(.,'0123456789',''))='SMS']"):
+    _excl = ("not(contains(.,'/')) and not(contains(.,'List')) and "
+             "not(contains(.,'Templates')) and not(contains(.,'Report')) and "
+             "not(contains(.,'Email'))")
+    for xp in (f"xpath=//a[starts-with(normalize-space(.),'SMS') and {_excl}]",
+               f"xpath=//span[starts-with(normalize-space(.),'SMS') and {_excl}]/ancestor::a[1]",
+               f"xpath=//*[@role='button'][starts-with(normalize-space(.),'SMS') and {_excl}]"):
         try:
             loc = page.locator(xp).first
             if loc.count() > 0:
                 loc.click(timeout=6000, no_wait_after=True)
-                _log(f"[sms] opened SMS panel via {xp}")
+                _log(f"[sms] opened SMS panel via {xp[:55]}")
                 page.wait_for_timeout(4000)
                 return True
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            _log(f"[sms] click attempt failed: {type(e).__name__}")
             continue
     return False
 
