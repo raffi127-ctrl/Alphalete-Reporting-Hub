@@ -5080,10 +5080,10 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "vantura_churn",
         # Self-running daily launchd job: it doesn't report a per-day
         # completion to the Hub, so keep it out of "due today" tallies.
-        "self_scheduled": True,
+        "self_scheduled": False,
         "schedule": {
             "frequency": "daily",
-            "time": "7:00 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
         "checklist": [],
