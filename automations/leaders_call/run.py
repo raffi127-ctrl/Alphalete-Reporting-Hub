@@ -332,6 +332,7 @@ def parse_rows(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     rows = rows[h:]
     keep_owners = {_owner_key(o) for o in camp.owners}
     out = []
+    numeric_reps = 0                 # a NUMBER where a rep NAME belongs — see guard below
     for r in rows[1:]:
         rep = (r[ri] if ri < len(r) else "").strip()
         owner = (r[oi] if oi is not None and oi < len(r) else "").strip()
@@ -343,7 +344,20 @@ def parse_rows(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
             continue
         if keep_owners and _owner_key(owner) not in keep_owners:
             continue
+        if re.fullmatch(r"[\d.,]+", rep):     # "25", "12", "3.0" — never a real name
+            numeric_reps += 1
+            continue
         out.append((rep, owner, val))
+    # GUARD (2026-07-27): the B2B break was SILENT — the Tableau view dropped its
+    # per-rep 'Rep' column, so 'rep' resolved to a numeric COUNT and the deck posted
+    # rep counts as names. If every qualifying row's rep is a number, the source
+    # shape changed: raise so _pull_parse flags it (PullFailure → visible sheet
+    # marker + corrections alert) instead of silently writing garbage.
+    if numeric_reps and not out:
+        raise RuntimeError(
+            f"{camp.key}: the 'rep' column resolved to NUMBERS ({numeric_reps} numeric "
+            f"'names') — the Tableau view likely lost its per-rep 'Rep' column and "
+            f"collapsed to owner-level. Not writing rep counts as names; fix the view.")
     out.sort(key=lambda t: t[2], reverse=True)
     return out
 
