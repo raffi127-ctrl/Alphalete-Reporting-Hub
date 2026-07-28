@@ -292,6 +292,7 @@ def set_current_week_dates(ws, monday: "dt.date") -> int:
               "(Weekend hours excluded from averages)")
     row1 = ws.get("A1:CR1")[0]
     updates = []
+    banner_written = False
     for c, v in enumerate(row1, 1):
         s = str(v).strip()
         if not s:
@@ -302,6 +303,24 @@ def set_current_week_dates(ws, monday: "dt.date") -> int:
                             "values": [[f"{m.group(1)} {md(by_wd[m.group(1)])}"]]})
         elif "Weekly Total" in s:
             updates.append({"range": rowcol_to_a1(1, c), "values": [[banner]]})
+            banner_written = True
+    # SEED a blank banner: some tabs have an empty banner cell (the merged
+    # dark-blue bar with no text). The rewrite loop above only touches cells
+    # that already hold "Weekly Total", so a blank banner never gets filled —
+    # and because set_frozen_week_dates locates the frozen banner column via
+    # row-1's "Weekly Total" text, a blank C1 leaves BOTH banners blank every
+    # rollover (Lamar Mitchell / Sam Park, Megan 2026-07-27). Derive the banner
+    # column from row 1's leftmost merge (the banner spans C:L, ahead of the
+    # single-cell day headers) and seed it — no hardcoded column.
+    if not banner_written:
+        merges = ws.spreadsheet.fetch_sheet_metadata(
+            {"ranges": [f"{ws.title}!A1:CR1"], "fields": "sheets.merges"}
+        )["sheets"][0].get("merges", [])
+        r1 = [m for m in merges if m.get("startRowIndex") == 0
+              and m.get("endColumnIndex", 0) - m.get("startColumnIndex", 0) > 1]
+        if r1:
+            bcol = min(r1, key=lambda m: m["startColumnIndex"])["startColumnIndex"] + 1
+            updates.append({"range": rowcol_to_a1(1, bcol), "values": [[banner]]})
     if updates:
         ws.batch_update(updates, value_input_option="USER_ENTERED")
     return len(updates)
