@@ -905,6 +905,41 @@ def probe_sms(page) -> None:
         except Exception as e:  # noqa: BLE001
             _log(f"SMS FRAME {i} err: {type(e).__name__}")
 
+    # The name= fields (sms_name_filter/sms_date_filter) turned out to be HIDDEN
+    # backing fields (page.fill timed out on them). Dump the VISIBLE widget
+    # controls (what a user actually types into) so we target those instead.
+    try:
+        vis = page.evaluate(
+            r"""() => {
+                const seen = e => { const r = e.getBoundingClientRect();
+                    return e.offsetParent !== null && r.width > 2 && r.height > 2; };
+                const lbl = e => {
+                    let p = e.previousElementSibling;
+                    let t = (p && (p.innerText||'').trim()) || '';
+                    if (!t && e.closest('label')) t = e.closest('label').innerText||'';
+                    return t.replace(/\s+/g,' ').slice(0, 18);
+                };
+                const inps = [...document.querySelectorAll('input')].filter(seen)
+                    .filter(e => !/hidden/.test(e.type))
+                    .map(e => `${e.type}|${e.name||e.id||'?'}|ph:${(e.placeholder||'').slice(0,14)}|L:${lbl(e)}`)
+                    .slice(0, 16);
+                const sels = [...document.querySelectorAll('select')].filter(seen)
+                    .map(e => `${e.name||e.id||'?'}|L:${lbl(e)}|opts:${[...e.options].map(o=>(o.text||'').trim()).slice(0,7).join(',')}`)
+                    .slice(0, 8);
+                const tas = [...document.querySelectorAll('textarea')].filter(seen)
+                    .map(e => `${e.name||e.id||'?'}|ph:${(e.placeholder||'').slice(0,20)}`).slice(0, 6);
+                const btns = [...document.querySelectorAll('button,input[type=button],input[type=submit],a')]
+                    .filter(seen).map(e => `${(e.innerText||e.value||'').trim().slice(0,20)}#${e.id||''}`)
+                    .filter(t => t && t.length < 26).slice(0, 24);
+                return {inps, sels, tas, btns};
+            }""")
+        for tag, arr in (("VISW inp", vis.get("inps")), ("VISW sel", vis.get("sels")),
+                         ("VISW ta", vis.get("tas")), ("VISW btn", vis.get("btns"))):
+            for item in (arr or []):
+                _log(f"{tag} :: {item}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"VISW dump err: {type(e).__name__}")
+
 
 # --------------------------------------------------------------------------- #
 # Main
