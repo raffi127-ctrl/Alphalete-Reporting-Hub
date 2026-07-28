@@ -49,6 +49,8 @@ EXCLUDE      = {"Rafael Hidalgo"}
 ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Randy Amoa",
                 "Sebastian Guerrero": "SABASTIN GUERRERO",
 
+                "Chole Johnson": "Chloe Johnson",   # sales board WE 7.26 C4 typo; fixed at source 2026-07-28, kept as a guard
+
                 "Drew": "Andrew Sanborn", "D": "Deavion Allen", "Zoey": "Zoria Johnson",
                 "Al": "Algemar Kennel"}
 
@@ -97,12 +99,22 @@ def norm(name):
     n = "".join(c for c in n if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", n).strip()
 
+def akey(raw):
+    """Roster key for a raw sheet name: strip parentheticals/accents, then fold
+    known spelling variants through ALIAS (matched raw OR post-norm). Every
+    reader goes through this so one ALIAS row fixes a name everywhere."""
+    s = str(raw).strip()
+    if s in ALIAS:
+        return norm(ALIAS[s])
+    n = norm(s)
+    return norm(ALIAS.get(n, n))
+
 def resolve_roster(name, rized):
     """Match a name/nickname to a full roster key: exact (after ALIAS), else a
     unique first-name prefix (last-initial narrowed). None if ambiguous."""
     if not name:
         return None
-    n = norm(ALIAS.get(str(name).strip(), str(name).strip()))
+    n = akey(name)
     if not n:
         return None
     if n in rized:
@@ -216,7 +228,7 @@ def read_sales(sales_file):
             raw = r[2] if len(r) > 2 else None
             if not (isinstance(raw, str) and raw.strip()):
                 break
-            name = norm(raw); rec = sales[name]
+            name = akey(raw); rec = sales[name]
             for rc in rc_cols:
                 dt = rc_date.get(rc)
                 if dt is None or dt.month != COMP_MONTH or dt.year != COMP_YEAR:
@@ -292,7 +304,7 @@ def read_leadership(sales_file):
             raw = r[2] if len(r) > 2 else None
             if not (isinstance(raw, str) and raw.strip()):
                 break
-            name = norm(raw)
+            name = akey(raw)
             status = r[c_status] if c_status < len(r) else None
             trainer = r[c_train] if (c_train is not None and c_train < len(r)) else None
             best = r[c_best] if (c_best is not None and c_best < len(r)) else None
@@ -428,7 +440,7 @@ def build_board(sales_file, recruit_file):
             "adj_p": 0.0,
         }
     for rn, (acc, show) in recruit.items():
-        key = norm(ALIAS.get(rn, rn))
+        key = akey(rn)
         if key in EXCLUDE or key not in rized:
             continue
         rized[key]["acc"] += acc; rized[key]["show"] += show
@@ -810,7 +822,7 @@ SLACK_CHANNELS = [
 ]
 
 IMESSAGE_GROUP   = os.environ.get("TDB_IMESSAGE_GROUP", "Alphalete A-Team Chat🔥🔥")
-IMESSAGE_CHAT_ID = os.environ.get("TDB_IMESSAGE_CHAT_ID", "iMessage;+;chat72256665735645227")
+IMESSAGE_CHAT_ID = os.environ.get("TDB_IMESSAGE_CHAT_ID", "")  # iMessage OFF 2026-07-22 (Apple disabled it); empty default = send_imessage skips
 IMESSAGE_TO      = [x.strip() for x in os.environ.get("TDB_IMESSAGE_TO", "").split(",") if x.strip()]
 IMESSAGE_TEXT  = "🥩 TEXAS DE BRAZIL COMPETITION STANDINGS"
 
