@@ -68,13 +68,14 @@ if [ "$(date +%u)" = "1" ]; then
   ST=$?
   echo "[$(date)] MONDAY: sending board email" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
-  # Captainship Report drafts: the 4am orchestrator's cadence excludes Monday (its
-  # §1 reads this board, which is only complete now), so build them HERE — after
-  # the board fill — for full 7-day coverage. Live (creates the 12 Gmail drafts in
-  # alphaletereporting; nothing is sent). "$@" carries a --dry-run through for a
-  # no-write test, same as the board fill above.
-  echo "[$(date)] MONDAY: building Captainship Report drafts" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.captainship_drafts.run "$@" >> "$LOG_FILE" 2>&1
+  # Captainship Report drafts: REMOVED 2026-07-28 (Eve). This used to build them
+  # live here on Monday (creating 12 Gmail drafts), which was the last thing about
+  # the Captainship Reports that touched Gmail without a human asking. They are now
+  # MANUAL ONLY — the orchestrator entry is cadence.weekdays [] too. Trigger them
+  # yourself after the board looks right:
+  #   python -m automations.captainship_drafts.run --dry-run   # build + review
+  #   python -m automations.captainship_drafts.run --send-reviewed
+  echo "[$(date)] MONDAY: Captainship drafts NOT built (manual only)" >> "$LOG_FILE"
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1

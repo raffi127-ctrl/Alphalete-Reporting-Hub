@@ -1571,23 +1571,18 @@
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,
-      "_note": "Builds the 12 Captainship Report Gmail drafts (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. LIVE 2026-07-22 (cadence.weekdays [1-6]): auto-fires Tue-Sun after the board fill + churns + activations, creating the 12 drafts in alphaletereporting@gmail.com (base_args has no --dry-run). Prereqs met: Sales Board screenshot profile logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) + the Tableau §2 shots (Cancel Rates / Team Stats Breakout) wired. `lucy rerun captainship_drafts --dry-run` previews to output/*.eml/.html; without --dry-run it creates Gmail drafts (nothing is sent — a human reviews + sends).",
+      "_note": "MANUAL ONLY since 2026-07-28 (Eve): cadence.weekdays is [] so the 4am orchestrator NEVER auto-runs this — nothing about the Captainship Reports fires on its own any more. on_scheduler stays true ONLY so registry.load_config keeps the entry and `lucy rerun captainship_drafts` can still find it. Trigger the build by hand (`python -m automations.captainship_drafts.run --dry-run`, or the Hub card's step 1), then send by hand (`--send-reviewed`). To put it back on the clock, restore weekdays [1,2,3,4,5,6]. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS AND NEVER TOUCHES GMAIL: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review. Sending is a deliberate second step Eve triggers from the Hub card ('2. Send the reviewed reports' -> run --send-reviewed), which mails those exact files so a bad number on the Sales Board can still be caught before anything leaves. Changed 2026-07-27 from creating Gmail drafts: a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Prereqs: Sales Board screenshot profile logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) + the Tableau §2 shots (Cancel Rates / Team Stats Breakout) wired.",
       "display_name": "Captainship Report Drafts (12)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.captainship_drafts.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--dry-run"
+      ],
       "cadence": {
-        "weekdays": [
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
