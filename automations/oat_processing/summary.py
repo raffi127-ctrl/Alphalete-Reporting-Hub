@@ -271,6 +271,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="OAT daily scorecard → Slack")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
     ap.add_argument("--dry-run", action="store_true", help="build the PDF, don't post")
+    ap.add_argument("--emit", action="store_true",
+                    help="print per-applicant bucket lines to stdout (lets a remote "
+                         "caller rebuild the scorecard without pulling the PDF); no post")
     args = ap.parse_args(argv)
     date = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
 
@@ -280,6 +283,16 @@ def main(argv=None) -> int:
     print(f"[scorecard] {date} — {t['processed']} rows: sent={len(t['sent'])} "
           f"removed={len(t['removed'])} retext={len(t['retext'])} "
           f"nophone={len(t['nophone'])} blocked={len(t['blocked'])}", flush=True)
+    if args.emit:
+        # Tab-separated, one applicant per line, short + greppable via logtail.
+        for b in ("sent", "removed", "retext", "nophone", "blocked"):
+            for it in t[b]:
+                print("EMIT\t" + "\t".join([
+                    b, str(it.get("name", "")), str(it.get("source", "")),
+                    str(it.get("reason", "")), str(it.get("position", "")),
+                    str(it.get("via", ""))]), flush=True)
+        print(f"EMITMETA\tprocessed={t['processed']}\tlast_scan={last_scan}", flush=True)
+        return 0
     html_body = build_html(date, t, last_scan)
     os.makedirs("output", exist_ok=True)
     pdf = f"output/oat-daily-push-scorecard-{date.isoformat()}.pdf"
