@@ -1861,7 +1861,9 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "8:00 AM",
+            # Runs in the Monday 4am orchestrator flow (att_focus_raf), not at a
+            # fixed clock — show the batch label, not a set time (Megan 2026-07-28).
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 15,
         },
         # Fully unattended via patchright (rcaptain AppStream + ownerville
