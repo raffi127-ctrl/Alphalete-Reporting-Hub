@@ -11566,6 +11566,10 @@ else:  # st.session_state.view == "user"
             # no run-status reported back) → permanent orange OPS pill like the
             # other always-on cards. (Megan 2026-07-28)
             "[class*='interview-audit-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Due Diligence Bot (Jiraiya) — 24/7 Socket Mode service on Lucy 1,
+            # triggered by /dd (no scheduled run reports back) → permanent orange
+            # OPS pill like the other always-on cards. (Megan 2026-07-28)
+            "[class*='due-diligence-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Org. Sales Board Email is PAUSED (off the scheduler, handed to Eve) —
             # force its pill PURPLE so it reads at a glance as "not running / manual"
             # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
