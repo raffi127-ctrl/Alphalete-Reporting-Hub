@@ -3491,11 +3491,7 @@ AUTOMATED_REPORTS = [
             "Pulls New Internet Country Metrics and Sales + Breakdown per "
             "Captainship.\n\n"
             "WHEN IT RUNS\n"
-            "Thursdays. Each run fills the most recently finished week.\n\n"
-            "WHILE IT RUNS\n"
-            "Claude will automatically open/connect with Tableau, do not type "
-            "or close the window while it works, otherwise the run will fail. "
-            "It will indicate when it's finished."
+            "Thursdays. Each run fills the most recently finished week."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit#gid=1044031962"),
