@@ -320,29 +320,45 @@ def _perform_remove(page) -> bool:
     Fails safe (returns False, logs why) if the Duplicate reason or Save button
     isn't found."""
     try:
-        res = page.evaluate(r"""() => {
+        # 1) set the checkbox + reason in JS (reliable), report if the reason exists.
+        picked = page.evaluate(r"""() => {
             const cb = document.querySelector("[name='removApp']");
             if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change',{bubbles:true})); }
             const s = document.querySelector("select[name='rmvReason']");
-            let picked = '';
-            if (s) { const o = [...s.options].find(o => /duplicate/i.test(o.text));
-                     if (o) { s.value = o.value;
-                              s.dispatchEvent(new Event('change',{bubbles:true}));
-                              picked = o.text; } }
-            if (!picked) return 'FAIL:no-duplicate-reason';
-            if (!cb || !cb.checked) return 'FAIL:removApp-not-set';
-            const btn = document.querySelector("[name='submitSaveApplicant']")
-                || [...document.querySelectorAll("input[type=submit],button")]
-                     .find(b => /save applicant/i.test(b.value || b.innerText || ''));
-            if (!btn) return 'FAIL:no-save-button';
-            btn.click();
-            return 'OK:' + picked;
+            if (!s) return '';
+            const o = [...s.options].find(o => /duplicate/i.test(o.text));
+            if (!o) return '';
+            s.value = o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
+            return o.text;
         }""")
-        _log(f"    [remove] {res}")
-        if str(res).startswith("OK"):
-            page.wait_for_timeout(2500)
-            return True
-        return False
+        if not picked:
+            _log("    [remove] FAIL: no '…Duplicate…' reason on the page")
+            return False
+        # 2) REAL Playwright click on Save so the ColdFusion form actually POSTS
+        #    (a JS .click() inside evaluate doesn't submit/navigate, which is why
+        #    removes logged done but the count never dropped). A confirm() on submit
+        #    is caught by the page 'dialog' handler (accept). Verify the POST via a
+        #    navigation wait; force-click if the button isn't strictly actionable.
+        btn = page.locator("[name='submitSaveApplicant']").first
+        if btn.count() == 0:
+            btn = page.locator(
+                "xpath=//input[@type='submit'][contains(@value,'Save Applicant')]"
+                " | //button[contains(normalize-space(.),'Save Applicant')]").first
+        if btn.count() == 0:
+            _log("    [remove] FAIL: no Save Applicant button")
+            return False
+        try:
+            with page.expect_navigation(timeout=8000):
+                btn.click(timeout=6000)
+        except Exception:  # noqa: BLE001 — retry force, then accept no-nav
+            try:
+                btn.click(timeout=6000, force=True, no_wait_after=True)
+            except Exception as e2:  # noqa: BLE001
+                _log(f"    [remove] FAIL: Save click ({type(e2).__name__})")
+                return False
+        page.wait_for_timeout(2500)
+        _log(f"    [remove] submitted (reason: {picked})")
+        return True
     except Exception as e:  # noqa: BLE001
         _log(f"    remove error: {type(e).__name__}: {e}")
         return False
