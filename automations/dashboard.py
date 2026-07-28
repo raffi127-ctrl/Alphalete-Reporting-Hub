@@ -4846,8 +4846,6 @@ AUTOMATED_REPORTS = [
         "description": "One login syncs all of ApplicantStream into the Applicant Tracker — morning appends the Call List + updates 2R status (reads yesterday), evening appends 2R Retention + marks first-day show-up (reads today), across 17 offices.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "One ApplicantStream login syncs the whole **Applicant Tracker** in "
-            "two phases (17 offices each):\n\n"
             "🌅 **MORNING** — reads **yesterday**, runs **~6:45am** (its own timer):\n"
             "**•** **Export Call List** → Call List tab (owner **A**, data "
             "**B–H**). Appends; no de-dupe.\n"
@@ -4858,16 +4856,9 @@ AUTOMATED_REPORTS = [
             "**AU–BC**). Appends; no de-dupe.\n"
             "**•** **Confirm First-Day** → 2R **col R** = Y/N. ⚠️ **Dry until "
             "verified** on a real first-day-of-training day.\n\n"
-            "PILL\n"
-            "**Orange** after the morning pass, **green** after the evening "
-            "pass (2 runs/day) — same rules as every other card. Any office "
-            "that didn't sync (error or no access) is posted to "
-            "**#claudecorrections-and-requests**, so a gap shows there instead "
-            "of holding the pill amber.\n\n"
             "HOW IT RUNS\n"
-            "On **Lucy 1** as **rcaptain** (the recruiting-captain login with "
-            "access to all 17 owners' offices). One login for the whole run; each "
-            "office is selected once and its Retention report loaded once per phase."
+            "On **Lucy 1** as **rcaptain**. Any office that doesn't sync (error "
+            "or no access) is posted to **#claudecorrections-and-requests**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
@@ -4904,20 +4895,6 @@ AUTOMATED_REPORTS = [
                 "help": "Live: appends 2R Retention for TODAY (owner AT, AU–BC). First-Day (col R) is computed but not written until verified.",
                 "module": "automations.applicant_tracker.run",
                 "args_fn": lambda: ["evening"],
-            },
-            {
-                "label": "Morning — dry run (no writes)",
-                "icon": "▶",
-                "help": "Exercises the morning phase (login + scrape) and prints what it would write. Safe any time.",
-                "module": "automations.applicant_tracker.run",
-                "args_fn": lambda: ["morning", "--dry-run"],
-            },
-            {
-                "label": "Evening — dry run (no writes)",
-                "icon": "▶",
-                "help": "Exercises the evening phase and prints what it would write. Safe any time.",
-                "module": "automations.applicant_tracker.run",
-                "args_fn": lambda: ["evening", "--dry-run"],
             },
         ],
     },
