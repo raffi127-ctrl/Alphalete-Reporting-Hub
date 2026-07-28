@@ -101,8 +101,23 @@ def install(name: str) -> tuple[bool, str]:
     if boot.returncode != 0 or not _loaded():
         return False, (f"{label}: bootstrap failed (exit {boot.returncode}): "
                        f"{(boot.stdout + boot.stderr).strip()[:180]}")
+    # Guarantee the newly-installed agent has a Hub card, so a scheduled
+    # automation can never run invisibly ("we keep losing automations" fix,
+    # 2026-07-27). Confident-only (publish-id / module match) — never guesses a
+    # card. Best-effort: a card hiccup must never fail an install.
+    card_note = ""
+    try:
+        from automations.day_orchestrator import hub_coverage
+        rid, why = hub_coverage._agent_report_id(name)
+        if rid and not hub_coverage.resolve_card(rid, create=False):
+            hub_coverage.resolve_card(rid, create=True)
+            card_note = f"; auto-created Hub card for {rid!r}"
+        elif rid is None and why == "unresolved":
+            card_note = "; ⚠️ no Hub card could be resolved — review coverage"
+    except Exception:
+        pass
     return True, (f"{label} reloaded in {domain} ✓ "
-                  "(race-free: old job confirmed gone before bootstrap)")
+                  "(race-free: old job confirmed gone before bootstrap)" + card_note)
 
 
 def main(argv=None) -> int:

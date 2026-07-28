@@ -148,6 +148,25 @@ def main() -> int:
     print(f"SCHEDULE-GUARD :: reloaded {ok_n}/{len(results)} timed job(s)")
     for ok, name, sched, msg in results:
         print(f"  {'OK ' if ok else 'FAIL'} {name} [{sched}]: {msg}")
+
+    # Daily coverage sweep: card any SCHEDULED job (4am batch OR standalone
+    # launchd agent) that lacks a Hub card, so automations can never silently go
+    # invisible. Confident-only + idempotent (safe to run on both machines).
+    # Fully best-effort — a coverage hiccup must never fail the schedule guard.
+    try:
+        from automations.day_orchestrator import hub_coverage
+        cov = hub_coverage.sync(dry_run=False) + hub_coverage.sync_agents(dry_run=False)
+        created = [m for m in cov if m.strip().startswith("✓")]
+        print(f"SCHEDULE-GUARD :: coverage sweep — {len(created)} card(s) created/updated")
+        for m in cov:
+            print(m)
+        unresolved = hub_coverage.audit_agents().get("unresolved", [])
+        if unresolved:
+            print("  ⚠️ agents with no resolvable card (review): "
+                  + ", ".join(n for n, _why in unresolved))
+    except Exception as e:  # noqa: BLE001 — never let coverage break the guard
+        print(f"SCHEDULE-GUARD :: coverage sweep skipped ({type(e).__name__}: {str(e)[:80]})")
+
     # Exit non-zero if ANY reload failed, so the guard log / Mini Control flags it.
     return 0 if ok_n == len(results) else 1
 

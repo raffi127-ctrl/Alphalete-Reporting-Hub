@@ -70,6 +70,11 @@ _SKIP_RE = re.compile(
 # surfaces any new report that needs an entry here.
 CURATED_ALIAS = {
     "texas_de_brazil": "june_texas_de_brazil_monthly_competition",
+    # Standalone agents whose scheduler report_id differs from the real card id —
+    # alias so the pill wires to the EXISTING card instead of auto-creating a
+    # duplicate. Surfaced by audit_agents() (2026-07-27).
+    "applicant_sync": "applicant-tracker-sync",       # applicant-morning/-evening
+    "b2b_metrics_preview": "b2b-metrics",             # b2b-metrics standalone
 }
 
 
@@ -147,11 +152,20 @@ def resolve_card(report_id: str, report_name: str = "", *,
     if is_internal(report_id):
         return None
     curated = _curated_map()
-    if report_id in curated:
-        return curated[report_id]
-    if report_id in CURATED_ALIAS:
-        return CURATED_ALIAS[report_id]
+    mapped = curated.get(report_id) or CURATED_ALIAS.get(report_id)
+    # Fast path: a curated target that is a real hardcoded card (local read, no
+    # network) is trusted as-is.
+    if mapped and mapped in _hardcoded_card_ids():
+        return mapped
     existing = _existing if _existing is not None else existing_card_ids()
+    # A curated target that exists as a library card is valid too.
+    if mapped and mapped in existing:
+        return mapped
+    # PHANTOM GUARD: a curated mapping whose target card does NOT exist anywhere
+    # (e.g. b2b_quality -> "b2b-quality", a card that was never created) must NOT
+    # short-circuit — returning it would publish the report's pill into the void
+    # forever. Fall through to slug-match / auto-create so the running report
+    # always lands on a real, publishable card. (2026-07-27)
     # Match an existing card in EITHER convention: hardcoded cards are hyphenated
     # (country-sales-board), library cards keep the underscore report_id (car_rides).
     if slug(report_id) in existing:
@@ -343,6 +357,123 @@ def reenrich(dry_run: bool = True) -> List[str]:
             continue
         ok, msg = ensure_library_card(rid, meta.get("name", ""), dry_run=dry_run)
         msgs.append(("  ✓ " if ok else "  ✗ ") + rid + ": " + msg)
+    return msgs
+
+
+# --------------------------------------------------- launchd agent coverage
+# The 4am-batch audit above only sees on_scheduler reports. STANDALONE launchd
+# agents (deploy/com.alphalete.*.plist) are where automations silently go
+# uncarded — a report whose module never publishes AND isn't in the batch is
+# invisible (this is exactly how dd_gross_revenue was lost). These helpers
+# reconcile the agent inventory itself, so every SCHEDULED job gets a card.
+DEPLOY_DIR = REPO_ROOT / "deploy"
+
+# Pure-infrastructure agents (never a report) + the cutover-retire duplicates
+# that shadow a batch report which already owns a card
+# (schedule_config _meta.cutover_retire_jobs). These never get a card.
+_INFRA_AGENTS = {
+    "day-orchestrator", "orchestrator-schedule-guard", "card-scheduler",
+    "session-holder", "keep-awake", "mini-control", "hub-watch",
+    "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
+    "social-scanner",
+    "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",
+}
+# Wrapper module segments that are PREP steps (run before the real report), so a
+# naive first-`-m` grab would resolve the wrong module (e.g. stf's chrome_guard).
+_PREP_MODULES = ("chrome_guard", "chrome_collision", "collision_guard")
+_PUBLISH_ID_RE = re.compile(
+    r"publish_(?:done|running)\(\s*['\"]([a-zA-Z0-9_]+)['\"]")
+_WRAPPER_MODULE_RE = re.compile(r"-m\s+(automations\.[a-zA-Z0-9_.]+)")
+
+
+def _wrapper_for_plist(plist_path: Path) -> Optional[Path]:
+    """The deploy/*.sh a plist runs (mapped into our repo, ignoring the committed
+    laptop path placeholder)."""
+    try:
+        import plistlib
+        args = plistlib.loads(plist_path.read_bytes()).get("ProgramArguments", [])
+    except Exception:
+        return None
+    for a in args:
+        if isinstance(a, str) and a.endswith(".sh"):
+            cand = DEPLOY_DIR / Path(a).name
+            return cand if cand.exists() else None
+    return None
+
+
+def _module_to_report_id(module: str) -> Optional[str]:
+    """Canonical report_id whose schedule_config command runs `module`, or None."""
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text())
+    except Exception:
+        return None
+    for rid, r in cfg.get("reports", {}).items():
+        if (r.get("command") or [None])[0] == module:
+            return rid
+    return None
+
+
+def _agent_report_id(agent_name: str) -> Tuple[Optional[str], str]:
+    """Best-effort CONFIDENT report_id for a launchd agent → (report_id, reason).
+
+    Prefers the wrapper's own publish_*() id — the id the pill actually writes to,
+    the only fully-reliable signal — then a schedule_config module match. Returns
+    (None, reason) when it can't resolve confidently: we NEVER guess a card into
+    existence (a junk card is worse than a flagged gap). reason 'infra'/'internal'
+    = deliberately card-less; 'unresolved' = surface for human review.
+    """
+    if agent_name in _INFRA_AGENTS:
+        return None, "infra"
+    plist = DEPLOY_DIR / ("com.alphalete.%s.plist" % agent_name)
+    if not plist.exists():
+        return None, "no-plist"
+    wrapper = _wrapper_for_plist(plist)
+    if wrapper is None:
+        return None, "no-wrapper"
+    try:
+        text = wrapper.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None, "unreadable-wrapper"
+    m = _PUBLISH_ID_RE.search(text)
+    if m:
+        rid = m.group(1)
+        return (None, "internal") if is_internal(rid) else (rid, "publish-id")
+    for mod in _WRAPPER_MODULE_RE.findall(text):
+        if any(p in mod for p in _PREP_MODULES):
+            continue
+        rid = _module_to_report_id(mod)
+        if rid:
+            return (None, "internal") if is_internal(rid) else (rid, "module-match")
+    return None, "unresolved"
+
+
+def audit_agents() -> Dict[str, list]:
+    """Classify every standalone launchd agent by whether it has a Hub card.
+    Pure read. Buckets: covered / needs_card / unresolved / infra."""
+    existing = existing_card_ids()
+    out = {"covered": [], "needs_card": [], "unresolved": [], "infra": []}
+    for plist in sorted(DEPLOY_DIR.glob("com.alphalete.*.plist")):
+        name = plist.name[len("com.alphalete."):-len(".plist")]
+        rid, why = _agent_report_id(name)
+        if rid is None:
+            bucket = "infra" if why in ("infra", "internal") else "unresolved"
+            out[bucket].append((name, why))
+            continue
+        card = resolve_card(rid, create=False, _existing=existing)
+        (out["covered"].append((name, rid, card)) if card
+         else out["needs_card"].append((name, rid)))
+    return out
+
+
+def sync_agents(dry_run: bool = True) -> List[str]:
+    """Create a library card for every launchd agent with a CONFIDENT report_id
+    but no card. Confident-only — unresolved agents are surfaced by audit_agents(),
+    never auto-carded. Idempotent (ensure_library_card updates in place)."""
+    msgs = []
+    for name, rid in audit_agents()["needs_card"]:
+        ok, msg = ensure_library_card(rid, rid.replace("_", " ").title(),
+                                      dry_run=dry_run)
+        msgs.append(("  ✓ " if ok else "  ✗ ") + name + " -> " + rid + ": " + msg)
     return msgs
 
 

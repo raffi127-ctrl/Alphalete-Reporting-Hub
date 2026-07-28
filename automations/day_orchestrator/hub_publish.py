@@ -76,7 +76,11 @@ _HUB_CARD = {
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "vantura_slack_sales": "vantura-slack-sales",
-    "b2b_quality": "b2b-quality",
+    # Was mapped to "b2b-quality", a card that never existed — its daily pill
+    # published into the void (Hub ORPHAN). Now maps to its real auto-registered
+    # library card. The phantom-guard in hub_coverage.resolve_card also catches
+    # this class of dangling mapping. (2026-07-27)
+    "b2b_quality": "b2b_quality",
     # B2B Metrics: standalone LaunchAgent on Lucy 2 (com.alphalete.b2b-metrics,
     # deploy/b2b_metrics.sh, 7:45am) — never in the 4am batch. Missing here since
     # it shipped, so it posted its whole thread every morning while its card pill

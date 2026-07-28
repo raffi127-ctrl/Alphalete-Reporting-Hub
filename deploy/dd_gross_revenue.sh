@@ -24,4 +24,12 @@ echo "[$(date)] dd_gross_revenue start" >> "$LOG_FILE"
 "$VENV_PY" -m automations.pay_structure.dd_pull --write >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] dd_gross_revenue exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub so the card's pill reflects a REAL
+# success/failure. Without this the report never publishes, leaves no activity
+# row, and stays invisible — a clean run looks identical to a silent miss (this
+# report was a Hub ORPHAN until 2026-07-27). Best-effort; never fails the run.
+if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_gross_revenue','DD Gross Revenue Pull','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+
 exit $ST
