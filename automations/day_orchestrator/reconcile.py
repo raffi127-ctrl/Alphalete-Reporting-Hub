@@ -43,6 +43,8 @@ def verify(report, target_date: dt.date, *, dry_run: bool, verbose: bool = True)
             return _verify_sheet_column(vcfg, target_date)
         if vtype == "slack_sections":
             return _verify_slack_sections(vcfg, target_date)
+        if vtype == "cells_nonblank":
+            return _verify_cells_nonblank(vcfg, target_date)
         # not_configured / unknown
         return ReconResult(ok=True, unknown=True,
                            note=f"verify not wired ({vtype}) — confirm cells by hand")
@@ -223,6 +225,52 @@ def _verify_sheet_column(vcfg: dict, target_date: dt.date) -> ReconResult:
         return ReconResult(ok=False, missing=missing,
                            note=f"{len(missing)} anchor cell(s) blank in {tab!r}")
     return ReconResult(ok=True, note=f"verified {len(labels)} anchor cell(s) filled in {tab!r}")
+
+
+# ---------------- cells-nonblank verifier ----------------
+
+def _verify_cells_nonblank(vcfg: dict, target_date: dt.date) -> ReconResult:
+    """Confirm a SNAPSHOT board actually has data. Boards like the Country /
+    All-Campaigns sales boards overwrite in place and label their columns with
+    day NAMES (not dates), so the date-column verifier can't anchor them — but a
+    run that produced an empty/broken board leaves its summary row blank. This
+    re-reads that row and flags an empty board (the P1 'exited 0 but wrote
+    nothing' case). Config (label-anchored, never positional):
+       sheet:  spreadsheet key
+       tab:    worksheet title
+       checks: [{row_label, min_nonblank=1, start_col=2}]  (start_col: 0-based,
+               2 = column C, i.e. skip the col-A/B label cells)
+    NOTE: this catches a BLANK board, not a stale-but-populated one; no-run is
+    still caught by the orchestrator's noon backstop (MISSED)."""
+    from automations.recruiting_report import fill
+
+    key, tab = vcfg.get("sheet"), vcfg.get("tab")
+    checks = vcfg.get("checks") or []
+    if not (key and tab and checks):
+        return ReconResult(ok=True, unknown=True, note="cells_nonblank under-specified")
+    sh = fill.open_by_key(key)
+    ws = sh.worksheet(tab)
+    grid = ws.get_all_values()
+    if not grid:
+        return ReconResult(ok=False, note=f"tab {tab!r} is empty")
+
+    missing: List[str] = []
+    for chk in checks:
+        label = chk.get("row_label", "")
+        need = int(chk.get("min_nonblank", 1))
+        start = int(chk.get("start_col", 2))
+        ri = _find_label_row(grid, label)
+        if ri is None:
+            missing.append(f"{label} (row label not found)")
+            continue
+        filled = [c for c in grid[ri][start:] if str(c).strip()]
+        if len(filled) < need:
+            missing.append(f"{label} ({len(filled)}/{need} cells filled)")
+
+    if missing:
+        return ReconResult(ok=False, missing=missing,
+                           note=f"{len(missing)} board anchor(s) empty in {tab!r}")
+    return ReconResult(ok=True, note=f"verified {len(checks)} board anchor(s) filled in {tab!r}")
 
 
 def _find_label_row(grid, label: str) -> Optional[int]:

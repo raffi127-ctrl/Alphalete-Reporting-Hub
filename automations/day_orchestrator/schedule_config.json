@@ -1447,7 +1447,17 @@
       "after": [
         "org_sales_board"
       ],
-      "verify": null
+      "verify": {
+        "type": "cells_nonblank",
+        "sheet": "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E",
+        "tab": "All Campaigns Org Sales Board ",
+        "checks": [
+          {
+            "row_label": "Sales - This Week",
+            "min_nonblank": 1
+          }
+        ]
+      }
     },
     "all_campaigns_board_slack": {
       "order": 11,
@@ -1514,7 +1524,17 @@
       "after": [
         "org_sales_board"
       ],
-      "verify": null
+      "verify": {
+        "type": "cells_nonblank",
+        "sheet": "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
+        "tab": "Country Sales Board",
+        "checks": [
+          {
+            "row_label": "Sales - This Week",
+            "min_nonblank": 1
+          }
+        ]
+      }
     },
     "country_sales_board_slack": {
       "order": 11.6,
