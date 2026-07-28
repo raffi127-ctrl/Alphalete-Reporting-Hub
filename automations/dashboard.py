@@ -3295,6 +3295,66 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-activation-rate",
+        "name": "Captainship Activation Rate (per-captain)",
+        "creator": "Eve",
+        "emoji": "📈",
+        "color": "#10B981",
+        "category": "📊 Metrics",
+        "description": "Daily activation rates on each fiber captain's Activation Rate tab of the Captainship Metrics Report sheet — Wayne / Starr / Chan / Tony / Sahil. Two boxes per tab: 0-30 days (Rolling 4 Weeks) and 30-60 days.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Adds one dated column per day to both activation boxes on "
+            "every fiber captain's tab — the Captainship Avg plus a row "
+            "per ICD owner.\n\n"
+            "TABS FILLED\n"
+            "• Activation Rate - Wayne (ATT Fiber)\n"
+            "• Activation Rate - Starr (ATT Fiber)\n"
+            "• Activation Rate - Chan (ATT Fiber)\n"
+            "• Activation Rate - Tony (ATT Fiber)\n"
+            "• Activation Rate - Sahil (ATT Fiber)\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "Tableau → ATTTRACKER2_1-D2D → Metrics view → worksheet "
+            "'Metrics Call Last week data (Internet)', filtered by "
+            "Captain's Bonus Teams.\n"
+            "• Box 'ACTIVATION 0-30 DAYS'   → column 'Rolling 4 Weeks'\n"
+            "• Box 'ACTIVATION RATE 30-60 DAYS' → column '30-60 day New "
+            "Internet activation rate'\n"
+            "• Captainship Avg → that team's own 'Total' row (never an "
+            "average of the owner cells — these are rates over different "
+            "denominators).\n\n"
+            "ONE PULL, FIVE TABS\n"
+            "The Metrics crosstab is already grouped by captainship, so "
+            "the run downloads it once and slices it per captain — this "
+            "workbook has no per-captain views.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, right after the other per-captain metrics."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1P95BxzlmLKkuvcL0gqjD9EfEHPLniGN-m4eE9UsPe_E/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Captainship Activation Rate done — today's column added to both boxes on all 5 fiber tabs.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Captainship Activation Rate",
+                "icon": "▶",
+                "primary": True,
+                "help": "One Metrics crosstab pull, sliced per captainship, then fills both activation boxes on all 5 tabs (refreshes today's column in place if it's already open — pass --force-insert in CLI to add another).",
+                "module": "automations.captainship_activation_rate.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "ongoing-1st-round-recruiter-retention",
         "name": "Ongoing 1st Round Recruiter Retention",
         "creator": "Megan",

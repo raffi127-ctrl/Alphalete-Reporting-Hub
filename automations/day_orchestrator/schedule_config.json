@@ -1374,6 +1374,36 @@
         "report_id": "owners-metrics-churn"
       }
     },
+    "captainship_activation_rate": {
+      "order": 15.1,
+      "on_scheduler": true,
+      "_note": "Eve 2026-07-28: fills the two activation boxes on each fiber captain's 'Activation Rate - <captain> (ATT Fiber)' tab in the Captainship Metrics Report workbook. ORDER 15.1 puts it directly after the other per-captain metrics (captainship_activations 12, captainship_churn 13, owners_metrics_churn 15) and before int_wow_penetration (15.5). ONE Metrics crosstab feeds all five captains — it is grouped by Captain's Bonus Teams, so the run downloads once and slices per captainship in Python; there are no per-captain views in this workbook. data_sources is [] on purpose: the Metrics workbook has no readiness probe mapped, and both metrics are ROLLING windows (Rolling 4 Weeks / 30-60 day activation rate) rather than 'today's data', so the tableau warm-session gate is the only gate that applies. Sheet-only, no Slack.",
+      "display_name": "Captainship Activation Rate (per-captain)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_activation_rate.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "manifest",
+        "report_id": "captainship-activation-rate"
+      }
+    },
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
