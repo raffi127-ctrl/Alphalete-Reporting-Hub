@@ -40,4 +40,8 @@ ST=$?
 
 # exit 75 = fill-gate held (target week not filled yet) — expected; next pass retries.
 echo "[$(date)] pnl-office finished exit=$ST" >> "$LOG_FILE"
+
+# No-show marker: the agent FIRED (0 = posted, 75 = legitimately held). A missing
+# marker past the deadline means launchd never ran it — a held day is NOT a miss.
+case "$ST" in 0|75) touch "output/logs/.pnl-office-ran-$(date +%Y-%m-%d)" 2>/dev/null || true ;; esac
 exit 0

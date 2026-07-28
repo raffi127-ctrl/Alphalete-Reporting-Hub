@@ -53,6 +53,10 @@ class WatchTarget:
     note: str = ""                 # shown in the miss reason (what to check)
     rerun_hint: str = ""           # the REAL command to re-post (a LaunchAgent
                                    # wrapper, not `lucy rerun`), shown as Re-run
+    prior_day: bool = False        # True = the run happens LATE (e.g. 23:00), so
+                                   # this morning we check YESTERDAY's marker. The
+                                   # weekday gate + marker date both use run-day
+                                   # (target_date - 1). Deadline is a morning time.
 
     @property
     def watch_id(self) -> str:
@@ -131,6 +135,43 @@ WATCH_TARGETS: List[WatchTarget] = [
         note="the Tuesday Carlos B2B Captainship Bonus left no done-marker by 10:45",
         rerun_hint="on Lucy 2: bash deploy/carlos_captainship_bonus_tue.sh",
     ),
+    # Lucy 1 standalone posters. org-board / pnl are CONDITIONAL (exit 75 = held,
+    # a no-post is legit) — their wrappers drop the marker whenever the agent FIRES
+    # (exit 0 or 75), so a missing marker means launchd never ran it, never a held
+    # day. stf runs 23:00 (outside the day window) → prior_day checks last night's
+    # marker this morning. (2026-07-28)
+    WatchTarget(
+        report_id="org_board_slack",
+        display_name="Org Board → Slack (post watch)",
+        machine="Lucy 1",
+        deadline="11:45",   # last retry pass is 11:25
+        marker_glob="output/logs/.org-board-slack-ran-{date}",
+        note="the org-board Slack agent left no ran-marker by 11:45 — its launchd "
+             "entry may have stopped firing (none of the 08:30–11:25 passes ran)",
+        rerun_hint="on Lucy 1: bash deploy/org_board_slack.sh",
+    ),
+    WatchTarget(
+        report_id="pnl_office",
+        display_name="PNL for the Office (post watch)",
+        machine="Lucy 1",
+        deadline="13:15",   # Friday, last retry pass 12:55
+        marker_glob="output/logs/.pnl-office-ran-{date}",
+        weekdays=[4],       # Fridays only
+        note="the Friday PNL agent left no ran-marker by 13:15 — its launchd entry "
+             "may have stopped firing",
+        rerun_hint="on Lucy 1: bash deploy/pnl_office_fri.sh",
+    ),
+    WatchTarget(
+        report_id="stf_field_check",
+        display_name="STF Field Check (post watch)",
+        machine="Lucy 1",
+        deadline="07:00",   # last night's 23:00 run should have left its marker
+        marker_glob="output/logs/.stf-field-check-done-{date}",
+        prior_day=True,     # runs 23:00 → check YESTERDAY's marker this morning
+        note="last night's 23:00 STF Field Check left no done-marker — its launchd "
+             "entry may have stopped firing",
+        rerun_hint="on Lucy 1: bash deploy/stf_field_check_11pm.sh",
+    ),
 ]
 
 
@@ -138,13 +179,18 @@ def targets_for(machine: str, target_date: dt.date) -> List[WatchTarget]:
     """Watch targets owned by `machine` and scheduled on `target_date`'s weekday.
     Both gates are applied here so an off-machine / off-day target is never even
     seeded — it can't false-alarm."""
-    wd = target_date.weekday()
     return [w for w in WATCH_TARGETS
-            if w.machine == machine and wd in w.weekdays]
+            if w.machine == machine and _run_date(w, target_date).weekday() in w.weekdays]
+
+
+def _run_date(w: WatchTarget, target_date: dt.date) -> dt.date:
+    """The date the run actually happened — yesterday for prior_day targets (a
+    23:00 run checked the next morning), else today."""
+    return target_date - dt.timedelta(days=1) if w.prior_day else target_date
 
 
 def _marker_path(w: WatchTarget, target_date: dt.date) -> Path:
-    return REPO_ROOT / w.marker_glob.format(date=target_date.isoformat())
+    return REPO_ROOT / w.marker_glob.format(date=_run_date(w, target_date).isoformat())
 
 
 def _parse_deadline(hhmm: str, target_date: dt.date) -> dt.datetime:

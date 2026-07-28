@@ -57,6 +57,9 @@ case " $* " in
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('stf_field_check','STF Field Check','$_PUB')" >> "$LOG_FILE" 2>&1 || true
     ;;
 esac
+# No-show marker (checked NEXT morning via post_watch prior_day — this runs 23:00,
+# outside the day-watch window). Dated with tonight's run date.
+[ "$ST" -eq 0 ] && touch "output/logs/.stf-field-check-done-$(date +%Y-%m-%d)" 2>/dev/null || true
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"STF Field Check failed (exit $ST) — check the log; the ownerville login may have expired\" with title \"STF Field Check\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

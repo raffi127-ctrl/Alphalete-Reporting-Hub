@@ -42,4 +42,9 @@ ST=$?
 # exit 75 = fill-gate held (yesterday not fully entered yet) — expected; the next
 # scheduled pass retries. Any other non-zero is a real error worth the log.
 echo "[$(date)] org-board slack finished exit=$ST" >> "$LOG_FILE"
+
+# No-show marker: the agent FIRED (0 = posted, 75 = legitimately held/nothing to
+# post). A missing marker past the deadline means launchd never ran it at all —
+# the only silent-no-fire signal (a held day is NOT a miss). (2026-07-28)
+case "$ST" in 0|75) touch "output/logs/.org-board-slack-ran-$(date +%Y-%m-%d)" 2>/dev/null || true ;; esac
 exit 0
