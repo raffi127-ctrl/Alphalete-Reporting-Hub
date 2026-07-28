@@ -3572,8 +3572,14 @@ AUTOMATED_REPORTS = [
         # Suspended 2026-07-28 (Megan) — off the scheduler, run by hand from this
         # card; handed to Eve. Re-enable: schedule_config on_scheduler=true +
         # base_args '--distro' at go-live.
+        # Kept on a daily cadence ONLY so it still renders a pill in the week
+        # strip — that pill is forced PURPLE via the calstat CSS override (search
+        # 'sales-board-screenshot-email__calstat') to read as "not running".
+        # hide_schedule keeps it OUT of the due-today / overdue / completion
+        # tallies (it's parked, not overdue). time None → no timer chip.
+        "hide_schedule": True,
         "schedule": {
-            "frequency": "manual",
+            "frequency": "daily",
             "time": None,
             "estimated_minutes": 5,
         },
