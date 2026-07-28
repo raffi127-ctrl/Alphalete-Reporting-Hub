@@ -591,6 +591,13 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         # extensions needed (OAT doesn't use the resume-extractor plugin).
         # yield_if_busy so we step aside if another Carlos-session run holds it.
         with appstream_direct_session(yield_if_busy=True) as page:
+            # ApplicantStream pops a JS confirm() on Save/remove/send; patchright
+            # auto-DISMISSES dialogs by default, which CANCELLED our removes/sends
+            # (they logged 'done' but the queue count never dropped — Megan 7/27).
+            # Accept every confirm so the actions actually persist. Applies to any
+            # popup opened in this context too.
+            page.on("dialog", lambda d: d.accept())
+            page.context.on("page", lambda p: p.on("dialog", lambda d: d.accept()))
             if not fetch_office._switch_office(page, config.OFFICE_ID,
                                                config.OFFICE_HINT):
                 _log(f"[oat] FATAL: office switch to {config.OFFICE_ID} failed")
