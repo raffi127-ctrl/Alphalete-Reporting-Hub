@@ -3543,27 +3543,38 @@ AUTOMATED_REPORTS = [
         "emoji": "📧",
         "color": "#DC2626",
         "category": "📊 Metrics",
-        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser).",
+        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, the RAF ORG current-vs-prior summary, the ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser). Currently manual-only — off the auto-schedule (handed to Eve).",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Sends a daily email of the Org Sales Board as clean, exact-sheet "
-            "screenshots (colors/fonts/borders match the sheet). Rendered from the "
-            "COPY tab via the Google Sheets PDF-export endpoint — no browser, runs "
-            "from any machine.\n\n"
+            "Emails the Org Sales Board as clean, exact-sheet screenshots "
+            "(colors/fonts/borders match the sheet). Rendered from the COPY tab "
+            "via the Google Sheets PDF-export endpoint — no browser, runs from "
+            "any machine.\n\n"
+            "STATUS — PAUSED 7/28\n"
+            "Off the automated schedule; handed to Eve, who now owns it. The "
+            "daily send is stopped — only the manual button below sends today. "
+            "Re-enables to the full distro once Eve turns it back on.\n\n"
             "RECIPIENTS\n"
-            "Proving phase: Rafael + Megan. Expand to the full distribution "
-            "list once it's proven out.\n\n"
-            "WHEN IT RUNS\n"
-            "Daily, after the morning Sales Board fill (so the numbers are fresh)."
+            "Manual send goes to the proving list (Rafael + Megan). At go-live "
+            "it expands to three Gmail groups — Alphalete Org Owners, Carlos' "
+            "Captain Team, Raf's Captain Team.\n\n"
+            "WHEN IT RUNS (when live)\n"
+            "Tue-Sun, right after the morning Sales Board fill (fresh numbers). "
+            "Monday's send lands in the afternoon via the board catch-up job — "
+            "Sunday's numbers only fully arrive Monday afternoon. A partial "
+            "board never sends."
         ),
         # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=129523613#gid=129523613"),
         "assignees": ["Lucy 1"],
+        # Suspended 2026-07-28 (Megan) — off the scheduler, run by hand from this
+        # card; handed to Eve. Re-enable: schedule_config on_scheduler=true +
+        # base_args '--distro' at go-live.
         "schedule": {
-            "frequency": "daily",
-            "time": "4 AM flow (when data's ready)",
+            "frequency": "manual",
+            "time": None,
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3576,7 +3587,7 @@ AUTOMATED_REPORTS = [
                 "label": "Send Email (Rafael + Megan)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Rafael, Megan). Takes a couple of minutes. Manual send — bypasses the fill-complete guard (the copy tab is kept current by the mini; that guard protects the automated scheduled run).",
+                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Rafael, Megan). Takes a couple of minutes. Manual send — bypasses the fill-complete guard (the copy tab is kept current by the mini; that guard protects the automated run when it's live).",
                 "module": "automations.org_sales_board.screenshot_email",
                 "args_fn": lambda: ["--force"],
             },
