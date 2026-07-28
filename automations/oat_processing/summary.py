@@ -287,8 +287,10 @@ def main(argv=None) -> int:
         # Tab-separated, one applicant per line, short + greppable via logtail.
         for b in ("sent", "removed", "retext", "nophone", "blocked"):
             for it in t[b]:
-                print("EMIT\t" + "\t".join([
-                    b, str(it.get("name", "")), str(it.get("source", "")),
+                # distinct per-bucket prefix (EMITSENT/EMITREMOVED/…) so a literal
+                # substring grep can pull one bucket cleanly.
+                print(f"EMIT{b.upper()}| " + " | ".join([
+                    str(it.get("name", "")), str(it.get("source", "")),
                     str(it.get("reason", "")), str(it.get("position", "")),
                     str(it.get("via", ""))]), flush=True)
         print(f"EMITMETA\tprocessed={t['processed']}\tlast_scan={last_scan}", flush=True)
