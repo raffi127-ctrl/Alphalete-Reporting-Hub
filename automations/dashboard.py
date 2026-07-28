@@ -1999,7 +1999,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌐",
         "color": "#10B981",
         "category": "🎯 Recruiting",
-        "description": "Pulls recruiting + (eventually) OPT metrics for the "
+        "description": "Pulls recruiting + OPT metrics for the "
                        "rep-per-campaign tabs on the Alphalete Org sheet "
                        "(NDS / B2B / BOX / Retail / JE / Frontier).",
         "breakdown": (
@@ -2007,18 +2007,14 @@ AUTOMATED_REPORTS = [
             "**•** Recruiting pull (APPS / Total Applies / Retention / "
             "1st & 2nd Booked / etc.) from AppStream for every visible "
             "rep tab.\n"
-            "**•** OPT / Personal Production — *in progress* (NDS reps "
-            "aren't in Raf's existing Tableau view; needs Megan to share "
-            "a Tableau scope that includes them).\n"
+            "**•** OPT / Personal Production from Tableau — the campaign "
+            "OPT views (NDS / B2B / BOX / JE / Retail) plus Personal "
+            "Production, for every rep tab.\n"
             "**•** Financial section — handled by the weekly Financial "
             "Pull card, which distributes uploaded workbooks to every "
             "matched ICD on this sheet too.\n\n"
             "WHEN IT RUNS\n"
             "**Mondays.** Each run fills the just-ended week's column.\n\n"
-            "TAB CONVENTION\n"
-            "Each tab is named `<AppStream owner name> - <CAMPAIGN>` "
-            "(e.g. `Isaiah Revelle - NDS`). The runner strips the "
-            "campaign suffix to find the AppStream owner.\n\n"
             "TO ADD A NEW REP\n"
             "**1.**  Create a tab named with the rep's exact AppStream "
             "name + ` - <CAMPAIGN>` suffix.\n"
