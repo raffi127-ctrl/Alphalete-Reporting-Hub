@@ -598,24 +598,30 @@ def health_check(page) -> None:
          f"rows={len(info.get('rows',[]))})")
 
 
-def probe_sms(page) -> None:
-    """Open the always-on SMS panel (top-right 'SMS' button — a Bandwidth widget)
-    and dump its structure (frames, inputs, buttons, textareas) so we can wire the
-    re-text send flow: search phone -> Load Template 'FOR LUCY' -> fill -> Send."""
-    clicked = False
-    for xp in ("xpath=//button[normalize-space(.)='SMS']",
-               "xpath=//a[normalize-space(.)='SMS']",
-               "xpath=//*[@role='button'][normalize-space(.)='SMS']",
-               "xpath=(//*[normalize-space(.)='SMS'][not(self::li) and not(self::ul)])[last()]"):
+def _open_sms_panel(page) -> bool:
+    """Click the always-on 'SMS' button (top-right). Its text is 'SMS' + an unread
+    badge number ('SMS\\n13'), so match the anchor whose text is 'SMS' once digits
+    are stripped — excludes 'SMS/Email', 'SMS Templates', 'SMS List Report'."""
+    for xp in ("xpath=//a[normalize-space(translate(.,'0123456789',''))='SMS']",
+               "xpath=//span[normalize-space(translate(.,'0123456789',''))='SMS']/ancestor::a[1]",
+               "xpath=//*[@role='button'][normalize-space(translate(.,'0123456789',''))='SMS']"):
         try:
             loc = page.locator(xp).first
             if loc.count() > 0:
                 loc.click(timeout=6000, no_wait_after=True)
-                clicked = True
-                _log(f"[sms] clicked SMS via {xp}")
-                break
+                _log(f"[sms] opened SMS panel via {xp}")
+                page.wait_for_timeout(4000)
+                return True
         except Exception:  # noqa: BLE001
             continue
+    return False
+
+
+def probe_sms(page) -> None:
+    """Open the always-on SMS panel (top-right 'SMS' button — a Bandwidth widget)
+    and dump its structure (frames, inputs, buttons, textareas) so we can wire the
+    re-text send flow: search phone -> Load Template 'FOR LUCY' -> fill -> Send."""
+    clicked = _open_sms_panel(page)
     if not clicked:
         try:
             cands = page.evaluate(
