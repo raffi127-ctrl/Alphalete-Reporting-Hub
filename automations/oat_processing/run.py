@@ -391,9 +391,11 @@ _RETEXT_ROWS: list = []
 
 def _flag_retext(a: Applicant, days) -> None:
     """Re-text (>1wk) sends a real message, so it's FLAGGED for review (not
-    auto-sent yet) — written to output/oat-retext-queue.csv."""
+    auto-sent yet) — written to output/oat-retext-queue.csv. Phone is recorded so
+    a send (manual --retext-send-live or armed auto) can bind the thread exactly."""
     _RETEXT_ROWS.append([dt.date.today().isoformat(), a.first_name, a.last_name,
-                         a.email, a.position, days if days is not None else ""])
+                         a.email, a.position, a.cell_phone or a.phone,
+                         days if days is not None else ""])
 
 
 def do_send_ai(page, a: Applicant, live: bool) -> str:
@@ -422,7 +424,8 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     lc = _parse_last_corr(_body(page))
     days = (dt.date.today() - lc).days if lc else None
     if days is not None and days > config.RETEXT_MIN_DAYS:
-        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} (last contact {days}d)")
+        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
+             f"[{a.cell_phone or a.phone or 'no-phone'}] (last contact {days}d)")
         _flag_retext(a, days)
         return "flag_retext"
     if _perform_remove(page):
@@ -719,7 +722,8 @@ def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
         _would(live, "flag re-text (send not armed)")
         if live:
             _flag_retext(a, None)
-            _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name}")
+            _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
+                 f"[{a.cell_phone or a.phone or 'no-phone'}]")
         return "flag_retext"
     role = _role_from_position(a.position)
     phone = a.cell_phone or a.phone
@@ -780,7 +784,7 @@ def _flush_queues() -> None:
                 "position"], _NO_PHONE_ROWS, "no-phone applicant(s)")
     _flush_csv("output/oat-retext-queue.csv",
                ["flagged_date", "first_name", "last_name", "email", "position",
-                "days_since_contact"], _RETEXT_ROWS, "re-text applicant(s)")
+                "phone", "days_since_contact"], _RETEXT_ROWS, "re-text applicant(s)")
     # Daily activity log — accumulates across every run of the day; the scorecard
     # reads the whole file and tallies.
     _flush_csv(_activity_csv(),
