@@ -1706,6 +1706,52 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "interview-audit-bot",
+        "name": "2nd Round Interview Auditor (24/7)",
+        "creator": "Raf & Claude",
+        "emoji": "🐺",
+        # Amber = an ONGOING self-running job, matching the other continuous Ops
+        # cards (sara-plus-issues, rc-autoread, bg-check-sync, resume-pushing).
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        # The card's link opens the live scorecard (public, no login).
+        "sheet_url": "https://raffi127-ctrl.github.io/scorecard-9f3kx7q2/",
+        "description": "Reps DM their 2nd-round interview recording → Gemini grades it → scored PDF back in ~90 sec. Keeps a live scorecard (office & rep rankings) and DMs Raf a daily 2 PM PDF with a retire/bring-back picker.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** A rep drops their 2nd-round interview recording in Slack → the "
+            "bot grades it against our 11-frame framework and DMs back a scored "
+            "PDF (Posture / D2D / Pay / Overall) in **~60–90 sec**.\n"
+            "**•** Before sending a score it asks the rep their **owner**, so every "
+            "submission is credited to the right office.\n"
+            "**•** Keeps a **live scorecard** — office & rep rankings, submissions, "
+            "and the weekly trend — always current:\n"
+            "https://raffi127-ctrl.github.io/scorecard-9f3kx7q2/\n"
+            "**•** DMs Raf a **daily 2 PM PDF** of the scorecard, with a "
+            "**manage-reps picker**: retire reps who've left, or bring a retired "
+            "rep back with all their data.\n"
+            "**•** A retired rep who submits again returns automatically, starting "
+            "fresh at 1 submission.\n\n"
+            "WHEN IT RUNS\n"
+            "**Continuously, 24/7** on Lucy 1 (its own LaunchAgent — separate from "
+            "the 4 AM orchestrator). The daily digest fires at **2 PM Central**. A "
+            "quiet card is the *normal, healthy* state."
+        ),
+        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own service, independent of the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
+        # Continuous service: self_scheduled + hide_schedule keep it out of the
+        # 4am batch, the due-today counter, and time/DUE pills (no single run time).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "2:00 PM",
+            "time_label": "24/7 · 2 PM digest",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
+    {
         "id": "sara-plus-issues",
         # Cadence in the name, same as the RingCentral Auto-Read card. The
         #   are non-breaking spaces so "(Q 5 Min)" wraps as ONE clean unit
