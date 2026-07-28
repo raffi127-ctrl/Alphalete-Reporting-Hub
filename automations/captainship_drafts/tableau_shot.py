@@ -25,6 +25,7 @@ add the date field to the filter tuple.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import quote
@@ -257,6 +258,71 @@ _VIZ_IFRAME = 'iframe[title="Data Visualization"]'
 # _trim_bottom cuts that away.
 _DASHBOARD = ".tab-dashboard"
 
+# --------------------------------------------------------------------------
+# Week filter: fall back to the newest week this captain actually has.
+# --------------------------------------------------------------------------
+# The team-stats boards open on the CURRENT week (NDS "Activation Week" = the
+# Sunday-ending week, B2B "Activation Date Week Ending (copy)"). A captain whose
+# team has no activations yet that week gets a board with EMPTY Volume tables —
+# Jairo, 2026-07-28. Tableau flags that state itself: an out-of-domain filter
+# value renders in PARENTHESES, "(8/2/2026)" instead of "8/2/2026". Detect that
+# and re-point the filter at the newest week the dropdown actually offers. The
+# option list is scoped by the team filter, so "newest offered" is per-captain
+# (Jairo's ends 7/26/2026 while Khalil's and Colten's include 8/2/2026), and on
+# a board whose default week HAS data this is a no-op — no wasted reload.
+_FILTER_BOX = ".CategoricalFilterBox"
+_FILTER_VALUE = ".tabComboBoxNameContainer"
+_FILTER_OPTION = ".FIText"
+# "(8/2/2026)" -> out of domain.  "(All)" / "(Multiple values)" are also
+# parenthesized and must NOT trigger this, hence the date shape.
+_OUT_OF_DOMAIN = re.compile(r"^\((\d{1,2}/\d{1,2}/\d{4})\)$")
+_DATE_OPTION = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+# Tableau's own words in the filter box; whatever is left is the field title.
+_FILTER_CHROME = {"Filter", "Inclusive", "Exclusive"}
+
+
+def _empty_week_fallback(page, verbose: bool = False) -> Optional[tuple]:
+    """(field, iso_week) when a date filter sits on a week this captain has no
+    data for, else None. Reads the dropdown rather than computing a date: only
+    Tableau knows which weeks the team actually has.
+
+    The week comes back ISO (2026-07-26), NOT as the dropdown spells it
+    (7/26/2026): a URL date filter only binds in ISO. Proven live 2026-07-28 —
+    `?Activation Week=7/26/2026` left the filter on its out-of-domain default
+    and the shot came back with the same empty Volume tables, silently."""
+    fr = page.frame_locator(_VIZ_IFRAME)
+    boxes = fr.locator(_FILTER_BOX)
+    for i in range(boxes.count()):
+        box = boxes.nth(i)
+        lines = [ln.strip() for ln in (box.inner_text() or "").splitlines()
+                 if ln.strip()]
+        if not lines or not _OUT_OF_DOMAIN.match(lines[-1]):
+            continue
+        field = next((ln for ln in lines[:-1] if ln not in _FILTER_CHROME), None)
+        if not field:
+            continue
+        box.locator(_FILTER_VALUE).first.click()
+        page.wait_for_timeout(2_000)
+        opts = fr.locator(_FILTER_OPTION)
+        weeks = []
+        for j in range(opts.count()):
+            m = _DATE_OPTION.match((opts.nth(j).inner_text() or "").strip())
+            if m:
+                mo, d, y = (int(g) for g in m.groups())
+                weeks.append((dt.date(y, mo, d), m.group(0)))
+        page.keyboard.press("Escape")
+        if not weeks:
+            if verbose:
+                print(f"   ⚠ {field} is {lines[-1]} but the dropdown offered no "
+                      f"weeks — keeping the default", flush=True)
+            return None
+        newest, label = max(weeks)
+        if verbose:
+            print(f"   ↺ {field} {lines[-1]} has no data for this team → "
+                  f"{label} (newest of {len(weeks)} offered)", flush=True)
+        return field, newest.isoformat()
+    return None
+
 
 def _trim_right(path: Path, margin_px: int = 14) -> None:
     """Drop the empty canvas to the right of the board. The rendered viz is as
@@ -317,12 +383,29 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
 
     Shoots the dashboard element, so Tableau's chrome never enters the image,
     then trims the empty canvas off the right and the bottom, and finally drops
-    the B2B board's own footer lines via _trim_footer_after_gap."""
+    the B2B board's own footer lines via _trim_footer_after_gap. If the board's
+    default week has no data for this team, reloads it on the newest week that
+    does (_empty_week_fallback) rather than shooting empty Volume tables."""
     from automations.tableau_screenshots import capture
     out = Path(out_dir) / f"{spec['title']}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     page.goto(spec["url"], wait_until="domcontentloaded")
     page.wait_for_timeout(_SHOT_HYDRATE_MS)
+    fallback = _empty_week_fallback(page, verbose=verbose)
+    if fallback:
+        field, week = fallback
+        page.goto(f"{spec['url']}&{quote(field)}={quote(week)}",
+                  wait_until="domcontentloaded")
+        page.wait_for_timeout(_SHOT_HYDRATE_MS)
+        # RAISE rather than shoot the empty board: if the param ever stops
+        # binding (field renamed, format changed), the old behaviour was a
+        # correct-looking screenshot with blank Volume tables — the exact silent
+        # failure this whole path exists to end. run._tableau_shots turns this
+        # into an honest 'pending' note.
+        if _empty_week_fallback(page):
+            raise RuntimeError(
+                f"{spec['id']}: '{field}' would not move to {week} — the board "
+                f"still sits on a week with no data for this team")
     board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
     board.wait_for(state="visible", timeout=60_000)
     board.screenshot(path=str(out))
