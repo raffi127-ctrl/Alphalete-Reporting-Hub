@@ -11485,6 +11485,10 @@ else:  # st.session_state.view == "user"
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
             "[class*='sara-plus-issues__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # 2nd Round Interview Auditor — 24/7 bot (reps DM recordings anytime,
+            # no run-status reported back) → permanent orange OPS pill like the
+            # other always-on cards. (Megan 2026-07-28)
+            "[class*='interview-audit-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
