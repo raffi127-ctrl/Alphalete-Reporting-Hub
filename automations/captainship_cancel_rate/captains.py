@@ -14,21 +14,23 @@ from dataclasses import dataclass
 # "Captainship Metrics Report - Cancel Rate" — the live workbook.
 REAL_SHEET_ID = "1P95BxzlmLKkuvcL0gqjD9EfEHPLniGN-m4eE9UsPe_E"
 
-# Sandbox = a duplicate of the real workbook. run.py writes HERE unless
-# --real is passed, so a new build can never touch the captains' live tabs.
+# Sandbox = a duplicate of the real workbook, for practice runs only. The
+# report writes to the LIVE workbook by default (Eve 2026-07-28: these tabs
+# were created from scratch for this report, so there's nothing to protect) —
+# --sandbox is the opt-in, not the other way round.
 # Set CANCEL_RATE_SANDBOX_SHEET_ID to point at a different duplicate.
 SANDBOX_SHEET_ID = os.environ.get(
     "CANCEL_RATE_SANDBOX_SHEET_ID",
     "1Je8W3Pv5sQ1GurNQeExBQBimzgDjN5gAxJq2o7P17-M")
 
 
-def sheet_id(real: bool) -> str:
-    """Destination workbook. Env override wins (lets the Hub / scheduler
-    retarget without a code change)."""
+def sheet_id(sandbox: bool = False) -> str:
+    """Destination workbook — the live one unless `sandbox`. Env override wins
+    (lets the Hub / scheduler retarget without a code change)."""
     override = os.environ.get("CANCEL_RATE_SHEET_ID", "").strip()
     if override:
         return override
-    return REAL_SHEET_ID if real else SANDBOX_SHEET_ID
+    return SANDBOX_SHEET_ID if sandbox else REAL_SHEET_ID
 
 
 @dataclass(frozen=True)

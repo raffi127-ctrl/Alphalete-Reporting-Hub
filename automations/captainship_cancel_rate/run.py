@@ -15,11 +15,11 @@ WHERE THE NUMBERS COME FROM (full path — see pull.py for the detail)
   30-60 : column "30-60 day New Internet activation rate", INVERTED
           (100% - activation), because the workbook has no 30-60 cancel column.
 
-SANDBOX BY DEFAULT. Writes go to the duplicate workbook until you pass
---real, so nothing can land on the captains' live tabs while this is new.
+Writes to the LIVE workbook by default. --sandbox retargets the whole run at
+a duplicate of it for practice; --dry-run writes nothing at all.
 
-  python -m automations.captainship_cancel_rate.run                # sandbox
-  python -m automations.captainship_cancel_rate.run --real         # live
+  python -m automations.captainship_cancel_rate.run                # live
+  python -m automations.captainship_cancel_rate.run --sandbox      # practice
   python -m automations.captainship_cancel_rate.run --dry-run
   python -m automations.captainship_cancel_rate.run --only wayne
   python -m automations.captainship_cancel_rate.run --skip-download
@@ -64,7 +64,7 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
           f"avg 0-30 {data['avg'].get(pull.P_030, '-')}, "
           f"30-60 {data['avg'].get(pull.P_3060, '-')}")
 
-    ws = fill.open_ws(cap.tab, real=args.real)
+    ws = fill.open_ws(cap.tab, sandbox=args.sandbox)
     sections = fill.find_sections(ws)
     if len(sections) != len(fill.SECTION_LABELS):
         raise RuntimeError(
@@ -120,9 +120,12 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="captainship_cancel_rate")
     ap.add_argument("--date", default=None, help="Override today (YYYY-MM-DD).")
-    ap.add_argument("--real", action="store_true",
-                    help="Write to the LIVE workbook. Without this every write "
-                         "goes to the sandbox duplicate.")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="Practice run: write to the SANDBOX duplicate instead "
+                         "of the live workbook.")
+    # Accepted and ignored — the live workbook is now the default, but saved
+    # rerun commands and older scheduler configs still pass --real.
+    ap.add_argument("--real", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--dry-run", action="store_true",
                     help="Print what would happen; write nothing.")
     ap.add_argument("--skip-download", action="store_true",
@@ -135,9 +138,9 @@ def main(argv=None) -> int:
 
     today = _today(args.date)
     selected = [c for c in C.CAPTAINS if args.only is None or c.slug == args.only]
-    target = C.sheet_id(args.real)
+    target = C.sheet_id(args.sandbox)
 
-    mode = "DRY-RUN" if args.dry_run else ("LIVE" if args.real else "SANDBOX")
+    mode = "DRY-RUN" if args.dry_run else ("SANDBOX" if args.sandbox else "LIVE")
     print(f"=== Captainship Cancel Rate — {today.isoformat()} ({mode}) ===")
     print(f"Workbook: https://docs.google.com/spreadsheets/d/{target}/edit")
     print(f"Captains: {[c.slug for c in selected]}")
@@ -215,7 +218,7 @@ def _write_manifest(failed: list, went_dark_all: dict, args) -> None:
             _rm.write_manifest(
                 REPORT_ID, failed=list(failed),
                 retry_args=(["--only", failed[0]] if len(failed) == 1 else [])
-                           + (["--real"] if args.real else []),
+                           + (["--sandbox"] if args.sandbox else []),
                 kind="report",
                 note=f"{len(failed)} captain tab(s) failed: {failed}."
                      + (f" ⚠ {dark_note}" if dark_note else ""),
@@ -232,7 +235,7 @@ def _write_manifest(failed: list, went_dark_all: dict, args) -> None:
         elif dark_note:
             _rm.write_manifest(
                 REPORT_ID, failed=list(went_dark_all.keys()),
-                retry_args=(["--real"] if args.real else []), kind="report",
+                retry_args=(["--sandbox"] if args.sandbox else []), kind="report",
                 note="⚠ " + dark_note,
                 remediation=_rm.make_remediation(
                     reason="Every captain tab filled, but an ICD that had recent "

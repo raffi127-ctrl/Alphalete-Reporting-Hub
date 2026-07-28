@@ -1353,7 +1353,7 @@
     "captainship_cancel_rate": {
       "order": 13.5,
       "on_scheduler": true,
-      "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) — same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. --real is required for the live workbook; without it the run writes to the sandbox duplicate.",
+      "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) — same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. Writes the LIVE workbook — no flag needed (Eve 2026-07-28: these tabs were built from scratch for this report, so there is nothing to protect). --sandbox is the opt-in for a practice run.",
       "display_name": "Captainship - Cancel Rate (ATT Fiber)",
       "source_type": "tableau",
       "data_sources": [
@@ -1362,9 +1362,7 @@
       "command": [
         "automations.captainship_cancel_rate.run"
       ],
-      "base_args": [
-        "--real"
-      ],
+      "base_args": [],
       "cadence": {
         "weekdays": [
           0,

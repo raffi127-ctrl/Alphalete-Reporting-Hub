@@ -72,8 +72,8 @@ def _date_label(today: dt.date) -> str:
             f"{today.month}/{today.day}/{today.year % 100}")
 
 
-def open_ws(tab: str, *, real: bool = False):
-    return open_by_key(C.sheet_id(real)).worksheet(tab)
+def open_ws(tab: str, *, sandbox: bool = False):
+    return open_by_key(C.sheet_id(sandbox)).worksheet(tab)
 
 
 # ------------------------------------------------------------------ structure
