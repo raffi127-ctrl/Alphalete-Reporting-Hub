@@ -490,6 +490,73 @@ def sync_agents(dry_run: bool = True) -> List[str]:
     return msgs
 
 
+_XML_COMMENT = re.compile(rb"<!--.*?-->", re.S)
+
+
+def _plist_schedule(plist_path: Path) -> Optional[dict]:
+    """Parse a plist's StartCalendarInterval into a card schedule (fixed clock →
+    a card that lands in ⏰ Time Set). None for interval/continuous jobs (no
+    calendar) → on-demand. launchd Weekday: 0/7=Sun, 1=Mon…6=Sat → Python Mon=0."""
+    try:
+        import plistlib
+        raw = plist_path.read_bytes()
+        try:
+            d = plistlib.loads(raw)
+        except Exception:
+            d = plistlib.loads(_XML_COMMENT.sub(b"", raw))
+    except Exception:
+        return None
+    cal = d.get("StartCalendarInterval")
+    if not cal:
+        return None
+    if isinstance(cal, dict):
+        cal = [cal]
+    def _pywd(wd):
+        return 6 if wd in (0, 7) else wd - 1
+    wds = sorted({_pywd(e["Weekday"]) for e in cal if "Weekday" in e})
+    e0 = min(cal, key=lambda e: (e.get("Hour", 0), e.get("Minute", 0)))
+    t = "%02d:%02d" % (e0.get("Hour", 0), e0.get("Minute", 0))
+    sc = {"frequency": "daily" if not wds or len(wds) >= 7 else "weekly", "time": t}
+    if wds and len(wds) < 7:
+        sc["weekdays"] = wds
+    return sc
+
+
+def sync_launchd_system(dry_run: bool = True) -> List[str]:
+    """Card every launchd agent (deploy/com.alphalete.*.plist) that fires on a
+    schedule but has NO card of ANY kind — including ⚙️ System plumbing that
+    _agent_report_id can't resolve to a report. Keeps the "every scheduled job is
+    visible" guarantee true for FUTURE jobs, not just today's. Hardened dedup:
+    skips anything already covered by a report card (hardcoded / curated / slug /
+    library) OR a same-name card — so it can never recreate the duplicate cards a
+    naive pass produced (2026-07-28). Idempotent."""
+    existing = existing_card_ids()
+    curated = _curated_map()
+    msgs: List[str] = []
+    for plist in sorted(DEPLOY_DIR.glob("com.alphalete.*.plist")):
+        name = plist.name[len("com.alphalete."):-len(".plist")]
+        rid, _why = _agent_report_id(name)
+        # covered by a real report card (hardcoded / curated / slug / library)?
+        if rid and resolve_card(rid, create=False, _existing=existing):
+            continue
+        cid = name.replace("-", "_")
+        # would this dupe an existing card, a hardcoded slug, or a curated target?
+        if (cid in existing or slug(cid) in existing or cid in curated
+                or cid in CURATED_ALIAS):
+            continue
+        sched = _plist_schedule(plist)
+        cat, emoji = (("⚙️ System", "⚙️") if name in _INFRA_AGENTS
+                      else ("🗂 Auto-registered", "🗂"))
+        ok, msg = ensure_library_card(
+            cid, name.replace("-", " ").title(), category=cat, emoji=emoji,
+            schedule_ov=sched,
+            description="Scheduled launchd job (%s). Auto-carded so no automation "
+                        "runs invisibly." % name,
+            dry_run=dry_run)
+        msgs.append(("  ✓ " if ok else "  ✗ ") + name + ": " + msg)
+    return msgs
+
+
 def _print_audit() -> None:
     a = audit()
     print("Hub coverage audit — %s" % dt.date.today().isoformat())

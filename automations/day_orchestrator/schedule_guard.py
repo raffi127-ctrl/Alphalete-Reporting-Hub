@@ -155,7 +155,9 @@ def main() -> int:
     # Fully best-effort — a coverage hiccup must never fail the schedule guard.
     try:
         from automations.day_orchestrator import hub_coverage
-        cov = hub_coverage.sync(dry_run=False) + hub_coverage.sync_agents(dry_run=False)
+        cov = (hub_coverage.sync(dry_run=False)
+               + hub_coverage.sync_agents(dry_run=False)
+               + hub_coverage.sync_launchd_system(dry_run=False))
         created = [m for m in cov if m.strip().startswith("✓")]
         print(f"SCHEDULE-GUARD :: coverage sweep — {len(created)} card(s) created/updated")
         for m in cov:
