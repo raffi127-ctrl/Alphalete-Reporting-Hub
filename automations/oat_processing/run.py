@@ -1037,6 +1037,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 last = " ".join(nm[1:]) if len(nm) > 1 else ""
                 role = parts[1] if len(parts) > 1 and parts[1] else "Event Marketing"
                 phone = parts[2] if len(parts) > 2 else ""
+                open_oat(page)  # land on p=604 — the SMS widget injects there
                 _log(f"[oat] RETEXT-TEST (no send) name={first} {last!r} "
                      f"role={role!r} phone={phone!r}")
                 status, detail = retext_applicant(page, first, last, phone, role,
