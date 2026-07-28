@@ -82,9 +82,11 @@ def _modal() -> dict:
     }
 
 
-def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
+def _process(web, user_id: str, icd: str, leader: str, names: list,
+             thread_ts: str = None) -> None:
     """Runs in a background thread (the pull takes minutes; the modal was already
-    ack'd). DMs the requester progress + the result."""
+    ack'd). DMs the requester progress + the result. `thread_ts` threads the reply
+    under an existing message (used when re-pulling from a corrected-name reply)."""
     from .pull import gather_team
     link = f"https://docs.google.com/spreadsheets/d/{C.DD_SHEET_ID}/edit"
     # files_upload_v2 needs the DM *channel* id (not the user id), so open it once.
@@ -92,17 +94,18 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
         chan = web.conversations_open(users=user_id)["channel"]["id"]
     except Exception:
         chan = user_id
+    _kw = {"thread_ts": thread_ts} if thread_ts else {}
     try:
         n = len(names)
         # The pull is 8 weekly crosstabs + shared metrics/churn — a fixed ~8 min,
         # NOT per-rep (a whole team costs the same as one rep).
-        web.chat_postMessage(channel=chan, text=(
+        web.chat_postMessage(channel=chan, **_kw, text=(
             f":frog: On it — pulling *{icd}* ({n} rep{'s' if n != 1 else ''}). "
             f"This takes about *8 min* (8 weeks of data); I'll send back an image "
             f"of the 3 charts and log them to the sheet."))
         people, misses = gather_team(names, icd=icd)
         if not people:
-            web.chat_postMessage(channel=chan, text=(
+            web.chat_postMessage(channel=chan, **_kw, text=(
                 f":warning: Couldn't find any of those reps under *{icd}*: "
                 f"{', '.join(names)}. Check the spelling and try `/dd` again."))
             return
@@ -114,14 +117,14 @@ def _process(web, user_id: str, icd: str, leader: str, names: list) -> None:
                f"<{tab_link}|{res['tab']} tab>.")
         if misses:
             cap += f"\n:warning: Couldn't match (check spelling): {', '.join(misses)}"
-        web.files_upload_v2(channel=chan, file=str(res["png"]),
+        web.files_upload_v2(channel=chan, **_kw, file=str(res["png"]),
                             filename=f"{icd} Due Diligence.png", initial_comment=cap)
         # Remember this request so a plain DM reply (a corrected name) can
         # re-pull without re-entering the ICD/leader/team.
         _save_ctx(user_id, icd, leader, names)
     except Exception as e:                       # noqa: BLE001 — never crash the listener
         try:
-            web.chat_postMessage(channel=chan,
+            web.chat_postMessage(channel=chan, **_kw,
                                  text=f":x: Jiraiya hit an error: {type(e).__name__}: {str(e)[:200]}")
         except Exception:
             pass
@@ -142,19 +145,24 @@ def _handler(client, req):
     if req.type == "events_api":
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         ev = req.payload.get("event", {})
+        print(f"[event] etype={ev.get('type')} ch={ev.get('channel_type')} "
+              f"sub={ev.get('subtype')} bot={bool(ev.get('bot_id'))} "
+              f"user={ev.get('user')} text={(ev.get('text') or '')[:40]!r}", flush=True)
         if (ev.get("type") == "message" and ev.get("channel_type") == "im"
                 and not ev.get("bot_id") and not ev.get("subtype")):
             user = ev.get("user")
             text = (ev.get("text") or "").strip()
             ctx = _load_ctx().get(user or "")
+            print(f"[event] ctx_found={bool(ctx)} is_ack={text.lower() in _ACKS}", flush=True)
             # Only re-pull when the user has a recent request AND the reply looks
             # like a name (not a "thanks"). Adds the corrected name(s) and re-runs.
             if ctx and text and text.lower() not in _ACKS:
                 new_names = list(dict.fromkeys(
                     ctx["names"] + [l.strip() for l in text.splitlines() if l.strip()]))
+                tts = ev.get("thread_ts") or ev.get("ts")   # reply in the thread
                 threading.Thread(
                     target=_process,
-                    args=(client.web_client, user, ctx["icd"], ctx["leader"], new_names),
+                    args=(client.web_client, user, ctx["icd"], ctx["leader"], new_names, tts),
                     daemon=True).start()
         return
     if req.type == "interactive" and req.payload.get("type") == "view_submission" \
