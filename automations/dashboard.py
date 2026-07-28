@@ -1401,7 +1401,11 @@ def _b2b_metrics_card() -> dict:
         "assignees": ["Lucy 2"],
         "schedule": {
             "frequency": "daily",
-            "time": "4:00 AM flow (~5 AM)",
+            # `time` must be a real clock value (drives sort + the "Daily at …"
+            # label); the descriptive cadence lives in time_label (box-order-log
+            # pattern). Was a prose string that rendered literally + broke sort.
+            "time": "5:00 AM",
+            "time_label": "4am flow (~5 AM CST)",
             "estimated_minutes": 10 * len(offs),
         },
         "checklist": [],
@@ -3091,8 +3095,8 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2_iCFDdmBBLPQNQ8x8xLQPTUOJcxHOMRj5RWu6E/edit"),
         "assignees": ["Lucy 1"],
-        "schedule": {"frequency": "daily", "time": "9:30 AM",
-                     "estimated_minutes": 12},
+        "schedule": {"frequency": "daily", "weekdays": [1, 2, 3, 4, 5, 6],
+                     "time": "9:30 AM", "estimated_minutes": 12},
         "checklist": [],
         "post_run": {
             "message_success": "✅ 12 Captainship drafts created in alphaletereporting@gmail.com — review, add the recipient, send.",
@@ -4398,14 +4402,6 @@ AUTOMATED_REPORTS = [
                         "(workbook + payout image) to #alphalete-gp-sales.",
                 "module": "automations.box_order_log.run",
                 "args_fn": lambda: ["--sheet", "--xlsx", "--post"],
-            },
-            {
-                "label": "Update the Google Sheet only — no Slack",
-                "icon": "📄",
-                "help": "Same as the 8:30am pass: refreshes the rolling "
-                        "6-week log on the Vantura board and posts nothing.",
-                "module": "automations.box_order_log.run",
-                "args_fn": lambda: ["--sheet", "--xlsx"],
             },
         ],
     },
