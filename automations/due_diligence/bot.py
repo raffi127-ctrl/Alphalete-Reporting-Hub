@@ -96,13 +96,11 @@ def _process(web, user_id: str, icd: str, leader: str, names: list,
         chan = user_id
     _kw = {"thread_ts": thread_ts} if thread_ts else {}
     try:
-        n = len(names)
         # The pull is 8 weekly crosstabs + shared metrics/churn — a fixed ~8 min,
         # NOT per-rep (a whole team costs the same as one rep).
         web.chat_postMessage(channel=chan, **_kw, text=(
-            f":frog: On it — pulling *{icd}* ({n} rep{'s' if n != 1 else ''}). "
-            f"This takes about *8 min* (8 weeks of data); I'll send back an image "
-            f"of the 3 charts and log them to the sheet."))
+            f":frog: On it — pulling *{icd}*. This takes about *8 min* (8 weeks "
+            f"of data); I'll send back an image of the 3 charts and log them to the sheet."))
         people, misses = gather_team(names, icd=icd)
         if not people:
             web.chat_postMessage(channel=chan, **_kw, text=(
@@ -116,12 +114,15 @@ def _process(web, user_id: str, icd: str, leader: str, names: list,
                f"{'s' if len(people) != 1 else ''}) — logged to the "
                f"<{tab_link}|{res['tab']} tab>.")
         if misses:
-            cap += f"\n:warning: Couldn't match (check spelling): {', '.join(misses)}"
+            cap += (f"\n:warning: Couldn't match: *{', '.join(misses)}* — reply in "
+                    f"this thread with the correct spelling and I'll re-pull the "
+                    f"whole team's numbers for you.")
         web.files_upload_v2(channel=chan, **_kw, file=str(res["png"]),
                             filename=f"{icd} Due Diligence.png", initial_comment=cap)
-        # Remember this request so a plain DM reply (a corrected name) can
-        # re-pull without re-entering the ICD/leader/team.
-        _save_ctx(user_id, icd, leader, names)
+        # Remember this request so a thread reply (a corrected name) can re-pull
+        # without re-entering the team. Store only the MATCHED reps so misses
+        # don't pile up on the running list.
+        _save_ctx(user_id, icd, leader, [p.matched_rep for p in people])
     except Exception as e:                       # noqa: BLE001 — never crash the listener
         try:
             web.chat_postMessage(channel=chan, **_kw,
