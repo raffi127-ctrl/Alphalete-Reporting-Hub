@@ -1,0 +1,49 @@
+[
+  {
+    "key": "haytham",
+    "report_id": "haytham_metrics",
+    "label": "Haytham's Local Office",
+    "owner": "Haytham Nagi",
+    "channel_id": "C09KCM8P6D9",
+    "channel_name": "horizon-edge-sales",
+    "sheet_id": "1Jjq8htt9jKu7BQ2hOKxHxD5iT7feuUNU0aoCebdPwBg",
+    "knocks_office": "Haytham Nagi",
+    "ov_account": "22524",
+    "business_name": "Horizon Edge Alliance, Inc.",
+    "website": "https://horizonedgealliance.com/",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "notes": ""
+  }
+]
