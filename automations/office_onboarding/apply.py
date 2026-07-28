@@ -66,6 +66,16 @@ def _office_row(rec: OnboardingRecord) -> dict:
         "machine": rec.machine(),
         "notes": rec.notes,
     }
+    # D2D offices are set up by DUPLICATING the "Master Metrics Templates"
+    # workbook (Megan 2026-07-28), whose churn/ABP tabs are named on the
+    # "Lucy ..." convention — not the older "Local Office - ..." names the fills
+    # default to. Carry those labels so the runner writes to the tabs that
+    # actually exist (office_metrics.runner passes them as CHURN_NI_TAB /
+    # CHURN_WL_TAB / ABP_TAB). B2B has its own tab handling, so scope to D2D.
+    if rec.family == "d2d":
+        row["churn_ni_tab"] = "Lucy New INT Churn"
+        row["churn_wl_tab"] = "Lucy Wireless Churn"
+        row["abp_tab"] = "Lucy New INT ABP%"
     return row
 
 
