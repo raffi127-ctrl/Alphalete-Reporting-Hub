@@ -499,21 +499,34 @@ def _close_sms_panel(page) -> None:
             continue
 
 
-def _sms_widget_frame(page, timeout_ms: int = 15000):
+def _sms_widget_frame(page, timeout_ms: int = 15000, reopen=None):
     """Find the frame (main page or an iframe) that actually holds the Bandwidth
-    SMS widget — identified by its Name filter. Returns (frame_or_None, diag)."""
-    for _ in range(max(1, timeout_ms // 500)):
+    SMS widget — identified by its Name filter (detected the same way the probe
+    does: fr.evaluate). If not seen mid-way and `reopen` is given, re-click the
+    SMS button once (in case the first open missed/toggled). Returns
+    (frame_or_None, diag)."""
+    tries = max(1, timeout_ms // 500)
+    for k in range(tries):
         for fr in page.frames:
             try:
-                if fr.query_selector("input[name='sms_name_filter']"):
+                if fr.evaluate("() => !!document.querySelector("
+                               "\"input[name='sms_name_filter']\")"):
                     return fr, ""
             except Exception:  # noqa: BLE001
                 continue
+        if reopen and k == tries // 2:
+            try:
+                reopen(page)
+            except Exception:  # noqa: BLE001
+                pass
         page.wait_for_timeout(500)
     diag = []
     for fr in page.frames:
         try:
-            diag.append(f"{(fr.url or '')[-34:]}|inp={len(fr.query_selector_all('input'))}")
+            names = fr.evaluate(
+                "() => [...document.querySelectorAll('input,select,textarea')]"
+                ".map(e=>e.name||e.id||'').filter(n=>/sms/i.test(n)).slice(0,8)")
+            diag.append(f"{(fr.url or '')[-24:]}|sms:{names}")
         except Exception as e:  # noqa: BLE001
             diag.append(f"err:{type(e).__name__}")
     return None, " ; ".join(diag)
@@ -548,7 +561,7 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "sms_panel_fail", "could not open SMS widget"
     # The Bandwidth widget injects its DOM asynchronously and may live in a child
     # iframe — resolve the actual frame that holds it before driving anything.
-    w, diag = _sms_widget_frame(page, 16000)
+    w, diag = _sms_widget_frame(page, 18000, reopen=_open_sms_panel)
     if w is None:
         _log(f"    [retext] widget frame not found — frames: {diag}")
         _close_sms_panel(page)
