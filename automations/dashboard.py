@@ -2595,18 +2595,7 @@ AUTOMATED_REPORTS = [
             "time": "6:00 PM",
             "estimated_minutes": 3,
         },
-        "checklist": [
-            {"text": "Automatic — the report pulls the Frontier PDFs from "
-                     "email and fills; no action needed. FALLBACK ONLY: if "
-                     "the email didn't arrive, upload the PDF(s) here "
-                     "(Daily Sales by Store, Daily Sales Events, and/or "
-                     "Quality Scorecard) and Run.",
-             "uploader": {
-                 "target_dir": "automations/uploaded/frontier",
-                 "accept": [".pdf"],
-                 "multiple": True,
-             }},
-        ],
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Frontier OPT filled from the emailed "
                                "PDF(s). Rows without a matching PDF were "
