@@ -4846,7 +4846,8 @@ AUTOMATED_REPORTS = [
         "description": "One login syncs all of ApplicantStream into the Applicant Tracker — morning appends the Call List + updates 2R status (reads yesterday), evening appends 2R Retention + marks first-day show-up (reads today), across 17 offices.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "🌅 **MORNING** — reads **yesterday**, runs **~6:45am** (its own timer):\n"
+            "🌅 **MORNING** — reads **yesterday**, runs in the **4am flow** "
+            "(right after Daily Recruiting Focus):\n"
             "**•** **Export Call List** → Call List tab (owner **A**, data "
             "**B–H**). Appends; no de-dupe.\n"
             "**•** **Update 2R Status** → 2R tab, on rows already there: Offered "
@@ -4871,8 +4872,10 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "6:45 AM",
-            "time_label": "6:45 AM + 8 PM CST · Mon–Sat",
+            # Morning phase moved into the 4am orchestrator flow (after
+            # daily_focus) 2026-07-28; evening stays its own 8pm launchd.
+            "time": "4:00 AM",
+            "time_label": "4 AM flow + 8 PM CST · Mon–Sat",
             "estimated_minutes": 12,
         },
         "checklist": [],
@@ -11455,6 +11458,10 @@ else:  # st.session_state.view == "user"
             # no run-status reported back) → permanent orange OPS pill like the
             # other always-on cards. (Megan 2026-07-28)
             "[class*='interview-audit-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Org. Sales Board Email is PAUSED (off the scheduler, handed to Eve) —
+            # force its pill PURPLE so it reads at a glance as "not running / manual"
+            # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
+            "[class*='sales-board-screenshot-email__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )

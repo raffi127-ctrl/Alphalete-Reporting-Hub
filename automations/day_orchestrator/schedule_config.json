@@ -128,8 +128,8 @@
       "machine": "Lucy 1"
     },
     "applicant_sync_morning": {
-      "on_scheduler": false,
-      "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). Runs ~6:45am Mon–Sat on its OWN launchd (com.alphalete.applicant-morning), NOT the 4am batch: daily_focus uses the SAME rcaptain ApplicantStream login in that batch and the concurrent logins collided (16/17 + no-session-token failures). 6:45 is after the 4am batch clears (~6:12). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange). Install via install_applicant_morning_agent.",
+      "on_scheduler": true,
+      "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). MOVED INTO THE 4am FLOW (Megan 2026-07-28): runs in the orchestrator's sequential pass on Lucy 1, gated `after` daily_focus. WHY this is now safe from the old collision — daily_focus and this share the SAME rcaptain ApplicantStream login, and back when this was a SEPARATE 6:45am launchd it could overlap the still-running 4am batch (16/17 + no-session-token failures). The orchestrator runs reports ONE AT A TIME, and `after: daily_focus` makes this PENDING until daily_focus reaches a terminal state, so the two logins can never be concurrent. `after` (not depends_on) is deliberate: a FAILED/absent daily_focus (e.g. Saturday, when focus isn't scheduled) must NOT strand the sync — the login is free either way. order 2 keeps it right behind daily_focus (order 1) so the Call List lands early. The standalone com.alphalete.applicant-morning launchd is retired via disable_applicant_morning_agent (must be booted out or the Call List double-appends — no de-dupe). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange).",
       "display_name": "Applicant Tracker: morning phase (4am)",
       "source_type": "appstream",
       "data_sources": [],
@@ -149,11 +149,37 @@
           5
         ]
       },
+      "order": 2,
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
+      "after": [
+        "daily_focus"
+      ],
       "verify": null,
       "timeout_minutes": 25,
+      "machine": "Lucy 1"
+    },
+    "disable_applicant_morning_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "RETIRE the standalone 6:45am morning launchd now that the morning phase runs in the 4am flow: `lucy rerun disable_applicant_morning_agent --machine \"Lucy 1\"` race-free boots out + stashes com.alphalete.applicant-morning.plist -> .disabled on Lucy 1, so it stops firing on its own timer (else the Call List double-appends — it has no de-dupe). REVERSIBLE: re-run install_applicant_morning_agent to re-create + bootstrap it (and flip applicant_sync_morning on_scheduler=false). Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Retire: Applicant morning 6:45am LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "applicant-morning"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
       "machine": "Lucy 1"
     },
     "install_applicant_morning_agent": {
