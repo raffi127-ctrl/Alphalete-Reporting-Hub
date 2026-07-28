@@ -1006,7 +1006,7 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
-        retext_test: str = None, _attempt: int = 1) -> int:
+        retext_test: str = None, retext_send: str = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -1037,21 +1037,25 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 probe_sms(page)
                 return 0
 
-            if retext_test:
-                # Validate the FULL re-text chain on ONE named person WITHOUT
-                # sending: 'First Last', or 'First Last|Role|Phone' to override.
-                parts = [p.strip() for p in retext_test.split("|")]
+            if retext_test or retext_send:
+                # Validate the FULL re-text chain on ONE named person. --retext-test
+                # stops before Send (dry); --retext-send-live actually sends ONE real
+                # message (controlled Send-button validation). 'First Last' or
+                # 'First Last|Role|Phone'.
+                spec = retext_send or retext_test
+                do_send = bool(retext_send)
+                parts = [p.strip() for p in spec.split("|")]
                 nm = parts[0].split()
                 first = nm[0] if nm else ""
                 last = " ".join(nm[1:]) if len(nm) > 1 else ""
                 role = parts[1] if len(parts) > 1 and parts[1] else "Event Marketing"
                 phone = parts[2] if len(parts) > 2 else ""
                 open_oat(page)  # land on p=604 — the SMS widget injects there
-                _log(f"[oat] RETEXT-TEST (no send) name={first} {last!r} "
-                     f"role={role!r} phone={phone!r}")
+                _log(f"[oat] RETEXT-{'SEND-LIVE' if do_send else 'TEST(no send)'} "
+                     f"name={first} {last!r} role={role!r} phone={phone!r}")
                 status, detail = retext_applicant(page, first, last, phone, role,
-                                                  do_send=False)
-                _log(f"[oat] RETEXT-TEST result: {status} :: {detail[:160]!r}")
+                                                  do_send=do_send)
+                _log(f"[oat] RETEXT result: {status} :: {detail[:160]!r}")
                 return 0
 
             if debug:
@@ -1307,12 +1311,16 @@ def main(argv=None) -> int:
                    metavar="'First Last[|Role|Phone]'",
                    help="Validate the full re-text chain on one named person "
                         "WITHOUT sending (Load Template -> FOR LUCY -> compose), stop")
+    p.add_argument("--retext-send-live", default=None, dest="retext_send",
+                   metavar="'First Last[|Role|Phone]'",
+                   help="ACTUALLY SEND one real re-text to the named person "
+                        "(controlled Send-button validation). Sends an SMS.")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
                max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
-               retext_test=args.retext_test)
+               retext_test=args.retext_test, retext_send=args.retext_send)
 
 
 if __name__ == "__main__":
