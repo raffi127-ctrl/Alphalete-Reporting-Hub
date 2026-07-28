@@ -1452,9 +1452,9 @@ def _tableau_trackers_card() -> dict:
     missed. That's what makes one card safe here: a single red light would hide
     a lone channel failing.
 
-    B2B Box is NOT on this card — its data isn't in at 4:31, so it posts hours
+    B2B Box is NOT on this card — its data isn't in at 5:00, so it posts hours
     later on its own card (_tableau_box_card). Two runs, two pills: one card
-    covering both would go red at 4:31 every morning for a board that simply
+    covering both would go red at 5:00 every morning for a board that simply
     hasn't landed yet."""
     from automations.tableau_screenshots import slack_post as _sp
     from automations.tableau_screenshots import pages as _pages
@@ -1521,8 +1521,8 @@ def _tableau_trackers_card() -> dict:
                f"{_custom_block}\n\n" if _custom_block else "")
             + "WHY BOX ISN'T HERE\n"
             f"{late_names}'s numbers don't settle until its Tableau data "
-            "refreshes (~7am), so posting it at 4:31 posted yesterday's "
-            "figures. It's listed in the Slack thread's header from 4:31 — "
+            "refreshes (~7am), so posting it at 5:00 posted yesterday's "
+            "figures. It's listed in the Slack thread's header from 5:00 — "
             "marked as still coming — and its image is added to that same "
             "thread by the 'Box (late)' card as soon as the data is real.\n\n"
             "IF A CHANNEL MISSES\n"
@@ -1586,7 +1586,7 @@ def _tableau_box_card() -> dict:
     Same code, same channels, same thread as _tableau_trackers_card — only the
     timing differs, so everything here is derived from the same pages.py/
     ORG_CHANNELS source rather than restated. Its own card because it's its own
-    run with its own outcome: Box failing at 7am and the 4:31 batch failing are
+    run with its own outcome: Box failing at 7am and the 5:00 batch failing are
     different problems, and one pill couldn't tell Megan which happened."""
     from automations.tableau_screenshots import slack_post as _sp
     from automations.tableau_screenshots import pages as _pages
@@ -1609,12 +1609,12 @@ def _tableau_box_card() -> dict:
             "'Tableau Country Trackers M/D/YYYY' thread in every sales channel "
             f"({channels}) — but only once Box's Tableau data has actually "
             "refreshed. Box's numbers don't settle until ~7am, so it used to "
-            "post yesterday's figures with the 4:31 batch."),
+            "post yesterday's figures with the 5:00 batch."),
         "breakdown": (
             "WHAT IT DOES\n"
             f"Captures {late_names} and adds it to the tracker thread that "
-            "already went out at 4:31 — same thread, every channel below. The "
-            "thread's header lists Box from 4:31, marked as still coming; this "
+            "already went out at 5:00 — same thread, every channel below. The "
+            "thread's header lists Box from 5:00, marked as still coming; this "
             "run posts the image and clears that note.\n\n"
             "WHEN IT RUNS\n"
             "Not on a clock. It waits for Box's Tableau data to actually land "
