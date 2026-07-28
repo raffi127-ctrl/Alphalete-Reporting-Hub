@@ -122,6 +122,16 @@ def find_sections(grid: List[List[str]]) -> List[dict]:
             b = (row[1] if len(row) > 1 else "").strip()
             if b:
                 reps.append((j, b))
+        # Fallback: a few tabs put the rep name in column A instead (Starr
+        # Rodenhurst has it in a vertical merge A97:A103, column B empty).
+        # Only used when column B is empty for the WHOLE section, so tabs
+        # that use A for section notes ("Rason Williams' team") are untouched.
+        if not reps:
+            for j in range(header_row + 1, total_row):
+                row = grid[j - 1]
+                a = (row[0] if row else "").strip()
+                if a:
+                    reps.append((j, a))
         out.append({"header_row": header_row, "total_row": total_row,
                     "reps": reps, "header": grid[header_row - 1]})
     return out
