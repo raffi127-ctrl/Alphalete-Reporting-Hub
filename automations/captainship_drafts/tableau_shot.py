@@ -240,13 +240,111 @@ def _crop_cancel_last_n_days(path: Path, n_days: int = _CANCEL_DAYS,
                   flush=True)
 
 
+# Team-stats boards are shot AS RENDERED, not exported. Download→Image re-draws
+# the dashboard at its authored size and CLIPS any worksheet whose container
+# scrolls: Khalil's and Colten's Quality tables came back cut mid-row, missing
+# reps and the Total. The same board ON SCREEN shows every row — which is why
+# Eve's hand-made screenshots always looked right (2026-07-28). So for these we
+# screenshot the live viz and crop Tableau's chrome off. The cancel boards export
+# fine (no scrolling container) and keep the Download→Image path, which is
+# higher-resolution and already feeds the 7-day width crop.
+_SHOT_HYDRATE_MS = 25_000
+_VIZ_IFRAME = 'iframe[title="Data Visualization"]'
+# The dashboard itself inside the viz iframe — shooting THIS element (not the
+# iframe) leaves out Tableau's toolbar and workbook tab strip, so there is no
+# chrome to crop off by pixel-guessing. It reports the authored dashboard size
+# (1250x2000 on the NDS board), most of which is empty canvas below the content;
+# _trim_bottom cuts that away.
+_DASHBOARD = ".tab-dashboard"
+
+
+def _trim_right(path: Path, margin_px: int = 14) -> None:
+    """Drop the empty canvas to the right of the board. The rendered viz is as
+    wide as the browser window, so without this every team-stats shot carries a
+    few hundred px of white on the right and the email renders the table small."""
+    import numpy as np
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    arr = np.asarray(im.convert("L")).astype(np.int16)
+    col_has = (arr.max(axis=0) - arr.min(axis=0)) >= 22
+    xs = np.where(col_has)[0]
+    if not len(xs):
+        return
+    cut = min(im.width, int(xs[-1]) + 1 + margin_px)
+    if cut < im.width - 2:
+        im.crop((0, 0, cut, im.height)).save(path)
+
+
+def _trim_footer_after_gap(path: Path, max_gap: int = 60,
+                           margin_px: int = 14) -> None:
+    """Drop trailing content separated from the board by a WIDE blank gap.
+
+    The B2B board ends with 'Last Server Update' / '**CONFIDENTIAL**' lines
+    sitting ~200px below the tables. capture._trim_bottom's peel_footer rule
+    drops trailing bands under 100px, which is the wrong test here: it also ate
+    the last rows + Total of the NDS Quality table (489px -> 422px, the very
+    clipping this capture path exists to fix). Separation is the honest signal —
+    real table rows are contiguous, a footer is not."""
+    import numpy as np
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    arr = np.asarray(im.convert("L")).astype(np.int16)
+    row_has = (arr.max(axis=1) - arr.min(axis=1)) >= 22
+    bands, y, h = [], 0, arr.shape[0]
+    while y < h:
+        if row_has[y]:
+            s = y
+            while y < h and row_has[y]:
+                y += 1
+            bands.append((s, y))
+        else:
+            y += 1
+    if not bands:
+        return
+    end = bands[0][1]
+    for (s, e), (_ps, pe) in zip(bands[1:], bands[:-1]):
+        if s - pe > max_gap:
+            break
+        end = e
+    cut = min(h, end + margin_px)
+    if cut < h - 2:
+        im.crop((0, 0, im.width, cut)).save(path)
+
+
+def _shoot_rendered(page, spec: dict, out_dir: Path, *,
+                    verbose: bool = False) -> Path:
+    """Screenshot the board as a human sees it, cropped to the board itself.
+
+    Shoots the dashboard element, so Tableau's chrome never enters the image,
+    then trims the empty canvas off the right and the bottom, and finally drops
+    the B2B board's own footer lines via _trim_footer_after_gap."""
+    from automations.tableau_screenshots import capture
+    out = Path(out_dir) / f"{spec['title']}.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    page.goto(spec["url"], wait_until="domcontentloaded")
+    page.wait_for_timeout(_SHOT_HYDRATE_MS)
+    board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
+    board.wait_for(state="visible", timeout=60_000)
+    board.screenshot(path=str(out))
+    _trim_right(out)
+    capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
+    _trim_footer_after_gap(out)
+    if verbose:
+        from PIL import Image
+        with Image.open(out) as im:
+            print(f"   ✓ rendered-viz shot  {out.name}  {im.width}x{im.height}px",
+                  flush=True)
+    return out
+
+
 def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
                          today: dt.date | None = None,
                          verbose: bool = False, logfn=print) -> Optional[Path]:
     """Capture one captain's §2 Tableau board as a PNG, or return None if its
     source isn't configured yet (no browser is opened in that case). Opens a
-    Tableau session and runs the shared Download→Image capture; cancel boards are
-    then width-cropped to the last 7 days. Any capture failure PROPAGATES to the
+    Tableau session; team-stats boards are shot as rendered (see above) and
+    cancel boards go through the shared Download→Image capture and are then
+    width-cropped to the last 7 days. Any capture failure PROPAGATES to the
     caller (run._tableau_shots), which degrades it to a 'pending' note — a failed
     pull must never post a wrong-looking image."""
     spec = _spec_for(captain_key, flavor)
@@ -260,6 +358,8 @@ def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
     # how sheet_shot captures all ranges in one browser. Fine pre-go-live (manual
     # cadence); an unconfigured captain never reaches here, so no wasted login.
     with tableau_session(headless=True, verbose=verbose) as page:
+        if flavor in _TEAMSTATS_FLAVORS:
+            return _shoot_rendered(page, spec, out_dir, verbose=verbose)
         png = capture.capture_page(page, spec, out_dir, verbose=verbose)
     if flavor in _CANCEL_FLAVORS and png:
         _crop_cancel_last_n_days(png, verbose=verbose)
