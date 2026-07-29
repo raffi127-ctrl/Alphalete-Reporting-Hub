@@ -58,6 +58,10 @@ APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
 # Stamped into the Slack message so --check can find the day's post from another
 # machine without anything being passed between them.
 MARKER = "CAPTAINSHIP-REVIEW"
+REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
+# Hours after the post, not a clock time — the build is triggered by hand once
+# the Sales Board is complete, so it lands at a different hour every day.
+REMIND_AFTER_HOURS = 3.0
 
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 DRIVE_FOLDER_NAME = "Captainship Reports - para revisar"
@@ -223,25 +227,87 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     return r["ts"]
 
 
-def find_approval(today: dt.date, channel: Optional[str] = None,
-                  verbose: bool = True) -> Optional[Tuple[str, str]]:
-    """(user_id, name) of the first authorised checkmark on today's post, else
-    None. Finds the post by its marker rather than by a ts handed over from the
-    machine that posted it, so the two halves stay independent."""
+def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:
+    """The day's review message, found by its marker rather than by a ts handed
+    over from the machine that posted it — that is what lets --post run on the
+    mini and everything else run on Eve's box."""
     want = f"{MARKER} {today:%Y-%m-%d}"
     hist = _client().conversations_history(channel=_channel(channel), limit=100)
-    msg = next((m for m in hist.get("messages", [])
-                if want in (m.get("text") or "")), None)
-    if msg is None:
-        if verbose:
-            print(f"— no review post found for {today:%Y-%m-%d}", flush=True)
-        return None
+    return next((m for m in hist.get("messages", [])
+                 if want in (m.get("text") or "")), None)
+
+
+def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:
     for rx in msg.get("reactions", []):
         if rx.get("name") not in APPROVE_EMOJI:
             continue
         for uid in rx.get("users", []):
             if uid in APPROVERS:
                 return uid, APPROVERS[uid]
+    return None
+
+
+def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
+           channel: Optional[str] = None, verbose: bool = True) -> bool:
+    """Nudge the channel if the day's reports are still waiting. True if posted.
+
+    Hours SINCE THE POST, not a wall-clock time: the build is triggered by hand
+    once the Sales Board is complete, so it lands at a different hour every day
+    and a fixed 3pm reminder would fire before the link existed as often as
+    after it.
+
+    Silence was the alternative and it fails exactly when it matters — the day
+    everyone is busy and nobody notices the captains got nothing (Eve,
+    2026-07-29). Nudges ONCE: a reminder that repeats becomes noise, and noise
+    is how the real one gets ignored."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        if verbose:
+            print(f"— nothing posted for {today:%Y-%m-%d}, nothing to chase",
+                  flush=True)
+        return False
+    who = _approver_of(msg)
+    if who:
+        if verbose:
+            print(f"— already approved by {who[1]}", flush=True)
+        return False
+    # Epoch maths, so no timezone can make this fire early on one machine.
+    import time
+    age_h = (time.time() - float(msg["ts"])) / 3600
+    if age_h < after_hours:
+        if verbose:
+            print(f"— posted {age_h:.1f}h ago, waiting until {after_hours}h",
+                  flush=True)
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if any(REMIND_MARKER in (r.get("text") or "") for r in replies[1:]):
+        if verbose:
+            print("— already reminded once", flush=True)
+        return False
+    names = " o ".join(sorted(APPROVERS.values()))
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"Recordatorio: los informes de capitanes siguen sin aprobar "
+              f"({age_h:.0f}h). No se envió nada todavía — hace falta un "
+              f":white_check_mark: de {names}.\n`{REMIND_MARKER}`"))
+    if verbose:
+        print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
+    return True
+
+
+def find_approval(today: dt.date, channel: Optional[str] = None,
+                  verbose: bool = True) -> Optional[Tuple[str, str]]:
+    """(user_id, name) of the first authorised checkmark on today's post, else
+    None."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        if verbose:
+            print(f"— no review post found for {today:%Y-%m-%d}", flush=True)
+        return None
+    who = _approver_of(msg)
+    if who:
+        return who
     if verbose:
         got = [f":{r['name']}: x{r['count']}" for r in msg.get("reactions", [])]
         print(f"— not approved yet (reactions: {', '.join(got) or 'none'})",
@@ -274,6 +340,12 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="with --check: actually send. Without it, --check only "
                          "reports what it found.")
+    ap.add_argument("--remind", action="store_true",
+                    help="nudge the channel if the day's reports are still "
+                         "unapproved after --after-hours. Nudges once.")
+    ap.add_argument("--after-hours", type=float, default=REMIND_AFTER_HOURS,
+                    help=f"hours since the post before --remind fires "
+                         f"(default {REMIND_AFTER_HOURS}).")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -290,6 +362,8 @@ def main(argv=None) -> int:
     if args.post:
         post_review(upload_pdf(build_pdf(today)), today, args.channel)
         return 0
+    if args.remind:
+        return 0 if remind(today, args.after_hours, args.channel) else 1
     if args.check:
         who = find_approval(today, args.channel)
         if not who:
