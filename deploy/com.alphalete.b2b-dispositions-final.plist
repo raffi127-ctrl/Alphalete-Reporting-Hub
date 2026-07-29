@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.b2b-dispositions-final</string>
+
+    <!-- The 6:30pm final: the last Today's Activity + Time Tracker shots (tagged
+         "Final") AND the per-territory Dispositions. Path is the laptop
+         placeholder; install_agent.py rewrites it on Lucy 2:
+         python -m automations.day_orchestrator.install_agent b2b-dispositions-final -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/b2b_dispositions.sh</string>
+        <string>--which</string>
+        <string>all</string>
+        <string>--final</string>
+        <string>--send</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 6:30pm, once. Hour/Minute are machine LOCAL time; Lucy 2 is Central. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-dispositions-final.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-dispositions-final.launchd.err.log</string>
+</dict>
+</plist>
