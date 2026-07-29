@@ -153,57 +153,48 @@ def print_outline(page, label: str) -> None:
           flush=True)
 
 
-def _shoot(page, out_path: Path, *, title_text: str,
-           bottom_text: Optional[str] = None, max_width: Optional[int] = None,
-           extra_bottom: int = 20, dump: bool = False) -> str:
-    """Screenshot the region between the view title and a bottom anchor. Returns
-    'clip' | 'full' describing which path was taken. On dump=True (dry-run),
-    also writes a DOM outline next to the PNG when we had to fall back."""
+def _shoot(page, out_path: Path, *, crop=None) -> str:
+    """Full-page screenshot, then optionally PIL-crop to `crop`, a callable
+    (W, H) -> (left, top, right, bottom) in image pixels. Full-page can never
+    come back blank (the earlier anchor-clip approach did); the crop just trims
+    the fixed left sidebar + top chrome so the content fills the frame. Returns
+    'clip' if cropped, 'full' if we kept the whole page."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    rect = None
-    try:
-        rect = page.evaluate(_RECT_JS, {
-            "titleText": title_text, "bottomText": bottom_text,
-            "maxWidth": max_width, "extraBottom": extra_bottom})
-    except Exception:
-        rect = None
-    if rect and rect.get("width", 0) > 40 and rect.get("height", 0) > 40:
-        # A plain screenshot clips only within the VIEWPORT, so a rect that runs
-        # past the fold ("Clipped area outside the resulting image") must be
-        # clamped to the viewport bounds — and if it still fails, fall through to
-        # a full-page shot rather than crashing the whole run.
-        vp = page.viewport_size or {"width": VIEWPORT["width"],
-                                    "height": VIEWPORT["height"]}
-        x = max(0.0, float(rect["x"]))
-        y = max(0.0, float(rect["y"]))
-        w = min(float(rect["width"]), vp["width"] - x)
-        h = min(float(rect["height"]), vp["height"] - y)
-        if w > 40 and h > 40:
-            try:
-                page.screenshot(path=str(out_path),
-                                clip={"x": x, "y": y, "width": w, "height": h})
-                return "clip"
-            except Exception:
-                pass  # bad clip → full-page fallback below
-    # Fallback: whole page, and leave breadcrumbs to pin the anchor next time.
-    page.screenshot(path=str(out_path), full_page=True)
-    if dump:
+    full = out_path.with_name(out_path.stem + "_full.png")
+    page.screenshot(path=str(full), full_page=True)
+    if crop is not None:
         try:
-            outline = page.evaluate(
-                """() => [...document.querySelectorAll('body *')]
-                    .filter(e => e.offsetParent !== null &&
-                        (e.id || (e.className && String(e.className).length)))
-                    .slice(0, 400)
-                    .map(e => { const r = e.getBoundingClientRect();
-                        return `${e.tagName} #${e.id||''} .${String(e.className||'').slice(0,60)} `
-                          + `[${Math.round(r.left)},${Math.round(r.top)} `
-                          + `${Math.round(r.width)}x${Math.round(r.height)}] `
-                          + `"${(e.innerText||'').replace(/\\s+/g,' ').slice(0,40)}"`; })
-                    .join('\\n')""")
-            out_path.with_suffix(".domdump.txt").write_text(outline)
-        except Exception:
-            pass
+            from PIL import Image
+            im = Image.open(full)
+            w, h = im.size
+            left, top, right, bottom = crop(w, h)
+            left = max(0, min(int(left), w - 1))
+            right = max(left + 10, min(int(right), w))
+            top = max(0, min(int(top), h - 1))
+            bottom = max(top + 10, min(int(bottom), h))
+            im.crop((left, top, right, bottom)).save(out_path)
+            try:
+                full.unlink()
+            except Exception:
+                pass
+            return "clip"
+        except Exception as e:  # noqa: BLE001 — never let a crop kill the run
+            print(f"  crop failed ({type(e).__name__}: {str(e)[:70]}) — keeping "
+                  f"full page", flush=True)
+    try:
+        full.replace(out_path)
+    except Exception:
+        page.screenshot(path=str(out_path), full_page=True)
     return "full"
+
+
+# Per-view crop boxes over the full-page image (1680px-wide viewport). The left
+# nav is ~168px and the top user-bar + page title ~205px; territories/cards sit
+# near the top, so we cap their height. Tuned against Lucy 2 dry-runs; a full
+# page is captured first so a wrong box degrades to "too much", never blank.
+CROP_TODAYS_ACTIVITY = lambda w, h: (168, 205, min(w, 720), h)          # noqa: E731
+CROP_TIME_TRACKER = lambda w, h: (168, 205, w, min(h, 1150))            # noqa: E731
+CROP_TERRITORY_STATS = lambda w, h: (168, 205, w, min(h, 1150))        # noqa: E731
 
 
 # --- the three views ----------------------------------------------------------
@@ -218,8 +209,7 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     if dump:
         print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
-    how = _shoot(page, out, title_text="Today's Activity",
-                 max_width=430, extra_bottom=40, dump=dump)
+    how = _shoot(page, out, crop=CROP_TODAYS_ACTIVITY)
     return {"view": "todays_activity", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
@@ -235,12 +225,7 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     if dump:
         print_outline(page, f"time_tracker {tag}")
     out = out_dir / f"time_tracker_{_slug(tag)}.png"
-    # Anchor top on the stable page title "Time Tracker", bottom on the "Reps
-    # Over 15 Minute Gap" card, so both gap-summary cards are in frame. (The card
-    # headers themselves carry a count badge, so they're not reliable anchors.)
-    how = _shoot(page, out, title_text="Time Tracker",
-                 bottom_text="Reps Over 15 Minute Gap", extra_bottom=160,
-                 dump=dump)
+    how = _shoot(page, out, crop=CROP_TIME_TRACKER)
     return {"view": "time_tracker", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
@@ -289,10 +274,9 @@ def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
     tag = cfg.CAMPAIGN_TAG[campaign]
     name = _clean_territory_name(terr.get("name", terr["id"]))
     out = out_dir / f"territory_{_slug(tag)}_{_slug(name)}.png"
-    # "Report By" is the filter-row label; the three cards end with "CURRENT
-    # PERIOD". Anchor top on Report By so the selected territory name is in frame.
-    how = _shoot(page, out, title_text="Report By",
-                 bottom_text="Current Period", extra_bottom=380, dump=dump)
+    if dump:
+        print_outline(page, f"territory_stats {tag} {name}")
+    how = _shoot(page, out, crop=CROP_TERRITORY_STATS)
     return {"view": "territory_stats", "campaign": campaign, "tag": tag,
             "territory_id": terr["id"], "territory": name,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
