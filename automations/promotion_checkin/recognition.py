@@ -87,3 +87,53 @@ def append_promotions(promos, *, sheet_id: str = None, dry_run: bool = True):
     return {"tab": ws.title, "wrote": bool(rows) and not dry_run,
             "added": added, "skipped_dup": skipped, "row_start": row_start,
             "link": link, "n": len(rows)}
+
+
+def logged_this_week(*, sheet_id: str = None, owner: str = None):
+    """Reps THIS office logged on the current tab — [(rep, recognition)]. Only
+    rows whose Owner matches ours, so the remove-list never offers another
+    office's row."""
+    from automations.recruiting_report import fill
+    sheet_id = sheet_id or C.RECOGNITION_SHEET_ID
+    owner = owner or C.OWNER
+    sh = fill._client().open_by_key(sheet_id)
+    ws = _target_worksheet(sh)
+    grid = ws.get_all_values()
+    hdr = _header_row(grid)
+    out = []
+    for row in grid[hdr + 1:]:
+        if len(row) < 3 or not row[0].strip():
+            continue
+        if _norm(row[2]) == _norm(owner):
+            rec = row[3].strip() if len(row) > 3 else ""
+            out.append((row[0].strip(), rec))
+    return out
+
+
+def remove_promotions(names, *, sheet_id: str = None, owner: str = None,
+                      dry_run: bool = True):
+    """Clear the row (A:E) for each named rep — but ONLY where Owner is ours, so
+    we can never blank another office's entry. Clearing (not deleting) leaves the
+    other rows exactly where they are. Returns {tab, wrote, removed, link}."""
+    from automations.recruiting_report import fill
+    sheet_id = sheet_id or C.RECOGNITION_SHEET_ID
+    owner = owner or C.OWNER
+    want = {_norm(n) for n in names}
+    sh = fill._client().open_by_key(sheet_id)
+    ws = _target_worksheet(sh)
+    grid = ws.get_all_values()
+    hdr = _header_row(grid)
+    link = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={ws.id}"
+
+    removed, ranges = [], []
+    for i in range(hdr + 1, len(grid)):
+        row = grid[i]
+        if len(row) < 3 or not row[0].strip():
+            continue
+        if _norm(row[0]) in want and _norm(row[2]) == _norm(owner):
+            ranges.append(f"A{i + 1}:E{i + 1}")     # 1-based row
+            removed.append(row[0].strip())
+    if ranges and not dry_run:
+        ws.batch_clear(ranges)
+    return {"tab": ws.title, "wrote": bool(ranges) and not dry_run,
+            "removed": removed, "link": link, "n": len(removed)}

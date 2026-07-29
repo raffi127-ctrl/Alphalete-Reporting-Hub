@@ -168,6 +168,17 @@ def _handler(client, req):
                     args=(client.web_client, user, ctx["icd"], ctx["leader"], new_names, tts),
                     daemon=True).start()
         return
+    # Promotion Check-In "Remove a mistake" modal submit.
+    if req.type == "interactive" and req.payload.get("type") == "view_submission" \
+            and req.payload.get("view", {}).get("callback_id") == "promo_remove_modal":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        try:
+            from automations.promotion_checkin import handler as promo
+            threading.Thread(target=promo.handle_remove_submission,
+                             args=(client.web_client, req.payload), daemon=True).start()
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[promo] remove dispatch failed {type(e).__name__}: {e}", flush=True)
+        return
     if req.type == "interactive" and req.payload.get("type") == "view_submission" \
             and req.payload.get("view", {}).get("callback_id") == CALLBACK:
         vals = req.payload["view"]["state"]["values"]

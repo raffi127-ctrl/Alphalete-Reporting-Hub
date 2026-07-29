@@ -36,9 +36,11 @@ CHANNEL_ID = os.environ.get("PROMO_CHANNEL_ID", "C09JG28CD27")   # #alphalete-lv
 PREVIEW_USER = os.environ.get("PROMO_PREVIEW_USER", "").strip()
 
 # --- The promotion ladder ---------------------------------------------------
-# A rep's CURRENT board level -> (new level after promotion, the Recognition
-# string written to the sheet). "Auto next level up": one pick per rep, no menu.
-# Recognition strings mirror the sheet's existing wording ("LVL 1 Leader").
+# LADDER just marks which board levels are still promotable (used to filter the
+# pick-list — a Mastermind rep has nowhere to go). The RECOGNITION level is NOT
+# inferred from the board anymore: the board's "Leadership Status" is a moving
+# target (it can already be bumped to the new level), so the LEADER picks the
+# target level on the card (Megan 2026-07-28). See LEVEL_CHOICES.
 LADDER = {
     "Entry Level": ("Level 1", "LVL 1 Leader"),
     "Level 1":     ("Level 2", "LVL 2 Leader"),
@@ -47,8 +49,21 @@ LADDER = {
 # Levels that appear on the board (top of the ladder = not promotable further).
 TOP_LEVEL = "Mastermind"
 
+# The "Promoted to" dropdown: (label shown, Recognition string written). The
+# leader picks ONE per batch; every rep picked in that submit logs at this level.
+# Wording mirrors the sheet's existing rows ("LVL 1 Leader").
+LEVEL_CHOICES = [
+    ("Level 1", "LVL 1 Leader"),
+    ("Level 2", "LVL 2 Leader"),
+    ("Mastermind", "Mastermind"),
+]
+
 # Slack Block Kit identifiers (kept here so the bot handler + builder agree).
 BLOCK_CALLBACK = "promo_checkin"          # message-level tag we look for
 ACTION_PICK = "promo_pick_reps"           # the multi-select action_id
 ACTION_SUBMIT = "promo_submit"            # "Log promotions" button
 ACTION_NONE = "promo_none"                # "No promotions this week" button
+ACTION_LEVEL = "promo_pick_level"         # the "Promoted to" single-select
+ACTION_REMOVE = "promo_remove_open"       # "Remove a mistake" button (opens modal)
+REMOVE_CALLBACK = "promo_remove_modal"    # the remove modal's callback_id
+ACTION_REMOVE_PICK = "promo_remove_pick"  # the remove modal's multi-select
