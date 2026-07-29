@@ -1,0 +1,9 @@
+# Streamlit Community Cloud deps for the owner Metrics Request app
+# (entry point: metric_request/app.py). Without this file Cloud installs only
+# streamlit, so `import gspread` fails and the app silently drops to local mode
+# (saves nowhere permanent, never pings) — mirror office_onboarding's deps.
+streamlit>=1.30
+gspread>=5.10          # write the request to the Metric Requests sheet tab
+google-auth>=2.20      # gcp_oauth credentials
+slack_sdk>=3.21        # post the corrections-channel ping
+certifi>=2023.7        # SSL bundle for the Slack client

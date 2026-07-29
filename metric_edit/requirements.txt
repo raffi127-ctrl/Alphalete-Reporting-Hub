@@ -1,0 +1,7 @@
+# Streamlit Community Cloud deps for the owner Metrics Edit app
+# (entry point: metric_edit/app.py). Reuses the Thread Builder editor (drag list)
+# + reads the Pay Structure codes and Thread Plans sheet, so it needs gspread.
+streamlit>=1.30
+gspread>=5.10          # read pay codes + write the thread plan
+google-auth>=2.20      # gcp_oauth credentials
+streamlit-sortables>=0.3.1   # drag-and-drop section ordering (degrades gracefully)
