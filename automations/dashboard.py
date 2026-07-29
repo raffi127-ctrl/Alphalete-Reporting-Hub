@@ -11412,6 +11412,8 @@ else:  # st.session_state.view == "user"
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
             "[class*='override-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            # DD Bulletin — also in testing → pink pill. (Megan 2026-07-28)
+            "[class*='dd-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
