@@ -455,6 +455,27 @@
       "timeout_minutes": 10,
       "verify": null
     },
+    "proof_order_log": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "SHADOW proof for the order-log ALLREPS harvest-once (Megan 2026-07-29). `lucy rerun proof_order_log` runs automations.harvest.proof_order_log on the mini: harvest the ALLREPS 'A.Order Log' crosstab ONCE + a fresh live pull + byte-diff. The 8 office-metrics reports all pull this IDENTICAL crosstab (only the Python owner-filter differs), so byte-identical PROVES the whole cluster. Read-only w.r.t. Sheets/Slack (writes only the cache + a temp file); does NOT flip HARVEST_MODE. source_type tableau so chrome_guard + the warm Tableau session apply. Exit 0 = IDENTICAL = safe to canary-flip one office report.",
+      "display_name": "Harvest Proof — Order Log ALLREPS (shadow)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.proof_order_log"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 20
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
