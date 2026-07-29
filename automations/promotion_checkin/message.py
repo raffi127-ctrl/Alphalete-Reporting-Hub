@@ -59,7 +59,11 @@ def build_message(week_label, reps_by_team, *, final_call: bool = False,
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": title}},
         {"type": "section", "text": {"type": "mrkdwn", "text": ask}},
-        {"type": "actions", "block_id": C.BLOCK_CALLBACK, "elements": [select]},
+        # A multi-select is only valid as a section ACCESSORY (Slack rejects it in
+        # an actions block). block_id is what the handler reads from state.values.
+        {"type": "section", "block_id": C.BLOCK_CALLBACK,
+         "text": {"type": "mrkdwn", "text": "*Promoted this week*"},
+         "accessory": select},
         {"type": "actions", "elements": [
             {"type": "button", "action_id": C.ACTION_SUBMIT, "style": "primary",
              "value": "preview" if preview else "live",
