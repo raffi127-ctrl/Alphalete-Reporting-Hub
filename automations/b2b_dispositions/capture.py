@@ -90,11 +90,19 @@ _RECT_JS = """
   const all = [...document.querySelectorAll('body *')];
   const byText = t => all.find(e => e.offsetParent !== null &&
       norm(e.innerText) === norm(t));
-  // Prefer an exact title match; fall back to "starts with" (dates get appended
-  // to some headers, e.g. "Disposition by Rep - 07/29/2026 - 07/29/2026").
+  // Prefer an exact title match; then "starts with" (dates get appended to some
+  // headers, e.g. "Disposition by Rep - 07/29/2026 - ..."); then a SMALL element
+  // that merely contains it (avoid a giant wrapper whose innerText is the whole
+  // page). This is the top anchor, so pick the tightest match.
   let title = byText(titleText);
   if (!title) title = all.find(e => e.offsetParent !== null &&
       norm(e.innerText).startsWith(norm(titleText)));
+  if (!title) {
+    const hits = all.filter(e => e.offsetParent !== null &&
+        norm(e.innerText).includes(norm(titleText)) &&
+        (e.innerText || '').length < norm(titleText).length + 60);
+    title = hits.length ? hits[0] : null;
+  }
   if (!title) return null;
   const t = title.getBoundingClientRect();
   const contentLeft = t.left;
@@ -117,6 +125,32 @@ _RECT_JS = """
            height: Math.max(50, bottom - top + 8) };
 }
 """
+
+
+_OUTLINE_JS = """
+() => [...document.querySelectorAll('body *')]
+  .filter(e => e.offsetParent !== null)
+  .map(e => { const r = e.getBoundingClientRect(); return {e, r}; })
+  .filter(x => x.r.width > 120 && x.r.height > 40 && x.r.top < 1400)
+  .sort((a,b) => (b.r.width*b.r.height) - (a.r.width*a.r.height))
+  .slice(0, 22)
+  .map(({e,r}) => `${e.tagName} #${e.id||''} .${String(e.className||'').trim().slice(0,40)} `
+     + `[${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}] `
+     + `"${(e.innerText||'').replace(/\\s+/g,' ').slice(0,50)}"`)
+  .join('\\n')
+"""
+
+
+def print_outline(page, label: str) -> None:
+    """Print a compact outline of the biggest on-screen containers to stdout.
+    In --dry-run this lands in the run log, so `logtail` can fetch the real DOM
+    structure from the laptop and crop anchors can be pinned exactly."""
+    try:
+        txt = page.evaluate(_OUTLINE_JS)
+    except Exception:
+        txt = "(outline unavailable)"
+    print(f"--- DOM outline [{label}] ---\n{txt}\n--- end [{label}] ---",
+          flush=True)
 
 
 def _shoot(page, out_path: Path, *, title_text: str,
@@ -169,6 +203,8 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     _goto(page, _page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst, campaign))
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
+    if dump:
+        print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
     how = _shoot(page, out, title_text="Today's Activity",
                  max_width=430, extra_bottom=40, dump=dump)
@@ -184,11 +220,14 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
+    if dump:
+        print_outline(page, f"time_tracker {tag}")
     out = out_dir / f"time_tracker_{_slug(tag)}.png"
-    # Anchor top on the "Reps Under 15 Minute Gap" header, bottom on the "Reps
-    # Over 15 Minute Gap" card (its rows), so both summary cards are in frame.
-    how = _shoot(page, out, title_text="Reps Under 15 Minute Gap",
-                 bottom_text="Reps Over 15 Minute Gap", extra_bottom=140,
+    # Anchor top on the stable page title "Time Tracker", bottom on the "Reps
+    # Over 15 Minute Gap" card, so both gap-summary cards are in frame. (The card
+    # headers themselves carry a count badge, so they're not reliable anchors.)
+    how = _shoot(page, out, title_text="Time Tracker",
+                 bottom_text="Reps Over 15 Minute Gap", extra_bottom=160,
                  dump=dump)
     return {"view": "time_tracker", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
