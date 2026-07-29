@@ -917,6 +917,90 @@ def health_check(page) -> None:
          f"rows={len(info.get('rows',[]))})")
 
 
+_PHONE_RE = re.compile(r"\+?1?[\s\-.]*\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{4}")
+
+
+def _view_resume_href(page):
+    """Find the 'View resume →' link (in the Resume panel / embedded Indeed email,
+    which may be an iframe) and return its href — the signed employers.indeed.com
+    resume URL that shows the applicant's real phone (Megan 2026-07-28)."""
+    for fr in page.frames:
+        try:
+            h = fr.evaluate(
+                "() => { const a = [...document.querySelectorAll('a')].find("
+                "e => /view\\s*resume/i.test(e.innerText||'') && /indeed/i.test(e.href||''));"
+                " return a ? a.href : null; }")
+            if h:
+                return h
+        except Exception:  # noqa: BLE001
+            continue
+    # fallback: any indeed candidates/resume link on the page
+    for fr in page.frames:
+        try:
+            h = fr.evaluate(
+                "() => { const a = [...document.querySelectorAll('a')].find("
+                "e => /candidates\\/resume/i.test(e.href||'')); return a ? a.href : null; }")
+            if h:
+                return h
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def lookup_resume_phone(page):
+    """Open the applicant's Indeed resume (signed URL from 'View resume') in a new
+    page and pull the first phone number. Returns (phone_or_None, detail). No Indeed
+    login needed — the URL token authorizes it (Megan confirmed)."""
+    href = _view_resume_href(page)
+    if not href:
+        return None, "no view-resume link"
+    newpg = None
+    try:
+        newpg = page.context.new_page()
+        newpg.goto(href, wait_until="domcontentloaded", timeout=30000)
+        newpg.wait_for_timeout(2500)
+        body = newpg.evaluate("() => (document.body.innerText || '')")
+        # The resume header shows name / email / phone / city. Take the first phone
+        # that looks real (>= 10 digits), skipping the office callback numbers.
+        for m in _PHONE_RE.finditer(body[:2500]):
+            digits = re.sub(r"\D", "", m.group(0))
+            if len(digits) >= 10:
+                return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+        return None, f"no phone on resume (title={newpg.title()[:40]!r})"
+    except Exception as e:  # noqa: BLE001
+        return None, f"resume open err: {type(e).__name__}"
+    finally:
+        if newpg:
+            try:
+                newpg.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def probe_resume(page) -> None:
+    """Diagnostic: on the current (no-phone) applicant, find the View-resume link,
+    open the resume, and dump what we can pull — to validate the phone-lookup."""
+    a = read_current_applicant(page)
+    _log(f"[resume] current: {a.first_name} {a.last_name} phone={a.phone!r} "
+         f"cell={a.cell_phone!r}")
+    href = _view_resume_href(page)
+    _log(f"[resume] view-resume href: {str(href)[:110]}")
+    if not href:
+        # dump anchor texts across frames for diagnosis
+        for i, fr in enumerate(page.frames):
+            try:
+                anchors = fr.evaluate(
+                    "() => [...document.querySelectorAll('a')].map(e=>"
+                    "(e.innerText||'').trim().slice(0,24)).filter(Boolean).slice(0,20)")
+                if anchors:
+                    _log(f"[resume] frame {i} anchors: {anchors}")
+            except Exception:  # noqa: BLE001
+                continue
+        return
+    phone, detail = lookup_resume_phone(page)
+    _log(f"[resume] RESULT phone={phone!r} :: {detail}")
+
+
 def _open_sms_panel(page) -> bool:
     """Click the always-on 'SMS' button (top-right). Its text is 'SMS' + an unread
     badge number ('SMS\\n13'), so match the anchor whose text is 'SMS' once digits
@@ -1062,6 +1146,7 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
+        probe_resume_flag: bool = False,
         retext_test: str = None, retext_send: str = None,
         remove_applicant: str = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
@@ -1092,6 +1177,11 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             if probe_sms_flag:
                 open_oat(page)
                 probe_sms(page)
+                return 0
+
+            if probe_resume_flag:
+                open_oat(page)
+                probe_resume(page)
                 return 0
 
             if retext_test or retext_send:
@@ -1379,6 +1469,9 @@ def main(argv=None) -> int:
                         "(safety throttle; use --max-actions 1 for a controlled test)")
     p.add_argument("--probe-sms", action="store_true", dest="probe_sms",
                    help="Open the SMS panel and dump its structure (for re-text), stop")
+    p.add_argument("--probe-resume", action="store_true", dest="probe_resume",
+                   help="On the current applicant, open the Indeed resume and try to "
+                        "pull the phone (for the no-phone lookup), stop")
     p.add_argument("--retext-test", default=None, dest="retext_test",
                    metavar="'First Last[|Role|Phone]'",
                    help="Validate the full re-text chain on one named person "
@@ -1395,6 +1488,7 @@ def main(argv=None) -> int:
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
                max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
+               probe_resume_flag=args.probe_resume,
                retext_test=args.retext_test, retext_send=args.retext_send,
                remove_applicant=args.remove_applicant)
 
