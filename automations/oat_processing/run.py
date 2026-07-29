@@ -834,6 +834,18 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             except Exception:  # noqa: BLE001
                 pass
             page.wait_for_timeout(1500)   # let AS settle after the phone change
+            try:
+                diag = page.evaluate(
+                    "() => ({ url: location.href.slice(-42),"
+                    " phone: (document.querySelector(\"input[name='phone']\")||{}).value,"
+                    " btns: [...document.querySelectorAll("
+                    "'button,input[type=submit],input[type=button],a')]"
+                    ".map(e=>(e.innerText||e.value||'').trim())"
+                    ".filter(t=>/send|save|ai/i.test(t)).slice(0,12) })")
+                _log(f"    [phones] after-fill url=…{diag.get('url')} "
+                     f"phone={diag.get('phone')!r} btns={diag.get('btns')}")
+            except Exception as e:  # noqa: BLE001
+                _log(f"    [phones] diag err: {type(e).__name__}")
             return do_send_ai(page, a, live)
         _log(f"    no resume phone ({detail}) → flag: "
              f"{a.first_name} {a.last_name}")
