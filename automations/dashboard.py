@@ -11352,19 +11352,19 @@ else:  # st.session_state.view == "user"
             "[class*='new-start-followup__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
-            "[class*='override-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='override-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # DD Bulletin — also in testing → pink pill. (Megan 2026-07-28)
-            "[class*='dd-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='dd-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # Weekly Promotion Check-In — 2 passes (Mon 6pm + 7:15pm): force the
             # mid-day (pass 1 of 2) pill ORANGE; pass 2 greens on the default 'ok'
             # colour. (Megan 2026-07-28)
             "[class*='promo_checkin__calstat_progress'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important;opacity:1!important;animation:none!important}"
             # DD Gross Revenue — in testing → pink pill. (Megan 2026-07-28)
-            "[class*='dd_gross_revenue__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='dd_gross_revenue__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # OAT Daily Scorecard — in testing → pink pill. (Megan 2026-07-28)
-            "[class*='oat_summary__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='oat_summary__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # OAT Processing — in testing → pink pill. (Megan 2026-07-28)
-            "[class*='oat_processing__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='oat_processing__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
