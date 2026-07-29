@@ -1053,7 +1053,11 @@ def _read_shared_library() -> list[dict]:
                 or _rid in {"applicant_morning", "applicant_evening",
                             "car_rides_cleanup", "new_start_followup_sat",
                             "leaders_call_mon", "override_bulletin_send_fri",
-                            "texas_de_brazil_745"}):
+                            "texas_de_brazil_745",
+                            # utility / build-aid / duplicate handles (Megan 7/28):
+                            "alphalete_org_retail", "harvest_prime",
+                            "haytham_metrics", "vantura_sara_preflight",
+                            "vantura_sara_recon"}):
             continue
         module = report.get("module")
         if not module:
