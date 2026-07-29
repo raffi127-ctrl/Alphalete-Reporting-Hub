@@ -544,9 +544,15 @@ def sync_launchd_system(dry_run: bool = True) -> List[str]:
         if (cid in existing or slug(cid) in existing or cid in curated
                 or cid in CURATED_ALIAS):
             continue
+        # Pure-infra plumbing + cutover-retire duplicates (in _INFRA_AGENTS) are
+        # NOT reports — Megan doesn't want them on the Hub, and the _INFRA_AGENTS
+        # contract already says they "never get a card". Skip them entirely
+        # (audit_agents still tracks them in the 'infra' bucket); only genuine
+        # standalone jobs get an auto-card. (Megan 2026-07-28)
+        if name in _INFRA_AGENTS:
+            continue
         sched = _plist_schedule(plist)
-        cat, emoji = (("⚙️ System", "⚙️") if name in _INFRA_AGENTS
-                      else ("🗂 Auto-registered", "🗂"))
+        cat, emoji = "🗂 Auto-registered", "🗂"
         ok, msg = ensure_library_card(
             cid, name.replace("-", " ").title(), category=cat, emoji=emoji,
             schedule_ov=sched,

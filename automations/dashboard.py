@@ -1041,6 +1041,12 @@ def _read_shared_library() -> list[dict]:
         return []
     for meta in rows:
         report = dict(meta)
+        # Pure-infra plumbing self-registered as "⚙️ System" (day-orchestrator,
+        # watchdogs, session-holder, …) is not something Megan needs on the Hub —
+        # hide it from every Hub surface (Megan 2026-07-28). The rows stay in the
+        # library Sheet (harmless); hub_coverage no longer creates new ones.
+        if (report.get("category") or "").strip() == "⚙️ System":
+            continue
         module = report.get("module")
         if not module:
             continue
