@@ -4104,7 +4104,8 @@ AUTOMATED_REPORTS = [
             "filled in), so it never posts an empty P&L."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1537448816#gid=1537448816"),
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "pnl_office",
