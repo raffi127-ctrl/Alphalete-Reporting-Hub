@@ -177,6 +177,15 @@ class B2BOffice:
     # card shows can never drift apart.
     mirror_channels: tuple = field(default_factory=tuple)
 
+    # Per-channel FAN-OUT — each channel gets only ITS metrics (unlike
+    # mirror_channels, which posts the SAME set to every channel). Empty = no
+    # fan-out (Carlos/Atef: byte-identical). Each element is a dict:
+    #   {"channel_id","channel_name","report_keys":[owner-b2b-key,…]}
+    # report_keys are the owner-facing ReportKind keys; the runner maps them to the
+    # internal item ids via B2B_OWNER_KEY_TO_ITEMS. Only used when every plan has a
+    # resolved channel_id (else the merge leaves this empty and the office mirrors).
+    channel_plans: tuple = field(default_factory=tuple)
+
     @property
     def channel_names(self) -> list:
         """Every channel this office posts into, primary first — for display."""
@@ -304,7 +313,37 @@ _ONBOARDED_FILE = _Path(__file__).with_name("onboarded_offices.json")
 # overrides are left for a manual view_overrides edit and flagged in EXTRA).
 _B2B_VIEW_FIELD = {"b2b_sales": "sales_metrics", "b2b_activation": "activation_rate"}
 
+# Owner-facing B2B ReportKind keys -> the internal thread item ids they include.
+# Several owner concepts bundle multiple sections (Activation = the rate chart +
+# by-rep + overview; AT&T Order Log = the log + the tiered-bonus ranking). Used by
+# the runner to fan a channel plan's picked metrics out to the right sections.
+# NOTE: b2b_order_log_box maps to NOTHING here — the Box log is the standalone
+# box_order_log report (its own thread), not a metrics-thread section.
+B2B_OWNER_KEY_TO_ITEMS = {
+    "b2b_sales":          ["sales_metrics"],
+    "b2b_activation":     ["activation_rate", "activation_by_rep", "activation_overview"],
+    "b2b_churn_wireless": ["churn_wireless"],
+    "b2b_churn_int":      ["churn_int"],
+    "b2b_churn_air":      ["churn_air"],
+    "b2b_customer_churn": ["customer_churn"],
+    "b2b_order_log_att":  ["order_log", "order_tiered_bonus"],
+    "b2b_order_log_box":  [],   # standalone report, not a thread section
+}
+
 ONBOARDED_EXTRA: dict = {}
+
+
+def items_for_report_keys(report_keys) -> set:
+    """Translate owner-facing B2B ReportKind keys to the internal item ids they
+    cover (unknown keys pass through unchanged, so a raw item id also works)."""
+    out = set()
+    for k in report_keys or []:
+        mapped = B2B_OWNER_KEY_TO_ITEMS.get(k)
+        if mapped is None:
+            out.add(k)          # already an item id
+        else:
+            out.update(mapped)
+    return out
 
 
 def _merge_onboarded() -> None:
@@ -326,13 +365,25 @@ def _merge_onboarded() -> None:
                 overrides[fld] = url
             elif url:
                 unmapped.append(rk)
+        # Per-channel fan-out: build channel_plans ONLY when there are 2+ plans AND
+        # every one has a resolved channel_id (else mirror/single behaviour — safe).
+        _plans, _ok = [], True
+        for p in (r.get("channel_plans") or []):
+            cid = (p.get("channel_id") or "").strip()
+            if not cid:
+                _ok = False
+                break
+            _plans.append({"channel_id": cid,
+                           "channel_name": p.get("channel_name", ""),
+                           "report_keys": p.get("report_keys") or p.get("slugs") or []})
+        _cp = tuple(_plans) if (_ok and len(_plans) > 1) else tuple()
         try:
             OFFICES[key] = B2BOffice(
                 key=key, label=r.get("label") or f"{key.title()}'s B2B Office",
                 owner=r.get("owner", ""), channel_id=r.get("channel_id", ""),
                 channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
                 owner_office=r.get("owner_office", ""),
-                view_overrides=overrides)
+                view_overrides=overrides, channel_plans=_cp)
             ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
             if unmapped:
                 ex["_unmapped_views"] = unmapped   # need a manual view_overrides edit

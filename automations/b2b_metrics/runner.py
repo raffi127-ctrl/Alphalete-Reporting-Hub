@@ -253,7 +253,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     # (normally just the deferred order-log), not the whole thread. Cheap: thread
     # state is a Sheet read, no Slack client. Skipped under --force (which exists
     # to re-post) and --channel (a verification post with its own scratch thread).
-    if post and not force and not channel_override:
+    if post and not force and not channel_override and not getattr(o, "channel_plans", ()):
         import automations.b2b_quality.run as _bq
         _tgts = [o.channel_id] + [c for c, _n in o.mirror_channels
                                   if c != o.channel_id]
@@ -311,11 +311,31 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     # the office's real channel — proves the full threaded post path without
     # touching Carlos's live thread. A DM user id (U…) is opened into a channel.
     cid = o.channel_id
+    # chan_items: channel_id -> set(item ids to post there). None = post every
+    # captured item to every target (mirror behaviour / single channel).
+    chan_items = None
     if channel_override:
         cid = (client.conversations_open(users=channel_override)["channel"]["id"]
                if channel_override.upper().startswith("U") else channel_override)
         log("  channel OVERRIDE -> {}".format(cid))
         targets = [cid]                 # a verification post goes ONLY there
+    elif getattr(o, "channel_plans", ()):
+        # FAN-OUT: each channel gets ONLY its enrolled metrics' sections. A section
+        # NO plan claims and that the owner didn't enroll is NOT posted (the post
+        # loop skips any item outside every channel's set). Only ALWAYS-ON sections
+        # (Out of Bounds posts even when empty) fall through to the primary channel.
+        from automations.b2b_metrics.offices import items_for_report_keys
+        _ALWAYS_ON = {"out_of_bounds"}
+        chan_items, claimed = {}, set()
+        for p in o.channel_plans:
+            ids = items_for_report_keys(p.get("report_keys") or [])
+            chan_items[p["channel_id"]] = set(ids)
+            claimed |= ids
+        fallthrough = (_ALWAYS_ON & {i["id"] for i in items}) - claimed
+        if fallthrough:
+            chan_items.setdefault(cid, set()).update(fallthrough)
+        targets = list(chan_items.keys())
+        log("  fan-out -> {} channels".format(len(targets)))
     else:
         # MIRRORS get the SAME captured set. Slack threads are per-channel, so
         # each target keeps its own daily thread + its own posted-state (dedup is
@@ -338,6 +358,10 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         if first_ts is None:
             first_ts = ts
         for item in items:
+            # Fan-out: only post this channel's own sections (chan_items is None in
+            # the mirror/single case → every item goes to every target as before).
+            if chan_items is not None and item["id"] not in chan_items.get(chan, set()):
+                continue
             path = captured.get(item["id"])
             if not path:
                 continue
