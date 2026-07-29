@@ -14,11 +14,12 @@ from . import config as C
 
 
 def _opt(rep):
-    # value = the rep's cleaned name; the handler re-reads the board to resolve
-    # trainer + next level, so the value stays short (< 75 char Slack cap).
-    label = f"{rep.name} · {rep.level}"
-    if rep.field:
-        label += f" ({rep.field})"
+    # value = the rep's cleaned name; the handler re-reads the board for the
+    # trainer, so the value stays short (< 75 char Slack cap). We deliberately do
+    # NOT show the board's level here — the leader sets the level in the "Promoted
+    # to" dropdown, so showing the board's (possibly-stale) level is confusing
+    # (Megan 2026-07-28). Keep just the name + tenure week for context.
+    label = f"{rep.name} ({rep.field})" if rep.field else rep.name
     return {"text": {"type": "plain_text", "text": label[:75]}, "value": rep.name[:75]}
 
 
@@ -35,7 +36,9 @@ def build_message(week_label, reps_by_team, *, final_call: bool = False,
         if not reps:
             continue
         groups.append({
-            "label": {"type": "plain_text", "text": team[:75]},
+            # Slack option-group labels are plain_text (no bold markdown), so we
+            # UPPERCASE the team to make it stand out (Megan 2026-07-28).
+            "label": {"type": "plain_text", "text": team.upper()[:75]},
             "options": [_opt(r) for r in reps],
         })
 
