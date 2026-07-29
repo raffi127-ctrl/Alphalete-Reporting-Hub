@@ -1533,6 +1533,36 @@
         "report_id": "captainship-activation-rate"
       }
     },
+    "captainship_abp_6days": {
+      "order": 15.2,
+      "on_scheduler": true,
+      "_note": "Eve 2026-07-29: fills the 'ABP %' and '% of Ongoing 6+ Days Sales' boxes on each fiber captain's 'ABP & 6 days out - <captain> (ATT Fiber)' tab in the 'Captainship Metrics Report - ABP and 6 days out' workbook (1XlHd...). ORDER 15.2 puts it right after captainship_activation_rate (15.1), which reads the SAME Metrics crosstab — same warm Tableau session, and the two never fight over the browser profile. ONE crosstab feeds all five captains (it is grouped by Captain's Bonus Teams, sliced per captainship in Python; this workbook has no per-captain views). The 6-days-out number is a TOOLTIP measure: the visible column is a count, and the % rides along in the export as '% of sales scheduled 6+ days out (4 wks)' — if someone drops it from the tooltip, the export loses it and the run fails loudly. data_sources is [] for the same reason as the activation report: no readiness probe is mapped to the Metrics workbook and both measures are rolling 4-week windows rather than 'today's data', so the tableau warm-session gate is the only one that applies. Sheet-only, no Slack.",
+      "display_name": "Captainship ABP & 6 Days Out (per-captain)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_abp_6days.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "manifest",
+        "report_id": "captainship-abp-6days"
+      }
+    },
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
