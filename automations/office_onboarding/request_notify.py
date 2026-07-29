@@ -20,38 +20,13 @@ ONBOARDING_URL = "https://alphaletemetricsintake.streamlit.app"
 
 
 def _lines(rec: OnboardingRecord) -> Tuple[str, List[str]]:
+    """Minimal heads-up: just the office name + the finalize link (Megan opens it
+    to see the full request pre-filled — no need to repeat the metrics/email here)."""
     fam = "D2D" if rec.family == "d2d" else "B2B"
     who = rec.owner or rec.business_name or rec.key
-    title = (":sparkles: *New metrics request — {}*  ({} · {})".format(
-        who, rec.business_name or "—", fam))
-    plans = rec.channel_plans or []
-    body: List[str] = []
-    if plans:
-        body.append("*Wants these posted:*")
-        for p in plans:
-            labels = ", ".join(REPORTS_BY_KEY[k].label for k in p.report_keys
-                               if k in REPORTS_BY_KEY) or "_(no metrics)_"
-            body.append("• *{}* → {}".format(p.channel_name, labels))
-    else:
-        body.append("*Wants these metrics in* {}:".format(
-            rec.channel_name or "_(channel not given)_"))
-        for er in rec.ordered_reports():
-            rk = REPORTS_BY_KEY.get(er.key)
-            body.append("• {}".format(rk.label if rk else er.key))
-    body.append("")
-    contact = []
-    if rec.owner_email:
-        contact.append("email {}".format(rec.owner_email))
-    if rec.website:
-        contact.append(rec.website)
-    if rec.ov_account:
-        contact.append("OV #{}".format(rec.ov_account))
-    if contact:
-        body.append("_Owner gave:_ " + " · ".join(contact))
+    title = ":sparkles: *New metrics request — {}*  ({})".format(who, fam)
     link = "{}/?request={}".format(ONBOARDING_URL, rec.key or "")
-    body.append("👉 <{}|Finalize {}'s onboarding here> — it opens pre-filled with "
-                "this request; create their Google Sheet, then submit.".format(
-                    link, who))
+    body = ["👉 <{}|Finalize {}'s onboarding →>".format(link, who)]
     return title, body
 
 
