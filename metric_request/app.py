@@ -125,19 +125,21 @@ def form_view() -> None:
     st.warning("**Important:** add **Megan Hidalgo** to every channel below — we "
                "can't post to a channel she isn't in.")
 
-    st.session_state.setdefault("_chan_count", 1)
-    n_chan = st.session_state["_chan_count"]
+    n_chan = int(st.number_input(
+        "How many Slack channels do you want to post in?",
+        min_value=1, max_value=8, value=1, step=1, key="_chan_count",
+        help="Most offices use 1. Pick more only if you want different metrics in "
+             "different channels (e.g. a leaders channel that gets only cancels)."))
     plans: list = []
     for i in range(n_chan):
         with st.container(border=True):
             cname = st.text_input(
-                f"Channel {i + 1}" + (" *" if i == 0 else ""),
+                (f"Channel {i + 1}" if n_chan > 1 else "Channel") + " *",
                 key=f"chan_name_{i}", placeholder="#your-office-sales")
             st.caption("Metrics to post in this channel:")
             keys_here: list = []
             for rk in fam_reports:
-                st.session_state.setdefault(f"chan_met_{i}_{rk.key}",
-                                            rk.default_on if i == 0 else False)
+                st.session_state.setdefault(f"chan_met_{i}_{rk.key}", rk.default_on)
                 on = st.checkbox(rk.label, key=f"chan_met_{i}_{rk.key}")
                 if rk.blurb and i == 0:
                     st.caption(rk.blurb)
@@ -145,19 +147,6 @@ def form_view() -> None:
                     keys_here.append(rk.key)
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
                                        report_keys=keys_here))
-    b1, b2 = st.columns(2)
-    with b1:
-        if st.button("➕ Add another channel"):
-            st.session_state["_chan_count"] += 1
-            st.rerun()
-    with b2:
-        if n_chan > 1 and st.button("➖ Remove last channel"):
-            last = n_chan - 1
-            st.session_state.pop(f"chan_name_{last}", None)
-            for rk in fam_reports:
-                st.session_state.pop(f"chan_met_{last}_{rk.key}", None)
-            st.session_state["_chan_count"] -= 1
-            st.rerun()
 
     with st.expander("Optional: Ownerville account number"):
         ov_account = st.text_input(
