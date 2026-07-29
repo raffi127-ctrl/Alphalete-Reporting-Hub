@@ -1041,11 +1041,19 @@ def _read_shared_library() -> list[dict]:
         return []
     for meta in rows:
         report = dict(meta)
-        # Pure-infra plumbing self-registered as "⚙️ System" (day-orchestrator,
-        # watchdogs, session-holder, …) is not something Megan needs on the Hub —
-        # hide it from every Hub surface (Megan 2026-07-28). The rows stay in the
-        # library Sheet (harmless); hub_coverage no longer creates new ones.
-        if (report.get("category") or "").strip() == "⚙️ System":
+        # Auto-registered NOISE — hidden from every Hub surface (Megan 2026-07-28).
+        # The rows stay in the library Sheet (harmless), just invisible. Covers:
+        #   • ⚙️ System plumbing + ↳ Sub-steps (pieces of a bigger report),
+        #   • the disable_* / "Retire" admin handles (not reports at all),
+        #   • launchd stubs that DUPLICATE a hand-built card already on the Hub.
+        _cat = (report.get("category") or "").strip()
+        _rid = str(report.get("id") or "")
+        if (_cat in ("⚙️ System", "↳ Sub-steps")
+                or _rid.startswith("disable_")
+                or _rid in {"applicant_morning", "applicant_evening",
+                            "car_rides_cleanup", "new_start_followup_sat",
+                            "leaders_call_mon", "override_bulletin_send_fri",
+                            "texas_de_brazil_745"}):
             continue
         module = report.get("module")
         if not module:
