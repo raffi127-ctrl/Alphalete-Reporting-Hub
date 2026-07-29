@@ -122,6 +122,12 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         elif kind == "INCOMPLETE":
             title = f":warning: *{name}* — ran partial on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
+        elif kind == "STUCK":
+            title = f":rotating_light: *{name}* — stuck, never finished on {lbl}"
+            err = ("opened a live 'running' pill"
+                   + (f" ({when})" if when else "")
+                   + " and never closed — the run crashed, was killed, or hung "
+                     "mid-run, so it produced no success/fail")
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")

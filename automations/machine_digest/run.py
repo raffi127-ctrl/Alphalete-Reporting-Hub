@@ -251,6 +251,13 @@ def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
 
 
 _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn't run"
+# How long a standalone report's live 'running' pill (publish_running) may stay
+# OPEN before we treat it as stuck/crashed. Longer than any standalone report's
+# real runtime (the longest instrumented, vantura_payroll incl. its one retry,
+# is ~60m) and shorter than the Hub pill's 2h staleness fade, so a crash is
+# alerted before it silently disappears. Orchestrator reports are skipped (they
+# heartbeat their pill + self-alert), so this only fires on standalone reports.
+_STUCK_AFTER_MIN = 90
 
 
 def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2):
@@ -362,6 +369,38 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
             posted += 1
         except Exception as e:  # noqa: BLE001
             print(f"[{ts}] watch: didn't-run alert failed for {cid}: "
+                  f"{type(e).__name__}: {e}", flush=True)
+
+    # 3) STUCK — a standalone report opened a live 'running' pill (publish_running)
+    #    and never closed it: the run crashed, was killed, or hung between open and
+    #    close. Nothing else catches this — _classify('started')=='running' so step
+    #    1 skips it, and because a row EXISTS step 2 skips it too. The pill would sit
+    #    yellow until the Hub's 2h fade, then vanish silently. Flag any still-open
+    #    'started' row older than _STUCK_AFTER_MIN. (Orchestrator reports are in
+    #    `skip` — they heartbeat their pill + self-alert, so no false positives.)
+    for r in reports:
+        if _classify(r["status"])[1] != "running" or r.get("ended"):
+            continue
+        rid = r.get("report_id") or r.get("name") or "?"
+        if rid in skip or rid in already or rid in newly:
+            continue
+        try:
+            age = now - dt.datetime.fromisoformat(str(r["started"]))
+        except Exception:
+            continue
+        if age < dt.timedelta(minutes=_STUCK_AFTER_MIN):
+            continue
+        try:
+            notify.send_standalone_alert(
+                cfg, name=r["name"], report_id=rid, kind="STUCK",
+                status="stuck (running pill never closed)",
+                when=f"running since {_time_only(r['started'])}", day=day_human,
+                machine_label=_machine_label(r.get("machine", ""), lucy2_hosts),
+                dry_run=dry_run)
+            newly.add(rid)
+            posted += 1
+        except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
+            print(f"[{ts}] watch: stuck alert failed for {rid}: "
                   f"{type(e).__name__}: {e}", flush=True)
 
     if newly and not dry_run:
