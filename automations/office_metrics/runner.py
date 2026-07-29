@@ -111,13 +111,28 @@ def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
     record_status(o.label, o.channel_name, ok=ok, error=error)
 
 
+# Harvest-once CANARY for the Order Log ALLREPS pull — office keys whose order_log
+# metric reads the primed cache instead of scraping. The ALLREPS "A.Order Log"
+# crosstab is byte-identical across all 8 offices (proof_order_log VERDICT
+# IDENTICAL, 2026-07-29) and harvest_prime warms it before these run, so serving
+# it from cache is safe. Rolling out ONE office first (mirrors the churn canary
+# that flipped daily_metrics only): this set reads cache; the other 7 stay live
+# until a morning is watched. Widen by adding keys; EMPTY set = full rollback to
+# live. Fail-safe regardless: a cache miss / stale / any error → live scrape.
+_HARVEST_ORDER_LOG_OFFICES = {"rashad"}
+
+
 def metrics_for(o: Office) -> list[dict]:
     """The eight metrics for one office, built from its config. Shape is identical
     across offices — only the env values (views/sheet/owner) come from `o`."""
     return [
         dict(slug="order_log", label="📋 Order Log / 🆕 Rep Activations",
              module="automations.uploaded.order_log",
-             owner_args=["--owner", o.owner], env={},
+             owner_args=["--owner", o.owner],
+             # HARVEST_VERBOSE so tomorrow's log shows "served from cache" and we
+             # can confirm the canary actually read cache (not just ran clean).
+             env=({"HARVEST_MODE": "on", "HARVEST_VERBOSE": "1"}
+                  if o.key in _HARVEST_ORDER_LOG_OFFICES else {}),
              dry_flag="--no-slack", post_flag=None),
         dict(slug="sales_6plus", label="📅 Sales Scheduled 6+ Days Out",
              module="automations.scheduled_6_days_out.run",
@@ -204,6 +219,65 @@ def _metric_cmd(m: dict, *, live: bool) -> list[str]:
     if flag:
         cmd.append(flag)
     return cmd
+
+
+# Owner-facing ReportKind keys → this runner's metric slugs. Several runner
+# metrics BUNDLE two owner concepts into one post — Order Log carries Rep
+# Activations, and one Churn post carries both New-Internet and Wireless — so
+# multiple keys map to one slug. A channel that asks for EITHER half gets the whole
+# combined post (the metrics can't be split; they're one subprocess/one message).
+# Keys already equal to a runner slug (and raw slugs) pass through unchanged.
+OWNER_KEY_TO_SLUG = {
+    "knocks": "knocks_gaps",
+    "activations": "order_log",
+    "churn_ni": "churn",
+    "churn_wl": "churn",
+}
+
+
+def _plan_slugs(plan) -> set:
+    """Translate a plan's owner ReportKind keys (or raw runner slugs) to the runner
+    slugs used by metrics_for. Unknown values pass through as-is."""
+    out = set()
+    for k in (plan.get("slugs") or plan.get("report_keys") or []):
+        out.add(OWNER_KEY_TO_SLUG.get(k, k))
+    return out
+
+
+def build_destinations(o, wired, target_chan, to_named, *, manual_channel):
+    """Where this office's metrics post. Returns (destinations, skipped).
+
+    Default (no channel_plans, or a manual --channel override): ONE destination —
+    the office's channel with EVERY wired metric (byte-identical to the old path).
+    With channel_plans and no manual override: one destination PER plan, each
+    carrying only the wired metrics whose slug is in that plan (the fan-out).
+
+    Each destination: {"channel_id","channel_name","header_label","metrics"}.
+    `skipped` is [(channel_name, sorted_slugs)] for plans that matched no wired
+    metric (e.g. an --only retry filtered them all out) — the caller logs them.
+    Pure (no I/O) so it unit-tests without a Slack/Tableau session.
+    """
+    plans = tuple(getattr(o, "channel_plans", ()) or ())
+    if plans and not manual_channel:
+        destinations, skipped = [], []
+        for p in plans:
+            slugs = _plan_slugs(p)
+            subset = [m for m in wired if m["slug"] in slugs]
+            if not subset:
+                skipped.append((p.get("channel_name") or p.get("channel_id"),
+                                sorted(slugs)))
+                continue
+            destinations.append({
+                "channel_id": p["channel_id"],
+                "channel_name": p.get("channel_name") or p["channel_id"],
+                "header_label": p.get("header_label") or o.header_label,
+                "metrics": subset})
+        return destinations, skipped
+    return [{
+        "channel_id": target_chan,
+        "channel_name": (o.channel_name if to_named else f"DM/{target_chan}"),
+        "header_label": o.header_label,
+        "metrics": wired}], []
 
 
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
@@ -694,13 +768,6 @@ def main(argv=None, *, office_key: str | None = None) -> int:
               "as Lucy.")
         return 0
 
-    child_env = dict(os.environ, METRICS_CHANNEL_ID=target_chan)
-    # Per-office thread label (only when offices share a channel) so each gets its
-    # own distinguishable Metrics thread. Subprocesses inherit it via child_env;
-    # the parent's ensure_metrics_thread reads the module attr (set below).
-    if o.header_label:
-        child_env["METRICS_HEADER_LABEL"] = o.header_label
-
     # Share the org-wide crosstab pulls across offices: the FIRST office to pull a
     # given view (Order Log, Cancels, Disconnects, Scheduled-6+) downloads it; the
     # next office the same morning reads the dated cache and skips the browser. So
@@ -708,8 +775,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # 3 per-office ICD views (churn/ongoing_cancel/abp) still pull per office (each
     # is a distinct URL → its own cache key, no false sharing). --fresh forces a
     # live re-pull. See tableau_patchright._xtab_cache_*.
+    base_env = dict(os.environ)
     if not args.fresh:
-        child_env["METRICS_XTAB_CACHE"] = str(
+        base_env["METRICS_XTAB_CACHE"] = str(
             REPO_ROOT / "output" / "metrics_xtab_cache")
 
     if mode == "live":
@@ -736,66 +804,113 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             try:
                 conv = client.conversations_open(users=",".join(users))
                 target_chan = conv["channel"]["id"]
-                child_env["METRICS_CHANNEL_ID"] = target_chan
                 print(f"  group DM opened for {len(users)} user(s) → {target_chan}")
             except Exception as e:              # noqa: BLE001
                 print(f"✗ couldn't open group DM for {users}: "
                       f"{type(e).__name__}: {str(e)[:140]}")
                 return 2
 
-        # slack_metrics_post read CHANNEL_ID + HEADER_LABEL at import — rebind both
-        # so the header thread + replies land in this office's channel, and (when
-        # two offices share a channel) under this office's labelled thread.
-        smp.CHANNEL_ID = target_chan
-        smp.HEADER_LABEL = o.header_label
-        if not args.only:
-            os.environ["METRICS_CHANNEL_ID"] = target_chan
-            if o.header_label:
-                os.environ["METRICS_HEADER_LABEL"] = o.header_label
-            try:
-                res = smp.ensure_metrics_thread()
-                print(f"  header thread: "
-                      f"{'existed' if res.get('existed') else 'posted'} "
-                      f"({res.get('thread_ts')})")
-            except Exception as e:              # noqa: BLE001
-                print(f"  ⚠ could not ensure header thread: {e}")
+    # ---- Destinations: normally ONE (the office's channel, all wired metrics).
+    # An office with channel_plans FANS OUT — each plan is its own channel with
+    # only that plan's metric slugs (e.g. cancels-only to a leaders channel).
+    # Skipped when --channel forces a manual override (a review DM wants the whole
+    # thread in one place). Empty channel_plans = exact prior single-channel path.
+    destinations, skipped = build_destinations(
+        o, wired, target_chan, to_named, manual_channel=bool(args.channel))
+    for cname, slugs in skipped:
+        print(f"  (channel {cname}: no wired metrics match {slugs} — skipped)")
+    if not destinations:
+        print("\nno channel-plan destinations match the wired metrics; nothing "
+              "posted.")
+        return 0
+
+    if len(destinations) > 1:
+        print(f"\n  fan-out → {len(destinations)} channels:")
+        for d in destinations:
+            print(f"    • {d['channel_name']} ({d['channel_id']}): "
+                  f"{', '.join(m['slug'] for m in d['metrics'])}")
 
     if mode == "dry-run":
         print("\n⚠ --dry-run PULLS real Tableau data (no Slack post). Requires "
               "the ownerville/Tableau session (run on the mini).")
 
-    results: list[tuple[str, str, bool, str]] = []
+    # Post each destination: its own header thread (live) + only its metrics. Each
+    # metric subprocess reads METRICS_CHANNEL_ID/METRICS_HEADER_LABEL from its env,
+    # so it finds THAT channel's daily thread. results carry the channel for the
+    # summary; a slug that fails in ANY channel counts as failed (for the retry).
+    results: list[tuple[str, str, str, bool, str]] = []  # (chan, slug, label, ok, note)
     overall_start = time.monotonic()
-    for m in wired:
-        cmd = _metric_cmd(m, live=(mode == "live"))
-        m_env = dict(child_env, **m.get("env", {}))
-        ok, note = _run_one(m["label"], cmd, m_env)
-        # In-run self-heal: a metric flagged retryable (knocks_gaps — its
-        # ownerville scrape intermittently times out and drops BOTH its metrics)
-        # gets one or more FRESH-subprocess re-attempts (new ownerville session)
-        # before the thread is finalized, so a first-pass flake doesn't sit until
-        # a human notices and triggers a rerun. Retry is safe because knocks_run
-        # only exits non-zero when the pull raises (pre-post) — see metrics_for.
-        retries = m.get("retry_on_fail", 0)
-        attempt = 0
-        while not ok and attempt < retries:
-            attempt += 1
-            print(f"\n↻ in-run retry {attempt}/{retries} for {m['label']} "
-                  f"(previous attempt: {note})", flush=True)
+    for dest in destinations:
+        chan = dest["channel_id"]
+        hdr = dest["header_label"] or ""
+        child_env = dict(base_env, METRICS_CHANNEL_ID=chan)
+        if hdr:
+            child_env["METRICS_HEADER_LABEL"] = hdr
+        else:
+            child_env.pop("METRICS_HEADER_LABEL", None)
+
+        if mode == "live":
+            # slack_metrics_post read CHANNEL_ID + HEADER_LABEL at import — rebind
+            # both so the header thread + replies land in THIS destination's channel
+            # (and under its labelled thread when a channel is shared).
+            smp.CHANNEL_ID = chan
+            smp.HEADER_LABEL = hdr
+            if not args.only:
+                os.environ["METRICS_CHANNEL_ID"] = chan
+                if hdr:
+                    os.environ["METRICS_HEADER_LABEL"] = hdr
+                else:
+                    os.environ.pop("METRICS_HEADER_LABEL", None)
+                try:
+                    res = smp.ensure_metrics_thread()
+                    print(f"  [{dest['channel_name']}] header thread: "
+                          f"{'existed' if res.get('existed') else 'posted'} "
+                          f"({res.get('thread_ts')})")
+                except Exception as e:          # noqa: BLE001
+                    print(f"  ⚠ [{dest['channel_name']}] could not ensure header "
+                          f"thread: {e}")
+
+        if len(destinations) > 1:
+            print(f"\n--- {dest['channel_name']} ({chan}) — "
+                  f"{len(dest['metrics'])} metric(s) ---")
+        for m in dest["metrics"]:
+            cmd = _metric_cmd(m, live=(mode == "live"))
+            m_env = dict(child_env, **m.get("env", {}))
             ok, note = _run_one(m["label"], cmd, m_env)
-            if ok:
-                note = f"{note} (recovered on retry {attempt})"
-        results.append((m["slug"], m["label"], ok, note))
+            # In-run self-heal: a metric flagged retryable (knocks_gaps — its
+            # ownerville scrape intermittently times out and drops BOTH its
+            # metrics) gets one or more FRESH-subprocess re-attempts (new
+            # ownerville session) before the thread is finalized, so a first-pass
+            # flake doesn't sit until a human notices and triggers a rerun. Retry
+            # is safe because knocks_run only exits non-zero when the pull raises
+            # (pre-post) — see metrics_for.
+            retries = m.get("retry_on_fail", 0)
+            attempt = 0
+            while not ok and attempt < retries:
+                attempt += 1
+                print(f"\n↻ in-run retry {attempt}/{retries} for {m['label']} "
+                      f"(previous attempt: {note})", flush=True)
+                ok, note = _run_one(m["label"], cmd, m_env)
+                if ok:
+                    note = f"{note} (recovered on retry {attempt})"
+            results.append((dest["channel_name"], m["slug"], m["label"], ok, note))
 
     total = time.monotonic() - overall_start
-    n_ok = sum(1 for *_, ok, _ in results if ok)
+    n_ok = sum(1 for *_x, ok, _ in results if ok)
     print(f"\n{'='*70}\n=== {o.label} metrics summary "
           f"({n_ok}/{len(results)} ok, {total/60:.0f}m, {mode}) ===")
-    for _slug, label, ok, note in results:
-        print(f"  {'✅' if ok else '❌'}  {label}  ({note})")
-    failed_slugs = [slug for slug, _l, ok, _ in results if not ok]
-    failed_labels = [label for _s, label, ok, _ in results if not ok]
-    ok_labels = [label for _s, label, ok, _ in results if ok]
+    for chan_name, _slug, label, ok, note in results:
+        _pfx = f"[{chan_name}] " if len(destinations) > 1 else ""
+        print(f"  {'✅' if ok else '❌'}  {_pfx}{label}  ({note})")
+    # A slug is FAILED if it missed in any channel; retry re-posts it to its
+    # channel(s). Dedup so a metric posted to 2 channels lists once.
+    failed_slugs = list(dict.fromkeys(
+        slug for _c, slug, _l, ok, _ in results if not ok))
+    failed_labels = list(dict.fromkeys(
+        label for _c, _s, label, ok, _ in results if not ok))
+    ok_labels = list(dict.fromkeys(
+        label for _c, _s, label, ok, _ in results
+        if ok and label not in set(l for _c2, _s2, l, o2, _n2 in results if not o2)))
 
     # Manifest for the orchestrator's completeness verify — full LIVE run only.
     # `succeeded` lets the Hub pill show ORANGE (partial) instead of green when
@@ -814,10 +929,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         retry = ["--office", o.key, "--live"]
         if failed_slugs:
             retry += ["--only", ",".join(failed_slugs)]
+        _dest_desc = (f"{len(destinations)} channels" if len(destinations) > 1
+                      else o.channel_name)
         _rm.write_manifest(
             o.report_id, failed=failed_labels, succeeded=ok_labels,
             retry_args=retry, kind="metric",
-            note=(f"{n_ok}/{len(results)} metrics posted to {o.channel_name}"
+            note=(f"{n_ok}/{len(results)} metrics posted to {_dest_desc}"
                   + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")))
         # Feed the ONE Hub card's per-office ✅/❌ checklist. Only a FULL live run
         # speaks for the whole office (an --only re-run covers a single metric,
