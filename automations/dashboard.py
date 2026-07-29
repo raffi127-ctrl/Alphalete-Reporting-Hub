@@ -2729,13 +2729,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.leaders_call.run",
                 "args_fn": lambda: ["--repost"],
             },
-            {
-                "label": "Preview deck (no post)",
-                "icon": "👁",
-                "help": "Build the deck and preview the channel posts without sending.",
-                "module": "automations.leaders_call.run",
-                "args_fn": lambda: ["--finalize", "--dry-run"],
-            },
         ],
     },
     {
