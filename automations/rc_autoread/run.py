@@ -128,6 +128,19 @@ WRAP_UP_PHRASES = [
     "the tech will connect the at&t and you disconnect your other provider",
     "reward card for you, i hope you enjoy",
     "rewards card for you, i hope you enjoy",
+    # Punctuation-independent rewards-card claim (catches the "!" / typo variant)
+    "claimed that reward card for you",
+    # More rep check-ins / reminders
+    "was the install successful",
+    "just giving a quick check up",
+    "just checking in, how's everything going",
+    "just checking in, did you receive your equipment",
+    "follow up on your installation, were you able to get everything installed",
+    "just checking in and making sure they made it out",
+    "quick reminder that your install is today",
+    "reminder that your appointment is set for tomorrow",
+    "your new install schedule is today",
+    "friendly reminder that your box should be coming today",
 ]
 
 
