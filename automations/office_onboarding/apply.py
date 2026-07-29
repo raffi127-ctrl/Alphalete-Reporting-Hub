@@ -56,6 +56,7 @@ def _office_row(rec: OnboardingRecord) -> dict:
         "sheet_id": rec.sheet_id,
         "knocks_office": rec.knocks_office,
         "ov_account": rec.ov_account,
+        "owner_office": rec.owner_office,   # B2B "Owner & Office" slice value
         "business_name": rec.business_name,
         "website": rec.website,
         "header_label": rec.header_label,

@@ -208,6 +208,7 @@ def _seed_from_request(d: dict) -> None:
     ss["on_family"] = (_FAM_LABELS[0] if r.family == "d2d" else _FAM_LABELS[1])
     ss["on_owner"] = r.owner
     ss["on_ov"] = r.ov_account
+    ss["on_owner_office"] = r.owner_office
     ss["on_knocks"] = "" if r.knocks_office == r.owner else r.knocks_office
     ss["on_business"] = r.business_name
     ss["on_website"] = r.website
@@ -333,6 +334,21 @@ def form_view() -> None:
             "Website", key="on_website",
             help="Their site — Pay Structure auto-pulls the logo + brand color "
                  "from it, so the office's editor is branded on first login.")
+
+    # B2B ONLY: the exact "Owner & Office" value Tableau uses to slice churn +
+    # activation. Without it those sections come back EMPTY for the office, so it's
+    # required for B2B. Free-text (not derived) because it must match Tableau
+    # character-for-character (case, brackets, punctuation).
+    owner_office = ""
+    if family == "b2b":
+        owner_office = st.text_input(
+            "Owner & Office (Tableau) *", key="on_owner_office",
+            placeholder="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
+            help="Copy this EXACTLY as it appears in Tableau's 'Owner & Office' "
+                 "filter — case, brackets and all. B2B churn + activation slice on "
+                 "it; if it's off by a character those sections come back empty.")
+        if not owner_office.strip():
+            st.caption("⚠️ Required for B2B — churn + activation won't fill without it.")
 
     # Internal id — pure plumbing (the --office handle, the <id>_metrics schedule
     # entry, cache filenames). Auto-made from the owner's first name so Megan
@@ -482,7 +498,7 @@ def form_view() -> None:
         business_name=business.strip(), website=website.strip(),
         channel_id=channel_id.strip(), channel_name=channel_name.strip(),
         sheet_id=sheet_id, family=family, channel_plans=built_plans,
-        ov_account=ov_account.strip(),
+        ov_account=ov_account.strip(), owner_office=owner_office.strip(),
         owner_email=owner_email.strip(), pay_code=pay_code.strip(),
         reports=enrolled, header_label=header_label.strip())
 
@@ -495,6 +511,10 @@ def form_view() -> None:
         if send_welcome and rec.owner_email and "@" not in rec.owner_email:
             problems.append("Owner email doesn't look valid (or uncheck 'Send the "
                             "welcome email').")
+        if rec.family == "b2b" and not rec.owner_office.strip():
+            problems.append("B2B needs the exact **Owner & Office** value (Tableau) "
+                            "— churn + activation slice on it and come back empty "
+                            "without it.")
         if problems:
             st.error("Fix these before submitting:")
             for p in problems:

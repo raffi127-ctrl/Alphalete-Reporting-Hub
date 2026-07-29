@@ -257,6 +257,12 @@ class OnboardingRecord:
                                   # from these; empty = single channel gets `reports`.
     ov_account: str = ""          # Ownerville account number (metadata; may equal
                                   # the AppStream office id but isn't guaranteed to).
+    owner_office: str = ""        # B2B ONLY: the exact "Owner & Office" value as
+                                  # Tableau spells it, e.g. "ATEF CHOUDHURY [domin8
+                                  # acquisitions, inc.]". B2B churn + activation slice
+                                  # on this field; empty falls back to `owner`, which
+                                  # for those views returns NO rows (they need the
+                                  # full string). Must match Tableau character-for-char.
     owner_email: str = ""         # where the Pay Structure invite is sent.
     pay_code: str = ""            # the office's Pay Structure access code.
     reports: List[EnrolledReport] = field(default_factory=list)
