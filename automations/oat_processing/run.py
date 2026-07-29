@@ -794,6 +794,52 @@ def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
     return _armed_retext(page, a, None, live)
 
 
+def retext_by_name(page, first, last, phone=""):
+    """Re-text an applicant who has already LEFT the OAT queue: global-search AS by
+    last name (Home→Search), open their record to read the role they applied for,
+    then re-text via the SMS widget. Returns (status, detail)."""
+    last = last or first
+    try:
+        page.fill("input[name='globalSrchFor']", last, timeout=6000)
+        clicked = False
+        for sel in ("#glblSrchSbmt", "input[name='glblSrchSbmt']",
+                    "xpath=//input[@value='Go']", "xpath=//*[normalize-space(.)='Go']"):
+            try:
+                b = page.locator(sel).first
+                if b.count() > 0:
+                    b.click(timeout=4000, no_wait_after=True)
+                    clicked = True
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        if not clicked:
+            page.press("input[name='globalSrchFor']", "Enter")
+        page.wait_for_timeout(3200)
+    except Exception as e:  # noqa: BLE001
+        return "search_err", f"{type(e).__name__}"
+    # Open the matching applicant from the results.
+    full = f"{first} {last}".lower()
+    opened = page.evaluate(
+        """(full) => {
+            const a = [...document.querySelectorAll('a')].find(e =>
+                (e.innerText||'').toLowerCase().includes(full));
+            if (a) { a.click(); return (a.innerText||'').trim().slice(0,40); }
+            return null; }""", full)
+    if not opened:
+        return "not_found", f"no search result for {full!r}"
+    page.wait_for_timeout(2500)
+    a = read_current_applicant(page)
+    role = _role_from_position(a.position)
+    ph = phone or a.cell_phone or a.phone
+    _log(f"    [retext-name] opened {a.first_name} {a.last_name} role={role!r} "
+         f"phone={ph!r}")
+    if not ph:
+        return "no_phone", f"{first} {last} has no phone on record"
+    status, detail = retext_applicant(page, first, last, ph, role, do_send=True)
+    _log(f"    [retext-name] {first} {last} -> {status} :: {detail[:70]}")
+    return status, f"{detail} (role={role})"
+
+
 _NO_PHONE_ROWS: list = []
 
 
@@ -1214,7 +1260,8 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
         probe_resume_flag: bool = False,
         retext_test: str = None, retext_send: str = None,
-        remove_applicant: str = None, _attempt: int = 1) -> int:
+        remove_applicant: str = None, retext_names: str = None,
+        _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -1248,6 +1295,23 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             if probe_resume_flag:
                 open_oat(page)
                 probe_resume(page)
+                return 0
+
+            if retext_names:
+                # Re-text applicants who've left the OAT queue. Semicolon list of
+                # 'First Last|Phone' (phone optional — read from their record).
+                open_oat(page)
+                for spec in retext_names.split(";"):
+                    parts = [p.strip() for p in spec.split("|")]
+                    nm = parts[0].split()
+                    if not nm:
+                        continue
+                    first = nm[0]
+                    last = " ".join(nm[1:]) if len(nm) > 1 else ""
+                    ph = parts[1] if len(parts) > 1 else ""
+                    st, det = retext_by_name(page, first, last, ph)
+                    _log(f"[oat] RETEXT-BY-NAME {first} {last!r} -> {st} :: {det[:90]}")
+                    open_oat(page)  # back to a clean OAT page for the next one
                 return 0
 
             if retext_test or retext_send:
@@ -1549,6 +1613,10 @@ def main(argv=None) -> int:
     p.add_argument("--remove-applicant", default=None, dest="remove_applicant",
                    metavar="'First Last'",
                    help="Walk OAT to the named applicant and remove them (no text)")
+    p.add_argument("--retext-by-name", default=None, dest="retext_names",
+                   metavar="'First Last|Phone;First Last|Phone'",
+                   help="Re-text applicants who left the queue: search AS, read their "
+                        "role, and SEND the FOR LUCY text. Semicolon-separated list.")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
@@ -1556,7 +1624,7 @@ def main(argv=None) -> int:
                max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
                probe_resume_flag=args.probe_resume,
                retext_test=args.retext_test, retext_send=args.retext_send,
-               remove_applicant=args.remove_applicant)
+               remove_applicant=args.remove_applicant, retext_names=args.retext_names)
 
 
 if __name__ == "__main__":
