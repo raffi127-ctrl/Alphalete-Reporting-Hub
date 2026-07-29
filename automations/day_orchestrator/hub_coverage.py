@@ -60,7 +60,7 @@ _SKIP_RE = re.compile(
     r"|kick_poller|morning_diag|set_wake|probe_readiness|opt_phase"
     r"|send_email_preview|schedule_audit|tableau_preview|sunday_coverage"
     r"|rebuild_lastweek|drb_backfill_lastweek|drb_tableau_pull|drb_fill_owner"
-    r"|recruiting_backfill_juan|vantura_board_audit|applicant_clear_session"
+    r"|recruiting_backfill_juan|applicant_clear_session"
     r"|harvest_prime"                       # churn-cache warm — internal, not a report
     r"|dd_headshots_sync|dd_special_accumulate"  # DD sub-steps under dd-bulletin
     r").*|.*(_slack|_post|_send|_finalize)$")
