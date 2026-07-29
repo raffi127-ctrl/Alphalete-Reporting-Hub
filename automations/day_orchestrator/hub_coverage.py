@@ -149,10 +149,18 @@ def resolve_card(report_id: str, report_name: str = "", *,
     the resolved id anyway so the caller can still log the run — a missing card
     is better than a crashed report.
     """
-    if is_internal(report_id):
-        return None
     curated = _curated_map()
     mapped = curated.get(report_id) or CURATED_ALIAS.get(report_id)
+    # An EXPLICIT curated mapping (_HUB_CARD / CURATED_ALIAS) means the report is
+    # MEANT to carry a card, so it OVERRIDES the internal/skip patterns. Without
+    # this, a report_id ending in _slack/_post/_send/_finalize (e.g.
+    # org_board_slack — the daily Org Sales Board Slack post) matched _SKIP_RE and
+    # resolved to None, so its pill silently stopped publishing even though
+    # _HUB_CARD maps it to a real card (regression: org-sales-board-slack went
+    # white after 2026-07-27). Only skip when there is NO explicit mapping.
+    # (Megan 2026-07-29)
+    if not mapped and is_internal(report_id):
+        return None
     # Fast path: a curated target that is a real hardcoded card (local read, no
     # network) is trusted as-is.
     if mapped and mapped in _hardcoded_card_ids():
