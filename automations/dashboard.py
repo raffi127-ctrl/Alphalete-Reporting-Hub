@@ -4046,10 +4046,7 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Assembles each **active ICD's** weekly override \u2014 regular + "
-            "captain/special, pulled from five sources \u2014 fills our own copy of "
-            "the Org Overrides report, and renders the black/gold **Override "
-            "Bulletin** (top-5 leader cards + the two override tables). Anyone "
-            "active it can't find is **listed for you**, never written as $0.\n\n"
+            "captain/special, pulled from five sources.\n\n"
             "WHEN IT RUNS\n"
             "**Fridays ~10am CST** for the week that just ended; the send "
             "follows right after.\n\n"
@@ -4080,36 +4077,12 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Preview (no write)",
-                "icon": "\U0001F441",
-                "primary": True,
-                "help": "Pulls every source and shows what it WOULD write, plus anyone active it couldn't find. Changes nothing.",
-                "module": "automations.override_bulletin.run",
-                "args_fn": lambda: [],
-            },
-            {
                 "label": "Fill Sandbox Tab",
                 "icon": "\u25B6",
-                "primary": False,
+                "primary": True,
                 "help": "Writes the assembled numbers into the 'Copy of Org Overrides Ongoing Report' tab. The live tab is refused.",
                 "module": "automations.override_bulletin.run",
                 "args_fn": lambda: ["--write"],
-            },
-            {
-                "label": "Check Against the VA's Week",
-                "icon": "\U0001F50E",
-                "primary": False,
-                "help": "Pulls a week the VA already filled by hand and compares every number to hers, one cell at a time. Changes nothing anywhere — it just tells you whether the numbers agree.",
-                "module": "automations.override_bulletin.verify",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Preview Bulletin (no send)",
-                "icon": "\U0001F4E7",
-                "primary": False,
-                "help": "Builds the bulletin image and shows the subject line, the two Slack channels and every email address it would go to. Sends nothing.",
-                "module": "automations.override_bulletin.send",
-                "args_fn": lambda: [],
             },
             {
                 "label": "Send to Preview Group (email 4)",
