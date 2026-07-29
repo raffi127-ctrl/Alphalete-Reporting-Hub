@@ -213,11 +213,26 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
             f"Revisen y reaccionen con :white_check_mark: para que salga. "
             f"Nada se envía hasta entonces.")
     cli = _client()
+    olds = _all_posts(today, channel)
+
+    # NEVER destroy an approval. If today's post already carries an authorised
+    # checkmark, the day is decided: re-posting would delete a human's decision
+    # and silently reset the gate to "waiting". Learned the hard way 2026-07-29
+    # — a rerun queued moments before Eve reacted wiped her checkmark, and the
+    # email that was approved simply never went. --post is a no-op from then on.
+    for old in olds:
+        who = _approver_of(old)
+        if who:
+            if verbose:
+                print(f"— {_title(today)} is already approved by {who[1]}; "
+                      f"leaving the post (and the approval) alone", flush=True)
+            return old["ts"]
+
     # A second review post for the same day is worse than none: the checker
     # takes the newest, so a checkmark left on the older one would silently
     # never send. A rerun replaces its own previous post — ours only, matched on
-    # our own title for this day.
-    for old in _all_posts(today, channel):
+    # our own title for this day, and only while nobody has approved it.
+    for old in olds:
         try:
             cli.chat_delete(channel=_channel(channel), ts=old["ts"])
             if verbose:
