@@ -231,8 +231,8 @@ def _done_view() -> None:
         "One reminder: make sure **Megan Hidalgo** is added to each **Slack** "
         "channel above. You don't need to do anything else. 🎉")
     if d["where"] == "sheet" and not d["alerted"][0]:
-        # Owner-facing reassurance + a diagnostic line for the team (only shows on
-        # a ping failure, which is being debugged; harmless if an owner sees it).
+        # Owner-facing reassurance + a diagnostic line for the team, shown only on a
+        # ping failure (the request still saved to the tab).
         st.caption("(Saved — our team will pick it up.)")
         st.caption("⚙️ team note: notification didn't send — {}".format(
             d["alerted"][1]))
