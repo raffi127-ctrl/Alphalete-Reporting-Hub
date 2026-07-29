@@ -54,7 +54,7 @@ for KEY in $OWNERS; do
         echo "[$(date)] $KEY already emailed today — skipping" >> "$LOG_FILE"
         continue
     else
-        MODE="--email"
+        MODE="--email --sheet"
         # EARLY pass only: defer to 8:30 if this owner's extract isn't fresh yet.
         if [ "$(date +%H)" -lt 8 ]; then
             MODE="$MODE --require-fresh"

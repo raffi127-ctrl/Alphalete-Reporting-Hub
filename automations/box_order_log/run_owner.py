@@ -74,6 +74,11 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--email", action="store_true",
                     help="actually send the email (default: dry-run, writes a "
                          "preview .eml and sends nothing)")
+    ap.add_argument("--sheet", action="store_true",
+                    help="also fill this owner's metrics workbook 'Lucy Box "
+                         "Order Log' tab (owners.py sheet_id). Merges the "
+                         "rolling 6-week log; touches only that tab + its hidden "
+                         "data tab. No-op if the owner has no sheet_id.")
     ap.add_argument("--test-to", metavar="ADDR",
                     help="send for real but ONLY to this address (proving send "
                          "for review — implies --email; the owner is NOT mailed)")
@@ -184,6 +189,27 @@ def main(argv: Optional[list] = None) -> int:
     if verbose:
         print("  Workbook: {}".format(out_xlsx))
         print("  Payout image: {}".format(out_png))
+
+    # ---- 4b. fill the owner's metrics-sheet BOX Order Log tab -----------
+    # Same formula template as Carlos's board, so box_order_log.sheet.push
+    # writes the hidden data tab + rebuilds the view, sized to this owner's rep
+    # count. Only that tab + its hidden data tab are touched. Rolling 6 weeks,
+    # merged (never blanked). Best-effort: a sheet hiccup must not stop the email.
+    if args.sheet:
+        if not cfg.sheet_id:
+            print("  (--sheet: {} has no sheet_id in owners.py — skipping)"
+                  .format(cfg.display))
+        else:
+            from . import sheet as box_sheet
+            try:
+                res = box_sheet.push(sales, today=today, sheet_id=cfg.sheet_id)
+                print("  \U0001F4CA Sheet updated ({} rows, {} reps, {} weeks)"
+                      .format(res.get("rows"), res.get("reps"),
+                              res.get("weeks")))
+            except Exception as exc:
+                print("  ⚠ sheet write failed (email still proceeds): {}"
+                      .format(exc), file=sys.stderr)
+                traceback.print_exc()
 
     # ---- 5. email it (dry by default) ---------------------------------
     from . import email as box_email

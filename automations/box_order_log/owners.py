@@ -26,6 +26,10 @@ class OwnerConfig(NamedTuple):
     office_id: str      # OwnerVille office id, for reference/traceability
     match: str          # lower-cased substring matched against "Owner & Office"
     email_to: List[str]
+    sheet_id: str = ""  # this owner's metrics workbook — its "Lucy Box Order
+    #                     Log" tab is the SAME formula template as Carlos's, so
+    #                     run_owner --sheet fills it via box_order_log.sheet.push.
+    #                     Empty => no sheet write for this owner (email only).
 
 
 # Add an owner by adding a row here — run_owner.py picks it up, no other change.
@@ -39,5 +43,8 @@ OWNERS = {
         office_id="19833",
         match="roshan",
         email_to=["roshanaminahmad10@gmail.com"],
+        # "Metrics - Roshan Amin Ahmad" workbook; its "Lucy Box Order Log" tab
+        # is the same formula template (reads a hidden "Lucy Box Data" tab).
+        sheet_id="1zn_oolbuDO2Svu1ui0F8w24RRR5Am6FpPp0WCExAp2I",
     ),
 }

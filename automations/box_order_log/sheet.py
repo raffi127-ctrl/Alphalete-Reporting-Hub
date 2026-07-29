@@ -146,8 +146,11 @@ def _stamp(now: dt.datetime) -> str:
         "AM" if now.hour < 12 else "PM")
 
 
-def _open():
-    return open_by_key(SHEET_ID)
+def _open(sheet_id: Optional[str] = None):
+    # Defaults to Carlos's board (SHEET_ID). A per-owner run (run_owner.py)
+    # passes that owner's own metrics workbook id — the "Lucy Box Order Log"
+    # tab there is the SAME formula template, so the same push fills it.
+    return open_by_key(sheet_id or SHEET_ID)
 
 
 def _ensure_tab(sh, title: str, *, hidden: bool = False, rows: int = 1000,
@@ -662,9 +665,14 @@ def _clear_color_rules(sh, view_id: int) -> List[dict]:
 
 def push(sales: Sequence, *, generated: Optional[str] = None,
          today: Optional[dt.date] = None, weeks_back: int = WEEKS,
-         log=print) -> Dict[str, object]:
-    """Merge today's pull into the sheet and repaint the view."""
-    sh = _open()
+         sheet_id: Optional[str] = None, log=print) -> Dict[str, object]:
+    """Merge today's pull into the sheet and repaint the view.
+
+    sheet_id: target a workbook other than Carlos's board (SHEET_ID) — used by
+    run_owner.py to fill a per-owner metrics sheet's identical "Lucy Box Order
+    Log" template. Only TAB_VIEW + TAB_DATA are written; no other tab is touched.
+    """
+    sh = _open(sheet_id)
     today = today or dt.date.today()
 
     # Belt and braces: refuse to run if our view tab name ever collides with
