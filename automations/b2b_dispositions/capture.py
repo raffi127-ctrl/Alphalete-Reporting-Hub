@@ -141,6 +141,70 @@ _OUTLINE_JS = """
 """
 
 
+_CONTENT_BOX_JS = r"""
+(kind) => {
+  window.scrollTo(0, 0);
+  const vis = e => e && e.offsetParent !== null;
+  const norm = s => (s||'').replace(/\s+/g,' ').trim().toLowerCase();
+  const all = [...document.querySelectorAll('body *')].filter(vis);
+  const containing = t => all.filter(e => norm(e.innerText).includes(norm(t)));
+  // The tightest element whose text contains `t` (leaf-most, smallest area).
+  const tight = t => { const c = containing(t);
+    return c.length ? c.sort((a,b)=>{const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();
+      return (ra.width*ra.height)-(rb.width*rb.height);})[0] : null; };
+  const union = els => { const rs = els.filter(Boolean).map(e=>e.getBoundingClientRect());
+    if (!rs.length) return null;
+    return { left: Math.min(...rs.map(r=>r.left)), top: Math.min(...rs.map(r=>r.top)),
+             right: Math.max(...rs.map(r=>r.right)), bottom: Math.max(...rs.map(r=>r.bottom)) }; };
+  const box = e => { const r=e.getBoundingClientRect();
+    return {left:r.left, top:r.top, right:r.right, bottom:r.bottom}; };
+  let b = null;
+  if (kind === 'todays_activity') {
+    // The rep-list panel: from the search box, climb to the tall/narrow panel
+    // that holds the rows (adapts to the collapsed sidebar).
+    let inp = document.querySelector(
+      'input[placeholder*="owner" i], input[placeholder*="rep" i], input[type="search"]');
+    if (inp) { let el = inp;
+      for (let i=0;i<7 && el.parentElement;i++){ el = el.parentElement;
+        const r = el.getBoundingClientRect();
+        if (r.height > 350 && r.width > 180 && r.width < 760) { b = box(el); break; } }
+      if (!b) b = box(inp.parentElement || inp); }
+  } else if (kind === 'time_tracker') {
+    // Both gap cards: union the "Reps Under/Over 15 Minute Gap" card blocks.
+    const under = tight('Reps Under 15 Minute Gap');
+    const over = tight('Reps Over 15 Minute Gap');
+    const card = e => { let el=e; for (let i=0;i<4 && el.parentElement;i++){ el=el.parentElement;
+      if (el.getBoundingClientRect().height > 90) return el; } return e; };
+    b = union([under && card(under), over && card(over)]);
+  } else if (kind === 'territory_stats') {
+    // The 3 stat cards, from the "Report By" filter row to the CURRENT PERIOD
+    // card. Climb from each card's header to the card block, then union with the
+    // filter row (which carries the territory name Carlos wants visible).
+    const rb = tight('Report By');
+    const cardEls = ['TODAY', 'SINCE TERRITORY', 'CURRENT PERIOD']
+      .map(t => tight(t))
+      .map(e => { if (!e) return null; let el = e;
+        for (let i=0;i<5 && el.parentElement;i++){ el = el.parentElement;
+          if (el.getBoundingClientRect().height > 200) return el; } return e; });
+    b = union([rb, ...cardEls]);
+  }
+  if (!b) return null;
+  return { left:b.left, top:b.top, right:b.right, bottom:b.bottom,
+           innerWidth: window.innerWidth };
+}
+"""
+
+
+def content_box(page, kind: str):
+    """The live bounding box (CSS px) of a view's real content, so the crop
+    adapts to the collapsed sidebar / actual layout instead of fixed pixels.
+    Returns a dict with left/top/right/bottom/innerWidth, or None."""
+    try:
+        return page.evaluate(_CONTENT_BOX_JS, kind)
+    except Exception:
+        return None
+
+
 def print_outline(page, label: str) -> None:
     """Print a compact outline of the biggest on-screen containers to stdout.
     In --dry-run this lands in the run log, so `logtail` can fetch the real DOM
@@ -153,34 +217,47 @@ def print_outline(page, label: str) -> None:
           flush=True)
 
 
-def _shoot(page, out_path: Path, *, crop=None) -> str:
-    """Full-page screenshot, then optionally PIL-crop to `crop`, a callable
-    (W, H) -> (left, top, right, bottom) in image pixels. Full-page can never
-    come back blank (the earlier anchor-clip approach did); the crop just trims
-    the fixed left sidebar + top chrome so the content fills the frame. Returns
-    'clip' if cropped, 'full' if we kept the whole page."""
+def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14) -> str:
+    """Full-page screenshot, then PIL-crop to the view's real content. Two crop
+    sources, in order: (1) the LIVE element bounding box from content_box(kind)
+    — adapts to the collapsed sidebar / actual layout, the tight crop Megan
+    asked for; (2) a fixed fallback box `fixed(W,H)` if the element can't be
+    located. Full-page can never come back blank, so a miss degrades to "too
+    much", never empty. Returns 'box' | 'fixed' | 'full'."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    box = content_box(page, kind)      # measured BEFORE the shot (scrolls to top)
     full = out_path.with_name(out_path.stem + "_full.png")
     page.screenshot(path=str(full), full_page=True)
-    if crop is not None:
-        try:
-            from PIL import Image
-            im = Image.open(full)
-            w, h = im.size
-            left, top, right, bottom = crop(w, h)
-            left = max(0, min(int(left), w - 1))
-            right = max(left + 10, min(int(right), w))
-            top = max(0, min(int(top), h - 1))
-            bottom = max(top + 10, min(int(bottom), h))
+    how = "full"
+    try:
+        from PIL import Image
+        im = Image.open(full)
+        w, h = im.size
+        rect = None
+        if box and box.get("innerWidth"):
+            # getBoundingClientRect is CSS px; the full-page PNG is scaled by the
+            # device pixel ratio, so map CSS px -> image px via W / innerWidth.
+            s = w / float(box["innerWidth"]) or 1.0
+            rect = (box["left"] * s - pad, box["top"] * s - pad,
+                    box["right"] * s + pad, box["bottom"] * s + pad)
+            how = "box"
+        elif fixed is not None:
+            rect = fixed(w, h)
+            how = "fixed"
+        if rect is not None:
+            left = max(0, min(int(rect[0]), w - 1))
+            top = max(0, min(int(rect[1]), h - 1))
+            right = max(left + 10, min(int(rect[2]), w))
+            bottom = max(top + 10, min(int(rect[3]), h))
             im.crop((left, top, right, bottom)).save(out_path)
             try:
                 full.unlink()
             except Exception:
                 pass
-            return "clip"
-        except Exception as e:  # noqa: BLE001 — never let a crop kill the run
-            print(f"  crop failed ({type(e).__name__}: {str(e)[:70]}) — keeping "
-                  f"full page", flush=True)
+            return how
+    except Exception as e:  # noqa: BLE001 — never let a crop kill the run
+        print(f"  crop failed ({type(e).__name__}: {str(e)[:70]}) — keeping "
+              f"full page", flush=True)
     try:
         full.replace(out_path)
     except Exception:
@@ -188,13 +265,11 @@ def _shoot(page, out_path: Path, *, crop=None) -> str:
     return "full"
 
 
-# Per-view crop boxes over the full-page image (1680px-wide viewport). The left
-# nav is ~168px and the top user-bar + page title ~205px; territories/cards sit
-# near the top, so we cap their height. Tuned against Lucy 2 dry-runs; a full
-# page is captured first so a wrong box degrades to "too much", never blank.
+# Fixed fallback boxes over the full-page image, used only when the live element
+# box can't be found (1680px-wide viewport; left nav ~168px, top chrome ~205px).
 CROP_TODAYS_ACTIVITY = lambda w, h: (168, 205, min(w, 720), h)          # noqa: E731
-CROP_TIME_TRACKER = lambda w, h: (168, 205, w, min(h, 1150))            # noqa: E731
-CROP_TERRITORY_STATS = lambda w, h: (168, 205, w, min(h, 1150))        # noqa: E731
+CROP_TIME_TRACKER = lambda w, h: (168, 300, w, min(h, 620))            # noqa: E731
+CROP_TERRITORY_STATS = lambda w, h: (168, 250, w, min(h, 1000))        # noqa: E731
 
 
 # --- the three views ----------------------------------------------------------
@@ -209,7 +284,7 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     if dump:
         print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
-    how = _shoot(page, out, crop=CROP_TODAYS_ACTIVITY)
+    how = _shoot(page, out, kind="todays_activity", fixed=CROP_TODAYS_ACTIVITY)
     return {"view": "todays_activity", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
@@ -225,7 +300,7 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     if dump:
         print_outline(page, f"time_tracker {tag}")
     out = out_dir / f"time_tracker_{_slug(tag)}.png"
-    how = _shoot(page, out, crop=CROP_TIME_TRACKER)
+    how = _shoot(page, out, kind="time_tracker", fixed=CROP_TIME_TRACKER)
     return {"view": "time_tracker", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
@@ -276,7 +351,7 @@ def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
     out = out_dir / f"territory_{_slug(tag)}_{_slug(name)}.png"
     if dump:
         print_outline(page, f"territory_stats {tag} {name}")
-    how = _shoot(page, out, crop=CROP_TERRITORY_STATS)
+    how = _shoot(page, out, kind="territory_stats", fixed=CROP_TERRITORY_STATS)
     return {"view": "territory_stats", "campaign": campaign, "tag": tag,
             "territory_id": terr["id"], "territory": name,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
