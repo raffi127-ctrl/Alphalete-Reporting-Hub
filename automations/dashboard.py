@@ -4473,9 +4473,9 @@ AUTOMATED_REPORTS = [
             "Slack account (named so someone chases them by hand).\n\n"
             "WHEN IT RUNS\n"
             "**Saturday 8am** — roll call @-tagging every leader with a new "
-            "start (and their count); **10am / 1pm / 5pm** reminders that tag "
-            "only who hasn't replied yet. **Sunday 1pm** — the numbered ✅ "
-            "roll-up of who sent and who didn't."
+            "start (and their count); **1pm** — a reminder that tags only who "
+            "hasn't replied yet. **Sunday 1pm** — the numbered ✅ roll-up of "
+            "who sent and who didn't."
         ),
         "assignees": ["Lucy 1"],
         # Pinned to Lucy 1 (same as bg-check-sync): that's where Lucy's Slack
@@ -4483,23 +4483,23 @@ AUTOMATED_REPORTS = [
         # rather than reposting. Slack-only — no iMessage (texting is parked).
         "run_machine": "Lucy 1",
         "run_rerun_id": "new_start_followup",
-        # Own launchd timers (Sat ×4 + Sun ×1) — hide the DUE-TODAY + schedule
+        # Own launchd timers (Sat ×2 + Sun ×1) — hide the DUE-TODAY + schedule
         # pills and keep it out of the "due today" tallies, same as bg-check-sync.
         "hide_schedule": True,
         "self_scheduled": True,
-        # Pill climbs as each pass lands: Saturday = 4 (roll-call 8am + nudges
-        # 10am/1pm/5pm) greens at 4/4; Sunday = the single 1pm checklist greens
-        # at 1/1. Weekday-keyed (weekday(): Sat=5, Sun=6) so the lighter day
-        # still turns green instead of amber-ing at 1/4. Each live pass records
-        # itself via hub_publish (new_start_followup -> this card).
-        "daily_runs": {"5": 4, "6": 1},
+        # Pill climbs as each pass lands: Saturday = 2 (roll-call 8am + the 1pm
+        # nudge — cut from 10am/1pm/5pm on 2026-07-26, too many pings) greens at
+        # 2/2; Sunday = the single 1pm checklist greens at 1/1. Weekday-keyed
+        # (weekday(): Sat=5, Sun=6). Each live pass records itself via hub_publish
+        # (new_start_followup -> this card).
+        "daily_runs": {"5": 2, "6": 1},
         "schedule": {
             "frequency": "weekly",
             "weekdays": [5, 6],  # Saturday, Sunday
             "time": "8:00 AM",
             # Weekday-keyed (Sat=5, Sun=6): each day's pill shows only its own
             # times — no redundant "Sat …/Sun …" prefix in the day's column.
-            "time_label": {"5": "8am/10am/1pm/5pm CST", "6": "1pm CST"},
+            "time_label": {"5": "8am/1pm CST", "6": "1pm CST"},
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -11341,6 +11341,9 @@ else:  # st.session_state.view == "user"
             # the same shifting multi-color GRADIENT pill so the multi-pass
             # cadence reads at a glance. (Megan 2026-07-28)
             "[class*='vantura-slack-sales__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
+            # New-Start Follow-Up — multi-pass (Sat 8am + 1pm, Sun 1pm) → same
+            # shifting gradient pill. (Megan 2026-07-28)
+            "[class*='new-start-followup__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
             "[class*='override-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
