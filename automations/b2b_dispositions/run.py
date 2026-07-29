@@ -119,19 +119,23 @@ def main(argv=None) -> int:
     ap.add_argument("--final", action="store_true",
                     help="tag the hourly shots as the 6:30 Final")
     ap.add_argument("--send", action="store_true",
-                    help="actually post to Slack (default is dry-run)")
+                    help="post to the live Slack channels")
+    ap.add_argument("--preview", action="store_true",
+                    help="DM the captured shots to Megan for review (no channel post)")
     ap.add_argument("--dry-run", action="store_true",
                     help="capture + report only, post nothing (default)")
     ap.add_argument("--headless", action="store_true",
                     help="run the browser headless")
     args = ap.parse_args(argv)
 
-    dry_run = not args.send  # send is the ONLY thing that posts; --dry-run is default
+    # send -> live channels; preview -> DM Megan; neither -> dry-run (save only).
+    dry_run = not (args.send or args.preview)
     today = _central_now().date()
     out_dir = OUTPUT_DIR / today.strftime("%Y-%m-%d")
     slot = slot_label(args.final)
 
-    mode = "DRY-RUN (no Slack)" if dry_run else "SEND"
+    mode = ("SEND" if args.send else "PREVIEW-DM" if args.preview
+            else "DRY-RUN (no Slack)")
     print(f"B2B Dispositions — {mode} — which={args.which} slot={slot!r} "
           f"out={out_dir}", flush=True)
 
@@ -157,19 +161,24 @@ def main(argv=None) -> int:
         print(f"  [{s['thread']}] {s['caption']}  ->  {Path(s['path']).name}{note}",
               flush=True)
 
-    results = _post_by_thread(specs, today, dry_run)
+    if args.preview:
+        res = sp.preview_dm(specs, today)
+        print(f"\nPREVIEW — DM'd {len(res.get('sent', []))}/{len(specs)} shot(s) "
+              f"to Megan for review. errors={res.get('errors')}", flush=True)
+        return 0 if res.get("ok") else 1
+
     if dry_run:
         print(f"\nDRY-RUN complete — {len(specs)} shot(s) saved to {out_dir}. "
-              f"Nothing posted. Review the PNGs, then re-run with --send.",
+              f"Nothing posted. Review the PNGs, then re-run with --preview/--send.",
               flush=True)
-    else:
-        ok = all(r.get("ok") for r in results)
-        print(f"\nPosted. ok={ok}", flush=True)
-        for r in results:
-            print(f"  {r['thread']}: ok={r.get('ok')}", flush=True)
-        if not ok:
-            return 1
-    return 0
+        return 0
+
+    results = _post_by_thread(specs, today, dry_run=False)
+    ok = all(r.get("ok") for r in results)
+    print(f"\nPosted. ok={ok}", flush=True)
+    for r in results:
+        print(f"  {r['thread']}: ok={r.get('ok')}", flush=True)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

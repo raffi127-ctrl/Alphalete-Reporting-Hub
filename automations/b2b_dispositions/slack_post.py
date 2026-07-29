@@ -26,6 +26,40 @@ from automations.b2b_dispositions import config as cfg
 from automations.shared import slack_metrics_post as smp
 
 
+# Preview recipient: Megan Hidalgo. VERIFIED id (schedule_config warns a prior
+# session DM'd Carlos's B2B images to Raf U045Z8N0ZQC by confusing them — Megan
+# is U04G5HJBGFN; resolve via users.info if ever unsure).
+PREVIEW_USER = "U04G5HJBGFN"
+
+
+def preview_dm(specs: List[Dict], today: Optional[dt.date] = None, *,
+               user: str = PREVIEW_USER, dry_run: bool = False) -> Dict:
+    """DM each captured PNG to `user` (Megan) for crop/label review — posts
+    NOTHING to the channels. `specs` = [{'thread','caption','path',...}]. This is
+    the reviewable dry-run: the filesystem PNGs live on Lucy 2 where we can't see
+    them, so the preview comes back over Slack."""
+    today = today or dt.date.today()
+    if dry_run:
+        return {"dry_run": True, "to_user": user,
+                "dms": [{"caption": s["caption"], "file": Path(s["path"]).name}
+                        for s in specs]}
+    sent, errors = [], []
+    for s in specs:
+        png = Path(s["path"])
+        comment = f"*[preview → {s['thread']}]*  {s['caption']}"
+        if not png.exists():
+            errors.append(f"{s['caption']} (no file)")
+            continue
+        try:
+            smp.dm_user_with_file(png, user=user, comment=comment,
+                                  file_name=png.name, as_bot=False)
+            sent.append(s["caption"])
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{s['caption']}: {type(e).__name__} {str(e)[:80]}")
+    return {"to_user": user, "sent": sent, "errors": errors,
+            "ok": not errors}
+
+
 def parent_title(thread_name: str, today: dt.date) -> str:
     return f"{thread_name} — {today.month}/{today.day}/{today.year}"
 

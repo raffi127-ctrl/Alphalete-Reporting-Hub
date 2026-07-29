@@ -1958,8 +1958,40 @@ def _action_set_dd_app_token(args: str) -> tuple[bool, str]:
                   "`lucy rerun install_jiraiya_bot_agent`.")
 
 
+def _action_run_b2b_dispositions(args: str) -> tuple[bool, str]:
+    """Run the B2B Dispositions capture on THIS machine (Lucy 2 — where Carlos's
+    OwnerVille B2B campaigns live). Default = --preview (DM the shots to Megan,
+    post nothing) so a bare enqueue is always safe; pass args to override:
+      run_b2b_dispositions --which all --dry-run   # capture only, no Slack
+      run_b2b_dispositions --which hourly --preview # DM Megan the 2 hourly shots
+      run_b2b_dispositions --which all --final --send  # LIVE to the channels
+    A stray human Chrome on the mini breaks the patchright scrape, so close it
+    first like the orchestrator does for browser reports."""
+    import shlex
+    extra = shlex.split(args) if (args or "").strip() else []
+    if not extra:
+        extra = ["--which", "all", "--preview"]
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, out = _run_cmd([sys.executable, "-m", "automations.b2b_dispositions.run",
+                        *extra], timeout_s=25 * 60,
+                       log_name=f"b2b-dispositions-{stamp}.log")
+    # Surface the per-shot summary lines (capture path + any full-page/campaign
+    # flags) and the final status, trimmed to fit the result cell.
+    lines = [ln for ln in (out or "").splitlines()
+             if (ln.strip().startswith("[") or "⚠" in ln
+                 or "territories" in ln or "PREVIEW" in ln or "DRY-RUN" in ln
+                 or ln.startswith("Posted"))]
+    return ok, (" · ".join(lines)[:450] or (out or "")[-300:])
+
+
 ACTIONS = {
     "ping": _action_ping,
+    "run_b2b_dispositions": _action_run_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
