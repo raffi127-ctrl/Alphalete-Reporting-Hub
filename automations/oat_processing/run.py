@@ -794,6 +794,52 @@ def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
     return _armed_retext(page, a, None, live)
 
 
+def probe_search(page, term: str) -> None:
+    """Diagnostic: map the AS search (Megan uses Home→Search→first name), then run a
+    search for `term` and dump the results structure so we can wire retext_by_name."""
+    first = term.split()[0] if term else ""
+    last = term.split()[-1] if term else ""
+    # what search inputs / nav exist?
+    info = page.evaluate(
+        """() => ({
+            url: location.href.slice(-46),
+            nav: [...document.querySelectorAll('a')].map(e=>(e.innerText||'').trim())
+                 .filter(t=>t && t.length<22).slice(0,34),
+            searchInputs: [...document.querySelectorAll('input')]
+                .filter(e=>/search|srch|name|fname|lname/i.test((e.name||'')+(e.placeholder||'')+(e.id||'')))
+                .map(e=>`${e.name||e.id||'?'}|ph:${(e.placeholder||'').slice(0,18)}`).slice(0,16)
+        })""")
+    _log(f"[search] url={info.get('url')}")
+    _log(f"[search] nav={info.get('nav')}")
+    _log(f"[search] searchInputs={info.get('searchInputs')}")
+    # try the global top-nav search by last name, dump results
+    try:
+        page.fill("input[name='globalSrchFor']", last, timeout=5000)
+        for sel in ("#glblSrchSbmt", "input[name='glblSrchSbmt']",
+                    "xpath=//*[normalize-space(.)='Go']"):
+            b = page.locator(sel).first
+            if b.count() > 0:
+                b.click(timeout=4000, no_wait_after=True); break
+        page.wait_for_timeout(3200)
+        res = page.evaluate(
+            """(full) => ({
+                url: location.href.slice(-46),
+                links: [...document.querySelectorAll('a')]
+                    .map(e=>((e.innerText||'').trim().slice(0,26))+' -> '+(e.getAttribute('href')||'').slice(0,30))
+                    .filter(t=>t.length>4).slice(0,24),
+                rowsWithName: [...document.querySelectorAll('tr,li,div')]
+                    .filter(e=>(e.innerText||'').toLowerCase().includes(full) && (e.innerText||'').length<120)
+                    .map(e=>(e.innerText||'').replace(/\\s+/g,' ').slice(0,70)).slice(0,8)
+            })""", f"{first} {last}".lower())
+        _log(f"[search] after-search url={res.get('url')}")
+        for i, l in enumerate(res.get("links", [])):
+            _log(f"[search] link {i}: {l}")
+        for i, r in enumerate(res.get("rowsWithName", [])):
+            _log(f"[search] nameRow {i}: {r}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"[search] probe err: {type(e).__name__}: {e}")
+
+
 def retext_by_name(page, first, last, phone=""):
     """Re-text an applicant who has already LEFT the OAT queue: global-search AS by
     last name (Home→Search), open their record to read the role they applied for,
@@ -1261,7 +1307,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         probe_resume_flag: bool = False,
         retext_test: str = None, retext_send: str = None,
         remove_applicant: str = None, retext_names: str = None,
-        _attempt: int = 1) -> int:
+        probe_search_term: str = None, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -1295,6 +1341,11 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             if probe_resume_flag:
                 open_oat(page)
                 probe_resume(page)
+                return 0
+
+            if probe_search_term:
+                open_oat(page)
+                probe_search(page, probe_search_term)
                 return 0
 
             if retext_names:
@@ -1617,6 +1668,9 @@ def main(argv=None) -> int:
                    metavar="'First Last|Phone;First Last|Phone'",
                    help="Re-text applicants who left the queue: search AS, read their "
                         "role, and SEND the FOR LUCY text. Semicolon-separated list.")
+    p.add_argument("--probe-search", default=None, dest="probe_search_term",
+                   metavar="'First Last'",
+                   help="Diagnostic: map AS search + dump results for a name, stop")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
@@ -1624,7 +1678,8 @@ def main(argv=None) -> int:
                max_actions=args.max_actions, probe_sms_flag=args.probe_sms,
                probe_resume_flag=args.probe_resume,
                retext_test=args.retext_test, retext_send=args.retext_send,
-               remove_applicant=args.remove_applicant, retext_names=args.retext_names)
+               remove_applicant=args.remove_applicant, retext_names=args.retext_names,
+               probe_search_term=args.probe_search_term)
 
 
 if __name__ == "__main__":
