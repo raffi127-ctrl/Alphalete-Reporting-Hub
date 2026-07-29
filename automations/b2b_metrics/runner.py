@@ -127,6 +127,17 @@ def _publish_hub(status: str) -> None:
         pass
 
 
+def _publish_running() -> None:
+    """Open a live 'running' pill so the B2B Metrics card PULSES while the run
+    works; _publish_hub closes that same row into green/red. Best-effort — a
+    publish failure must NEVER fail the report (Megan 2026-07-29)."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_running("b2b_metrics", "B2B Metrics → office channels")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _write_manifest(per_office: list) -> None:
     """Persist section-level completeness so the orchestrator's reconciler can
     turn a silent partial post into an INCOMPLETE alert (the AT&T Order Log went
@@ -398,6 +409,11 @@ def main(argv=None) -> int:
     if args.no_crop:
         import os
         os.environ["B2B_SKIP_CROP"] = "1"
+
+    # Pulse the card live while this real posting run works (not on --check /
+    # dry-run); the _publish_hub at the end closes it green/red.
+    if args.post and not args.check:
+        _publish_running()
 
     if args.require_fresh:
         import os

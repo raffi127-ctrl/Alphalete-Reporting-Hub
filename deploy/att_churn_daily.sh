@@ -72,6 +72,10 @@ done
 # CDP pull. Only kills non-ours Chrome; leaves the automation's debug Chrome alone.
 "$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
 
+# Open a live 'running' pill so the card PULSES while the refresh works — the
+# publish_done below closes this same row into green/red (Megan 2026-07-29).
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('att_churn','B2B Churn (Carlos)')" >> "$LOG_FILE" 2>&1 || true
+
 # --fill is baked in: the daily job always writes. Pass through any extra args
 # (e.g. a manual `--only wireless`).
 "$VENV_PY" -u -m automations.att_order_log.churn_run --fill "$@" >> "$LOG_FILE" 2>&1

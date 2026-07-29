@@ -264,25 +264,52 @@ def incomplete_status(report_id: str) -> str:
         return "success"
 
 
+def _find_open_row_for_card(ws, card: str):
+    """Row index (1-based) of the most-recent OPEN 'started' row for `card` — one a
+    publish_running opened and never closed (Status col 8 == 'started', Ended At
+    col 9 empty). Lets a standalone wrapper pair its start/end WITHOUT threading a
+    RunID through shell: it publish_running's at the top, then its existing
+    publish_done (no run_id) finds and closes that same row here. Returns None if
+    no open row (→ publish_done appends a fresh finished row, the old behaviour)."""
+    try:
+        vals = ws.get_all_values()
+    except Exception:
+        return None
+    hit = None
+    for i, row in enumerate(vals[1:], start=2):     # skip header row
+        row = (row + [""] * 9)[:9]
+        # cols: 0 RunID,1 Started,2 Report ID(card),3 Name,4 User,5 Machine,6 PID,7 Status,8 Ended
+        if row[2] == card and str(row[7]).lower() == "started" and not str(row[8]).strip():
+            hit = i                                 # keep the LAST match = most recent
+    return hit
+
+
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
     UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
-    flips running->done and doesn't leave a dangling yellow pill. Otherwise append a
-    fresh finished row (the reverify / no-prior-start path). Returns True if the Hub
-    was touched, False if the report has no Hub card. Best-effort — never raises."""
+    flips running->done and doesn't leave a dangling yellow pill. With no run_id,
+    close the most-recent OPEN started row for this card if one exists (a standalone
+    wrapper that publish_running'd at its start), so it too shows a running->done
+    pulse; only if there's no open row do we append a fresh finished row (the
+    reverify / no-prior-start path). Returns True if the Hub was touched, False if
+    the report has no Hub card. Best-effort — never raises."""
     card = _resolve_card(report_id, report_name)
     if not card:
         return False
     now = dt.datetime.now().isoformat(timespec="seconds")
     try:
         ws = _ws()
+        row = None
         if run_id:
             cell = ws.find(str(run_id))
-            if cell:
-                ws.update_cell(cell.row, 8, status)                       # Status
-                ws.update([[now]], f"I{cell.row}", value_input_option="RAW")  # Ended At
-                return True
+            row = cell.row if cell else None
+        else:
+            row = _find_open_row_for_card(ws, card)   # pair a wrapper's start/end
+        if row:
+            ws.update_cell(row, 8, status)                        # Status
+            ws.update([[now]], f"I{row}", value_input_option="RAW")   # Ended At
+            return True
         ws.append_row(
             [uuid.uuid4().hex[:12], now, card, report_name, "Mini (auto)",
              socket.gethostname(), "", status, now],

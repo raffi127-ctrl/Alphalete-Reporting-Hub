@@ -43,6 +43,13 @@ MODE="--fill --yes"
 LOG_FILE="$LOG_DIR/vantura-slack-sales-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] vantura-slack-sales starting (mode: $MODE)" > "$LOG_FILE"
 
+# Open a live 'running' pill so the card PULSES while this pass works — the
+# publish_done below closes this same row into green/red (Megan 2026-07-29).
+# Skipped on --dry (a preview must not blink the card as a real run).
+if [ "${1:-}" != "--dry" ]; then
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('vantura_slack_sales','Sales Board Fill')" >> "$LOG_FILE" 2>&1 || true
+fi
+
 "$VENV_PY" -u -m automations.vantura_slack_sales.run $MODE >> "$LOG_FILE" 2>&1
 ST=$?
 

@@ -6484,9 +6484,19 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             if _done >= _daily_runs:
                 return "ok"                   # every pass landed → green
             if _done > 0:
-                # Some passes in. Amber today (more still due); on a past day it
-                # never completed, so surface it as partial rather than green.
-                return "progress" if _day == today else "partial"
+                if _day != today:
+                    return "partial"          # past day, never finished
+                # TODAY, mid-run: universal phase ramp (Megan 2026-07-29). The
+                # pill warms from orange → amber → yellow toward green as passes
+                # land — first completed pass = orange, the pass just before done
+                # = yellow, green (ok) reserved for the LAST pass. Anchored on the
+                # endpoints so a 4-pass card is exactly orange/amber/yellow/green
+                # at 1/2/3/4, a 2-pass card goes orange→green, and a 9-pass card
+                # sweeps the ramp. See [[reference_hub_card_rendering_rules]].
+                if _done <= 1:
+                    return "phase1"                       # orange
+                _pos = (_done - 1) / max(_daily_runs - 1, 1)
+                return "phase2" if _pos <= 0.5 else "phase3"   # amber / yellow
             if _s in (None, "success"):
                 return "up" if _day == today else "miss"
             # nothing succeeded and the latest attempt was not a success → fall
@@ -6610,13 +6620,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
                              "miss": "– ", "running": "🔄 ",
-                             "progress": "🟡 "}.get(_stat, "")
+                             "progress": "🟡 ", "phase1": "🟠 ",
+                             "phase2": "🟡 ", "phase3": "🟡 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Multi-run card mid-day: show how many passes have landed
                     # (e.g. "(1/3 done)") so the amber pill says WHY it isn't
                     # green yet. Parenthesized + "done" so a bare "6/7" jammed
                     # after the name doesn't read like a date (e.g. June 7).
-                    if _stat == "progress":
+                    if _stat in ("progress", "phase1", "phase2", "phase3"):
                         _label += (f" ({_cal_counts.get((_r['id'], _day), 0)}"
                                    f"/{_dr_today} done)")
                     # Self-scheduled reports fire on their OWN fixed timer (not the
@@ -6647,6 +6658,9 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         "ok": "Ran OK — open to view",
                         "partial": "Ran, but some parts missed — open to see which",
                         "progress": "Running on schedule — some of today's passes are done, more still due",
+                        "phase1": "Phase 1 done (orange) — more passes still due today",
+                        "phase2": "Phase 2 done (amber) — more passes still due today",
+                        "phase3": "Phase 3 done (yellow) — final pass still due today",
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
                         "up": "Open this report to run it",
@@ -11299,6 +11313,18 @@ else:  # st.session_state.view == "user"
             # 8am pass, with 11:30am + 4pm still due). Amber = on track but not
             # finished; it turns green only once the LAST pass lands.
             "[class*='__calstat_progress'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important}"
+            # UNIVERSAL PHASE RAMP (Megan 2026-07-29): a multi-pass card warms
+            # orange → amber → yellow → green as its passes land. phase1/2/3 are
+            # the pre-green steps; the LAST pass turns it __calstat_ok (green).
+            # Same 3 hues every phased card uses — no per-card pill hacks.
+            "[class*='__calstat_phase1'] button{background:#FFE0C2!important;color:#7C2D12!important;border-color:#FB923C!important}"
+            "[class*='__calstat_phase2'] button{background:#FDE7C0!important;color:#7A4E06!important;border-color:#F59E0B!important}"
+            "[class*='__calstat_phase3'] button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important}"
+            # Shared TESTING (pink) / IN-REVIEW (purple) states — first-class so a
+            # card can be flagged without a bespoke selector. Scoped :not(ok/fail)
+            # so a real run still greens/reds. (Megan 2026-07-29)
+            "[class*='__calstat_testing']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            "[class*='__calstat_review']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
@@ -11334,8 +11360,8 @@ else:  # st.session_state.view == "user"
             # Captainship Report Drafts (12) — draft-only (a human sends), so pin
             # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
             "[class*='captainship-drafts__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            # Alphalete Org Sales Board (Copy Tab) — purple revisit item. (7/28)
-            "[class*='org-sales-board__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Org Sales Board — LIVE daily report: no pin, it greens on a real run
+            # and reds on failure like any other batch report. (Megan 2026-07-29)
             # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)
             "[class*='country-sales-board-slack__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Car-Rides Cleanup / Sales Board Fill / New-Start Follow-Up are
@@ -11347,10 +11373,9 @@ else:  # st.session_state.view == "user"
             "[class*='override-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # DD Bulletin — also in testing → pink pill. (Megan 2026-07-28)
             "[class*='dd-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
-            # Weekly Promotion Check-In — 2 passes (Mon 6pm + 7:15pm): force the
-            # mid-day (pass 1 of 2) pill ORANGE; pass 2 greens on the default 'ok'
-            # colour. (Megan 2026-07-28)
-            "[class*='promo_checkin__calstat_progress'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important;opacity:1!important;animation:none!important}"
+            # Weekly Promotion Check-In — 2 passes (Mon 6pm + 7:15pm). No custom
+            # pill: the universal phase ramp gives pass 1 orange (phase1) and pass
+            # 2 green (ok) on its own. (Megan 2026-07-29)
             # DD Gross Revenue — in testing → pink pill. (Megan 2026-07-28)
             "[class*='dd_gross_revenue__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             # OAT Daily Scorecard — in testing → pink pill. (Megan 2026-07-28)

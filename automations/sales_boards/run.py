@@ -293,6 +293,17 @@ def main(argv=None) -> int:
               "wrong week.")
         return 75          # EX_TEMPFAIL — the scheduler retries
 
+    # Open a live 'running' pill so the card PULSES while the boards render/post;
+    # _publish_hub below closes this same row into green/red. Only on a real post
+    # (a held/dry pass must not blink the card) (Megan 2026-07-29).
+    if args.post:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_running("sales_boards",
+                                        "Sales Boards → #alphalete-gp-sales")
+        except Exception:  # noqa: BLE001 — Hub publish must never break the post
+            pass
+
     for w in sh.worksheets():                 # clear any orphan from a crashed run
         if w.title == TEMP_TAB:
             sh.del_worksheet(w)
