@@ -42,8 +42,13 @@ LOG_FILE="$LOG_DIR/vantura-churn-daily-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Vantura churn+activations refresh starting (extra args: ${*:-none})" > "$LOG_FILE"
 
 # Open a live 'running' pill so the card PULSES while the refresh works — the
-# publish_done below closes this same row into green/red (Megan 2026-07-29).
-"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('vantura_churn','Vantura Churn & Activations')" >> "$LOG_FILE" 2>&1 || true
+# publish_done below closes this same row into green/red. Skip on --dry-run to
+# MATCH the publish_done gate below (else a dry run opens a pill that never
+# closes → a stale 'running' card) (Megan 2026-07-29).
+case " $* " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('vantura_churn','Vantura Churn & Activations')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
 
 "$VENV_PY" -u -m automations.vantura_churn.run "$@" >> "$LOG_FILE" 2>&1
 ST=$?

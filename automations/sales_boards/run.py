@@ -294,9 +294,10 @@ def main(argv=None) -> int:
         return 75          # EX_TEMPFAIL — the scheduler retries
 
     # Open a live 'running' pill so the card PULSES while the boards render/post;
-    # _publish_hub below closes this same row into green/red. Only on a real post
-    # (a held/dry pass must not blink the card) (Megan 2026-07-29).
-    if args.post:
+    # _publish_hub below closes this same row into green/red. Gate MUST match the
+    # close (`not args.dm`) — a --post --dm DM-test never calls _publish_hub, so
+    # opening a row there would leave a stale pill that never closes (Megan 2026-07-29).
+    if args.post and not args.dm:
         try:
             from automations.day_orchestrator import hub_publish
             hub_publish.publish_running("sales_boards",

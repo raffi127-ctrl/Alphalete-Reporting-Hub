@@ -410,10 +410,6 @@ def main(argv=None) -> int:
         import os
         os.environ["B2B_SKIP_CROP"] = "1"
 
-    # Pulse the card live while this real posting run works (not on --check /
-    # dry-run); the _publish_hub at the end closes it green/red.
-    if args.post and not args.check:
-        _publish_running()
 
     if args.require_fresh:
         import os
@@ -453,6 +449,12 @@ def main(argv=None) -> int:
     # --only run (which would flip the whole card green off one item). One publish
     # for the batch (the ONE 'b2b-metrics' card covers every office).
     publishable = args.post and not args.channel and not args.only
+
+    # Open a live 'running' pill so the card PULSES while the offices post — gated
+    # on the SAME `publishable` as the _publish_hub close below, so a --channel /
+    # --only / dry run never opens a row that then never closes (Megan 2026-07-29).
+    if publishable:
+        _publish_running()
 
     statuses = []
     per_office = []     # {key, present, missed, failed} — feeds the run-manifest
