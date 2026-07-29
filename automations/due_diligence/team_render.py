@@ -178,6 +178,10 @@ def write_and_render(people: List[RepDD], *, icd: str, leader: str = "") -> dict
     # 2) write the real values over the placeholders
     padded = [r + [""] * (NCOLS - len(r)) for r in block]
     _retry(ws.update, f"A1:{_col_letter(NCOLS)}{H}", padded, value_input_option="USER_ENTERED")
+    # 2b) auto-fit the name + avg-label columns (A-C) so long names/labels aren't
+    #     clipped in the rendered image.
+    _retry(sh.batch_update, {"requests": [{"autoResizeDimensions": {"dimensions": {
+        "sheetId": nid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 3}}}]})
     # 3) render the block to a PNG (exact-sheet look)
     from automations.org_sales_board import screenshot_email as se
     C.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

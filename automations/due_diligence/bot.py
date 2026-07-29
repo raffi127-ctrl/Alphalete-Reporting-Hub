@@ -96,11 +96,13 @@ def _process(web, user_id: str, icd: str, leader: str, names: list,
         chan = user_id
     _kw = {"thread_ts": thread_ts} if thread_ts else {}
     try:
-        # The pull is 8 weekly crosstabs + shared metrics/churn — a fixed ~8 min,
-        # NOT per-rep (a whole team costs the same as one rep).
+        # Fast when today's 3am harvest cache is warm; a live 8-week pull otherwise.
+        from .pull import _cache_dir, _cache_complete, recent_sundays
+        warm = _cache_complete(_cache_dir(), recent_sundays(C.WEEKS))
+        est = "about *30 seconds*" if warm else "*a few minutes* (pulling 8 weeks live)"
         web.chat_postMessage(channel=chan, **_kw, text=(
-            f":frog: On it — pulling *{icd}*. This takes about *8 min* (8 weeks "
-            f"of data); I'll send back an image of the 3 charts and log them to the sheet."))
+            f":frog: On it — pulling *{icd}*. This takes {est}; I'll send back an "
+            f"image of the 3 charts and log them to the sheet."))
         people, misses = gather_team(names, icd=icd)
         if not people:
             web.chat_postMessage(channel=chan, **_kw, text=(
