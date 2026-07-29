@@ -11555,6 +11555,11 @@ else:  # st.session_state.view == "user"
             "[class*='captainship-drafts__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Alphalete Org Sales Board (Copy Tab) — purple revisit item. (7/28)
             "[class*='org-sales-board__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Car-Rides Cleanup — 9 morning passes (8:30–11:15). Give it a shifting
+            # multi-color GRADIENT pill (each pass a color) so the multi-pass
+            # cadence reads at a glance. (Megan 2026-07-28)
+            "@keyframes carpass{0%{background-position:0% 50%}100%{background-position:200% 50%}}"
+            "[class*='car_rides__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
             "</style>",
             unsafe_allow_html=True,
         )
