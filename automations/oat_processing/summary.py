@@ -294,6 +294,9 @@ def main(argv=None) -> int:
     ap.add_argument("--emit-tab", default=None, dest="emit_tab",
                     metavar="<sheetId>:<tabName>",
                     help="write full bucketed data to a Google Sheet tab (no post)")
+    ap.add_argument("--dm", default=None,
+                    help="DM the scorecard PDF to this Slack user (id/email) as Lucy "
+                         "instead of posting to the channel (for review)")
     args = ap.parse_args(argv)
     date = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
 
@@ -345,6 +348,19 @@ def main(argv=None) -> int:
     print(f"[scorecard] wrote {pdf}", flush=True)
     if args.dry_run:
         print("[scorecard] --dry-run: not posting", flush=True)
+        return 0
+    if args.dm:
+        # DM the card to one person (Megan) for review — no public channel post.
+        from automations.shared import slack_metrics_post as smp
+        n_re = len(t.get("reengaged", []))
+        comment = (f"\U0001F4CB OAT Daily Push — {date.strftime('%b %-d')} "
+                   f"(office 11580, Carlos)\n"
+                   f"{len(t['sent'])} sent to AI · {n_re} re-texted & removed · "
+                   f"{len(t['removed'])} removed · {len(t['retext'])} flagged · "
+                   f"{len(t['nophone'])} no-phone. Review before it goes to the channel.")
+        res = smp.dm_user_with_file(pdf, user=args.dm, comment=comment,
+                                    file_name=f"OAT-Daily-Push-{date.isoformat()}.pdf")
+        print(f"[scorecard] DM'd to {args.dm}: {res}", flush=True)
         return 0
     res = post_to_slack(pdf, date, t)
     print(f"[scorecard] posted to Slack: {res}", flush=True)
