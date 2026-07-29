@@ -11594,6 +11594,8 @@ else:  # st.session_state.view == "user"
             # Captainship Report Drafts (12) — draft-only (a human sends), so pin
             # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
             "[class*='captainship-drafts__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Alphalete Org Sales Board (Copy Tab) — purple revisit item. (7/28)
+            "[class*='org-sales-board__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
