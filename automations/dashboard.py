@@ -11373,6 +11373,10 @@ else:  # st.session_state.view == "user"
             # cadence reads at a glance. (Megan 2026-07-28)
             "@keyframes carpass{0%{background-position:0% 50%}100%{background-position:200% 50%}}"
             "[class*='car_rides__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
+            # Sales Board Fill — many hourly passes (4–9pm) + a 5am sweep; give it
+            # the same shifting multi-color GRADIENT pill so the multi-pass
+            # cadence reads at a glance. (Megan 2026-07-28)
+            "[class*='vantura-slack-sales__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
             "[class*='override-bulletin__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
