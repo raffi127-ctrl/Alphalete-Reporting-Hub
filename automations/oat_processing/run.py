@@ -797,10 +797,42 @@ def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
 _NO_PHONE_ROWS: list = []
 
 
+def _fill_phone_field(page, phone: str) -> bool:
+    """Fill the AS Phone + Cell Phone fields (both required for Send to AI) with a
+    number pulled from the resume. Formats to (NNN) NNN-NNNN."""
+    d = re.sub(r"\D", "", phone or "")
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    val = f"({d[:3]}) {d[3:6]}-{d[6:]}" if len(d) == 10 else phone
+    try:
+        n = page.evaluate(
+            """(v) => { let n = 0;
+                for (const sel of ["input[name='phone']", "input[name='cellPhone']"]) {
+                    const e = document.querySelector(sel);
+                    if (e) { e.value = v;
+                             e.dispatchEvent(new Event('input',{bubbles:true}));
+                             e.dispatchEvent(new Event('change',{bubbles:true})); n++; }
+                }
+                return n; }""", val)
+        return bool(n)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
-    """Parked branch: record the applicant so a human (or a later Octo/Indeed
-    lookup) can get their number. This write is SAFE (local CSV) so it runs in
-    dry-run too."""
+    """No phone on file → first try to pull the real number off the applicant's
+    Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
+    and Send to AI (turns a dead-end into a real send). Only when the resume has no
+    phone either do we flag as 'need to get number from Indeed'."""
+    if live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False):
+        phone, detail = lookup_resume_phone(page)
+        if phone and _fill_phone_field(page, phone):
+            _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
+                 f"{a.first_name} {a.last_name}")
+            page.wait_for_timeout(700)
+            return do_send_ai(page, a, live)
+        _log(f"    no resume phone ({detail}) → flag: "
+             f"{a.first_name} {a.last_name}")
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
         a.email, a.job_board, a.position,

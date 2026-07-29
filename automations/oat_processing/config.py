@@ -33,11 +33,12 @@ RETEXT_MIN_DAYS = int(os.environ.get("OAT_RETEXT_MIN_DAYS", "7"))
 # by Megan 2026-07-28 after the real-send validation (Stephany). Sends real SMS.
 RETEXT_ARMED = os.environ.get("OAT_RETEXT_ARMED", "1") == "1"
 
-# --- Phone-lookup branch (PARKED for v1) ----------------------------------- #
-# The no-phone applicants (Octo Browser → the source's Indeed account → search
-# name → grab phone) are NOT automated in v1. When False, no-phone applicants
-# are left untouched and flagged to the human queue (see NO_PHONE_FLAG_*).
-AUTOMATE_PHONE_LOOKUP = os.environ.get("OAT_AUTOMATE_PHONE_LOOKUP", "0") == "1"
+# --- Phone-lookup branch (LIVE 2026-07-28) --------------------------------- #
+# No-phone applicant → open their Indeed resume via the AS 'View resume' link
+# (a signed employers.indeed.com URL, no login needed — Megan's method) and pull
+# the real phone, fill it in, and Send to AI. Proven on Nevaeh (+1 817 550 4383).
+# When False, no-phone applicants are just flagged to the human queue.
+AUTOMATE_PHONE_LOOKUP = os.environ.get("OAT_AUTOMATE_PHONE_LOOKUP", "1") == "1"
 
 # Where flagged no-phone applicants get surfaced for a human. Default is a local
 # CSV under output/ (dry-run friendly, no external side effects). A Slack post
