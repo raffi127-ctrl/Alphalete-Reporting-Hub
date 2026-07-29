@@ -195,8 +195,8 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
   <div class="kpis">
     <div class="kpi" style="--c:var(--sent)"><div class="klab">Sent to AI</div>
       <div class="knum">{n_sent}</div><div class="ksub">{n_direct} direct · {n_over} via overwrite</div></div>
-    <div class="kpi" style="--c:var(--brand)"><div class="klab">Re-engaged</div>
-      <div class="knum">{n_re}</div><div class="ksub">texted &amp; removed</div></div>
+    <div class="kpi" style="--c:var(--brand)"><div class="klab">Re-texted &amp; removed</div>
+      <div class="knum">{n_re}</div><div class="ksub">quiet &gt; 1 week — re-engaged</div></div>
     <div class="kpi" style="--c:var(--flag)"><div class="klab">Flagged · re-text</div>
       <div class="knum">{n_rt}</div><div class="ksub">no SMS thread yet</div></div>
     <div class="kpi" style="--c:var(--rem)"><div class="klab">Removed · duplicate</div>
@@ -219,7 +219,7 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
   </div>
 
   <div class="panel" style="--c:var(--brand);--cbg:#e7edfb">
-    <div class="ph"><h2>Re-engaged</h2><span class="n">{n_re}</span>
+    <div class="ph"><h2>Re-texted &amp; removed</h2><span class="n">{n_re}</span>
       <span class="hint">quiet &gt; 1 week — texted the FOR&nbsp;LUCY invite, then removed</span></div>
     <table><thead><tr><th style="width:38%">Applicant</th><th>Why</th>
       <th style="width:26%">Action taken</th></tr></thead><tbody>{reengaged_rows}</tbody></table>
