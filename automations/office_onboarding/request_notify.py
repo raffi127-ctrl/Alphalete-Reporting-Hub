@@ -57,16 +57,45 @@ def _lines(rec: OnboardingRecord) -> Tuple[str, List[str]]:
 
 def notify(rec: OnboardingRecord, *, dry_run: bool = False) -> Tuple[bool, str]:
     """Post the request heads-up to the corrections channel. Returns (ok, note).
-    Never raises — alerting must not break the owner's submit."""
+    Never raises — alerting must not break the owner's submit.
+
+    Posts DIRECTLY (rather than via day_orchestrator._post_corrections, which
+    swallows Slack errors) so `note` carries the real failure reason — no token,
+    invalid_auth, not_in_channel, missing_scope — surfaced to Megan on-screen.
+    """
     title, body = _lines(rec)
+    text = "\n".join([title] + body)
     if dry_run:
-        print(title)
-        print("\n".join(body))
+        print(text)
         return True, "dry-run"
+
+    # 1) resolve the corrections channel from config (falls back to the known id).
+    channel = None
     try:
         from automations.day_orchestrator import registry, notify as _n
         cfg = registry.load_config()
-        _n._post_corrections(cfg, title, body, False, tag="metric-request")
-        return True, "posted"
+        channel = _n._corrections_channel(cfg)
     except Exception as e:  # noqa: BLE001
-        return False, "{}: {}".format(type(e).__name__, e)
+        print("[request_notify] config load failed: {}: {}".format(
+            type(e).__name__, e))
+    if not channel:
+        return False, "no corrections channel configured (config unreadable?)"
+
+    # 2) get a Slack client (reads SLACK_USER_TOKEN — set from the app's
+    #    slack_user_token secret) and post, surfacing the real Slack error.
+    try:
+        from automations.shared.slack_metrics_post import _client
+    except Exception as e:  # noqa: BLE001
+        return False, "slack client import failed: {}".format(e)
+    try:
+        client = _client()
+    except Exception as e:  # noqa: BLE001 — SlackPostError = no token resolves
+        return False, "no Slack token — add a `slack_user_token` (xoxp-…) secret ({})".format(e)
+    try:
+        client.chat_postMessage(channel=channel, text=text,
+                                unfurl_links=False, unfurl_media=False)
+        print("[request_notify] posted metric-request ping to {}".format(channel))
+        return True, "posted to {}".format(channel)
+    except Exception as e:  # noqa: BLE001
+        print("[request_notify] post FAILED to {}: {}".format(channel, e))
+        return False, "{}: {}".format(type(e).__name__, str(e)[:200])

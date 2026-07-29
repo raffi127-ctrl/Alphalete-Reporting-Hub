@@ -230,8 +230,12 @@ def _done_view() -> None:
         "3. You'll get a welcome email with how to set your commission payouts.\n\n"
         "One reminder: make sure **Megan Hidalgo** is added to each **Slack** "
         "channel above. You don't need to do anything else. 🎉")
-    if not d["alerted"][0] and d["where"] == "sheet":
-        st.caption("(Saved. Our team will pick it up.)")
+    if d["where"] == "sheet" and not d["alerted"][0]:
+        # Owner-facing reassurance + a diagnostic line for the team (only shows on
+        # a ping failure, which is being debugged; harmless if an owner sees it).
+        st.caption("(Saved — our team will pick it up.)")
+        st.caption("⚙️ team note: notification didn't send — {}".format(
+            d["alerted"][1]))
     if st.button("Send another request"):
         for k in list(st.session_state.keys()):
             if isinstance(k, str) and (k.startswith("chan_") or k in ("_chan_count", "_req_done")):
