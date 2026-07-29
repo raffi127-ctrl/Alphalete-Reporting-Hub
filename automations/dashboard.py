@@ -3791,44 +3791,22 @@ AUTOMATED_REPORTS = [
         "description": "Fills the Country Sales Board tab from Tableau (ATT Tracker 2.1 - D2D → 'D2D Page 1 - This Week') and rolls the week over every Tuesday. Writes the REAL tab — the one the country reads.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Downloads ONE crosstab from **ATT Tracker 2.1 - D2D / "
-            "D2D 1-PAGERV4**, worksheet **'Sales By ICD (ATT) (V2)'** — the "
-            "tracker whose header reads **This Week**.\n"
-            "**•** Writes only the **Mon-Sun day cells** of the "
-            "'Fiber - All Units' block. Everything else on the tab "
-            "(leaderboard, Totals, Product Summary, Current vs Prior) is "
-            "formula-driven and re-derives itself.\n"
-            "**•** Fills every rep already on the board — a rep with no sales "
-            "gets a real **0**, never a blank.\n\n"
+            "Pulls the D2D **'This Week'** crosstab and writes only the "
+            "**Mon-Sun day cells** on the real Country Sales Board tab. "
+            "Everything else (leaderboard, totals, summary) is formula-driven. "
+            "A rep with no sales gets a real **0**, never a blank.\n\n"
             "WHEN IT RUNS\n"
-            "**Daily**, right after the Alphalete Org Sales Board fill. Only "
-            "completed days fill; today and future days stay blank.\n\n"
-            "THE TUESDAY ROLLOVER\n"
-            "Fires **automatically on Tuesday** (the first run that day): "
-            "freezes the finished week into the leaderboard, pushes it onto the "
-            "WE history stack, shifts each rep's weekly totals, then clears the "
-            "day cells for the new week. **Monday never rolls** — Monday's fill "
-            "exists to write Sunday into the week that's closing. If Tuesday is "
-            "missed, the next run rolls instead; re-running is safe (a no-op "
-            "once that week is rolled). It snapshots to "
-            "**'Country Sales Board (pre-rollover backup)'** before touching "
-            "anything.\n\n"
-            "⚠️ THE VAs MUST NOT ALSO ROLL THIS TAB\n"
-            "Two rollovers on the same Tuesday shift the leaderboard one column "
-            "too far and push a duplicate week into the history. If it happens, "
-            "restore from the pre-rollover backup tab.\n\n"
-            "IT CHECKS ITSELF\n"
-            "After writing, it re-reads the sheet and confirms **yesterday** — "
-            "the day it reports on — actually carries numbers. If that day is "
-            "blank or zero, the run **fails on purpose** so you get the alert "
-            "instead of a silently empty board. A country-wide zero is never a "
-            "quiet day: the board does ~7,000 units a week and even Sunday runs "
-            "~190.\n\n"
-            "NAMES THAT DON'T MATCH\n"
-            "A board row absent from Tableau is filled **0** and flagged in the "
-            "log. That's expected for inactive reps — but a rep who IS selling "
-            "showing up there means a spelling drift, fixed with one row on the "
-            "**ICD Aliases** sheet."
+            "**Daily**, right after the Org Sales Board fill (completed days "
+            "only). On **Tuesday** the first run **auto-rolls the week** — "
+            "snapshotting to a backup tab first; if Tuesday is missed the next "
+            "run rolls instead, and re-running is safe. ⚠️ The VAs must **not** "
+            "also roll this tab — two rollovers corrupt the leaderboard; restore "
+            "from the backup tab if it happens.\n\n"
+            "SELF-CHECK\n"
+            "After writing, it confirms **yesterday** carries numbers; a "
+            "blank/zero day **fails on purpose** so you get an alert, not a "
+            "silently empty board. Unmatched names fill **0** and are flagged — "
+            "fix a selling rep's spelling drift on the **ICD Aliases** sheet."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
@@ -3855,14 +3833,6 @@ AUTOMATED_REPORTS = [
                 "help": "Pulls the D2D 'This Week' crosstab and fills the completed days on the real Country Sales Board tab. On Tuesdays it rolls the week over first (snapshotting the tab beforehand).",
                 "module": "automations.country_sales_board.run",
                 "args_fn": lambda: ["--real", "--i-mean-it", "--enable-rollover"],
-            },
-            {
-                "label": "Preview (no writes)",
-                "icon": "👁",
-                "help": "Same pull, but prints the planned cells instead of writing them. Safe to run any time.",
-                "module": "automations.country_sales_board.run",
-                "args_fn": lambda: ["--real", "--i-mean-it", "--enable-rollover",
-                                    "--dry-run"],
             },
         ],
     },
