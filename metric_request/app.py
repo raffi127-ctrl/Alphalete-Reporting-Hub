@@ -228,8 +228,8 @@ def _done_view() -> None:
         "1. Our team sets up your office's report sheet and wires it in.\n"
         "2. Your metrics start posting to your Slack channel(s) every morning.\n"
         "3. You'll get a welcome email with how to set your commission payouts.\n\n"
-        "One reminder: make sure **Megan Hidalgo** is in each channel above. "
-        "You don't need to do anything else. 🎉")
+        "One reminder: make sure **Megan Hidalgo** is added to each **Slack** "
+        "channel above. You don't need to do anything else. 🎉")
     if not d["alerted"][0] and d["where"] == "sheet":
         st.caption("(Saved. Our team will pick it up.)")
     if st.button("Send another request"):
