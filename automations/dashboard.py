@@ -3836,42 +3836,12 @@ AUTOMATED_REPORTS = [
         "description": "SUSPENDED — the automatic daily DM is off (Eve 2026-07-28); the board is filled day by day only. 'Post Now' still sends it by hand: one shared group DM as Lucy to Rafael Hidalgo, Maud Miller and Evelyn Sobrino.",
         "breakdown": (
             "SUSPENDED (Eve 2026-07-28)\n"
-            "The **automatic daily send is OFF** — the Country Sales Board is "
-            "filled day by day and nothing is DM'd on its own. This card's "
-            "**Post Now** button still sends, on purpose: it's a deliberate "
-            "click, not the scheduler. To turn the daily DM back on, flip "
-            "`country_sales_board_slack` to `on_scheduler: true` and put "
-            "`--post` back in its `base_args`.\n\n"
-            "WHAT IT DOES\n"
-            "**•** Renders the Country Sales Board exactly as it looks on the "
-            "sheet (same colors, fonts, borders) via the Sheets PDF export — "
-            "**no browser**.\n"
-            "**•** Sends it as **ONE shared group DM** — all three people in a "
-            "single thread, not three separate DMs.\n"
-            "**•** Posts as **Lucy**, titled with **yesterday's** date — e.g. "
-            "`Country Sales Board 7.26` on a 7/27 run. Yesterday, because the "
-            "fill only writes completed days, so that's the last day with "
-            "numbers in it.\n\n"
-            "WHO GETS IT\n"
-            "**Rafael Hidalgo, Maud Miller, Evelyn Sobrino** — deliberately a "
-            "shorter list than the All Campaigns board DM.\n\n"
-            "WHAT'S IN THE IMAGE\n"
-            "Two blocks stitched into one picture:\n"
-            "**•** **The board** — Product Summary, Current vs Prior Weeks, and "
-            "the full rep ranking with TOTALS and 8 weeks of trend.\n"
-            "**•** **The Delta Units chart** — each rep's total for the week "
-            "plus **all seven days**, every one as This week / Last week / "
-            "Delta, down to the country-wide totals row.\n"
-            "NOT the whole tab — it runs 310 rows by 54 columns and renders as "
-            "an unreadable postage stamp at full size. Both blocks are found by "
-            "their labels each run, so a new rep or an inserted row can never "
-            "quietly crop the image.\n\n"
-            "WHEN IT RUNS\n"
-            "**Daily**, right after the Country Sales Board fill, so the "
-            "numbers are fresh.\n\n"
-            "RUNS ON THE MINI\n"
-            "Lucy's Slack token lives there. From another machine it would send "
-            "from that person's own account instead of Lucy."
+            "The **automatic daily DM is OFF**. The **Post Now** button below "
+            "still sends it by hand.\n\n"
+            "WHAT IT DOES (when on)\n"
+            "DMs an image of the Country Sales Board — exactly as it looks on "
+            "the sheet — as **one shared group DM** (as Lucy) to Rafael, Maud "
+            "& Evelyn, titled with yesterday's date."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
@@ -3880,8 +3850,12 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "country_sales_board_slack",
         # Suspended 2026-07-28 — off the scheduler, run by hand from this card.
+        # Kept on a daily cadence ONLY so it still renders a pill (forced PURPLE
+        # via the calstat override) to read as "paused / revisit with Eve";
+        # hide_schedule keeps it out of the due-today / overdue tallies.
+        "hide_schedule": True,
         "schedule": {
-            "frequency": "manual",
+            "frequency": "daily",
             "time": None,
             "estimated_minutes": 2,
         },
@@ -11555,6 +11529,8 @@ else:  # st.session_state.view == "user"
             "[class*='captainship-drafts__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Alphalete Org Sales Board (Copy Tab) — purple revisit item. (7/28)
             "[class*='org-sales-board__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)
+            "[class*='country-sales-board-slack__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Car-Rides Cleanup — 9 morning passes (8:30–11:15). Give it a shifting
             # multi-color GRADIENT pill (each pass a color) so the multi-pass
             # cadence reads at a glance. (Megan 2026-07-28)
