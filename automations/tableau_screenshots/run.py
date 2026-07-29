@@ -305,12 +305,34 @@ def main(argv=None) -> int:
                          "images land in the right position (Slack appends "
                          "replies, so a plain re-post would land at the bottom). "
                          "Run with all 8 trackers -- it replaces the whole set.")
+    ap.add_argument("--new-thread", action="store_true",
+                    help="Post a SECOND, complete thread for today instead of "
+                         "reusing today's existing one: a fresh parent + every "
+                         "image, in every channel. The morning thread is left "
+                         "untouched (nothing edited, nothing deleted). For the "
+                         "day the source data was wrong when the first thread "
+                         "went out — pair with --fresh so the images are "
+                         "re-captured, and --include-late so Box is in it too.")
+    ap.add_argument("--header-note", default=None,
+                    help="One italic line under the thread title (e.g. why a "
+                         "second thread exists). Used with --new-thread.")
     ap.add_argument("--headless", action="store_true",
                     help="Run the browser headless (default: headed, matches the "
                          "other Tableau reports + renders more reliably).")
     ap.add_argument("--out-dir", default=str(OUT_DIR),
                     help="Where to write PNGs (default: output/tableau_screenshots).")
     args = ap.parse_args(argv)
+
+    # --new-thread creates a brand-new parent, so there are no old replies under
+    # it to clear — --replace would be a silent no-op, and the pair reads like it
+    # means "replace the old thread", which is the opposite of what happens.
+    if args.new_thread and args.replace:
+        raise SystemExit("--new-thread and --replace are mutually exclusive: "
+                         "--new-thread posts a SECOND thread and leaves the "
+                         "existing one alone; --replace fixes the images inside "
+                         "today's EXISTING thread. Pick one.")
+    if args.new_thread and args.retitle_only:
+        raise SystemExit("--new-thread and --retitle-only are mutually exclusive.")
 
     today = dt.date.today()
     selected = _select(args.only, late_only=args.late_only,
@@ -522,7 +544,9 @@ def main(argv=None) -> int:
     if args.dry_run:
         for org in orgs:
             result = sp.post_all(captures, post_pages, today, dry_run=True,
-                                 replace=args.replace, org=org)
+                                 replace=args.replace, org=org,
+                                 new_thread=args.new_thread,
+                                 note=args.header_note or "")
             print(f"\n  [{org}] would post to {', '.join(result['channels'])} as "
                   f"{sp.header_title(today)}", flush=True)
         print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
@@ -549,7 +573,9 @@ def main(argv=None) -> int:
         label = sp.ORG_LABEL[org]
         try:
             result = sp.post_all(captures, post_pages, today,
-                                 replace=args.replace, org=org)
+                                 replace=args.replace, org=org,
+                                 new_thread=args.new_thread,
+                                 note=args.header_note or "")
         except Exception as e:                        # noqa: BLE001
             result = {"ok": False, "channels": [],
                       "error": f"{type(e).__name__}: {str(e)[:120]}"}

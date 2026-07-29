@@ -213,16 +213,23 @@ def _legacy_title(today: dt.date) -> str:
 LATE_NOTE = "_(data lands ~7am — image posts then)_"
 
 
-def header_text(pages: list, today: dt.date, pending_late=()) -> str:
+def header_text(pages: list, today: dt.date, pending_late=(), note: str = "") -> str:
     """Bold dated title + one ':react: Title' line per tracker (parent message).
 
     A tracker id in `pending_late` gets a note after its name: it IS listed, in
     its normal order, but its image isn't in the thread yet (see pages.py `late`).
     Without the note a reader just sees a tracker with no image and assumes the
     automation broke — which is exactly the report we got. The catch-up run drops
-    the note when it posts the image."""
+    the note when it posts the image.
+
+    `note` is a free-text italic line under the title — used when a SECOND thread
+    goes up the same day (see --new-thread) so readers know which one to trust.
+    The title itself is never changed: find_thread_ts matches on it."""
+    lines = [f"*{header_title(today)}*"]
+    if note:
+        lines.append(f"_{note}_")
     pending = set(pending_late or ())
-    lines = [f"*{header_title(today)}*", ""]
+    lines.append("")
     lines += [f":{p['react']}: {p['title']}"
               + (f"  {LATE_NOTE}" if p["id"] in pending else "")
               for p in pages]
@@ -255,23 +262,36 @@ def find_thread_ts(client, channel: str, today: dt.date):
 
 
 def ensure_thread(client, channel: str, pages: list, today: dt.date,
-                  pending_late=()) -> dict:
+                  pending_late=(), *, new_thread: bool = False,
+                  note: str = "") -> dict:
     """Find today's tracker parent in `channel` or create it (bold header, Lucy).
     A parent still carrying the legacy title is RETITLED in place, so today's
-    thread ends up reading the same as every other channel's."""
-    ts, is_legacy = find_thread_ts(client, channel, today)
-    if ts:
-        if is_legacy:
-            try:
-                client.chat_update(channel=channel, ts=ts,
-                                   text=header_text(pages, today, pending_late))
-                print(f"  {channel}: retitled today's parent → {header_title(today)}",
-                      flush=True)
-            except Exception as e:
-                print(f"  {channel}: retitle skipped ({type(e).__name__})", flush=True)
-        return {"thread_ts": ts, "created": False}
-    resp = client.chat_postMessage(channel=channel,
-                                   text=header_text(pages, today, pending_late))
+    thread ends up reading the same as every other channel's.
+
+    `new_thread=True` SKIPS the lookup and always posts a fresh parent, so the
+    day gets a SECOND thread. Needed when the morning thread went out on stale
+    Tableau data: the find-or-create dedup exists to stop an accidental double
+    post, and this is the deliberate one. The earlier thread is left completely
+    untouched — nothing is edited, nothing is deleted. Future same-day runs find
+    the NEW parent, because conversations_history returns newest-first and
+    find_thread_ts takes the first title match."""
+    if not new_thread:
+        ts, is_legacy = find_thread_ts(client, channel, today)
+        if ts:
+            if is_legacy:
+                try:
+                    client.chat_update(channel=channel, ts=ts,
+                                       text=header_text(pages, today, pending_late))
+                    print(f"  {channel}: retitled today's parent → {header_title(today)}",
+                          flush=True)
+                except Exception as e:
+                    print(f"  {channel}: retitle skipped ({type(e).__name__})", flush=True)
+            return {"thread_ts": ts, "created": False}
+    else:
+        print(f"  {channel}: --new-thread — posting a SECOND thread for today; "
+              f"the existing one is left untouched", flush=True)
+    resp = client.chat_postMessage(
+        channel=channel, text=header_text(pages, today, pending_late, note))
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
@@ -357,7 +377,8 @@ def delete_image_replies(client, channel: str, thread_ts: str, pages: list,
 
 def _post_to_channel(client, channel: str, captures: list, pages: list,
                      today: dt.date, replace: bool = False,
-                     late_all=()) -> dict:
+                     late_all=(), *, new_thread: bool = False,
+                     note: str = "") -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
     channel. A failure in one channel is caught by the caller so the others still
     post.
@@ -382,7 +403,8 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
     # Late trackers this run ISN'T posting are the ones still owed — that's both
     # the note a fresh header carries AND, after a late run posts, what's left.
     pending_late = [i for i in (late_all or []) if i not in set(mine)]
-    thread = ensure_thread(client, channel, pages, today, pending_late)
+    thread = ensure_thread(client, channel, pages, today, pending_late,
+                           new_thread=new_thread, note=note)
     thread_ts = thread["thread_ts"]
     removed = 0
     already = (set() if thread["created"]
@@ -554,7 +576,8 @@ def retitle_today(pages: list, today: dt.date | None = None,
 
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
-             org: str = DEFAULT_ORG) -> dict:
+             org: str = DEFAULT_ORG, new_thread: bool = False,
+             note: str = "") -> dict:
     """Post the thread + one image reply per captured tracker, to every channel
     this ORG posts into. `captures` is (spec, png_path) in post order; `pages` is
     the full ordered list used to build the header (so the header lists every
@@ -586,10 +609,11 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         return {
             "dry_run": True,
             "replace": replace,
+            "new_thread": new_thread,
             "org": org,
             "channels": list(channels),
             "pending_late": pending_late,
-            "header": header_text(pages, today, pending_late),
+            "header": header_text(pages, today, pending_late, note),
             "replies": [
                 {"file": Path(p).name, "caption": reply_caption(spec, today),
                  "react": spec["react"]}
@@ -627,7 +651,8 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         try:
             channel_results.append(
                 _post_to_channel(client, channel, captures, pages, today,
-                                 replace=replace, late_all=late_all))
+                                 replace=replace, late_all=late_all,
+                                 new_thread=new_thread, note=note))
         except Exception as e:
             channel_results.append(
                 {"channel": channel, "ok": False,
