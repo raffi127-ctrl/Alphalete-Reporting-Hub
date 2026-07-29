@@ -60,7 +60,7 @@ def _dedupe(rows: list) -> list:
 def tally(rows: list) -> dict:
     """Bucket the day's rows into the scorecard categories (deduped by applicant)."""
     rows = _dedupe(rows)
-    sent, removed, retext, nophone, blocked = [], [], [], [], []
+    sent, removed, retext, reengaged, nophone, blocked = [], [], [], [], [], []
     for r in rows:
         outcome = (r.get("outcome") or "").strip()
         action = (r.get("action") or "").strip()
@@ -69,16 +69,19 @@ def tally(rows: list) -> dict:
         if outcome in SENT:
             who["via"] = "overwrite" if outcome == "sent_override" else "direct"
             sent.append(who)
+        elif outcome in ("retext_removed", "retext_sent"):
+            reengaged.append(who)          # actually texted (+removed)
         elif outcome == "removed":
             removed.append(who)
-        elif outcome == "flag_retext" or action == "retext_then_remove":
-            retext.append(who)
+        elif outcome == "flag_retext":
+            retext.append(who)             # flagged only (not reachable / not armed)
         elif outcome == "flag_no_phone" or action == "flag_no_phone":
             nophone.append(who)
         elif outcome in ("left", "error", "no_button"):
             blocked.append(who)
     return {"sent": sent, "removed": removed, "retext": retext,
-            "nophone": nophone, "blocked": blocked, "processed": len(rows)}
+            "reengaged": reengaged, "nophone": nophone, "blocked": blocked,
+            "processed": len(rows)}
 
 
 # --------------------------------------------------------------------------- #
@@ -103,7 +106,8 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
     n_sent = len(t["sent"]); n_direct = sum(1 for x in t["sent"] if x.get("via") == "direct")
     n_over = n_sent - n_direct
     n_rem = len(t["removed"]); n_rt = len(t["retext"]); n_np = len(t["nophone"])
-    n_blk = len(t["blocked"]); reached = n_sent
+    n_re = len(t.get("reengaged", []))
+    n_blk = len(t["blocked"]); reached = n_sent + n_re
     proc = t["processed"] or 1
     date_str = date.strftime("%A, %B %-d, %Y") if os.name != "nt" else date.strftime("%A, %B %d, %Y")
 
@@ -111,6 +115,10 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
         return (f'<td><div class="who">{_esc(it["name"])}</div>'
                 f'<div class="src">{_esc(it["source"])}</div></td>')
 
+    reengaged_rows = _rows_html(t.get("reengaged", []), lambda it: [
+        who_src(it), f'<td>{_esc(it["reason"]) or "gone quiet &gt; 1 week"}</td>',
+        '<td><span class="pill" style="--c:var(--sent);--cbg:var(--sent-bg)">'
+        'Re-texted &amp; removed</span></td>'])
     removed_rows = _rows_html(t["removed"], lambda it: [
         who_src(it), f'<td>{_esc(it["reason"]) or "duplicate"}</td>',
         '<td><span class="pill">Removed</span></td>'])
@@ -187,8 +195,10 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
   <div class="kpis">
     <div class="kpi" style="--c:var(--sent)"><div class="klab">Sent to AI</div>
       <div class="knum">{n_sent}</div><div class="ksub">{n_direct} direct · {n_over} via overwrite</div></div>
+    <div class="kpi" style="--c:var(--brand)"><div class="klab">Re-engaged</div>
+      <div class="knum">{n_re}</div><div class="ksub">texted &amp; removed</div></div>
     <div class="kpi" style="--c:var(--flag)"><div class="klab">Flagged · re-text</div>
-      <div class="knum">{n_rt}</div><div class="ksub">&gt; 1 week — re-engage</div></div>
+      <div class="knum">{n_rt}</div><div class="ksub">no SMS thread yet</div></div>
     <div class="kpi" style="--c:var(--rem)"><div class="klab">Removed · duplicate</div>
       <div class="knum">{n_rem}</div><div class="ksub">recent / already booked</div></div>
     <div class="kpi" style="--c:var(--phone)"><div class="klab">No phone</div>
@@ -208,9 +218,16 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
       <th style="width:26%">Action taken</th></tr></thead><tbody>{removed_rows}</tbody></table>
   </div>
 
+  <div class="panel" style="--c:var(--brand);--cbg:#e7edfb">
+    <div class="ph"><h2>Re-engaged</h2><span class="n">{n_re}</span>
+      <span class="hint">quiet &gt; 1 week — texted the FOR&nbsp;LUCY invite, then removed</span></div>
+    <table><thead><tr><th style="width:38%">Applicant</th><th>Why</th>
+      <th style="width:26%">Action taken</th></tr></thead><tbody>{reengaged_rows}</tbody></table>
+  </div>
+
   <div class="panel" style="--c:var(--flag);--cbg:var(--flag-bg)">
     <div class="ph"><h2>Flagged for re-text</h2><span class="n">{n_rt}</span>
-      <span class="hint">gone quiet &gt; 1 week — queued to re-engage</span></div>
+      <span class="hint">gone quiet &gt; 1 week — no SMS thread to reply into yet</span></div>
     <table><thead><tr><th style="width:38%">Applicant</th><th>Last contact</th>
       <th style="width:26%">Status</th></tr></thead><tbody>{retext_rows}</tbody></table>
   </div>
@@ -299,7 +316,7 @@ def main(argv=None) -> int:
         except Exception:  # noqa: BLE001
             wsx = sh.add_worksheet(title=tabn, rows=200, cols=8)
         out = [["bucket", "name", "source", "reason", "position", "via"]]
-        for b in ("sent", "removed", "retext", "nophone", "blocked"):
+        for b in ("sent", "reengaged", "removed", "retext", "nophone", "blocked"):
             for it in t[b]:
                 out.append([b, it.get("name", ""), it.get("source", ""),
                             it.get("reason", ""), it.get("position", ""),
@@ -311,7 +328,7 @@ def main(argv=None) -> int:
         return 0
     if args.emit:
         # Tab-separated, one applicant per line, short + greppable via logtail.
-        for b in ("sent", "removed", "retext", "nophone", "blocked"):
+        for b in ("sent", "reengaged", "removed", "retext", "nophone", "blocked"):
             for it in t[b]:
                 # distinct per-bucket prefix (EMITSENT/EMITREMOVED/…) so a literal
                 # substring grep can pull one bucket cleanly.

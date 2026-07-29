@@ -420,14 +420,12 @@ def do_send_ai(page, a: Applicant, live: bool) -> str:
     if _try_overwrite_send(page):
         _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
         return "sent_override"
-    # genuinely can't send → >1wk re-text (flag) else auto-remove (recent dup).
+    # genuinely can't send → >1wk re-text (armed: text+remove, else flag) else
+    # auto-remove (recent dup).
     lc = _parse_last_corr(_body(page))
     days = (dt.date.today() - lc).days if lc else None
     if days is not None and days > config.RETEXT_MIN_DAYS:
-        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
-             f"[{a.cell_phone or a.phone or 'no-phone'}] (last contact {days}d)")
-        _flag_retext(a, days)
-        return "flag_retext"
+        return _armed_retext(page, a, days, live)
     if _perform_remove(page):
         _log(f"    🗑 auto-removed (dup, last contact "
              f"{days if days is not None else '?'}d): {a.first_name} {a.last_name}")
@@ -759,17 +757,17 @@ def _walk_to_and_remove(page, first, last, max_hops: int = 80) -> str:
     return "not_found"
 
 
-def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
-    """Re-text a quiet applicant (>1wk) via the SMS widget, then remove them
-    ('re-texted & removed'). Real sends stay gated behind config.RETEXT_ARMED until
-    validated live; until then this FLAGS to output/oat-retext-queue.csv."""
-    armed = live and getattr(config, "RETEXT_ARMED", False)
-    if not armed:
-        _would(live, "flag re-text (send not armed)")
-        if live:
-            _flag_retext(a, None)
-            _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
-                 f"[{a.cell_phone or a.phone or 'no-phone'}]")
+def _armed_retext(page, a: Applicant, days, live: bool) -> str:
+    """Shared re-text handler for BOTH re-text paths (do_retext_then_remove AND
+    do_send_ai's >1wk block). Armed (live + config.RETEXT_ARMED): text the quiet
+    applicant via the SMS widget, then remove the current record
+    ('re-texted & removed'). Not armed, or no reachable SMS thread: FLAG (no
+    send/remove) — never guesses/spams."""
+    if not (live and getattr(config, "RETEXT_ARMED", False)):
+        _flag_retext(a, days)
+        tail = f" (last contact {days}d)" if days is not None else ""
+        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} "
+             f"[{a.cell_phone or a.phone or 'no-phone'}]{tail}")
         return "flag_retext"
     role = _role_from_position(a.position)
     phone = a.cell_phone or a.phone
@@ -782,10 +780,18 @@ def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
             return "retext_removed"
         return "retext_sent"
     # couldn't uniquely reach them — flag for a human, don't guess/spam.
-    _flag_retext(a, None)
+    _flag_retext(a, days)
     _log(f"    ⚑ re-text fell back to FLAG ({status}: {detail}): "
          f"{a.first_name} {a.last_name}")
     return "flag_retext"
+
+
+def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
+    """Re-text a quiet applicant (>1wk, past-interview path) then remove them."""
+    _would(live, "re-text then remove")
+    if not live:
+        return "dry"
+    return _armed_retext(page, a, None, live)
 
 
 _NO_PHONE_ROWS: list = []
