@@ -1177,7 +1177,15 @@ def _allreps_filtered_download(owner_name: str, tmp_dir: Path,
                                        end=END_DATE.isoformat())
     print(f"-> Downloading org-wide ALLREPS '{CROSSTAB_SHEET}' crosstab "
           f"({START_DATE} → {END_DATE}), then filtering to {owner_name!r}...")
-    download_crosstab_patchright(url, CROSSTAB_SHEET, raw, verbose=verbose)
+    # Harvest-once seam (DEFAULT-OFF, fail-safe): all 8 office-metrics reports pull
+    # this IDENTICAL raw ALLREPS crosstab and only differ in the owner filter below,
+    # so when HARVEST_MODE=on and today's pull is already primed in the cache, serve
+    # it byte-identically instead of re-scraping. Off / cache miss / stale / ANY
+    # error → try_cache_view returns None → the live download runs exactly as before
+    # (should_use_cache() is False by default, so this is inert). (Megan 2026-07-29)
+    from automations.harvest import adapter as _hv
+    if _hv.try_cache_view(url, CROSSTAB_SHEET, raw) is None:
+        download_crosstab_patchright(url, CROSSTAB_SHEET, raw, verbose=verbose)
     filtered = tmp_dir / "order_log_crosstab.csv"
     n = _filter_crosstab_by_owner(raw, filtered, owner_name)
     print(f"   ✓ {n} order-log row(s) for {owner_name}")

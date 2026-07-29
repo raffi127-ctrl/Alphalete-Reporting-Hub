@@ -33,6 +33,17 @@ def main(argv=None) -> int:
     target = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     needs = CHURN_CLUSTER_NEEDS if args.full_cluster else scheduled_data_needs(target)
 
+    # Fold in the order-log ALLREPS need (shared by the 8 office-metrics reports)
+    # so the prime warms it once too. Shadow import — order_log pulls the browser
+    # stack, so ONLY the prime (never needs.py, never the live report path)
+    # references it. Best-effort: a miss here just means those reports live-scrape.
+    try:
+        from automations.harvest.needs_order_log import order_log_needs
+        from automations.harvest.needs import dedupe_by_cache_key
+        needs = dedupe_by_cache_key(list(needs) + order_log_needs(target))
+    except Exception as e:  # noqa: BLE001 — never let the add break the prime
+        print(f"(order-log need skipped: {type(e).__name__}: {e})")
+
     print(f"=== harvest-prime {target.isoformat()} — {len(needs)} need(s) "
           f"({'full-cluster' if args.full_cluster else 'scheduled today'}) ===")
     if args.dry_run:
