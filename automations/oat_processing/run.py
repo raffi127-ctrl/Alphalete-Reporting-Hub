@@ -834,16 +834,22 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             except Exception:  # noqa: BLE001
                 pass
             page.wait_for_timeout(1500)   # let AS settle after the phone change
+            # The holder-warmed session can leave the SMS widget open from a prior
+            # re-text run, overlaying the panel so 'Send to AI' can't be clicked.
+            # Close it before sending.
+            _close_sms_panel(page)
+            page.wait_for_timeout(600)
             try:
                 diag = page.evaluate(
                     "() => ({ url: location.href.slice(-42),"
-                    " phone: (document.querySelector(\"input[name='phone']\")||{}).value,"
+                    " smsOpen: !!document.querySelector('#sms_name_filter'),"
+                    " hasSendToAI: /send to ai/i.test(document.body.innerText||''),"
                     " btns: [...document.querySelectorAll("
-                    "'button,input[type=submit],input[type=button],a')]"
-                    ".map(e=>(e.innerText||e.value||'').trim())"
-                    ".filter(t=>/send|save|ai/i.test(t)).slice(0,12) })")
+                    "'button,input[type=submit],input[type=button]')]"
+                    ".map(e=>(e.innerText||e.value||'').trim()).filter(Boolean).slice(0,22) })")
                 _log(f"    [phones] after-fill url=…{diag.get('url')} "
-                     f"phone={diag.get('phone')!r} btns={diag.get('btns')}")
+                     f"smsOpen={diag.get('smsOpen')} hasSendToAI={diag.get('hasSendToAI')} "
+                     f"btns={diag.get('btns')}")
             except Exception as e:  # noqa: BLE001
                 _log(f"    [phones] diag err: {type(e).__name__}")
             return do_send_ai(page, a, live)
