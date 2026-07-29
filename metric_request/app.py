@@ -80,6 +80,19 @@ def _inject_client() -> None:
         store.set_client(gc)
 
 
+def _inject_slack_token() -> None:
+    """On Streamlit Cloud there's no token file or SLACK_USER_TOKEN env var, so the
+    corrections ping can't post. If a `slack_user_token` secret is set, export it as
+    the env var the shared Slack poster reads (slack_metrics_post._load_token).
+    Best-effort — absent secret just means no ping (the request still saves)."""
+    try:
+        tok = st.secrets.get("slack_user_token")
+    except Exception:                                # noqa: BLE001
+        tok = None
+    if tok and not os.environ.get("SLACK_USER_TOKEN"):
+        os.environ["SLACK_USER_TOKEN"] = str(tok).strip()
+
+
 # --------------------------------------------------------------------------
 def form_view() -> None:
     st.markdown("## 📊 Request your office metrics")
@@ -228,6 +241,7 @@ def _done_view() -> None:
 
 # --------------------------------------------------------------------------
 _inject_client()
+_inject_slack_token()
 if st.session_state.get("_req_done"):
     _done_view()
 else:
