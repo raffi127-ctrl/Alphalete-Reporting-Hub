@@ -66,6 +66,15 @@ def _office_row(rec: OnboardingRecord) -> dict:
         "machine": rec.machine(),
         "notes": rec.notes,
     }
+    # Per-channel fan-out plans (channel + its metric subset). The runner only
+    # fans out when EVERY plan carries a resolved channel_id (set on finalize);
+    # otherwise it posts everything to the primary channel. Carry them through so
+    # the office_metrics/b2b_metrics merge can enable the fan-out.
+    if rec.channel_plans:
+        row["channel_plans"] = [
+            {"channel_id": p.channel_id, "channel_name": p.channel_name,
+             "report_keys": list(p.report_keys), "header_label": ""}
+            for p in rec.channel_plans]
     # D2D offices are set up by DUPLICATING the "Master Metrics Templates"
     # workbook (Megan 2026-07-28), whose churn/ABP tabs are named on the
     # "Lucy ..." convention — not the older "Local Office - ..." names the fills

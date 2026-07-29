@@ -213,12 +213,17 @@ def _seed_from_request(d: dict) -> None:
     ss["on_website"] = r.website
     ss["on_channel_id"] = r.channel_id
     ss["on_channel_name"] = r.channel_name
-    # Per-channel plan the owner asked for (channel → its metric labels), surfaced
-    # in the Slack section so Megan wires the fan-out.
-    ss["_channel_plans"] = [
-        (p.channel_name, [S.REPORTS_BY_KEY[k].label for k in p.report_keys
-                          if k in S.REPORTS_BY_KEY])
+    # Per-channel plan the owner asked for. Carry the full spec (name, metric keys,
+    # labels, any owner-given id) so the Slack section can show the fan-out AND
+    # collect a channel_id per channel — the runner needs an id for each to fan out.
+    ss["_req_channel_plans"] = [
+        {"channel_name": p.channel_name, "channel_id": p.channel_id,
+         "report_keys": list(p.report_keys),
+         "labels": [S.REPORTS_BY_KEY[k].label for k in p.report_keys
+                    if k in S.REPORTS_BY_KEY]}
         for p in (r.channel_plans or [])]
+    for i, p in enumerate(r.channel_plans or []):
+        ss[f"chanid_{i}"] = p.channel_id
     ss["on_header"] = r.header_label
     ss["on_owner_email"] = r.owner_email
     ss["on_customid"] = False
@@ -357,13 +362,20 @@ def form_view() -> None:
     with c6:
         channel_name = st.text_input("Channel name *", placeholder="#elevate-sales",
                                      key="on_channel_name")
-    _plans = st.session_state.get("_channel_plans") or []
+    _plans = st.session_state.get("_req_channel_plans") or []
     if len(_plans) > 1:
-        _lines = "\n".join("- **{}** → {}".format(cn, ", ".join(ls) if ls else "(none)")
-                           for cn, ls in _plans)
-        st.info("📣 **The owner asked for a per-channel fan-out** (this card wires "
-                "the primary channel above; the others are wired when posting is "
-                "set up for this office):\n\n" + _lines)
+        st.info("📣 **The owner asked for a per-channel fan-out.** Give each channel "
+                "its Slack **Channel ID** below — the morning run posts each channel "
+                "only its metrics. (Leave any ID blank and the office posts "
+                "everything to the primary channel above until all IDs are set.)")
+        for i, spec in enumerate(_plans):
+            st.markdown("**{}** → {}".format(
+                spec["channel_name"],
+                ", ".join(spec["labels"]) if spec["labels"] else "(no metrics)"))
+            st.text_input(f"Channel ID for {spec['channel_name']}", placeholder="C0…",
+                          key=f"chanid_{i}",
+                          help="Right-click the channel → View channel details → the "
+                               "ID at the bottom.")
     header_label = st.text_input(
         "Thread name — only if another office shares this channel", key="on_header",
         help="Leave blank if this office has the channel to itself. If two "
@@ -453,12 +465,24 @@ def form_view() -> None:
 
     # ---- build the record -------------------------------------------------
     st.divider()
+    # Rebuild the per-channel plans with the channel_ids Megan entered above, so the
+    # fan-out can resolve. Falls back to the primary channel_id for the plan whose
+    # name matches the primary channel (she already typed that id in section 3).
+    built_plans = []
+    for i, spec in enumerate(st.session_state.get("_req_channel_plans") or []):
+        cid = (st.session_state.get(f"chanid_{i}", "") or "").strip()
+        if not cid and spec["channel_name"] == channel_name.strip():
+            cid = channel_id.strip()
+        built_plans.append(S.ChannelPlan(
+            channel_name=spec["channel_name"], report_keys=spec["report_keys"],
+            channel_id=cid))
     rec = S.OnboardingRecord(
         key=(key or "").strip(), owner=owner.strip(),
         knocks_office=knocks.strip() or owner.strip(),
         business_name=business.strip(), website=website.strip(),
         channel_id=channel_id.strip(), channel_name=channel_name.strip(),
-        sheet_id=sheet_id, family=family, ov_account=ov_account.strip(),
+        sheet_id=sheet_id, family=family, channel_plans=built_plans,
+        ov_account=ov_account.strip(),
         owner_email=owner_email.strip(), pay_code=pay_code.strip(),
         reports=enrolled, header_label=header_label.strip())
 
@@ -592,11 +616,12 @@ def _show_result() -> None:
 def _clear_form_state() -> None:
     """Wipe the keyed form widgets so the next office starts blank (the fields
     persist across reruns now that they're keyed)."""
-    prefixes = ("on_", "rep_", "ord_")
+    prefixes = ("on_", "rep_", "ord_", "chanid_")
     for k in [k for k in st.session_state
               if isinstance(k, str) and k.startswith(prefixes)]:
         del st.session_state[k]
-    for k in ("_from_request_key", "_prefilled_idx", "_req_pick", "_channel_plans"):
+    for k in ("_from_request_key", "_prefilled_idx", "_req_pick",
+              "_req_channel_plans"):
         st.session_state.pop(k, None)
 
 

@@ -264,6 +264,22 @@ def _merge_onboarded() -> None:
             fld = _VIEW_FIELD.get(rk)
             if fld and url:
                 kw[fld] = url
+        # Per-channel fan-out: build channel_plans ONLY when there are 2+ plans AND
+        # every one has a resolved channel_id (Megan sets these on finalize). If any
+        # id is missing, fan-out stays OFF and the office posts everything to its
+        # primary channel — a safe fallback, never a crash or a lost metric.
+        _plans, _ok = [], True
+        for p in (r.get("channel_plans") or []):
+            cid = (p.get("channel_id") or "").strip()
+            if not cid:
+                _ok = False
+                break
+            _plans.append({"channel_id": cid,
+                           "channel_name": p.get("channel_name", ""),
+                           "slugs": p.get("report_keys") or p.get("slugs") or [],
+                           "header_label": p.get("header_label", "")})
+        if _ok and len(_plans) > 1:
+            kw["channel_plans"] = tuple(_plans)
         try:
             OFFICES[key] = Office(**kw)
             ONBOARDED_EXTRA[key] = {"thresholds": r.get("thresholds", {}),
