@@ -566,90 +566,69 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     _log(f"    [retext] widget frame ok (url …{(w.url or '')[-30:]})")
     page.wait_for_timeout(800)
 
-    # 1)+2) Set Date='This Month' + a search term via JS (fill/select timed out
-    #    mid-animation even though visible), then click Search (#sms_filter_search).
-    #    Prefer the PHONE filter when we have a number (exact, unlike a messy
-    #    multi-word last name); otherwise the Name filter (Megan's manual method).
-    set_ok = w.evaluate(
-        r"""(args) => {
-            const nm = args[0], phone = args[1];
-            const out = {date:'', term:false, by:'', opts:[]};
-            const d = document.querySelector("#sms_date_filter, [name='sms_date_filter']");
-            if (d) { out.opts = [...d.options].map(o => o.text.trim());
-                     // Widen the window: 'Last Month' catches older threads that
-                     // 'This Month' misses (Megan 2026-07-29).
-                     const o = [...d.options].find(o => /last month/i.test(o.text))
-                            || [...d.options].find(o => /this month/i.test(o.text));
-                     if (o) { d.value = o.value;
-                              d.dispatchEvent(new Event('change',{bubbles:true}));
-                              out.date = o.text.trim(); } }
-            const setF = (sel, val) => {
-                const e = document.querySelector(sel);
-                if (!e) return false;
-                e.value = val;
-                e.dispatchEvent(new Event('input',{bubbles:true}));
-                e.dispatchEvent(new Event('change',{bubbles:true}));
-                return true;
-            };
-            // clear both, then set the one we're searching by
-            setF("#sms_name_filter, [name='sms_name_filter']", "");
-            setF("#sms_phone_filter, [name='sms_phone_filter']", "");
-            if (phone && setF("#sms_phone_filter, [name='sms_phone_filter']", phone)) {
-                out.term = true; out.by = 'phone';
-            } else if (setF("#sms_name_filter, [name='sms_name_filter']", nm)) {
-                out.term = true; out.by = 'name';
-            }
-            return out;
-        }""", [last or name, want])
-    if not set_ok.get("term"):
-        _close_sms_panel(page)
-        return "retext_err", "sms name/phone/date filter not found in widget frame"
-    searched = False
-    try:
-        w.locator("#sms_filter_search").first.click(timeout=4000, no_wait_after=True)
-        searched = True
-    except Exception:  # noqa: BLE001
-        searched = w.evaluate(
-            "() => { const b = document.querySelector('#sms_filter_search');"
-            " if (b) { b.click(); return true; } return false; }")
-    _log(f"    [retext] filters set date={set_ok.get('date')!r} "
-         f"by={set_ok.get('by')} searched={searched} opts={set_ok.get('opts')}")
-    page.wait_for_timeout(2600)
-
-    # 3) Pick the conversation: prefer the row whose number matches the applicant's
-    #    phone; else a single result; else the single name match. Never guess among
-    #    several.
-    picked = w.evaluate(
-        r"""(args) => {
-            const want = args[0], name = (args[1]||'').toLowerCase();
-            const norm = s => (s||'').replace(/\D/g,'');
-            const all = [...document.querySelectorAll('div,li,a,tr')];
-            const rows = all.filter(e => {
-                const t = e.innerText || '';
-                return t.length < 200 && norm(t).length >= 10 &&
-                       /\+?1?\d{10}/.test(norm(t)) &&
-                       e.querySelectorAll('*').length < 25;
-            });
-            const cand = rows.filter(e => !rows.some(o => o !== e && e.contains(o)));
-            window.__oat_rows = cand;
-            const scored = cand.map((e, i) => {
-                const t = e.innerText || '', d = norm(t);
-                return { i, hasPhone: !!(want && d.includes(want)),
-                         hasName: !!(name && t.toLowerCase().includes(name)),
-                         text: t.replace(/\s+/g,' ').slice(0,60) };
-            });
-            const byPhone = scored.find(s => s.hasPhone);
-            const named = scored.filter(s => s.hasName);
-            const choice = byPhone || (named.length === 1 ? named[0]
-                         : (cand.length === 1 ? scored[0] : null));
-            return { count: cand.length, choice, sample: scored.slice(0, 6) };
-        }""", [want, name])
-    _log(f"    [retext] search '{last or name}' -> results={picked.get('count')} "
-         f"sample={[s.get('text') for s in picked.get('sample', [])]}")
-    choice = picked.get("choice")
+    # Search across WIDENING date windows until the applicant's thread turns up.
+    # Threads can be this-month, older ('Last Month'), or created later in the day —
+    # so sweep instead of a single window (Megan 2026-07-29: "look at Last Month").
+    _SET_JS = r"""(args) => {
+        const nm=args[0], phone=args[1], win=args[2];
+        const out={date:'', term:false, by:'', opts:[]};
+        const d=document.querySelector("#sms_date_filter, [name='sms_date_filter']");
+        if(d){ out.opts=[...d.options].map(o=>o.text.trim());
+            const o=[...d.options].find(o=>o.text.trim().toLowerCase()===win.toLowerCase())
+                  ||[...d.options].find(o=>new RegExp(win,'i').test(o.text));
+            if(o){ d.value=o.value; d.dispatchEvent(new Event('change',{bubbles:true})); out.date=o.text.trim(); } }
+        const setF=(sel,val)=>{const e=document.querySelector(sel); if(!e)return false;
+            e.value=val; e.dispatchEvent(new Event('input',{bubbles:true}));
+            e.dispatchEvent(new Event('change',{bubbles:true})); return true;};
+        setF("#sms_name_filter, [name='sms_name_filter']","");
+        setF("#sms_phone_filter, [name='sms_phone_filter']","");
+        if(phone && setF("#sms_phone_filter, [name='sms_phone_filter']",phone)){out.term=true;out.by='phone';}
+        else if(setF("#sms_name_filter, [name='sms_name_filter']",nm)){out.term=true;out.by='name';}
+        return out;
+    }"""
+    _PICK_JS = r"""(args) => {
+        const want = args[0], name = (args[1]||'').toLowerCase();
+        const norm = s => (s||'').replace(/\D/g,'');
+        const all = [...document.querySelectorAll('div,li,a,tr')];
+        const rows = all.filter(e => { const t=e.innerText||'';
+            return t.length<200 && norm(t).length>=10 && /\+?1?\d{10}/.test(norm(t))
+                   && e.querySelectorAll('*').length<25; });
+        const cand = rows.filter(e => !rows.some(o => o!==e && e.contains(o)));
+        window.__oat_rows = cand;
+        const scored = cand.map((e,i)=>{ const t=e.innerText||'', d=norm(t);
+            return {i, hasPhone:!!(want && d.includes(want)),
+                    hasName:!!(name && t.toLowerCase().includes(name)),
+                    text:t.replace(/\s+/g,' ').slice(0,60)}; });
+        const byPhone = scored.find(s=>s.hasPhone);
+        const named = scored.filter(s=>s.hasName);
+        const choice = byPhone || (named.length===1 ? named[0] : (cand.length===1 ? scored[0] : null));
+        return {count:cand.length, choice, sample:scored.slice(0,6)};
+    }"""
+    picked = None; used_win = None; opts = None
+    for win in ("This Month", "Last Month", "This Week", "Today"):
+        set_ok = w.evaluate(_SET_JS, [last or name, want, win])
+        opts = set_ok.get("opts")
+        if not set_ok.get("term"):
+            _close_sms_panel(page)
+            return "retext_err", "sms name/phone filter not found in widget frame"
+        if not set_ok.get("date"):
+            continue                      # this window isn't in the dropdown
+        try:
+            w.locator("#sms_filter_search").first.click(timeout=4000, no_wait_after=True)
+        except Exception:  # noqa: BLE001
+            w.evaluate("() => { const b=document.querySelector('#sms_filter_search');"
+                       " if (b) b.click(); }")
+        page.wait_for_timeout(2600)
+        p = w.evaluate(_PICK_JS, [want, name])
+        _log(f"    [retext] window={win!r} by={set_ok.get('by')} results={p.get('count')}")
+        if p.get("choice"):
+            picked = p; used_win = win; break
+        picked = p
+    _log(f"    [retext] date opts={opts} matched_in={used_win!r}")
+    choice = picked.get("choice") if picked else None
     if not choice:
         _close_sms_panel(page)
-        return "no_thread", f"no unique thread for {name} ({want or 'no-phone'})"
+        return "no_thread", f"no thread for {name} ({want or 'no-phone'}) across windows"
     try:
         w.evaluate("(i) => window.__oat_rows[i].click()", choice["i"])
         page.wait_for_timeout(1800)
@@ -1012,6 +991,26 @@ _ACTIVITY_ROWS: list = []
 def _activity_csv(today: dt.date = None) -> str:
     today = today or dt.date.today()
     return f"output/oat-activity-{today.isoformat()}.csv"
+
+
+def reset_activity() -> int:
+    """Archive today's activity log + the flag queues so the scorecard restarts
+    from a clean slate (e.g. after a day of manual testing polluted the log).
+    Files are RENAMED to .bak (not deleted) so nothing is lost."""
+    import shutil
+    stamp = dt.datetime.now().strftime("%H%M%S")
+    moved = []
+    for path in (_activity_csv(), "output/oat-retext-queue.csv",
+                 config.NO_PHONE_FLAG_CSV):
+        if os.path.exists(path):
+            bak = f"{path}.{stamp}.bak"
+            try:
+                shutil.move(path, bak)
+                moved.append(os.path.basename(bak))
+            except Exception as e:  # noqa: BLE001
+                _log(f"[reset] could not archive {path}: {type(e).__name__}")
+    _log(f"[reset] archived {len(moved)} file(s) -> {moved}; scorecard starts fresh")
+    return 0
 
 
 def _flush_queues() -> None:
@@ -1722,7 +1721,13 @@ def main(argv=None) -> int:
     p.add_argument("--probe-search", default=None, dest="probe_search_term",
                    metavar="'First Last'",
                    help="Diagnostic: map AS search + dump results for a name, stop")
+    p.add_argument("--reset-activity", action="store_true", dest="reset_activity",
+                   help="Archive today's activity log + flag queues (.bak) so the "
+                        "scorecard restarts fresh; no browser, stop")
     args = p.parse_args(argv)
+
+    if args.reset_activity:
+        return reset_activity()
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
