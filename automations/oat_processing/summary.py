@@ -352,12 +352,9 @@ def main(argv=None) -> int:
     if args.dm:
         # DM the card to one person (Megan) for review — no public channel post.
         from automations.shared import slack_metrics_post as smp
-        n_re = len(t.get("reengaged", []))
+        # Header only — the PDF already carries the full breakdown (Megan 2026-07-29).
         comment = (f"\U0001F4CB OAT Daily Push — {date.strftime('%b %-d')} "
-                   f"(office 11580, Carlos)\n"
-                   f"{len(t['sent'])} sent to AI · {n_re} re-texted & removed · "
-                   f"{len(t['removed'])} removed · {len(t['retext'])} flagged · "
-                   f"{len(t['nophone'])} no-phone. Review before it goes to the channel.")
+                   f"(office 11580, Carlos)")
         res = smp.dm_user_with_file(pdf, user=args.dm, comment=comment,
                                     file_name=f"OAT-Daily-Push-{date.isoformat()}.pdf")
         print(f"[scorecard] DM'd to {args.dm}: {res}", flush=True)
