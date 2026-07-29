@@ -85,8 +85,10 @@ REPORTS: List[ReportKind] = [
                blurb="Your B2B AIR-product churn rate."),
     ReportKind("b2b_customer_churn", "🐺 Customer Churn",          "b2b", True, True,
                blurb="Your overall B2B customer churn."),
-    ReportKind("b2b_order_log",     "📄 B2B Order Log",            "b2b", False, True,
-               blurb="The day's B2B orders (AT&T + Box)."),
+    ReportKind("b2b_order_log_att", "📄 AT&T Order Log",           "b2b", False, True,
+               blurb="The day's AT&T B2B orders."),
+    ReportKind("b2b_order_log_box", "📦 Box Order Log",            "b2b", False, True,
+               blurb="The day's Box B2B orders."),
 ]
 
 REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
@@ -134,10 +136,8 @@ SHEET_TAB_TEMPLATES: "Dict[str, list]" = {
     "b2b_churn_int":      [{"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")}],
     "b2b_churn_air":      [{"tab": "Lucy AIR Churn",      "template": _tpl("420276109")}],
     "b2b_customer_churn": [{"tab": "Lucy OA Churn",       "template": _tpl("169198075")}],
-    "b2b_order_log": [
-        {"tab": "Lucy At&t Order Log", "template": _tpl("1952579837")},
-        {"tab": "Lucy Box Order Log",  "template": _tpl("882492646")},
-    ],
+    "b2b_order_log_att": [{"tab": "Lucy At&t Order Log", "template": _tpl("1952579837")}],
+    "b2b_order_log_box": [{"tab": "Lucy Box Order Log",  "template": _tpl("882492646")}],
 }
 
 
