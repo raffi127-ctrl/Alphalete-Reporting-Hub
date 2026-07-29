@@ -207,7 +207,13 @@ def _orchestrator_ids(cfg, target_date) -> set:
     but run on their OWN launchd, never the loop) are NOT excluded — the watcher is
     their only alert. Matched by BOTH the registry key AND its hyphenated Hub CARD
     id (the Activity log uses the card id, e.g. daily-rep-breakdown), via the
-    canonical hub_publish map. `standalone_watch: true` force-includes a report."""
+    canonical hub_publish map. `standalone_watch: true` force-includes a report;
+    `standalone_watch: false` force-EXCLUDES it — that's how a report PAUSED on
+    purpose (on_scheduler flipped false, e.g. org_sales_board_email handed to Eve
+    2026-07-28) stops alerting. Without it a paused report is invisible to
+    load_config, so it falls through to the historical-expected baseline and
+    posts "didn't run today" every day for a week — a deliberate pause read as a
+    breakage."""
     try:
         from automations.day_orchestrator.hub_publish import _HUB_CARD
     except Exception:  # noqa: BLE001
@@ -215,15 +221,24 @@ def _orchestrator_ids(cfg, target_date) -> set:
     wd = target_date.weekday()
     ids = set()
     raw = cfg.raw.get("reports", {})
+
+    def _add(rid):
+        ids.add(rid)
+        card = _HUB_CARD.get(rid)
+        if card:
+            ids.add(card)
+
+    # Paused-on-purpose reports: read from RAW, since load_config drops every
+    # on_scheduler:false entry before cfg.reports is built.
+    for rid, rep_raw in raw.items():
+        if rep_raw.get("standalone_watch") is False:
+            _add(rid)
     for rid, rep in cfg.reports.items():
         if raw.get(rid, {}).get("standalone_watch"):
             continue
         if wd not in (getattr(rep, "weekdays", None) or []):
             continue   # not orchestrator-scheduled today → the watcher must cover it
-        ids.add(rid)
-        card = _HUB_CARD.get(rid)
-        if card:
-            ids.add(card)
+        _add(rid)
     return ids
 
 

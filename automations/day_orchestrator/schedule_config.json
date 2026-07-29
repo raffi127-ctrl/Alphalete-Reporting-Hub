@@ -1567,7 +1567,8 @@
     "org_sales_board_email": {
       "order": 9,
       "on_scheduler": false,
-      "_note": "OFF the scheduler (Megan 2026-07-28): handed to Eve, who now owns this automation. It was still emailing only the proving list (Rafael + Megan), so the daily send is stopped. Manual Hub button + module stay intact for Eve to pick up. Re-enable by flipping on_scheduler true (and set base_args '--distro' at go-live). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
+      "standalone_watch": false,
+      "_note": "OFF the scheduler (Megan 2026-07-28): handed to Eve, who now owns this automation. standalone_watch:false because a PAUSE is not a breakage — without it machine_digest --watch sees three same-weekday runs in the Activity log, no row today, and posts a 'didn't run today on Lucy 1' alert every morning for a week (it fired 2026-07-29). Drop that key when the report goes back on the scheduler. It was still emailing only the proving list (Rafael + Megan), so the daily send is stopped. Manual Hub button + module stay intact for Eve to pick up. Re-enable by flipping on_scheduler true (and set base_args '--distro' at go-live). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email",
       "source_type": "tableau",
       "data_sources": [],
