@@ -76,10 +76,14 @@ WORKING_REACTION = os.environ.get("DD_WORKING_REACTION", "hourglass_flowing_sand
 
 # --- Lazy default resolvers (import heavy modules only when actually pulling) -
 def product_source() -> tuple:
-    from automations.recruiting_report.opt_phase import (
-        PRODUCT_SALES_VIEW_URL, PRODUCT_SALES_SHEET)
-    return (PRODUCT_VIEW_URL or PRODUCT_SALES_VIEW_URL,
-            PRODUCT_SHEET or PRODUCT_SALES_SHEET)
+    from automations.recruiting_report.opt_phase import PRODUCT_SALES_SHEET
+    # DDfullyEXP (Megan 2026-07-28): fully rep-expanded, NO rep/owner filter, so
+    # every rep is included. The old DailyRepBDreportpull custom view had a saved
+    # filter that dropped reps (e.g. Corrieonna Johnson, Aden Berhane's newer team).
+    default = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
+               "e594b76d-504f-4868-8c4a-ec18893bebb8/DDfullyEXP?:iid=1")
+    return (PRODUCT_VIEW_URL or default, PRODUCT_SHEET or PRODUCT_SALES_SHEET)
 
 
 def metrics_ni_source() -> tuple:
