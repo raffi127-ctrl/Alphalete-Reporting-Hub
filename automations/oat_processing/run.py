@@ -798,25 +798,31 @@ _NO_PHONE_ROWS: list = []
 
 
 def _fill_phone_field(page, phone: str) -> bool:
-    """Fill the AS Phone + Cell Phone fields (both required for Send to AI) with a
-    number pulled from the resume. Formats to (NNN) NNN-NNNN."""
+    """Fill the AS Phone + Cell Phone fields by REAL keystrokes — the way a human
+    does it. (JS-setting the value + firing 'change' makes AS re-render and drop
+    the 'Send to AI' button; typing keeps it — Megan 2026-07-28.)"""
     d = re.sub(r"\D", "", phone or "")
     if len(d) == 11 and d.startswith("1"):
         d = d[1:]
-    val = f"({d[:3]}) {d[3:6]}-{d[6:]}" if len(d) == 10 else phone
-    try:
-        n = page.evaluate(
-            """(v) => { let n = 0;
-                for (const sel of ["input[name='phone']", "input[name='cellPhone']"]) {
-                    const e = document.querySelector(sel);
-                    if (e) { e.value = v;
-                             e.dispatchEvent(new Event('input',{bubbles:true}));
-                             e.dispatchEvent(new Event('change',{bubbles:true})); n++; }
-                }
-                return n; }""", val)
-        return bool(n)
-    except Exception:  # noqa: BLE001
+    if len(d) != 10:
         return False
+    ok = False
+    for sel in ("input[name='phone']", "input[name='cellPhone']"):
+        try:
+            loc = page.locator(sel).first
+            if loc.count() == 0:
+                continue
+            loc.click(timeout=4000)
+            loc.fill("")                       # clear any partial
+            loc.press_sequentially(d, delay=35)  # type the 10 digits, human-like
+            ok = True
+        except Exception:  # noqa: BLE001
+            continue
+    try:
+        page.keyboard.press("Tab")             # blur the last field
+    except Exception:  # noqa: BLE001
+        pass
+    return ok
 
 
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
