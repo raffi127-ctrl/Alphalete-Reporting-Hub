@@ -19,6 +19,9 @@ Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
   update                git pull the latest code onto the mini (remote deploy)
   git_status            READ-ONLY: branch, HEAD, local edits, what blocks a pull
+  git_diff [path]       READ-ONLY: the CONTENT of this machine's uncommitted
+                        edits (git_status gives names only). Use before pulling
+                        machine-only code back into the repo.
   git_stash [label]     park uncommitted TRACKED edits so a blocked update can
                         run. Recoverable (git stash pop); never discards.
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
@@ -1214,6 +1217,59 @@ def _action_git_status(args: str) -> tuple[bool, str]:
     return True, "\n".join(head_lines) + "\n· full: lucy logtail git-status"
 
 
+def _action_git_diff(args: str) -> tuple[bool, str]:
+    """Read-only: the CONTENT of this runner's uncommitted edits, to a log.
+
+    `git_status` answers "which files are dirty"; it deliberately prints names
+    only so the result cell stays readable. That is not enough when a machine is
+    running code that exists NOWHERE ELSE — on 2026-07-29 the mini turned out to
+    be the only copy of an 11th tracker org (#horizon-edge-sales), and the laptop
+    could see that the file was modified but not what the edit said, so the fix
+    would have had to be guessed at. Guessing at someone's channel config is how
+    an office silently stops getting its report.
+
+    Optional path argument scopes the diff (e.g. `lucy git_diff
+    automations/tableau_screenshots/slack_post.py`); no argument diffs the whole
+    working tree. Never touches the index or the working tree — no add, no
+    stash, no checkout. Full output goes to output/logs/git-diff.log because a
+    diff never fits a result cell; read it with `lucy logtail git-diff`.
+    """
+    def _git(*a):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=60)
+        return (p.stdout or p.stderr).strip()
+
+    # shlex so a path with spaces survives; a caller passing several paths still
+    # works because they land as separate pathspec args.
+    try:
+        paths = shlex.split(args or "")
+    except ValueError:
+        paths = (args or "").split()
+    spec = ["--", *paths] if paths else []
+    try:
+        stat = _git("diff", "--stat", *spec)
+        body = _git("diff", *spec)
+        untracked = _git("ls-files", "--others", "--exclude-standard", *paths)
+    except Exception as e:  # noqa: BLE001
+        return False, f"git_diff failed: {type(e).__name__}: {str(e)[:120]}"
+
+    scope = " ".join(paths) if paths else "(whole working tree)"
+    lines = [f"--- git diff {scope} ---", stat or "(no tracked edits)", "",
+             body or "(empty diff)"]
+    if untracked:
+        lines += ["", "--- untracked (NOT in the diff above) ---", untracked]
+    full = "\n".join(lines)
+    try:
+        log_dir = REPO_ROOT / "output" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "git-diff.log").write_text(full, encoding="utf-8")
+    except Exception:  # noqa: BLE001 — logging must never fail a read-only probe
+        pass
+    n = len([l for l in body.splitlines() if l.startswith(("+", "-"))])
+    return True, (f"{scope}: {n} changed line(s)\n{stat or '(no tracked edits)'}"
+                  "\n· full: lucy logtail git-diff")
+
+
 def _action_git_stash(args: str) -> tuple[bool, str]:
     """Park uncommitted TRACKED changes so a blocked `update` can proceed.
 
@@ -1915,6 +1971,7 @@ ACTIONS = {
     "onboard_apply": _action_onboard_apply,
     "update": _action_update,
     "git_status": _action_git_status,
+    "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "set_meta_token": _action_set_meta_token,
     "set_payroll_webapp": _action_set_payroll_webapp,
@@ -2161,6 +2218,7 @@ def print_help() -> None:
         "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
+        "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
         "  lucy git_stash            park uncommitted edits so update can run\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
