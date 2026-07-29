@@ -455,6 +455,30 @@
       "timeout_minutes": 10,
       "verify": null
     },
+    "due_diligence_harvest": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Rerun handle for the 3am DD Harvest (standalone com.alphalete.due-diligence-harvest on Lucy 1). `lucy rerun due_diligence_harvest` re-pulls the DD Tableau views into the cache (idempotent, read-only w.r.t. Sheets) and — via the rerun path's publish — greens the 'due_diligence_harvest' Hub card. The standalone 3am wrapper now also publishes (deploy/due_diligence_harvest.sh, 2026-07-29), so the scheduled run greens on its own from 7/30; this handle just lets a manual re-run green it same-day. source_type tableau → chrome_guard + warm session apply. Added 2026-07-29.",
+      "display_name": "Due Diligence Harvest (rerun)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.due_diligence.run"
+      ],
+      "base_args": [
+        "--harvest",
+        "--verbose"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 20
+    },
     "proof_order_log": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW proof for the order-log ALLREPS harvest-once (Megan 2026-07-29). `lucy rerun proof_order_log` runs automations.harvest.proof_order_log on the mini: harvest the ALLREPS 'A.Order Log' crosstab ONCE + a fresh live pull + byte-diff. The 8 office-metrics reports all pull this IDENTICAL crosstab (only the Python owner-filter differs), so byte-identical PROVES the whole cluster. Read-only w.r.t. Sheets/Slack (writes only the cache + a temp file); does NOT flip HARVEST_MODE. source_type tableau so chrome_guard + the warm Tableau session apply. Exit 0 = IDENTICAL = safe to canary-flip one office report.",
