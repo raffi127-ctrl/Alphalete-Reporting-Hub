@@ -40,11 +40,13 @@ def _selected_names(payload):
     return []
 
 
-def _update_card(web, payload, blocks, fallback):
+def _reply_in_thread(web, payload, blocks, fallback):
+    """Post a receipt UNDER the card (thread reply) and LEAVE the card in place,
+    so leaders can keep picking + logging more all evening. Dedup stops re-logs."""
     ch = (payload.get("channel") or {}).get("id")
     ts = (payload.get("message") or {}).get("ts")
     if ch and ts:
-        web.chat_update(channel=ch, ts=ts, blocks=blocks, text=fallback)
+        web.chat_postMessage(channel=ch, thread_ts=ts, blocks=blocks, text=fallback)
 
 
 def handle_action(web, payload, *, write_sheet=None, verbose=False):
@@ -66,8 +68,8 @@ def handle_action(web, payload, *, write_sheet=None, verbose=False):
     week = _week_from_message(payload)
 
     if action == C.ACTION_NONE:
-        _update_card(web, payload, M.none_blocks(week, actor=actor),
-                     f"No promotions logged for {week}.")
+        _reply_in_thread(web, payload, M.none_blocks(week, actor=actor),
+                         f"No promotions logged for {week}.")
         return {"none": True, "actor": actor}
 
     # ACTION_SUBMIT — resolve picks against the live board and log them.
@@ -102,8 +104,13 @@ def handle_action(web, payload, *, write_sheet=None, verbose=False):
     if not write_sheet:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
             "text": ":eyes: *Preview mode* — the sheet was NOT written."}]})
-    _update_card(web, payload, blocks,
-                 f"Logged {res.get('n', 0)} promotions to {res.get('tab')}.")
+    else:
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+            "text": "_Missed someone? Pick them in the card above and hit "
+                    "*Log promotions* again — I won't double-log anyone._"}]})
+    # Reply in-thread and LEAVE the card live so more can be added all evening.
+    _reply_in_thread(web, payload, blocks,
+                     f"Logged {res.get('n', 0)} promotions to {res.get('tab')}.")
     return {"submit": True, "result": res, "misses": misses, "actor": actor,
             "wrote": bool(write_sheet)}
 
