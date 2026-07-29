@@ -1057,7 +1057,10 @@ def _read_shared_library() -> list[dict]:
                             # utility / build-aid / duplicate handles (Megan 7/28):
                             "alphalete_org_retail", "harvest_prime",
                             "haytham_metrics", "vantura_sara_preflight",
-                            "vantura_sara_recon"}):
+                            "vantura_sara_recon",
+                            # b2b_quality: renamed to "B2B Metrics" 7/20 and now
+                            # posted by the consolidated B2B Metrics run — superseded.
+                            "b2b_quality"}):
             continue
         module = report.get("module")
         if not module:
