@@ -951,6 +951,66 @@
       "depends_on": [],
       "verify": null
     },
+    "install_jiraiya_bot_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_jiraiya_bot_agent` (re)installs the always-on Jiraiya Socket Mode listener (com.alphalete.jiraiya-bot, KeepAlive). Serves BOTH the /dd popup AND the Weekly Promotion Check-In buttons, so re-run this after pulling code that changes due_diligence/bot.py or promotion_checkin/. REQUIRES the two Jiraiya tokens on this machine (~/.config/recruiting-report/dd-bot-token + dd-app-token) or it crash-loops. weekdays [] = manual only.",
+      "display_name": "Install Jiraiya bot listener",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "jiraiya-bot"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_promo_checkin_mon_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_promo_checkin_mon_agent` installs com.alphalete.promo-checkin-mon (Mon 6:00pm CST) — posts the Weekly Promotion Check-In card to #alphalete-lvl1-chat as Jiraiya. Posting writes nothing; a leader's click is handled by the jiraiya-bot listener. weekdays [] = manual only.",
+      "display_name": "Install Promotion Check-In (Mon 6pm) agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "promo-checkin-mon"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_promo_checkin_final_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_promo_checkin_final_agent` installs com.alphalete.promo-checkin-final (Mon 7:15pm CST) — the final-call variant of the Promotion Check-In card. weekdays [] = manual only.",
+      "display_name": "Install Promotion Check-In (Mon 7:15pm final call) agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "promo-checkin-final"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_owners_call_reminder_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm + 7:15pm-final-call CST). EMAILS the owners/ICDs Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) from the reporting Gmail. REQUIRES: OWNERS_CALL_EMAILS set to the comma-separated recipient list. weekdays [] = manual only.",

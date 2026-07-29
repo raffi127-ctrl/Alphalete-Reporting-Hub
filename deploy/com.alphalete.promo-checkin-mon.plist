@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.promo-checkin-mon</string>
+
+    <!-- Path is the laptop placeholder; install_agent rewrites it to the mini's
+         repo path on `lucy rerun install_promo_checkin_mon_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/promotion_checkin_post.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 6:00pm CST (machine LOCAL time; the mini is Central). Posts the
+         promotion check-in to #alphalete-lvl1-chat before the Leader's Call.
+         launchd Weekday: 1=Mon. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>18</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/promo-checkin-mon.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/promo-checkin-mon.launchd.err.log</string>
+</dict>
+</plist>

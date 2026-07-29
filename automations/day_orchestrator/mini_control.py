@@ -25,6 +25,9 @@ Actions:
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use
+  set_dd_bot_token <tok>  install Jiraiya's BOT token (xoxb-…) — the always-on
+                        listener that serves /dd + the Promotion Check-In buttons
+  set_dd_app_token <tok>  install Jiraiya's APP-LEVEL token (xapp-…) for Socket Mode
   set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
   set_gmail_token <json>  install the gmail.compose token (gmail-token.json contents)
                         so draft-creating reports (captainship_drafts) can run
@@ -94,6 +97,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
+                    "set_dd_bot_token", "set_dd_app_token",
                     "set_contacts_token", "sheets_login"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
@@ -1685,6 +1689,79 @@ def _action_focus_owner(args: str) -> tuple[bool, str]:
     return ok, res
 
 
+def _action_set_dd_bot_token(args: str) -> tuple[bool, str]:
+    """Install/refresh Jiraiya's Slack BOT token (xoxb-) on THIS machine at
+    ~/.config/recruiting-report/dd-bot-token — the file due_diligence.watch._client()
+    reads. Jiraiya is the always-on Socket Mode listener that serves BOTH the /dd
+    popup AND the Weekly Promotion Check-In buttons, so the mini needs this token to
+    run the listener at all. Backs up any existing token, verifies via auth_test,
+    NEVER echoes the token.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell once this shows 'done'."""
+    import shutil
+    token = (args or "").strip()
+    if not token.startswith("xoxb-"):
+        return False, "set_dd_bot_token needs Jiraiya's BOT token (starts with 'xoxb-') as the Args"
+    path = Path.home() / ".config" / "recruiting-report" / "dd-bot-token"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"dd-bot-token.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(token, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    try:
+        from automations.due_diligence.watch import _client
+        who = _client().auth_test()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but auth_test errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if not who.get("ok"):
+        return False, f"token written but auth_test not ok: {str(who)[:120]}"
+    return True, (f"Jiraiya bot token installed + verified: authed as "
+                  f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
+
+
+def _action_set_dd_app_token(args: str) -> tuple[bool, str]:
+    """Install/refresh Jiraiya's Slack APP-LEVEL token (xapp-) on THIS machine at
+    ~/.config/recruiting-report/dd-app-token — needed for Socket Mode. App tokens
+    open the socket rather than call Web API, so this validates the prefix + writes
+    (no auth_test). Backs up any existing token, NEVER echoes it.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell once this shows 'done'."""
+    import shutil
+    token = (args or "").strip()
+    if not token.startswith("xapp-"):
+        return False, "set_dd_app_token needs Jiraiya's APP-LEVEL token (starts with 'xapp-') as the Args"
+    path = Path.home() / ".config" / "recruiting-report" / "dd-app-token"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"dd-app-token.bak.{stamp}")
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        path.write_text(token, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    return True, (f"Jiraiya app-level token installed at {path} ({len(token)} chars) "
+                  "— Socket Mode ready. Reload the listener: "
+                  "`lucy rerun install_jiraiya_bot_agent`.")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "focus_owner": _action_focus_owner,
@@ -1703,6 +1780,8 @@ ACTIONS = {
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
+    "set_dd_bot_token": _action_set_dd_bot_token,
+    "set_dd_app_token": _action_set_dd_app_token,
     "set_gbp_token": _action_set_gbp_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_contacts_token": _action_set_contacts_token,

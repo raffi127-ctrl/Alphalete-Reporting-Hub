@@ -180,6 +180,18 @@ def _handler(client, req):
         threading.Thread(target=_process, args=(client.web_client, user_id, icd, leader, names),
                          daemon=True).start()
         return
+    # Promotion Check-In buttons (a separate feature riding the same Jiraiya app).
+    if req.type == "interactive" and req.payload.get("type") == "block_actions":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        try:
+            from automations.promotion_checkin import handler as promo
+            if promo.is_promo_action(req.payload):
+                threading.Thread(target=promo.handle_action,
+                                 args=(client.web_client, req.payload),
+                                 daemon=True).start()
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[promo] dispatch failed {type(e).__name__}: {e}", flush=True)
+        return
     # ack anything else so Slack doesn't retry
     client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
