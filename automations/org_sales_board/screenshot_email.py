@@ -50,10 +50,19 @@ from automations.scheduled_6_days_out.email_send import (
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
 PROVING_TO = ["raffi127@gmail.com",
               "Meganhidalgo1191@gmail.com"]
-# GO-LIVE distro — 3 Gmail contact GROUPS, expanded to live addresses at send time
+# GO-LIVE distro — Gmail contact GROUPS, expanded to live addresses at send time
 # via the People API (automations.shared.contacts_auth). Names must match the
 # groups in alphaletereporting@gmail.com's contacts exactly.
-DISTRO_GROUPS = ["Alphalete Org Owners", "Carlos' Captain Team", "Raf's Captain Team"]
+#
+# ONE GROUP, not three (Eve 2026-07-29): she named "Alphalete Org Owners" as the
+# official distro when the send went live. The old three-group plan (Megan
+# 2026-07-04) also carried "Carlos' Captain Team" + "Raf's Captain Team"; they
+# are left here commented rather than deleted because turning them back on is a
+# decision, not a rediscovery. Erring narrow is deliberate: an org-wide sales
+# email sent to two extra groups cannot be taken back, and an under-send is a
+# quiet one-line fix.
+DISTRO_GROUPS = ["Alphalete Org Owners"]
+# DISTRO_GROUPS += ["Carlos' Captain Team", "Raf's Captain Team"]
 
 _LB_WEEKS = 4          # leaderboard columns to show: this week + 3 prior (== the email)
 

@@ -50,8 +50,11 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
-# LIVE by default. "--dry" checks for the approval and stops short of mailing.
-MODE="--send"
+# LIVE by default, and LIVE means the real distro: --distro expands the
+# "Alphalete Org Owners" contact group at send time (Eve 2026-07-29, go-live).
+# Drop --distro to fall back to the proving list (Rafael + Megan).
+# "--dry" checks for the approval and stops short of mailing.
+MODE="--send --distro"
 [ "${1:-}" = "--dry" ] && MODE=""
 
 LOG_FILE="$LOG_DIR/org-board-email-review-$(date +%Y-%m-%d).log"

@@ -57,10 +57,17 @@ APPROVERS = {
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
 
-# Stamped into the message so --check finds the day's post without anything
-# being handed to it.
-MARKER = "ORG-BOARD-EMAIL-REVIEW"
-REMIND_MARKER = "ORG-BOARD-EMAIL-REVIEW-REMINDER"
+# How --check finds the day's post from a run that never spoke to the one that
+# posted it. It used to be a `ORG-BOARD-EMAIL-REVIEW 2026-07-29` line stamped
+# into the message; Eve cut it 2026-07-29 — the reviewers read this message, and
+# a machine code in it is noise to every one of them. The TITLE already carries
+# the date and is already unique per day, so it does the same job with nothing
+# extra on screen. Same for the thread replies: they're matched on their own
+# opening word, and only ever our own messages live in that thread.
+TITLE = "Org Sales Board — correo del"          # + " M/D"
+REMIND_OPENER = "Recordatorio:"
+SENT_OPENER = "Enviado"
+FAILED_OPENER = "No se pudo enviar"
 REMIND_AFTER_HOURS = 3.0
 
 DRIVE_FOLDER_NAME = "Org Sales Board - correos para revisar"
@@ -201,26 +208,52 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     reason the message arrives from Lucy."""
     # .month/.day, never %-m — that strftime flag does not exist on Windows and
     # this module runs on both machines.
-    reported = today - dt.timedelta(days=1)
-    text = (f"*Org Sales Board — correo del {reported.month}/{reported.day}*\n"
+    text = (f"*{_title(today)}*\n"
             f"{link}\n\n"
             f"Revisen y reaccionen con :white_check_mark: para que salga. "
-            f"Nada se envía hasta entonces.\n"
-            f"`{MARKER} {today:%Y-%m-%d}`")
-    r = _client().chat_postMessage(channel=_channel(channel), text=text,
-                                   unfurl_links=False)
+            f"Nada se envía hasta entonces.")
+    cli = _client()
+    # A second review post for the same day is worse than none: the checker
+    # takes the newest, so a checkmark left on the older one would silently
+    # never send. A rerun replaces its own previous post — ours only, matched on
+    # our own title for this day.
+    for old in _all_posts(today, channel):
+        try:
+            cli.chat_delete(channel=_channel(channel), ts=old["ts"])
+            if verbose:
+                print(f"  (replaced the earlier post for {_title(today)})", flush=True)
+        except Exception as e:  # noqa: BLE001 — a stale post must not block the new one
+            print(f"  (could not remove the earlier post: {type(e).__name__})", flush=True)
+    r = cli.chat_postMessage(channel=_channel(channel), text=text,
+                             unfurl_links=False)
     if verbose:
         print(f"✓ posted to {_channel(channel)} ts={r['ts']}", flush=True)
     return r["ts"]
 
 
-def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:
-    """The day's review message, found by its marker rather than by a ts handed
-    over from the run that posted it."""
-    want = f"{MARKER} {today:%Y-%m-%d}"
+def _title(today: dt.date) -> str:
+    """The message's first line. Carries the REPORTED day (yesterday), which is
+    what makes it unique per day — and what --check keys off.
+    .month/.day, never %-m: that strftime flag does not exist on Windows."""
+    reported = today - dt.timedelta(days=1)
+    return f"{TITLE} {reported.month}/{reported.day}"
+
+
+def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
+    """Every review post for `today`, newest first. More than one means a rerun
+    happened; the captainship gate's posts share this channel and are skipped by
+    the title."""
+    want = _title(today)
     hist = _client().conversations_history(channel=_channel(channel), limit=100)
-    return next((m for m in hist.get("messages", [])
-                 if want in (m.get("text") or "")), None)
+    return [m for m in hist.get("messages", []) if want in (m.get("text") or "")]
+
+
+def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:
+    """The day's review message, found by its TITLE rather than by a ts handed
+    over from the run that posted it — that is what lets --post and --check be
+    separate runs. No hidden marker: the title already says which day it is."""
+    posts = _all_posts(today, channel)
+    return posts[0] if posts else None
 
 
 def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:
@@ -244,22 +277,42 @@ def already_sent(today: dt.date, channel: Optional[str] = None) -> bool:
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    return any(SENT_MARKER in (r.get("text") or "") for r in replies[1:])
+    return any((r.get("text") or "").startswith(SENT_OPENER) for r in replies[1:])
 
 
-SENT_MARKER = "ORG-BOARD-EMAIL-SENT"
+def report_failure(today: dt.date, rc: int, channel: Optional[str] = None) -> None:
+    """Say in the thread that an APPROVED email did not go out. Once.
+
+    The send now expands a live contact group, so it has a way to fail that the
+    approval can't predict — a missing contacts token on the mini, a renamed
+    group. Without this the checker would retry every 15 minutes and each
+    failure would land in a log on a machine nobody is looking at, while the
+    channel still showed a green checkmark and everyone assumed it went."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        return
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if any((r.get("text") or "").startswith(FAILED_OPENER) for r in replies[1:]):
+        return
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{FAILED_OPENER}: está aprobado, pero el envío falló "
+              f"(exit {rc}). Sigo reintentando cada 15 min; si no cambia, "
+              f"revisar el log `org-board-email-review` en la mini."))
 
 
 def confirm_sent(today: dt.date, who: str, to_note: str = "",
                  channel: Optional[str] = None) -> None:
-    """Reply in-thread that it went out. Doubles as the once-a-day lock."""
+    """Reply in-thread that it went out. Doubles as the once-a-day lock, so it
+    must keep starting with SENT_OPENER."""
     msg = _find_post(today, channel)
     if msg is None:
         return
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"Enviado :white_check_mark: (aprobó {who})"
-              f"{(' — ' + to_note) if to_note else ''}\n`{SENT_MARKER}`"))
+        text=(f"{SENT_OPENER} :white_check_mark: — aprobó {who}"
+              f"{(' · ' + to_note) if to_note else ''}"))
 
 
 def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
@@ -288,16 +341,17 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if any(REMIND_MARKER in (r.get("text") or "") for r in replies[1:]):
+    if any((r.get("text") or "").startswith(REMIND_OPENER) for r in replies[1:]):
         if verbose:
             print("— already reminded once", flush=True)
         return False
     names = " o ".join(sorted(APPROVERS.values()))
+    # Must keep starting with REMIND_OPENER — that is what stops it repeating.
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"Recordatorio: el correo del Org Sales Board sigue sin aprobar "
+        text=(f"{REMIND_OPENER} el correo del Org Sales Board sigue sin aprobar "
               f"({age_h:.0f}h). No se envió nada todavía — hace falta un "
-              f":white_check_mark: de {names}.\n`{REMIND_MARKER}`"))
+              f":white_check_mark: de {names}."))
     if verbose:
         print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
     return True
@@ -391,7 +445,11 @@ def main(argv=None) -> int:
             return 0
         rc = send_reviewed(today, args.distro)
         if rc == 0:
-            confirm_sent(today, who[1], channel=args.channel)
+            confirm_sent(today, who[1],
+                         to_note="distro Alphalete Org Owners" if args.distro else "",
+                         channel=args.channel)
+        else:
+            report_failure(today, rc, args.channel)
         return rc
     ap.print_help()
     return 2
