@@ -108,15 +108,19 @@ _CAMPAIGN_OPTIONS_JS = r"""
 
 
 def _open_campaign_dropdown(page) -> None:
+    """Open the Bootstrap campaign dropdown so its options are VISIBLE (collapsed,
+    the option <a>s have offsetParent===null and can't be clicked). Click the
+    toggle AND force the open/show classes + menu display, so it opens whether or
+    not the site's jQuery handler fires under patchright's isolated world."""
     try:
         page.evaluate(
-            "(rx)=>{const e=[...document.querySelectorAll('span,a,button,div')]"
-            ".find(x=>new RegExp(rx).test((x.innerText||'').trim()) "
-            "&& x.offsetParent!==null); if(e){e.click();"
-            " const p=e.closest('.dropdown,.btn-group'); if(p){const tg="
-            "p.querySelector('[data-toggle],.dropdown-toggle'); if(tg) tg.click();}}}",
-            _CAMPAIGN_SWITCH_RX)
-        page.wait_for_timeout(1200)
+            "()=>{const tg=document.querySelector('.D2DClientDropdown,"
+            "[data-toggle=\"dropdown\"]'); if(!tg) return; tg.click();"
+            " const dd=tg.closest('.dropdown,.btn-group,li'); "
+            " if(dd){dd.classList.add('open','show');"
+            " const m=dd.querySelector('.dropdown-menu'); "
+            " if(m){m.classList.add('show'); m.style.display='block';}}}")
+        page.wait_for_timeout(900)
     except Exception:
         pass
 
