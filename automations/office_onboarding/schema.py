@@ -73,13 +73,19 @@ REPORTS: List[ReportKind] = [
     ReportKind("tableau_shot",   "📸 Tableau Metrics screenshot",  "d2d", False, True,
                blurb="A snapshot image of your office's Tableau metrics board."),
     # B2B bundle (b2b_metrics.runner) — Carlos's team views, owner-sliced.
-    ReportKind("b2b_sales",      "B2B Sales Metrics",              "b2b", True,  True,
+    ReportKind("b2b_sales",         "📊 B2B Sales Metrics",        "b2b", True, True,
                blurb="Your daily B2B sales numbers."),
-    ReportKind("b2b_activation", "B2B Activation Rate",            "b2b", True,  True,
+    ReportKind("b2b_activation",    "⚡ B2B Activation Rate",       "b2b", True, True,
                blurb="Share of your B2B sales that activated."),
-    ReportKind("b2b_churn",      "B2B Churn (3 product views)",    "b2b", True,  True,
-               blurb="B2B churn across internet, wireless, and AIR."),
-    ReportKind("b2b_order_log",  "B2B Order Log",                  "b2b", False, True,
+    ReportKind("b2b_churn_wireless", "📉 Wireless Churn",          "b2b", True, True,
+               blurb="Your B2B wireless churn rate."),
+    ReportKind("b2b_churn_int",     "📉 INT Churn",                "b2b", True, True,
+               blurb="Your B2B new-internet (INT) churn rate."),
+    ReportKind("b2b_churn_air",     "📉 AIR Churn",                "b2b", True, True,
+               blurb="Your B2B AIR-product churn rate."),
+    ReportKind("b2b_customer_churn", "🐺 Customer Churn",          "b2b", True, True,
+               blurb="Your overall B2B customer churn."),
+    ReportKind("b2b_order_log",     "📄 B2B Order Log",            "b2b", False, True,
                blurb="The day's B2B orders (AT&T + Box)."),
 ]
 
@@ -122,13 +128,12 @@ SHEET_TAB_TEMPLATES: "Dict[str, list]" = {
     "churn_ni": [{"tab": "Local Office - New Internet Churn", "template": ""}],
     "churn_wl": [{"tab": "Local Office - Wireless Churn",     "template": ""}],
     "abp":      [{"tab": "Local Office - New Internet ABP%",  "template": ""}],
-    # --- B2B (all in the Master Templates workbook) ---
-    "b2b_churn": [
-        {"tab": "Lucy OA Churn",       "template": _tpl("169198075")},
-        {"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")},
-        {"tab": "Lucy Wireless Churn", "template": _tpl("0")},
-        {"tab": "Lucy AIR Churn",      "template": _tpl("420276109")},
-    ],
+    # --- B2B (all in the Master Templates workbook) — one churn tab per product,
+    # so an office only needs the tabs for the churn metrics it actually enrolls ---
+    "b2b_churn_wireless": [{"tab": "Lucy Wireless Churn", "template": _tpl("0")}],
+    "b2b_churn_int":      [{"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")}],
+    "b2b_churn_air":      [{"tab": "Lucy AIR Churn",      "template": _tpl("420276109")}],
+    "b2b_customer_churn": [{"tab": "Lucy OA Churn",       "template": _tpl("169198075")}],
     "b2b_order_log": [
         {"tab": "Lucy At&t Order Log", "template": _tpl("1952579837")},
         {"tab": "Lucy Box Order Log",  "template": _tpl("882492646")},
