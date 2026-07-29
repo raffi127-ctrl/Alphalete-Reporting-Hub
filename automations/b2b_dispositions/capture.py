@@ -85,33 +85,89 @@ def verify_campaign(page, want: str) -> Tuple[bool, str]:
 _CAMPAIGN_SWITCH_RX = r"^(B2B AT&T SBS|B2B-BOX-Energy|BASE Energy)$"
 
 
+# Reads every campaign option OwnerVille knows about, with the invD2DClientId
+# each one carries (in href / onclick / data-*). The dropdown is collapsed, so
+# we click it open first; then the options are in the DOM.
+_CAMPAIGN_OPTIONS_JS = r"""
+(rx) => {
+  const re = new RegExp(rx);
+  const out = [];
+  [...document.querySelectorAll('a,li,span,button,option')].forEach(x => {
+    const t = (x.innerText || x.textContent || '').trim();
+    if (!re.test(t)) return;
+    const blob = [x.getAttribute('href'), x.getAttribute('onclick'),
+                  x.getAttribute('data-id'), x.getAttribute('data-invd2dclientid'),
+                  x.value].filter(Boolean).join(' ');
+    const m = blob.match(/(?:invD2DClientId|clientId|id)\D{0,3}(\d{1,6})/i);
+    out.push({ name: t, id: m ? m[1] : null,
+               html: (x.outerHTML || '').replace(/\s+/g,' ').slice(0, 140) });
+  });
+  return out;
+}
+"""
+
+
+def _open_campaign_dropdown(page) -> None:
+    try:
+        page.evaluate(
+            "(rx)=>{const e=[...document.querySelectorAll('span,a,button,div')]"
+            ".find(x=>new RegExp(rx).test((x.innerText||'').trim()) "
+            "&& x.offsetParent!==null); if(e){e.click();"
+            " const p=e.closest('.dropdown,.btn-group'); if(p){const tg="
+            "p.querySelector('[data-toggle],.dropdown-toggle'); if(tg) tg.click();}}}",
+            _CAMPAIGN_SWITCH_RX)
+        page.wait_for_timeout(1200)
+    except Exception:
+        pass
+
+
+def campaign_options(page) -> List[Dict]:
+    """Every campaign option + its invD2DClientId, read after opening the
+    dropdown. Lets us switch by the id OwnerVille itself uses (incl. AT&T's,
+    which isn't in the code) instead of guessing."""
+    _open_campaign_dropdown(page)
+    try:
+        return page.evaluate(_CAMPAIGN_OPTIONS_JS, _CAMPAIGN_SWITCH_RX) or []
+    except Exception:
+        return []
+
+
 def ensure_campaign(page, rqst: str, campaign: str) -> bool:
     """Make the session's ACTIVE campaign = `campaign`, returning True on success.
 
     The campaign is a STICKY session-global: invD2DClientId=16 switches to Box,
-    but navigating without the param does NOT switch back to AT&T — so a Box nav
-    followed by an AT&T (no-param) nav leaves the session on Box, and both
-    campaigns capture the same reps (the 'same people' bug). Driving the toolbar
-    dropdown flips it globally for every page, the same fallback car_rides uses."""
-    _goto(page, _page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst, campaign))
-    _, got = verify_campaign(page, campaign)
-    if got == campaign:
-        return True
+    but a no-param nav does NOT switch back to AT&T — so both campaigns end up
+    capturing Box (the 'same people' bug). We read the real invD2DClientId of
+    each option from the dropdown and set the global by navigating Time Tracker
+    (which honors the param) with that id; fall back to clicking the option."""
+    # Load a page that carries the toolbar, then learn each option's real id.
+    _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
+    opts = campaign_options(page)
+    print(f"  campaign options: {opts}", flush=True)
+    want = next((o for o in opts if o.get("name") == campaign), None)
+    cid = (want or {}).get("id") or (
+        str(cfg.CAMPAIGN_URL_IDS[campaign])
+        if cfg.CAMPAIGN_URL_IDS.get(campaign) is not None else None)
+
+    if cid:
+        url = (f"https://v2.ownerville.com/index.cfm?p={cfg.PAGE_TIME_TRACKER}"
+               f"&rqst={rqst}&invD2DClientId={cid}")
+        _goto(page, url)
+        _, got = verify_campaign(page, campaign)
+        if got == campaign:
+            return True
+
+    # Fallback: click the option in the open dropdown.
     try:
-        # Open the dropdown (click the toolbar element showing the current
-        # campaign), then click the wanted campaign's entry.
+        _open_campaign_dropdown(page)
         page.evaluate(
-            "(rx)=>{const e=[...document.querySelectorAll('span,a,button')]"
-            ".find(x=>new RegExp(rx).test((x.innerText||'').trim()) "
-            "&& x.offsetParent!==null); if(e) e.click();}", _CAMPAIGN_SWITCH_RX)
-        page.wait_for_timeout(1200)
-        page.evaluate(
-            "(c)=>{const a=[...document.querySelectorAll('a,li,span,button')]"
-            ".find(x=>(x.innerText||'').trim()===c && x.offsetParent!==null);"
-            " if(a){a.click(); return true;} return false;}", campaign)
+            "(c)=>{const a=[...document.querySelectorAll('a,li,span,button,option')]"
+            ".find(x=>((x.innerText||x.textContent||'').trim())===c "
+            "&& x.offsetParent!==null); if(a){a.click(); return true;} return false;}",
+            campaign)
         page.wait_for_timeout(8000)
     except Exception as e:  # noqa: BLE001
-        print(f"  campaign switch to {campaign!r} errored: {type(e).__name__}",
+        print(f"  campaign click to {campaign!r} errored: {type(e).__name__}",
               flush=True)
     _, got = verify_campaign(page, campaign)
     if got != campaign:
