@@ -57,4 +57,12 @@ ST=$?
 # unconditional `exit 0` reported it as a clean pass, so nothing alerted and no
 # email went out. Propagate the real status — a hold stays silent, a crash pages.
 echo "[$(date)] override-bulletin finished exit=$ST" >> "$LOG_FILE"
+# A HOLD exits 0 (correct — the Override Summary just hasn't published the week;
+# stays quiet + keeps the testing/pink pill). A real FAILURE (non-zero) writes no
+# Hub row otherwise, so the digest can't see it and nothing alerts. Publish
+# 'failed' ONLY on a real failure → reds the card + the 10-min digest posts it to
+# #claudecorrections. Skip on --dry preview. (Megan 2026-07-29)
+if [ "$ST" -ne 0 ] && [ "${1:-}" != "--dry" ]; then
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('override_bulletin','Override Bulletin','failed')" >> "$LOG_FILE" 2>&1 || true
+fi
 exit $ST

@@ -51,6 +51,22 @@ CMD=("$VENV_PY" -u -m automations.applicant_tracker.run "$PHASE")
 if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
     CMD+=("${EXTRA_ARGS[@]}")
 fi
+# Open a live 'running' pill so the card PULSES while the phase works; the
+# publish_done below closes it green/red. Skip on --dry-run. (Megan 2026-07-29)
+case " ${EXTRA_ARGS[*]:-} " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('applicant_sync','Applicant Tracker Sync')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
 "${CMD[@]}" >> "$LOG_FILE" 2>&1
-echo "[$(date)] applicant/${PHASE} finished exit=$?" >> "$LOG_FILE"
-exit 0
+ST=$?
+echo "[$(date)] applicant/${PHASE} finished exit=$ST" >> "$LOG_FILE"
+# Publish real status so a FAILED evening run isn't silent — this wrapper used to
+# `exit 0`, hiding crashes from launchd AND writing no Hub row, so nothing ever
+# alerted #claudecorrections. Now a fail reds the card + the 10-min digest posts
+# it. Skip on --dry-run. (Megan 2026-07-29)
+case " ${EXTRA_ARGS[*]:-} " in
+  *" --dry-run "*) : ;;
+  *) if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('applicant_sync','Applicant Tracker Sync','$_PUB')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
+exit $ST
