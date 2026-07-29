@@ -558,5 +558,37 @@ def reps(sales: Iterable[Sale]) -> List[str]:
                    for s in sales if (s.fields.get("Rep Name") or "").strip()})
 
 
-def load(path: Path) -> Tuple[List[Sale], Dict[str, int]]:
-    return collapse(read_rows(Path(path)))
+# The team ALLEXP export carries every office; this column slices it to one office
+# (same "Owner & Office" field the churn/activation views filter on). Carlos's
+# legacy CarlosOrderLog view is already single-office and has no such column, so
+# the filter is applied ONLY when an owner_office is passed (per-office runs).
+OWNER_OFFICE_COL = "Owner & Office"
+
+
+def _norm_owner(s: str) -> str:
+    """Whitespace-collapsed, case-folded — tolerant of stray \\r / casing so an
+    onboarded office's stored value matches the export without being fragile."""
+    return " ".join((s or "").split()).casefold()
+
+
+def filter_to_owner(rows: List[Dict[str, str]], owner_office: str) -> List[Dict[str, str]]:
+    """Keep only the rows for `owner_office`. Raises if the export lacks the
+    Owner & Office column (wrong view) rather than silently returning nothing."""
+    rows = list(rows)
+    if not rows:
+        return rows
+    if OWNER_OFFICE_COL not in rows[0]:
+        raise KeyError(
+            "crosstab has no {!r} column — a per-office run needs the team "
+            "ALLEXP order-log view, not a single-office view".format(OWNER_OFFICE_COL))
+    want = _norm_owner(owner_office)
+    return [r for r in rows if _norm_owner(r.get(OWNER_OFFICE_COL, "")) == want]
+
+
+def load(path: Path, owner_office: str = "") -> Tuple[List[Sale], Dict[str, int]]:
+    """Read the crosstab into Sales. When `owner_office` is given, first slice the
+    (team) export to that office — the SAME isolation the B2B metric views use."""
+    rows = read_rows(Path(path))
+    if owner_office:
+        rows = filter_to_owner(rows, owner_office)
+    return collapse(rows)

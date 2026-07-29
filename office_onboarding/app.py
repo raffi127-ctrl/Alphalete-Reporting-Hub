@@ -459,15 +459,14 @@ def form_view() -> None:
     enrolled = [S.EnrolledReport(key=rk.key, order=order)
                 for rk, order in sorted(picked, key=lambda t: t[1])]
 
-    # Box Order Log has NO shared per-office data source (it pulls Carlos's energy
-    # view, `CarlosOrderLog`, which isn't owner-filterable) — so it can't auto-wire
-    # for a new office like every other metric. Flag it so it's never a silent gap:
-    # everything else posts automatically; Box needs a manual setup (or drop it).
+    # Box Order Log posts its OWN per-ICD thread from the team ALLEXP energy export,
+    # sliced to this office's exact "Owner & Office" value (box_order_log.per_office).
+    # It needs the Owner & Office field above to be exact — that's the slice.
     if any(er.key == "b2b_order_log_box" for er in enrolled):
-        st.warning("📦 **Box Order Log won't auto-wire** — it's built only from "
-                   "Carlos's energy report and has no shared per-office source. "
-                   "Every other metric here posts automatically; Box needs a manual "
-                   "setup on our end (or uncheck it above).")
+        st.info("📦 **Box Order Log** posts as its own thread for this office, "
+                "sliced to only its rows by the **Owner & Office** value above — so "
+                "make sure that's exactly right (it's how Box finds this office's "
+                "energy sales).")
 
     # ---- 6. Owner welcome email ------------------------------------------
     st.divider()

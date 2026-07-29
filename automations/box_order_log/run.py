@@ -46,12 +46,14 @@ PAYOUT_LINE = "\U0001F4B5 Accepted by supplier — last week & this week"
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _pull(dest: Path, verbose: bool = True) -> Path:
+def _pull(dest: Path, verbose: bool = True, view_url: str = "",
+          crosstab_sheet: str = "") -> Path:
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
-            VIEW_URL, CROSSTAB_SHEET, dest, verbose=verbose, page=page)
+            view_url or VIEW_URL, crosstab_sheet or CROSSTAB_SHEET, dest,
+            verbose=verbose, page=page)
 
 
 def _describe(sales, stats) -> str:
@@ -123,7 +125,25 @@ def main(argv: Optional[list] = None) -> int:
                     help="skip the Tableau pull and use an existing crosstab")
     ap.add_argument("--out", metavar="PDF", help="output PDF path")
     ap.add_argument("--quiet", action="store_true")
+    # --- per-office overrides (onboarded B2B offices) ---------------------
+    # Default (no overrides) = Carlos's existing standalone post, byte-identical.
+    ap.add_argument("--view-url", metavar="URL",
+                    help="override the Tableau view to pull — per-office runs point "
+                         "at the TEAM ALLEXP order-log view (all offices)")
+    ap.add_argument("--crosstab-sheet", metavar="NAME",
+                    help="override the crosstab worksheet name (default 'Order Log')")
+    ap.add_argument("--owner-office", metavar="VALUE",
+                    help="slice the export to ONE office by its exact 'Owner & "
+                         "Office' value — the per-office isolation filter")
+    ap.add_argument("--channel", metavar="CID",
+                    help="override the Slack channel id to post the thread to")
+    ap.add_argument("--channel-name", metavar="#name",
+                    help="display name for --channel (logs + preview text)")
     args = ap.parse_args(argv)
+
+    # Resolve the post destination once (override or Carlos's default channel).
+    chan_id = args.channel or CHANNEL[1]
+    chan_name = args.channel_name or (args.channel and args.channel) or CHANNEL[0]
 
     verbose = not args.quiet
     today = dt.date.today()
@@ -156,14 +176,15 @@ def main(argv: Optional[list] = None) -> int:
     else:
         src = OUTPUT_DIR / "box_order_log_{}.csv".format(today.isoformat())
         try:
-            _pull(src, verbose=verbose)
+            _pull(src, verbose=verbose, view_url=(args.view_url or ""),
+                  crosstab_sheet=(args.crosstab_sheet or ""))
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
             return 1
 
     # ---- 2. collapse ----------------------------------------------------
-    sales, stats = clean.load(src)
+    sales, stats = clean.load(src, owner_office=(args.owner_office or ""))
     if not sales:
         print("✗ no sales found in the crosstab — refusing to post an empty "
               "log. Check the view's date filter.", file=sys.stderr)
@@ -280,7 +301,7 @@ def main(argv: Optional[list] = None) -> int:
         _report_to_hub(started_at, verbose)
         if verbose:
             print("\n  Not posted to Slack. To post the PDF to {}:".format(
-                CHANNEL[0]))
+                chan_name))
             print("    header : {}".format(header))
             print("    re-run with --post")
         return 0
@@ -291,10 +312,10 @@ def main(argv: Optional[list] = None) -> int:
         print("✗ Slack helper unavailable: {}".format(exc), file=sys.stderr)
         return 1
 
-    os.environ["METRICS_CHANNEL_ID"] = CHANNEL[1]
+    os.environ["METRICS_CHANNEL_ID"] = chan_id
     try:
         client = smp._client()
-        target, where = CHANNEL[1], CHANNEL[0]
+        target, where = chan_id, chan_name
         text = header
         if args.dm:
             users = ",".join(u.strip() for u in args.dm.split(",") if u.strip())
@@ -305,7 +326,7 @@ def main(argv: Optional[list] = None) -> int:
             # having already gone live.
             text = (header + "\n_Preview — this is what would post to "
                     "{} every morning. Nothing has been posted to the "
-                    "channel._".format(CHANNEL[0]))
+                    "channel._".format(chan_name))
         if args.note:
             text = text + "\n" + args.note
         resp = client.chat_postMessage(channel=target, text=text)
