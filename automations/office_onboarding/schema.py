@@ -43,28 +43,44 @@ class ReportKind:
     family: str         # "d2d" | "b2b"
     needs_view: bool    # does this report ever need a per-office saved view?
     default_on: bool    # pre-checked when Megan picks this family
+    blurb: str = ""     # plain-language one-liner shown on the OWNER request form
 
 
 REPORTS: List[ReportKind] = [
     # D2D bundle (office_metrics.runner). All shared-view / owner-sliced today, so
     # needs_view=False — a plain D2D office is pure config. needs_view stays a
     # knob for the rare office that can't use a shared view.
-    ReportKind("knocks",         "🚪 Telemapper Knocks",           "d2d", False, True),
-    ReportKind("order_log",      "📋 Order Log",                   "d2d", False, True),
-    ReportKind("sales_6plus",    "📅 Sales Scheduled 6+ Days Out", "d2d", False, True),
-    ReportKind("cancels",        "🚫 Canceled Orders",             "d2d", False, True),
-    ReportKind("ongoing_cancel", "🔁 Ongoing Cancel",              "d2d", True,  True),
-    ReportKind("disconnects",    "❎ Disconnected New Internets",   "d2d", False, True),
-    ReportKind("churn_ni",       "🌐 New Internet Churn",          "d2d", True,  True),
-    ReportKind("churn_wl",       "📊 Wireless Churn",              "d2d", True,  True),
-    ReportKind("activations",    "🆕 Rep Activations",             "d2d", False, True),
-    ReportKind("abp",            "💳 New Internet ABP %",          "d2d", True,  True),
-    ReportKind("tableau_shot",   "📸 Tableau Metrics screenshot",  "d2d", False, True),
+    ReportKind("knocks",         "🚪 Telemapper Knocks",           "d2d", False, True,
+               blurb="How many doors your reps knocked (pulled from Telemapper)."),
+    ReportKind("order_log",      "📋 Order Log",                   "d2d", False, True,
+               blurb="The day's orders — a tab per rep, with each rep's estimated payout."),
+    ReportKind("sales_6plus",    "📅 Sales Scheduled 6+ Days Out", "d2d", False, True,
+               blurb="Installs booked more than 6 days out."),
+    ReportKind("cancels",        "🚫 Canceled Orders",             "d2d", False, True,
+               blurb="Orders that were canceled."),
+    ReportKind("ongoing_cancel", "🔁 Ongoing Cancel",              "d2d", True,  True,
+               blurb="Orders currently working through the cancel process."),
+    ReportKind("disconnects",    "❎ Disconnected New Internets",   "d2d", False, True,
+               blurb="New-internet accounts that disconnected."),
+    ReportKind("churn_ni",       "🌐 New Internet Churn",          "d2d", True,  True,
+               blurb="Your new-internet churn rate (installs that dropped)."),
+    ReportKind("churn_wl",       "📊 Wireless Churn",              "d2d", True,  True,
+               blurb="Your wireless churn rate."),
+    ReportKind("activations",    "🆕 Rep Activations",             "d2d", False, True,
+               blurb="Which reps activated (got their first sale)."),
+    ReportKind("abp",            "💳 New Internet ABP %",          "d2d", True,  True,
+               blurb="Autopay / bank-payment attach rate on new internet."),
+    ReportKind("tableau_shot",   "📸 Tableau Metrics screenshot",  "d2d", False, True,
+               blurb="A snapshot image of your office's Tableau metrics board."),
     # B2B bundle (b2b_metrics.runner) — Carlos's team views, owner-sliced.
-    ReportKind("b2b_sales",      "B2B Sales Metrics",              "b2b", True,  True),
-    ReportKind("b2b_activation", "B2B Activation Rate",            "b2b", True,  True),
-    ReportKind("b2b_churn",      "B2B Churn (3 product views)",    "b2b", True,  True),
-    ReportKind("b2b_order_log",  "B2B Order Log",                  "b2b", False, True),
+    ReportKind("b2b_sales",      "B2B Sales Metrics",              "b2b", True,  True,
+               blurb="Your daily B2B sales numbers."),
+    ReportKind("b2b_activation", "B2B Activation Rate",            "b2b", True,  True,
+               blurb="Share of your B2B sales that activated."),
+    ReportKind("b2b_churn",      "B2B Churn (3 product views)",    "b2b", True,  True,
+               blurb="B2B churn across internet, wireless, and AIR."),
+    ReportKind("b2b_order_log",  "B2B Order Log",                  "b2b", False, True,
+               blurb="The day's B2B orders (AT&T + Box)."),
 ]
 
 REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
@@ -203,6 +219,17 @@ class EnrolledReport:
 
 
 @dataclass
+class ChannelPlan:
+    """One posting destination: a Slack channel + exactly which metrics go there.
+    Lets an office fan a SUBSET of metrics to a different channel (e.g. cancels
+    only to a leader channel). channel_id is resolved by Megan on finalize; the
+    owner gives the name (and optionally the id)."""
+    channel_name: str
+    report_keys: List[str] = field(default_factory=list)  # ReportKind.key subset
+    channel_id: str = ""
+
+
+@dataclass
 class OnboardingRecord:
     """Everything the form captures for one office — the row written to the
     'Office Onboarding' tab and the input to apply.py's wiring."""
@@ -211,10 +238,18 @@ class OnboardingRecord:
     knocks_office: str            # ownerville/knocks name (may differ from owner).
     business_name: str            # the office's own brand.
     website: str                  # site we auto-brand Pay Structure from.
-    channel_id: str               # Slack channel id (C...).
-    channel_name: str             # "#elevate-sales".
+    channel_id: str               # Slack channel id (C...) — the PRIMARY channel.
+    channel_name: str             # "#elevate-sales" — the PRIMARY channel name.
     sheet_id: str                 # the office's metrics workbook id.
     family: str                   # "d2d" | "b2b".
+    channels: List[str] = field(default_factory=list)
+                                  # every channel the owner wants it posted in
+                                  # (names). channel_name is channels[0]; the extra
+                                  # channels are wired by Megan on finalize.
+    channel_plans: List[ChannelPlan] = field(default_factory=list)
+                                  # per-channel metric subsets (the source of truth
+                                  # for the fan-out). channels/reports are derived
+                                  # from these; empty = single channel gets `reports`.
     ov_account: str = ""          # Ownerville account number (metadata; may equal
                                   # the AppStream office id but isn't guaranteed to).
     owner_email: str = ""         # where the Pay Structure invite is sent.
@@ -366,4 +401,41 @@ def validate(rec: OnboardingRecord, *,
             "run on both at once. Put every per-office view on one machine, or "
             "split it into two offices.")
 
+    return problems
+
+
+# Fields the OWNER request form does NOT collect — Megan supplies these when she
+# finalizes (she creates the sheet, resolves the channel id, sets the pay code).
+# The lighter validate_request() below only checks what an owner can actually give.
+REQUEST_ONLY_LOOSE_FIELDS = ("sheet_id", "channel_id", "pay_code")
+
+
+def validate_request(rec: OnboardingRecord) -> List[str]:
+    """Return [] when an OWNER's partial request is complete enough to alert Megan,
+    else the list of problems to show the owner. Deliberately looser than
+    validate(): the owner fills what they can (program, metrics, who they are, the
+    channel name) and Megan finalizes the rest (Google Sheet, channel id, wiring).
+    """
+    problems: List[str] = []
+    for label, val in (("Your name", rec.owner),
+                       ("Company / office name", rec.business_name),
+                       ("Website", rec.website)):
+        if not (val or "").strip():
+            problems.append(f"{label} is required.")
+    if rec.family not in ("d2d", "b2b"):
+        problems.append("Pick how your office sells (D2D or B2B).")
+    if not rec.owner_email.strip():
+        problems.append("Your email is required.")
+    elif "@" not in rec.owner_email:
+        problems.append("That email doesn't look valid.")
+    # Per-channel plans: each named channel needs at least one metric.
+    plans = rec.channel_plans or []
+    if not any(p.channel_name.strip() for p in plans):
+        problems.append("Add at least one Slack channel and pick its metrics.")
+    for i, p in enumerate(plans):
+        if not p.channel_name.strip():
+            continue                       # blank block is just ignored
+        if not p.report_keys:
+            problems.append(f"{p.channel_name.strip()} has no metrics checked — "
+                            "pick at least one, or clear the channel name.")
     return problems

@@ -16,19 +16,31 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from automations.office_onboarding.schema import OnboardingRecord, EnrolledReport
+from automations.office_onboarding.schema import (
+    OnboardingRecord, EnrolledReport, ChannelPlan)
 
 # THE config store. A new "Office Onboarding" tab in the AUTOMATION MASTER sheet.
 MASTER_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 ONBOARDING_TAB = "Office Onboarding"
+
+# The OWNER-facing intake lands here first (a partial record — no sheet/wiring).
+# Megan finalizes it in the Office Onboarding form, which writes ONBOARDING_TAB.
+REQUESTS_TAB = "Metric Requests"
 
 # One JSON blob per office in column B keeps the tab future-proof (new fields
 # never need a schema migration); column A is the key for at-a-glance reading.
 _HEADER = ["office_key", "config_json", "machine", "report_id", "submitted_at",
            "submitted_by"]
 
+# The requests tab: same config_json blob + a status the finalize step flips
+# ("new" -> "wired") so a request is never silently re-finalized.
+_REQ_HEADER = ["office_key", "config_json", "family", "status", "submitted_at",
+               "submitted_by"]
+
 _LOCAL_FALLBACK = (Path(__file__).resolve().parents[2] / "output"
                    / "office_onboarding_submissions.json")
+_LOCAL_REQUESTS = (Path(__file__).resolve().parents[2] / "output"
+                   / "office_metric_requests.json")
 
 _CLIENT = None
 
@@ -104,12 +116,124 @@ def load_all() -> List[dict]:
     return []
 
 
+# --------------------------------------------------------------------------
+# Metric Requests tab — the OWNER-facing intake (partial records Megan finalizes).
+# --------------------------------------------------------------------------
+def _requests_ws():
+    """The 'Metric Requests' worksheet, created (with header) if missing. None
+    when no client is injected — callers fall back to local JSON."""
+    if _CLIENT is None:
+        return None
+    ss = _CLIENT.open_by_key(MASTER_SHEET_ID)
+    try:
+        return ss.worksheet(REQUESTS_TAB)
+    except Exception:
+        ws = ss.add_worksheet(title=REQUESTS_TAB, rows=200, cols=len(_REQ_HEADER))
+        ws.append_row(_REQ_HEADER)
+        return ws
+
+
+def save_request(rec: OnboardingRecord) -> str:
+    """Append an owner's partial request. Returns 'sheet' or 'local'. Append-only —
+    never overwrites another office's row; status starts 'new'."""
+    row = [rec.key, json.dumps(rec.to_json()), rec.family, "new",
+           rec.submitted_at, rec.submitted_by]
+    ws = _requests_ws()
+    if ws is not None:
+        if not ws.get_all_values():
+            ws.append_row(_REQ_HEADER)
+        ws.append_row(row)
+        return "sheet"
+    _LOCAL_REQUESTS.parent.mkdir(parents=True, exist_ok=True)
+    data = []
+    if _LOCAL_REQUESTS.exists():
+        try:
+            data = json.loads(_LOCAL_REQUESTS.read_text())
+        except Exception:
+            data = []
+    blob = rec.to_json()
+    blob["_status"] = "new"
+    data.append(blob)
+    _LOCAL_REQUESTS.write_text(json.dumps(data, indent=2))
+    return "local"
+
+
+def load_requests(status: Optional[str] = None) -> List[dict]:
+    """Every owner request's config json (sheet, else local). Each dict carries a
+    `_status` key. Pass status='new' to get only the not-yet-finalized ones."""
+    out: List[dict] = []
+    ws = _requests_ws()
+    if ws is not None:
+        for r in ws.get_all_records():
+            raw = r.get("config_json") or ""
+            if not raw:
+                continue
+            try:
+                d = json.loads(raw)
+            except Exception:
+                continue
+            d["_status"] = (r.get("status") or "new").strip() or "new"
+            out.append(d)
+    elif _LOCAL_REQUESTS.exists():
+        try:
+            for d in json.loads(_LOCAL_REQUESTS.read_text()):
+                d.setdefault("_status", "new")
+                out.append(d)
+        except Exception:
+            out = []
+    if status is not None:
+        out = [d for d in out if d.get("_status") == status]
+    return out
+
+
+def mark_request_wired(office_key: str) -> bool:
+    """Flip a request's status to 'wired' once Megan finalizes it, so it drops out
+    of the pending list. Best-effort; returns True if a row was updated."""
+    ws = _requests_ws()
+    if ws is not None:
+        try:
+            values = ws.get_all_values()
+        except Exception:
+            return False
+        if not values:
+            return False
+        header = values[0]
+        try:
+            key_col = header.index("office_key")
+            status_col = header.index("status")
+        except ValueError:
+            return False
+        updated = False
+        for i, row in enumerate(values[1:], start=2):
+            if len(row) > key_col and row[key_col] == office_key:
+                ws.update_cell(i, status_col + 1, "wired")
+                updated = True
+        return updated
+    # local fallback
+    if not _LOCAL_REQUESTS.exists():
+        return False
+    try:
+        data = json.loads(_LOCAL_REQUESTS.read_text())
+    except Exception:
+        return False
+    updated = False
+    for d in data:
+        if d.get("key") == office_key:
+            d["_status"] = "wired"
+            updated = True
+    if updated:
+        _LOCAL_REQUESTS.write_text(json.dumps(data, indent=2))
+    return updated
+
+
 def record_from_json(d: dict) -> OnboardingRecord:
     """Rebuild an OnboardingRecord from a stored config json (drops _derived)."""
     d = {k: v for k, v in d.items() if not k.startswith("_")}
     reps = [EnrolledReport(**er) if isinstance(er, dict) else er
             for er in d.pop("reports", [])]
-    return OnboardingRecord(reports=reps, **d)
+    plans = [ChannelPlan(**cp) if isinstance(cp, dict) else cp
+             for cp in d.pop("channel_plans", [])]
+    return OnboardingRecord(reports=reps, channel_plans=plans, **d)
 
 
 # --------------------------------------------------------------------------

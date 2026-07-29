@@ -11531,6 +11531,15 @@ else:  # st.session_state.view == "user"
                         use_container_width=True)
                     st.caption("Edit sections + order")
                     st.markdown("Admin password: **A\\*\\*\\*\\*123**")
+                # Owner-facing request form: send this link to an office owner and
+                # they pick their program + which metrics they want. Their request
+                # lands on the Metric Requests tab + pings the corrections channel,
+                # then pre-fills the onboarding form above so you just add the sheet.
+                _safe_link_button(
+                    "📤 Owner request form (send to an office)",
+                    "https://alphaletemetricsrequest.streamlit.app",
+                    use_container_width=True)
+                st.caption("Owner picks program + metrics → you get pinged to finalize")
             # ---- Tracker Onboarding (Office Operations) — add an office to the
             # daily Tableau tracker screenshots: its Slack channel + which trackers
             # + order. The daily run + trackers card pick it up automatically.

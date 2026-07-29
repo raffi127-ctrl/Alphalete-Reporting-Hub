@@ -189,6 +189,57 @@ def _enqueue_onboard(key: str, machine: str, *, post: bool) -> "tuple":
 
 
 # --------------------------------------------------------------------------
+def _pending_requests() -> "list":
+    """Owner requests still waiting to be finalized (status 'new'), newest first."""
+    try:
+        reqs = store.load_requests(status="new")
+    except Exception:                                # noqa: BLE001
+        return []
+    return list(reversed(reqs))
+
+
+def _seed_from_request(d: dict) -> None:
+    """Pre-fill every form widget from an owner's request dict. Seeds session_state
+    for the keyed widgets (before they render) so Megan opens the form already
+    filled with what the owner asked for — she only adds the Google Sheet + finalizes.
+    """
+    r = store.record_from_json(d)
+    ss = st.session_state
+    ss["on_family"] = (_FAM_LABELS[0] if r.family == "d2d" else _FAM_LABELS[1])
+    ss["on_owner"] = r.owner
+    ss["on_ov"] = r.ov_account
+    ss["on_knocks"] = "" if r.knocks_office == r.owner else r.knocks_office
+    ss["on_business"] = r.business_name
+    ss["on_website"] = r.website
+    ss["on_channel_id"] = r.channel_id
+    ss["on_channel_name"] = r.channel_name
+    # Per-channel plan the owner asked for (channel → its metric labels), surfaced
+    # in the Slack section so Megan wires the fan-out.
+    ss["_channel_plans"] = [
+        (p.channel_name, [S.REPORTS_BY_KEY[k].label for k in p.report_keys
+                          if k in S.REPORTS_BY_KEY])
+        for p in (r.channel_plans or [])]
+    ss["on_header"] = r.header_label
+    ss["on_owner_email"] = r.owner_email
+    ss["on_customid"] = False
+    ss["on_key"] = r.key
+    ss["on_sheet"] = ""                      # owner never gives this — Megan adds it
+    ss.pop("on_pay_code", None)              # regen from the business name
+    # Reports: check exactly what the owner asked for, in their order.
+    wanted = {er.key: er.order for er in r.reports}
+    for rk in S.REPORTS:
+        if rk.family != r.family:
+            continue
+        ss[f"rep_{rk.key}"] = rk.key in wanted
+        if rk.key in wanted:
+            ss[f"ord_{rk.key}"] = int(wanted[rk.key])
+    ss["_from_request_key"] = r.key
+
+
+_FAM_LABELS = ["D2D — Office Daily Metrics (Lucy 1)",
+               "B2B — B2B Metrics (Lucy 2)"]
+
+
 def form_view() -> None:
     st.markdown("## 🏢 Metrics Onboarding")
     st.caption("Add a new office to daily metrics posting. Fill it in once; on "
@@ -197,13 +248,51 @@ def form_view() -> None:
                "from) and shows you exactly how it wires — which machine runs it "
                "and what to apply.")
 
+    # ---- 0. Start from an owner request ----------------------------------
+    # Owners submit a partial request (program + metrics + who/where) on the
+    # request form; pick one here to pre-fill everything they gave. You then just
+    # create their Google Sheet and finalize.
+    reqs = _pending_requests()
+    # Deep link from the corrections ping: ?request=<key> opens straight onto that
+    # owner's request, pre-filled. Seed once (guarded by _prefilled_idx).
+    try:
+        _qp_req = str(st.query_params.get("request", "")).strip()
+    except Exception:                                # noqa: BLE001
+        _qp_req = ""
+    if _qp_req and reqs and st.session_state.get("_prefilled_idx") != _qp_req:
+        for _j, _d in enumerate(reqs):
+            if _d.get("key") == _qp_req:
+                _seed_from_request(_d)
+                st.session_state["_prefilled_idx"] = _qp_req
+                st.session_state["_req_pick"] = _j + 1
+                st.rerun()
+    if reqs:
+        st.divider()
+        st.markdown("### ⬇️ Start from an owner request")
+        opts = ["— none (fill from scratch) —"] + [
+            "{} · {} [{}] — wants {} metric{}".format(
+                d.get("owner") or d.get("key"), d.get("business_name") or "—",
+                (d.get("family") or "").upper(), len(d.get("reports") or []),
+                "" if len(d.get("reports") or []) == 1 else "s")
+            for d in reqs]
+        idx = st.selectbox("An office owner asked for these — pick one to pre-fill:",
+                           range(len(opts)), format_func=lambda i: opts[i],
+                           key="_req_pick")
+        if idx > 0 and st.session_state.get("_prefilled_idx") != reqs[idx - 1].get("key"):
+            _seed_from_request(reqs[idx - 1])
+            st.session_state["_prefilled_idx"] = reqs[idx - 1].get("key")
+            st.rerun()
+        if idx > 0:
+            st.success("Pre-filled from {}'s request. Add their Google Sheet below, "
+                       "review, and submit.".format(
+                           reqs[idx - 1].get("owner") or reqs[idx - 1].get("key")))
+
     # ---- 1. Campaign ------------------------------------------------------
     st.divider()
     st.markdown("### 1. Campaign")
+    st.session_state.setdefault("on_family", _FAM_LABELS[0])
     fam_label = st.radio(
-        "Which campaign does this office run?",
-        ["D2D — Office Daily Metrics (Lucy 1)",
-         "B2B — B2B Metrics (Lucy 2)"],
+        "Which campaign does this office run?", _FAM_LABELS, key="on_family",
         help="Sets the report runner + which machine posts it — D2D runs on "
              "Lucy 1, B2B on Lucy 2. Almost every office just uses the shared "
              "team views; only add a per-office saved view under Advanced if one "
@@ -214,29 +303,29 @@ def form_view() -> None:
     st.divider()
     st.markdown("### 2. Office & owner")
     owner = st.text_input(
-        "Canonical owner name *",
+        "Canonical owner name *", key="on_owner",
         help="Exactly as the ICD Aliases sheet / roster spells it — this filters "
              "every owner-sliced metric. Fix spelling in the alias sheet, not here.")
     c1, c2 = st.columns(2)
     with c1:
         ov_account = st.text_input(
-            "Ownerville account number",
+            "Ownerville account number", key="on_ov",
             help="The office's Ownerville account number, for cross-referencing / "
                  "impersonation. Note: it isn't guaranteed to match the AppStream "
                  "office id, so it's stored separately.")
     with c2:
         knocks = st.text_input(
-            "Name as it appears in Ownerville",
+            "Name as it appears in Ownerville", key="on_knocks",
             help="The office's name in ownerville for the Telemapper Knocks "
                  "scrape, IF it differs from the canonical owner. Blank = same "
                  "as owner.")
     c3, c4 = st.columns(2)
     with c3:
-        business = st.text_input("Company name *",
-                                help="The office's own brand, e.g. 'Aeon'.")
+        business = st.text_input("Company name *", key="on_business",
+                                help="The office's own brand, e.g. 'Alphalete'.")
     with c4:
         website = st.text_input(
-            "Website",
+            "Website", key="on_website",
             help="Their site — Pay Structure auto-pulls the logo + brand color "
                  "from it, so the office's editor is branded on first login.")
 
@@ -244,11 +333,12 @@ def form_view() -> None:
     # entry, cache filenames). Auto-made from the owner's first name so Megan
     # never has to think about it; an override appears only if she wants one.
     key_default = S.slug_from_owner(owner)
-    if st.checkbox("Set a custom internal id (rarely needed)", value=False,
+    if st.checkbox("Set a custom internal id (rarely needed)", key="on_customid",
                    help="The internal id is auto-made from the owner's first name. "
                         "Only change it if another office already uses that id "
                         "(e.g. two owners share a first name)."):
-        key = st.text_input("Internal id", value=key_default).strip()
+        st.session_state.setdefault("on_key", key_default)
+        key = st.text_input("Internal id", key="on_key").strip()
     else:
         key = key_default
         if owner.strip():
@@ -260,14 +350,22 @@ def form_view() -> None:
     st.markdown("### 3. Slack channel")
     c5, c6 = st.columns(2)
     with c5:
-        channel_id = st.text_input("Channel ID *", placeholder="C0…",
+        channel_id = st.text_input("Channel ID *", placeholder="C0…", key="on_channel_id",
                                    help="The Slack channel id metrics post into. "
                                         "Right-click the channel → View channel "
                                         "details → the ID at the bottom.")
     with c6:
-        channel_name = st.text_input("Channel name *", placeholder="#elevate-sales")
+        channel_name = st.text_input("Channel name *", placeholder="#elevate-sales",
+                                     key="on_channel_name")
+    _plans = st.session_state.get("_channel_plans") or []
+    if len(_plans) > 1:
+        _lines = "\n".join("- **{}** → {}".format(cn, ", ".join(ls) if ls else "(none)")
+                           for cn, ls in _plans)
+        st.info("📣 **The owner asked for a per-channel fan-out** (this card wires "
+                "the primary channel above; the others are wired when posting is "
+                "set up for this office):\n\n" + _lines)
     header_label = st.text_input(
-        "Thread name — only if another office shares this channel",
+        "Thread name — only if another office shares this channel", key="on_header",
         help="Leave blank if this office has the channel to itself. If two "
              "offices post to the SAME channel (like Hammad + Salik → "
              "#elite-prime-sales), give this office a name here — it's added to "
@@ -283,8 +381,10 @@ def form_view() -> None:
     # ---- 4. Google Sheet --------------------------------------------------
     st.divider()
     st.markdown("### 4. Office metrics Google Sheet")
+    st.caption("This is the one thing the owner can't give — you create the sheet "
+               "(duplicate the tabs below) and paste it here.")
     sheet_link = st.text_input(
-        "Sheet link or ID *",
+        "Sheet link or ID *", key="on_sheet",
         help="The office's own metrics workbook — where the churn + ABP fills "
              "land. Paste the full URL or the bare id.")
     sheet_id = S.sheet_id_from(sheet_link)
@@ -313,11 +413,13 @@ def form_view() -> None:
     fam_reports = [r for r in S.REPORTS if r.family == family]
     picked: list = []            # (ReportKind, order)
     for i, rk in enumerate(fam_reports):
+        st.session_state.setdefault(f"rep_{rk.key}", rk.default_on)
+        st.session_state.setdefault(f"ord_{rk.key}", i + 1)
         oc1, oc2 = st.columns([6, 1])
         with oc1:
-            on = st.checkbox(rk.label, value=rk.default_on, key=f"rep_{rk.key}")
+            on = st.checkbox(rk.label, key=f"rep_{rk.key}")
         with oc2:
-            order = st.number_input("order", 1, 99, i + 1, key=f"ord_{rk.key}",
+            order = st.number_input("order", 1, 99, key=f"ord_{rk.key}",
                                     label_visibility="collapsed", disabled=not on)
         if on:
             picked.append((rk, int(order)))
@@ -338,14 +440,16 @@ def form_view() -> None:
     we1, we2 = st.columns([3, 2])
     with we1:
         owner_email = st.text_input(
-            "Owner email", help="Where the welcome email is sent.")
+            "Owner email", key="on_owner_email", help="Where the welcome email is sent.")
     with we2:
+        st.session_state.setdefault("on_pay_code", S.gen_pay_code(business, key or ""))
         pay_code = st.text_input(
-            "Pay Structure code", value=S.gen_pay_code(business, key or ""),
+            "Pay Structure code", key="on_pay_code",
             help="Auto-made from the company name — edit if you want a cleaner "
                  "code. This is what the owner enters on the Pay Structure site.")
     send_welcome = st.checkbox(
-        "✉️ Send the welcome email to the owner on submit", value=True)
+        "✉️ Send the welcome email to the owner on submit", value=True,
+        key="on_send_welcome")
 
     # ---- build the record -------------------------------------------------
     st.divider()
@@ -379,6 +483,14 @@ def form_view() -> None:
         except Exception as e:                       # noqa: BLE001
             st.error(f"Couldn't save: {e}")
             return
+        # If this came from an owner request, mark it finalized so it drops off
+        # the pending list (best-effort — never blocks the submit).
+        from_req = st.session_state.get("_from_request_key")
+        if from_req:
+            try:
+                store.mark_request_wired(from_req)
+            except Exception:                        # noqa: BLE001
+                pass
         result = {"rec": rec.to_json(), "where": where}
         # Auto-wire: hand the office's machine an apply job so it joins the morning
         # run with no manual apply/commit. Only when the submission hit the Sheet.
@@ -472,8 +584,20 @@ def _show_result() -> None:
             st.markdown(html, unsafe_allow_html=True)
 
     if st.button("Onboard another office"):
+        _clear_form_state()
         del st.session_state["_last_submit"]
         st.rerun()
+
+
+def _clear_form_state() -> None:
+    """Wipe the keyed form widgets so the next office starts blank (the fields
+    persist across reruns now that they're keyed)."""
+    prefixes = ("on_", "rep_", "ord_")
+    for k in [k for k in st.session_state
+              if isinstance(k, str) and k.startswith(prefixes)]:
+        del st.session_state[k]
+    for k in ("_from_request_key", "_prefilled_idx", "_req_pick", "_channel_plans"):
+        st.session_state.pop(k, None)
 
 
 # --------------------------------------------------------------------------
