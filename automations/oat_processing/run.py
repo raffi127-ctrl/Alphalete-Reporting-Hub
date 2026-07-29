@@ -1325,6 +1325,25 @@ def probe_sms(page) -> None:
                 _log(f"{tag} :: {item}")
     except Exception as e:  # noqa: BLE001
         _log(f"VISW dump err: {type(e).__name__}")
+    # Hunt for a 'new conversation / compose' control (icon buttons often carry it
+    # in title/aria-label/class, not visible text).
+    try:
+        nc = page.evaluate(
+            r"""() => {
+                const hint = e => ((e.innerText||'')+' '+(e.title||'')+' '
+                    +(e.getAttribute('aria-label')||'')+' '+(e.className||'')+' '+(e.id||''));
+                return [...document.querySelectorAll('a,button,i,span,div,[role=button]')]
+                    .filter(e => /new|compose|create|start|pencil|plus|\+|newmsg|new-msg/i.test(hint(e)))
+                    .filter(e => (e.innerText||e.title||e.getAttribute('aria-label')||e.className||'').length < 70)
+                    .map(e => `${e.tagName}|t:${(e.innerText||'').trim().slice(0,14)}|ttl:${(e.title||'').slice(0,22)}|al:${(e.getAttribute('aria-label')||'').slice(0,22)}|cls:${(e.className||'').slice(0,28)}|id:${(e.id||'').slice(0,20)}`)
+                    .slice(0, 22);
+            }""")
+        for x in nc:
+            _log(f"NEWCONV :: {x}")
+        if not nc:
+            _log("NEWCONV :: (none matched)")
+    except Exception as e:  # noqa: BLE001
+        _log(f"NEWCONV err: {type(e).__name__}")
 
 
 # --------------------------------------------------------------------------- #
