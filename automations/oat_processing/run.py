@@ -573,12 +573,16 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     set_ok = w.evaluate(
         r"""(args) => {
             const nm = args[0], phone = args[1];
-            const out = {date:false, term:false, by:''};
+            const out = {date:'', term:false, by:'', opts:[]};
             const d = document.querySelector("#sms_date_filter, [name='sms_date_filter']");
-            if (d) { const o = [...d.options].find(o => /this month/i.test(o.text));
+            if (d) { out.opts = [...d.options].map(o => o.text.trim());
+                     // Widen the window: 'Last Month' catches older threads that
+                     // 'This Month' misses (Megan 2026-07-29).
+                     const o = [...d.options].find(o => /last month/i.test(o.text))
+                            || [...d.options].find(o => /this month/i.test(o.text));
                      if (o) { d.value = o.value;
                               d.dispatchEvent(new Event('change',{bubbles:true}));
-                              out.date = true; } }
+                              out.date = o.text.trim(); } }
             const setF = (sel, val) => {
                 const e = document.querySelector(sel);
                 if (!e) return false;
@@ -608,8 +612,8 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         searched = w.evaluate(
             "() => { const b = document.querySelector('#sms_filter_search');"
             " if (b) { b.click(); return true; } return false; }")
-    _log(f"    [retext] filters set date={set_ok.get('date')} "
-         f"by={set_ok.get('by')} searched={searched}")
+    _log(f"    [retext] filters set date={set_ok.get('date')!r} "
+         f"by={set_ok.get('by')} searched={searched} opts={set_ok.get('opts')}")
     page.wait_for_timeout(2600)
 
     # 3) Pick the conversation: prefer the row whose number matches the applicant's
