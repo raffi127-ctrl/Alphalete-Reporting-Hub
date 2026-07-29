@@ -83,8 +83,13 @@ def _fetch_grid(col_start: str, col_end: str, row_start: int,
 
 def _rgb(c: Optional[dict], default: str = "") -> str:
     """A Sheets color dict -> CSS 'rgb(r,g,b)'. Missing channel = 0 (that is how
-    Sheets stores pure black / pure red — the absent keys are zeros, not ones)."""
-    if not c:
+    Sheets stores pure black / pure red — the absent keys are zeros, not ones).
+
+    `c is None` means the cell carries no such color and the caller's default
+    applies. An EMPTY DICT is not that: proto3 omits zero-valued fields, so
+    pure black serializes as {} and `not c` would throw it away — see
+    _is_white."""
+    if c is None:
         return default
     r = round(c.get("red", 0) * 255)
     g = round(c.get("green", 0) * 255)
@@ -93,7 +98,15 @@ def _rgb(c: Optional[dict], default: str = "") -> str:
 
 
 def _is_white(c: Optional[dict]) -> bool:
-    if not c:
+    """Whether this fill can be left unpainted.
+
+    `{}` is PURE BLACK, not absent — the API omits zero-valued channels, and a
+    genuinely unstyled cell comes back with explicit 1s instead. Treating the
+    empty dict as falsy dropped the black fill off 114 cells of Rafael's
+    Product Summary alone: the TOTALS row turned white-on-white (its numbers
+    vanished) and the black-masked K/L helper cells published prior-week totals
+    the sheet deliberately hides."""
+    if c is None:
         return True
     return (c.get("red", 0) >= 0.999 and c.get("green", 0) >= 0.999
             and c.get("blue", 0) >= 0.999)
