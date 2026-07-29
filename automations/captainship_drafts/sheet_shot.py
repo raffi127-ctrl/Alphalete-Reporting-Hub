@@ -38,8 +38,9 @@ from patchright.sync_api import sync_playwright
 import datetime as dt
 
 from automations.captainship_drafts.sales_board import (
-    CAPTAIN_TOKEN, PS_END_COL, SALES_BOARD_ID, SALES_BOARD_TAB,
-    _open_ws, _values, discover_blocks, prior_day_columns, ps_shot_view,
+    CAPTAIN_TOKEN, PS_END_COL, ROW_RENDER_SLACK, SALES_BOARD_ID,
+    SALES_BOARD_TAB, _open_ws, _values, discover_blocks, grid_span,
+    prior_day_columns, ps_shot_view,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -264,8 +265,24 @@ def _union_rect(a: dict | None, b: dict | None) -> dict | None:
     return {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
 
 
+def _bottom_has_ink(png: bytes, frac: float = 0.04) -> bool:
+    """Is there text in the last `frac` of the shot?
+
+    With an exact clip the height gate goes circular — the clip is handed to
+    Chromium, so the shot can never come back short of it. What can still go
+    wrong is Sheets not having painted the tail rows when the frame settles, and
+    that shows up as a blank strip at the bottom rather than a missing one."""
+    import io
+
+    from PIL import Image
+    im = Image.open(io.BytesIO(png)).convert("L")
+    band = im.crop((0, int(im.height * (1 - frac)), im.width, im.height))
+    return sum(band.histogram()[:_INK_LUMA]) >= _MIN_INK_PX
+
+
 def _shoot_when_painted(page, rng: str, *, settle_ms: int, timeout_s: int,
-                        full_rect: dict | None = None) -> bytes:
+                        full_rect: dict | None = None,
+                        exact_clip: dict | None = None) -> bytes:
     """Screenshot the selection clip once consecutive frames stop changing.
     The canvas keeps painting (backgrounds first, then text once the row
     data arrives) for seconds AFTER the selection rect is stable — only
@@ -278,17 +295,22 @@ def _shoot_when_painted(page, rng: str, *, settle_ms: int, timeout_s: int,
       • a collapsed overlay counts as "still painting", so the frame-settle
         loop keeps waiting for the tail rows instead of freezing a short shot.
     Falling back to the union on timeout keeps the old best-effort behaviour;
-    the caller's height gate decides whether that shot is usable."""
+    the caller's height gate decides whether that shot is usable.
+
+    `exact_clip` (from the sheet's own geometry) REPLACES the union outright —
+    unioning would hand the merge-widened overlay right back and undo the whole
+    point of measuring the grid."""
     page.wait_for_timeout(settle_ms)
     deadline = time.time() + timeout_s
+    want = exact_clip or full_rect
     prev, same = None, 0
     while True:
         rect = _selection_rect(page)
-        if rect is None and full_rect is None:
+        if rect is None and want is None:
             raise RuntimeError(f"range {rng}: selection overlay vanished")
-        clip = _union_rect(full_rect, rect)
-        covered = (full_rect is None or rect is not None
-                   and rect["height"] >= full_rect["height"] * 0.97)
+        clip = exact_clip or _union_rect(full_rect, rect)
+        covered = (want is None or rect is not None
+                   and rect["height"] >= want["height"] * 0.97)
         cur = page.screenshot(clip=clip)
         if covered and prev is not None and cur == prev:
             same += 1
@@ -304,9 +326,22 @@ def _shoot_when_painted(page, rng: str, *, settle_ms: int, timeout_s: int,
 
 def _capture_on_page(page, rng: str, out_path: Path, *,
                      settle_ms: int, timeout_s: int,
-                     edit_url: str | None = None, gid: int | None = None) -> Path:
+                     edit_url: str | None = None, gid: int | None = None,
+                     exact: dict | None = None) -> Path:
+    """Screenshot `rng`. Without `exact`, the clip is the selection overlay.
+
+    `exact` pins the clip's WIDTH to the cells themselves — {width, est_h}:
+      • width  — rendered CSS px of the columns, from sales_board.grid_span. The
+                 overlay can't be asked: Sheets widens it over every merge the
+                 range touches, which is how column M reached Chan's email.
+      • est_h  — the stored row-height sum. Only ever used to size the viewport,
+                 never to clip: an auto-fit row reports 21 and draws at 24-27.
+    The height still comes from the overlay, which is the real rendered size —
+    ps_shot_view hides the rows below the cut that the selection would otherwise
+    expand into, so it ends where the range ends."""
     png = None
     short: tuple[int, int] | None = None     # (got_px, wanted_px) of the last try
+    blank_tail = False                       # exact-clip shot with an unpainted end
     for attempt in range(1, _ATTEMPTS + 1):
         rect = _goto_range(page, rng, timeout_s, edit_url, gid)
         # Grow the viewport so the WHOLE range is on screen (rect.x/y is the
@@ -320,8 +355,18 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         # last rows never sit at the fold, where Sheets paints them late.
         tail = _VIEWPORT_PAD + _TAIL_HEADROOM * attempt
         for _ in range(8):
-            need_w = math.ceil(rect["x"] + rect["width"]) + _VIEWPORT_PAD
-            need_h = math.ceil(rect["y"] + rect["height"]) + tail
+            # With `exact`, size off the range's KNOWN extent, not the overlay.
+            # The overlay is clipped to the viewport, so asking it how much room
+            # the range needs answers "one screenful more" however tall the range
+            # really is: the loop grew by one tail per round, ran out of rounds
+            # and shot it anyway. That is how Rafael's PS lost everything below
+            # Muhammad Haque, with the height gate — which compared the shot to
+            # that same clipped rect — reporting it fine (2026-07-28).
+            span_w = max(exact["width"], rect["width"]) if exact else rect["width"]
+            span_h = (max(exact["est_h"] * ROW_RENDER_SLACK, rect["height"])
+                      if exact else rect["height"])
+            need_w = math.ceil(rect["x"] + span_w) + _VIEWPORT_PAD
+            need_h = math.ceil(rect["y"] + span_h) + tail
             if need_w > _MAX_VIEWPORT[0] or need_h > _MAX_VIEWPORT[1]:
                 raise RuntimeError(
                     f"range {rng} needs a {need_w}x{need_h} viewport, over the "
@@ -332,11 +377,26 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
             page.set_viewport_size({"width": max(vp["width"], need_w),
                                     "height": max(vp["height"], need_h)})
             rect = _goto_range(page, rng, timeout_s, edit_url, gid)
-        grown_h = rect["height"]        # settled full-range height (all rows)
+        # Width from the sheet (the overlay is merge-widened), height from the
+        # overlay (stored row sizes are not what gets drawn). ps_shot_view hides
+        # the rows below the cut that the selection would otherwise be dragged
+        # into, so the overlay's bottom is the range's bottom.
+        exact_clip = ({"x": rect["x"], "y": rect["y"],
+                       "width": exact["width"], "height": rect["height"]}
+                      if exact else None)
+        grown_h = rect["height"]
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
         png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
-                                  timeout_s=timeout_s, full_rect=rect)
+                                  timeout_s=timeout_s, full_rect=rect,
+                                  exact_clip=exact_clip)
         has_ink = _ink_pixels(png) >= _MIN_INK_PX
+        if exact and has_ink and not _bottom_has_ink(png):
+            # Right size, blank tail: Sheets hadn't painted the last rows when
+            # the frame settled. The height gate can't see this — the clip is
+            # exact, so the shot is never short — hence its own retry.
+            blank_tail = True
+            continue
+        blank_tail = False
         # Guard against a vertically-clipped shot. On a very tall range Sheets can
         # paint only part of it before _shoot returns, so the selection overlay
         # collapses to the painted region and the shot cuts the last rows (e.g.
@@ -354,6 +414,10 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         # data (Eve, 2026-07-27 — Luis' draft silently lost the 4 WE history
         # rows). Raise instead, so run.py degrades that section to the honest
         # 'pending' note.
+        if blank_tail:
+            raise RuntimeError(
+                f"range {rng}: the last rows never painted after {_ATTEMPTS} "
+                f"attempts — the shot is the right size but ends blank")
         if short:
             raise RuntimeError(
                 f"range {rng}: shot came back {short[0]}px tall, short of the "
@@ -369,10 +433,14 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
 
 def capture_ranges(items: Iterable[Tuple[str, Path]], *, scale: float = 2.0,
                    settle_ms: int = 2500, timeout_s: int = 60,
-                   edit_url: str | None = None, gid: int | None = None) -> list[Path]:
+                   edit_url: str | None = None, gid: int | None = None,
+                   exact: dict | None = None) -> list[Path]:
     """Screenshot each (range, out_path) of the Sales Board tab in one
     browser session. Returns the written paths. `edit_url`/`gid` target a
-    different workbook/tab (default: the captainship drafts' Sales Board)."""
+    different workbook/tab (default: the captainship drafts' Sales Board).
+    `exact` ({width, est_h}, see _capture_on_page) pins the clip's width to the
+    cells themselves rather than the merge-widened selection overlay; pass it
+    when a single range is being captured."""
     if _SIGNED_OUT:            # a previous capture already hit the sign-in wall
         raise SheetsSignedOut(_SIGNED_OUT_MSG)
     done: list[Path] = []
@@ -385,7 +453,7 @@ def capture_ranges(items: Iterable[Tuple[str, Path]], *, scale: float = 2.0,
                 done.append(_capture_on_page(
                     page, rng, Path(path),
                     settle_ms=settle_ms, timeout_s=timeout_s,
-                    edit_url=edit_url, gid=gid))
+                    edit_url=edit_url, gid=gid, exact=exact))
         finally:
             ctx.close()
     return done
@@ -466,9 +534,12 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
     # 2.5s it clipped intermittently, at 8s it was full every time). timeout_s is
     # raised to match so the frame-settle loop isn't starved.
     with ps_shot_view(blocks.ps_start, blocks.ps_end, keep_weeks=4) as ps_end_row:
+        # Measured INSIDE the view: the hidden older weeks are part of the answer.
+        ps_w, ps_est_h = grid_span(PS_END_COL, blocks.ps_start, ps_end_row)
         capture_ranges(
             [(f"A{blocks.ps_start}:{PS_END_COL}{ps_end_row}", ps_path)],
-            scale=scale, settle_ms=8000, timeout_s=90)
+            scale=scale, settle_ms=8000, timeout_s=90,
+            exact={"width": ps_w, "est_h": ps_est_h})
 
     units_out: list = []
     for i, ub in enumerate(_units_blocks_for(captain_key, flavor, blocks)):

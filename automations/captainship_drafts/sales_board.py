@@ -37,10 +37,19 @@ from automations.recruiting_report import fill as _rf
 SALES_BOARD_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 SALES_BOARD_TAB = "Copy of Alphalete ORG Sales Board"
 
-# How many columns the Product Summary block spans (A..K). The daily + weekly
-# tables top out at 'Grand Total' at K; the vertical weekly-historical detail
-# lives in COLLAPSED ROW GROUPS inside the range (expanded for the screenshot).
-PS_END_COL = "K"
+# How many columns the Product Summary block spans (A..L) — the true right edge
+# of every table in it: the daily blocks end at "PREVIOUS WEEK'S TOTALS" (L) and
+# the CAPTAIN TEAM historical ends at its 10th week column (L). Anything at M or
+# beyond is older history that is NOT part of this report (Eve, 2026-07-28).
+# The vertical weekly-historical detail lives in COLLAPSED ROW GROUPS inside the
+# range (expanded for the screenshot).
+#
+# This was "K" until 2026-07-28, which cut the daily blocks' last column — but
+# nobody saw that, because a browser selection is EXPANDED to cover any merged
+# cell it touches, so the shot silently came back at whatever the widest merge
+# in the span reached (Rafael L, Chan M). Hence grid_span() below: the shot's
+# clip is measured from the sheet's own geometry, never from the selection.
+PS_END_COL = "L"
 
 # The name-token we look for inside a captain's block header, per captain key.
 # Header text varies ("Raf's Captainship Team" / "Wayne's Captain Team" /
@@ -373,6 +382,91 @@ def _rows_unhidden(rows: List[int]):
         _set(True)
 
 
+def _col_index(letter: str) -> int:
+    """'A' -> 0, 'L' -> 11, 'AA' -> 26."""
+    n = 0
+    for ch in letter.strip().upper():
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+# A rendered column is its stored pixelSize plus one gridline. Measured on the
+# Sales Board 2026-07-28: A:L is 1296 stored, 1308 rendered, for every row tried.
+_GRIDLINE_PX = 1
+# Rows do NOT follow their stored size — an auto-fit row reports 21 and draws at
+# 24 or 27 depending on its font. So the stored row sum is only ever used to
+# SIZE THE VIEWPORT, never to clip, and it is padded by this much first.
+ROW_RENDER_SLACK = 1.6
+
+
+def grid_span(end_col: str, row_start: int, row_end: int) -> Tuple[float, float]:
+    """(rendered width, STORED height) in CSS px of A:`end_col` x
+    `row_start`:`row_end`, skipping whatever is hidden right now. Call it INSIDE
+    ps_shot_view — hidden state is part of the answer.
+
+    The width is exact and is what the screenshot clips to. The height is only an
+    estimate (see ROW_RENDER_SLACK); the caller measures the real one in the
+    browser off a COLUMN-A-ONLY range.
+
+    Why not just measure both in the browser: Sheets expands a selection to cover
+    every merged cell it touches, in BOTH directions.
+      • across — Chan's row-1058 merge reaches M, so his A:L overlay came back
+        M-wide and put WE 05.24 (unformatted, not part of this report) in his
+        email.
+      • down — his M1059:M1114 merge drags the overlay 41 rows past the range
+        end; the viewport then clipped it and the shot ended mid-row.
+    A column-A range touches neither, which is why the height probe uses one.
+    """
+    ws = _open_ws()
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),data(columnMetadata("
+                   "pixelSize,hiddenByUser,hiddenByFilter),rowMetadata("
+                   "pixelSize,hiddenByUser,hiddenByFilter)))"})
+    data = next(((sh.get("data") or [{}])[0] for sh in meta["sheets"]
+                 if sh["properties"]["sheetId"] == ws.id), {})
+
+    def _visible(md: List[dict], lo: int, hi: int) -> List[dict]:
+        return [m for m in md[lo:hi]
+                if not (m.get("hiddenByUser") or m.get("hiddenByFilter"))]
+
+    cols = _visible(data.get("columnMetadata") or [], 0, _col_index(end_col) + 1)
+    rows = _visible(data.get("rowMetadata") or [], row_start - 1, row_end)
+    width = sum(c.get("pixelSize", 0) + _GRIDLINE_PX for c in cols)
+    return float(width), float(sum(r.get("pixelSize", 0) for r in rows))
+
+
+def merge_expanded_end_row(row_start: int, row_end: int, end_col: str) -> int:
+    """The last row a selection of A`row_start`:`end_col``row_end` REALLY covers.
+
+    Sheets grows a selection to contain every merged cell it touches, and the
+    growth is transitive: on Chan's block the range reaches M (row-1058 merge
+    spans A:M), M then brings in M1059:M1114, and the selection lands 41 rows
+    below the range. The overlay is what the screenshot clips to, so those rows
+    ride along into the email — his PS ran to WE 5.17 instead of stopping at the
+    4th week. Fixpoint rather than one pass, because each expansion can touch
+    merges the last one didn't."""
+    ws = _open_ws()
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),merges)"})
+    merges = next((sh.get("merges", []) for sh in meta["sheets"]
+                   if sh["properties"]["sheetId"] == ws.id), [])
+    r0, r1 = row_start - 1, row_end                 # 0-based, half-open
+    c0, c1 = 0, _col_index(end_col) + 1
+    for _ in range(12):                             # converges in 2-3
+        grew = False
+        for m in merges:
+            ms, me = m.get("startRowIndex", 0), m.get("endRowIndex", 0)
+            ns, ne = m.get("startColumnIndex", 0), m.get("endColumnIndex", 0)
+            if ms < r1 and me > r0 and ns < c1 and ne > c0:
+                if ms < r0 or me > r1 or ns < c0 or ne > c1:
+                    r0, r1 = min(r0, ms), max(r1, me)
+                    c0, c1 = min(c0, ns), max(c1, ne)
+                    grew = True
+        if not grew:
+            break
+    return r1
+
+
 @contextlib.contextmanager
 def ps_shot_view(ps_start: int, ps_end: int, keep_weeks: int = 4):
     """Sheet view state for a Product Summary screenshot: EXPAND the collapsed
@@ -390,11 +484,25 @@ def ps_shot_view(ps_start: int, ps_end: int, keep_weeks: int = 4):
     reveal rather than skip-and-walk-further on purpose: skipping would emit
     4 rows spanning NON-CONSECUTIVE weeks, silently dropping real data and
     reading as if it were the last 4 weeks. Scoped to week-history rows only,
-    so a rep row someone hid deliberately stays hidden."""
+    so a rep row someone hid deliberately stays hidden.
+
+    The reveal list EXCLUDES whatever the plan is hiding. Both lists are week
+    rows, and the reveal is measured before the groups are expanded — so with the
+    groups COLLAPSED (their rows read as hiddenByUser) every older week landed in
+    both lists, and the reveal, running last, undid the hide. Chan's PS then
+    showed all 10 weeks instead of 4 (2026-07-29). Whether it happened at all
+    depended on how someone had left the groups, which is why it stayed hidden
+    for weeks."""
     vals = _values()
     ranges, end_row = ps_shot_plan(ps_start, ps_end, keep_weeks, vals)
+    # Collapse the rows the selection would be dragged into below the cut, so the
+    # overlay ends where the range does. They are restored on exit like the rest.
+    tail_end = merge_expanded_end_row(ps_start, end_row, PS_END_COL)
+    if tail_end > end_row:
+        ranges = ranges + [(end_row, tail_end)]     # 0-based half-open
+    planned_hidden = {r for s, e in ranges for r in range(s + 1, e + 1)}
     week_rows = {r for run in week_history_runs(ps_start, ps_end, vals)
-                 for r in run}
+                 for r in run} - planned_hidden
     reveal = [r for r in _user_hidden_rows(ps_start, end_row)
               if r in week_rows]
     with ps_groups_expanded(ps_start, ps_end):
