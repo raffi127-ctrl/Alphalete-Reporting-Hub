@@ -42,7 +42,7 @@ from automations.captainship_drafts import config
 # The private channel with Evelyn, Jolie and Lucy. Set once (Slack blocks the
 # reporting token from creating channels — it has no groups:write), then never
 # again: a renamed channel keeps its id, so this survives a rename.
-REVIEW_CHANNEL = ""
+REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-informes-capitanes
 
 # Whose checkmark counts. Jolie is in the channel to review, NOT to authorise
 # (Eve, 2026-07-29). Slack reports the reacting user, so this is enforceable.
