@@ -85,6 +85,14 @@
         "_todo": "wire before cutover"
       }
     },
+    "sheet:org_board_yesterday": {
+      "label": "Org Sales Board copy tab — yesterday's column actually filled",
+      "_note": "NOT a Tableau extract: the readiness gate for org_sales_board_email reads the board itself (Eve 2026-07-29). readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(): ready when YESTERDAY's day column on 'Copy of Alphalete ORG Sales Board' is filled for every rep in every daily section, except sections that legitimately publish a day behind (Retail JE, Frontier — data_gate.LAGGING_SECTIONS). Measured 2026-07-29: a normal morning is 194/199 rep cells with Retail JE the only gap. Read-only, one get_all_values per pass, and it fails OPEN on a Sheets error so a read hiccup can never swallow the day's email.",
+      "probe": {
+        "type": "org_board_filled",
+        "send_anyway_after": "11:30"
+      }
+    },
     "tableau:box_daily": {
       "label": "BOX daily tracker (org sales board \u2014 last source to land, ~7-8am)",
       "probe": {
@@ -1566,17 +1574,19 @@
     },
     "org_sales_board_email": {
       "order": 9,
-      "on_scheduler": false,
-      "standalone_watch": false,
-      "_note": "OFF the scheduler (Megan 2026-07-28): handed to Eve, who now owns this automation. standalone_watch:false because a PAUSE is not a breakage — without it machine_digest --watch sees three same-weekday runs in the Activity log, no row today, and posts a 'didn't run today on Lucy 1' alert every morning for a week (it fired 2026-07-29). Drop that key when the report goes back on the scheduler. It was still emailing only the proving list (Rafael + Megan), so the daily send is stopped. Manual Hub button + module stay intact for Eve to pick up. Re-enable by flipping on_scheduler true (and set base_args '--distro' at go-live). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
+      "on_scheduler": true,
+      "_note": "BACK ON, DELAYED + DATA-GATED (Eve 2026-07-29). History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed the automation to Eve. Eve turned it back on with two changes, so the email can never go out ahead of the numbers: (1) not_before 09:30 \u2014 the old 6-7am send raced the VAs' keying and the 9:00 org_board_slack pass that refreshes day-behind Retail JE; (2) data_sources 'sheet:org_board_yesterday', a readiness probe (readiness._probe_org_board_filled -> org_sales_board.data_gate) that reads the copy tab and holds the report PENDING until YESTERDAY's column is filled for every daily section except the known day-behind ones (Retail JE, Frontier), then opens at 11:30 regardless (before the 12:00 orchestrator backstop) so a section that never publishes cannot cost us the day's email. Gating in READINESS, not in the module's exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. screenshot_email runs the same gate again right before it sends, so a manual/Hub run is protected too. RECIPIENTS UNCHANGED: base_args stays '' = the proving list (Rafael + Megan); going to the real distro is a separate call \u2014 set base_args '--distro' then. depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "sheet:org_board_yesterday"
+      ],
       "command": [
         "automations.org_sales_board.screenshot_email"
       ],
       "base_args": [],
       "cadence": {
+        "not_before": "09:30",
         "_note": "Monday (0) EXCLUDED (Megan 2026-07-13): last week's Sunday lands in the sources only through Monday afternoon, so a morning email undercounts. On Mondays the board+email run in the afternoon via board_catchup.sh instead. Tue-Sun email in the morning batch as usual.",
         "weekdays": [
           1,

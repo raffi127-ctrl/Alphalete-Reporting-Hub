@@ -529,6 +529,23 @@ def main(argv=None) -> int:
                   f"incomplete/incorrect numbers. (--force overrides.)", flush=True)
             return 2
 
+    # SECOND GUARD (Eve 2026-07-29): the manifest above says "the fill RAN clean";
+    # this says "yesterday is actually ON the board". A run that succeeded having
+    # written nothing passes the first and fails this one. Same rule the
+    # orchestrator's readiness probe uses (org_sales_board.data_gate), so the
+    # scheduled path holds the report instead of sending early — this repeat is
+    # for every OTHER path (manual, Hub, another machine). Always PRINTED, so a
+    # dry-run shows exactly what the automated run would decide.
+    from automations.org_sales_board import data_gate
+    _gate_ok, _gate_why = data_gate.gate()
+    print(f"[screenshot_email] data gate: {'OK' if _gate_ok else 'HOLD'} — {_gate_why}",
+          flush=True)
+    if not (_gate_ok or a.dry_run or _manual):
+        print("[screenshot_email] NOT SENT — the board is short of yesterday. "
+              "It sends by itself once the missing section fills (or at "
+              f"{data_gate.SEND_ANYWAY_AFTER}). (--force overrides.)", flush=True)
+        return 2
+
     out_dir = Path("output") / "sales_board_shots" / dt.date.today().isoformat()
     images = capture(out_dir)
     print(f"[screenshot_email] saved: {[str(p) for _n, p in images]}", flush=True)

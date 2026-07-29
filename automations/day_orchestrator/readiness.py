@@ -210,7 +210,26 @@ class ReadinessCache:
         if ptype == "captainship_bonus":
             return self._probe_captainship_bonus(source_id, probe)
 
+        if ptype == "org_board_filled":
+            return self._probe_org_board_filled(source_id, probe)
+
         return Readiness(False, f"unknown probe type {ptype!r}")
+
+    def _probe_org_board_filled(self, source_id: str, probe: dict) -> Readiness:
+        """Not a Tableau extract — the BOARD ITSELF. Ready once yesterday's column
+        on the copy tab is filled for every daily section except the known
+        day-behind ones (Retail JE, Frontier), or once the send-anyway hour
+        passes. Gating the board EMAIL here rather than inside the module means an
+        unfilled board leaves it PENDING/STILL_TRYING — circled back every pass,
+        no burnt retries, no failure alert — instead of exiting non-zero three
+        times and going red for a board that was merely late (Eve 2026-07-29)."""
+        from automations.org_sales_board import data_gate
+        yday = self.target_date - dt.timedelta(days=1)
+        kw = {}
+        if probe.get("send_anyway_after"):
+            kw["send_anyway_after"] = probe["send_anyway_after"]
+        ok, why = data_gate.gate(yday=yday, **kw)
+        return Readiness(ok, why)
 
     def _probe_captainship_bonus(self, source_id: str, probe: dict) -> Readiness:
         """Is the just-ended week's CaptainsBonus / Captain Team activation data
