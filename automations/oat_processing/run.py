@@ -812,30 +812,58 @@ def probe_search(page, term: str) -> None:
     _log(f"[search] url={info.get('url')}")
     _log(f"[search] nav={info.get('nav')}")
     _log(f"[search] searchInputs={info.get('searchInputs')}")
-    # try the global top-nav search by last name, dump results
+    # Go to Advanced Search (Megan's Home→Search), dump its form, search by first
+    # name, then dump the results + applicant links.
     try:
-        page.fill("input[name='globalSrchFor']", last, timeout=5000)
-        for sel in ("#glblSrchSbmt", "input[name='glblSrchSbmt']",
-                    "xpath=//*[normalize-space(.)='Go']"):
-            b = page.locator(sel).first
+        for lbl in ("Advanced Search", "Search"):
+            loc = page.locator(f"xpath=//a[normalize-space(.)='{lbl}']").first
+            if loc.count() > 0:
+                loc.click(timeout=5000, no_wait_after=True)
+                page.wait_for_timeout(3000)
+                _log(f"[search] clicked nav '{lbl}'")
+                break
+        form = page.evaluate(
+            """() => ({
+                url: location.href.slice(-40),
+                fields: [...document.querySelectorAll('input,select')]
+                    .filter(e=>!/hidden/.test(e.type||''))
+                    .map(e=>`${e.tagName}:${e.name||e.id||'?'}|ph:${(e.placeholder||'').slice(0,16)}`).slice(0,26),
+                submits: [...document.querySelectorAll('input[type=submit],button,input[type=button]')]
+                    .map(e=>(e.value||e.innerText||'').trim()).filter(Boolean).slice(0,10)
+            })""")
+        _log(f"[search] ADV url={form.get('url')}")
+        for x in form.get("fields", []):
+            _log(f"[search] ADV field {x}")
+        _log(f"[search] ADV submits={form.get('submits')}")
+        # fill a first-name-ish field, submit
+        filled = page.evaluate(
+            """(fn) => { const c=[...document.querySelectorAll('input')]
+                .filter(e=>/first|fname/i.test((e.name||'')+(e.id||'')+(e.placeholder||'')));
+                if(c[0]){c[0].value=fn; c[0].dispatchEvent(new Event('input',{bubbles:true}));
+                    return c[0].name||c[0].id;} return null; }""", first)
+        _log(f"[search] ADV filled first-name field: {filled}")
+        for lbl in ("Search", "Go", "Submit", "Find"):
+            b = page.locator(f"xpath=//input[@type='submit'][contains(@value,'{lbl}')]"
+                             f" | //button[contains(normalize-space(.),'{lbl}')]").first
             if b.count() > 0:
                 b.click(timeout=4000, no_wait_after=True); break
-        page.wait_for_timeout(3200)
+        page.wait_for_timeout(3500)
         res = page.evaluate(
             """(full) => ({
-                url: location.href.slice(-46),
+                url: location.href.slice(-40),
+                rows: [...document.querySelectorAll('tr')]
+                    .filter(e=>(e.innerText||'').toLowerCase().includes(full))
+                    .map(e=>(e.innerText||'').replace(/\\s+/g,' ').slice(0,80)).slice(0,6),
                 links: [...document.querySelectorAll('a')]
-                    .map(e=>((e.innerText||'').trim().slice(0,26))+' -> '+(e.getAttribute('href')||'').slice(0,30))
-                    .filter(t=>t.length>4).slice(0,24),
-                rowsWithName: [...document.querySelectorAll('tr,li,div')]
-                    .filter(e=>(e.innerText||'').toLowerCase().includes(full) && (e.innerText||'').length<120)
-                    .map(e=>(e.innerText||'').replace(/\\s+/g,' ').slice(0,70)).slice(0,8)
+                    .filter(e=>(e.innerText||'').toLowerCase().includes(full.split(' ')[0])
+                        || /p=604|openApp|viewApp|editApp/i.test(e.getAttribute('href')||''))
+                    .map(e=>((e.innerText||'').trim().slice(0,24))+' -> '+(e.getAttribute('href')||'').slice(0,42)).slice(0,10)
             })""", f"{first} {last}".lower())
-        _log(f"[search] after-search url={res.get('url')}")
-        for i, l in enumerate(res.get("links", [])):
-            _log(f"[search] link {i}: {l}")
-        for i, r in enumerate(res.get("rowsWithName", [])):
-            _log(f"[search] nameRow {i}: {r}")
+        _log(f"[search] RESULT url={res.get('url')}")
+        for r in res.get("rows", []):
+            _log(f"[search] RESULT row: {r}")
+        for l in res.get("links", []):
+            _log(f"[search] RESULT link: {l}")
     except Exception as e:  # noqa: BLE001
         _log(f"[search] probe err: {type(e).__name__}: {e}")
 
