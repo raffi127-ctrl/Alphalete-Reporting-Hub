@@ -168,11 +168,23 @@ def _shoot(page, out_path: Path, *, title_text: str,
     except Exception:
         rect = None
     if rect and rect.get("width", 0) > 40 and rect.get("height", 0) > 40:
-        # Clamp to the rendered page so Playwright doesn't reject the clip.
-        page.screenshot(path=str(out_path), clip={
-            "x": float(rect["x"]), "y": float(rect["y"]),
-            "width": float(rect["width"]), "height": float(rect["height"])})
-        return "clip"
+        # A plain screenshot clips only within the VIEWPORT, so a rect that runs
+        # past the fold ("Clipped area outside the resulting image") must be
+        # clamped to the viewport bounds — and if it still fails, fall through to
+        # a full-page shot rather than crashing the whole run.
+        vp = page.viewport_size or {"width": VIEWPORT["width"],
+                                    "height": VIEWPORT["height"]}
+        x = max(0.0, float(rect["x"]))
+        y = max(0.0, float(rect["y"]))
+        w = min(float(rect["width"]), vp["width"] - x)
+        h = min(float(rect["height"]), vp["height"] - y)
+        if w > 40 and h > 40:
+            try:
+                page.screenshot(path=str(out_path),
+                                clip={"x": x, "y": y, "width": w, "height": h})
+                return "clip"
+            except Exception:
+                pass  # bad clip → full-page fallback below
     # Fallback: whole page, and leave breadcrumbs to pin the anchor next time.
     page.screenshot(path=str(out_path), full_page=True)
     if dump:

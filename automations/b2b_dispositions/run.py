@@ -142,6 +142,13 @@ def main(argv=None) -> int:
     from automations.shared.tableau_patchright import ownerville_session
     specs: List[Dict] = []
     with ownerville_session(headless=args.headless) as page:
+        # Tall viewport so more of each view sits in-frame (a plain screenshot
+        # clips only within the viewport). Best-effort — a persistent context can
+        # refuse a resize; the clamp in _shoot covers whatever the real size is.
+        try:
+            page.set_viewport_size(dict(cap.VIEWPORT))
+        except Exception:
+            pass
         rqst = cap.capture_rqst(page)
         if args.which in ("hourly", "all"):
             specs += _capture_hourly(page, rqst, out_dir, slot, dry_run)
