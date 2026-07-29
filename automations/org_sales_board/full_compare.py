@@ -729,6 +729,54 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
 
     clean = not concerning     # frozen + other are REPORT-ONLY — never gate
     _report(logfn, concerning, benign, frozen, other, clean)
+
+    # Prior-week columns ("LAST WEEK'S TOTALS" / "PREVIOUS WEEK'S TOTALS") —
+    # checked against the COPY ITSELF, not the VA. REPORT-ONLY, never gates.
+    # The copy-vs-VA passes above cannot see this class of defect: the VA's own
+    # daily-section history rows carry it too, and these frozen columns are
+    # deliberately un-gated (66c5720). Eve found the columns 2 rollovers stale
+    # on all 26 blocks (2026-07-28); rollover.apply_prior_week_totals now
+    # re-derives them every week, and this is the tripwire if anything else
+    # (a hand paste, a skipped roll) knocks them out again.
+    logfn("  --- PRIOR-WEEK COLUMNS, SELF-CHECK (report-only, does NOT gate) ---")
+    try:
+        _pw = rollover.check_prior_week_totals(cS)
+        if _pw:
+            logfn(f"  ⚠ {len(_pw)} prior-week cell(s) disagree with the "
+                  f"'Last Week Totals' rule (K = the week below, L = two below):")
+            for _nm, _a1, _lab, _w, _got, _want in _pw[:20]:
+                logfn(f"      [{_nm}] {_a1} {_lab} {_w}: {_got!r} should be {_want!r}")
+            if len(_pw) > 20:
+                logfn(f"      …and {len(_pw) - 20} more")
+            logfn("      fix: python output/org_board_prior_week_repair.py --apply")
+        else:
+            logfn("  ✅ every 'Last Week Totals' / 'Previous Week Totals' cell "
+                  "matches its week row.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ prior-week self-check skipped ({str(e)[:60]})")
+
+    # Captainship leaderboard TOTALS rows — is each one's frozen history still
+    # under the right week header? REPORT-ONLY. The totals line was excluded
+    # from the rollover's shift (CaptainAnchor.leaderboard stops AT it), so it
+    # slid one column further behind every week while its live col-C '=SUM'
+    # kept the open week looking right — 2 columns off on 17 of 18 boxes before
+    # anyone noticed (Eve 2026-07-28).
+    logfn("  --- LEADERBOARD TOTALS ALIGNMENT (report-only, does NOT gate) ---")
+    try:
+        from automations.org_sales_board import leaderboard_totals_repair as _lt
+        _off = [b for b in _lt.find_boxes(cS, cU) if b["offset"]]
+        if _off:
+            logfn(f"  ⚠ {len(_off)} leaderboard TOTALS row(s) sitting under the "
+                  f"wrong week column:")
+            for b in _off:
+                logfn(f"      {b['title']} r{b['totals_row']}: "
+                      f"off by {b['offset']} column(s)")
+            logfn("      fix: python -m automations.org_sales_board."
+                  "leaderboard_totals_repair --apply")
+        else:
+            logfn("  ✅ every leaderboard TOTALS row lines up with its week header.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ leaderboard TOTALS alignment check skipped ({str(e)[:60]})")
     return {"concerning": concerning, "benign_count": benign,
             "frozen": frozen, "other": other, "clean": clean,
             "touched": touched, "gated": gated}

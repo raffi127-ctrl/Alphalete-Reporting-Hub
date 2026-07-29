@@ -363,6 +363,24 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
         for _variant, a in boxes:
             hdr_row = a.leaderboard[0][0] - 2
             lb_rows = [r for r, _ in a.leaderboard]
+            # …PLUS the box's own 'TOTALS' row. CaptainAnchor.leaderboard stops
+            # AT that row (it's the terminator, never a member), so shifting only
+            # a.leaderboard left the totals line standing still while every rep
+            # row moved: its col-C '=SUM' kept the open week right, but its
+            # frozen D.. history drifted one column further behind every week —
+            # 2 columns off on 17 of 18 boxes by 2026-07-28, so the column
+            # labelled 'WE 07.26' was showing WE 07.12's total (Eve). Col C is
+            # never written (see plan_captainship_leaderboard_rollover), so the
+            # =SUM survives the shift.
+            _tot = next((r for r in range(max(lb_rows) + 1,
+                                          min(max(lb_rows) + 5, len(grid) + 1))
+                         if _cell(grid, r - 1, 0).upper().startswith("TOTAL")),
+                        None)
+            if _tot:
+                lb_rows.append(_tot)
+            else:
+                logfn(f"      ⚠ {title}: no leaderboard TOTALS row below "
+                      f"row {max(lb_rows)} — its history will not shift")
             last_col = max((c + 1 for c in range(2, len(grid[hdr_row - 1]))
                             if (grid[hdr_row - 1][c] or "").strip()), default=16)
             upd, _ = plan_captainship_leaderboard_rollover(
@@ -433,6 +451,20 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     # row numbers in `grid` are now stale — re-read before the daily clear and
     # the date-anchor step, both of which locate their rows by this grid.
     grid = ws.get_all_values()
+
+    # 3e. Prior-week columns ("LAST WEEK'S TOTALS" / "PREVIOUS WEEK'S TOTALS").
+    # The row shift above carries these down correctly on its own, but nothing
+    # seeded the TOP of each stack, so 'Totals'!K/L sat frozen at whatever the
+    # VA last typed by hand — 2 weeks stale on all 26 blocks when Eve caught it
+    # (2026-07-28), and shown in the emailed board. Re-deriving the whole stack
+    # from the rule is idempotent, so this also self-heals a missed week.
+    # MUST run AFTER 3b/3c/3d (it reads the just-frozen week totals) and it
+    # never reads the live 'Totals' col-J, so the daily clear below is
+    # unaffected either way.
+    apply_prior_week_totals(ws, grid, dry_run=dry_run, logfn=logfn)
+    summary["prior_week_blocks"] = len(find_week_stacks(grid))
+    logfn(f"  3e/5 prior-week columns re-derived on "
+          f"{summary['prior_week_blocks']} block(s)")
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
@@ -670,6 +702,176 @@ def apply_delta_lastweek(ws, today: Optional[dt.date] = None,
 
 _ORG_WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday",
                  "friday", "saturday", "sunday"}
+
+
+# --------------------------------------------------------------------------
+# "LAST WEEK'S TOTALS" / "PREVIOUS WEEK'S TOTALS" (cols K/L) — the prior-week
+# columns that sit to the right of RUNNING WEEK TOTALS on every daily chart.
+# --------------------------------------------------------------------------
+# ONE rule governs them, confirmed against ~2 years of untouched captainship
+# week-log history (Eve 2026-07-28): for ANY row of a block's week stack,
+#     K = the RUNNING-WEEK-TOTAL (col J) of the row ONE week older, and
+#     L = the col-J of the row TWO weeks older.
+# The 'Totals' row is just the top of that stack (its "one week older" is the
+# just-closed week), so it needs no special case.
+#
+# The rollover's row shift CARRIES K/L down correctly all by itself — a row
+# that satisfied the rule still satisfies it one position lower, because its
+# two source weeks move down with it. The ONE thing the shift cannot do is
+# seed the TOP of the stack, and that was never ported from the VA's manual
+# process: 'Totals'!K/L were left frozen at whatever a human last typed, so
+# the "Last Week Totals" COLUMN drifted away from the "Last Week" ROW — 2
+# rollovers stale on all 26 blocks by 2026-07-28, and visible in the emailed
+# board (screenshot_email crops through col L).
+#
+# A cell is written ONLY when its source row exists in the stack, so the
+# bottom rows — whose source weeks have already fallen off the block — keep
+# the values the shift correctly handed them instead of being blanked.
+
+_K_HDR = "LAST WEEK'S TOTALS"
+_L_HDR = "PREVIOUS WEEK'S TOTALS"
+_J_HDR = "RUNNING WEEK TOTALS"
+_HIST_ROW_LABELS = ("last week", "prior week", "2 weeks prior", "3 weeks prior")
+
+
+def find_week_stacks(grid: List[List[str]]) -> List[dict]:
+    """Every block carrying the prior-week columns, with its ordered week
+    stack (newest first). Works for BOTH block shapes:
+      • daily-section blocks — 'Totals' + the 4 'Last Week'…'3 Weeks Prior' rows
+      • captainship blocks   — 'Totals' + the dated 'WE m.d' week-log
+    Everything is located by HEADER LABEL / ROW LABEL, never by index
+    ([[feedback_no_hardcoded_columns]]).
+
+    The stack STOPS at the first LABELLED row that is not a week row (blank
+    spacer rows inside a week-log are tolerated). A block's region runs all the
+    way to the next prior-week header, which sweeps past the following box's
+    leaderboard 'TOTALS' row — and, for the LAST block on the board, past the
+    'X ORG - Current vs Prior Weeks' summaries whose own 'Last Week' / 'Prior
+    Week' rows would otherwise be pulled into the stack and get K/L written
+    into columns those blocks do not even have (Eve 2026-07-28).
+    Returns dicts {name, header_row, j, k, l, stack:[(row, label)]} (1-based
+    rows, 1-based cols)."""
+    n = len(grid)
+    hdr_rows = [r for r in range(n)
+                if any(_cell(grid, r, c).upper() == _K_HDR
+                       for c in range(len(grid[r])))]
+    out: List[dict] = []
+    for hi, hr in enumerate(hdr_rows):
+        end = hdr_rows[hi + 1] if hi + 1 < len(hdr_rows) else n
+        def _col(label):
+            return next((c + 1 for c in range(len(grid[hr]))
+                         if _cell(grid, hr, c).upper() == label), None)
+        j, k, l = _col(_J_HDR), _col(_K_HDR), _col(_L_HDR)
+        if not (j and k and l):
+            continue
+        stack: List[Tuple[int, str]] = []
+        for r in range(hr + 1, end):
+            lab = (_cell(grid, r, 0) or _cell(grid, r, 1)).strip()
+            low = lab.lower()
+            is_totals = low in ("totals", "total")
+            is_week = low in _HIST_ROW_LABELS or bool(_WE_ROW_RE.match(lab))
+            if not stack:
+                if is_totals:
+                    stack.append((r + 1, lab))
+                continue
+            if is_week:
+                stack.append((r + 1, lab))
+            elif lab:
+                break                    # a new labelled table — the stack ends
+        if len(stack) >= 2:
+            out.append({"name": _cell(grid, hr, 0) or _cell(grid, hr, 1),
+                        "header_row": hr + 1, "j": j, "k": k, "l": l,
+                        "stack": stack})
+    return out
+
+
+def plan_prior_week_totals(ws, blocks: List[dict], extra=None) -> List[dict]:
+    """Build the K/L writes for `blocks` (from find_week_stacks).
+
+    col-J totals are read UNFORMATTED — the displayed text carries thousands
+    separators ('1,199') on some rows, and writing that back as a string would
+    turn a number into text.
+
+    `extra` optionally supplies a value for a stack's missing older weeks, as
+    {header_row: [week_after_last, week_after_that]} — used by the one-off
+    repair to reach a week recovered from the VA tab. Without it, a cell whose
+    source row is off the block is simply NOT written.
+    Read-only until applied."""
+    extra = extra or {}
+    updates: List[dict] = []
+    for b in blocks:
+        stack = b["stack"]
+        rng = (f"{a1col(b['j'])}{stack[0][0]}:"
+               f"{a1col(b['j'])}{stack[-1][0]}")
+        got = ws.get(rng, value_render_option="UNFORMATTED_VALUE") or []
+        span = stack[-1][0] - stack[0][0] + 1
+        flat = [(row[0] if row else "") for row in got] + [""] * span
+        jval = {stack[0][0] + i: flat[i] for i in range(span)}
+        tail = list(extra.get(b["header_row"], []))
+        # totals for [one week older, two weeks older] of each stack row
+        def older(i, step):
+            if i + step < len(stack):
+                return jval.get(stack[i + step][0], "")
+            t = i + step - len(stack)                 # 0,1 -> the extra weeks
+            return tail[t] if t < len(tail) else None
+        for i, (row, _lab) in enumerate(stack):
+            for col, step in ((b["k"], 1), (b["l"], 2)):
+                v = older(i, step)
+                if v is None:                         # off the block — leave be
+                    continue
+                updates.append({"range": f"{a1col(col)}{row}", "values": [[v]]})
+    return updates
+
+
+def check_prior_week_totals(grid: List[List[str]]) -> List[tuple]:
+    """SELF-consistency check of the prior-week columns — no Sheet reads, no VA
+    tab. Returns [(block, a1, row_label, which, found, expected)] for every cell
+    that disagrees with the rule.
+
+    This is the guard that would have caught the original drift: a copy-vs-VA
+    comparison cannot, because the VA's own daily-section history rows carry the
+    same defect, and the compare deliberately stops gating on these frozen
+    columns (66c5720). Checking the board against ITSELF needs neither."""
+    bad: List[tuple] = []
+    for b in find_week_stacks(grid):
+        st = b["stack"]
+        jv = {r: _cell(grid, r - 1, b["j"] - 1).replace(",", "")
+              for r, _l in st}
+        for i, (row, lab) in enumerate(st):
+            for col, step, which in ((b["k"], 1, "K"), (b["l"], 2, "L")):
+                if i + step >= len(st):
+                    continue          # source week is off the block — not a bug
+                got = _cell(grid, row - 1, col - 1).replace(",", "")
+                want = jv[st[i + step][0]]
+                if got != want:
+                    bad.append((b["name"], f"{a1col(col)}{row}", lab, which,
+                                got, want))
+    return bad
+
+
+def apply_prior_week_totals(ws, grid=None, extra=None, dry_run: bool = False,
+                            logfn=print) -> List[dict]:
+    """Re-derive every block's 'LAST WEEK'S TOTALS' / 'PREVIOUS WEEK'S TOTALS'
+    from the rule above. Idempotent — a board already consistent produces the
+    same values, so this is safe to call on every rollover."""
+    grid = ws.get_all_values() if grid is None else grid
+    blocks = find_week_stacks(grid)
+    updates = plan_prior_week_totals(ws, blocks, extra=extra)
+    changed = 0
+    for b in blocks:
+        for row, _lab in b["stack"]:
+            for col in (b["k"], b["l"]):
+                cur = _cell(grid, row - 1, col - 1)
+                new = next((str(u["values"][0][0]) for u in updates
+                            if u["range"] == f"{a1col(col)}{row}"), None)
+                if new is not None and cur.replace(",", "") != new:
+                    changed += 1
+    logfn(f"  prior-week columns: {len(blocks)} block(s), {len(updates)} cell(s) "
+          f"derived, {changed} differ from the sheet"
+          f"{' [dry-run]' if dry_run else ''}")
+    if updates and not dry_run:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return updates
 
 
 def find_org_history_tables(grid: List[List[str]]) -> List[dict]:
