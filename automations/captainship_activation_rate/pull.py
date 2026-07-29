@@ -124,8 +124,15 @@ def _pct(cell: str) -> str:
     return v if _PCT_RE.match(v) else ""
 
 
-def parse(csv_path: Path, team_value: Optional[str] = None) -> dict:
+def parse(csv_path: Path, team_value: Optional[str] = None,
+          box_columns: Optional[dict] = None) -> dict:
     """Slice the crosstab to one captainship.
+
+    `box_columns` ({box key: crosstab column header}) defaults to this
+    report's two activation columns. Sibling reports off the SAME Metrics
+    crosstab (captainship_abp_6days) pass their own pair rather than fork this
+    function — the owner-subtotal rule below is the delicate part and must have
+    exactly one implementation.
 
     Returns {"office_total": {box: {"pct": str}},
              "reps": {"Owner Name": {box: {"pct": str}}}} — the same shape the
@@ -136,6 +143,7 @@ def parse(csv_path: Path, team_value: Optional[str] = None) -> dict:
     rate is not the mean of its owners' rates), so averaging the owner cells
     would be wrong. team_value=None returns the country `Grand Total` instead.
     """
+    box_columns = box_columns or BOX_COLUMNS
     rows = _read_crosstab(csv_path)
     if not rows:
         return {"office_total": {}, "reps": {}}
@@ -144,13 +152,13 @@ def parse(csv_path: Path, team_value: Optional[str] = None) -> dict:
     team_i = header.index(TEAM_COL)
     owner_i = header.index(OWNER_COL)
     rep_i = header.index(REP_COL) if REP_COL in header else None
-    missing = [c for c in BOX_COLUMNS.values() if c not in header]
+    missing = [c for c in box_columns.values() if c not in header]
     if missing:
         raise ValueError(
             f"Metrics crosstab is missing column(s) {missing}. Columns present: "
             f"{header}. A Tableau rename here also breaks country_metrics."
         )
-    box_i = {b: header.index(c) for b, c in BOX_COLUMNS.items()}
+    box_i = {b: header.index(c) for b, c in box_columns.items()}
 
     office_total: dict = {}
     reps: dict = {}

@@ -3369,6 +3369,68 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-abp-6days",
+        "name": "Captainship ABP & 6 Days Out (per-captain)",
+        "creator": "Eve",
+        "emoji": "📐",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Daily ABP % and % of ongoing 6+ days out sales on each fiber captain's tab of the 'Captainship Metrics Report - ABP and 6 days out' sheet — Wayne / Starr / Chan / Tony / Sahil. Two boxes per tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Adds one dated column per day to both boxes on every fiber "
+            "captain's tab — the Captainship Avg plus a row per ICD "
+            "owner.\n\n"
+            "TABS FILLED\n"
+            "• ABP & 6 days out - Wayne (ATT Fiber)\n"
+            "• ABP & 6 days out - Starr (ATT Fiber)\n"
+            "• ABP & 6 days out - Chan (ATT Fiber)\n"
+            "• ABP & 6 days out - Tony (ATT Fiber)\n"
+            "• ABP & 6 days out - Sahil (ATT Fiber)\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "Tableau → ATTTRACKER2_1-D2D → Metrics view → worksheet "
+            "'Metrics Call Last week data (Internet)', filtered by "
+            "Captain's Bonus Teams.\n"
+            "• Box 'ABP %' → column 'New Internet ABP Mix % (Metrics)'\n"
+            "• Box '% of Ongoing 6+ Days Sales' → column '% of sales "
+            "scheduled 6+ days out (4 wks)'. That is the percentage "
+            "Tableau shows in the TOOLTIP of the visible 6+-days count "
+            "column — tooltip measures ship in the crosstab export, so no "
+            "hovering is needed. It cannot be derived from the count.\n"
+            "• Captainship Avg → that team's own 'Total' row (never an "
+            "average of the owner cells — these are rates over different "
+            "denominators).\n\n"
+            "ONE PULL, EVERY TAB\n"
+            "The Metrics crosstab is already grouped by captainship, so "
+            "the run downloads it once and slices it per captain.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, right after the other per-captain metrics."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1XlHdh3OIQYmyY7VGTZWc-OK-rIlz6ClomLULyR5I0y0/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Captainship ABP & 6 Days Out done — today's column added to both boxes on all 5 fiber tabs.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Captainship ABP & 6 Days Out",
+                "icon": "▶",
+                "primary": True,
+                "help": "One Metrics crosstab pull, sliced per captainship, then fills the ABP % and 6+-days-out boxes on all 5 tabs (refreshes today's column in place if it's already open — pass --force-insert in CLI to add another).",
+                "module": "automations.captainship_abp_6days.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "ongoing-1st-round-recruiter-retention",
         "name": "Ongoing 1st Round Recruiter Retention",
         "creator": "Megan",
