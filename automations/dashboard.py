@@ -11361,6 +11361,10 @@ else:  # st.session_state.view == "user"
             "[class*='promo_checkin__calstat_progress'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important;opacity:1!important;animation:none!important}"
             # DD Gross Revenue — in testing → pink pill. (Megan 2026-07-28)
             "[class*='dd_gross_revenue__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            # OAT Daily Scorecard — in testing → pink pill. (Megan 2026-07-28)
+            "[class*='oat_summary__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            # OAT Processing — in testing → pink pill. (Megan 2026-07-28)
+            "[class*='oat_processing__calstat'] button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
