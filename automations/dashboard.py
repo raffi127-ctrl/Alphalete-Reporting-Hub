@@ -11338,18 +11338,10 @@ else:  # st.session_state.view == "user"
             "[class*='org-sales-board__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)
             "[class*='country-sales-board-slack__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            # Car-Rides Cleanup — 9 morning passes (8:30–11:15). Flip a clean
-            # solid brand color on each pass (hard-stop, no muddy blend) so the multi-pass
-            # cadence reads at a glance. (Megan 2026-07-28)
-            "@keyframes passhue{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(300deg)}}"
-            "[class*='car_rides__calstat'] button{background:#E8792B!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passhue 9s steps(6) infinite!important}"
-            # Sales Board Fill — many hourly passes (4–9pm) + a 5am sweep; give it
-            # the same stepped per-pass color pill so the multi-pass
-            # cadence reads at a glance. (Megan 2026-07-28)
-            "[class*='vantura-slack-sales__calstat'] button{background:#E8792B!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passhue 9s steps(6) infinite!important}"
-            # New-Start Follow-Up — multi-pass (Sat 8am + 1pm, Sun 1pm) → same
-            # stepped per-pass color pill. (Megan 2026-07-28)
-            "[class*='new-start-followup__calstat'] button{background:#E8792B!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passhue 9s steps(6) infinite!important}"
+            # Car-Rides Cleanup / Sales Board Fill / New-Start Follow-Up are
+            # multi-pass. NO custom pill — they use the default phase pill:
+            # colorless at rest, YELLOW while a pass is in progress, GREEN when
+            # the day's passes finish (same as the other phase cards). (Megan 2026-07-28)
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
             "[class*='override-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
