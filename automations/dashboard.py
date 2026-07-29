@@ -1268,7 +1268,7 @@ def _office_metrics_card() -> dict:
         if not (ch in _seen or _seen.add(ch)))
     return {
         "id": "office-metrics",
-        "name": "Office Daily Metrics",
+        "name": "D2D Office Daily Metrics",
         "creator": "Megan",
         "emoji": "📈",
         "color": "#8B5CF6",
@@ -1300,12 +1300,7 @@ def _office_metrics_card() -> dict:
             "• 💳 New Internet ABP %\n"
             "• 📸 Tableau Metrics (screenshot of the ATT TRACKER Metrics view, scoped to the office)\n\n"
             "WHEN IT RUNS\n"
-            "Daily in the 4am batch, each office in turn.\n\n"
-            "ABOUT THE TABLEAU SCREENSHOT\n"
-            "The first office to run captures EVERY office's shot in one Tableau "
-            "login and caches them for the day; the rest just post their image "
-            "from that cache. So the shot costs one login for the whole batch, "
-            "not one per office."),
+            "Daily in the 4am batch, each office in turn."),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
