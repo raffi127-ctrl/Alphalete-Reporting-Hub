@@ -459,6 +459,16 @@ def form_view() -> None:
     enrolled = [S.EnrolledReport(key=rk.key, order=order)
                 for rk, order in sorted(picked, key=lambda t: t[1])]
 
+    # Box Order Log has NO shared per-office data source (it pulls Carlos's energy
+    # view, `CarlosOrderLog`, which isn't owner-filterable) — so it can't auto-wire
+    # for a new office like every other metric. Flag it so it's never a silent gap:
+    # everything else posts automatically; Box needs a manual setup (or drop it).
+    if any(er.key == "b2b_order_log_box" for er in enrolled):
+        st.warning("📦 **Box Order Log won't auto-wire** — it's built only from "
+                   "Carlos's energy report and has no shared per-office source. "
+                   "Every other metric here posts automatically; Box needs a manual "
+                   "setup on our end (or uncheck it above).")
+
     # ---- 6. Owner welcome email ------------------------------------------
     st.divider()
     st.markdown("### 6. Owner welcome email")
