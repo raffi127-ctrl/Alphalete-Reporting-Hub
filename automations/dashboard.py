@@ -3738,7 +3738,8 @@ AUTOMATED_REPORTS = [
             "Frontier legitimately lag a day and the board still posts."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=388012799#gid=388012799"),
         "assignees": ["Lucy 1"],
         # Runs on the mini — that's where Lucy's Slack token lives. A play from
         # any machine routes there (a laptop run would post as Megan, not Lucy).
@@ -3964,7 +3965,8 @@ AUTOMATED_REPORTS = [
             "It **refuses to send** while any number on the page is known wrong."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=423082205#gid=423082205"),
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
         "run_rerun_id": "dd_bulletin",
@@ -4088,20 +4090,13 @@ AUTOMATED_REPORTS = [
         "description": "Posts the weekly office P&L summary (Total Loss – Reps, Total Loss – Other, Total Profit, Gross Profit) to #top-leaders-alphalete-org and #alphalete-lvl1-chat as Lucy, for the previous fully completed week.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Opens the **Raf PNL 2026** tab and finds the **previous "
-            "fully completed week** by its WE date header.\n"
-            "**•** Crops the 4 summary rows — **Total Loss – Reps**, **Total "
-            "Loss – Other**, **Total Profit**, **Gross Profit** — found by "
-            "row label, so a template change can't shift it.\n"
-            "**•** Posts that exact-sheet image to **#top-leaders-alphalete-org** "
-            "and **#alphalete-lvl1-chat** as Lucy.\n"
-            "**•** Posts **once per week**; later passes do nothing.\n\n"
+            "Posts a screenshot of the office **P&L summary** (Total Loss – "
+            "Reps, Total Loss – Other, Total Profit, and the TOTAL) for the "
+            "previous completed week to **#top-leaders-alphalete-org** and "
+            "**#alphalete-lvl1-chat** as Lucy. Once per week.\n\n"
             "WHEN IT RUNS\n"
-            "**Fridays at 10:00am CST**, retrying every 25 min until the week's "
-            "numbers are in.\n\n"
-            "SAFETY GATE\n"
-            "Holds while the target week's column is still all $0.00 (not yet "
-            "filled in), so it never posts an empty P&L."
+            "**Fridays 10am CST** — it holds and retries until the week's "
+            "numbers are in, so it never posts an empty P&L."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
@@ -4129,14 +4124,6 @@ AUTOMATED_REPORTS = [
                 "help": "Builds the previous completed week's P&L image and POSTS it to both channels as Lucy.",
                 "module": "automations.pnl_office.run",
                 "args_fn": lambda: ["--post"],
-            },
-            {
-                "label": "Preview (no post)",
-                "icon": "👁",
-                "primary": False,
-                "help": "Builds the image and lists the channels it would go to. Posts nothing.",
-                "module": "automations.pnl_office.run",
-                "args_fn": lambda: [],
             },
         ],
     },
@@ -4230,7 +4217,8 @@ AUTOMATED_REPORTS = [
             "shows the right week, and never double-posts."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"
+                      "?gid=1898586497#gid=1898586497"),
         # Lucy 2 (Carlos's machine — #alphalete-gp-sales is his channel). The
         # Lucy Slack token was installed + verified there 2026-07-18, so the
         # earlier "runs on Lucy 1, no token" workaround is retired.
