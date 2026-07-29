@@ -631,6 +631,27 @@
       "timeout_minutes": 15,
       "verify": null
     },
+    "install_org_board_email_review_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_email_review_agent` can install/refresh the STANDALONE com.alphalete.org-board-email-review LaunchAgent on the mini — the approval half of the Org Sales Board email review gate. Fires every 15 min (StartInterval); deploy/org_board_email_review.sh gates the 9am-8pm window, asks Slack whether an approver checkmarked the day's review post, and mails the reviewed images when one has. Sends NOTHING on its own — no checkmark, no email. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Org Sales Board email review agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "org-board-email-review"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "install_org_board_slack_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_slack_agent` can install/refresh the STANDALONE com.alphalete.org-board-slack LaunchAgent on the mini, which posts the Org Sales Board to #top-leaders-alphalete-org daily 9:00-11:55 CST (8 passes q25m, gated) via deploy/org_board_slack.sh (--post = LIVE). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
@@ -1605,16 +1626,19 @@
     "org_sales_board_email": {
       "order": 9,
       "on_scheduler": true,
-      "_note": "BACK ON, DELAYED + DATA-GATED (Eve 2026-07-29). History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed the automation to Eve. Eve turned it back on with two changes, so the email can never go out ahead of the numbers: (1) not_before 09:30 \u2014 the old 6-7am send raced the VAs' keying and the 9:00 org_board_slack pass that refreshes day-behind Retail JE; (2) data_sources 'sheet:org_board_yesterday', a readiness probe (readiness._probe_org_board_filled -> org_sales_board.data_gate) that reads the copy tab and holds the report PENDING until YESTERDAY's column is filled for every daily section except the known day-behind ones (Retail JE, Frontier), then opens at 11:30 regardless (before the 12:00 orchestrator backstop) so a section that never publishes cannot cost us the day's email. Gating in READINESS, not in the module's exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. screenshot_email runs the same gate again right before it sends, so a manual/Hub run is protected too. RECIPIENTS UNCHANGED: base_args stays '' = the proving list (Rafael + Megan); going to the real distro is a separate call \u2014 set base_args '--distro' then. depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
-      "display_name": "Org. Sales Board Email",
+      "_note": "BACK ON, DELAYED, DATA-GATED, AND NOW REVIEW-GATED (Eve 2026-07-29). This entry no longer sends anything: it runs review_gate --post, which builds the day's preview, prints it to PDF, drops it in Drive and posts the link in #revision-emails AS LUCY (the mini's token). The email goes out only when Lucy or Evelyn puts a checkmark on that post \u2014 picked up within 15 min by the com.alphalete.org-board-email-review LaunchAgent (deploy/org_board_email_review.sh, 9am-8pm), which mails the images ALREADY captured, from the run's manifest, so what was approved is what goes out. Same review habit as the captainship drafts, deliberately. History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed it to Eve, who turned it back on with three gates instead of one. (1) not_before 09:30 \u2014 the old 6-7am send raced the VAs' keying and the 9:00 org_board_slack pass that refreshes day-behind Retail JE. (2) data_sources 'sheet:org_board_yesterday', a readiness probe (readiness._probe_org_board_filled -> org_sales_board.data_gate) holding the report PENDING until YESTERDAY's column is filled for every daily section except the known day-behind ones (Retail JE, Frontier), opening at 11:30 regardless (before the 12:00 orchestrator backstop) so a section that never publishes cannot cost us the day's email. Gating in READINESS, not in an exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. (3) the human checkmark. RECIPIENTS UNCHANGED: the proving list (Rafael + Megan); the real distro is a separate call \u2014 add '--distro' to the CHECKER's args in deploy/org_board_email_review.sh, not here. depends_on org_sales_board so it only runs AFTER the fill is DONE. source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
+
+      "display_name": "Org. Sales Board Email (a revisión)",
       "source_type": "tableau",
       "data_sources": [
         "sheet:org_board_yesterday"
       ],
       "command": [
-        "automations.org_sales_board.screenshot_email"
+        "automations.org_sales_board.review_gate"
       ],
-      "base_args": [],
+      "base_args": [
+        "--post"
+      ],
       "cadence": {
         "not_before": "09:30",
         "_note": "Monday (0) EXCLUDED (Megan 2026-07-13): last week's Sunday lands in the sources only through Monday afternoon, so a morning email undercounts. On Mondays the board+email run in the afternoon via board_catchup.sh instead. Tue-Sun email in the morning batch as usual.",

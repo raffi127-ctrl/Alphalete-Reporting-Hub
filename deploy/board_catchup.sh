@@ -67,13 +67,14 @@ if [ "$(date +%u)" = "1" ]; then
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships --skip-compare "$@" >> "$LOG_FILE" 2>&1
   ST=$?
   # Board email: stopped 2026-07-28 (Megan, handed to Eve), BACK ON 2026-07-29 (Eve)
-  # alongside the Tue-Sun morning path (org_sales_board_email on_scheduler true,
-  # not_before 09:30). Recipients are still the proving list (Rafael + Megan) — this
-  # line does NOT go to the real distro. screenshot_email's own data gate decides
-  # whether to send; this run is well past the 11:30 send-anyway hour, so Monday
-  # goes out with whatever the afternoon fill just landed.
-  echo "[$(date)] MONDAY: sending the board email (fill exit $ST)" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
+  # alongside the Tue-Sun morning path — but it does NOT send from here. Monday's
+  # email goes through the same review gate as every other day: this posts the
+  # preview to #revision-emails, and the com.alphalete.org-board-email-review
+  # agent (every 15 min to 8pm) mails it once an approver checkmarks it. Monday
+  # is the day the board is least finished, so it is the last day that should
+  # mail itself unattended. Recipients stay the proving list (Rafael + Megan).
+  echo "[$(date)] MONDAY: posting the board email for review (fill exit $ST)" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.org_sales_board.review_gate --post >> "$LOG_FILE" 2>&1
   # Captainship Report drafts: REMOVED 2026-07-28 (Eve). This used to build them
   # live here on Monday (creating 12 Gmail drafts), which was the last thing about
   # the Captainship Reports that touched Gmail without a human asking. They are now

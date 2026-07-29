@@ -30,7 +30,7 @@ import sys
 from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import requests
 from google.auth.transport.requests import Request as _GARequest
@@ -493,6 +493,57 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     return msg
 
 
+def out_dir_for(day: dt.date) -> Path:
+    return Path("output") / "sales_board_shots" / day.isoformat()
+
+
+def _write_manifest(out_dir: Path, images: List[Tuple[str, Path]]) -> Path:
+    """Record the ORDER the images go in the email. --send-reviewed mails these
+    exact files rather than re-capturing: what was approved is what goes out,
+    even if the board moved between the review post and the checkmark."""
+    import json
+    p = out_dir / "manifest.json"
+    p.write_text(json.dumps([{"name": n, "file": Path(f).name} for n, f in images],
+                            indent=2), encoding="utf-8")
+    return p
+
+
+def reviewed_images(day: dt.date) -> List[Tuple[str, Path]]:
+    """The day's captured images, in email order, from the manifest."""
+    import json
+    out_dir = out_dir_for(day)
+    man = out_dir / "manifest.json"
+    if not man.exists():
+        raise RuntimeError(
+            f"no manifest in {out_dir} — nothing was captured for "
+            f"{day:%Y-%m-%d}. Build the preview first (--dry-run).")
+    rows = json.loads(man.read_text(encoding="utf-8"))
+    images = [(r["name"], out_dir / r["file"]) for r in rows]
+    missing = [str(p) for _n, p in images if not p.exists()]
+    if missing:
+        raise RuntimeError(f"manifest lists files that are gone: {missing}")
+    return images
+
+
+def preview_html(msg: EmailMessage) -> str:
+    """The email as ONE self-contained HTML string — every inline cid: image
+    swapped for a data: URI. Used for the on-disk preview and, through it, for
+    the PDF the reviewers approve, so what they see is the built email itself
+    and not a second rendering of the same data."""
+    import base64
+    body = msg.get_body(preferencelist=("html",))
+    html = body.get_content()
+    for part in msg.walk():
+        cid = (part.get("Content-ID") or "").strip("<>")
+        if cid and part.get_content_maintype() == "image":
+            b64 = base64.b64encode(part.get_payload(decode=True)).decode()
+            html = html.replace(
+                f"cid:{cid}", f"data:{part.get_content_type()};base64,{b64}")
+    return ("<!doctype html><meta charset='utf-8'>"
+            f"<title>{msg['Subject']}</title>"
+            f"<body style='margin:24px;background:#fff'>{html}</body>")
+
+
 def send(msg: EmailMessage) -> None:
     # certifi's CA bundle — the python.org macOS build ships without system CAs,
     # so a default context fails SSL verification (works on the mini either way).
@@ -538,7 +589,35 @@ def main(argv=None) -> int:
                          "the People API (needs contacts_auth authorized)")
     ap.add_argument("--force", action="store_true",
                     help="skip the board-fill-complete guard (manual/laptop testing)")
+    ap.add_argument("--send-reviewed", action="store_true",
+                    help="mail the images ALREADY captured for --date (from the "
+                         "manifest) — no re-capture. What was approved is what "
+                         "goes out. This is what the review gate calls.")
+    ap.add_argument("--date", default=None,
+                    help="run date (default today). With --send-reviewed, which "
+                         "day's captured images to mail.")
     a = ap.parse_args(argv)
+    today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
+
+    # --- the approved path: mail exactly what was reviewed, rebuild nothing ---
+    if a.send_reviewed:
+        images = reviewed_images(today)
+        print(f"[screenshot_email] mailing {len(images)} reviewed image(s) from "
+              f"{out_dir_for(today)}", flush=True)
+        to = _recipients(a)
+        if to is None:
+            return 2
+        msg = build_email(images, to, today - dt.timedelta(days=1))
+        if a.dry_run:
+            print(f"[screenshot_email] DRY-RUN — not sent. Would go to: {to}",
+                  flush=True)
+            print("=== done (dry-run) ===", flush=True)
+            return 0
+        send(msg)
+        print(f"[screenshot_email] sent to {to}", flush=True)
+        _publish_sent()
+        print("=== done ===", flush=True)
+        return 0
 
     # GUARD: never email a partial board on the AUTOMATED run. Only a DATA-COMPLETE
     # fill is safe (clean, or INCOMPLETE only from VA-compare notes). A missing
@@ -572,57 +651,72 @@ def main(argv=None) -> int:
               f"{data_gate.SEND_ANYWAY_AFTER}). (--force overrides.)", flush=True)
         return 2
 
-    out_dir = Path("output") / "sales_board_shots" / dt.date.today().isoformat()
+    out_dir = out_dir_for(today)
     images = capture(out_dir)
+    _write_manifest(out_dir, images)
     print(f"[screenshot_email] saved: {[str(p) for _n, p in images]}", flush=True)
 
+    to = _recipients(a)
+    if to is None:
+        return 2
+    # Subject carries YESTERDAY — the day the board's numbers are for.
+    msg = build_email(images, to, today - dt.timedelta(days=1))
+
+    if a.dry_run:
+        eml = out_dir / "preview.eml"
+        eml.write_bytes(bytes(msg))
+        html = out_dir / "preview.html"
+        html.write_text(preview_html(msg), encoding="utf-8")
+        print(f"[screenshot_email] DRY-RUN — not sent. Recipients would be: {to}\n"
+              f"  email written to {eml}\n"
+              f"  openable preview  {html}", flush=True)
+        print("=== done (dry-run) ===", flush=True)   # Hub success sentinel
+        return 0
+    send(msg)
+    print(f"[screenshot_email] sent to {to}", flush=True)
+    _publish_sent()
+    print("=== done ===", flush=True)                 # Hub reads this as success
+    return 0
+
+
+def _recipients(a) -> Optional[List[str]]:
+    """Resolve the recipient list from the flags. None = refuse to send (the
+    caller returns 2) — an under-sent distro is worse than no email."""
     if a.to:
-        to = [x.strip() for x in a.to.split(",") if x.strip()]
-    elif a.distro:
+        return [x.strip() for x in a.to.split(",") if x.strip()]
+    if a.distro:
         from automations.shared.contacts_auth import expand_groups
         to, missing = expand_groups(DISTRO_GROUPS)
         if missing:                         # fail loudly — never silently under-send
             print(f"[screenshot_email] NOT SENT — distro group(s) not found: "
                   f"{missing}. Check the names match the contacts groups.", flush=True)
-            return 2
+            return None
         if not to:
             print("[screenshot_email] NOT SENT — distro expanded to 0 addresses.",
                   flush=True)
-            return 2
+            return None
         print(f"[screenshot_email] distro expanded to {len(to)} address(es)", flush=True)
-    elif a.preview:
-        to = PREVIEW_TO
-    else:
-        to = PROVING_TO
-    # Subject carries YESTERDAY — the day the board's numbers are for.
-    msg = build_email(images, to, dt.date.today() - dt.timedelta(days=1))
+        return to
+    return PREVIEW_TO if a.preview else PROVING_TO
 
-    if a.dry_run:
-        eml = out_dir / "preview.eml"
-        eml.write_bytes(bytes(msg))
-        print(f"[screenshot_email] DRY-RUN — not sent. Recipients would be: {to}\n"
-              f"  email written to {eml}", flush=True)
-        print("=== done (dry-run) ===", flush=True)   # Hub success sentinel
-        return 0
-    send(msg)
-    print(f"[screenshot_email] sent to {to}", flush=True)
-    # Tell the Hub the board email ACTUALLY WENT OUT today — from WHATEVER machine
-    # sent it. The card used to reflect only the mini's 4am orchestrator run, so a
-    # morning failure left it red for the rest of the day even after the email had
-    # been sent by hand from another machine (Megan 2026-07-14: "this should go
-    # green if it's been sent for that day — not just the morning run"). The Hub
-    # marks a card run-today off any SUCCESS row on the Hub Activity tab, so
-    # publishing here makes the card tell the truth: sent = green.
-    # A run under the orchestrator / `lucy rerun` also publishes its own row; a
-    # second success row is harmless (the Hub looks for ANY success today).
+
+def _publish_sent() -> None:
+    """Tell the Hub the board email ACTUALLY WENT OUT today — from WHATEVER machine
+    sent it. The card used to reflect only the mini's 4am orchestrator run, so a
+    morning failure left it red for the rest of the day even after the email had
+    been sent by hand from another machine (Megan 2026-07-14: "this should go
+    green if it's been sent for that day — not just the morning run"). The Hub
+    marks a card run-today off any SUCCESS row on the Hub Activity tab, so
+    publishing here makes the card tell the truth: sent = green. Doubly so now
+    that the send is a separate review-gate run from the morning build.
+    A run under the orchestrator / `lucy rerun` also publishes its own row; a
+    second success row is harmless (the Hub looks for ANY success today)."""
     try:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done("org_sales_board_email",
                                  "Org. Sales Board Email", status="success")
     except Exception:  # noqa: BLE001 — the Hub must never fail a delivered email
         pass
-    print("=== done ===", flush=True)                 # Hub reads this as success
-    return 0
 
 
 if __name__ == "__main__":
