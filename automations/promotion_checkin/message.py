@@ -84,6 +84,7 @@ def build_message(week_label, reps_by_team, *, final_call: bool = False,
             {"type": "button", "action_id": C.ACTION_NONE,
              "text": {"type": "plain_text", "text": "No promotions this week"}},
             {"type": "button", "action_id": C.ACTION_REMOVE,
+             "value": "preview" if preview else "live",
              "text": {"type": "plain_text", "text": "✏️ Remove a mistake"}},
         ]},
         {"type": "context", "elements": [{"type": "mrkdwn",
@@ -113,12 +114,15 @@ def confirmation_blocks(week_label, result, *, actor: str = ""):
     return [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
 
 
-def remove_modal(week_label, logged, *, channel: str = "", ts: str = ""):
+def remove_modal(week_label, logged, *, channel: str = "", ts: str = "",
+                 preview: bool = False):
     """A modal listing what OUR office logged this week, to un-log a mistake.
     `logged` = [(rep, recognition)]. private_metadata carries the card's channel+ts
-    so the submission can reply under it."""
+    (so the submission can reply under it) and the preview flag (so a preview card's
+    remove never writes the sheet)."""
     import json
-    pm = json.dumps({"channel": channel, "ts": ts, "week": week_label})
+    pm = json.dumps({"channel": channel, "ts": ts, "week": week_label,
+                     "preview": bool(preview)})
     if not logged:
         return {
             "type": "modal", "callback_id": C.REMOVE_CALLBACK,

@@ -142,12 +142,17 @@ def _open_remove_modal(web, payload):
     ch = (payload.get("channel") or {}).get("id", "")
     ts = (payload.get("message") or {}).get("ts", "")
     week = _week_from_message(payload)
+    # Carry the card's preview stamp into the modal so a preview card's remove
+    # can't clear real rows even with PROMO_WRITE on.
+    clicked = next((a for a in payload.get("actions", [])
+                    if a.get("action_id") == C.ACTION_REMOVE), None)
+    preview = (clicked or {}).get("value") == "preview"
     try:
         logged = R.logged_this_week()
     except Exception as e:                     # noqa: BLE001
         logged = []
         print(f"[promo] logged_this_week failed {type(e).__name__}: {e}", flush=True)
-    view = M.remove_modal(week, logged, channel=ch, ts=ts)
+    view = M.remove_modal(week, logged, channel=ch, ts=ts, preview=preview)
     web.views_open(trigger_id=trigger, view=view)
     return {"remove": "opened", "n_logged": len(logged)}
 
@@ -162,6 +167,8 @@ def handle_remove_submission(web, payload, *, write_sheet=None):
         meta = json.loads(payload.get("view", {}).get("private_metadata") or "{}")
     except Exception:                          # noqa: BLE001
         pass
+    if meta.get("preview"):
+        write_sheet = False                    # a preview card's remove never writes
     actor = (payload.get("user") or {}).get("id", "")
     vals = (payload.get("view", {}).get("state") or {}).get("values") or {}
     picked = []
