@@ -119,6 +119,13 @@ class Office:
     churn_ni_tab: str = ""
     churn_wl_tab: str = ""
     abp_tab: str = ""
+    # Per-channel fan-out. Empty = the office posts ALL its metrics to the single
+    # channel_id above (every existing office — byte-identical). When set, the
+    # office posts each plan to its OWN channel with only that plan's metric slugs
+    # (e.g. cancels-only to a leaders channel). Each element is a dict:
+    #   {"channel_id","channel_name","slugs":[metric-slug,…],"header_label":""}
+    # slugs are ReportKind.key values, which equal the runner's metric slugs.
+    channel_plans: tuple = ()
 
     @property
     def views(self) -> dict:
