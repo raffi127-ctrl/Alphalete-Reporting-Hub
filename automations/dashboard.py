@@ -3930,13 +3930,6 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--real", "--i-mean-it", "--notify"],
             },
             {
-                "label": "Preview (no writes, no DM)",
-                "icon": "👁",
-                "help": "Same read and parse, but prints the planned cells instead of writing them, and sends nothing. Safe any time.",
-                "module": "automations.sci_campaigns.run",
-                "args_fn": lambda: ["--real", "--i-mean-it", "--dry-run"],
-            },
-            {
                 "label": "What's in the inbox?",
                 "icon": "📥",
                 "help": "Lists every tracker week Adriana has sent, the tab column it maps to, and whether it's filled yet.",
