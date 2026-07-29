@@ -11325,31 +11325,31 @@ else:  # st.session_state.view == "user"
             # Org. Sales Board Email is PAUSED (off the scheduler, handed to Eve) —
             # force its pill PURPLE so it reads at a glance as "not running / manual"
             # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
-            "[class*='sales-board-screenshot-email__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            "[class*='sales-board-screenshot-email__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Eve's two per-captain cards (in progress) — force their pills PURPLE
             # so Megan can spot them to revisit with Eve. Two near-identical names:
             # 'Captainship Activations' AND 'Captainship Activation Rate'. (7/28)
-            "[class*='captainship-activations__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            "[class*='captainship-activation-rate__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            "[class*='captainship-activations__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            "[class*='captainship-activation-rate__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Captainship Report Drafts (12) — draft-only (a human sends), so pin
             # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
-            "[class*='captainship-drafts__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            "[class*='captainship-drafts__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Alphalete Org Sales Board (Copy Tab) — purple revisit item. (7/28)
-            "[class*='org-sales-board__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            "[class*='org-sales-board__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)
-            "[class*='country-sales-board-slack__calstat'] button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            # Car-Rides Cleanup — 9 morning passes (8:30–11:15). Give it a shifting
-            # multi-color GRADIENT pill (each pass a color) so the multi-pass
+            "[class*='country-sales-board-slack__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Car-Rides Cleanup — 9 morning passes (8:30–11:15). Flip a clean
+            # solid brand color on each pass (hard-stop, no muddy blend) so the multi-pass
             # cadence reads at a glance. (Megan 2026-07-28)
-            "@keyframes carpass{0%{background-position:0% 50%}100%{background-position:200% 50%}}"
-            "[class*='car_rides__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
+            "@keyframes passjump{from{background-position:0 50%}to{background-position:-2000px 50%}}"
+            "[class*='car_rides__calstat'] button{background:repeating-linear-gradient(90deg,#F59E0B 0 400px,#10B981 400px 800px,#0EA5E9 800px 1200px,#8B5CF6 1200px 1600px,#EC4899 1600px 2000px)!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passjump 7.5s steps(5) infinite!important}"
             # Sales Board Fill — many hourly passes (4–9pm) + a 5am sweep; give it
-            # the same shifting multi-color GRADIENT pill so the multi-pass
+            # the same stepped per-pass color pill so the multi-pass
             # cadence reads at a glance. (Megan 2026-07-28)
-            "[class*='vantura-slack-sales__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
+            "[class*='vantura-slack-sales__calstat'] button{background:repeating-linear-gradient(90deg,#F59E0B 0 400px,#10B981 400px 800px,#0EA5E9 800px 1200px,#8B5CF6 1200px 1600px,#EC4899 1600px 2000px)!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passjump 7.5s steps(5) infinite!important}"
             # New-Start Follow-Up — multi-pass (Sat 8am + 1pm, Sun 1pm) → same
-            # shifting gradient pill. (Megan 2026-07-28)
-            "[class*='new-start-followup__calstat'] button{background:linear-gradient(90deg,#F59E0B,#10B981,#0EA5E9,#8B5CF6,#EC4899,#F59E0B)!important;background-size:200% 100%!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:carpass 6s linear infinite!important}"
+            # stepped per-pass color pill. (Megan 2026-07-28)
+            "[class*='new-start-followup__calstat'] button{background:repeating-linear-gradient(90deg,#F59E0B 0 400px,#10B981 400px 800px,#0EA5E9 800px 1200px,#8B5CF6 1200px 1600px,#EC4899 1600px 2000px)!important;color:#fff!important;border:none!important;opacity:1!important;text-shadow:0 1px 2px rgba(0,0,0,.28)!important;animation:passjump 7.5s steps(5) infinite!important}"
             # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
             # force its pill PINK so the test state reads at a glance. (7/28)
             "[class*='override-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
