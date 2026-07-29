@@ -46,6 +46,9 @@ echo "[$(date)] Vantura payroll prep starting (extra args: ${*:-none})" > "$LOG_
 # LIVE (see header). Extra args still pass through; note argparse's mutually
 # exclusive group means passing --dry-run here would conflict with --live —
 # remove --live to revert instead.
+# Open a live 'running' pill so the card PULSES while payroll prep works — the
+# publish_done below is unconditional, so this is too (Megan 2026-07-29).
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('vantura_payroll','Vantura Weekly Payroll')" >> "$LOG_FILE" 2>&1 || true
 "$VENV_PY" -u -m automations.vantura_payroll.run --live "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 

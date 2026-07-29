@@ -51,6 +51,12 @@ echo "[$(date)] Raf Captainship Bonus weekly run starting (extra args: ${*:-none
 "$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
 
 # LIVE by default (fills the sheet). Any extra arg (e.g. --dry-run) is appended.
+# Open a live 'running' pill so the card PULSES while it works — gate MUST match
+# the publish_done below (skip on --dry-run) so a dry run can't strand it. (7/29)
+case " $* " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('raf_captainship_bonus','Raf Captainship Bonus')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
 "$VENV_PY" -u -m automations.raf_captainship_bonus.run "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 

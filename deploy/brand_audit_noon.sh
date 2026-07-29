@@ -33,6 +33,12 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/brand-audit-noon-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] brand-audit noon scan starting (extra args: ${*:-none})" > "$LOG_FILE"
 
+# Open a live 'running' pill so the card PULSES while the scan works — gate MUST
+# match the publish_done below (skip on --dry-run) so a dry run can't strand it. (7/29)
+case " $* " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('brand_audit','Brand Health Audit')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
 "$VENV_PY" -m automations.brand_audit.run --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 

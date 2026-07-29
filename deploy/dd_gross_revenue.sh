@@ -21,6 +21,9 @@ export PYTHONPATH="$(pwd)"
 export PAY_STRUCTURE_SHEET_ID="1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 
 echo "[$(date)] dd_gross_revenue start" >> "$LOG_FILE"
+# Open a live 'running' pill so the card PULSES while the pull works — the
+# publish_done below is unconditional, so this is too (Megan 2026-07-29).
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('dd_gross_revenue','DD Gross Revenue Pull')" >> "$LOG_FILE" 2>&1 || true
 "$VENV_PY" -m automations.pay_structure.dd_pull --write >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] dd_gross_revenue exit=$ST" >> "$LOG_FILE"

@@ -47,6 +47,12 @@ echo "[$(date)] social-scanner noon run starting (extra args: ${*:-none})" > "$L
 
 # LIVE by default (writes to Slack + schedules). Any extra arg (e.g. --dry-run)
 # is appended and wins.
+# Open a live 'running' pill so the card PULSES while it works — gate MUST match
+# the publish_done below (skip on --dry-run) so a dry run can't strand it. (7/29)
+case " $* " in
+  *" --dry-run "*) : ;;
+  *) "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('social_inbox','Alphalete social media posting')" >> "$LOG_FILE" 2>&1 || true ;;
+esac
 "$VENV_PY" -m automations.brand_audit.social_inbox "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
