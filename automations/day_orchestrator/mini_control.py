@@ -97,7 +97,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
-                    "set_dd_bot_token", "set_dd_app_token",
+                    "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "sheets_login"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
@@ -604,6 +604,90 @@ def _action_install_card_scheduler(args: str) -> tuple[bool, str]:
         return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
     return True, (f"installed {label} · mode={'LIVE' if live else 'OBSERVE'} · "
                   f"{smoke[:110]}")
+
+
+def _action_install_jiraiya(args: str) -> tuple[bool, str]:
+    """Install 'Jiraiya' on THIS machine: the always-on /dd Socket Mode listener
+    (com.alphalete.jiraiya-bot, KeepAlive) + the 3am nightly DD pre-harvest
+    (com.alphalete.due-diligence-harvest). Run `update` + `restart_poller` first
+    so this action exists in the running poller.
+
+    Refuses to bootstrap the KeepAlive listener unless BOTH Slack tokens are
+    already on the machine (~/.config/recruiting-report/dd-bot-token = xoxb,
+    dd-app-token = xapp) — otherwise it would just crash-loop. Tokens are secrets
+    and can't ride the control sheet, so a human places them once by hand; this
+    only wires the launchd jobs around them. Smoke-tests the import first so a
+    Python-3.9-incompatible line fails loud here instead of silently.
+
+    Pass `bot-only` to (re)install just the listener, `harvest-only` for just the
+    3am job; default installs both."""
+    uid = os.getuid()
+    mode = (args or "").strip().lower() or "both"
+    cfg = Path.home() / ".config" / "recruiting-report"
+    bot_tok, app_tok = cfg / "dd-bot-token", cfg / "dd-app-token"
+
+    want_bot = mode in ("both", "bot-only")
+    want_harvest = mode in ("both", "harvest-only")
+    if mode not in ("both", "bot-only", "harvest-only"):
+        return False, "args must be blank, 'bot-only', or 'harvest-only'"
+
+    # 1) Tokens must exist before we bootstrap a KeepAlive listener.
+    if want_bot:
+        missing = [p.name for p in (bot_tok, app_tok) if not p.exists()]
+        if missing:
+            return False, (f"NOT installing the listener — missing token(s) on "
+                           f"{__import__('socket').gethostname()}: {', '.join(missing)} "
+                           f"in {cfg}. A human must place them by hand (secrets can't "
+                           f"ride the control sheet), then re-queue install_jiraiya.")
+
+    # 2) Smoke-test the import — catches a 3.9-incompatible line loudly.
+    ok, out = _run_cmd([sys.executable, "-c",
+                        "import automations.due_diligence.bot, "
+                        "automations.due_diligence.run"],
+                       timeout_s=120, log_name="jiraiya-install-smoke.log")
+    if not ok:
+        return False, f"import smoke test FAILED — not installing: {out[:200]}"
+
+    jobs = []
+    if want_bot:
+        jobs.append(("com.alphalete.jiraiya-bot", "jiraiya_bot.sh"))
+    if want_harvest:
+        jobs.append(("com.alphalete.due-diligence-harvest", "due_diligence_harvest.sh"))
+
+    done = []
+    for label, wrapper_name in jobs:
+        src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+        wrapper = REPO_ROOT / "deploy" / wrapper_name
+        dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        if not src_plist.exists() or not wrapper.exists():
+            return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                           "`update` first to pull them")
+        try:
+            text = src_plist.read_text().replace(
+                "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+            dst_plist.parent.mkdir(parents=True, exist_ok=True)
+            dst_plist.write_text(text)
+            os.chmod(wrapper, 0o755)
+        except Exception as e:  # noqa: BLE001
+            return False, f"{label}: couldn't write plist/chmod: {str(e).splitlines()[0][:140]}"
+        lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if lint.returncode != 0:
+            return False, f"{label}: plist lint failed: {(lint.stdout or '')[:160]}"
+        subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if boot.returncode != 0:
+            return False, f"{label}: bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+        done.append(label)
+
+    tail = " · listener is KeepAlive (starts now); harvest runs 3am CST." \
+        if want_bot else " · harvest runs 3am CST."
+    return True, (f"installed: {', '.join(done)}{tail} "
+                  "Stop the laptop's jiraiya-bot so only one Socket Mode listener runs.")
 
 
 def _action_watch_test(args: str) -> tuple[bool, str]:
@@ -1791,6 +1875,7 @@ ACTIONS = {
     "install_hub_watch": _action_install_hub_watch,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
+    "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
