@@ -4308,6 +4308,28 @@
         "type": "not_configured"
       }
     },
+    "install_box_order_log_owners_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_box_order_log_owners_agent` installs/refreshes the STANDALONE com.alphalete.box-order-log-owners LaunchAgent — install it ON THE MINI (default queue), NOT Lucy 2: this agent emails per-owner BOX order logs and its pull needs the mini's org-wide OwnerVille/Tableau session (Lucy 2 is scoped to Carlos). Runs deploy/box_order_log_owners.sh at 7:00 + 8:30am CST daily, which iterates owners.py and emails each owner (Roshan Amin Ahmad #19833 first), one email per owner per day via a dated marker, 7:00 --require-fresh so it defers to 8:30 if the extract isn't in yet. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes. Added 2026-07-29.",
+      "display_name": "Install BOX Order Log OWNERS email agent (7:00 + 8:30am, mini)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "box-order-log-owners"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "apex_payroll": {
       "on_scheduler": false,
       "machine": "Lucy 2",

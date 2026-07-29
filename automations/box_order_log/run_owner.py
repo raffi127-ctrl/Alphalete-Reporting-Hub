@@ -77,6 +77,11 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--test-to", metavar="ADDR",
                     help="send for real but ONLY to this address (proving send "
                          "for review — implies --email; the owner is NOT mailed)")
+    ap.add_argument("--require-fresh", action="store_true",
+                    help="EARLY pass only: if this owner's newest sale hasn't "
+                         "reached yesterday, exit 3 (no email) so the later "
+                         "pass sends once the extract lands. Data-timed, not "
+                         "clock-timed — mirrors box_order_log's 7:00 gate.")
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull; use an existing ALL-OWNERS "
                          "BoxOrderLog crosstab")
@@ -133,6 +138,20 @@ def main(argv: Optional[list] = None) -> int:
               "under a different spelling, update owners.py `match`.",
               file=sys.stderr)
         return 1
+
+    # Freshness gate for the EARLY (7:00) pass — same idea as box_order_log's:
+    # if the owner's newest sale hasn't reached yesterday, the extract likely
+    # hasn't refreshed yet, so DON'T email; exit 3 and let the 8:30 pass (which
+    # omits --require-fresh) send once the data's in.
+    if args.require_fresh and (args.email or args.test_to):
+        dated_all = [s.sale_date for s in sales if s.sale_date]
+        expected = today - dt.timedelta(days=1)
+        newest = max(dated_all) if dated_all else None
+        if newest is None or newest < expected:
+            print("extract not fresh yet (newest sale {}, need >= {}) — "
+                  "deferring to the later pass".format(newest, expected),
+                  flush=True)
+            return 3
 
     if verbose:
         reps = sorted({(s.fields.get("Rep Name") or "").strip()

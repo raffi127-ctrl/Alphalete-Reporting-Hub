@@ -62,10 +62,9 @@ def build_message(subject: str, xlsx_path: Path, png_path: Path,
     msg.set_content(
         "{}\n\n"
         "Here's your BOX Order Log for today:\n\n"
-        "  • Overall log + a tab per rep (your office)\n"
-        "  • Accepted by supplier — last week & this week\n\n"
-        "This covers your office only.\n\n"
-        "— Alphalete Reporting\n".format(hi)
+        "  • Overall log + a tab per rep\n"
+        "  • Accepted by supplier — last week & this week\n\n\n"
+        "— Lucy at Alphalete Reporting \U0001F43E\n".format(hi)
     )
     for p in (xlsx_path, png_path):
         if p and Path(p).exists():
