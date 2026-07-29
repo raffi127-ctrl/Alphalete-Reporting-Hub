@@ -35,12 +35,16 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
-# The private channel where the day's email is reviewed. Set it ONCE (Slack
-# blocks the reporting token from creating channels — no groups:write — and from
-# even LISTING them: no channels:read/groups:read, which is why this can't be
-# looked up by name at runtime), then never again: a renamed channel keeps its
-# id. Get it from the channel's Slack link — the trailing C0…-looking segment.
-REVIEW_CHANNEL = ""      # #revision-emails
+# The private channel where the day's email is reviewed — THE SAME ONE THE
+# CAPTAINSHIP DRAFTS USE (Eve, 2026-07-29). One channel, one review habit: the
+# approvers are the same two people and they check one place, not two. The two
+# gates can't confuse each other's posts — each searches for its own MARKER, and
+# they differ.
+#
+# Hardcoded because the reporting token can neither create a channel (no
+# groups:write) nor LIST them (no channels:read/groups:read), so this can't be
+# resolved by name at runtime. Safe to hardcode: a renamed channel keeps its id.
+REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-informes-capitanes
 
 # Whose checkmark counts. Slack reports the reacting user, so this is
 # enforceable. Same two as the captainship gate.
@@ -182,7 +186,7 @@ def _channel(channel: Optional[str] = None) -> str:
     ch = channel or REVIEW_CHANNEL
     if not ch:
         raise RuntimeError(
-            "REVIEW_CHANNEL is unset — create #revision-emails in Slack, add "
+            "REVIEW_CHANNEL is unset — create the review channel in Slack, add "
             "Lucy to it, then paste its id here. The reporting token can "
             "neither create the channel (no groups:write) nor find it by name "
             "(no channels:read/groups:read).")
