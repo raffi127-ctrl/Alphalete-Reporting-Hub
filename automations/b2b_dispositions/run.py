@@ -69,6 +69,7 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
     by thread. Returns [{thread, caption, path, meta}, ...]."""
     specs = []
     for campaign in cfg.CAMPAIGNS:
+        cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
         specs.append({"thread": cfg.THREAD_TODAYS_ACTIVITY,
@@ -85,6 +86,7 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
     """Territory Stats: one shot per territory per campaign."""
     specs = []
     for campaign in cfg.CAMPAIGNS:
+        cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         terrs = cap.list_territories(page, rqst, campaign)
         tag = cfg.CAMPAIGN_TAG[campaign]
         print(f"  {tag}: {len(terrs)} territories", flush=True)

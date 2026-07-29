@@ -82,6 +82,44 @@ def verify_campaign(page, want: str) -> Tuple[bool, str]:
     return (got == want or got == ""), got
 
 
+_CAMPAIGN_SWITCH_RX = r"^(B2B AT&T SBS|B2B-BOX-Energy|BASE Energy)$"
+
+
+def ensure_campaign(page, rqst: str, campaign: str) -> bool:
+    """Make the session's ACTIVE campaign = `campaign`, returning True on success.
+
+    The campaign is a STICKY session-global: invD2DClientId=16 switches to Box,
+    but navigating without the param does NOT switch back to AT&T — so a Box nav
+    followed by an AT&T (no-param) nav leaves the session on Box, and both
+    campaigns capture the same reps (the 'same people' bug). Driving the toolbar
+    dropdown flips it globally for every page, the same fallback car_rides uses."""
+    _goto(page, _page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst, campaign))
+    _, got = verify_campaign(page, campaign)
+    if got == campaign:
+        return True
+    try:
+        # Open the dropdown (click the toolbar element showing the current
+        # campaign), then click the wanted campaign's entry.
+        page.evaluate(
+            "(rx)=>{const e=[...document.querySelectorAll('span,a,button')]"
+            ".find(x=>new RegExp(rx).test((x.innerText||'').trim()) "
+            "&& x.offsetParent!==null); if(e) e.click();}", _CAMPAIGN_SWITCH_RX)
+        page.wait_for_timeout(1200)
+        page.evaluate(
+            "(c)=>{const a=[...document.querySelectorAll('a,li,span,button')]"
+            ".find(x=>(x.innerText||'').trim()===c && x.offsetParent!==null);"
+            " if(a){a.click(); return true;} return false;}", campaign)
+        page.wait_for_timeout(8000)
+    except Exception as e:  # noqa: BLE001
+        print(f"  campaign switch to {campaign!r} errored: {type(e).__name__}",
+              flush=True)
+    _, got = verify_campaign(page, campaign)
+    if got != campaign:
+        print(f"  ⚠ campaign still {got!r} after switching to {campaign!r}",
+              flush=True)
+    return got == campaign
+
+
 # --- generic anchor-based crop ------------------------------------------------
 _RECT_JS = """
 (args) => {
@@ -170,12 +208,21 @@ _CONTENT_BOX_JS = r"""
         if (r.height > 350 && r.width > 180 && r.width < 760) { b = box(el); break; } }
       if (!b) b = box(inp.parentElement || inp); }
   } else if (kind === 'time_tracker') {
-    // Both gap cards: union the "Reps Under/Over 15 Minute Gap" card blocks.
+    // The two gap cards sit ABOVE the "Time Tracking Data" table. Bound the crop
+    // by that heading so the table is never included (it kept swallowing the
+    // shot). Left/right from the gap-card blocks; top from their top; bottom at
+    // the data-table heading.
     const under = tight('Reps Under 15 Minute Gap');
     const over = tight('Reps Over 15 Minute Gap');
     const card = e => { let el=e; for (let i=0;i<4 && el.parentElement;i++){ el=el.parentElement;
-      if (el.getBoundingClientRect().height > 90) return el; } return e; };
-    b = union([under && card(under), over && card(over)]);
+      const r=el.getBoundingClientRect(); if (r.height > 80 && r.width > 200) return el; } return e; };
+    const cu = union([under && card(under), over && card(over)]);
+    const dataHdr = tight('Time Tracking Data');
+    if (cu) {
+      const bottom = dataHdr ? Math.min(cu.bottom, dataHdr.getBoundingClientRect().top - 8) : cu.bottom;
+      b = { left: cu.left, top: cu.top, right: cu.right,
+            bottom: Math.max(cu.top + 60, bottom) };
+    }
   } else if (kind === 'territory_stats') {
     // The 3 stat cards, from the "Report By" filter row to the CURRENT PERIOD
     // card. Climb from each card's header to the card block, then union with the
@@ -217,7 +264,8 @@ def print_outline(page, label: str) -> None:
           flush=True)
 
 
-def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14) -> str:
+def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
+           pad_bottom: int = 0) -> str:
     """Full-page screenshot, then PIL-crop to the view's real content. Two crop
     sources, in order: (1) the LIVE element bounding box from content_box(kind)
     — adapts to the collapsed sidebar / actual layout, the tight crop Megan
@@ -239,7 +287,7 @@ def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14) -> str
             # device pixel ratio, so map CSS px -> image px via W / innerWidth.
             s = w / float(box["innerWidth"]) or 1.0
             rect = (box["left"] * s - pad, box["top"] * s - pad,
-                    box["right"] * s + pad, box["bottom"] * s + pad)
+                    box["right"] * s + pad, box["bottom"] * s + pad + pad_bottom)
             how = "box"
         elif fixed is not None:
             rect = fixed(w, h)
@@ -284,7 +332,8 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     if dump:
         print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
-    how = _shoot(page, out, kind="todays_activity", fixed=CROP_TODAYS_ACTIVITY)
+    how = _shoot(page, out, kind="todays_activity", fixed=CROP_TODAYS_ACTIVITY,
+                 pad_bottom=36)
     return {"view": "todays_activity", "campaign": campaign, "tag": tag,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
