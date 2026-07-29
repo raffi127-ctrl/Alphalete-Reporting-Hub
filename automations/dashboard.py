@@ -4933,7 +4933,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Board refreshed — bases, disconnect rolloff, and activations written; numbers reconciled against the Churn Rates dashboard before any write.",
-            "message_failed": "❌ Run failed — the board was NOT written, so it's showing the previous run's numbers (stale, not wrong). Don't just re-run: the reconcile gate already tolerates normal Tableau refresh drift (base ±10%, churn ±0.5pp), so a mismatch means the Order Log and the CHURN RATES dashboard genuinely disagree by more than that. Check the Order Log pull (owner filter / 60-day window), then whether CHURNRATES has finished refreshing, before re-running or touching the sheet by hand. Megan is emailed automatically on any failure.",
+            "message_failed": "❌ Run failed — the board was NOT written, so it's showing the previous run's numbers (stale, not wrong). Don't just re-run: the reconcile gate already tolerates normal Tableau refresh drift (base ±10%, churn ±0.5pp), so a mismatch means the Order Log and the CHURN RATES dashboard genuinely disagree by more than that. Check the Order Log pull (owner filter / 60-day window), then whether CHURNRATES has finished refreshing, before re-running or touching the sheet by hand. A failure is flagged in #claudecorrections-and-requests.",
         },
         "actions": [
             {
@@ -4960,24 +4960,20 @@ AUTOMATED_REPORTS = [
         "description": "Fills the 'Lucy Wireless Churn', 'Lucy New INT Churn' and 'Lucy AIR Churn' tabs on EVERY B2B office's board — the persistent, dated, per-rep churn report Carlos wanted these three products to have (built 2026-07-19 to 'act like the D2D fiber-office metrics report'). Currently Carlos (Vantura Master Sales Board) + Atef/Domin8 (All In One - Atef); adding an office is one config row, no new Tableau view. Crosstab-pulls three ALL-TEAM CHURNRATES views (CarlosTEAMWireless / CarlosTEAMNewINTEXP / CarlosTEAMAIREXP) ONCE each, then slices every office's owner out in code and runs the D2D new_internet_churn fill (dated column, missing reps, colours, dark-rep hide). Posts nothing — the B2B Metrics run (7:45am) posts its own churn SCREENSHOTS separately; these are the maintained sheet tabs.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Crosstab-pulls the three **ALL-TEAM** Wireless / New Internet "
-            "/ AIR churn views ONCE each (the .csv ignores custom views, so the "
-            "product split only survives through the crosstab dialog).\n"
-            "**•** Slices every B2B office's owner out of each pull in code, then "
-            "fills that office's three tabs with the shared **new_internet_churn** "
-            "filler — a dated column per morning, missing reps added, ranked, "
-            "coloured, dark reps hidden.\n"
-            "**•** So it's **3 pulls/day for any number of offices**; adding an "
-            "office is one config row (owner + board), no new Tableau view.\n"
-            "**•** Writes the tabs only; **posts nothing**.\n\n"
+            "Fills the **Lucy Wireless / New INT / AIR churn** tabs on every "
+            "B2B office's board — a dated per-rep churn column each morning "
+            "(ranked, coloured, missing reps added). It pulls the three "
+            "all-team churn views once and slices each office out in code, so "
+            "adding an office is one config row. Writes the tabs only — **posts "
+            "nothing** (the B2B Metrics run posts the churn screenshots).\n\n"
             "OFFICES\n"
-            "**•** Carlos — Vantura Master Sales Board\n"
-            "**•** Atef (Domin8) — All In One - Atef\n\n"
+            "Carlos (Vantura Master Sales Board) + Atef/Domin8 (All In One - "
+            "Atef).\n\n"
             "WHEN IT RUNS\n"
-            "**Daily 7:15 AM** on Lucy 2 — after Vantura Churn's 7:00 refresh "
-            "(both share one CDP Chrome, so the wrapper waits for vantura to "
-            "finish before pulling). No reconcile gate: a failed pull leaves "
-            "the tabs on the previous run's numbers and emails Megan."
+            "In the **4am flow** on Lucy 2, right after Vantura Churn (they "
+            "share one Chrome session, so it runs after Vantura finishes). A "
+            "failed pull keeps the previous numbers and is flagged in "
+            "**#claudecorrections-and-requests**."
         ),
         # Deep-links to the Lucy Wireless Churn tab (New INT gid 916425770,
         # AIR gid 866551208 are the sibling tabs in the same workbook).
@@ -4990,18 +4986,18 @@ AUTOMATED_REPORTS = [
         # there. A Hub "play" from ANY machine routes to Lucy 2 via mini-control.
         "run_machine": "Lucy 2",
         "run_rerun_id": "att_churn",
-        # Self-running daily launchd job: it doesn't report a per-day completion
-        # to the Hub, so keep it out of "due today" tallies.
-        "self_scheduled": True,
+        # Runs in Lucy 2's 4am orchestrator flow, sequenced `after` vantura_churn
+        # (they share the CDP Chrome; the port-9246 lock serializes them). Moved
+        # off the standalone 7:15am launchd 2026-07-28.
         "schedule": {
             "frequency": "daily",
-            "time": "7:15 AM",
+            "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 12,
         },
         "checklist": [],
         "post_run": {
             "message_success": "✅ Tabs filled — Wireless, New INT and AIR churn each got today's dated column (per-rep, ranked, coloured).",
-            "message_failed": "❌ Run failed — one or more of the three churn tabs did NOT update, so they're showing the previous run's numbers (stale). Usual cause on Lucy 2: the CDP Chrome/Tableau session (TargetClosedError = a human's Chrome or a crash mid-pull), or a CHURNRATES view that hasn't refreshed. Megan is emailed automatically on any failure.",
+            "message_failed": "❌ Run failed — one or more of the three churn tabs did NOT update, so they're showing the previous run's numbers (stale). Usual cause on Lucy 2: the CDP Chrome/Tableau session (TargetClosedError = a human's Chrome or a crash mid-pull), or a CHURNRATES view that hasn't refreshed. A failure is flagged in #claudecorrections-and-requests.",
         },
         "actions": [
             {

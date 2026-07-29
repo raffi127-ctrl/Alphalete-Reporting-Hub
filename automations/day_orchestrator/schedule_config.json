@@ -3907,23 +3907,53 @@
       "machine": "Lucy 2"
     },
     "att_churn": {
-      "on_scheduler": false,
+      "on_scheduler": true,
       "_off_scheduler_note": "Carlos's B2B Churn -> 'Lucy New INT Churn' + 'Lucy Wireless Churn' on the Vantura Master Sales Board (Megan 2026-07-19: the two churn tabs 'should act like the metrics report one we do for the fiber d2d offices'). Reuses the D2D machinery wholesale \u2014 new_internet_churn.fill does the four-section dated-column fill; the only B2B-specific parts are the two ATTTRACKER-B2B/CHURNRATES custom views (CarloWireless / CarlosNewINT), a header rename (att_order_log.churn_shape: 'Rep'->'Rep Name', '0-30 Day'->'0-30 Day Churn', ...), and the CHURN_NI_TAB / CHURN_WL_TAB / CHURN_SHEET_ID / CHURN_SLICE_OWNER env. MUST use the CROSSTAB DIALOG, not the direct .csv: the .csv ignores custom views (both returned byte-identical all-teams data) and carries no product column, so the wireless/new-internet split exists ONLY inside each view's filter. Crosstab preserves it \u2014 576 rows/66 reps vs 408/82, verified 2026-07-19. DRY-RUN by default; --fill writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing \u2014 the B2B thread is assembled separately and stays gated.",
       "display_name": "B2B Churn (Carlos) -> Sheet",
+      "_migrated_note": "MOVED into the Lucy 2 4am flow 2026-07-28: on_scheduler true, cadence [0-6], base_args ['--fill'] (WITHOUT --fill it dry-runs and writes nothing), after ['vantura_churn'] so the shared CDP Chrome (port 9246, serialized by cdp_pull._cdp_lock) is free — churn_run._kill_ours() on start would otherwise abort vantura mid-pull. Standalone 7:15am launchd (com.alphalete.att-churn-daily) RETIRED via disable_att_churn_daily_agent; its failure EMAIL is replaced by the orchestrator's #claudecorrections-and-requests alert.",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.att_order_log.churn_run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--fill"
+      ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0, 1, 2, 3, 4, 5, 6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
+      "after": [
+        "vantura_churn"
+      ],
       "timeout_minutes": 20,
       "verify": null,
+      "machine": "Lucy 2"
+    },
+    "disable_att_churn_daily_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "RETIRE the standalone 7:15am launchd now that att_churn runs in the Lucy 2 4am flow (after vantura_churn; port-9246 lock serializes the shared CDP Chrome). `lucy rerun disable_att_churn_daily_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.att-churn-daily.plist -> .disabled so it doesn't ALSO fire at 7:15. REVERSIBLE: re-run install_att_churn_daily_agent + set att_churn cadence.weekdays []. Read-only w.r.t. Sheet data.",
+      "display_name": "Retire: B2B Churn 7:15am LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "att-churn-daily"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
       "machine": "Lucy 2"
     },
     "att_order_log_probe": {
