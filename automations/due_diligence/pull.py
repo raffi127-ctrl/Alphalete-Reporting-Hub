@@ -294,24 +294,43 @@ def _gather_over_page(dd: RepDD, rep_name: str, rep_norm: str, weeks: int,
 # TEAM MODE — pull a whole team (leader + reps) over ONE set of crosstabs.
 # --------------------------------------------------------------------------
 def _match_name(typed: str, roster_norm: dict):
-    """Resolve a loosely-typed rep name to a canonical roster key.
-    roster_norm: {normalized name: display}. Tries exact, then token-subset
-    (every typed word appears in the candidate), then a fuzzy close match.
-    Returns the matched normalized key, or None."""
+    """Resolve a loosely-typed rep name to a roster key — SAFELY.
+
+    Order: exact norm → token-subset (every typed word is a word of the
+    candidate, e.g. 'David Becerra' -> 'David Becerra Amador') → a careful fuzzy
+    step that requires the SURNAME to match and the first name to be close
+    ('Ilya rezaee' -> 'Iliya Rezaee Nia', 'Bas Elhassan' -> 'Basil Elhassan').
+    It will NOT match a different first name onto the same surname
+    ('Corrieonna Johnson' -> 'Zoria Johnson' is rejected). Returns None (flag it)
+    rather than guess a wrong rep. `roster_norm` is {normalized: display}."""
     import difflib
     tn = _norm(typed)
     if tn in roster_norm:
         return tn
 
-    def toks(s):                                   # split on spaces AND hyphens
-        return set(str(s).lower().replace("-", " ").split())
-    typed_tokens = toks(typed)
-    subset = [k for k in roster_norm
-              if typed_tokens and typed_tokens.issubset(toks(roster_norm[k]))]
+    def words(s):
+        return str(s).lower().replace("-", " ").split()
+    tw = words(typed)
+    tset = set(tw)
+    # token-subset: every typed word is one of the candidate's words
+    subset = [k for k in roster_norm if tset and tset.issubset(set(words(roster_norm[k])))]
     if len(subset) == 1:
         return subset[0]
-    close = difflib.get_close_matches(tn, list(roster_norm.keys()), n=1, cutoff=0.7)
-    return close[0] if close else None
+    if len(subset) > 1:                              # ambiguous — don't guess
+        return None
+    if len(tw) < 2:                                  # a lone token is too risky to fuzzy
+        return None
+    t_first, t_last = tw[0], tw[-1]
+    cands = []
+    for k, disp in roster_norm.items():
+        cw = words(disp)
+        if t_last not in cw:                         # SURNAME must be present
+            continue
+        c_first = cw[0]
+        if (t_first == c_first or t_first in c_first or c_first in t_first
+                or difflib.SequenceMatcher(None, t_first, c_first).ratio() >= 0.8):
+            cands.append(k)
+    return cands[0] if len(cands) == 1 else None
 
 
 def _cache_dir(anchor=None) -> Path:
@@ -348,6 +367,28 @@ def _download_team_files(d: Path, wk_order, page, verbose, gaps) -> dict:
     return p
 
 
+def _add_rep_names(roster: dict, path) -> None:
+    """Add each rep name from a metrics/churn crosstab into the roster
+    ({norm: display}). Uses the 'Rep Name' column, or the ICD-owner column."""
+    try:
+        rows = _read_utf16_tsv(path)
+    except Exception:
+        return
+    if not rows:
+        return
+    h = [_norm(x) for x in rows[0]]
+    ci = next((i for i, x in enumerate(h) if x == "rep name"), None)
+    if ci is None:
+        ci = next((i for i, x in enumerate(h) if "icd owner name" in x), None)
+    if ci is None:
+        return
+    for r in rows[1:]:
+        if len(r) > ci:
+            name = (r[ci] or "").strip()
+            if name and name.lower() not in ("total", "grand total"):
+                roster.setdefault(_norm(name), name)
+
+
 def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
     """Build a RepDD per named rep from already-downloaded crosstab files."""
     opt = _opt()
@@ -361,6 +402,10 @@ def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
         week_reps[sun] = reps
         for k, v in reps.items():
             roster.setdefault(k, v.get("owner", k))
+    # Widen the roster with reps who appear in metrics/churn but had no product
+    # sales in the window (e.g. wireless-only or newer reps) so they're findable.
+    for pth in (paths["mni"], paths["mwl"], paths["cni"], paths["cwl"]):
+        _add_rep_names(roster, pth)
     people, misses = [], []
     for name in names:
         key = _match_name(name, roster)
