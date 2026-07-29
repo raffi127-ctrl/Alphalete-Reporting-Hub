@@ -26,7 +26,13 @@ echo "[$(date)] DD harvest starting" > "$LOG_FILE"
 # The pull drives Tableau through patchright; a stray human Chrome collides.
 "$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
 
+# Open a live 'running' pill so the card PULSES while the harvest works; the
+# publish_done below closes it green/red — otherwise this 3am job is silent and
+# the card stays WHITE even on a clean run (Megan 2026-07-29).
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('due_diligence_harvest','Due Diligence Harvest')" >> "$LOG_FILE" 2>&1 || true
 "$VENV_PY" -u -m automations.due_diligence.run --harvest --verbose >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] DD harvest finished exit=$ST" >> "$LOG_FILE"
+if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('due_diligence_harvest','Due Diligence Harvest','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 exit $ST
