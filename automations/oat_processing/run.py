@@ -829,7 +829,11 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         if phone and _fill_phone_field(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
                  f"{a.first_name} {a.last_name}")
-            page.wait_for_timeout(700)
+            try:
+                page.bring_to_front()
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(1500)   # let AS settle after the phone change
             return do_send_ai(page, a, live)
         _log(f"    no resume phone ({detail}) → flag: "
              f"{a.first_name} {a.last_name}")
@@ -1007,6 +1011,12 @@ def lookup_resume_phone(page):
                 newpg.close()
             except Exception:  # noqa: BLE001
                 pass
+        # Restore the OAT tab to the foreground — the new resume tab backgrounded
+        # it, which left 'Send to AI' unclickable afterward.
+        try:
+            page.bring_to_front()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def probe_resume(page) -> None:
