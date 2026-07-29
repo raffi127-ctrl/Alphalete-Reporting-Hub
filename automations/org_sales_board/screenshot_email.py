@@ -238,18 +238,30 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
     return out
 
 
-def _bottom_org_ranges(g) -> List[Tuple[str, str]]:
-    """Bottom 'X ORG - Current vs Prior Weeks' summary tables (RAF/CARLOS/COLTEN/
-    BEN). Header → 'Sales ( 4 Week AVG)' row; the frozen Last/Prior/2wp/3wp history
-    rows below are excluded. Same org filter: include an ORG only if its head is on
-    the ALPHALETE ORG leaderboard (RAF→Rafael, BEN→Benjamin Burden, etc.)."""
+def _bottom_org_ranges(g, start: int = None) -> List[Tuple[str, str]]:
+    """Bottom 'X ORG - Current vs Prior Weeks' summary tables (RAF w/out Carlos &
+    Colten, CARLOS, COLTEN, BEN). Header → 'Sales ( 4 Week AVG)' row; the frozen
+    Last/Prior/2wp/3wp history rows below are excluded. Same org filter: include an
+    ORG only if its head is on the ALPHALETE ORG leaderboard (RAF→Rafael,
+    BEN→Benjamin Burden, etc.).
+
+    `start` = first row of the bottom region, so the TOP 'RAF ORG - Current vs
+    Prior Weeks' block (a different table: the whole org, Carlos + Colten
+    included) can't be swept in. It used to be a hardcoded `range(1600, …)`, which
+    silently skipped RAF w/out at row 1592 — the block was 8 rows above the magic
+    number, so the email carried CARLOS and COLTEN but never RAF's own. Default:
+    everything after the last daily section. [[no hardcoded rows]]"""
     import re
     lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)
     lb_end = _block_end(g, lb) if lb else 0
     firsts = {_cell(g, r, 2).split()[0].lower() for r in range(lb or 1, lb_end + 1)
               if _cell(g, r, 1).isdigit() and _cell(g, r, 2)}
+    if start is None:
+        dailies = _daily_section_ranges(g)
+        start = (int(re.search(r"(\d+)$", dailies[-1][1]).group(1)) + 1
+                 if dailies else (lb_end or 1) + 1)
     out = []
-    for r in range(1600, len(g) + 1):
+    for r in range(start, len(g) + 1):
         text = (_cell(g, r, 1) + " " + _cell(g, r, 2)).lower().strip()
         if not re.search(r"\borg\b.*current vs prior", text):
             continue
@@ -264,18 +276,29 @@ def _bottom_org_ranges(g) -> List[Tuple[str, str]]:
 
 
 def section_ranges(g) -> List[Tuple[str, str]]:
-    """Return [(name, 'A1:Z9'), …] for the full email, by label: the top org
-    summary, the 8 daily section tables, every in-org captainship block (3 images
-    each), and the bottom RAF/CARLOS/COLTEN/BEN ORG summary tables."""
+    """Return [(name, 'A1:Z9'), …] for the full email, by label:
+
+        Product Summary → ALPHALETE ORG leaderboard → the 8 daily section tables
+        (Retail NL … Retail Internet) → RAF ORG (w/out Carlos & Colten), CARLOS
+        ORG, COLTEN ORG — Current vs Prior Weeks.
+
+    SHAPE SET BY EVE 2026-07-29: the email runs to the Retail Internet daily box
+    and then closes with one Current-vs-Prior summary per org. Two things left:
+
+    - The 7 CAPTAINSHIP blocks (21 images) are OUT. They tripled the email's
+      length and are the Captainship Reports' job, not this one's.
+      `_captainship_ranges` is kept below, uncalled, so putting them back is a
+      one-line change.
+    - The TOP 'RAF ORG - Current vs Prior Weeks' (row ~16, the whole org WITH
+      Carlos and Colten) is OUT too — it's the same table twice over. The one
+      Eve asked for is the bottom 'RAF ORG (w/out Carlos & Colten)', which now
+      leads the closing trio.
+    """
     out = []
     ps = _label_row(g, "Product Summary", col=1)
     if ps:
         end = _block_end(g, ps)
         out.append(("product_summary", f"A{ps}:{_colletter(_last_col(g, ps, end))}{end}"))
-    raf = _label_row(g, "RAF ORG", col=1)
-    if raf:
-        end = _block_end(g, raf)
-        out.append(("raf_org", f"A{raf}:{_colletter(_last_col(g, raf, end))}{end}"))
     lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)   # skip the r1 title cell
     if lb:
         end = _block_end(g, lb)
@@ -284,7 +307,6 @@ def section_ranges(g) -> List[Tuple[str, str]]:
         last = first_val + _LB_WEEKS - 1
         out.append(("org_leaderboard", f"A{lb}:{_colletter(last)}{end}"))
     out.extend(_daily_section_ranges(g))
-    out.extend(_captainship_ranges(g))
     out.extend(_bottom_org_ranges(g))
     return out
 
@@ -428,6 +450,10 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
 
 def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
                 day: dt.date) -> EmailMessage:
+    """`day` is the day the numbers are FOR — yesterday, not the run date (Eve
+    2026-07-29). The board only ever carries completed days, so a 7/29 run shows
+    7/28's sales; titling it 7/29 dated the email a day ahead of the sales it
+    was showing. Same rule as the Country Sales Board Slack DM."""
     msg = EmailMessage()
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to_addrs)
@@ -568,7 +594,8 @@ def main(argv=None) -> int:
         to = PREVIEW_TO
     else:
         to = PROVING_TO
-    msg = build_email(images, to, dt.date.today())
+    # Subject carries YESTERDAY — the day the board's numbers are for.
+    msg = build_email(images, to, dt.date.today() - dt.timedelta(days=1))
 
     if a.dry_run:
         eml = out_dir / "preview.eml"
