@@ -40,6 +40,9 @@ Actions:
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
   sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
                         headlessly; bare opens the Google login for a human
+  set_sheets_cookies <json>  replay an exported Google session into that
+                        profile, for a runner nobody can sit at. Source it with
+                        `sheet_shot export-cookies` on a signed-in machine.
 
 CLI:
   python -m automations.day_orchestrator.mini_control --loop      # on the mini
@@ -98,7 +101,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
-                    "set_contacts_token", "sheets_login"}
+                    "set_contacts_token", "sheets_login", "set_sheets_cookies"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -739,6 +742,59 @@ def _action_sheets_login(args: str) -> tuple[bool, str]:
                           else " — SIGNED OUT: queue `sheets_login` and finish "
                                "the Google sign-in on the mini's screen")
     return ok, res + " (needs a human to finish the Google sign-in on the mini)"
+
+
+def _action_set_sheets_cookies(args: str) -> tuple[bool, str]:
+    """Replay an exported Google session into THIS machine's screenshot profile.
+
+    The escape hatch from sheets_login's one hard requirement: a human at the
+    screen for 2FA. Nobody sits at Lucy 1, so the captainship drafts have been
+    building on Eve's laptop instead — which only works when her laptop is on,
+    and the whole point of a scheduled runner is that it isn't conditional on
+    that.
+
+    This is NOT the profile copy _action_sheets_login rules out. That fails
+    because Chrome seals its cookie store with an OS-level key, so the files are
+    unreadable elsewhere. Here Playwright reads the cookies out through Chrome's
+    own API on the source machine — already decrypted — and hands them to this
+    machine's Chrome, which re-seals them with ITS key. The OS key never travels.
+
+    Args is the JSON produced by `sheet_shot export-cookies` on a machine where
+    the profile IS signed in. It is a live Google session: CLEAR THE ARGS CELL
+    once this shows done, same as the token actions.
+
+    Google may refuse a session replayed onto different hardware and a different
+    OS. A failure here is expected-ish and costs nothing — it just means the
+    human login is still the only way in."""
+    import json
+
+    blob = (args or "").strip()
+    if not blob.startswith("["):
+        return False, ("set_sheets_cookies needs the JSON array from "
+                       "`sheet_shot export-cookies` as the Args")
+    try:
+        cookies = json.loads(blob)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args is not valid JSON: {str(e)[:120]}"
+    if not cookies:
+        return False, "no cookies in the Args"
+    path = (Path.home() / ".config" / "recruiting-report" / "sheets-cookies.json")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(blob, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    cmd = [sys.executable, "-m", "automations.captainship_drafts.sheet_shot",
+           "seed-cookies", str(path)]
+    ok, res = _run_cmd(cmd, timeout_s=5 * 60, log_name="sheets-seed-cookies.log")
+    # The session is spent either way — don't leave it lying on disk.
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    return ok, (f"{len(cookies)} cookie(s) replayed · " + res +
+                (" — profile is signed in" if ok else
+                 " — Google rejected it; the human sheets_login is still needed"))
 
 
 def _action_ping(args: str) -> tuple[bool, str]:
@@ -1882,6 +1938,7 @@ ACTIONS = {
     "run_bg_check_sync": _action_run_bg_check_sync,
     "reseed_appstream": _action_reseed_appstream,
     "sheets_login": _action_sheets_login,
+    "set_sheets_cookies": _action_set_sheets_cookies,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "set_sleep": _action_set_sleep,

@@ -147,6 +147,69 @@ def login(timeout_s: int = 300) -> bool:
         return ok
 
 
+COOKIES_PATH = (Path.home() / ".config" / "recruiting-report"
+                / "sheets-cookies.json")
+
+
+def export_cookies(out_path: Path | None = None) -> int:
+    """Write this machine's Google session to a JSON file. Returns the count.
+
+    Run it where the profile IS signed in; the file is what seed_cookies()
+    replays on a machine where it is not."""
+    import json
+
+    out = Path(out_path or COOKIES_PATH)
+    with sync_playwright() as p:
+        ctx = _launch(p, headless=True, viewport=dict(_DEFAULT_VIEWPORT))
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(_SHEET_EDIT_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(6000)
+        if not _is_authenticated(page):
+            ctx.close()
+            raise RuntimeError(
+                "this profile is signed out too — nothing worth exporting")
+        cookies = [c for c in ctx.storage_state().get("cookies", [])
+                   if "google.co" in (c.get("domain") or "")]
+        ctx.close()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(cookies, separators=(",", ":")), encoding="utf-8")
+    return len(cookies)
+
+
+def seed_cookies(path: Path | None = None) -> bool:
+    """Replay an exported Google session into THIS machine's profile.
+
+    The interactive login needs a human at the screen for 2FA, which is a
+    problem when the machine that has to run the report is one nobody sits at.
+
+    This is NOT the profile copy that _action_sheets_login rules out. Copying
+    the profile directory fails because Chrome seals its cookie store with an
+    OS-level key (macOS Keychain / Windows DPAPI), so the file is unreadable
+    anywhere else. Here Playwright reads the cookies out through Chrome's own
+    API — already decrypted — and add_cookies hands them to the target's Chrome,
+    which re-seals them with ITS key. The OS key never has to travel.
+
+    Returns whether the profile can open the sheet afterwards. Google may well
+    refuse a session replayed onto different hardware and a different OS; a
+    False here means the human login is still the only way in."""
+    import json
+
+    p = Path(path or COOKIES_PATH)
+    if not p.exists():
+        raise RuntimeError(f"no exported session at {p}")
+    cookies = json.loads(p.read_text(encoding="utf-8"))
+    with sync_playwright() as pw:
+        ctx = _launch(pw, headless=True, viewport=dict(_DEFAULT_VIEWPORT))
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        ctx.add_cookies(cookies)
+        page.goto(_SHEET_EDIT_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(8000)
+        ok = _is_authenticated(page)
+        page.wait_for_timeout(2000)      # let Chrome flush them into the profile
+        ctx.close()
+    return ok
+
+
 def check() -> bool:
     """Headless check that the saved profile can open the sheet."""
     with sync_playwright() as p:
@@ -566,6 +629,19 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "login"
     if cmd == "check":
         sys.exit(0 if check() else 1)
+    elif cmd == "export-cookies":
+        # python -m ...sheet_shot export-cookies [path]   — run where signed in
+        p = Path(sys.argv[2]) if len(sys.argv) > 2 else COOKIES_PATH
+        n = export_cookies(p)
+        print(f"✓ {n} cookie(s) -> {p}")
+    elif cmd == "seed-cookies":
+        # python -m ...sheet_shot seed-cookies [path]   — run where signed OUT
+        p = Path(sys.argv[2]) if len(sys.argv) > 2 else COOKIES_PATH
+        ok = seed_cookies(p)
+        print("✓ Authenticated — the replayed session was accepted" if ok else
+              "✗ Still signed out — Google rejected the replayed session; the "
+              "human login is the only way in")
+        sys.exit(0 if ok else 1)
     elif cmd == "shot":
         # python -m ...sheet_shot shot <captain> [out_dir]   (default output/)
         from automations.captainship_drafts.config import BY_KEY
