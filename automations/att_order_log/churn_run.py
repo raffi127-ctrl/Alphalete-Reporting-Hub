@@ -417,7 +417,60 @@ def main(argv=None) -> int:
     else:
         log("feed results: " + ", ".join(
             "{}={}".format(k, v) for k, v in results.items()))
+        _write_manifest(results, fill=args.fill, log=log)
     return rc
+
+
+def _split_tag(tag: str) -> tuple:
+    """'carlos_new_int' -> ('carlos', 'new_int'). Matched against the OFFICES keys
+    rather than split on '_', because product keys contain underscores too."""
+    for okey in OFFICES:
+        if tag.startswith(okey + "_"):
+            return okey, tag[len(okey) + 1:]
+    return None, None
+
+
+def _write_manifest(results: dict, *, fill: bool, log=print) -> None:
+    """Record per-feed outcomes so the orchestrator can RECONCILE this run instead
+    of trusting exit 0 (Megan 2026-07-30 — att_churn had verify:null, so a run that
+    exited clean having filled nothing read as DONE).
+
+    Only a --fill run writes the manifest: a dry-run touches no tab, so letting it
+    stamp `ok=true` would hand reconcile a clean bill for a run that wrote nothing
+    (and reconcile's freshness gate keys on the date, so a 10am dry-run would
+    otherwise overwrite the 4am fill's real result).
+
+    Best-effort — a manifest problem must never change this run's exit code."""
+    if not fill or not results:
+        return
+    try:
+        from automations.shared import run_manifest
+
+        failed = sorted(t for t, v in results.items() if v != "ok")
+        ok_units = sorted(t for t, v in results.items() if v == "ok")
+        # Narrow the retry to exactly what failed. args_override REPLACES base_args
+        # in the orchestrator, so --fill must be carried explicitly or the retry
+        # would dry-run and write nothing.
+        retry = ["--fill"]
+        offs = {o for o, _ in (_split_tag(t) for t in failed) if o}
+        prods = {p for _, p in (_split_tag(t) for t in failed) if p}
+        if len(offs) == 1:
+            retry += ["--office", next(iter(offs))]
+        if len(prods) == 1:
+            retry += ["--only", next(iter(prods))]
+
+        run_manifest.write_manifest(
+            "att_churn", failed=failed, succeeded=ok_units, kind="feed",
+            retry_args=retry,
+            note=("all {} feed(s) filled".format(len(ok_units)) if not failed else
+                  "{} of {} feed(s) failed: {}".format(
+                      len(failed), len(results), ", ".join(failed))),
+        )
+        log("manifest: {}/{} feed(s) ok{}".format(
+            len(ok_units), len(results),
+            "" if not failed else " · retry args {}".format(" ".join(retry))))
+    except Exception as e:  # noqa: BLE001 — never let bookkeeping fail the run
+        log("manifest write skipped ({}: {})".format(type(e).__name__, str(e)[:120]))
 
 
 if __name__ == "__main__":

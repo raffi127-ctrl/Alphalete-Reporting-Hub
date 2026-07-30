@@ -4251,7 +4251,11 @@
         "vantura_churn"
       ],
       "timeout_minutes": 20,
-      "verify": null,
+      "verify": {
+        "type": "manifest",
+        "report_id": "att_churn"
+      },
+      "_verify_note": "Wired 2026-07-30 (was null = soft-pass, so an exit-0 run that filled nothing read as DONE). churn_run._write_manifest records one unit per FEED — office_product, e.g. carlos_wireless / atef_new_int, 6 on a full run — from the same results dict the 'feed results:' log line prints. Only a --fill run writes it (a dry-run touches no tab, so it must not stamp ok=true), and reconcile's freshness gate ignores a manifest not from today, so a crash before the manifest falls back to the exit code. retry_args carry --fill explicitly (args_override REPLACES base_args) and narrow to --office/--only when every failed feed shares one.",
       "machine": "Lucy 2"
     },
     "disable_att_churn_daily_agent": {
