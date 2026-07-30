@@ -4346,6 +4346,28 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "box_order_log_abel": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "PER-OWNER BOX Order Log for Abel Draper (Abyl Acquisition Group), EMAILED to him (abeldraper1@gmail.com), NOT Slack. Requested via Megan 2026-07-30 ('set up like Roshan'). Same path as box_order_log_roshan: run_owner pulls the org-wide BoxOrderLog, filters to his Owner & Office (owners.py match='abel draper'), builds his office's workbook + payout image, emails it, and (--sheet) fills the 'Lucy Box Order Log' tab of his 'Abel Draper - Metrics' workbook. Abel is a small BOX office (14 collapsed sales per Megan's verified ALLEXP export 2026-07-30). DRY by default (base_args '--owner abel'); --email sends to Abel, --test-to <addr> proving-sends to one address, --sheet fills his sheet. The daily 7-8am mini agent (com.alphalete.box-order-log-owners) already iterates owners.py, so Abel is covered going forward with no new agent. MUST run on the MINI (org-wide session). Present so `lucy rerun box_order_log_abel` works. Registered 2026-07-30.",
+      "display_name": "BOX Order Log (Abel) -> Email",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.run_owner"
+      ],
+      "base_args": [
+        "--owner",
+        "abel"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "box_order_log_per_office": {
       "on_scheduler": false,
       "_off_scheduler_note": "PER-ICD BOX Order Log for onboarded B2B offices that enrolled 'Box Order Log' in Metrics Onboarding -> each posts its OWN Slack thread in its office channel. ONBOARDING-DRIVEN SLACK sibling of box_order_log_roshan (which EMAILS specific owners from a manual registry). Runs automations.box_order_log.per_office: pulls the TEAM ALLEXPORDERLOG view (B2BBOXEnergyTracker/BoxOrderLog/ALLEXPORDERLOG) ONCE, then for each onboarded office with Box enrolled filters the export to that office's exact 'Owner & Office' value (clean.filter_to_owner — verified against Megan's real ALLEXP export 2026-07-29: Carlos 127 / Roshan 794 / Abel 14 sales, unknown owner => 0 rows, case/whitespace tolerant) and posts its thread via box_order_log.run --owner-office/--channel. Carlos's standalone box_order_log post is byte-identical/untouched. --post ENABLED 2026-07-29 (Megan). SCOPE VERIFIED on the mini: `lucy rerun box_order_log_per_office --probe` pulled ALLEXPORDERLOG through the mini's session and returned ALL 4 offices (ROSHAN 3264 / RYAN 1438 / CARLOS 485 / ABEL 54), matching Megan's export; clean.filter_to_owner isolates each (unknown => 0 rows). So the MINI is the correct machine (Carlos's Lucy 2 session is self-scoped and would return only Carlos). NO-OP until an office enrolls Box (box_offices() returns [] -> 'nothing to do'). Runs via `lucy rerun`; a daily 7-8am LaunchAgent on the mini is the remaining install step (mirrors box_order_log_roshan) once the first Box office is live. Cadence rides the 7-8am window (Box extract lands ~7-8am). Present so `lucy rerun box_order_log_per_office` works (dry). Posting schedule is a STANDALONE LaunchAgent to install once Megan verifies a live per-office post. Registered 2026-07-29.",

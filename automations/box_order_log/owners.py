@@ -47,4 +47,13 @@ OWNERS = {
         # is the same formula template (reads a hidden "Lucy Box Data" tab).
         sheet_id="1zn_oolbuDO2Svu1ui0F8w24RRR5Am6FpPp0WCExAp2I",
     ),
+    "abel": OwnerConfig(
+        key="abel",
+        display="Abel Draper",
+        office_id="",           # OwnerVille # not on file; match is by name
+        match="abel draper",    # full name — "abel" alone would hit "Isabel…"
+        email_to=["abeldraper1@gmail.com"],
+        # "Abel Draper - Metrics" workbook; same "Lucy Box Order Log" template.
+        sheet_id="1UUQ8J0cDz0q9PMRTI_IMV0iKP-YLxaDh7t-V4R9TSNc",
+    ),
 }
