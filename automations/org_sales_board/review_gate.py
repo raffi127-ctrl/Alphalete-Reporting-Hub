@@ -98,8 +98,12 @@ TITLE = "Org Sales Board Email"                 # + " — M/D"
 TITLE_LEGACY = "Org Sales Board — correo del"   # + " M/D"
 REMIND_MARK = "reminder: the Org Sales Board email"
 REMIND_MARK_LEGACY = "Recordatorio:"
-SENT_MARK = "Sent to the distro"
-SENT_MARK_LEGACY = "Enviado"
+SENT_MARK = "Sent — approved by"
+# "Enviado" is what this wrote before 2026-07-30. "Sent to the distro" was the
+# English wording for a few minutes on 2026-07-30 and said "distro" even when the
+# mail had gone to the proving list — recognised here so a thread that got one
+# is still locked, never written.
+SENT_MARK_LEGACY = ("Enviado", "Sent to the distro")
 FAILED_MARK = "Could not send"
 FAILED_MARK_LEGACY = "No se pudo enviar"
 REMIND_AFTER_HOURS = 3.0
@@ -110,8 +114,15 @@ def _said(replies, *marks) -> bool:
 
     Substring, not startswith: the replies now OPEN with the approver mentions,
     so the phrase that identifies them is no longer the first thing in the text.
-    Safe as a substring because only our own messages live in this thread."""
-    return any(any(m in (r.get("text") or "") for m in marks)
+    Safe as a substring because only our own messages live in this thread.
+
+    Each mark is a string OR an iterable of them, so a wording that changed more
+    than once can carry every retired spelling without the call sites growing a
+    star-arg each time."""
+    flat = []
+    for m in marks:
+        flat.extend([m] if isinstance(m, str) else list(m))
+    return any(any(m in (r.get("text") or "") for m in flat)
                for r in replies[1:])
 
 DRIVE_FOLDER_NAME = "Org Sales Board - correos para revisar"
@@ -387,7 +398,7 @@ def confirm_sent(today: dt.date, who: str, to_note: str = "",
         return
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"{SENT_MARK} :white_check_mark: — approved by {who}"
+        text=(f":white_check_mark: {SENT_MARK} {who}"
               f"{(' · ' + to_note) if to_note else ''}"))
 
 
@@ -520,8 +531,13 @@ def main(argv=None) -> int:
             return 0
         rc = send_reviewed(today, args.distro)
         if rc == 0:
+            # Name the real destination in BOTH cases (Eve, 2026-07-30). The
+            # confirmation used to say nothing at all without --distro, so a
+            # mail that went only to Rafael + Megan read in the channel exactly
+            # like one that went to the whole org.
             confirm_sent(today, who[1],
-                         to_note="distro Alphalete Org Owners" if args.distro else "",
+                         to_note=("Alphalete Org Owners distro" if args.distro
+                                  else "proving list (Rafael + Megan)"),
                          channel=args.channel)
         else:
             report_failure(today, rc, args.channel)
