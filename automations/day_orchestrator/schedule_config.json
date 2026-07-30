@@ -4714,6 +4714,59 @@
       },
       "machine": "Lucy 1"
     },
+    "dd_week_roll": {
+      "on_scheduler": true,
+      "_off_scheduler_note": "Insert the new week-ending column on the Org DDs Ongoing Report tab when the week that just ended isn't already its leftmost week — so nobody has to hand-roll the tab (what caused the 2026-07-30 wrong-week send). Copies the Avg DD / Active Owners formula cells into the new column (PASTE_FORMULA re-points their refs) and blanks the owner data rows for dd_populate to fill. DRY-RUN by default: base_args carries --roll only, so it PRINTS the plan. Add --write to go live. Validated on the '_dd_sandbox' duplicate 2026-07-30. LUCY 1.",
+      "display_name": "DD — roll the week-ending column",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.dd_search"
+      ],
+      "base_args": [
+        "--roll"
+      ],
+      "cadence": {
+        "weekdays": [
+          3
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "dd_populate": {
+      "on_scheduler": true,
+      "_off_scheduler_note": "Populate the tab's current-week column for EVERY Active-YES owner from OUR Tableau mapping (ORG DD Detail), combining the week's Sat+Sun deposit dates and folding Credico — the switch off the VA hand-fill (Megan 2026-07-30). DRY-RUN by default: base_args carries --populate only, so it PRINTS the per-owner diff vs the tab and writes nothing (VA still fills the tab during the transition). Add --write to go live. Never overwrites a Credico owner's cell when Credico is unavailable. Depends on credico_fetch so the fold has data. LUCY 1.",
+      "display_name": "DD — populate all owners from our mapping",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.dd_search"
+      ],
+      "base_args": [
+        "--populate"
+      ],
+      "cadence": {
+        "weekdays": [
+          3
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [
+        "dd_week_roll",
+        "credico_fetch"
+      ],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "dd_name_search": {
       "on_scheduler": false,
       "_off_scheduler_note": "One-shot: download the Tableau ORG DD Detail crosstab and search it for the four bulletin-only names (Justin Fermin, Marcos Barbosa, Karrington Moody, Milan Godbolt) to settle whether they have weekly DD history in the source or exist only as a single manual figure. READ-ONLY \u2014 writes nothing to any report tab; results land on the '_dd_search' tab of the override workbook, readable from any machine. Needs Raf's Tableau login, so LUCY 1.",

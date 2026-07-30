@@ -37,6 +37,11 @@ OUT = Path(__file__).resolve().parents[2] / "output" / "override_bulletin"
 # spelling still matches the name the bulletin uses.
 TARGETS = ["Justin Fermin", "Marcos Barbosa", "Karrington Moody", "Milan Godbolt"]
 
+# Owners whose tab cell = Tableau part + a Credico deposit (the second DD source).
+# Used only as a SAFETY skip-list when Credico can't be pulled, so the populate
+# never overwrites their cell with a Tableau-only figure and drops the deposit.
+CREDICO_OWNERS = ["Abel Draper", "Jahvid Thompson"]
+
 _WK_RE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2,4})")
 
 
@@ -308,9 +313,27 @@ def accumulate_all(write=False, page=None, verbose=True):
         k = P._norm_name(F.canon(o, aliases))
         ourk[k] = round(ourk.get(k, 0) + d["clean"], 2)
 
-    credico = {P._norm_name(F.canon(n, aliases))
-               for n in ("Abel Draper", "Jahvid Thompson")}
-    changes, same, skipped, missing, wrote = [], 0, [], [], 0
+    # Fold Credico (the SECOND DD source) so those owners' figure = Tableau part
+    # + Credico deposit, exactly as the tab holds it. Same source dd_data uses;
+    # if it can't be reached (needs credico_fetch on Lucy 1) those owners come out
+    # short and are flagged rather than silently wrong.
+    credico_amts, credico_ok = {}, False
+    try:
+        from automations.credico import report as C
+        cowners, _cnotes, _coff = C.pull(tabweek, aliases=aliases, verbose=False)
+        credico_amts = {P._norm_name(F.canon(o, aliases)): amt
+                        for o, amt in cowners.items()}
+        credico_ok = True
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ Credico NOT folded ({type(e).__name__}) — Credico owners will be "
+              f"short; on Lucy 1 run `lucy rerun credico_fetch` first")
+
+    # Safety: if Credico is UNAVAILABLE, never overwrite a known Credico owner's
+    # cell — a Tableau-only figure would drop their deposit. Skip + flag them.
+    credico_skip = set() if credico_ok else {
+        P._norm_name(F.canon(n, aliases)) for n in CREDICO_OWNERS}
+
+    changes, same, folded, missing, held, wrote = [], 0, [], [], [], 0
     for i, r in enumerate(vals[1:], start=2):
         nm = (r[0] or "").strip()
         if not nm or nm.lower().startswith("total"):
@@ -318,15 +341,19 @@ def accumulate_all(write=False, page=None, verbose=True):
         if not (len(r) > 1 and r[1].strip().upper() == "YES"):
             continue
         k = P._norm_name(F.canon(nm, aliases))
-        if k in credico:
-            skipped.append(nm)
+        if k in credico_skip:
+            held.append(nm)
             continue
-        ours = ourk.get(k)
+        tableau = ourk.get(k)
+        cred = credico_amts.get(k, 0.0)
         cur = D.money(r[wcol]) if wcol < len(r) else 0.0
-        if ours is None:
+        if tableau is None and not cred:
             if abs(cur) > 0.5:
                 missing.append((nm, cur))     # tab has a figure, our pull doesn't
             continue
+        ours = round((tableau or 0.0) + cred, 2)
+        if cred:
+            folded.append((nm, tableau or 0.0, cred, ours))
         if abs(ours - cur) > 0.5:
             changes.append((nm, cur, ours))
         else:
@@ -337,7 +364,11 @@ def accumulate_all(write=False, page=None, verbose=True):
 
     print(f"\ntab current week = {tabweek!r}")
     print(f"matches already on the tab: {same}")
-    print(f"Credico owners skipped (folded by the credico step): {', '.join(skipped) or 'none'}")
+    print(f"Credico folded ({'ok' if credico_ok else 'UNAVAILABLE'}): "
+          + (", ".join(f"{nm} = ${t:,.0f}+${c:,.0f}" for nm, t, c, _ in folded)
+             or "none"))
+    if held:
+        print(f"HELD (Credico unavailable, not overwritten): {', '.join(held)}")
     if missing:
         print("tab has a figure our pull does NOT (check alias / Active flag):")
         for nm, cur in missing:
@@ -347,7 +378,81 @@ def accumulate_all(write=False, page=None, verbose=True):
     for nm, cur, ours in sorted(changes, key=lambda x: -abs(x[2] - x[1])):
         print(f"   {nm}: tab ${cur:,.2f} -> ours ${ours:,.2f}  "
               f"(Δ ${ours - cur:,.2f})")
-    return {"changes": changes, "same": same, "skipped": skipped, "missing": missing}
+    return {"changes": changes, "same": same, "folded": folded,
+            "held": held, "missing": missing}
+
+
+def _col_letter(idx0):
+    """0-based column index -> A1 letter(s)."""
+    s = ""
+    n = idx0 + 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def roll_week(ws, due_label=None, dry_run=True, verbose=True):
+    """Insert the new week-ending column at the leftmost week position, so nobody
+    has to hand-roll the tab (Megan 2026-07-30). The Avg DD / Active Owners rows
+    reference the leftmost week column by RELATIVE ref, so a bare insert would
+    leave them pointing at the OLD week — we copy those formula cells into the new
+    column (PASTE_FORMULA adjusts the ref to the new column), and blank the owner
+    DATA rows for the populate to fill. Idempotent: no-op if the leftmost week is
+    already the due week. DRY-RUN unless dry_run=False. Run on `_dd_sandbox` first."""
+    from automations.override_bulletin import dd_data as D
+    vals = ws.get_all_values()
+    hdr = vals[0]
+    wcol0 = next((i for i, h in enumerate(hdr)
+                  if re.match(r"^\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$", h or "")), None)
+    if wcol0 is None:
+        print("✗ no week column found"); return None
+    leftmost = hdr[wcol0].strip()
+    due = due_label or D.fmt_week(D.week_just_ended())
+    if leftmost == due:
+        print(f"leftmost week is already {due!r} — no roll needed"); return None
+
+    col = _col_letter(wcol0)                       # current-week column letter
+    nrows = len(vals)
+    formula_col = ws.get(f"{col}1:{col}{nrows}", value_render_option="FORMULA")
+    formula_rows, data_rows = [], []
+    for i, cell in enumerate(formula_col, start=1):
+        v = (cell[0] if cell else "")
+        if i == 1:
+            continue                               # header handled separately
+        (formula_rows if str(v).startswith("=") else data_rows).append((i, v))
+
+    print(f"\n{'[dry-run] ' if dry_run else ''}roll: insert new column {col} = {due!r}, "
+          f"push {leftmost!r} right")
+    print(f"  formula cells to re-point (copied so refs follow to {col}): {len(formula_rows)}")
+    print(f"  owner/data cells to blank for the populate: "
+          f"{sum(1 for _, v in data_rows if str(v).strip() not in ('', '$0.00', '0'))}")
+    if dry_run:
+        return {"due": due, "insert_at": col, "formula_rows": len(formula_rows),
+                "data_rows": len(data_rows)}
+
+    gid = ws.id
+    # 1) insert a blank column at the leftmost-week position
+    ws.spreadsheet.batch_update({"requests": [{"insertDimension": {
+        "range": {"sheetId": gid, "dimension": "COLUMNS",
+                  "startIndex": wcol0, "endIndex": wcol0 + 1},
+        "inheritFromBefore": False}}]})
+    # 2) copy the OLD week column (now shifted to wcol0+1) into the new one,
+    #    PASTE_FORMULA so relative refs adjust to the new column
+    ws.spreadsheet.batch_update({"requests": [{"copyPaste": {
+        "source": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": nrows,
+                   "startColumnIndex": wcol0 + 1, "endColumnIndex": wcol0 + 2},
+        "destination": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": nrows,
+                        "startColumnIndex": wcol0, "endColumnIndex": wcol0 + 1},
+        "pasteType": "PASTE_FORMULA"}}]})
+    # 3) header + blank the data rows in the new column
+    ws.update_cell(1, wcol0 + 1, due)
+    blanks = [{"range": f"{col}{i}", "values": [[""]]} for i, _ in data_rows]
+    if blanks:
+        ws.batch_update(blanks, value_input_option="USER_ENTERED")
+    print(f"  ✓ rolled: {col}1={due}, {len(formula_rows)} formulas re-pointed, "
+          f"{len(blanks)} data cells blanked")
+    return {"due": due, "rolled": True}
 
 
 def search(page=None, verbose=True):
@@ -542,9 +647,22 @@ def main(argv=None):
                     help="populate the tab's current-week column for EVERY "
                          "Active-YES owner from our mapping (dry-run without "
                          "--write) — the switch off the VA hand-fill")
+    ap.add_argument("--roll", action="store_true",
+                    help="insert the new week-ending column on the DD tab if the "
+                         "week just ended isn't its leftmost week (dry-run without "
+                         "--write)")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="target the '_dd_sandbox' tab instead of the live DD tab "
+                         "(for --populate / --roll testing)")
     a = ap.parse_args(argv)
     try:
-        if a.populate:
+        if a.roll:
+            from automations.override_bulletin import dd_data as D
+            from automations.recruiting_report import fill as _fill
+            tab = "_dd_sandbox" if a.sandbox else D.DD_TAB
+            ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(tab)
+            roll_week(ws, dry_run=not a.write)
+        elif a.populate:
             accumulate_all(write=a.write)
         elif a.all:
             compare_all(week=a.week)

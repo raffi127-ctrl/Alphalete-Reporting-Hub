@@ -409,11 +409,18 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
 
     for p in podium:
         if p["expected_week"] is not None and abs(p["week"] - p["expected_week"]) > 0.5:
-            msg = (f"{p['name']}: computed ${p['week']:,.2f} but the bulletin "
-                   f"says ${p['expected_week']:,.2f} "
-                   f"(off ${p['week'] - p['expected_week']:,.2f})")
-            problems.append(msg)
-            blocking.append(msg)
+            # NON-blocking since 2026-07-30: DD now comes from OUR mapping, so the
+            # leader figure IS the sum of the leader's list off our-populated
+            # column. The tree's 'expected week' cell is a HAND-TYPED reference
+            # that lags a week until someone rolls it — it can no longer be an
+            # independent source, so a difference is a note, not a send-stopper.
+            # The real money guards stay blocking: a listed ICD with no DD row,
+            # the direct-list reconciliation, and the headline read off the tab.
+            problems.append(
+                f"{p['name']}: computed ${p['week']:,.2f}; the tree's manual "
+                f"reference says ${p['expected_week']:,.2f} "
+                f"(off ${p['week'] - p['expected_week']:,.2f}) — reference lags, "
+                f"not a block")
         if p["expected_n"] is not None and p["n_icds"] and p["n_icds"] != p["expected_n"]:
             # Count only, and never blocking — the money is checked separately
             # and to the penny. Name the members worth $0 this week: a count
