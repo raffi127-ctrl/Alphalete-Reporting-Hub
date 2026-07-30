@@ -66,6 +66,13 @@ def _bundle(tmp: Path, captain) -> dict:
         "cancel_tableau": _png(tmp, f"{k}_cancel"),
         "teamstats_tableau": _png(tmp, f"{k}_stats"),
         "fiber_activation": _png(tmp, f"{k}_fiber"),
+        # One PNG per 'box:<slot>' section this captain declares. Built from
+        # the captain's own SECTION_KINDS rather than a fixed list, so a new
+        # metric box is covered by this test the moment it's wired up — the
+        # six fiber boxes would otherwise render as 'pending' notes here and
+        # silently drop out of the image-contract check.
+        "boxes": {kind.split(":", 1)[1]: _png(tmp, f"{k}_{kind.split(':', 1)[1]}")
+                  for _, kind in captain.sections if kind.startswith("box:")},
     }
 
 

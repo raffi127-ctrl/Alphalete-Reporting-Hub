@@ -2,16 +2,22 @@
 
 12 drafts in 4 flavors (roster + brand colors confirmed by Eve 2026-07-17):
   rafael  (1) — Raf's Captainship: NI churn + Wireless churn
-  fiber   (5) — Wayne / Starr / Chan / Tony / Sahil: NI churn
+  fiber   (5) — Wayne / Starr / Chan / Tony / Sahil: 10 sections (see below)
   b2b     (3) — Carlos / Eveliz / Luis: NI churn (5 buckets, incl 120)
   nds     (3) — Khalil / Colten / Jairo: NI churn
 
-Section layout (per flavor) — the last 1-2 sections are the CHURN blocks,
-wired here via ChurnSource over the existing render engine. Section 1
-(Product Summary + Captainship Units, Sales Board screenshots) and section
-2 (Tableau Cancel-Rates / Team-Stats shots; fiber also pastes the Fiber
-Activations PNG) are built in sales_board.py / tableau_shot.py / fiber_png.py
-and assembled by email_build.py.
+Section layout is declared TWICE, index-aligned: _INTRO holds the wording the
+reader sees (Eve's list, emoji and all) and SECTION_KINDS says what each of
+those lines renders. Adding a section means adding one line to BOTH.
+
+Where each kind comes from:
+  product_summary / units      sales_board.py + sheet_shot.py (Sales Board)
+  fiber_activation             fiber_png.py (the daily Fiber Activations PNG)
+  cancel_tableau / teamstats_  tableau_shot.py (rafael / b2b / nds only)
+  churn_ni / churn_wireless    churn_images.py over the churn render engines
+  box:<slot>                   box_images.py + daily_box_render.py — the
+                               one-column-per-day boxes the cancel-rate,
+                               activation-rate and ABP/6-days runs fill
 
 Churn sources reference the EXISTING open_ws_* helpers + tab constants so
 tab names are never hardcoded (and we don't trip on the en-dash/hyphen
@@ -41,11 +47,21 @@ _INTRO = {
         "New Internet Ongoing Churn Metrics 🌐",
         "Wireless Ongoing Churn Metrics 🛜",
     ]),
+    # Fiber went from 4 sections to 10 on 2026-07-29 (Eve's list, verbatim
+    # including the emoji): the Tableau Cancel-Rates shot is replaced by the
+    # two cancel-rate BOXES we now fill daily, Wireless churn joins, and the
+    # four new metric boxes (ABP, activation 0-30 / 30-60, 6+ days) close it.
     "fiber": ("Hello, team! Below you'll find:", [
         "Product Summaries Of Sales 💰",
         "Captainship Fiber Activations ✅",
-        "New Internet Ongoing Cancel Metrics ⚠️",
+        "New Int 0-30 Day Cancel Rate ⚠️",
+        "New Int 30-60 Day Cancel Rate 🚨",
         "New Internet Ongoing Churn Metrics 🌐",
+        "Wireless Ongoing Churn Metrics 🛜",
+        "ABP % Ongoing Report 💳",
+        "0-30 Day Ongoing Activation Rate ▶️",
+        "30-60 Day Ongoing Activation Rate 🚀",
+        "Ongoing 6+ Days Sales Rate 🤝🏻",
     ]),
     "b2b": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
@@ -67,11 +83,16 @@ _INTRO = {
 #   cancel_tableau     -> Tableau Cancel-Rates shot (filtered to this team)
 #   teamstats_tableau  -> Tableau Captain Team Stats Breakout shot (this person)
 #   churn_ni / churn_wireless -> the rendered churn bucket images
+#   box:<slot>         -> a one-column-per-day metrics box (see BOX_SOURCES),
+#                         rendered by box_images/daily_box_render
 SECTION_KINDS = {
     "rafael": ["product_summary", "cancel_tableau", "churn_ni",
                "churn_wireless"],
-    "fiber":  ["product_summary", "fiber_activation", "cancel_tableau",
-               "churn_ni"],
+    "fiber":  ["product_summary", "fiber_activation",
+               "box:cancel-0-30", "box:cancel-30-60",
+               "churn_ni", "churn_wireless",
+               "box:abp", "box:activation-0-30", "box:activation-30-60",
+               "box:six-days"],
     "b2b":    ["product_summary", "teamstats_tableau", "churn_ni"],
     "nds":    ["product_summary", "teamstats_tableau", "churn_ni"],
 }
@@ -87,6 +108,51 @@ class ChurnSource:
     brand_title: bool = True   # paint the title bar in the captain's brand
                                # color; False keeps the render's own default
                                # (e.g. Rafael's Wireless stays the std blue)
+
+
+@dataclass(frozen=True)
+class BoxSource:
+    """One ONE-COLUMN-PER-DAY metrics box, rendered by box_images.
+
+    These are the boxes the daily cancel-rate / activation-rate / ABP+6-days
+    runs fill. All three fill modules return the same section dict shape
+    (header_row / office_avg_row / rep_header_row / rep_rows), which is why one
+    renderer covers all six sections."""
+    open_ws: Callable          # () -> gspread Worksheet
+    find: Callable             # ws -> {box key: section dict}
+    box: str                   # which box on that tab
+    title: str                 # title-bar text inside the image
+    slot: str                  # matches the 'box:<slot>' kind + the cid slot
+    cache_key: str             # boxes sharing a tab share this, so the
+                               # worksheet is opened once per captain
+
+
+def _fiber_boxes(slug: str) -> List[BoxSource]:
+    """The six metric boxes on a fiber captain's three tabs.
+
+    Imported lazily inside the function so `config` stays importable even if
+    one of the newer report modules is mid-refactor — a broken import here
+    would take all 12 drafts down, not just six sections."""
+    from functools import partial
+    from automations.captainship_cancel_rate import fill as _cx, captains as _cxc
+    from automations.captainship_activation_rate import fill as _ax
+    from automations.captainship_abp_6days import fill as _bx
+
+    cancel_tab = _cxc.BY_SLUG[slug].tab
+    return [
+        BoxSource(partial(_cx.open_ws, cancel_tab), _cx.find_sections, "0-30",
+                  "NEW INT 0-30 DAY CANCEL RATE", "cancel-0-30", "cancel"),
+        BoxSource(partial(_cx.open_ws, cancel_tab), _cx.find_sections, "30-60",
+                  "NEW INT 30-60 DAY CANCEL RATE", "cancel-30-60", "cancel"),
+        BoxSource(partial(_ax.open_ws, slug), _ax.find_boxes, "0-30",
+                  "0-30 DAY ONGOING ACTIVATION RATE", "activation-0-30", "activation"),
+        BoxSource(partial(_ax.open_ws, slug), _ax.find_boxes, "30-60",
+                  "30-60 DAY ONGOING ACTIVATION RATE", "activation-30-60", "activation"),
+        BoxSource(partial(_bx.open_ws, slug), _bx.find_boxes, "abp",
+                  "ABP % ONGOING REPORT", "abp", "abp"),
+        BoxSource(partial(_bx.open_ws, slug), _bx.find_boxes, "6days",
+                  "ONGOING 6+ DAYS SALES RATE", "six-days", "abp"),
+    ]
 
 
 @dataclass(frozen=True)
@@ -111,6 +177,7 @@ class Captain:
                                # So the address lives here, not in Gmail's
                                # "To" box.
     churn: List[ChurnSource] = field(default_factory=list)
+    boxes: List[BoxSource] = field(default_factory=list)
 
     @property
     def intro(self) -> Tuple[str, List[str]]:
@@ -251,21 +318,37 @@ CAPTAINS: List[Captain] = [
                     brand_title=False),
     ]),
     # ----- Fiber (Aron retired → Chan; Tony + Sahil added 2026-07-17) -----
+    # Wireless churn joined the fiber drafts 2026-07-29. It comes off the
+    # per-captain Wireless tabs owners_metrics_churn fills from ONE org-wide
+    # pull sliced by Captain's Bonus Teams — there are no per-captain wireless
+    # views in Tableau. brand_title=False like Rafael's: wireless_churn.render
+    # pins its own blue palette (title bar AND date band) and takes no title_bg
+    # at all, so a brand color here is not just off-style, it raises TypeError.
     Captain("wayne", "Wayne", "fiber", title_bg="#E69138", to=_to("wayne"), churn=[
         ChurnSource(_own.open_ws_fiber_wayne, _ni_render, "New Internet Churn"),
-    ]),
+        ChurnSource(_own.open_ws_wl_wayne, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("wayne")),
     Captain("starr", "Starr", "fiber", title_bg="#9900FF", to=_to("starr"), churn=[
         ChurnSource(_own.open_ws_fiber_starr, _ni_render, "New Internet Churn"),
-    ]),
+        ChurnSource(_own.open_ws_wl_starr, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("starr")),
     Captain("chan", "Chan", "fiber", title_bg="#8A7465", to=_to("chan"), churn=[
         ChurnSource(_own.open_ws_fiber_chan, _ni_render, "New Internet Churn"),
-    ]),
+        ChurnSource(_own.open_ws_wl_chan, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("chan")),
     Captain("tony", "Tony", "fiber", title_bg="#001F5B", to=_to("tony"), churn=[
         ChurnSource(_own.open_ws_fiber_tony, _ni_render, "New Internet Churn"),
-    ]),
+        ChurnSource(_own.open_ws_wl_tony, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("tony")),
     Captain("sahil", "Sahil", "fiber", title_bg="#800020", to=_to("sahil"), churn=[
         ChurnSource(_own.open_ws_fiber_sahil, _ni_render, "New Internet Churn"),
-    ]),
+        ChurnSource(_own.open_ws_wl_sahil, _wl_render, "Wireless Churn",
+                    brand_title=False),
+    ], boxes=_fiber_boxes("sahil")),
     # ----- B2B (5 buckets incl 120) -----
     Captain("carlos", "Carlos", "b2b", title_bg="#4CAF4F", to=_to("carlos"), churn=[
         ChurnSource(_own.open_ws_b2b_carlos, _ni_render, "New Internet Churn"),

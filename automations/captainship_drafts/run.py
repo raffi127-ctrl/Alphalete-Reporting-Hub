@@ -29,9 +29,16 @@ piles up 12 more drafts. --no-replace opts out.
 --skip-sheets skips the Sales Board screenshots (no browser login / no sheet
 row-group toggling) — those sections show a 'pending' note.
 
-Sections wired: §1 Product Summary + Captainship Units (Sales Board shots),
-churn (§3/§4), fiber Activations PNG. The Tableau §2 (Cancel Rates / Team
-Stats Breakout) shows a per-section 'pending' note until the Tableau phase.
+Sections wired: Product Summary + Captainship Units (Sales Board shots), the
+churn blocks, the fiber Activations PNG, and — since 2026-07-29 — the six
+one-column-per-day metric boxes on the fiber drafts (cancel rate 0-30 / 30-60,
+ABP %, activation 0-30 / 30-60, 6+ days out). Those read the tabs the daily
+cancel-rate / activation-rate / ABP runs fill, so this must run AFTER them;
+a box with no data for today shows a per-section 'pending' note.
+
+Rafael / B2B / NDS still take their §2 from Tableau (Cancel Rates / Team Stats
+Breakout). Fiber no longer does, so a fiber-only run needs no Tableau session
+at all.
 """
 from __future__ import annotations
 
@@ -42,7 +49,7 @@ import tempfile
 from pathlib import Path
 
 from automations.captainship_drafts import (
-    config, churn_images, email_build, fiber_png, preview,
+    config, churn_images, box_images, email_build, fiber_png, preview,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -169,6 +176,15 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     cross-captain size normalization, so same-flavor sections share one size."""
     logfn(f"\n--- {captain.key} ({captain.display_name}, {captain.flavor}) ---")
     churn = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
+    # The daily metric boxes (cancel / activation / ABP / 6-days). Never fatal:
+    # a box that can't be read is left out of the bundle and its section says
+    # so, rather than taking the whole draft down.
+    try:
+        boxes = box_images.render_captain(captain, today, render_dir, logfn=logfn)
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ metric boxes skipped for {captain.key}: "
+              f"{type(e).__name__}: {e}")
+        boxes = {}
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
     churn_ni = [c for c in churn if not c[0].lower().startswith("wireless")]
 
@@ -178,8 +194,16 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     else:
         ps, units = _sales_board_shots(captain, today, render_dir, logfn=logfn)
 
-    if skip_tableau:
-        logfn("  (‑‑skip-tableau) Tableau §2 shot skipped")
+    # Only pull a Tableau shot if a section actually renders one. Since
+    # 2026-07-29 the fiber drafts read their cancel rates off the sheet boxes
+    # instead, so fiber no longer has a cancel_tableau section — capturing it
+    # anyway would spend a Tableau session per captain on an image nothing
+    # shows.
+    kinds = {k for _, k in captain.sections}
+    wants_tableau = bool(kinds & {"cancel_tableau", "teamstats_tableau"})
+    if skip_tableau or not wants_tableau:
+        if skip_tableau:
+            logfn("  (‑‑skip-tableau) Tableau §2 shot skipped")
         cancel_tableau, teamstats_tableau = None, None
     else:
         cancel_tableau, teamstats_tableau = _tableau_shots(
@@ -194,11 +218,12 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         # captain's team. None → email_build shows a per-section 'pending' note.
         "cancel_tableau": cancel_tableau,
         "teamstats_tableau": teamstats_tableau,
+        "boxes": boxes,
         "fiber_activation": (fiber_png.fiber_activation_png(
             captain.key, today, render_dir, logfn=logfn)
             if captain.flavor == "fiber" else None),
     }
-    n_imgs = sum([ps is not None, len(units), len(churn),
+    n_imgs = sum([ps is not None, len(units), len(churn), len(boxes),
                   cancel_tableau is not None, teamstats_tableau is not None,
                   bundle["fiber_activation"] is not None])
     if not n_imgs:
@@ -228,12 +253,13 @@ def _pad_pngs_to_common_width(paths) -> None:
 
 
 def _normalize_sizes(built, *, logfn=print) -> None:
-    """Pad each section's PNGs to a common width WITHIN each flavor, so every
-    fiber Product Summary is one width, every fiber cancel shot one width, etc.
-    Sheet-screenshot sections vary in pixel width (per-captain sheet column
-    widths); the rendered sections (churn, fiber activation) are already fixed-
-    width so this is a harmless no-op for them. Runs across all captains of a
-    flavor present in THIS run (a single-captain run has nothing to match)."""
+    """Pad each SHEET-SCREENSHOT section's PNGs to a common width WITHIN each
+    flavor, so every fiber Product Summary is one width, etc. Those vary in
+    pixel width because sheet column widths differ per captain.
+
+    The churn images and metric boxes are deliberately left out — see the note
+    below. Runs across all captains of a flavor present in THIS run (a
+    single-captain run has nothing to match)."""
     from collections import defaultdict
     by_flavor: dict = defaultdict(list)
     for captain, bundle in built:
@@ -242,9 +268,16 @@ def _normalize_sizes(built, *, logfn=print) -> None:
         for key in ("product_summary", "cancel_tableau", "teamstats_tableau",
                     "fiber_activation"):
             _pad_pngs_to_common_width([b.get(key) for b in bundles])
+        # NOT normalized: the churn images and the metric boxes. Both are OUR
+        # renders, and since 2026-07-29 their width is meaningful — it's the
+        # number of days that tab actually holds. Padding a 2-day box out to a
+        # 7-day one's width would put back exactly the empty strip on the right
+        # that Eve asked us to remove. Only the sheet SCREENSHOTS get matched,
+        # which is what this step was built for (per-captain column widths).
+        #
         # (caption, path) lists — normalize per index so fiber's New-Internet and
         # All-Units unit charts each match their counterpart across captains.
-        for key in ("units", "churn_ni", "churn_wireless"):
+        for key in ("units",):
             depth = max((len(b.get(key) or []) for b in bundles), default=0)
             for i in range(depth):
                 _pad_pngs_to_common_width(

@@ -177,21 +177,29 @@ def export_cookies(out_path: Path | None = None) -> int:
 
 
 def seed_cookies(path: Path | None = None) -> bool:
-    """Replay an exported Google session into THIS machine's profile.
+    """DEAD END — kept as the record of one. Do not reach for this.
 
-    The interactive login needs a human at the screen for 2FA, which is a
-    problem when the machine that has to run the report is one nobody sits at.
+    The idea: sheets_login needs a human at the screen for 2FA, and nobody sits
+    at Lucy 1, so replay a session exported from a machine that IS signed in.
+    Mechanically sound — Playwright reads the cookies out through Chrome's own
+    API already decrypted, so this sidesteps the OS-key problem that makes a
+    copied profile directory unreadable (macOS Keychain / Windows DPAPI).
 
-    This is NOT the profile copy that _action_sheets_login rules out. Copying
-    the profile directory fails because Chrome seals its cookie store with an
-    OS-level key (macOS Keychain / Windows DPAPI), so the file is unreadable
-    anywhere else. Here Playwright reads the cookies out through Chrome's own
-    API — already decrypted — and add_cookies hands them to the target's Chrome,
-    which re-seals them with ITS key. The OS key never has to travel.
+    TRIED LIVE 2026-07-29, Eve's Windows box -> Lucy 1. It cost us the working
+    session and gained nothing:
+      • the seeded browser DID load the sheet, so this function returned True
+      • the very next launch was signed out again — the injected cookies never
+        survived into the profile
+      • and Google revoked the session AT SOURCE: Eve's box, signed in and
+        building reports all morning, was signed out too. She had to redo the
+        interactive login on a machine that had been working fine
 
-    Returns whether the profile can open the sheet afterwards. Google may well
-    refuse a session replayed onto different hardware and a different OS; a
-    False here means the human login is still the only way in."""
+    So the cost is not "it might not work" — it is losing the session you
+    already had. A human at the target machine is the only way in.
+
+    Returns whether the profile can open the sheet in THIS browser, which the
+    above shows is not the same as the profile being signed in. Anything relying
+    on this must verify separately with check()."""
     import json
 
     p = Path(path or COOKIES_PATH)
@@ -362,27 +370,57 @@ def _shoot_when_painted(page, rng: str, *, settle_ms: int, timeout_s: int,
 
     `exact_clip` (from the sheet's own geometry) REPLACES the union outright —
     unioning would hand the merge-widened overlay right back and undo the whole
-    point of measuring the grid."""
+    point of measuring the grid. Its WIDTH is final; its HEIGHT is only a
+    starting point and grows here — see below.
+
+    Returns (png, clip_used). The caller needs the clip it actually got, not the
+    one it asked for, because the height gate compares against it.
+
+    WHY THE CLIP HEIGHT GROWS (2026-07-29). The overlay is clipped to the
+    viewport, so on a tall range the caller's grow loop measures it short, then
+    enlarges the viewport — and the FIRST measurement after that resize still
+    comes back at the old height, because Sheets hasn't re-laid-out yet. That
+    stale number was frozen into exact_clip and, since the height gate compares
+    the shot to that same number, the run reported a clean capture of a
+    truncated range. It is a race, which is why it hit some captains and not
+    others in the same batch and looked fixed for days at a time: measured live,
+    Sahil's PS read 1617px then 1796px seconds later — the short one cut his
+    All-Units block mid-rep and dropped the 4 week-history rows under it.
+
+    So the overlay is re-read every round and the clip follows it UP (never
+    down — a collapsed overlay must not shrink a good clip), bounded by what the
+    viewport can actually paint. Any growth restarts the settle count, so the
+    shot returned is always one that stopped changing at the FINAL size."""
     page.wait_for_timeout(settle_ms)
     deadline = time.time() + timeout_s
-    want = exact_clip or full_rect
     prev, same = None, 0
+    clip = dict(exact_clip) if exact_clip else None
+    # A screenshot clip is not scrolled into view: anything past the bottom of
+    # the viewport comes back cut, so that is the ceiling for any growth.
+    vp = page.viewport_size or _DEFAULT_VIEWPORT
+    max_h = vp["height"] - (clip["y"] if clip else 0)
     while True:
         rect = _selection_rect(page)
-        if rect is None and want is None:
+        if rect is None and clip is None and full_rect is None:
             raise RuntimeError(f"range {rng}: selection overlay vanished")
-        clip = exact_clip or _union_rect(full_rect, rect)
+        if clip is not None and rect is not None:
+            grown = min(rect["height"], max_h)
+            if grown > clip["height"]:
+                clip["height"] = grown
+                same = 0           # geometry moved — the settle count restarts
+        shot_clip = clip or _union_rect(full_rect, rect)
+        want = clip or full_rect
         covered = (want is None or rect is not None
                    and rect["height"] >= want["height"] * 0.97)
-        cur = page.screenshot(clip=clip)
+        cur = page.screenshot(clip=shot_clip)
         if covered and prev is not None and cur == prev:
             same += 1
             if same >= 2:          # 3 identical frames ≈ 2.4s of no painting
-                return cur
+                return cur, shot_clip
         else:
             same = 0
         if time.time() > deadline:
-            return cur             # best effort — height gate below still guards
+            return cur, shot_clip  # best effort — height gate below still guards
         prev = cur
         page.wait_for_timeout(1200)
 
@@ -447,11 +485,16 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         exact_clip = ({"x": rect["x"], "y": rect["y"],
                        "width": exact["width"], "height": rect["height"]}
                       if exact else None)
-        grown_h = rect["height"]
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
-        png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
-                                  timeout_s=timeout_s, full_rect=rect,
-                                  exact_clip=exact_clip)
+        png, used_clip = _shoot_when_painted(page, rng, settle_ms=settle_ms,
+                                             timeout_s=timeout_s,
+                                             full_rect=rect,
+                                             exact_clip=exact_clip)
+        # The clip the shot was actually taken at, which _shoot_when_painted
+        # grows as the overlay settles. Gating against the pre-settle rect
+        # instead is what let a truncated PS through: both numbers came from
+        # the same stale measurement, so they always agreed.
+        grown_h = (used_clip or rect)["height"]
         has_ink = _ink_pixels(png) >= _MIN_INK_PX
         if exact and has_ink and not _bottom_has_ink(png):
             # Right size, blank tail: Sheets hadn't painted the last rows when

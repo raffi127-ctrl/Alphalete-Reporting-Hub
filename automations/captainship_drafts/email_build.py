@@ -130,6 +130,12 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
         ts = bundle.get("teamstats_tableau")
         body += (imgs.img(ts, slot="team-stats") if ts
                  else _pending("Team Stats Breakout Tableau shot"))
+    elif kind.startswith("box:"):
+        # One-column-per-day metrics box (cancel / activation / ABP / 6-days).
+        slot = kind.split(":", 1)[1]
+        path = (bundle.get("boxes") or {}).get(slot)
+        body += (imgs.img(path, slot=slot) if path
+                 else _pending(f"{heading} box"))
     elif kind in ("churn_ni", "churn_wireless"):
         items = bundle.get(kind) or []
         if items:
@@ -180,8 +186,9 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
 
     bundle keys: product_summary(Path), units([(cap,Path)]),
     fiber_activation(Path), cancel_tableau(Path), teamstats_tableau(Path),
-    churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]).  Missing keys
-    render as a per-section 'pending' note."""
+    churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]),
+    boxes({slot: Path}).  Missing keys render as a per-section 'pending'
+    note."""
     msg = EmailMessage()
     msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR
