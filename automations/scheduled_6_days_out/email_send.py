@@ -39,6 +39,37 @@ _APP_PW_ENV = "ALPHALETE_REPORTING_GMAIL_APP_PASSWORD"
 # Recipient lists per captainship. Eve edits these directly when a group member
 # changes — no Gmail contact-group resolution (programmatic sends can't expand a
 # Gmail group name; they need explicit addresses).
+# Team -> the contact group in alphaletereporting's Contacts that IS the real
+# list (Eve, 2026-07-30). Both are shared with other reports: 'Raf's Captain
+# Team' also feeds the Org Sales Board email and Rafael's captainship report,
+# 'Starr's Captainship' also feeds Starr's. Editing either moves all of them.
+# RECIPIENTS below is only the fallback if the group can't be read.
+GROUPS: dict[str, str] = {
+    "raf": "Raf's Captain Team",
+    "starr": "Starr's Captainship",
+}
+
+
+def recipients_for(team: str, *, logfn=print) -> List[str]:
+    """The team's live list: its contact group, else the RECIPIENTS fallback
+    with a loud warning. Never raises — a Contacts outage must not stop the
+    morning send."""
+    group = GROUPS.get(team)
+    if group:
+        try:
+            from automations.shared.contacts_auth import expand_groups
+            emails, missing = expand_groups([group])
+            if emails and not missing:
+                return emails
+            logfn(f"  ⚠ {team}: contact group {group!r} "
+                  f"{'not found' if missing else 'is empty'} — using the "
+                  f"RECIPIENTS fallback in email_send.py")
+        except Exception as e:                    # noqa: BLE001
+            logfn(f"  ⚠ {team}: couldn't read Contacts ({type(e).__name__}: "
+                  f"{e}) — using the RECIPIENTS fallback in email_send.py")
+    return list(RECIPIENTS.get(team, []))
+
+
 RECIPIENTS: dict[str, List[str]] = {
     "raf": [
         "andrew.sanborn07@gmail.com", "Ayakhafaji02@gmail.com",
@@ -49,14 +80,19 @@ RECIPIENTS: dict[str, List[str]] = {
         "edgarmuniz2020@icloud.com", "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
         "Loganjoseph81@yahoo.com", "Palace.kash@gmail.com",
-        "kiarri.mcbroom@gmail.com", "maudmiller4@gmail.com",
+        # Kiarri McBroom + Preppie Olison dropped 2026-07-30: they are not in
+        # "Raf's Captain Team", and that group is now the list.
+        "maudmiller4@gmail.com",
         "Zenithzenith2099@gmail.com", "niitagoe4@gmail.com",
-        "preppie.olison@gmail.com", "raffi127@gmail.com",
+        "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
         "mcelwee.steve95@gmail.com", "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
     ],
     "starr": [
+        # Added 2026-07-30 to match "Starr's Captainship".
+        "adreyb15@gmail.com", "nataliagwarda@gmail.com",
+        "iraffi127@icloud.com",
         "dylanjtwaddle@gmail.com", "jason.vyzahinc@gmail.com",
         "jpascual@elevaremanagementinc.com", "maudmiller4@gmail.com",
         "milly.vinceremarketing@gmail.com", "omniamanagementinc@gmail.com",
@@ -188,7 +224,7 @@ def send(team: str, png_path: Path, subject: str,
     team = team.lower()
     if team not in RECIPIENTS:
         raise EmailSendError(f"Unknown team {team!r} (expected raf/starr).")
-    to_addrs = [test_to] if test_to else list(RECIPIENTS[team])
+    to_addrs = [test_to] if test_to else recipients_for(team)
 
     msg = build_message(subject, png_path, to_addrs)
 
