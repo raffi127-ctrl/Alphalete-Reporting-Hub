@@ -291,8 +291,10 @@ def fix_last_header() -> int:
     from automations.shared import slack_metrics_post as smp
     c = smp._client()
     hist = c.conversations_history(channel=CHANNEL_ID, limit=40)
+    # match on the text WITHOUT the emoji — Slack returns 📋 as :clipboard: in the
+    # API, so an exact PARENT_TEXT match misses.
     parent = next((m for m in hist.get("messages", [])
-                   if PARENT_TEXT in (m.get("text") or "")), None)
+                   if "DAILY PUSH SCORECARD" in (m.get("text") or "")), None)
     if not parent:
         print("[fix] no DAILY PUSH SCORECARD parent found", flush=True)
         return 0
