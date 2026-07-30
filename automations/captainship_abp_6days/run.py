@@ -66,15 +66,16 @@ def _run_fill_phase(label: str, slug: str, parsed: dict, today: dt.date,
     print(f"\n--- {label}: parse + fill ---")
     office = parsed["office_total"]
     print(f"  ICD owners with data: {len(parsed['reps'])}")
-    for box in pull.BOXES:
+    expected = fill.boxes_for(slug)
+    for box in expected:
         print(f"    Captainship Avg {BOX_TITLE[box]:>14}: "
               f"{office.get(box, {}).get('pct', '-'):>8}")
 
     ws = fill.open_ws(slug)
     boxes = fill.find_boxes(ws)
-    if len(boxes) != len(pull.BOXES):
+    if set(boxes) != set(expected):
         raise ValueError(
-            f"expected {len(pull.BOXES)} boxes on {ws.title!r}, found "
+            f"expected boxes {sorted(expected)} on {ws.title!r}, found "
             f"{sorted(boxes)}. The box headers are matched on 'ABP' / '6+ DAY' "
             f"in column A."
         )

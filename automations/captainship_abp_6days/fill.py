@@ -57,6 +57,20 @@ BOX_LABELS = (
     ("6days", "6+ DAY"),
 )
 
+# Slug -> the boxes its tab is EXPECTED to carry, when that is not all of them.
+# Rafael's ABP sits on a tab of its own (his 6-days-out is a separate tab), so
+# "found one box" is correct for him and a hard failure for everyone else — the
+# five fiber tabs carry both, and one missing there means a renamed header, which
+# is exactly the silent breakage the caller's count check exists to catch.
+SLUG_BOXES = {
+    "rafael": ("abp",),
+}
+
+
+def boxes_for(slug: str) -> tuple:
+    """Which boxes `slug`'s tab should have."""
+    return SLUG_BOXES.get(slug, tuple(k for k, _ in BOX_LABELS))
+
 _norm = _shared._norm
 _has_pct = _shared._has_pct
 _date_label = _shared._date_label
