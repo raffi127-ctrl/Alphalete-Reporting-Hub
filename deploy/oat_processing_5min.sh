@@ -62,12 +62,12 @@ echo "[$(date)] OAT Processing starting (args: ${ARGS:-dry-run} ${*:-})" >> "$LO
 ST=$?
 echo "[$(date)] OAT Processing finished exit=$ST" >> "$LOG_FILE"
 
-# ---- DAILY SCORECARD: after the 8:00 PM run, DM it to Megan for review (NOT the
-# channel). Megan reviews, then it's posted to #alphaletegp-recruiting on her OK
-# (Megan 2026-07-29). Megan's Slack id = U04G5HJBGFN (Megan Hidalgo). -----------
+# ---- DAILY SCORECARD: after the 8:00 PM run, POST it to #alphaletegp-recruiting
+# as Lucy — LIVE, no review step (Megan 2026-07-29: "just take it live, no need to
+# DM me"). Header carries no counts breakdown; the PDF has the full card. --------
 if [ "$DRYRUN" -eq 0 ] && [ "$h" -eq 20 ] && [ "$m" -eq 0 ]; then
-  echo "[$(date)] 8pm — building + DMing the daily scorecard to Megan (review)" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.oat_processing.summary --dm U04G5HJBGFN >> "$LOG_FILE" 2>&1 || true
+  echo "[$(date)] 8pm — posting the daily scorecard to #alphaletegp-recruiting" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.oat_processing.summary >> "$LOG_FILE" 2>&1 || true
 fi
 
 # ---- Report to the Hub (streak-gated, like resume_pushing) so the card shows a

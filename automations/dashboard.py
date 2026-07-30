@@ -11444,10 +11444,9 @@ else:  # st.session_state.view == "user"
             # 2 green (ok) on its own. (Megan 2026-07-29)
             # DD Gross Revenue — in testing → pink pill. (Megan 2026-07-28)
             "[class*='dd_gross_revenue__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
-            # OAT Daily Scorecard — in testing → pink pill. (Megan 2026-07-28)
-            "[class*='oat_summary__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
-            # OAT Processing — in testing → pink pill. (Megan 2026-07-28)
-            "[class*='oat_processing__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            # OAT Processing + OAT Daily Scorecard — LIVE 2026-07-29 (Megan "take it
+            # live"): testing pink pills removed; they use the normal calstat pills
+            # (green ok / red fail / orange running) like any live report.
             "</style>",
             unsafe_allow_html=True,
         )
