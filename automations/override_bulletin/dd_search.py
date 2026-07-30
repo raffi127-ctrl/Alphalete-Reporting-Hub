@@ -272,6 +272,84 @@ def accumulate(write=False, page=None, verbose=True):
     return figs
 
 
+def accumulate_all(write=False, page=None, verbose=True):
+    """Populate the DD tab's CURRENT-WEEK column for EVERY Active-YES owner from
+    OUR Tableau mapping — the switch off the VA hand-fill (Megan 2026-07-30).
+    Combined week (Sat+Sun deposit dates) + fees excluded. DRY-RUN unless write=True.
+
+    SKIPS the Credico owners (Abel Draper / Jahvid Thompson): their tab cell is the
+    Tableau part PLUS a Credico deposit folded by the separate credico step, so
+    overwriting it with the Tableau-only figure would drop the Credico money. Only
+    ever writes the current-week cell of an Active-YES row. SANDBOX/dry-run first
+    (CLAUDE.md) — this touches the whole week column."""
+    from automations.override_bulletin import dd_data as D
+    from automations.recruiting_report import fill as _fill
+    aliases = F.load_alias_map()
+
+    per, _ = _pull(page=page, verbose=verbose, targets=None)
+    per = {o: _regroup_weeks(wk) for o, wk in per.items()}
+
+    ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
+    vals = ws.get_all_values()
+    hdr = vals[0]
+    wcol = next((i for i, h in enumerate(hdr)
+                 if re.match(r"^\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$", h or "")), None)
+    if wcol is None:
+        print("✗ no week column found on the tab")
+        return {}
+    tabweek = hdr[wcol].strip()
+
+    # our combined-week figure per alias-canonical key
+    ourk = {}
+    for o, wk in per.items():
+        d = wk.get(tabweek)
+        if not d:
+            continue
+        k = P._norm_name(F.canon(o, aliases))
+        ourk[k] = round(ourk.get(k, 0) + d["clean"], 2)
+
+    credico = {P._norm_name(F.canon(n, aliases))
+               for n in ("Abel Draper", "Jahvid Thompson")}
+    changes, same, skipped, missing, wrote = [], 0, [], [], 0
+    for i, r in enumerate(vals[1:], start=2):
+        nm = (r[0] or "").strip()
+        if not nm or nm.lower().startswith("total"):
+            continue
+        if not (len(r) > 1 and r[1].strip().upper() == "YES"):
+            continue
+        k = P._norm_name(F.canon(nm, aliases))
+        if k in credico:
+            skipped.append(nm)
+            continue
+        ours = ourk.get(k)
+        cur = D.money(r[wcol]) if wcol < len(r) else 0.0
+        if ours is None:
+            if abs(cur) > 0.5:
+                missing.append((nm, cur))     # tab has a figure, our pull doesn't
+            continue
+        if abs(ours - cur) > 0.5:
+            changes.append((nm, cur, ours))
+        else:
+            same += 1
+        if write:
+            ws.update_cell(i, wcol + 1, ours)
+            wrote += 1
+
+    print(f"\ntab current week = {tabweek!r}")
+    print(f"matches already on the tab: {same}")
+    print(f"Credico owners skipped (folded by the credico step): {', '.join(skipped) or 'none'}")
+    if missing:
+        print("tab has a figure our pull does NOT (check alias / Active flag):")
+        for nm, cur in missing:
+            print(f"   {nm}: tab ${cur:,.2f}")
+    print(f"would change {len(changes)} cell(s)" if not write
+          else f"WROTE {wrote} cell(s)")
+    for nm, cur, ours in sorted(changes, key=lambda x: -abs(x[2] - x[1])):
+        print(f"   {nm}: tab ${cur:,.2f} -> ours ${ours:,.2f}  "
+              f"(Δ ${ours - cur:,.2f})")
+    return {"changes": changes, "same": same, "skipped": skipped, "missing": missing}
+
+
 def search(page=None, verbose=True):
     per, all_names = _pull(page=page, verbose=verbose)
     out = [["TARGET", "DD WEEK", "VA FIGURE (fees excl.)", "RAW (fees incl.)", "ROWS"]]
@@ -460,9 +538,15 @@ def main(argv=None):
     ap.add_argument("--week", default=None,
                     help="with --all, compare a specific week label e.g. 7.26.26 "
                          "(default: the newest week our pull returns)")
+    ap.add_argument("--populate", action="store_true",
+                    help="populate the tab's current-week column for EVERY "
+                         "Active-YES owner from our mapping (dry-run without "
+                         "--write) — the switch off the VA hand-fill")
     a = ap.parse_args(argv)
     try:
-        if a.all:
+        if a.populate:
+            accumulate_all(write=a.write)
+        elif a.all:
             compare_all(week=a.week)
         elif a.accumulate:
             accumulate(write=a.write)
