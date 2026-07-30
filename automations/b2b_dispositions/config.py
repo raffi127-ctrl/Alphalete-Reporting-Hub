@@ -33,8 +33,13 @@ TERRITORY_ID_PARAM = "teritoryId"
 CAMPAIGN_ATT = "B2B AT&T SBS"
 CAMPAIGN_BOX = "B2B-BOX-Energy"
 
-# campaign label -> invD2DClientId to append (None = default, no param).
-CAMPAIGN_URL_IDS = {CAMPAIGN_ATT: None, CAMPAIGN_BOX: 16}
+# campaign label -> invD2DClientId. Discovered live via --probe-campaigns on
+# Lucy 2 (2026-07-29): AT&T SBS = 2, BOX-Energy = 16. Navigating Time Tracker
+# (p=510) with the explicit id sets the sticky session-global, which every other
+# page then reflects — the reliable switch (the toolbar dropdown is AJAX and
+# resisted automation). car_rides used None for AT&T (default), which only worked
+# from a fresh session; the explicit id switches even from a Box-stuck session.
+CAMPAIGN_URL_IDS = {CAMPAIGN_ATT: 2, CAMPAIGN_BOX: 16}
 
 # Short tag used in captions / filenames so a reader knows which campaign a shot
 # is (and so ATT vs Box replies can't be confused inside one thread).
