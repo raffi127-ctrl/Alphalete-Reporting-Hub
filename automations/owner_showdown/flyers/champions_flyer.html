@@ -1,0 +1,93 @@
+<title>August Owner Showdown — Champions</title>
+<style>
+  :root{
+    --ink:#07080A; --line2:#2C313B;
+    --paper:#F4F2EC; --muted:#8B919C; --dim:#5C626D;
+    --gold:#E8B23A; --gold-hi:#F8DE96; --gold-lo:#B9822A;
+    --green:#59D08A; --blue:#5AA0F2;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(120% 70% at 50% -10%, #14171C 0%, var(--ink) 60%);
+    color:var(--paper);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:52px 22px;
+    display:flex;justify-content:center;align-items:flex-start;min-height:100vh}
+  .flyer{width:100%;max-width:780px;display:flex;flex-direction:column}
+
+  header{text-align:center;margin-bottom:6px}
+  .eyebrow{font-size:11px;letter-spacing:.42em;color:var(--gold);font-weight:700;
+    text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:14px}
+  .eyebrow::before,.eyebrow::after{content:"";height:1px;width:38px;
+    background:linear-gradient(90deg,transparent,var(--gold-lo))}
+  .eyebrow::after{background:linear-gradient(90deg,var(--gold-lo),transparent)}
+  .wordmark{font-weight:800;text-transform:uppercase;line-height:.86;letter-spacing:-.01em;
+    margin:10px 0 4px;font-size:clamp(62px,13vw,112px);
+    background:linear-gradient(180deg,var(--gold-hi) 0%,var(--gold) 42%,var(--gold-lo) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 2px 36px rgba(232,178,58,.18)}
+  .subword{font-weight:700;text-transform:uppercase;letter-spacing:.34em;
+    font-size:clamp(19px,3.6vw,32px)}
+  .crowned{margin-top:12px;font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
+  .crowned b{color:var(--gold)}
+
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:52px}
+  @media(max-width:640px){.cards{grid-template-columns:1fr}}
+  .champ{position:relative;background:linear-gradient(180deg,#13161B,#0C0E12);
+    border:1px solid var(--line2);border-radius:18px;padding:22px 24px 22px;overflow:hidden}
+  .champ::before{content:"";position:absolute;inset:0 0 auto 0;height:5px}
+  .champ.g::before{background:linear-gradient(90deg,var(--green),#2f7d54)}
+  .champ.b::before{background:linear-gradient(90deg,var(--blue),#2c5c94)}
+  /* big faded rank numeral — echoes the 01/02 on the launch graphic */
+  .ghost{position:absolute;top:6px;right:14px;font-size:104px;font-weight:800;
+    line-height:1;color:rgba(255,255,255,.04);letter-spacing:-.04em;pointer-events:none}
+  .btag{position:relative;font-size:11px;letter-spacing:.24em;text-transform:uppercase;font-weight:700}
+  .g .btag{color:var(--green)} .b .btag{color:var(--blue)}
+  .btitle{position:relative;font-size:clamp(21px,3.8vw,27px);font-weight:800;
+    text-transform:uppercase;letter-spacing:.01em;margin-top:6px}
+  .cwhat{position:relative;font-size:12px;color:var(--dim);margin-top:4px;letter-spacing:.03em}
+  .seal{position:relative;margin-top:18px;font-size:10px;letter-spacing:.3em;text-transform:uppercase;
+    color:var(--gold-lo);font-weight:700}
+  .cname{position:relative;font-size:clamp(24px,4.4vw,33px);font-weight:800;margin:4px 0 10px;
+    letter-spacing:.01em;text-wrap:balance}
+  .cstat{position:relative;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .cstat b{color:var(--paper);font-weight:800;font-size:19px}
+  .ribbon{position:relative;margin-top:18px;display:inline-flex;align-items:center;gap:8px;
+    border:1px solid var(--gold-lo);border-radius:22px;padding:9px 18px;
+    background:linear-gradient(180deg,rgba(232,178,58,.16),rgba(232,178,58,.04));
+    color:var(--gold);font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px}
+
+  .foot{text-align:center;margin-top:22px;color:var(--dim);font-size:11px;
+    letter-spacing:.22em;text-transform:uppercase}
+</style>
+
+<div class="flyer">
+  <header>
+    <div class="eyebrow">Alphalete Marketing Presents</div>
+    <div class="wordmark">August</div>
+    <div class="subword">Owner Showdown</div>
+    <div class="crowned">And your <b>two champions</b> are…</div>
+  </header>
+
+  <div class="cards">
+    <section class="champ g">
+      <div class="btag">Competition 1</div>
+      <div class="btitle">Personal Sales</div>
+      <div class="cwhat">Most new-internet sales in August</div>
+      <div class="seal">Champion</div>
+      <div class="cname">Haytham Nagi</div>
+      <div class="cstat"><b>142</b> new-internet sales</div>
+      <div class="ribbon">🏆 $5,000 Winner</div>
+    </section>
+
+    <section class="champ b">
+      <div class="btag">Competition 2</div>
+      <div class="btitle">Rep Count Growth</div>
+      <div class="cwhat">Biggest headcount increase since Aug 2nd</div>
+      <div class="seal">Champion</div>
+      <div class="cname">Francisco Castillo</div>
+      <div class="cstat">grew by <b>+18</b> reps</div>
+      <div class="ribbon">🏆 $5,000 Winner</div>
+    </section>
+  </div>
+
+  <div class="foot">August 1–31 · Congratulations to our champions</div>
+</div>

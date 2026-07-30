@@ -1674,6 +1674,65 @@ def _tableau_box_card() -> dict:
 
 
 AUTOMATED_REPORTS = [
+    # 🏆 TEMP COMPETITION CARD — August Owner Showdown (Raf, 2026-07-29).
+    # Two $5,000 battles for August only: personal new-internet sales (daily)
+    # + rep-count growth (Sundays). Remove this card after 2026-08-31. Pill is
+    # forced BRIGHT YELLOW (temp) via the calstat CSS override below (search
+    # 'owner-showdown__calstat'); it still turns GREEN when the day's run
+    # succeeds. Fills the KTS tab; Sunday digest emails Raf only.
+    {
+        "id": "owner-showdown",
+        "name": "August Owner Showdown 🏆",
+        "creator": "Raf & Claude",
+        "emoji": "🏆",
+        # Bright yellow accent — temporary competition card.
+        "color": "#EAB308",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "owner_showdown",
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=893154737#gid=893154737"),
+        "schedule": {
+            "frequency": "daily",
+            "time": "4 AM flow (when data's ready)",
+            "estimated_minutes": 3,
+        },
+        "description": (
+            "August-only competition tracker. Fills the KTS tab daily: each "
+            "owner's personal NEW-INTERNET sales (daily) and active rep-count "
+            "growth (Sundays), both sorted highest→lowest. Sunday digest emails "
+            "Raf the standings. $5,000 to each of the two winners."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** **Personal Sales** — every new-internet sale in each owner's "
+            "own codes (Aug 1–31), pulled daily from Tableau and written into "
+            "the KTS 'Personal Production' table. 0 entered on a day with no "
+            "sale. TOTALS = month-to-date, sorted most→least.\n"
+            "**•** **Rep Count Growth** — active rep count pulled on Sundays "
+            "(8/2, 8/9, 8/16, 8/23, 8/30) into the 'Rep Count' table. "
+            "TOTALS = growth vs the 8/2 baseline, sorted most→least.\n"
+            "**•** **Sunday email** — standings digest to Raf only, first Sun "
+            "Aug 2, last Sun Aug 30.\n"
+            "**•** Temp card — retired after Aug 31."
+        ),
+        "post_run": {
+            "message_success": "✅ Owner Showdown updated — KTS tab filled and sorted.",
+            "message_failed": "❌ Owner Showdown run failed — see the log above.",
+        },
+        "checklist": [],
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the latest numbers and refills the KTS competition tables now.",
+                "module": "automations.owner_showdown.run",
+                "args_fn": (lambda: []),
+            },
+        ],
+    },
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
     # preflight → send UI via the report-id hook in _render_report_card (not
     # the standard checklist/run-button flow). `actions` is present only to
@@ -11426,6 +11485,11 @@ else:  # st.session_state.view == "user"
             # Captainship Report Drafts (12) — draft-only (a human sends), so pin
             # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
             "[class*='captainship-drafts__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # August Owner Showdown — TEMP competition card. Force its pill
+            # BRIGHT YELLOW at rest so it reads as "temporary / competition"; the
+            # :not(ok):not(fail) guard lets it still turn GREEN on a real run (and
+            # red on failure). Remove with the card after 2026-08-31. (Raf 7/29)
+            "[class*='owner-showdown__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important;opacity:1!important;animation:none!important}"
             # Org Sales Board — LIVE daily report: no pin, it greens on a real run
             # and reds on failure like any other batch report. (Megan 2026-07-29)
             # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)

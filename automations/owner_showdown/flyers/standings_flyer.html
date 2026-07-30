@@ -1,0 +1,159 @@
+<title>August Owner Showdown — Standings</title>
+<style>
+  :root{
+    --ink:#07080A; --panel:#0F1114; --panel2:#12151A;
+    --line:#22262E; --line2:#2C313B;
+    --paper:#F4F2EC; --muted:#8B919C; --dim:#5C626D;
+    --gold:#E8B23A; --gold-hi:#F8DE96; --gold-lo:#B9822A;
+    --green:#59D08A; --green-dim:#1C3A2C;
+    --blue:#5AA0F2; --blue-dim:#1B3350;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:
+      radial-gradient(120% 80% at 50% -10%, #14171C 0%, var(--ink) 60%);
+    color:var(--paper);
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:44px 22px 40px;display:flex;justify-content:center;min-height:100vh}
+  .flyer{width:100%;max-width:820px}
+  .stack{display:flex;flex-direction:column}
+
+  /* ---- header ---- */
+  header{text-align:center;margin-bottom:26px}
+  .eyebrow{font-size:12px;letter-spacing:.42em;color:var(--gold);
+    font-weight:700;text-transform:uppercase;
+    display:flex;align-items:center;justify-content:center;gap:16px}
+  .eyebrow::before,.eyebrow::after{content:"";height:1px;width:42px;
+    background:linear-gradient(90deg,transparent,var(--gold-lo))}
+  .eyebrow::after{background:linear-gradient(90deg,var(--gold-lo),transparent)}
+  .wordmark{font-weight:800;text-transform:uppercase;line-height:.9;
+    letter-spacing:-.01em;margin:12px 0 4px;
+    font-size:clamp(58px,12vw,104px);
+    background:linear-gradient(180deg,var(--gold-hi) 0%,var(--gold) 42%,var(--gold-lo) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 2px 40px rgba(232,178,58,.18)}
+  .subword{font-weight:700;text-transform:uppercase;letter-spacing:.34em;
+    font-size:clamp(18px,3.4vw,30px);color:var(--paper)}
+  .tagline{margin-top:14px;color:var(--muted);font-size:14px;
+    letter-spacing:.14em;text-transform:uppercase}
+  .tagline b{color:var(--paper);font-weight:700}
+
+  /* ---- prize strip ---- */
+  .prize{margin:22px auto 30px;display:inline-flex;align-items:center;gap:14px;
+    border:1px solid var(--line2);border-radius:12px;
+    padding:12px 22px;background:linear-gradient(180deg,#15181D,#0E1013)}
+  .prize .amt{font-size:26px;font-weight:800;color:var(--gold);letter-spacing:.02em}
+  .prize .amt small{font-size:13px;color:var(--gold-lo);font-weight:700;letter-spacing:.16em}
+  .prize .txt{text-align:left;font-size:12px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--muted);line-height:1.5}
+  .prizewrap{text-align:center}
+
+  /* ---- boards ---- */
+  .boards{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:660px){.boards{grid-template-columns:1fr}}
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    overflow:hidden;position:relative}
+  .board::before{content:"";position:absolute;inset:0 0 auto 0;height:4px}
+  .board.g::before{background:linear-gradient(90deg,var(--green),#2f7d54)}
+  .board.b::before{background:linear-gradient(90deg,var(--blue),#2c5c94)}
+  .bhead{padding:20px 20px 14px;border-bottom:1px solid var(--line)}
+  .btag{font-size:11px;letter-spacing:.26em;text-transform:uppercase;font-weight:700}
+  .g .btag{color:var(--green)} .b .btag{color:var(--blue)}
+  .btitle{font-size:23px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.01em;margin-top:6px}
+  .bsub{font-size:12px;color:var(--dim);margin-top:5px;letter-spacing:.03em}
+
+  ol{list-style:none;padding:8px 12px 14px}
+  li{display:grid;grid-template-columns:30px 1fr auto;align-items:center;
+    gap:10px;padding:9px 8px;border-radius:9px}
+  li+li{border-top:1px solid rgba(255,255,255,.04)}
+  li.lead{background:linear-gradient(90deg,rgba(232,178,58,.10),transparent)}
+  .rank{font-weight:800;font-size:15px;color:var(--dim);text-align:center;
+    font-variant-numeric:tabular-nums}
+  li.lead .rank{color:var(--gold);font-size:17px}
+  .medal{font-size:16px}
+  .who{font-size:15px;font-weight:600;letter-spacing:.01em;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .val{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;
+    letter-spacing:.01em}
+  .g .val{color:var(--green)} .b .val{color:var(--blue)}
+  .val .u{font-size:10px;color:var(--dim);font-weight:700;margin-left:3px;
+    letter-spacing:.08em;text-transform:uppercase}
+
+  /* ---- timeline + footer ---- */
+  .rail{display:flex;align-items:center;justify-content:center;gap:16px;
+    margin:26px 0 6px;color:var(--muted);font-size:12px;letter-spacing:.2em;
+    text-transform:uppercase;font-weight:700}
+  .rail .chip{border:1px solid var(--line2);border-radius:20px;padding:6px 16px;color:var(--paper)}
+  .rail .mid{color:var(--gold)}
+  .foot{text-align:center;margin-top:14px;color:var(--dim);font-size:11px;
+    letter-spacing:.24em;text-transform:uppercase}
+  .foot .live{color:var(--green)}
+  .note{margin-top:16px;text-align:center;font-size:11px;color:var(--gold-lo);
+    letter-spacing:.12em;text-transform:uppercase}
+</style>
+
+<div class="flyer stack">
+  <header>
+    <div class="eyebrow">Alphalete Marketing Presents</div>
+    <div class="wordmark">August</div>
+    <div class="subword">Owner Showdown</div>
+    <div class="tagline">Two Battles. Two Champions. <b>One Month to Prove It.</b></div>
+  </header>
+
+  <div class="prizewrap">
+    <div class="prize">
+      <div class="amt">$5,000<br><small>To Each Winner</small></div>
+      <div class="txt">Two Winners<br>$10,000 on the line</div>
+    </div>
+  </div>
+
+  <div class="boards">
+    <!-- Personal Sales -->
+    <section class="board g">
+      <div class="bhead">
+        <div class="btag">Competition 1</div>
+        <div class="btitle">Personal Sales</div>
+        <div class="bsub">Most new-internet sales in your codes · month-to-date</div>
+      </div>
+      <ol>
+        <li class="lead"><span class="rank">1</span><span class="who">🥇 Haytham Nagi</span><span class="val">— <span class="u">new int</span></span></li>
+        <li><span class="rank">2</span><span class="who">🥈 Angel Arias</span><span class="val">— <span class="u">new int</span></span></li>
+        <li><span class="rank">3</span><span class="who">🥉 Eric Martinez</span><span class="val">— <span class="u">new int</span></span></li>
+        <li><span class="rank">4</span><span class="who">German Lopez</span><span class="val">—</span></li>
+        <li><span class="rank">5</span><span class="who">Cody Cannon</span><span class="val">—</span></li>
+        <li><span class="rank">6</span><span class="who">Kash Rai</span><span class="val">—</span></li>
+        <li><span class="rank">7</span><span class="who">Oren Shezaf</span><span class="val">—</span></li>
+        <li><span class="rank">8</span><span class="who">Ozzy Centeno</span><span class="val">—</span></li>
+        <li><span class="rank">9</span><span class="who">Natalia Gwarda</span><span class="val">—</span></li>
+        <li><span class="rank">10</span><span class="who">Christian Esposito</span><span class="val">—</span></li>
+      </ol>
+    </section>
+
+    <!-- Rep Count Growth -->
+    <section class="board b">
+      <div class="bhead">
+        <div class="btag">Competition 2</div>
+        <div class="btitle">Rep Count Growth</div>
+        <div class="bsub">Biggest headcount increase since Aug 2nd</div>
+      </div>
+      <ol>
+        <li class="lead"><span class="rank">1</span><span class="who">🥇 Francisco Castillo</span><span class="val">— <span class="u">heads</span></span></li>
+        <li><span class="rank">2</span><span class="who">🥈 Ozzy Centeno</span><span class="val">— <span class="u">heads</span></span></li>
+        <li><span class="rank">3</span><span class="who">🥉 Aya Al-Khafaji</span><span class="val">— <span class="u">heads</span></span></li>
+        <li><span class="rank">4</span><span class="who">Sebastian Gutierrez</span><span class="val">—</span></li>
+        <li><span class="rank">5</span><span class="who">Marcellus Butler</span><span class="val">—</span></li>
+        <li><span class="rank">6</span><span class="who">Jacob Dover</span><span class="val">—</span></li>
+        <li><span class="rank">7</span><span class="who">Eric Zech</span><span class="val">—</span></li>
+        <li><span class="rank">8</span><span class="who">Rashad Reed</span><span class="val">—</span></li>
+        <li><span class="rank">9</span><span class="who">Brian Tran</span><span class="val">—</span></li>
+        <li><span class="rank">10</span><span class="who">Jarred Hill</span><span class="val">—</span></li>
+      </ol>
+    </section>
+  </div>
+
+  <div class="rail">
+    <span class="chip">Aug 1</span><span class="mid">→ 31 Days →</span><span class="chip">Aug 31</span>
+  </div>
+  <div class="foot">Updated every <span class="live">Sunday</span> through Aug 31 · top of each board wins $5,000</div>
+</div>
