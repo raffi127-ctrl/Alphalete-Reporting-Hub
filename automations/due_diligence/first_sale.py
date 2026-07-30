@@ -39,7 +39,14 @@ STATE_PATH = C.OUTPUT_DIR / "first_sale_backfill.json"
 # re-pull it as weekly sub-chunks instead of trusting it. Never truncate
 # silently — that is exactly how the week-filter bug hid for two days.
 CHUNK_ROW_ALARM = 150_000
-BACKFILL_FLOOR = dt.date(2015, 1, 1)     # probe walks forward from here
+BACKFILL_FLOOR = dt.date(2015, 1, 1)     # probe walks back toward here
+
+# The ALLREPS view does NOT keep history forever (probed 2026-07-30): asking for
+# June 2025 returned only 06-25 onward, and 2024/2023 returned nothing at all —
+# a rolling ~400-day window. So a rep whose earliest sale sits AT that window's
+# floor may well have started before it, and we must not assert a date we can't
+# see. Those reps render "<date> or earlier" instead of a made-up exact day.
+WINDOW_EDGE_SLACK_DAYS = 3
 
 
 # --------------------------------------------------------------------------
@@ -174,7 +181,9 @@ def week_ranges(start: dt.date, end: dt.date) -> Iterator[Tuple[dt.date, dt.date
 def _load_state() -> dict:
     try:
         raw = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        raw["map"] = {k: (v[0], dt.date.fromisoformat(v[1])) for k, v in raw.get("map", {}).items()}
+        raw["map"] = {k: (v[0], dt.date.fromisoformat(v[1]),
+                          bool(v[2]) if len(v) > 2 else True)
+                      for k, v in raw.get("map", {}).items()}
         return raw
     except Exception:
         return {"done": [], "map": {}}
@@ -184,14 +193,21 @@ def _save_state(st: dict) -> None:
     C.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps({
         "done": st["done"],
-        "map": {k: [v[0], v[1].isoformat()] for k, v in st["map"].items()},
+        "map": {k: [v[0], v[1].isoformat(), (v[2] if len(v) > 2 else True)]
+                for k, v in st["map"].items()},
     }), encoding="utf-8")
 
 
 def _pull_chunk(a: dt.date, b: dt.date, page, verbose: bool, log) -> Dict[str, Tuple[str, dt.date]]:
     """One range -> min-per-rep. Splits to weekly if the export looks truncated."""
     tmp = C.OUTPUT_DIR / "first_sale_chunk.csv"
-    _download(a, b, tmp, page, verbose)
+    try:
+        _download(a, b, tmp, page, verbose)
+    except Exception as e:                       # noqa: BLE001
+        # An all-empty range renders a view with no crosstab sheet to click.
+        # That is "no data here", not a failure worth aborting the backfill for.
+        log(f"  {a}..{b}: no data ({type(e).__name__}: {str(e)[:70]})")
+        return {}
     got, n, lo, hi = scan_file(tmp)
     log(f"  {a}..{b}: {n:,} rows, {len(got):,} reps, dates {lo}..{hi}")
     if n >= CHUNK_ROW_ALARM:
@@ -230,6 +246,11 @@ def backfill(*, start: dt.date = None, end: dt.date = None, page=None,
             _work(pg)
     else:
         _work(page)
+    # The floor is what the view ACTUALLY served, not what we asked for — the
+    # retention window moves, so measure it rather than hard-code a date.
+    floor = min((v[1] for v in st["map"].values()), default=None)
+    st["map"] = mark_window_edge(st["map"], floor, log=log)
+    _save_state(st)
     log(f"backfill done — {len(st['map']):,} reps with a first-sale date")
     return st["map"]
 
@@ -300,32 +321,60 @@ def load_map() -> Dict[str, Tuple[str, dt.date]]:
             continue
         d = _parse_date(r[1])
         if d:
-            out[_norm(r[0])] = (r[0].strip(), d)
+            exact = (r[2].strip().lower() != "no") if len(r) > 2 and r[2] else True
+            out[_norm(r[0])] = (r[0].strip(), d, exact)
     return out
 
 
-def save_map(m: Dict[str, Tuple[str, dt.date]]) -> int:
+def mark_window_edge(m: dict, floor: Optional[dt.date], log=print) -> dict:
+    """Flag every rep whose earliest visible sale sits at the retention window's
+    floor as NOT exact — their real first sale may predate what the view keeps."""
+    if floor is None:
+        return m
+    edge = floor + dt.timedelta(days=WINDOW_EDGE_SLACK_DAYS)
+    out, n = {}, 0
+    for k, v in m.items():
+        disp, d = v[0], v[1]
+        exact = d > edge
+        n += 0 if exact else 1
+        out[k] = (disp, d, exact)
+    log(f"window floor {floor}: {n:,} of {len(m):,} rep(s) sit at the edge and "
+        f"render '<date> or earlier' (their true first sale is not in the view)")
+    return out
+
+
+def save_map(m: dict) -> int:
     """Overwrite the tab with the full map (sorted by rep). This tab is derived
     data the report owns end-to-end — no human types into it — so a rewrite is
     safe; every other DD tab stays append-only."""
     from automations.recruiting_report.fill import _retry
     ws = _ws(create=True)
     today = dt.date.today().isoformat()
-    body = [[disp, d.isoformat(), today] for _, (disp, d) in sorted(m.items())]
+    body = [[v[0], v[1].isoformat(),
+             ("yes" if (v[2] if len(v) > 2 else True) else "no"), today]
+            for _, v in sorted(m.items())]
     _retry(ws.clear)
-    _retry(ws.update, "A1:C1", [["Rep", "First Sale", "Updated"]])
+    _retry(ws.update, "A1:D1", [["Rep", "First Sale", "Exact", "Updated"]])
     if body:
-        _retry(ws.update, f"A2:C{len(body) + 1}", body)
+        _retry(ws.update, f"A2:D{len(body) + 1}", body)
     return len(body)
 
 
-def start_date_for(rep_key: str, m: Dict[str, Tuple[str, dt.date]]) -> str:
-    """Rendered value for the 'Start Date or First Day of sales' cell."""
+def start_date_for(rep_key: str, m) -> str:
+    """Rendered value for the 'Start Date or First Day of sales' cell.
+
+    A rep whose earliest visible sale sits at the retention window's floor gets
+    "<date> or earlier" — we genuinely cannot see whether they sold before it,
+    and a bare date there would read as an exact start day that is very likely
+    wrong for every tenured rep.
+    """
     hit = m.get(rep_key)
     if not hit:
         return ""
     d = hit[1]
-    return f"{d.month}/{d.day}/{d.year}"      # not %-m/%-d — that is Mac-only
+    exact = hit[2] if len(hit) > 2 else True
+    shown = f"{d.month}/{d.day}/{d.year}"     # not %-m/%-d — that is Mac-only
+    return shown if exact else f"{shown} or earlier"
 
 
 # --------------------------------------------------------------------------
@@ -348,8 +397,17 @@ def probe(*, page=None, verbose: bool = False, log=print, empty_stop: int = 2) -
                 _download(a, b, tmp, pg, verbose)
                 _, n, lo, hi = scan_file(tmp)
             except Exception as e:                # noqa: BLE001
-                log(f"  {yr}-06: pull failed ({type(e).__name__}: {str(e)[:80]})")
-                found[yr] = {"rows": None, "min": None}
+                # A range with no data renders an empty view, and the Crosstab
+                # dialog then has no 'A.Order Log' thumbnail to click — so this
+                # failure IS the empty signal and must count toward the stop,
+                # not be skipped (or the probe walks back to 2015 for nothing).
+                log(f"  {yr}-06: no data ({type(e).__name__}: {str(e)[:70]})")
+                found[yr] = {"rows": 0, "min": None, "empty_via": "no crosstab sheet"}
+                empties += 1
+                if empties >= empty_stop:
+                    log(f"  {empty_stop} empty years in a row — history starts "
+                        f"after {yr}; stopping the probe here")
+                    return
                 continue
             log(f"  {yr}-06: {n:,} rows, dates {lo}..{hi}")
             found[yr] = {"rows": n, "min": lo.isoformat() if lo else None}
