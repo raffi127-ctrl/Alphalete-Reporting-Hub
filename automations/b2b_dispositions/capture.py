@@ -493,18 +493,21 @@ def render_gap_card(reps: List[Dict], out_path: Path) -> Path:
 
 _TERRITORY_OPTIONS_JS = """
 () => {
-  // The Territory <select> on Disposition-by-Rep. Options carry the teritoryId
-  // as value and "name (date range)" as text. Read whatever select actually
-  // holds territory-shaped options — never a fixed list.
-  const sels = [...document.querySelectorAll('select')];
-  let best = null, bestN = 0;
-  for (const s of sels) {
-    const opts = [...s.options].filter(o => o.value && /\\d/.test(o.value));
-    if (opts.length > bestN) { best = opts; bestN = opts.length; }
+  // The ACTUAL Territory dropdown is <select name="territory"> — exactly what the
+  // user sees (the page also has other, bigger <select>s, so "most options" was
+  // grabbing the wrong one; Megan 7/30). Fall back to a select whose options look
+  // like "name (MM/DD/YYYY - MM/DD/YYYY)". Skip the "Select Territory" placeholder
+  // (non-numeric value).
+  let sel = document.querySelector('select[name="territory" i], select[id*="territor" i]');
+  if (!sel) {
+    const rx = /\\(\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\)/;
+    sel = [...document.querySelectorAll('select')].find(s =>
+      [...s.options].some(o => rx.test(o.textContent || '')));
   }
-  if (!best) return [];
-  return best.map(o => ({ id: String(o.value).trim(),
-                          name: (o.textContent||'').replace(/\\s+/g,' ').trim() }));
+  if (!sel) return [];
+  return [...sel.options].filter(o => o.value && /\\d/.test(o.value))
+    .map(o => ({ id: String(o.value).trim(),
+                 name: (o.textContent||'').replace(/\\s+/g,' ').trim() }));
 }
 """
 
