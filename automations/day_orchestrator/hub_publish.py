@@ -73,6 +73,13 @@ _HUB_CARD = {
     # vantura_churn: without this entry its card stays grey and a missed/failed run
     # looks identical to a clean one.
     "att_churn": "att-churn",
+    # DD / Organization Bulletin: standalone LaunchAgent on the mini
+    # (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh, Thursday
+    # 10:30-13:00) since 2026-07-30 — never in the 4am batch, so without this
+    # entry its card stays grey and a week that never went out looks exactly like
+    # a clean one. Its wrapper publishes ONLY on a pass that actually emailed:
+    # the other six passes are quiet holds waiting for Eve to fill the tab.
+    "dd_bulletin": "dd-bulletin",
     "recognition_tab": "recognition-tab",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",

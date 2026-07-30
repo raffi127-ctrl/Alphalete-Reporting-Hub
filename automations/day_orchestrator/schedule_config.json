@@ -804,6 +804,28 @@
         "type": "not_configured"
       }
     },
+    "install_dd_bulletin_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_dd_bulletin_agent` can install/refresh the STANDALONE com.alphalete.dd-bulletin-thu LaunchAgent on the mini, which SENDS the DD / Organization Bulletin Thursdays 10:30-13:00 Central (q25m, gated) via deploy/dd_bulletin_thu.sh. Moved off the 4am batch 2026-07-30 because the DD tab is filled BY HAND and Eve's deadline is 10am — a 4am send republished last week's column. SOFT LAUNCH: runs `send --dd --test --send` = emails the 4-person TEST_TO group (Megan/Eve/Carlos/Raf), NO Slack. Holds quietly if the newest week column is not the Sunday that just ended, and records the week so retries never double-email. Flip to full-org by dropping --test from ARGS in the wrapper. install_agent is read-only w.r.t. Sheet data; it only reloads the plist. Re-run after the plist changes.",
+      "display_name": "Install DD Bulletin agent (Thu 10:30am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "dd-bulletin-thu"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_pnl_office_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_pnl_office_agent` can install/refresh the STANDALONE com.alphalete.pnl-office-fri LaunchAgent on the mini, which posts PNL for the Office to #top-leaders-alphalete-org + #alphalete-lvl1-chat Fridays 10:00-12:55 CST (q25m, gated) via deploy/pnl_office_fri.sh (--post = LIVE). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
@@ -4752,8 +4774,8 @@
       "machine": "Lucy 1"
     },
     "dd_bulletin": {
-      "on_scheduler": true,
-      "_off_scheduler_note": "Weekly DD / Organization Bulletin (item 4 of the VA replacement). Builds BOTH pages from the 'Org DDs Ongoing Report' tab plus the per-leader ICD lists on 'Lucy Org Tree', folding in the week's Credico direct deposits. READ-ONLY \u2014 writes to no report tab, and sends NOTHING. Publishing is the separate dd_bulletin_send step. LUCY 1, because the Credico workbooks land there (run credico_fetch first, or the build reports Credico as not folded in and refuses to send). Thursday morning by 10am is the VA's slot; OFF the scheduler until Megan approves the first real send.",
+      "on_scheduler": false,
+      "_off_scheduler_note": "OFF THE 4am BATCH 2026-07-30 (Eve): this report never writes the DD tab — Eve opens the week's column by hand and has until 10am Central — so a 4am build/send used LAST week's column and republished a week that had already gone out. The Thursday send now runs on its own STANDALONE LaunchAgent at 10:30am (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh, passes 10:30-13:00 q25m), and send.py builds both pages itself, so this entry is now the MANUAL preview/QA build only: `lucy rerun dd_bulletin`. Its inputs (credico_fetch, dd_special_accumulate, dd_headshots_sync) STAY in the 4am batch — they must be done before 10:30. Weekly DD / Organization Bulletin (item 4 of the VA replacement). Builds BOTH pages from the 'Org DDs Ongoing Report' tab plus the per-leader ICD lists on 'Lucy Org Tree', folding in the week's Credico direct deposits. READ-ONLY \u2014 writes to no report tab, and sends NOTHING. Publishing is the separate dd_bulletin_send step. LUCY 1, because the Credico workbooks land there (run credico_fetch first, or the build reports Credico as not folded in and refuses to send). Thursday morning by 10am is the VA's slot; OFF the scheduler until Megan approves the first real send.",
       "display_name": "DD Bulletin \u2014 build both pages",
       "source_type": "sheet",
       "data_sources": [],
@@ -4781,8 +4803,8 @@
       "machine": "Lucy 1"
     },
     "dd_bulletin_send": {
-      "on_scheduler": true,
-      "_off_scheduler_note": "SOFT LAUNCH (Megan 2026-07-24): Thursday auto-send of the DD bulletin to the 4-person TEST group ONLY (Megan, Eve, Carlos, Raf) by EMAIL, no Slack \u2014 base_args '--dd --test --send'. Run a week like this, then swap base_args to '--dd --send' for the full org distro + Slack. Refuses to send while any blocking problem stands. Needs credico_fetch + dd_special_accumulate to have run first (depends_on).",
+      "on_scheduler": false,
+      "_off_scheduler_note": "MOVED OFF THE 4am BATCH 2026-07-30 (Eve) to the STANDALONE com.alphalete.dd-bulletin-thu LaunchAgent — Thursday passes 10:30-13:00 Central, q25m, via deploy/dd_bulletin_thu.sh. WHY: the DD tab is filled BY HAND (nothing here rolls it) and Eve's deadline is 10am Central, so the 4am send published last week's column — 7.19 went out twice, 7/23 and 7/30. Install/refresh with `lucy rerun install_dd_bulletin_agent`. This entry stays so `lucy rerun dd_bulletin_send` still works by hand. SOFT LAUNCH (Megan 2026-07-24): Thursday auto-send of the DD bulletin to the 4-person TEST group ONLY (Megan, Eve, Carlos, Raf) by EMAIL, no Slack \u2014 base_args '--dd --test --send'. Run a week like this, then swap base_args to '--dd --send' for the full org distro + Slack. Refuses to send while any blocking problem stands. Needs credico_fetch + dd_special_accumulate to have run first (depends_on).",
       "display_name": "DD Bulletin \u2014 preview the send (nothing goes out)",
       "source_type": "sheet",
       "data_sources": [],
