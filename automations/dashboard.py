@@ -3979,6 +3979,134 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    # The two board EMAILS (Eve 2026-07-30). Same machinery as the Org Sales
+    # Board email above — capture, post for review, send on a checkmark — but
+    # one module (automations.board_emails) driving both boards.
+    {
+        "id": "country-sales-board-email",
+        "name": "Country Sales Board Email",
+        "creator": "Eve & Claude",
+        "emoji": "🌎",
+        "color": "#0D9488",
+        "category": "📊 Metrics",
+        "description": "Emails an exact-sheet screenshot of the Country Sales Board (the board + the per-day delta units chart) to Rafael and Maud Miller. Behind the #revision-emails review gate: nothing goes out until Evelyn or Jolie puts a checkmark on the day's post.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Renders the Country Sales Board with the SAME function its Slack "
+            "DM uses (Sheets PDF export — exact colors/fonts/borders, no "
+            "browser), builds the email, and posts it for review.\n\n"
+            "WHAT'S IN THE IMAGE\n"
+            "• the board: title + Product Summary + Current vs Prior, then the "
+            "rep leaderboard with the live week and the 7 most recent frozen "
+            "weeks\n"
+            "• the delta units chart: every rep's This week / Last week / Delta "
+            "for all seven days\n"
+            "Both blocks are found by LABEL every run, so an inserted row or a "
+            "new rep can't silently crop the image.\n\n"
+            "THE REVIEW GATE\n"
+            "The 4am flow posts the day's PDF in #revision-emails (not before "
+            "09:30) and mails nothing. A ✅ from Evelyn or Jolie releases it, "
+            "picked up within 15 minutes by the watcher on the mini. The send "
+            "mails the image ALREADY captured — what was approved is what goes "
+            "out, even if the board moves in between.\n\n"
+            "WHO GETS IT\n"
+            "Rafael + Maud Miller only.\n\n"
+            "THE SUBJECT SAYS YESTERDAY\n"
+            "The board only ever holds completed days, so a run on the 30th is "
+            "showing the 29th's sales."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/"
+                      "edit?gid=1121646560"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:30 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Posted for review in #revision-emails — it sends when Evelyn or Jolie ticks it.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Build + post for review",
+                "icon": "▶",
+                "primary": True,
+                "help": "Captures the board, builds the email, uploads the PDF and posts the link in #revision-emails. Sends nothing.",
+                "module": "automations.board_emails.review_gate",
+                "args_fn": lambda: ["--board", "country", "--post"],
+            },
+            {
+                "label": "Preview only (no Slack)",
+                "icon": "👁",
+                "help": "Builds output/board_emails/country/<date>/preview.html and stops. No Drive, no Slack, no email.",
+                "module": "automations.board_emails.email_send",
+                "args_fn": lambda: ["--board", "country", "--dry-run"],
+            },
+        ],
+    },
+    {
+        "id": "all-units-board-email",
+        "name": "All Units Org Sales Board Email",
+        "creator": "Eve & Claude",
+        "emoji": "📦",
+        "color": "#7C3AED",
+        "category": "📊 Metrics",
+        "description": "Emails an exact-sheet screenshot of the 'All Campaigns Org Sales Board' tab to Rafael and Maud Miller. Behind the #revision-emails review gate: nothing goes out until Evelyn or Jolie puts a checkmark on the day's post.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Renders the whole All Campaigns Org Sales Board tab with the SAME "
+            "function its Slack DM uses (Sheets PDF export — exact "
+            "colors/fonts/borders, no browser), builds the email, and posts it "
+            "for review. The captured range is measured from the tab's own "
+            "content each run, so a new rep or campaign row is included "
+            "automatically.\n\n"
+            "THE REVIEW GATE\n"
+            "The 4am flow posts the day's PDF in #revision-emails (not before "
+            "09:30) and mails nothing. A ✅ from Evelyn or Jolie releases it, "
+            "picked up within 15 minutes by the watcher on the mini. The send "
+            "mails the image ALREADY captured — what was approved is what goes "
+            "out, even if the board moves in between.\n\n"
+            "WHO GETS IT\n"
+            "Rafael + Maud Miller only.\n\n"
+            "THE SUBJECT SAYS YESTERDAY\n"
+            "The board only ever holds completed days, so a run on the 30th is "
+            "showing the 29th's sales."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/"
+                      "edit?gid=546263838"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:30 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Posted for review in #revision-emails — it sends when Evelyn or Jolie ticks it.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Build + post for review",
+                "icon": "▶",
+                "primary": True,
+                "help": "Captures the board, builds the email, uploads the PDF and posts the link in #revision-emails. Sends nothing.",
+                "module": "automations.board_emails.review_gate",
+                "args_fn": lambda: ["--board", "all-units", "--post"],
+            },
+            {
+                "label": "Preview only (no Slack)",
+                "icon": "👁",
+                "help": "Builds output/board_emails/all-units/<date>/preview.html and stops. No Drive, no Slack, no email.",
+                "module": "automations.board_emails.email_send",
+                "args_fn": lambda: ["--board", "all-units", "--dry-run"],
+            },
+        ],
+    },
     # The Country Sales Board pair, kept adjacent to the Org Sales Board cards
     # above because they're the same shape: a fill card, then the Slack DM that
     # renders what the fill just wrote.

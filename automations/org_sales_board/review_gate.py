@@ -191,7 +191,8 @@ def build_pdf(today: dt.date, html: Optional[Path] = None,
 # --------------------------------------------------------------------------
 # 2. Drive
 # --------------------------------------------------------------------------
-def upload_pdf(pdf: Path, verbose: bool = True) -> str:
+def upload_pdf(pdf: Path, verbose: bool = True,
+               folder_name: str = None) -> str:
     """Put the PDF in Drive and return a link the reviewers can open.
 
     Reuses the fiber_activations Drive token (alphaletereporting, drive.file
@@ -208,15 +209,18 @@ def upload_pdf(pdf: Path, verbose: bool = True) -> str:
 
     from automations.fiber_activations import drive_auth
 
+    # `folder_name` defaults to this board's folder; board_emails passes its
+    # own so each report's reviewers open a folder holding only that report.
+    folder_name = folder_name or DRIVE_FOLDER_NAME
     svc = build("drive", "v3", credentials=drive_auth.load_credentials(),
                 cache_discovery=False)
     folder_mime = "application/vnd.google-apps.folder"
-    q = (f"name = '{DRIVE_FOLDER_NAME}' and mimeType = '{folder_mime}' "
+    q = (f"name = '{folder_name}' and mimeType = '{folder_mime}' "
          f"and trashed = false")
     found = svc.files().list(q=q, spaces="drive",
                              fields="files(id)").execute().get("files", [])
     fid = (found[0]["id"] if found else
-           svc.files().create(body={"name": DRIVE_FOLDER_NAME,
+           svc.files().create(body={"name": folder_name,
                                     "mimeType": folder_mime},
                               fields="id").execute()["id"])
 
@@ -336,8 +340,14 @@ def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
     never have gone out."""
     wants = (_title(today), _title_legacy(today))
     hist = _client().conversations_history(channel=_channel(channel), limit=100)
+    # PREFIX, not "anywhere in the text" (2026-07-30). Four gates now share this
+    # channel, and every post opens with *its own title*. A plain `in` matched
+    # any title that merely CONTAINED this one, so a board named
+    # "… Org Sales Board Email" would have been picked up here — and a checkmark
+    # meant for it would have released the Org board's email instead.
     return [m for m in hist.get("messages", [])
-            if any(w in (m.get("text") or "") for w in wants)]
+            if any((m.get("text") or "").lstrip("*").startswith(w)
+                   for w in wants)]
 
 
 def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:

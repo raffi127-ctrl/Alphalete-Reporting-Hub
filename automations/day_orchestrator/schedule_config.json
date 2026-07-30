@@ -1853,6 +1853,74 @@
       ],
       "verify": null
     },
+    "all_units_board_email": {
+      "order": 10.1,
+      "on_scheduler": true,
+      "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via the every-15-min deploy/board_emails_review.sh on the mini \u2014 which mails the image ALREADY captured, so what was approved is what goes out. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
+      "display_name": "All Units Org Sales Board Email (a revisi\u00f3n)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.board_emails.review_gate"
+      ],
+      "base_args": [
+        "--post",
+        "--board",
+        "all-units"
+      ],
+      "cadence": {
+        "not_before": "09:30",
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "all_campaigns_board"
+      ],
+      "verify": null
+    },
+    "country_sales_board_email": {
+      "order": 11.6,
+      "on_scheduler": true,
+      "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/country/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via the every-15-min deploy/board_emails_review.sh on the mini \u2014 which mails the image ALREADY captured, so what was approved is what goes out. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on country_sales_board so the email can never show a board that hasn't filled yet.",
+      "display_name": "Country Sales Board Email (a revisi\u00f3n)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.board_emails.review_gate"
+      ],
+      "base_args": [
+        "--post",
+        "--board",
+        "country"
+      ],
+      "cadence": {
+        "not_before": "09:30",
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "country_sales_board"
+      ],
+      "verify": null
+    },
     "country_sales_board": {
       "order": 11.5,
       "on_scheduler": true,
@@ -2010,6 +2078,27 @@
       ],
       "base_args": [
         "captainship-review"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "install_board_emails_review_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_board_emails_review_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.board-emails-review on the mini \u2014 the every-15-min watcher that turns a :white_check_mark: on the Country / All Units review posts into a sent email. Until this is installed, the 4am job still POSTS both previews for review, but an approval never becomes an email. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Re-runnable any time.",
+      "display_name": "Install: board-emails review LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "board-emails-review"
       ],
       "cadence": {
         "weekdays": []

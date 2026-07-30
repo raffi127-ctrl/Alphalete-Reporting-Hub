@@ -52,6 +52,8 @@ _HUB_CARD = {
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
     "org_sales_board_email": "sales-board-screenshot-email",
+    "country_sales_board_email": "country-sales-board-email",
+    "all_units_board_email": "all-units-board-email",
     # The daily Slack POST of the board (replaces the VA's manual post) — a
     # separate card from the board FILL above. Publishes only when it actually
     # posts, not on every 25-min pass.
