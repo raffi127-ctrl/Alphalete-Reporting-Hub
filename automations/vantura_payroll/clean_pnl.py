@@ -46,6 +46,16 @@ _HDR_BG = {"red": 0.52156866, "green": 0.1254902, "blue": 0.047058824}
 _SEC_BG = {"red": 0.85, "green": 0.85, "blue": 0.85}
 _MONEY = {"type": "CURRENCY", "pattern": '"$"#,##0.00'}
 _PCT = {"type": "PERCENT", "pattern": "0.0%"}
+_WHITE = {"red": 1, "green": 1, "blue": 1}
+_INK = {"red": 0.13, "green": 0.13, "blue": 0.13}
+_BAND = {"red": 0.965, "green": 0.965, "blue": 0.965}
+# Semantic colours, matching the house style on the working tab:
+# blue = revenue coming in, red = money going out, green = what we keep.
+_TONE = {"in": {"red": 0.067, "green": 0.333, "blue": 0.8},
+         "out": {"red": 0.7, "green": 0.0, "blue": 0.0},
+         "profit": {"red": 0.094, "green": 0.502, "blue": 0.22}}
+_BORDER = {"style": "SOLID", "width": 1,
+           "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
 
 
 def _log(m):
@@ -113,7 +123,29 @@ def read_source(sh, log=_log) -> dict:
     log(f"source: {len(weeks)} week blocks, roster rows {REP_FIRST}-{last_rep}, "
         f"{len(live)} with a Revenue-by-Campaign block")
     return {"src": src, "grid": grid, "weeks": weeks, "blocks": blocks,
-            "live": live, "last_rep": last_rep}
+            "live": live, "last_rep": last_rep,
+            "order": [h for _, h in weeks]}
+
+
+def _cell(grid, row, col_letter_str):
+    c = sum((ord(ch) - 64) * 26 ** i
+            for i, ch in enumerate(reversed(col_letter_str)))
+    r = grid[row - 1] if row - 1 < len(grid) else []
+    return r[c - 1] if c - 1 < len(r) else ""
+
+
+def _week_has_data(info, hdr) -> bool:
+    """A week counts as run once its Total DD / payroll is set OR any rep row
+    carries revenue. Keeps un-started columns out of the clean tab."""
+    b = info["blocks"][hdr]
+    g = info["grid"]
+    for key in ("total_dd", "total_payroll"):
+        if b.get(key) and _money(_cell(g, b[key], b["prof"])):
+            return True
+    for row in range(REP_FIRST, info["last_rep"] + 1):
+        if _money(_cell(g, row, b["bro"])):
+            return True
+    return False
 
 
 def _rep_rows(info) -> list:
@@ -156,22 +188,23 @@ def build(*, write: bool = True, log=_log) -> dict:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
     info = read_source(sh, log=log)
-    # Only weeks that have actually been run. A blank column per un-started week
-    # would push the live ones off-screen; the Wednesday rebuild adds each new
-    # week as it lands.
-    order = info["live"]
+    # Every week that has ANY data — the whole year to date, not just the weeks
+    # with a Revenue-by-Campaign block (that block only starts at WE 6/21, so
+    # earlier weeks show the TOTAL box and the rep table with blank campaigns).
+    # Un-started weeks are skipped so they don't push the live ones off-screen.
+    order = [h for h in info["order"] if _week_has_data(info, h)]
     reps = active_reps(info, log=log)
 
     q = f"'{SRC_TAB}'!"
     rows: list[list] = []
-    fmt: list[tuple] = []          # (row_index0, kind)
+    fmt: list[dict] = []
 
-    def add(label, per_week=None, kind=None, bold=False):
+    def add(label, per_week=None, kind=None, bold=False, tone=None):
         r = [label]
         for hdr in order:
             r.append(per_week(info["blocks"][hdr]) if per_week else "")
         rows.append(r)
-        fmt.append((len(rows) - 1, kind, bold))
+        fmt.append({"i": len(rows) - 1, "kind": kind, "bold": bold, "tone": tone})
 
     def ref(b, row):
         return f"={q}{b['prof']}{row}" if row else ""
@@ -182,44 +215,54 @@ def build(*, write: bool = True, log=_log) -> dict:
         return (f"=IFERROR(IF({q}{b['prof']}{den_row}=0,\"\","
                 f"{q}{b['prof']}{num_row}/{q}{b['prof']}{den_row}),\"\")")
 
-    add("VANTURA — P&L 2026", kind="title", bold=True)
+    add("VANTURA \u2014 P&L 2026", kind="title", bold=True)
     add("")
     add("TOTAL", kind="section", bold=True)
-    add("Revenue Brought In (no captainship)", lambda b: ref(b, b["total_dd"]), "money")
-    add("Captainship Bonus", lambda b: ref(b, b["captain"]), "money")
-    # A week with no Captain's Bonus line has no captain row at all — fall back
+    add("Revenue Brought In (no captainship)", lambda b: ref(b, b["total_dd"]),
+        "money", tone="in")
+    add("Captainship Bonus", lambda b: ref(b, b["captain"]), "money", tone="in")
+    # A week with no Captain's Bonus line has no captain row at all \u2014 fall back
     # to the plain DD rather than blanking the whole row.
     add("Total DD (with captainship)",
         lambda b: ("" if not b["total_dd"] else
                    f"={q}{b['prof']}{b['total_dd']}+{q}{b['prof']}{b['captain']}"
-                   if b["captain"] else f"={q}{b['prof']}{b['total_dd']}"), "money")
-    add("Paid Out", lambda b: ref(b, b["total_payroll"]), "money")
-    add("Payroll Tax", lambda b: ref(b, b["total_tax"]), "money")
-    add("Total Gross Profit", lambda b: ref(b, b["total_pnl"]), "money", bold=True)
-    add("Profit Margin %", lambda b: margin(b, b["total_pnl"], b["total_dd"]), "pct")
+                   if b["captain"] else f"={q}{b['prof']}{b['total_dd']}"),
+        "money", bold=True, tone="in")
+    add("Paid Out", lambda b: ref(b, b["total_payroll"]), "money", tone="out")
+    add("Payroll Tax", lambda b: ref(b, b["total_tax"]), "money", tone="out")
+    add("Total Gross Profit", lambda b: ref(b, b["total_pnl"]), "money",
+        bold=True, tone="profit")
+    add("Profit Margin %", lambda b: margin(b, b["total_pnl"], b["total_dd"]),
+        "pct", bold=True, tone="profit")
     add("")
 
     for camp in CAMPAIGNS:
         add(camp, kind="section", bold=True)
         add("Revenue Brought In",
-            lambda b, c=camp: ref(b, b[c] + 1 if b.get(c) else None), "money")
+            lambda b, c=camp: ref(b, b[c] + 1 if b.get(c) else None),
+            "money", tone="in")
         add("Paid Out",
-            lambda b, c=camp: ref(b, b[c] + 2 if b.get(c) else None), "money")
+            lambda b, c=camp: ref(b, b[c] + 2 if b.get(c) else None),
+            "money", tone="out")
         add("Payroll Tax",
-            lambda b, c=camp: ref(b, b[c] + 3 if b.get(c) else None), "money")
+            lambda b, c=camp: ref(b, b[c] + 3 if b.get(c) else None),
+            "money", tone="out")
         add("Profit",
-            lambda b, c=camp: ref(b, b[c] + 4 if b.get(c) else None), "money", bold=True)
+            lambda b, c=camp: ref(b, b[c] + 4 if b.get(c) else None),
+            "money", bold=True, tone="profit")
         add("Profit Margin %",
             lambda b, c=camp: margin(b, b[c] + 4 if b.get(c) else None,
-                                     b[c] + 1 if b.get(c) else None), "pct")
+                                     b[c] + 1 if b.get(c) else None),
+            "pct", bold=True, tone="profit")
         add("")
 
-    add("REVENUE BROUGHT IN BY REP  (active only — 2 quiet weeks drops off)",
+    add("REVENUE BROUGHT IN BY REP  (active only \u2014 2 quiet weeks drops off)",
         kind="section", bold=True)
-    for rep_row, name in reps:
+    for n, (rep_row, name) in enumerate(reps):
         rows.append([name] + [f"={q}{info['blocks'][h]['bro']}{rep_row}"
                               for h in order])
-        fmt.append((len(rows) - 1, "money", False))
+        fmt.append({"i": len(rows) - 1, "kind": "money", "bold": False,
+                    "tone": "in", "band": n % 2 == 1})
 
     n_rows, n_cols = len(rows), len(order) + 1
     log(f"clean P&L: {n_rows} rows x {n_cols} cols "
@@ -266,23 +309,47 @@ def build(*, write: bool = True, log=_log) -> dict:
             "sheetId": sid, "dimension": "COLUMNS", "startIndex": 1, "endIndex": n_cols},
             "properties": {"pixelSize": 108}, "fields": "pixelSize"}},
     ]
-    for i, kind, bold in fmt:
-        r = i + 1  # +1 for the header row
+    for f in fmt:
+        r, kind, bold, tone = f["i"] + 1, f["kind"], f["bold"], f.get("tone")
         if kind in ("title", "section"):
             reqs.append({"repeatCell": {"range": rng(r, r + 1, 0, n_cols),
                 "cell": {"userEnteredFormat": {
                     "backgroundColor": _HDR_BG if kind == "title" else _SEC_BG,
-                    "textFormat": {"bold": True, "foregroundColor": (
-                        {"red": 1, "green": 1, "blue": 1} if kind == "title"
-                        else {"red": 0, "green": 0, "blue": 0})}}},
-                "fields": "userEnteredFormat(backgroundColor,textFormat)"}})
+                    "horizontalAlignment": "LEFT",
+                    "textFormat": {"bold": True, "fontSize": 11,
+                                   "foregroundColor": (
+                                       _WHITE if kind == "title" else _INK)}}},
+                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"}})
         elif kind in ("money", "pct"):
-            reqs.append({"repeatCell": {"range": rng(r, r + 1, 1, n_cols),
-                "cell": {"userEnteredFormat": {
-                    "numberFormat": _MONEY if kind == "money" else _PCT,
+            cell = {"numberFormat": _MONEY if kind == "money" else _PCT,
                     "horizontalAlignment": "CENTER",
-                    "textFormat": {"bold": bold}}},
-                "fields": "userEnteredFormat(numberFormat,horizontalAlignment,textFormat)"}})
+                    "textFormat": {"bold": bold, "foregroundColor": _TONE.get(tone, _INK)}}
+            if f.get("band"):
+                cell["backgroundColor"] = _BAND
+            reqs.append({"repeatCell": {"range": rng(r, r + 1, 1, n_cols),
+                "cell": {"userEnteredFormat": cell},
+                "fields": "userEnteredFormat(numberFormat,horizontalAlignment,"
+                          "textFormat" + (",backgroundColor" if f.get("band") else "") + ")"}})
+            lbl = {"textFormat": {"bold": bold, "foregroundColor": _INK},
+                   "horizontalAlignment": "LEFT"}
+            if f.get("band"):
+                lbl["backgroundColor"] = _BAND
+            reqs.append({"repeatCell": {"range": rng(r, r + 1, 0, 1),
+                "cell": {"userEnteredFormat": lbl},
+                "fields": "userEnteredFormat(textFormat,horizontalAlignment"
+                          + (",backgroundColor" if f.get("band") else "") + ")"}})
+    # Boxed borders around each section, and a highlight on the newest week.
+    for f in fmt:
+        if f["kind"] == "section":
+            r = f["i"] + 1
+            reqs.append({"updateBorders": {"range": rng(r, r + 1, 0, n_cols),
+                "top": _BORDER, "bottom": _BORDER}})
+    reqs.append({"repeatCell": {
+        "range": rng(1, n_rows + 1, n_cols - 1, n_cols),
+        "cell": {"userEnteredFormat": {"borders": {
+            "left": _BORDER, "right": _BORDER}}},
+        "fields": "userEnteredFormat.borders"}})
+
     sh.batch_update({"requests": reqs})
     log(f"wrote {DST_TAB!r} (gid {sid})")
     return {"rows": n_rows, "cols": n_cols, "reps": len(reps),
