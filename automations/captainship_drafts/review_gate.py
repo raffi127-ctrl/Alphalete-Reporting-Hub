@@ -62,6 +62,21 @@ APPROVERS = {
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
 
+
+def _mentions() -> str:
+    """The approvers as real Slack mentions, e.g. "<@U08…> <@U0A…>".
+
+    A plain "Approvers: Evelyn, Jolie" is only text — it lights nothing up, and
+    this channel competes with every other one they are in, so the message just
+    gets lost (Eve, 2026-07-30). "<@ID>" is what actually notifies them, and it
+    renders as @Name so the sentence still reads normally.
+
+    Built from APPROVERS and sorted by display name: the order is stable, and
+    changing who approves changes who gets pinged with no second edit."""
+    return " ".join(f"<@{uid}>" for uid, _ in
+                    sorted(APPROVERS.items(), key=lambda kv: kv[1]))
+
+
 # Stamped into the Slack message so --check can find the day's post from another
 # machine without anything being passed between them.
 MARKER = "CAPTAINSHIP-REVIEW"
@@ -224,13 +239,12 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     reported = today - dt.timedelta(days=1)
     # English, all of it (Eve, 2026-07-30) — the reminder in the thread below
     # matches, so the two halves of one conversation don't switch language.
-    # Names come from APPROVERS so adding an approver can't leave the message
-    # naming the old list.
-    names = ", ".join(sorted(APPROVERS.values()))
+    # The mentions come from APPROVERS, so changing who approves can't leave
+    # the message pinging the old list.
     text = (f"*Captainship Reports — {reported.month}/{reported.day}*\n"
             f"{link}\n\n"
-            f"Please review and react with :white_check_mark: to send them. "
-            f"Approvers: {names}. Nothing goes out until then.\n"
+            f"{_mentions()} — please review and react with "
+            f":white_check_mark: to send them. Nothing goes out until then.\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
     r = _client().chat_postMessage(channel=_channel(channel), text=text,
                                    unfurl_links=False)
@@ -297,12 +311,11 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         if verbose:
             print("— already reminded once", flush=True)
         return False
-    names = ", ".join(sorted(APPROVERS.values()))
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"Reminder: the captainship reports are still unapproved "
-              f"({age_h:.0f}h). Nothing has been sent — they need a "
-              f":white_check_mark: from {names}.\n`{REMIND_MARKER}`"))
+        text=(f"{_mentions()} — reminder: the captainship reports are still "
+              f"unapproved ({age_h:.0f}h). Nothing has been sent; they need a "
+              f":white_check_mark:.\n`{REMIND_MARKER}`"))
     if verbose:
         print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
     return True
