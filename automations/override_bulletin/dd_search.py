@@ -63,15 +63,20 @@ def _mdy(dd_week):
     return f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}" if m else (dd_week or "").strip()
 
 
-def _pull(page=None, verbose=True):
+def _pull(page=None, verbose=True, targets=TARGETS):
     """Download the period crosstabs and fold them into per-name weekly totals.
 
-    Returns (per, all_names). `per` is {target name: {'M.D.YY': {raw, clean,
-    rows}}} where `clean` drops the ledger/fee lines so it matches what the VA
-    types, and `raw` keeps them. Opens its own Tableau session if `page` is None.
+    Returns (per, all_names). `per` is {name: {'M.D.YY': {raw, clean, rows}}}
+    where `clean` drops the ledger/fee lines so it matches what the VA types, and
+    `raw` keeps them. Opens its own Tableau session if `page` is None.
+
+    `targets` limits the fold to those names (the default four special cases). Pass
+    `targets=None` to keep EVERY owner — the full-org independent re-pull Megan
+    asked for (2026-07-30): prove our mapping produces the week's DD without
+    reading the VA's tab.
     """
     aliases = F.load_alias_map()
-    keys = _keys(TARGETS, aliases)
+    keys = _keys(targets, aliases) if targets else None
     OUT.mkdir(parents=True, exist_ok=True)
 
     own = page is None
@@ -155,7 +160,11 @@ def _pull(page=None, verbose=True):
     #   * a NEGATIVE line KEPT in clean       -> a fee the rule missed (too low)
     per = {}
     for r in data:
-        hit = keys.get(P._norm_name(cell(r, oc)))
+        owner_cell = cell(r, oc)
+        if keys is not None:
+            hit = keys.get(P._norm_name(owner_cell))
+        else:
+            hit = owner_cell.strip()        # keep EVERY owner (full re-pull)
         if not hit:
             continue
         wk = _mdy(cell(r, wc)) or "(no week)"
@@ -211,7 +220,11 @@ def accumulate(write=False, page=None, verbose=True):
     per, _ = _pull(page=page, verbose=verbose)
     figs, flags = {}, []
     for name in TARGETS:
-        weeks = per.get(name) or {}
+        # Combine the week's deposit-date labels into the week-ending Sunday — the
+        # current DD week arrives as Sat+Sun labels and the tab column is their sum
+        # (Megan 2026-07-30). Picking the newest single label alone undercounts a
+        # special name paid on the Saturday.
+        weeks = _regroup_weeks(per.get(name) or {})
         nw = _newest_week(weeks)
         if nw:
             figs[name] = (nw, round(weeks[nw]["clean"], 2))
@@ -296,20 +309,138 @@ def search(page=None, verbose=True):
     return per
 
 
-def _dump(rows):
+def _tab_week_column(week_label):
+    """{owner_norm: DD figure} from the DD tab's column for `week_label` — the
+    REFERENCE we compare our independent pull against. Megan 2026-07-30 asked us
+    NOT to source the bulletin from the VA's tab; this reads the tab only so we
+    can see whether our own pull reproduces it, never as an input."""
+    from automations.override_bulletin import dd_data as D
+    from automations.recruiting_report import fill as _fill
+    aliases = F.load_alias_map()
+    ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
+    vals = ws.get_all_values()
+    hdr = vals[0]
+    col = next((i for i, h in enumerate(hdr) if (h or "").strip() == week_label), None)
+    out = {}
+    if col is not None:
+        for r in vals[1:]:
+            nm = (r[0] or "").strip()
+            if not nm or nm.lower().startswith("total"):
+                continue
+            out[P._norm_name(F.canon(nm, aliases))] = (
+                D.money(r[col]) if col < len(r) else 0.0)
+    return out, col
+
+
+def _wk_sort(w):
+    return [int(x) for x in w.split(".")] if re.match(r"^\d+\.\d+\.\d+$", w) else [0]
+
+
+def _week_ending(mdy):
+    """A Tableau DD-week date label ('7.25.26') -> its week-ending SUNDAY label
+    ('7.26.26'). The current DD week arrives as SEPARATE deposit-date labels
+    (Sat 7.25 + Sun 7.26); the tab's single 'week ending 7.26.26' column is their
+    SUM. Grouping by the Sunday is what makes our pull reproduce the tab — taking
+    only the newest single label drops everyone paid on the Saturday (Megan
+    2026-07-30: it was pulling an incomplete week)."""
+    import datetime as _dt
+    m = re.match(r"^\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s*$", mdy or "")
+    if not m:
+        return mdy
+    yr = int(m.group(3)); yr = yr if yr > 99 else 2000 + yr
+    d = _dt.date(yr, int(m.group(1)), int(m.group(2)))
+    sun = d + _dt.timedelta(days=(6 - d.weekday()))   # Mon=0..Sun=6 -> this week's Sun
+    return f"{sun.month}.{sun.day}.{str(sun.year)[-2:]}"
+
+
+def _regroup_weeks(wk):
+    """{daily 'M.D.YY' -> totals} -> {week-ending Sunday 'M.D.YY' -> summed totals}."""
+    out = {}
+    for lbl, d in wk.items():
+        se = _week_ending(lbl)
+        acc = out.setdefault(se, {"raw": 0.0, "clean": 0.0, "rows": 0,
+                                  "dropped_pos": 0.0, "neg_kept": 0.0})
+        for k in ("raw", "clean", "rows", "dropped_pos", "neg_kept"):
+            acc[k] += d.get(k, 0)
+    return out
+
+
+def compare_all(page=None, verbose=True, week=None):
+    """Independent FULL-ORG re-pull from OUR Tableau mapping (ORG DD Detail),
+    every owner — grouped into week-ending SUNDAYS and lined up against the DD
+    tab as a reference. Answers Megan's 2026-07-30 question: does our own mapping
+    pull the correct current week's DD, without leaning on the VA's hand-filled
+    numbers? Dumps to `_dd_repull`. EXPECTED residual diffs, none of them a pull
+    error: Credico owners (Abel Draper / Jahvid Thompson) — the tab folds their
+    Credico deposit on top of the Tableau part; and a few names the tab spells
+    with a suffix/middle name the alias map doesn't yet unify (Rafael Hidalgo TX,
+    Carlos Hidalgo TX, Roshan Amin Ahmad) — the money is there under the plain
+    name."""
+    per, _ = _pull(page=page, verbose=verbose, targets=None)
+    # Regroup each owner's daily deposit labels into week-ending Sundays.
+    per = {o: _regroup_weeks(wk) for o, wk in per.items()}
+    weeks_seen = sorted({w for wk in per.values() for w in wk}, key=_wk_sort)
+    newest = week or (weeks_seen[-1] if weeks_seen else None)
+    if verbose:
+        print(f"\nweeks present in our pull: {weeks_seen}")
+        print(f"comparing week: {newest}")
+    tabmap, tabcol = _tab_week_column(newest) if newest else ({}, None)
+    aliases = F.load_alias_map()
+
+    out = [["OWNER", f"OUR DD {newest} (fees excl.)", "OUR RAW (incl. fees)",
+            f"TAB {newest} (reference)", "DIFF our-tab", "LINES"]]
+    names = sorted((n for n in per if newest in per[n]),
+                   key=lambda n: -(per[n][newest]["clean"]))
+    our_total, matched, mism = 0.0, 0, []
+    for nm in names:
+        d = per[nm][newest]
+        clean = round(d["clean"], 2)
+        our_total += clean
+        tabv = tabmap.get(P._norm_name(F.canon(nm, aliases)))
+        diff = None if tabv is None else round(clean - tabv, 2)
+        if diff is not None:
+            if abs(diff) <= 0.5:
+                matched += 1
+            else:
+                mism.append((nm, clean, tabv, diff))
+        out.append([nm, f"${clean:,.2f}", f"${round(d['raw'], 2):,.2f}",
+                    "" if tabv is None else f"${tabv:,.2f}",
+                    "" if diff is None else f"${diff:,.2f}", str(d["rows"])])
+    out.append([""])
+    out.append([f"OUR pull total ({newest})", f"${round(our_total, 2):,.2f}",
+                "", "", "", f"{len(names)} owners"])
+    out.append([f"matched tab to the cent", str(matched), "of",
+                str(sum(1 for n in names
+                        if tabmap.get(P._norm_name(F.canon(n, aliases))) is not None)),
+                "", ""])
+    for nm, c, t, dff in mism:
+        out.append([f"≠ {nm}", f"ours ${c:,.2f}", f"tab ${t:,.2f}",
+                    f"diff ${dff:,.2f}", "", ""])
+
+    if verbose:
+        for r in out:
+            print(" | ".join(str(c) for c in r))
+    _dump(out, tab="_dd_repull")
+    print(f"\n✓ {len(out)} row(s) → '_dd_repull' tab; newest week pulled = {newest}")
+    return per, newest
+
+
+def _dump(rows, tab=DUMP_TAB):
     """Mirror the result to a throwaway tab so it is readable from any machine
     (same pattern as credico.report._dump_to_sheet). Never touches a report tab."""
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(WORKBOOK_ID)
+    ncol = max((len(r) for r in rows), default=1)
     try:
-        ws = sh.worksheet(DUMP_TAB)
+        ws = sh.worksheet(tab)
         ws.clear()
     except Exception:  # noqa: BLE001
-        ws = sh.add_worksheet(title=DUMP_TAB, rows=max(100, len(rows) + 20), cols=5)
+        ws = sh.add_worksheet(title=tab, rows=max(100, len(rows) + 20), cols=ncol)
     if len(rows) > ws.row_count:
         ws.add_rows(len(rows) - ws.row_count + 10)
+    last_col = chr(ord("A") + ncol - 1)
     ws.update(values=[[str(c) for c in r] for r in rows],
-              range_name=f"A1:E{len(rows)}", value_input_option="RAW")
+              range_name=f"A1:{last_col}{len(rows)}", value_input_option="RAW")
 
 
 def main(argv=None):
@@ -322,9 +453,18 @@ def main(argv=None):
                          "--write)")
     ap.add_argument("--write", action="store_true",
                     help="with --accumulate, actually write to the tab")
+    ap.add_argument("--all", action="store_true",
+                    help="full-org independent re-pull: every owner's DD from OUR "
+                         "Tableau mapping, compared week-for-week to the tab "
+                         "(reference only) → '_dd_repull' tab")
+    ap.add_argument("--week", default=None,
+                    help="with --all, compare a specific week label e.g. 7.26.26 "
+                         "(default: the newest week our pull returns)")
     a = ap.parse_args(argv)
     try:
-        if a.accumulate:
+        if a.all:
+            compare_all(week=a.week)
+        elif a.accumulate:
             accumulate(write=a.write)
         else:
             search()
