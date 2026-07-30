@@ -509,10 +509,31 @@ _TERRITORY_OPTIONS_JS = """
 """
 
 
-def list_territories(page, rqst: str, campaign: str) -> List[Dict]:
+def _territory_active(name: str) -> bool:
+    """A territory option reads 'luis (07/29/2026 - 08/02/2026)'. Keep it only if
+    today (Central) falls inside that range — the dropdown keeps EXPIRED
+    territories around, and we don't want to post stale ones (Megan 7/30). An
+    option with no parseable range is kept (fail-open)."""
+    import datetime as _dt
+    m = re.search(r"\((\d{1,2}/\d{1,2}/\d{4})\s*-\s*(\d{1,2}/\d{1,2}/\d{4})\)",
+                  name or "")
+    if not m:
+        return True
+    try:
+        start = _dt.datetime.strptime(m.group(1), "%m/%d/%Y").date()
+        end = _dt.datetime.strptime(m.group(2), "%m/%d/%Y").date()
+    except ValueError:
+        return True
+    today = _dt.datetime.strptime(_central_mdy(), "%m/%d/%Y").date()
+    return start <= today <= end
+
+
+def list_territories(page, rqst: str, campaign: str,
+                     active_only: bool = True) -> List[Dict]:
     """Enumerate territories for `campaign` from the page's own dropdown (values
     = teritoryId). Territories are campaign-scoped, so this is called once per
-    campaign."""
+    campaign. active_only drops expired territories (date range not covering
+    today)."""
     extra = f"&pane={cfg.DISPOSITION_PANE}"
     _goto(page, _page_url(cfg.PAGE_DISPOSITION, rqst, campaign, extra))
     try:
@@ -520,7 +541,10 @@ def list_territories(page, rqst: str, campaign: str) -> List[Dict]:
     except Exception:
         opts = []
     # Drop a leading placeholder ("select a territory") if present.
-    return [o for o in opts if o.get("id") and o["id"] not in ("0", "")]
+    terrs = [o for o in opts if o.get("id") and o["id"] not in ("0", "")]
+    if active_only:
+        terrs = [o for o in terrs if _territory_active(o.get("name", ""))]
+    return terrs
 
 
 def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
