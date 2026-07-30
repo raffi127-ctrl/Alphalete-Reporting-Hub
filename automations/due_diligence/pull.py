@@ -126,6 +126,20 @@ def _sum_products(values: Dict[str, int], match: str) -> int:
     return total
 
 
+def _week(view_url: str, sun: dt.date) -> str:
+    """Week-filter a view URL — the ONLY place DD appends a week filter.
+
+    opt_phase._week_url() joins its filter with a literal '?', so a URL that
+    already carries a query (Tableau's UI copies them with '?:iid=1') yields two
+    '?' and Tableau silently drops the filter. Strip the query here rather than
+    at each source, so this stays impossible even if another view is
+    week-filtered later. Only the product view is filtered today — the metrics
+    and churn views are deliberately pulled bare (opt_phase.py: their multi-week
+    measures get truncated by a week filter), so they never come through here.
+    """
+    return _opt()._week_url(C._bare_view(view_url), sun)
+
+
 def _dl(view_url: str, sheet: str, out: Path, page, verbose: bool,
         gaps: List[str], label: str) -> bool:
     """Download a crosstab; on failure record a gap and return False so the
@@ -214,7 +228,7 @@ def _gather_over_page(dd: RepDD, rep_name: str, rep_norm: str, weeks: int,
     wl_weekly: Dict[dt.date, Optional[int]] = {}
     for sun in dd.weeks:
         out = tmp / f"product_{sun.isoformat()}.csv"
-        url = opt._week_url(product_url, sun)
+        url = _week(product_url, sun)
         if not _dl(url, product_sheet, out, page, verbose, dd.gaps,
                    f"product sales {sun.isoformat()}"):
             ni_weekly[sun] = None
@@ -358,7 +372,7 @@ def _download_team_files(d: Path, wk_order, page, verbose, gaps) -> dict:
     product_url, product_sheet = C.product_source()
     p = _team_paths(d, wk_order)
     for sun in wk_order:
-        _dl(opt._week_url(product_url, sun), product_sheet, p["product"][sun],
+        _dl(_week(product_url, sun), product_sheet, p["product"][sun],
             page, verbose, gaps, f"product {sun.isoformat()}")
     _dl(*C.metrics_ni_source(), p["mni"], page, verbose, gaps, "NI metrics")
     _dl(*C.metrics_wl_source(), p["mwl"], page, verbose, gaps, "WL metrics")
