@@ -70,6 +70,25 @@ def _goto(page, url: str) -> None:
     page.wait_for_timeout(SETTLE_MS)
 
 
+def current_campaign(page) -> Tuple[str, str]:
+    """(visible campaign label, toggle's data-current-id). Used to probe which
+    invD2DClientId maps to which campaign."""
+    label = ""
+    cid = ""
+    try:
+        label = page.evaluate(_CAMPAIGN_LABEL_JS) or ""
+    except Exception:
+        pass
+    try:
+        cid = page.evaluate(
+            "()=>{const t=document.querySelector('.D2DClientDropdown,"
+            "[data-current-id]'); return t ? (t.getAttribute('data-current-id')"
+            "||'') : '';}") or ""
+    except Exception:
+        pass
+    return label, cid
+
+
 def verify_campaign(page, want: str) -> Tuple[bool, str]:
     """(ok, on_screen_label). The top-right toolbar shows the active campaign;
     we read it before every capture so a shot is never mislabeled. Empty label

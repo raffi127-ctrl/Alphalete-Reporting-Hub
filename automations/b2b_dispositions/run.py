@@ -128,7 +128,29 @@ def main(argv=None) -> int:
                     help="capture + report only, post nothing (default)")
     ap.add_argument("--headless", action="store_true",
                     help="run the browser headless")
+    ap.add_argument("--probe-campaigns", action="store_true",
+                    help="scan invD2DClientId ids and log which campaign each maps to")
     args = ap.parse_args(argv)
+
+    if args.probe_campaigns:
+        from automations.shared.tableau_patchright import ownerville_session
+        with ownerville_session(headless=args.headless) as page:
+            try:
+                page.set_viewport_size(dict(cap.VIEWPORT))
+            except Exception:
+                pass
+            rqst = cap.capture_rqst(page)
+            for cid in range(1, 31):
+                url = (f"https://v2.ownerville.com/index.cfm?p={cfg.PAGE_TIME_TRACKER}"
+                       f"&rqst={rqst}&invD2DClientId={cid}")
+                try:
+                    cap._goto(page, url)
+                    label, cur = cap.current_campaign(page)
+                except Exception as e:  # noqa: BLE001
+                    label, cur = f"(err {type(e).__name__})", ""
+                print(f"  probe id={cid} -> label={label!r} current={cur!r}",
+                      flush=True)
+        return 0
 
     # send -> live channels; preview -> DM Megan; neither -> dry-run (save only).
     dry_run = not (args.send or args.preview)
