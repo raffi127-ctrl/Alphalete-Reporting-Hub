@@ -303,7 +303,9 @@ class Captain:
 RECIPIENTS: dict = {
     "rafael": [
         "andrew.sanborn07@gmail.com", "Ayakhafaji02@gmail.com",
-        "burdenb@bgsu.edu", "codycannon1993@gmail.com",
+        # Benjamin Burden: the group carries his gmail, not the bgsu.edu
+        # address this list had. Synced 2026-07-30.
+        "Benjaminburden02@gmail.com", "codycannon1993@gmail.com",
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
         "edgarmuniz2020@icloud.com", "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
@@ -315,6 +317,7 @@ RECIPIENTS: dict = {
         "kesslerzadrian@gmail.com",
     ],
     "wayne": [
+        "iraffi127@icloud.com",
         "Turzynskialex@yahoo.com", "ascottburris@gmail.com",
         "resoundinc@gmail.com", "dylanjtwaddle@gmail.com",
         "mason.d.management@gmail.com", "maudmiller4@gmail.com",
@@ -322,6 +325,7 @@ RECIPIENTS: dict = {
         "sykes.meridian@gmail.com", "elitestrategicsolutions@gmail.com",
     ],
     "starr": [
+        "iraffi127@icloud.com",
         "adreyb15@gmail.com", "dylanjtwaddle@gmail.com",
         "jason.vyzahinc@gmail.com", "jpascual@elevaremanagementinc.com",
         "maudmiller4@gmail.com", "milly.vinceremarketing@gmail.com",
@@ -346,8 +350,11 @@ RECIPIENTS: dict = {
         "tonycv1920@gmail.com",
     ],
     "sahil": [
+        # Jeremiah Minor removed 2026-07-30 — Eve took him out of the
+        # "Sahil's Captainship" group on purpose; the fallback must not
+        # put him back.
         "ttran.brian@gmail.com", "dylanjtwaddle@gmail.com",
-        "Jeremiahminor2@gmail.com", "marcellusbutlerjr@gmail.com",
+        "marcellusbutlerjr@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
         "multani.business@gmail.com",
     ],
