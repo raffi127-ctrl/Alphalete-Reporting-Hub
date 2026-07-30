@@ -508,6 +508,24 @@ def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
 
+def fetch_time_tracking(page, rqst: str, mdy: str) -> list:
+    """Fetch the raw Time Tracker rows from OwnerVille's own JSON endpoint (same
+    one total_knocks uses) — the reliable source for the gap card, since the live
+    card widget doesn't render under patchright. Returns the list of row dicts."""
+    result = page.evaluate(
+        """async ({rqst, mdy}) => {
+            const url = `https://v2.ownerville.com/components/telemapper/`
+                + `report_timeTracker.cfc?method=getTimeTrackingData&rqst=${rqst}`
+                + `&dateToSearch=${encodeURIComponent(mdy)}&returnFormat=json`;
+            try { const r = await fetch(url, {credentials: 'include'});
+                  const txt = await r.text();
+                  try { return {status: r.status, data: JSON.parse(txt).data || []}; }
+                  catch(e){ return {status: r.status, data: [], raw: txt.slice(0,200)}; }
+            } catch(e){ return {status: 0, data: [], raw: String(e).slice(0,200)}; }
+        }""", {"rqst": rqst, "mdy": mdy})
+    return result.get("data", []) or []
+
+
 # --- stitch panels into one phone-friendly image ------------------------------
 STITCH_WIDTH = 640          # common panel width (narrow → reads on a phone)
 _PAD = 22

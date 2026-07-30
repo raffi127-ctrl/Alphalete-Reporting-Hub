@@ -145,7 +145,23 @@ def main(argv=None) -> int:
                     help="run the browser headless")
     ap.add_argument("--probe-campaigns", action="store_true",
                     help="scan invD2DClientId ids and log which campaign each maps to")
+    ap.add_argument("--probe-tt", action="store_true",
+                    help="dump the Time Tracker JSON endpoint fields")
     args = ap.parse_args(argv)
+
+    if getattr(args, "probe_tt", False):
+        from automations.shared.tableau_patchright import ownerville_session
+        mdy = _central_now().strftime("%m/%d/%Y")
+        with ownerville_session(headless=args.headless) as page:
+            rqst = cap.capture_rqst(page)
+            cap.ensure_campaign(page, rqst, cfg.CAMPAIGN_BOX)
+            rows = cap.fetch_time_tracking(page, rqst, mdy)
+            print(f"  tt rows={len(rows)}", flush=True)
+            if rows:
+                print(f"  keys={sorted(rows[0].keys())}", flush=True)
+                for r in rows[:3]:
+                    print(f"  row={r}", flush=True)
+        return 0
 
     if args.probe_campaigns:
         from automations.shared.tableau_patchright import ownerville_session
