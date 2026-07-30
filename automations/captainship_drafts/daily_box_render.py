@@ -141,16 +141,22 @@ def _cf_color(rules: list, row: int, col0: int, raw: str):
     return None
 
 
-def _read_box(ws, section: dict, n_days: int) -> dict:
+def _read_box(ws, section: dict, n_days: int, col_step: int = 1) -> dict:
     """Read one box: date headers, the Captainship Avg row and every rep row,
     across A..<n_days columns>.
+
+    `col_step` is how many sheet columns one day occupies: 1 on the fiber
+    captains' tabs (% only) and 2 on Rafael's and the ABP tab (% + units, with
+    the date merged over the pair). Only the % is drawn either way, so a step of
+    2 reads B, D, F… and skips the count columns — reading them as days is
+    exactly the mistake this module was written to avoid.
 
     Returns {"dates": [...], "avg": [...], "avg_row": int,
              "reps": [(name, sheet_row, [v, ...]), ...]} with every value list
     padded to n_days. The sheet row rides along because the conditional-format
     rules are addressed by row.
     """
-    end_col_0 = 1 + n_days
+    end_col_0 = 1 + n_days * col_step
     end_col = _col_letter(end_col_0 - 1)
     header_row = section["header_row"]
     # The three fill modules name this row differently — 'office_avg_row' in
@@ -173,7 +179,7 @@ def _read_box(ws, section: dict, n_days: int) -> dict:
 
     def cells(row):
         return [(row[i] if i < len(row) else "").strip()
-                for i in range(1, end_col_0)]
+                for i in range(1, end_col_0, col_step)]
 
     dates = cells(row_or_empty(result[0]))
     avg = cells(row_or_empty(result[1]))
@@ -195,7 +201,8 @@ def _read_box(ws, section: dict, n_days: int) -> dict:
         return (1, 0.0) if v is None else (0, -v)
 
     reps.sort(key=_key)
-    return {"dates": dates, "avg": avg, "avg_row": avg_row, "reps": reps}
+    return {"dates": dates, "avg": avg, "avg_row": avg_row, "reps": reps,
+            "col_step": col_step}
 
 
 def visible_days(dates: list) -> int:
@@ -225,13 +232,25 @@ def render_box(
     title_bg=TITLE_BG,
     title_fg=None,
     value_header: str = "%",
+    col_step: int = 1,
+    avg_label: str = AVG_LABEL,
 ) -> Path:
     """Draw one metrics box as a PNG. `section` is a dict shaped like the ones
     find_boxes()/find_sections() return (header_row, office_avg_row,
-    rep_header_row, rep_rows)."""
-    data = _read_box(ws, section, n_days)
+    rep_header_row, rep_rows).
+
+    `col_step` = sheet columns per day (2 for a %+units pair); `avg_label` names
+    the roll-up row — 'Captainship Avg' everywhere except the local-office ABP
+    tab, whose own label is 'Office Avg'."""
+    data = _read_box(ws, section, n_days, col_step)
     shown = max(visible_days(data["dates"]), 1)
     dates, avg, reps = data["dates"], data["avg"], data["reps"]
+    # A rep who is blank TODAY still draws — a blank under today's date says
+    # Tableau had nothing for them, which is worth seeing. A rep blank across
+    # EVERY shown day says nothing at all, and on the local-office ABP tab
+    # (96 names, most of them dormant) those rows made the image three times
+    # taller than the part anyone reads.
+    reps = [r for r in reps if any(v for v in r[2][:shown])]
     rules = _cf_rules(ws)
 
     # Drop reps carrying NO percentage at all — every report, not just ABP
@@ -296,11 +315,11 @@ def render_box(
 
     # 3. Captainship Avg row — banded per cell like the sheet's own avg row
     d.rectangle([x, y, x + inner_w, y + ROW_H], fill=OFFICE_AVG_BG)
-    d.text((x + 8, y + 4), AVG_LABEL, fill=TEXT, font=f11b)
+    d.text((x + 8, y + 4), avg_label, fill=TEXT, font=f11b)
     cx = x + NAME_COL_W
     for i in range(shown):
         v = avg[i] if i < len(avg) else ""
-        color = _cf_color(rules, data["avg_row"], 1 + i, v)
+        color = _cf_color(rules, data["avg_row"], 1 + i * col_step, v)
         if color:
             d.rectangle([cx, y, cx + day_w, y + ROW_H], fill=color)
         tw = d.textlength(v, font=f11b)
@@ -338,7 +357,7 @@ def render_box(
         cx = x + NAME_COL_W
         for i in range(shown):
             v = values[i] if i < len(values) else ""
-            color = _cf_color(rules, sheet_row, 1 + i, v)
+            color = _cf_color(rules, sheet_row, 1 + i * col_step, v)
             if color:
                 d.rectangle([cx, y, cx + day_w, y + ROW_H], fill=color)
             tw = d.textlength(v, font=f11b)

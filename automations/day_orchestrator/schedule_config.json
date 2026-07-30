@@ -1673,6 +1673,38 @@
         "report_id": "captainship-abp-6days"
       }
     },
+    "captainship_raf_metrics": {
+      "order": 15.3,
+      "on_scheduler": true,
+      "_note": "The same three metrics the five ATT Fiber captains get, but for RAFAEL — 'Captainship - Cancel Rate' (0-30 + 30-60), 'Captainship - Activation Rate' (0-30 + 30-60), 'Captainship - ABP' and 'Captainship - 6 days out', all in HIS workbook ('AT&T Fiber Metrics Report', 1Xddk29...). Runs right after the three per-captain fills because it reads the SAME Metrics crosstab (ATT TRACKER 2_1 - D2D -> Metrics -> 'Metrics Call Last week data (Internet)'), sliced to Captain's Bonus Teams == \"Raf's Team\". Separate module (captainship_raf_metrics) because his tabs carry a TWO-column pair per day (% + count, date merged over the pair) instead of the fiber tabs' single column. The 30-60 cancel rate is derived as 100% - the 30-60 activation rate (no 30-60 cancel column exists) and the two 30-60 boxes have no count, so their 'units' cells stay blank on purpose. 'Captainship - ABP' is his CAPTAINSHIP's ABP mix and is the one his draft shows (Eve 2026-07-30). Do not confuse it with 'Local Office - New Internet ABP%' in the same workbook: that is his local office, filled by daily_metrics (new_internet_abp), and the draft does not read it. Writes the LIVE workbook: Eve built these three tabs empty for this report on 2026-07-30, so there is nothing to protect; --sheet-id retargets a duplicate for a practice run.",
+      "display_name": "Captainship Metrics - Rafael",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:metrics"
+      ],
+      "command": [
+        "automations.captainship_raf_metrics.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "manifest",
+        "report_id": "captainship-raf-metrics"
+      }
+    },
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
@@ -1901,7 +1933,7 @@
       "timeout_minutes": 90,
       "order": 20,
       "on_scheduler": true,
-      "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau \u00a72 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. Rafael / B2B / NDS are unchanged \u2014 the six new boxes only exist for the 5 fiber captains.",
+      "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau \u00a72 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. RAFAEL followed on 2026-07-30 (Eve): his draft went from 4 sections to 9 in her exact order \u2014 Product Summary, the two cancel-rate boxes, NI churn, Wireless churn, then ABP %, activation 0-30 / 30-60 and 6+ days out. All six of those boxes are filled by captainship_raf_metrics on his own workbook, ABP included \u2014 it comes from his 'Captainship - ABP' tab, NOT from 'Local Office - New Internet ABP%' in the same workbook. His Tableau Cancel-Rates \u00a72 shot is gone with the change, so only B2B/NDS still need a Tableau session for their second section. B2B / NDS are otherwise unchanged.",
       "display_name": "Captainship Report Drafts (12)",
       "source_type": "tableau",
       "data_sources": [],
@@ -1931,7 +1963,8 @@
         "captainship_activations",
         "captainship_cancel_rate",
         "captainship_activation_rate",
-        "captainship_abp_6days"
+        "captainship_abp_6days",
+        "captainship_raf_metrics"
       ],
       "verify": null,
       "report_id": "captainship-drafts"

@@ -41,8 +41,14 @@ BUCKET_ORDER = ("0-30", "30", "60", "90", "120")
 # Body intros, verbatim per the spec. rafael/fiber greet "Hello, team!";
 # b2b/nds greet "Hi, team!". Rendered as an ordered list in the email.
 _INTRO = {
-    # Rafael went 4 -> 9 sections on 2026-07-30 (Eve's list, verbatim). Same
-    # shape as fiber minus the Fiber Activations block, which is not his.
+    # Rafael went from 4 sections to 9 on 2026-07-30 (Eve's list, verbatim
+    # including the emoji). Like the fiber drafts, the Tableau Cancel-Rates shot
+    # is replaced by the two cancel-rate BOXES we now fill daily, and four more
+    # boxes join: ABP % (his 'Captainship - ABP' tab, NOT the local-office one),
+    # activation 0-30 / 30-60 and
+    # 6+ days out. His order differs from fiber's — churn sits between the
+    # cancel rates and the ABP block — so the two lists are kept separate
+    # rather than shared.
     "rafael": ("Hello, team! Below you'll find:", [
         "Product Summaries Of Sales 💰",
         "New Int 0-30 Day Cancel Rate ⚠️",
@@ -135,6 +141,12 @@ class BoxSource:
     slot: str                  # matches the 'box:<slot>' kind + the cid slot
     cache_key: str             # boxes sharing a tab share this, so the
                                # worksheet is opened once per captain
+    col_step: int = 1          # sheet columns per DAY: 1 on the fiber tabs
+                               # (% only), 2 on Rafael's and the ABP tab, whose
+                               # day is a %+units pair with the date merged
+                               # across it
+    avg_label: str = "Captainship Avg"   # the roll-up row's name in the image;
+                               # the local-office ABP tab says 'Office Avg'
 
 
 def _fiber_boxes(slug: str) -> List[BoxSource]:
@@ -198,33 +210,38 @@ def _rafael_boxes() -> List[BoxSource]:
     30-60; the ABP and 6-days tabs one box each). So this is a different address
     for the same structure, not a second renderer.
 
-    NOTE the ABP source is 'Local Office - New Internet ABP%' — a LOCAL OFFICE
-    tab, not a captainship one, and it lists ~96 reps against ~15 on the others.
-    That is Eve's choice of source, not a mismatch: it is the ABP report that
-    already gets filled daily, and the ask was to put a PNG of it in the draft."""
+    ABP is his CAPTAINSHIP's, off 'Captainship - ABP' (Eve, 2026-07-30) — NOT
+    'Local Office - New Internet ABP%' in the same workbook, which is a
+    different report (automations.new_internet_abp, ~96 office reps against ~15
+    ICD owners here) and must not be what this draft shows.
+
+    Cancel / activation / 6-days-out use captainship_raf_metrics' finder rather
+    than the fiber one: it reports the tab's LAYOUT (a %-only column or a
+    %+units pair) alongside the rows, and these tabs have flipped between the
+    two. ABP keeps the fiber finder, because captainship_abp_6days is what
+    fills that tab."""
     from functools import partial
-    from automations.captainship_cancel_rate import fill as _cx
-    from automations.captainship_activation_rate import fill as _ax
     from automations.captainship_abp_6days import fill as _bx
+    from automations.captainship_raf_metrics import fill as _rx
 
     # cache_key is per TAB: unlike the fiber layout, only the two cancel boxes
     # and the two activation boxes share a worksheet here.
     return [
-        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _cx.find_sections,
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _rx.find_boxes,
                   "0-30", "NEW INT 0-30 DAY CANCEL RATE", "cancel-0-30",
                   "raf-cancel"),
-        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _cx.find_sections,
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _rx.find_boxes,
                   "30-60", "NEW INT 30-60 DAY CANCEL RATE", "cancel-30-60",
                   "raf-cancel"),
-        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _ax.find_boxes,
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _rx.find_boxes,
                   "0-30", "0-30 DAY ONGOING ACTIVATION RATE", "activation-0-30",
                   "raf-activation"),
-        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _ax.find_boxes,
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _rx.find_boxes,
                   "30-60", "30-60 DAY ONGOING ACTIVATION RATE",
                   "activation-30-60", "raf-activation"),
         BoxSource(partial(_raf_ws, RAFAEL_TABS["abp"]), _bx.find_boxes, "abp",
                   "ABP % ONGOING REPORT", "abp", "raf-abp"),
-        BoxSource(partial(_raf_ws, RAFAEL_TABS["six_days"]), _bx.find_boxes,
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["six_days"]), _rx.find_boxes,
                   "6days", "ONGOING 6+ DAYS SALES RATE", "six-days",
                   "raf-six-days"),
     ]

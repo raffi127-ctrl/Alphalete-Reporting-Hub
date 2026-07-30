@@ -44,6 +44,7 @@ _HUB_CARD = {
     "captainship_activations": "captainship-activations",
     "captainship_churn": "captainship-new-internet-wireless-churn",
     "captainship_cancel_rate": "captainship-cancel-rate",
+    "captainship_raf_metrics": "captainship-raf-metrics",
     "owners_metrics_churn": "owners-metrics-churn",
     "recruiter_retention_daily": "daily-1st-round-recruiter-percent",
     "recruiter_retention_weekly": "ongoing-1st-round-recruiter-retention",

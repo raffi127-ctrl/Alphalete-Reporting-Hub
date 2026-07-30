@@ -52,9 +52,15 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
                       f"on the tab (boxes present: {sorted(sections)})")
                 continue
             path = sub_dir / f"{src.slot}.png"
+            # A fill module that reads its tab's layout at run time reports it
+            # back in the section dict; that always beats the static hint on
+            # the BoxSource (Rafael's tabs lost their units column on
+            # 2026-07-30 and the image has to follow the sheet, not the config).
             daily_box_render.render_box(
                 ws, section, src.title, path, today=today,
-                title_bg=captain.title_bg, title_fg=fg)
+                title_bg=captain.title_bg, title_fg=fg,
+                col_step=section.get("col_step", src.col_step),
+                avg_label=src.avg_label)
             out[src.slot] = path
         except Exception as e:  # noqa: BLE001 — one box must not kill the draft
             logfn(f"  ⚠ {captain.key}/{src.slot}: not rendered "

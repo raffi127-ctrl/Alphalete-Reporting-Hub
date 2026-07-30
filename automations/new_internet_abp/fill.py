@@ -31,6 +31,7 @@ from typing import Optional
 
 from automations.new_internet_abp import pull
 from automations.recruiting_report.fill import open_by_key, _retry
+from automations.shared import sheet_style as _style
 from automations.new_internet_churn.fill import _date_label, _col_index_to_letter
 
 SHEET_ID = os.environ.get("ABP_SHEET_ID", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8")
@@ -46,6 +47,60 @@ REP_HEADER_ROW = 3    # 'Rep | % | units'
 FIRST_REP_ROW = 4     # roster starts here
 
 PCT_FMT = {"type": "PERCENT", "pattern": "0.0%"}
+
+# --------------------------------------------------------- day-pair styling
+# Eve re-formatted Raf's tab by hand on 2026-07-30 because every daily insert
+# was arriving with its borders gone and its text out of line. The cause was
+# the insert's copyPaste: Sheets keeps ONE border between two neighbouring
+# cells, so the thick edge painted on a units column clears the next column's
+# left edge, and the next morning's copy inherits the damage. Repeat daily and
+# the grid rots.
+#
+# So Raf's tab no longer copies yesterday — it STAMPS the style below onto the
+# fresh B:C pair, which is exactly how the tab looks now and cannot drift.
+# Offices with no entry here (Rashad, Aya) keep the old copy behaviour: their
+# tabs have a different look (yellow header, no borders) and re-styling them
+# was not asked for.
+_FONT, _SIZE = "Georgia", 12
+_THIN = dict(top="SOLID", bottom="SOLID")
+
+
+def _pair_cell(bg, *, left, right, white=False, number=None):
+    edges = dict(_THIN, left=left, right=right)
+    return _style.cell(bg=bg, borders=_style.borders(**edges),
+                       font=_FONT, size=_SIZE,
+                       fg=_style.WHITE if white else None,
+                       number=number, wrap=True)
+
+
+# row class -> (format for the % column, format for the units column). Each
+# pair carries its own thick outer edges, so it never depends on a neighbour.
+DAY_PAIR_STYLE = {
+    # Row 1 is the date, merged across the pair: black bar, white text, and no
+    # number format — the date is written as text ('Thu 7/30/26').
+    "header": (_pair_cell(_style.BLACK, left="SOLID_THICK", right="SOLID",
+                          white=True),
+               _pair_cell(_style.BLACK, left="SOLID", right="SOLID_THICK",
+                          white=True)),
+    "office": (_pair_cell(_style.WHITE, left="SOLID_THICK", right="SOLID",
+                          number=PCT_FMT),
+               _pair_cell(_style.WHITE, left="SOLID", right="SOLID_THICK")),
+    "rep_header": (_pair_cell(_style.BLACK, left="SOLID_THICK", right="SOLID",
+                              white=True, number=PCT_FMT),
+                   _pair_cell(_style.BLACK, left="SOLID", right="SOLID_THICK",
+                              white=True)),
+    "rep": (_pair_cell(_style.WHITE, left="SOLID_THICK", right="SOLID",
+                       number=PCT_FMT),
+            _pair_cell(_style.WHITE, left="SOLID", right="SOLID_THICK")),
+}
+
+# Which workbooks get stamped. Keyed by spreadsheet id so a run that targets a
+# duplicate (or another office) is unaffected.
+STYLED_SHEETS = {"1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8": DAY_PAIR_STYLE}
+
+
+def style_for(ws) -> Optional[dict]:
+    return STYLED_SHEETS.get(ws.spreadsheet.id)
 
 
 def open_ws(sheet_id: Optional[str] = None):
@@ -164,13 +219,18 @@ def bootstrap(ws, today: dt.date, parsed: dict, *, dry_run=False, logfn=print) -
 # ------------------------------------------------------------- daily insert
 
 def insert_two_cols_at_b(ws) -> None:
-    """Insert 2 fresh columns at B (0-idx 1) across the whole tab, then copy
-    the PRIOR day's formatting (now shifted to D:E) onto the new B:C so
-    Megan's manual look (colors, borders, number format, conditional
-    rules) carries forward every day. Values are NOT copied (PASTE_FORMAT
-    only) — write_today fills today's numbers into the clean B:C. Row-1
-    col A (section label) is untouched; single section → no preserve block
-    needed (unlike churn)."""
+    """Insert 2 fresh columns at B (0-idx 1) across the whole tab.
+
+    On a STYLED tab (see DAY_PAIR_STYLE) that is all this does: format_pair()
+    stamps the day's look afterwards, so there is nothing to copy and copying
+    is what caused the drift Eve fixed by hand.
+
+    On every other office the previous behaviour stands — copy the PRIOR day's
+    formatting (now shifted to D:E) onto the new B:C so that tab's manual look
+    (colors, borders, number format) carries forward. Values are NOT copied
+    (PASTE_FORMAT only); write_today fills today's numbers into the clean B:C.
+    Row-1 col A (section label) is untouched; single section → no preserve
+    block needed (unlike churn)."""
     last_row = ws.row_count
     ws.spreadsheet.batch_update({"requests": [{
         "insertDimension": {
@@ -180,6 +240,9 @@ def insert_two_cols_at_b(ws) -> None:
         }
     }]})
     time.sleep(1)
+    if style_for(ws):
+        time.sleep(1)
+        return
     # Carry yesterday's per-column formatting (D:E, post-shift) onto B:C.
     ws.spreadsheet.batch_update({"requests": [{
         "copyPaste": {
@@ -191,6 +254,59 @@ def insert_two_cols_at_b(ws) -> None:
         }
     }]})
     time.sleep(2)
+
+
+def format_pair(ws, rep_rows: dict, *, first_col_0: int = 1,
+                logfn=print) -> int:
+    """Stamp DAY_PAIR_STYLE onto ONE day pair (default today's B:C).
+
+    No-op on a tab with no configured style. `first_col_0` lets a repair pass
+    walk the whole history (run.py --reformat)."""
+    style = style_for(ws)
+    if not style:
+        return 0
+    last = last_rep_row(rep_rows)
+    blocks = [(HEADER_ROW - 1, HEADER_ROW, "header"),
+              (OFFICE_ROW - 1, OFFICE_ROW, "office"),
+              (REP_HEADER_ROW - 1, REP_HEADER_ROW, "rep_header")]
+    if last >= FIRST_REP_ROW:
+        blocks.append((FIRST_REP_ROW - 1, last, "rep"))
+
+    requests = []
+    for r0, r1, klass in blocks:
+        for offset, fmt in enumerate(style[klass]):
+            requests.append(_style.repeat_cell(
+                ws.id, fmt, row_start_0=r0, row_end_0=r1,
+                col_start_0=first_col_0 + offset,
+                col_end_0=first_col_0 + offset + 1))
+    ws.spreadsheet.batch_update({"requests": requests})
+    return len(requests)
+
+
+def day_columns(ws) -> list:
+    """0-indexed first column of every date pair that carries a header — B, D,
+    F ... up to the last filled one. Used by the --reformat repair pass."""
+    values = _retry(ws.row_values, HEADER_ROW)
+    out = []
+    for c0 in range(1, ws.col_count, 2):
+        if not (values[c0] if c0 < len(values) else "").strip():
+            break
+        out.append(c0)
+    return out
+
+
+def find_boxes(ws) -> dict:
+    """The tab as ONE box, in the shape every captainship report's find_boxes
+    returns, so the drafts email can render it with the same reader as the
+    cancel / activation / 6-days boxes. Key 'abp' matches the email's slot."""
+    return {"abp": {
+        "header_row": HEADER_ROW,
+        "office_avg_row": OFFICE_ROW,
+        "avg_row": OFFICE_ROW,
+        "rep_header_row": REP_HEADER_ROW,
+        "rep_rows": find_rep_rows(ws),
+        "col_step": 2,     # this tab's day is always a %+units pair
+    }}
 
 
 def append_missing_reps(ws, parsed: dict, rep_rows: dict, *,
@@ -442,3 +558,10 @@ def fill_office(ws, today, parsed, *, force_insert=False, dry_run=False,
     rep_rows = find_rep_rows(ws)   # re-read after append (+ insert)
     write_today(ws, today, parsed, rep_rows, dry_run=dry_run, logfn=logfn)
     _post_write_structure(ws, today, parsed, rep_rows, dry_run=dry_run, logfn=logfn)
+    # Last, so it also lands on any row the sort/hide pass touched: re-stamp
+    # today's pair. Runs on a same-day refresh too — the point is that the
+    # column looks the same however many times we've written it.
+    if not dry_run and style_for(ws):
+        n = format_pair(ws, find_rep_rows(ws), logfn=logfn)
+        logfn(f"  stamped today's B:C style ({n} block(s)) — no format copy, "
+              f"so the borders can't drift")

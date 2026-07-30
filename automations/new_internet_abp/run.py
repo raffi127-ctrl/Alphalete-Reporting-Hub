@@ -39,11 +39,33 @@ def main(argv=None) -> int:
                          "already present (side-by-side verification).")
     ap.add_argument("--skip-slack", action="store_true",
                     help="Fill the sheet but don't post to Slack.")
+    ap.add_argument("--reformat", action="store_true",
+                    help="Re-stamp the house style onto EVERY day pair already "
+                         "on the tab, then stop. No pull, no new column, no "
+                         "Slack — the repair pass for a tab whose older columns "
+                         "drifted before the stamping fix.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     mode = "DRY-RUN" if args.dry_run else "LIVE"
     print(f"=== New Internet ABP% — Local Office — {today.isoformat()} ({mode}) ===")
+
+    if args.reformat:
+        ws = fill.open_ws()
+        if not fill.style_for(ws):
+            print(f"  ⚠ no house style configured for this workbook "
+                  f"({ws.spreadsheet.id}) — nothing to stamp.")
+            return 1
+        rep_rows = fill.find_rep_rows(ws)
+        cols = fill.day_columns(ws)
+        print(f"Re-stamping {len(cols)} day pair(s) on '{fill.TAB}'...")
+        for c0 in cols:
+            if args.dry_run:
+                continue
+            fill.format_pair(ws, rep_rows, first_col_0=c0, logfn=print)
+        print("=== done ===" if not args.dry_run
+              else "(dry-run) nothing written")
+        return 0
 
     # --- Pull ---
     print("Step 1: Tableau ABP crosstab pull (RafLocalofficeINTABP)...")

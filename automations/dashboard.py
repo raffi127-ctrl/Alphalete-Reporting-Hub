@@ -3492,6 +3492,85 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-raf-metrics",
+        "name": "Captainship Metrics - Rafael",
+        "creator": "Eve",
+        "emoji": "🧭",
+        "color": "#E8612A",
+        "category": "📊 Metrics",
+        "description": "Daily cancel rate (0-30 / 30-60), activation rate (0-30 / 30-60) and 6+-days-out % for RAFAEL's captainship, on the three 'Captainship - …' tabs of his AT&T Fiber Metrics Report sheet. Same metrics the five fiber captains get, sliced to Raf's Team.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Adds one dated column PAIR per day (% + count) to every box on "
+            "Rafael's three captainship tabs — the Captainship Avg plus a row "
+            "per ICD owner on his team.\n\n"
+            "TABS FILLED\n"
+            "• Captainship - Cancel Rate (0-30 and 30-60 boxes)\n"
+            "• Captainship - Activation Rate (0-30 and 30-60 boxes)\n"
+            "• Captainship - 6 days out\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "Tableau → ATTTRACKER2_1-D2D → Metrics view → worksheet "
+            "'Metrics Call Last week data (Internet)', rows where Captain's "
+            "Bonus Teams = \"Raf's Team\", read at each owner's subtotal row.\n"
+            "• Cancel 0-30 → '0-30 day New Internet cancel rate'\n"
+            "• Cancel 30-60 → 100% − '30-60 day New Internet activation "
+            "rate' (the workbook carries no 30-60 cancel column). A blank "
+            "activation rate stays blank — no data is not a 100% cancel.\n"
+            "• Activation 0-30 → 'Rolling 4 Weeks'\n"
+            "• Activation 30-60 → '30-60 day New Internet activation rate'\n"
+            "His 'Captainship - ABP' tab is NOT filled here — Rafael is a "
+            "slug of the Captainship ABP & 6 Days Out report, which fills "
+            "it off the same crosstab in the same pass.\n"
+            "• 6+ days out → '% of sales scheduled 6+ days out (4 wks)', the "
+            "tooltip measure — it cannot be derived from the visible count.\n"
+            "• Captainship Avg → the team's own 'Total' row, never an average "
+            "of the owner cells (rates over different denominators).\n\n"
+            "THE 'units' COLUMN\n"
+            "Counts come from the crosstab: cancels for the 0-30 cancel box, "
+            "activations for the 0-30 activation box, the 6+-days count for "
+            "that one. Tableau publishes NO count behind either 30-60 rate, "
+            "so those units cells are left blank on purpose. Whether a tab "
+            "HAS a units column at all is read off the tab each run, never "
+            "assumed.\n\n"
+            "FORMATTING\n"
+            "The day's pair is re-stamped from the module's own style table "
+            "instead of copying yesterday's column, so the borders can never "
+            "drift the way the ABP tab's did.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, right after the per-captain fiber metrics."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Rafael's Captainship metrics done — today's column pair added to all three tabs.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Captainship Metrics - Rafael",
+                "icon": "▶",
+                "primary": True,
+                "help": "One Metrics crosstab pull, sliced to Raf's Team, then fills all five boxes across the three tabs (refreshes today's pair in place if it's already open — pass --force-insert in CLI to add another).",
+                "module": "automations.captainship_raf_metrics.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Re-stamp the formatting",
+                "icon": "🎨",
+                "help": "Repair pass: re-applies the house style to EVERY day pair already on the three tabs. No Tableau pull, no new column.",
+                "module": "automations.captainship_raf_metrics.run",
+                "args_fn": lambda: ["--reformat"],
+            },
+        ],
+    },
+    {
         "id": "ongoing-1st-round-recruiter-retention",
         "name": "Ongoing 1st Round Recruiter Retention",
         "creator": "Megan",
