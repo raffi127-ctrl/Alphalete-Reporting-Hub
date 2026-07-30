@@ -16,10 +16,16 @@ Structures rolled (all found by LABEL, never row index — [[feedback_no_hardcod
      into D..last+1, freezing the just-closed week into D. Col C keeps its
      =SUMIF — the daily clear (step 5) zeroes what it sums, so it self-drops to 0
      for the new week without overwriting the formula. Col-C header re-dated.
+     The box's TOTALS row shifts WITH the rep rows (it is the row scan's
+     terminator, so it used to be left behind — its live col-C =SUM kept the open
+     week right while its frozen history slid a column behind every Tuesday).
 
   2. DAILY 'All Units' per-rep 2-week freeze: each rep's RUNNING WEEK TOTAL (col
      J, a =SUM value) → col K (LAST WEEK'S TOTALS); old K → col L (PREVIOUS). Read
-     as values before the clear.
+     as values before the clear. Those same two columns on the WE stack below
+     (the 'Totals' row + every 'WE m.d' row) are re-derived after step 3 from the
+     rule K = col-J of the row ONE week older, L = of TWO weeks older — the rep
+     shift never touched them, so they went stale/blank.
 
   3. WE-history rows (the 'WE m.d' org-daily-breakdown rows under the daily
      Totals): INSERT the just-closed week as a new row at the TOP of the stack
@@ -85,15 +91,17 @@ def find_leaderboard_block(grid: List[List[str]]) -> dict:
     last_col = max((c + 1 for c in range(2, len(grid[hr - 1]))
                     if _cell(grid, hr - 1, c)), default=3)
     rows: List[int] = []
+    totals_row = None
     for i in range(hr, n):
         a = _cell(grid, i, 0).lower()
         b = _cell(grid, i, 1)
-        if a == "totals":
+        if a.startswith("total"):
+            totals_row = i + 1        # the terminator — reported, NOT a data row
             break
         if b:
             rows.append(i + 1)
-    return {"header_row": hr, "data_rows": rows, "first_col": 3,
-            "last_col": last_col}
+    return {"header_row": hr, "data_rows": rows, "totals_row": totals_row,
+            "first_col": 3, "last_col": last_col}
 
 
 def plan_leaderboard_rollover(ws, block: dict, new_label: str):
@@ -103,7 +111,16 @@ def plan_leaderboard_rollover(ws, block: dict, new_label: str):
     one col); col C keeps its =SUMIF (self-zeroes on the daily clear) and its
     header re-dates to the new week.
 
-    Destination D..last+1 = source C..last; nothing is dropped."""
+    Destination D..last+1 = source C..last; nothing is dropped.
+
+    The box's own TOTALS row shifts WITH the rep rows. It is the terminator of
+    find_leaderboard_block's row scan, not a member of it, and leaving it out is
+    exactly the defect Eve caught on the ORG board 2026-07-28: its col C is a
+    live '=SUM' so the OPEN week always looked right, while its static D.. history
+    stood still and slid one column further behind every Tuesday — the column
+    labelled 'WE 07.26' ending up showing a fortnight-old total. Col C is never
+    written here, so the =SUM survives the shift.
+    [[project_org-board-leaderboard-totals-row]]"""
     c0, c1 = block["first_col"], block["last_col"]        # C .. last
     width = c1 - c0 + 1
     hr = block["header_row"]
@@ -113,14 +130,18 @@ def plan_leaderboard_rollover(ws, block: dict, new_label: str):
                   value_render_option="UNFORMATTED_VALUE") or [[]])[0]
     hdr = (list(hdr) + [""] * width)[:width]              # old C..last
     updates.append({"range": f"{Cl}{hr}:{ANl}{hr}", "values": [[new_label] + hdr]})
-    rng = f"{Cl}{block['data_rows'][0]}:{a1col(c1)}{block['data_rows'][-1]}"
-    vals = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
-    rowmap = {block["data_rows"][0] + i: (list(r) + [""] * width)[:width]
+    shift_rows = list(block["data_rows"])
+    if block.get("totals_row"):
+        shift_rows.append(block["totals_row"])
+    r0, r1 = shift_rows[0], shift_rows[-1]
+    vals = ws.get(f"{Cl}{r0}:{a1col(c1)}{r1}",
+                  value_render_option="UNFORMATTED_VALUE")
+    rowmap = {r0 + i: (list(r) + [""] * width)[:width]
               for i, r in enumerate(vals)}
-    for row in block["data_rows"]:
+    for row in shift_rows:
         cur = rowmap.get(row, [""] * width)               # old C..last (C = value)
         updates.append({"range": f"{Dl}{row}:{ANl}{row}", "values": [cur]})
-        # col C left untouched — keeps its =SUMIF, self-zeroes on the daily clear
+        # col C left untouched — keeps its =SUMIF/=SUM, self-zeroes on the clear
     return updates
 
 
@@ -234,8 +255,10 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     upd = plan_leaderboard_rollover(ws, lb, new_label)
     if upd and not dry_run:
         ws.batch_update(upd, value_input_option="USER_ENTERED")
-    logfn(f"  1/6 leaderboard frozen ({len(lb['data_rows'])} rows) → new col C "
-          f"{new_label}; {len(upd)} write(s)")
+    tot_note = (f" + TOTALS row {lb['totals_row']}" if lb.get("totals_row")
+                else " — ⚠ no TOTALS row found, its history will NOT shift")
+    logfn(f"  1/6 leaderboard frozen ({len(lb['data_rows'])} rep rows{tot_note})"
+          f" → new col C {new_label}; {len(upd)} write(s)")
 
     anchor = fs.find_daily_section(grid, DAILY_LABEL)
     # 2) daily per-rep J → K → L (fixed window: L is dropped, no new columns)
@@ -275,6 +298,45 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     ps = apply_product_summary_rollover(ws, today=today, dry_run=dry_run, logfn=logfn)
     logfn(f"  4/6 WE-history grown down ({len(ps)} stack(s) — new week at top, "
           f"none dropped)")
+
+    # 4b) PRIOR-WEEK COLUMNS — "LAST WEEK'S TOTALS" (K) / "PREVIOUS WEEK'S
+    # TOTALS" (L) on the WE stack, re-derived from the one rule that governs
+    # them on EVERY row of the stack, the 'Totals' row included:
+    #     K = the col-J total of the row ONE week older, L = of TWO weeks older.
+    # Step 2 above shifts the per-REP J→K→L, but nothing seeded the stack: the
+    # 'Totals' row's K/L sat frozen at whatever a human last typed and the WE row
+    # step 4 inserts came in with K/L blank. Re-deriving the whole stack is
+    # idempotent, so this also self-heals the weeks already drifted and any
+    # future missed Tuesday. MUST run AFTER the insert (it reads the just-frozen
+    # week) — hence the fresh grid read inside apply_prior_week_totals — and it
+    # never reads the live 'Totals' col-J, so the daily clear below is
+    # unaffected. [[project_org-board-prior-week-columns]]
+    from automations.org_sales_board.rollover import (
+        apply_prior_week_totals, check_prior_week_totals,
+        check_leaderboard_totals_front)
+    if dry_run:
+        pre = check_prior_week_totals(grid)
+        logfn(f"  4b/6 [dry-run] prior-week columns: {len(pre)} cell(s) "
+              f"currently break the rule; the real roll re-derives the stack "
+              f"AFTER the week insert")
+    else:
+        pw = apply_prior_week_totals(ws, dry_run=False, logfn=logfn)
+        after = ws.get_all_values()
+        post = check_prior_week_totals(after)
+        logfn(f"  4b/6 prior-week columns re-derived ({len(pw)} cell(s)); "
+              f"{len(post)} residual violation(s)"
+              + (f" — {post[:3]}" if post else ""))
+        summary["prior_week_cells"] = len(pw)
+        summary["prior_week_residual"] = len(post)
+        # …and the tripwire for the OTHER half of the same defect: the box's
+        # TOTALS row must have moved right with its rep rows.
+        lb2 = find_leaderboard_block(after)
+        if lb2.get("totals_row"):
+            ok, msg = check_leaderboard_totals_front(
+                after, lb2["data_rows"], lb2["totals_row"],
+                lb2["first_col"] + 1)
+            logfn(f"  4b/6 {'✔' if ok else '❌'} {msg}")
+            summary["leaderboard_totals_ok"] = ok
 
     # 5) clear daily day cells (the daily table sits ABOVE the WE insert, so its
     # anchor row numbers are unchanged).

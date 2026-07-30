@@ -874,6 +874,48 @@ def apply_prior_week_totals(ws, grid=None, extra=None, dry_run: bool = False,
     return updates
 
 
+def _num(s) -> Optional[float]:
+    s = str(s).replace(",", "").replace("$", "").strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def check_leaderboard_totals_front(grid: List[List[str]], data_rows: List[int],
+                                   totals_row: int,
+                                   frozen_col: int) -> Tuple[bool, str]:
+    """Did the leaderboard's TOTALS row shift right along with its rep rows?
+
+    `frozen_col` is the column the roll has just frozen — the FIRST static
+    history column (col D on the Country and All Campaigns boards). Right after
+    a correct roll it must hold, on the TOTALS row, exactly the sum of the rep
+    rows above it: both were carried over from the same live col-C '=SUM'.
+
+    ONLY that one column is checked. Deeper history legitimately disagrees with
+    today's rep sums — roster churn drops departed reps from the leaderboard but
+    not from the frozen weekly totals — so comparing the whole row would cry
+    wolf every week. This is the tripwire for the defect where the TOTALS row is
+    left out of the shift and its frozen history slides one column further
+    behind every Tuesday ([[project_org-board-leaderboard-totals-row]])."""
+    col = a1col(frozen_col)
+    tot = _num(_cell(grid, totals_row - 1, frozen_col - 1))
+    reps = [_num(_cell(grid, r - 1, frozen_col - 1)) for r in data_rows]
+    rsum = sum(v for v in reps if v is not None)
+    if tot is None:
+        return False, (f"leaderboard TOTALS {col}{totals_row} is blank — the "
+                       f"row did not take the frozen week (reps sum {rsum:g})")
+    if abs(tot - rsum) > 0.5:
+        return False, (f"leaderboard TOTALS {col}{totals_row} = {tot:g} but the "
+                       f"rep rows in {col} sum to {rsum:g} — the TOTALS row did "
+                       f"not shift with them, so its frozen history is now one "
+                       f"column behind")
+    return True, (f"leaderboard TOTALS {col}{totals_row} = {tot:g} = the rep "
+                  f"rows' sum — the row shifted with them")
+
+
 def find_org_history_tables(grid: List[List[str]]) -> List[dict]:
     """Find each 'X ORG - Current vs Prior Weeks' summary table that carries a
     STATIC 4-week history — Last Week / Prior Week / 2 Weeks Prior / 3 Weeks

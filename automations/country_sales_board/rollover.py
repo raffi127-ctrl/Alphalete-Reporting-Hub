@@ -23,7 +23,12 @@ org_sales_board's own finders against it. What that showed:
 
   NEW here (the ORG board has no equivalent)
     • the day block carries per-rep LAST WEEK'S / PREVIOUS WEEK'S TOTALS in
-      cols K and L as STATIC values -> they shift L<-K, K<-J
+      cols K and L as STATIC values -> they shift L<-K, K<-J.
+      The WE stack BELOW the day block carries those same two columns per WEEK
+      (the 'Totals' row + every 'WE m.d' row), and the per-rep shift does not
+      touch them. They follow the ORG board's rule instead — K = the col-J total
+      of the row ONE week older, L = of TWO weeks older — re-derived every roll
+      by org_sales_board.rollover.apply_prior_week_totals
     • the Current-vs-Prior block anchors into the WE stack by ROW:
           C12 = =C$174                  Sales (Last Week)
           C13 = =AVERAGE(C$174:C$177)   Sales (4 Week AVG)
@@ -51,6 +56,7 @@ from automations.country_sales_board.fill import BLOCK_LABEL
 
 BACKUP_TAB = "Country Sales Board (pre-rollover backup)"
 LEADERBOARD_HDR_LABEL = "AT&T FIBER TEAM"     # col A of the leaderboard header
+FIRST_WEEK_COL = 3            # leaderboard col C = the live current week
 
 
 def _cell(grid, r1: int, c1: int) -> str:
@@ -166,7 +172,7 @@ def plan_leaderboard_shift(grid, lb: dict, new_label: str) -> List[dict]:
     value into col D and leave the formula in place, so it recomputes to 0 once
     the day cells are cleared and then fills as the new week lands."""
     updates: List[dict] = []
-    first, last = 3, lb["last_col"]
+    first, last = FIRST_WEEK_COL, lb["last_col"]
     for r in [lb["header_row"], *lb["data_rows"], lb["totals_row"]]:
         vals = [_cell(grid, r, c) for c in range(first, last + 1)]
         rng = f"{rowcol_to_a1(r, first + 1)}:{rowcol_to_a1(r, last + 1)}"
@@ -276,6 +282,8 @@ def run_rollover(sh, ws, *, today: Optional[dt.date] = None,
       3  day block: PREVIOUS <- LAST <- RUNNING weekly totals per rep
       4  WE stack: insert the closed week at the top, then re-anchor the
          Current-vs-Prior formulas that Sheets just shifted off it
+     4b  WE stack: re-derive its LAST WEEK'S / PREVIOUS WEEK'S columns from the
+         one rule, and self-check that the leaderboard TOTALS row shifted
       5  blank the day cells
       6  advance the day-number anchor to the new Monday
     1-3 read live values that 5 zeroes, so 5 runs last. 4 inserts a row and
@@ -355,6 +363,39 @@ def run_rollover(sh, ws, *, today: Optional[dt.date] = None,
         cvp = find_cvp_anchors(fgrid)
         logfn(f"  [dry-run] cvp anchors at rows {cvp} would be re-pointed "
               f"at row {stack['top_row']}")
+
+    # 4b — PRIOR-WEEK COLUMNS on the WE stack. Step 3 shifts the per-REP J→K→L,
+    # but the stack below the day block (the 'Totals' row + every 'WE m.d' row)
+    # carries the same two columns and nothing maintained them: the 'Totals'
+    # row's K/L sat frozen at whatever a human last typed, and the WE row step 4
+    # inserts arrives with K/L blank. ONE rule governs every row of the stack:
+    #     K = the col-J total of the row ONE week older, L = of TWO weeks older.
+    # Re-deriving the whole stack is idempotent, so it also self-heals the weeks
+    # already drifted and any missed Tuesday. MUST run AFTER the insert (it reads
+    # the just-frozen week), and it never reads the live 'Totals' col-J, so the
+    # daily clear below is unaffected. [[project_org-board-prior-week-columns]]
+    if dry_run:
+        pre = org_ro.check_prior_week_totals(grid)
+        logfn(f"  prior-week-totals: [dry-run] {len(pre)} cell(s) currently "
+              f"break the rule; the real roll re-derives the stack AFTER the "
+              f"week insert")
+    else:
+        pw = org_ro.apply_prior_week_totals(ws, dry_run=False, logfn=logfn)
+        summary["steps"]["prior-week-totals"] = len(pw)
+        after = _retry(ws.get_all_values)
+        post = org_ro.check_prior_week_totals(after)
+        logfn(f"  prior-week-totals: {len(pw)} cell(s) derived, "
+              f"{len(post)} residual violation(s)"
+              + (f" — {post[:3]}" if post else ""))
+        summary["prior_week_residual"] = len(post)
+        # The other half of the same defect: the leaderboard's TOTALS row must
+        # have moved right with its rep rows. It does here (plan_leaderboard_shift
+        # includes it) — this is the tripwire that says so out loud every week.
+        lb2 = find_leaderboard(after)
+        ok2, msg2 = org_ro.check_leaderboard_totals_front(
+            after, lb2["data_rows"], lb2["totals_row"], FIRST_WEEK_COL + 1)
+        logfn(f"  leaderboard-totals: {'✔' if ok2 else '❌'} {msg2}")
+        summary["leaderboard_totals_ok"] = ok2
 
     # 5 — blank the day cells.
     push("daily-clear", plan_daily_clear(anchor))
