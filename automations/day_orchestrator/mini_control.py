@@ -1989,9 +1989,27 @@ def _action_run_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(lines)[:450] or (out or "")[-300:])
 
 
+def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
+    """Install the two B2B Dispositions launchd agents on THIS machine (Lucy 2):
+    the hourly (12-6pm) and the 6:30 final. Idempotent — reinstalling re-locks the
+    plist. `git pull` (update) must have landed the plists first."""
+    from automations.day_orchestrator import install_agent
+    out = []
+    ok_all = True
+    for label in ("b2b-dispositions-hourly", "b2b-dispositions-final"):
+        try:
+            ok, msg = install_agent.install(label)
+        except Exception as e:  # noqa: BLE001
+            ok, msg = False, f"{type(e).__name__}: {str(e)[:80]}"
+        ok_all = ok_all and ok
+        out.append(f"{label}: {'OK' if ok else 'FAIL'} {msg[:80]}")
+    return ok_all, " · ".join(out)
+
+
 ACTIONS = {
     "ping": _action_ping,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
+    "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
