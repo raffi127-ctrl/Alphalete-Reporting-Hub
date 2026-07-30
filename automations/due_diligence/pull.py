@@ -299,9 +299,16 @@ def _gather_over_page(dd: RepDD, rep_name: str, rep_norm: str, weeks: int,
     if _dl(cwl_url, cwl_sheet, wl_churn, page, verbose, dd.gaps, "wireless churn"):
         dd.wireless.churn = _rep_churn(wl_churn, rep_norm)
 
-    # 4) Start date / first day of sales — Eve types this by hand; not wired
-    #    to a source yet, so leave blank + flag rather than guess.
-    dd.gaps.append("start date: fill manually (no automated source wired yet)")
+    # 4) Start date / first day of sales — from the '_first_sale' map (backfilled
+    #    from the full order history, topped up nightly). Flag only a real miss.
+    try:
+        from . import first_sale as _fs
+        dd.start_date = _fs.start_date_for(rep_norm, _fs.load_map())
+    except Exception as e:                       # noqa: BLE001
+        dd.gaps.append(f"start date: lookup failed ({type(e).__name__})")
+    if not dd.start_date and dd.matched_rep:
+        dd.gaps.append("start date: no logged sale found for this rep in the "
+                       "order history")
 
 
 # --------------------------------------------------------------------------
@@ -406,6 +413,11 @@ def _add_rep_names(roster: dict, path) -> None:
 def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
     """Build a RepDD per named rep from already-downloaded crosstab files."""
     opt = _opt()
+    try:                        # first-sale dates: the '_first_sale' tab, filled
+        from . import first_sale as _fs      # by the backfill + the 3am harvest
+        _first = _fs.load_map()
+    except Exception:           # never sink a /dd over the start-date column
+        _fs, _first = None, {}
     week_reps, roster = {}, {}
     for sun in wk_order:
         f = paths["product"][sun]
@@ -443,6 +455,8 @@ def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
         dd.wireless.cancel_0_30 = mw.get("0-30", ""); dd.wireless.cancel_30_60 = mw.get("30-60", "")
         dd.new_int.churn = _rep_churn(paths["cni"], key)
         dd.wireless.churn = _rep_churn(paths["cwl"], key)
+        if _fs is not None:
+            dd.start_date = _fs.start_date_for(key, _first)
         people.append(dd)
     return people, misses
 
@@ -470,17 +484,32 @@ def harvest_dd(*, weeks: int = None, anchor=None, page=None, verbose: bool = Fal
     wk_order = recent_sundays(weeks, anchor)
     d = _cache_dir(anchor)
     gaps = []
+    fs: dict = {}
+
+    def _work(pg):
+        _download_team_files(d, wk_order, pg, verbose, gaps)
+        # Top up the first-sale map with any rep who has just started selling.
+        # One extra crosstab over the SAME warm session (hence inside this
+        # block); add-only, so it can never move a date the backfill set.
+        try:
+            from . import first_sale as _fs
+            fs.update(_fs.update_recent(page=pg, verbose=verbose,
+                                        log=(print if verbose else (lambda _m: None))))
+        except Exception as e:                   # noqa: BLE001 — never sink the harvest
+            gaps.append(f"first-sale top-up failed ({type(e).__name__}: {str(e)[:100]})")
+
     if page is None:
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(headless=True, verbose=verbose) as p:
-            _download_team_files(d, wk_order, p, verbose, gaps)
+            _work(p)
     else:
-        _download_team_files(d, wk_order, page, verbose, gaps)
+        _work(page)
     if _identical_weeks(d, wk_order):
         gaps.append("BROKEN: all 8 weekly product crosstabs are identical — the "
                     "week filter didn't apply (check for a '?' query string on "
                     "DD_PRODUCT_VIEW_URL). Weekly sales would render flat.")
-    return {"dir": str(d), "complete": _cache_complete(d, wk_order), "gaps": gaps}
+    return {"dir": str(d), "complete": _cache_complete(d, wk_order),
+            "first_sale": fs, "gaps": gaps}
 
 
 def gather_team(names, *, icd: str = "", weeks: int = None, recent: int = None,

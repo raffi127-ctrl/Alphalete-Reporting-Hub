@@ -29,7 +29,7 @@ Mirrors Eve's [template](https://docs.google.com/spreadsheets/d/1YgiiodwnIq-5NwK
 | 8-wk avg / 4-wk avg | computed (mean of the 8 / newest 4, blanks skipped like the Sheet's AVERAGE) |
 | 0-30 & 30-60 Day Cancel Rate | Metrics workbook rep row (30-60 = 100 − activation) |
 | 0-30 / 30 / 60 / 90 Day Churn | all-team churn views, sliced to the rep (`new_internet_churn.parse`) |
-| Start date / first day of sales | **manual** — no automated source wired yet (flagged) |
+| Start date / first day of sales | earliest logged sale, from the org-wide `ORDERLOG`/`ALLREPS` `A.Order Log` (`first_sale.py`) |
 
 All ~12 crosstab pulls run over **one** `tableau_session` login per request.
 
@@ -88,9 +88,46 @@ go-live is confirmed (it posts to a team channel — [[feedback_ask_before_slack
   the 0-30 cancel + 30-60 (=100−activation) come straight off the rep's row.
 - New INT count = `NEW INTERNET` only (excludes `UPGRADE INTERNET`).
 
+## First day of sales (`first_sale.py`)
+
+Raf's spec (2026-07-30): Tableau keeps order history **forever**, **any** logged
+sale counts (cancelled/inactive included), and rep names are consistent — so a
+rep's first sale date is `min(Order Date)` over every row they appear on, with
+**no** product-type and **no** status filter.
+
+Source is the org-wide `ORDERLOG` / `ALLREPS` `A.Order Log` crosstab (per-order
+rows). The DD product view can't do this — it has no date field, only weekday
+*columns* inside a week-filtered pull, so reaching back years would need one
+pull per week.
+
+Two phases, because a first-sale date never changes once known:
+
+```bash
+# how far back the history actually reaches (walks back, stops after 2 empty years)
+.venv/bin/python -m automations.due_diligence.run --first-sale-probe
+
+# one-time backfill — monthly chunks, resumable, preview by default
+.venv/bin/python -m automations.due_diligence.run --first-sale-backfill --verbose
+.venv/bin/python -m automations.due_diligence.run --first-sale-backfill --write
+```
+
+Then the 3am harvest calls `update_recent()` over the same warm session: a
+rolling 30-day window that adds **only** reps missing from the map. Add-only, so
+it can never move a date the backfill established.
+
+The map lives on the **`_first_sale` tab** of the DD workbook (rep → ISO date),
+not a local JSON, so it works from any machine. That tab is derived data the
+report owns end-to-end — it's the one DD tab that is rewritten rather than
+appended to; every ICD tab stays append-only.
+
+A monthly chunk that trips `CHUNK_ROW_ALARM` (150k rows, vs ~47k measured for a
+normal month) is re-pulled as weekly sub-chunks rather than trusted — a
+truncated export must never pass silently.
+
 ## Open items
 
-1. **Start date** — Eve types it by hand; no source wired. Flagged, left blank.
+1. **B2B** — first-sale is RESIDENTIAL only (Megan 2026-07-30). Carlos's B2B
+   order log is a separate universe; a rep's first B2B sale is not counted.
 2. **Structure** — Eve asked Raf whether he wants the rolling 8-week snapshot
    (current) or continuous weeks. Default stays 8-week until he answers.
 3. **New-rep averages** — an absent sales week counts as 0 in the 8-wk/4-wk

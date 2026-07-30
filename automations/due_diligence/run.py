@@ -54,8 +54,34 @@ def main(argv=None) -> int:
     ap.add_argument("--harvest", action="store_true",
                     help="nightly: pull the shared crosstabs into today's cache "
                          "so /dd is instant")
+    ap.add_argument("--first-sale-probe", action="store_true",
+                    help="how far back the order history reaches (a few pulls)")
+    ap.add_argument("--first-sale-backfill", action="store_true",
+                    help="one-time: walk all history in monthly chunks and build "
+                         "the rep -> first-sale-date map (resumable)")
+    ap.add_argument("--first-sale-start", default="",
+                    help="YYYY-MM-DD floor for --first-sale-backfill")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.first_sale_probe:
+        import json
+        from . import first_sale as fs
+        print(json.dumps(fs.probe(verbose=args.verbose), indent=2, default=str))
+        return 0
+
+    if args.first_sale_backfill:
+        import datetime as _dt
+        from . import first_sale as fs
+        start = _dt.date.fromisoformat(args.first_sale_start) if args.first_sale_start else None
+        m = fs.backfill(start=start, verbose=args.verbose)
+        if not args.write:
+            print(f"  {len(m):,} rep(s) mapped — preview only, pass --write to "
+                  f"save them to the '{fs.SHEET_TAB}' tab")
+            return 0
+        n = fs.save_map(m)
+        print(f"  wrote {n:,} rep(s) to the '{fs.SHEET_TAB}' tab")
+        return 0
 
     if args.harvest:
         from .pull import harvest_dd
