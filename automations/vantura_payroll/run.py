@@ -129,7 +129,7 @@ RAW_FIRST_DATA_ROW = 2
 # headed "WE m/d" in row 1; rep rows 3-152; the campaign summary blocks sit
 # below (~rows 154-210), located by their labels — never by hardcoded rows.
 PNL_TAB = "Copy of Carlos PNL 2026"
-PNL_REP_FIRST, PNL_REP_LAST = 3, 152
+PNL_REP_FIRST, PNL_REP_LAST = 3, 163
 
 
 def _week_num(week: dt.date) -> float:
@@ -376,8 +376,13 @@ def _locate_block(pnl, week: dt.date, log=_log) -> dict:
 # Campaign membership by RAW Description (runbook §4.6 + the live WE 7/5
 # formulas, read back verbatim 2026-07-15). Blank description = the
 # BasePowerRES $200 lines. Only the Captain's bonus is excluded from gross.
-BOX_DESCS = ("BF 1", "BF 2", "Term Length Bonus", "kWH Bonus")
-BASE_DESCS = ("Energy Enrollment", "RES Pilot Program - Weekly Guarantee", "")
+BOX_DESCS = ("BF 1", "BF 2", "BF 3", "Term Length Bonus", "kWH Bonus",
+             "Rep Volume Bonus")
+BASE_DESCS = ("Energy Enrollment", "RES Pilot Program - Weekly Guarantee")
+# A blank Description used to mean the BasePowerRES $200 line, but the 7/26
+# export also blanks the Description on ordinary AT&T lines. Only treat a
+# blank as Base when the amount is exactly $200 (2026-07-28).
+BASE_BLANK_AMOUNT = 200
 # 2026-07-23 (Carlos): Lead Disposition is NEVER paid out and gets its own
 # Revenue-by-Campaign section (was lumped into the Base bucket before).
 LEAD_DESCS = ("Lead Disposition Bonus",)
@@ -387,10 +392,10 @@ LEAD_DESCS = ("Lead Disposition Bonus",)
 # labels in the paid column, values in the profit column, mirroring the
 # summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
 # writes it for each new week. Anchored at fixed rows per Carlos's spec.
-REV_TITLE_ROW = 215
+REV_TITLE_ROW = 228
 # 2026-07-23 v2 (Carlos): Lead Disposition revenue belongs under BOX (still
 # never paid — BOX's Paid Out mask excludes it). No separate section.
-REV_CAMPAIGNS = (("B2B", 217), ("BOX", 223), ("Base", 229))
+REV_CAMPAIGNS = (("B2B", 230), ("BOX", 236), ("Base", 242))
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
 # House style (read off the hand-built summary blocks 2026-07-19): dark
@@ -481,7 +486,8 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     H = f"RAW!$H${s}:$H${e}"
     I = f"RAW!$I${s}:$I${e}"
     box = "+".join(f'({E}="{d}")' for d in BOX_DESCS)
-    base = "+".join(f'({E}="{d}")' for d in BASE_DESCS)
+    base = ("+".join(f'({E}="{d}")' for d in BASE_DESCS)
+            + f'+(({E}="")*({H}={BASE_BLANK_AMOUNT}))')
     lead = "+".join(f'({E}="{d}")' for d in LEAD_DESCS)
     non_b2b = f'(1-({box}+{base}+{lead}+ISNUMBER(SEARCH("Captain",{E}))))'
     rep_c = f"$C{PNL_REP_FIRST}:$C{PNL_REP_LAST}"
@@ -514,7 +520,12 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         P, r0 = blk["profit"], hdr_row + 1
         rev_m, paid_m = camp_mask[name]
         formulas[f"{P}{r0}"] = f"=SUMPRODUCT({rev_m}*{H})"
-        formulas[f"{P}{r0+1}"] = f"=SUMPRODUCT({paid_m}*{I})"
+        # Paid Out comes from the rep block, NOT RAW col I: RAW never sees the
+        # Adjustments tab (bonuses / no-pay), so a RAW-sourced Paid Out
+        # understates real payroll (2026-07-28).
+        formulas[f"{P}{r0+1}"] = (
+            f'=SUMIF({rep_c},"{name}",{blk["paid"]}{PNL_REP_FIRST}:'
+            f'{blk["paid"]}{PNL_REP_LAST})')
         formulas[f"{P}{r0+2}"] = f"={P}{r0+1}*0.12"
         formulas[f"{P}{r0+3}"] = f"={P}{r0}-{P}{r0+1}-{P}{r0+2}"
 
