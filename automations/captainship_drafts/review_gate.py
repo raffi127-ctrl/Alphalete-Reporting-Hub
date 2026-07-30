@@ -81,6 +81,17 @@ def _mentions() -> str:
 # machine without anything being passed between them.
 MARKER = "CAPTAINSHIP-REVIEW"
 REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
+# Posted in the thread once the day's send has been attempted, and read before
+# any send. THE APPROVAL IS NOT THE LOCK: a checkmark stays on the message all
+# day, and the checker asks every 15 minutes from 9am to 8pm, so without this
+# an approved day mails all 12 reports to their real recipients on EVERY tick.
+# Found 2026-07-30 with the approval already in place — captainship_review.sh
+# documented this lock, but nothing implemented it.
+#
+# It lives in the Slack thread and not in a state file on purpose: the send can
+# be triggered from either machine and output/ gets wiped, so a local file would
+# be a lock only one of them can see.
+SENT_MARKER = "CAPTAINSHIP-SENT"
 # Hours after the post, not a clock time — the build is triggered by hand once
 # the Sales Board is complete, so it lands at a different hour every day.
 REMIND_AFTER_HOURS = 2.0
@@ -321,6 +332,29 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
     return True
 
 
+def already_sent(msg: dict, channel: Optional[str] = None) -> bool:
+    """Has today's send already been attempted? Reads the thread for the lock."""
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    return any(SENT_MARKER in (r.get("text") or "") for r in replies[1:])
+
+
+def mark_sent(msg: dict, failures: int, channel: Optional[str] = None) -> None:
+    """Close the day in the thread, cleanly or not.
+
+    Posted after ANY completed attempt, including one with failures, and that is
+    deliberate. Leaving it unlocked so a partial failure can retry means the
+    captains who DID get their report get it again every 15 minutes; a send that
+    needs a human is the lesser problem, and this message is how they find out.
+    """
+    note = ("✅ Sent — the reports are on their way to the captains."
+            if not failures else
+            f"⚠️ Sent with {failures} failure(s) — see the run log. Nothing will "
+            f"retry on its own; trigger the rest by hand once it's fixed.")
+    _client().chat_postMessage(channel=_channel(channel), thread_ts=msg["ts"],
+                               text=f"{note}\n`{SENT_MARKER}`")
+
+
 def find_approval(today: dt.date, channel: Optional[str] = None,
                   verbose: bool = True) -> Optional[Tuple[str, str]]:
     """(user_id, name) of the first authorised checkmark on today's post, else
@@ -411,7 +445,17 @@ def main(argv=None) -> int:
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)
-        return send_reviewed(today) if args.send else 0
+        if not args.send:
+            return 0
+        msg = _find_post(today, args.channel)
+        if msg is not None and already_sent(msg, args.channel):
+            print("— already sent today (the thread carries the lock); "
+                  "nothing to do", flush=True)
+            return 0
+        failures = send_reviewed(today)
+        if msg is not None:
+            mark_sent(msg, failures, args.channel)
+        return failures
     ap.print_help()
     return 2
 
