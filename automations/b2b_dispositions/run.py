@@ -151,9 +151,29 @@ def main(argv=None) -> int:
                     help="scan invD2DClientId ids and log which campaign each maps to")
     ap.add_argument("--probe-tt", action="store_true",
                     help="dump the Time Tracker JSON endpoint fields")
+    ap.add_argument("--probe-terr", action="store_true",
+                    help="dump every <select> on the dispositions page")
     ap.add_argument("--limit", type=int, default=0,
                     help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
+
+    if getattr(args, "probe_terr", False):
+        from automations.shared.tableau_patchright import ownerville_session
+        with ownerville_session(headless=args.headless) as page:
+            rqst = cap.capture_rqst(page)
+            cap.ensure_campaign(page, rqst, cfg.CAMPAIGN_ATT)
+            cap._goto(page, cap._page_url(cfg.PAGE_DISPOSITION, rqst,
+                      cfg.CAMPAIGN_ATT, f"&pane={cfg.DISPOSITION_PANE}"))
+            info = page.evaluate(
+                "() => [...document.querySelectorAll('select')].map((s,i) => ({"
+                " i, name: s.name||s.id||'', vis: s.offsetParent!==null,"
+                " n: s.options.length,"
+                " sample: [...s.options].slice(0,3).map(o=>(o.textContent||'')"
+                ".replace(/\\s+/g,' ').trim().slice(0,40)) }))")
+            for s in info:
+                print(f"  select[{s['i']}] name={s['name']!r} vis={s['vis']} "
+                      f"n={s['n']} sample={s['sample']}", flush=True)
+        return 0
 
     if getattr(args, "probe_tt", False):
         from automations.shared.tableau_patchright import ownerville_session
