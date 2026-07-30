@@ -257,8 +257,33 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
             f"{_mentions()} — please review and react with "
             f":white_check_mark: to send them. Nothing goes out until then.\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
-    r = _client().chat_postMessage(channel=_channel(channel), text=text,
-                                   unfurl_links=False)
+    # A SECOND post for the same day is worse than none: --check takes the
+    # newest, so a checkmark left on the older one would silently never send —
+    # the approvers would see a tick sitting there and the captains would get
+    # nothing. Re-posting is the normal way to correct a draft, so this has to
+    # be safe, not merely discouraged.
+    cli = _client()
+    for old in _all_posts(today, channel):
+        if _approver_of(old):
+            # Already approved. Replacing it would DISCARD an approval that has
+            # already been given; keep it and let the send run off it. Use
+            # --refresh to update the PDF behind the link it points at.
+            if verbose:
+                print(f"— {today:%Y-%m-%d} is already approved "
+                      f"({_approver_of(old)[1]}); leaving that post alone",
+                      flush=True)
+            return old["ts"]
+        try:
+            cli.chat_delete(channel=_channel(channel), ts=old["ts"])
+            if verbose:
+                print("  (replaced the earlier post for this day)", flush=True)
+        except Exception as e:  # noqa: BLE001 — a stale post must not block a new one
+            print(f"  (could not remove the earlier post: {type(e).__name__}) "
+                  f"— CHECK THE CHANNEL: two posts means a checkmark can land "
+                  f"on the wrong one", flush=True)
+
+    r = cli.chat_postMessage(channel=_channel(channel), text=text,
+                             unfurl_links=False)
     if verbose:
         print(f"✓ posted to {_channel(channel)} ts={r['ts']}", flush=True)
     return r["ts"]
@@ -268,10 +293,17 @@ def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:
     """The day's review message, found by its marker rather than by a ts handed
     over from the machine that posted it — that is what lets --post run on the
     mini and everything else run on Eve's box."""
+    posts = _all_posts(today, channel)
+    return posts[0] if posts else None
+
+
+def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
+    """Every review post for `today`, newest first. There should only ever be
+    one — see post_review, which is what keeps it that way."""
     want = f"{MARKER} {today:%Y-%m-%d}"
     hist = _client().conversations_history(channel=_channel(channel), limit=100)
-    return next((m for m in hist.get("messages", [])
-                 if want in (m.get("text") or "")), None)
+    return [m for m in hist.get("messages", [])
+            if want in (m.get("text") or "")]
 
 
 def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:

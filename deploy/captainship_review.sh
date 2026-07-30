@@ -4,7 +4,7 @@
 # The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run) and
 # then posts them for review as ONE PDF (captainship_drafts_review ->
 # review_gate --post). THIS agent is the other half: every 15 minutes it asks
-# Slack whether Lucy or Evelyn put a checkmark on that post, and mails the
+# Slack whether Evelyn or Jolie put a checkmark on that post, and mails the
 # reviewed .eml files the moment one has. Until then it does nothing.
 #
 # WHY A SEPARATE AGENT and not another orchestrator report: a report runs ONCE a
@@ -19,9 +19,14 @@
 # on instead of on Eve's laptop. The previews the send mails are the ones the
 # 4am build wrote HERE; a checker on another box would find an empty output/.
 #
-# IDEMPOTENT: review_gate --check will not send twice. It reads the thread under
-# the review post for its own "Enviado" confirmation, which is a lock every
-# machine and a wiped output/ can all see.
+# IDEMPOTENT: review_gate --check will not send twice. After a send it posts a
+# CAPTAINSHIP-SENT reply in the review thread and reads it before sending — a
+# lock every machine and a wiped output/ can all see.
+#
+# This comment described the ORG BOARD gate for a while and was not true here:
+# the lock was missing until 2026-07-30, and an approved day mailed all 12
+# reports on every 15-minute tick. It went out twice before the fix landed. If
+# you change the flow, grep for SENT_MARKER rather than trusting this paragraph.
 #
 # Manual test (finds the approval, mails nothing):
 #   bash deploy/captainship_review.sh --dry
@@ -68,7 +73,7 @@ echo "[$(date)] check (mode: ${MODE:-report-only})" >> "$LOG_FILE"
 ST=$?
 
 # exit 1 = not approved yet (the normal state most of the day). While it waits,
-# let the gate nudge the channel once, 3h after the post — silence fails exactly
+# let the gate nudge the channel once, 2h after the post — silence fails exactly
 # on the day everyone is busy and nobody notices the captains got nothing.
 if [ "$ST" = "1" ]; then
     "$VENV_PY" -u -m automations.captainship_drafts.review_gate --remind >> "$LOG_FILE" 2>&1
