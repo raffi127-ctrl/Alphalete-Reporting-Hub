@@ -86,6 +86,28 @@ def _norm(s: str) -> str:
     return (s or "").strip().lower()
 
 
+def list_groups() -> List[Tuple[str, int]]:
+    """Every contact group on the account as (name, member_count), user-created
+    first. Answers "what are my groups actually called?" — the names have to
+    match EXACTLY (case/spacing aside) for expand_groups to find them."""
+    from googleapiclient.discovery import build
+    svc = build("people", "v1", credentials=load_credentials(),
+                cache_discovery=False)
+    groups, token = [], None
+    while True:
+        resp = svc.contactGroups().list(pageSize=200, pageToken=token).execute()
+        groups += resp.get("contactGroups", []) or []
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    rows = [((g.get("formattedName") or g.get("name") or ""),
+             int(g.get("memberCount") or 0),
+             g.get("groupType") == "USER_CONTACT_GROUP")
+            for g in groups]
+    rows.sort(key=lambda r: (not r[2], r[0].lower()))
+    return [(n, c) for n, c, _ in rows]
+
+
 def expand_groups(group_names: List[str]) -> Tuple[List[str], List[str]]:
     """Return (emails, missing_group_names) — the deduped union of email addresses
     across the named contact groups. `missing_group_names` lists any requested
@@ -140,7 +162,16 @@ def main(argv=None) -> int:
     ap.add_argument("--expand", nargs="+", metavar="GROUP",
                     help="list emails for the named contact group(s) and exit "
                          "(smoke test — no email sent)")
+    ap.add_argument("--list-groups", action="store_true",
+                    help="print every contact group on the account with its "
+                         "member count, and exit")
     a = ap.parse_args(argv)
+    if a.list_groups:
+        rows = list_groups()
+        print(f"{len(rows)} contact group(s) on {CONTACTS_ACCOUNT}:")
+        for name, count in rows:
+            print(f"  {count:>4}  {name}")
+        return 0
     if a.expand:
         emails, missing = expand_groups(a.expand)
         if missing:

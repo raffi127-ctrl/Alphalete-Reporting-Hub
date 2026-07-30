@@ -49,7 +49,7 @@ import tempfile
 from pathlib import Path
 
 from automations.captainship_drafts import (
-    config, churn_images, box_images, email_build, fiber_png, preview,
+    config, churn_images, box_images, distro, email_build, fiber_png, preview,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -172,11 +172,13 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
                 logfn(f"  ✗ {captain.key}: no preview for {today} at {eml.name} "
                       f"— run with --dry-run first, then review it")
                 continue
-            recipient = to_override or captain.to
+            recipient = to_override or captain.recipients(logfn=logfn)
             if not recipient.strip():
                 failures += 1
-                logfn(f"  ✗ {captain.key}: no recipient in config.py "
-                      f"(RECIPIENTS[{captain.key!r}]) — skipped")
+                logfn(f"  ✗ {captain.key}: no recipient — the "
+                      f"{distro.group_name(captain.key)!r} contact group is "
+                      f"empty/missing AND RECIPIENTS[{captain.key!r}] is blank "
+                      f"— skipped")
                 continue
             msg = BytesParser(policy=policy.default).parsebytes(eml.read_bytes())
             if msg["To"] is None:
@@ -354,6 +356,11 @@ def main(argv=None) -> int:
                     help="With --send: send to ADDR instead of the captains' "
                          "real distribution lists. Use this to test a real "
                          "report on yourself before mailing 145 people.")
+    ap.add_argument("--distro-check", action="store_true",
+                    help="Print where each captain's recipients come from "
+                         "(their 'Captainship - <Name>' contact group vs the "
+                         "fallback list in config.py) and exit. Builds "
+                         "nothing, sends nothing.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -365,6 +372,13 @@ def main(argv=None) -> int:
         print(f"Unknown captain key(s): {sorted(unknown)}. "
               f"Valid: {[c.key for c in config.CAPTAINS]}")
         return 1
+
+    if args.distro_check:
+        print("=== Captainship recipients — contact group vs config.py ===")
+        drifted = distro.diff_report([c.key for c in selected])
+        print(f"\n{drifted} captain(s) whose group differs from config.py."
+              if drifted else "\nEvery group matches config.py.")
+        return 0
 
     mode = ("SEND REVIEWED" if args.send_reviewed else
             "DRY-RUN (preview .eml)" if args.dry_run else
@@ -409,7 +423,9 @@ def main(argv=None) -> int:
     for captain, bundle in built:
         try:
             msg = email_build.build(captain, bundle, today)
-            recipient = args.to or captain.to
+            # Resolved only for a real send: expanding 12 contact groups on
+            # every --dry-run build would be 12 People API calls for nothing.
+            recipient = (args.to or captain.recipients()) if args.send else ""
             if args.send:
                 msg.replace_header("To", recipient)
             print(f"  built draft: subj={msg['Subject']!r}, "
@@ -418,8 +434,9 @@ def main(argv=None) -> int:
             if args.send and not args.dry_run:
                 if not recipient.strip():
                     failures += 1
-                    print(f"  ✗ {captain.key}: --send but no recipient in "
-                          f"config.py (Captain.to is blank) — skipped")
+                    print(f"  ✗ {captain.key}: --send but no recipient — "
+                          f"{distro.group_name(captain.key)!r} is empty/missing "
+                          f"and the config.py fallback is blank — skipped")
                     continue
                 # Always leave the reviewable .html next to the sent mail, so
                 # there's a record of exactly what went out.

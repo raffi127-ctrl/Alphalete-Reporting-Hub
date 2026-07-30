@@ -255,8 +255,12 @@ class Captain:
     title_bg: str = "#EA903C"  # per-captain brand color (title-bar bg).
                                # Confirmed by Megan 2026-06-03 (verbal map;
                                # Sales Board banners were inconsistent).
-    to: str = ""               # recipient(s) for `run.py --send`, comma-
-                               # separated. Blank = --send skips this captain.
+    to: str = ""               # FALLBACK recipient(s), comma-separated. The
+                               # live list is the 'Captainship - <Name>'
+                               # contact group (see .recipients() / distro.py);
+                               # this is what gets used if that group is
+                               # missing or unreadable. Blank = --send skips
+                               # this captain.
                                #
                                # This exists because a human must NOT open
                                # these drafts in Gmail to send them. Proven
@@ -270,6 +274,14 @@ class Captain:
                                # "To" box.
     churn: List[ChurnSource] = field(default_factory=list)
     boxes: List[BoxSource] = field(default_factory=list)
+
+    def recipients(self, *, logfn=print) -> str:
+        """The LIVE To header: this captain's Gmail contact group, expanded at
+        send time, so Eve manages the list from Contacts instead of from code.
+        Falls back to `to` (the hardcoded list below) with a loud warning when
+        the group is missing or unreadable — see distro.py for the why."""
+        from automations.captainship_drafts import distro
+        return distro.to_header(self.key, logfn=logfn)
 
     @property
     def intro(self) -> Tuple[str, List[str]]:
