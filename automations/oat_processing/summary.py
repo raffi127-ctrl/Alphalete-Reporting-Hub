@@ -273,15 +273,44 @@ def post_to_slack(pdf_path: str, date: dt.date, t: dict) -> dict:
     xoxp token there; on the laptop it would be Megan)."""
     from automations.shared import slack_metrics_post as smp
     c = smp._client()
-    summary = (f"{date.strftime('%b %-d')} — {len(t['sent'])} sent to AI · "
-               f"{len(t['removed'])} removed · {len(t['retext'])} flagged for re-text · "
-               f"{len(t['nophone'])} no-phone. (Full scorecard attached.)")
+    # No counts breakdown in the header — the PDF carries the full picture
+    # (Megan 2026-07-29).
+    summary = f"{date.strftime('%A, %b %-d')} · office 11580 (Carlos)"
     parent = c.chat_postMessage(channel=CHANNEL_ID, text=PARENT_TEXT)
     ts = parent["ts"]
     up = c.files_upload_v2(channel=CHANNEL_ID, thread_ts=ts, file=pdf_path,
                           title=f"OAT Daily Push Scorecard — {date.isoformat()}",
                           initial_comment=summary)
     return {"ok": True, "thread_ts": ts, "file": up.get("file", {}).get("id")}
+
+
+def fix_last_header() -> int:
+    """Edit the most recent DAILY PUSH SCORECARD thread's PDF reply to strip the
+    counts breakdown from its text (keeps the PDF). Posts as Lucy via the same
+    user token that posted it."""
+    from automations.shared import slack_metrics_post as smp
+    c = smp._client()
+    hist = c.conversations_history(channel=CHANNEL_ID, limit=40)
+    parent = next((m for m in hist.get("messages", [])
+                   if PARENT_TEXT in (m.get("text") or "")), None)
+    if not parent:
+        print("[fix] no DAILY PUSH SCORECARD parent found", flush=True)
+        return 0
+    reps = c.conversations_replies(channel=CHANNEL_ID, ts=parent["ts"])
+    clean = "Full scorecard attached."
+    fixed = 0
+    for m in reps.get("messages", []):
+        if m.get("ts") == parent["ts"]:
+            continue
+        if "sent to AI" in (m.get("text") or "") or m.get("files"):
+            try:
+                c.chat_update(channel=CHANNEL_ID, ts=m["ts"], text=clean)
+                fixed += 1
+                print(f"[fix] updated reply {m['ts']}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[fix] chat_update failed on {m['ts']}: {e}", flush=True)
+    print(f"[fix] fixed {fixed} message(s)", flush=True)
+    return 0
 
 
 def main(argv=None) -> int:
@@ -297,7 +326,13 @@ def main(argv=None) -> int:
     ap.add_argument("--dm", default=None,
                     help="DM the scorecard PDF to this Slack user (id/email) as Lucy "
                          "instead of posting to the channel (for review)")
+    ap.add_argument("--fix-header", action="store_true", dest="fix_header",
+                    help="Edit the last channel post's reply to strip the counts "
+                         "breakdown from its text, then stop")
     args = ap.parse_args(argv)
+
+    if args.fix_header:
+        return fix_last_header()
     date = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
 
     rows = load_rows(date)
