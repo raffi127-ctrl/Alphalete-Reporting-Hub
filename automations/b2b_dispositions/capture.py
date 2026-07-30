@@ -266,7 +266,18 @@ _CONTENT_BOX_JS = r"""
       const p = panel || inp.parentElement || inp;
       const pr = p.getBoundingClientRect();
       const ir = inp.getBoundingClientRect();
-      b = { left: pr.left, top: ir.bottom + 8, right: pr.right, bottom: pr.bottom };
+      // Start the crop at the FIRST rep row — the topmost count-badge (e.g. "570"
+      // or "2 / 570") below the search box — so the divider/whitespace above the
+      // list is dropped (Megan wants it tight at the top).
+      const badges = [...p.querySelectorAll('*')].filter(e => {
+        const t = (e.innerText || '').trim();
+        const r = e.getBoundingClientRect();
+        return /^\d+(\s*\/\s*\d+)?$/.test(t) && r.top > ir.bottom + 2
+               && r.width < 130 && r.height > 10 && r.height < 56; });
+      const firstTop = badges.length
+        ? Math.min(...badges.map(e => e.getBoundingClientRect().top)) - 10
+        : ir.bottom + 8;
+      b = { left: pr.left, top: firstTop, right: pr.right, bottom: pr.bottom };
     }
   } else if (kind === 'time_tracker') {
     // JUST the "Reps Over 15 Minute Gap" card (Megan's blue box, 7/29) — not the
@@ -401,15 +412,26 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     Over 15 Minute Gap'; we capture from the 'Reps Under 15 Minute Gap' card
     header (top of the section) through the Over card, i.e. both cards."""
     _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
-    # The "Reps Over 15 Minute Gap" card is AJAX-populated a beat after load; wait
-    # for it or the crop falls back to the data table (the bug Megan caught 7/29).
-    try:
-        page.wait_for_function(
-            "() => (document.body.innerText||'').includes('Reps Over 15 Minute Gap')",
-            timeout=18000)
-        page.wait_for_timeout(1500)
-    except Exception:
-        print("  time_tracker: gap cards didn't render in time", flush=True)
+    # The "Reps Over 15 Minute Gap" card is AJAX-injected after load (the whole
+    # section, not just the tiles). Click "Reload Now" to trigger it, then wait —
+    # or the crop falls back to the data table (the bug Megan caught 7/29).
+    for attempt in range(2):
+        try:
+            page.locator(
+                "button:has-text('Reload Now'), a:has-text('Reload Now')"
+            ).first.click(timeout=4000)
+        except Exception:
+            pass
+        try:
+            page.wait_for_function(
+                "() => (document.body.innerText||'')"
+                ".includes('Reps Over 15 Minute Gap')", timeout=20000)
+            page.wait_for_timeout(1800)
+            break
+        except Exception:
+            if attempt == 1:
+                print("  time_tracker: gap cards didn't render in time",
+                      flush=True)
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
     if dump:
