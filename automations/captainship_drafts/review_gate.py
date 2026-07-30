@@ -92,6 +92,11 @@ REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
 # be triggered from either machine and output/ gets wiped, so a local file would
 # be a lock only one of them can see.
 SENT_MARKER = "CAPTAINSHIP-SENT"
+# Posted once when the day closes with no approval. Without it, a day nobody
+# reacted to looks exactly like a day that went fine: the checker stops at
+# END_HOUR, the captains get nothing, and the only trace is a post with no
+# checkmark that scrolls away. Silence must not be the failure mode.
+CLOSED_MARKER = "CAPTAINSHIP-NOT-SENT"
 # Hours after the post, not a clock time — the build is triggered by hand once
 # the Sales Board is complete, so it lands at a different hour every day.
 REMIND_AFTER_HOURS = 2.0
@@ -364,6 +369,47 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
     return True
 
 
+def close_day(today: dt.date, channel: Optional[str] = None,
+              verbose: bool = True) -> bool:
+    """Say in the thread that the day ended without an approval. True if posted.
+
+    The checker stops at END_HOUR. Until now that was the whole ending: no
+    approval, no send, no message — a day where 12 captains got nothing looked
+    identical to a day that went fine, because the only trace was a post with no
+    checkmark, scrolling away under everything else. Silence is the worst
+    failure mode a review gate can have.
+
+    Says nothing when the day is decided: an approved-and-sent day is already
+    confirmed in the thread, and an approved-but-failed one has its own notice.
+    Posts ONCE — the checker keeps ticking until midnight."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        if verbose:
+            print(f"— nothing posted for {today:%Y-%m-%d}, nothing to close",
+                  flush=True)
+        return False
+    if _approver_of(msg):
+        if verbose:
+            print("— approved; the send path owns this day", flush=True)
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if any(CLOSED_MARKER in (r.get("text") or "") for r in replies[1:]):
+        if verbose:
+            print("— already closed once", flush=True)
+        return False
+    n = len(config.CAPTAINS)
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{_mentions()} — nobody approved this today, so the {n} "
+              f"captainship reports were NOT sent. The previews are still on "
+              f"the mini: approve here and they go out, or leave it and "
+              f"tomorrow's run replaces them.\n`{CLOSED_MARKER}`"))
+    if verbose:
+        print("✓ day closed unapproved — said so in the thread", flush=True)
+    return True
+
+
 def already_sent(msg: dict, channel: Optional[str] = None) -> bool:
     """Has today's send already been attempted? Reads the thread for the lock."""
     replies = _client().conversations_replies(
@@ -441,6 +487,10 @@ def main(argv=None) -> int:
     ap.add_argument("--after-hours", type=float, default=REMIND_AFTER_HOURS,
                     help=f"hours since the post before --remind fires "
                          f"(default {REMIND_AFTER_HOURS}).")
+    ap.add_argument("--close-day", action="store_true",
+                    help="say in the thread that the day ended unapproved, so "
+                         "a day nobody reacted to isn't silent. Says it once, "
+                         "and nothing at all if the day was approved.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -472,6 +522,9 @@ def main(argv=None) -> int:
         return 0
     if args.remind:
         return 0 if remind(today, args.after_hours, args.channel) else 1
+    if args.close_day:
+        close_day(today, args.channel)
+        return 0
     if args.check:
         who = find_approval(today, args.channel)
         if not who:

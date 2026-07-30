@@ -29,7 +29,7 @@ END_HOUR=20         # last check — after this, tomorrow's run takes over
 
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
-if [ "$HOUR" -lt "$START_HOUR" ] || [ "$HOUR" -ge "$END_HOUR" ]; then
+if [ "$HOUR" -lt "$START_HOUR" ]; then
     exit 0
 fi
 
@@ -58,6 +58,17 @@ MODE="--send --distro"
 [ "${1:-}" = "--dry" ] && MODE=""
 
 LOG_FILE="$LOG_DIR/org-board-email-review-$(date +%Y-%m-%d).log"
+
+# PAST THE WINDOW: stop asking, but do not just disappear. A day nobody reacted
+# to used to end in silence — no approval, no send, no message — which looks
+# exactly like a day that went fine. Say it in the thread instead, once, and
+# then go quiet until tomorrow's post.
+if [ "$HOUR" -ge "$END_HOUR" ]; then
+    echo "[$(date)] past ${END_HOUR}:00 — closing the day" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.org_sales_board.review_gate --close-day >> "$LOG_FILE" 2>&1
+    exit 0
+fi
+
 echo "[$(date)] check (mode: ${MODE:-report-only})" >> "$LOG_FILE"
 
 "$VENV_PY" -u -m automations.org_sales_board.review_gate --check $MODE >> "$LOG_FILE" 2>&1

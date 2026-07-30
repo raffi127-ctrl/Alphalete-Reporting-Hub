@@ -105,6 +105,11 @@ SENT_MARK = "Sent — approved by"
 # is still locked, never written.
 SENT_MARK_LEGACY = ("Enviado", "Sent to the distro")
 FAILED_MARK = "Could not send"
+# Said once when the day closes with nobody having approved. Until this existed,
+# such a day ended in silence — no approval, no send, no message — which reads
+# exactly like a day that went fine. The only trace was a post with no checkmark,
+# scrolling away under everything else.
+CLOSED_MARK = "Not sent — nobody approved"
 FAILED_MARK_LEGACY = "No se pudo enviar"
 REMIND_AFTER_HOURS = 3.0
 
@@ -389,6 +394,40 @@ def report_failure(today: dt.date, rc: int, channel: Optional[str] = None) -> No
               f"clear, check the `org-board-email-review` log on the mini."))
 
 
+def close_day(today: dt.date, channel: Optional[str] = None,
+              verbose: bool = True) -> bool:
+    """Say in the thread that the day ended without an approval. True if posted.
+
+    The checker stops at END_HOUR, and until now that was the whole ending: the
+    board email simply never went and nobody was told. Says nothing when the day
+    is decided — an approved day is confirmed or has its own failure notice —
+    and says it ONCE, because the checker keeps ticking until midnight."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        if verbose:
+            print(f"— nothing posted for {_title(today)}, nothing to close",
+                  flush=True)
+        return False
+    if _approver_of(msg):
+        if verbose:
+            print("— approved; the send path owns this day", flush=True)
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, CLOSED_MARK):
+        if verbose:
+            print("— already closed once", flush=True)
+        return False
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{_mentions()} — {CLOSED_MARK}: today's Org Sales Board email "
+              f"did not go out. Approve here and it still will, or leave it and "
+              f"tomorrow's post replaces it."))
+    if verbose:
+        print("✓ day closed unapproved — said so in the thread", flush=True)
+    return True
+
+
 def confirm_sent(today: dt.date, who: str, to_note: str = "",
                  channel: Optional[str] = None) -> None:
     """Reply in-thread that it went out. Doubles as the once-a-day lock, so it
@@ -497,6 +536,10 @@ def main(argv=None) -> int:
     ap.add_argument("--remind", action="store_true",
                     help="nudge the channel if the day's email is still "
                          "unapproved after --after-hours. Nudges once.")
+    ap.add_argument("--close-day", action="store_true",
+                    help="say in the thread that the day ended unapproved, so "
+                         "a day nobody reacted to isn't silent. Says it once, "
+                         "and nothing at all if the day was approved.")
     ap.add_argument("--after-hours", type=float, default=REMIND_AFTER_HOURS,
                     help=f"hours since the post before --remind fires "
                          f"(default {REMIND_AFTER_HOURS}).")
@@ -519,6 +562,9 @@ def main(argv=None) -> int:
         return 0
     if args.remind:
         return 0 if remind(today, args.after_hours, args.channel) else 1
+    if args.close_day:
+        close_day(today, args.channel)
+        return 0
     if args.check:
         if already_sent(today, args.channel):
             print("— already sent today, nothing to do", flush=True)
