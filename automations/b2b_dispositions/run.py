@@ -93,10 +93,13 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
-                          dry_run: bool, limit: int = 0) -> List[Dict]:
-    """Territory Stats: one shot per territory per campaign. `limit` > 0 caps the
-    territories per campaign (for a quick crop-check preview without a flood)."""
-    specs = []
+                          dry_run: bool, limit: int = 0,
+                          slot: str = "") -> List[Dict]:
+    """Territory Stats: capture every territory per campaign, then STACK a
+    campaign's territories into ONE tall image (each keeps its name header). One
+    reply carries both campaign stacks (Megan 7/30 — 2 images at 6:30, not 18
+    posts). `limit` > 0 caps territories per campaign for a quick preview."""
+    stacks, notes = [], []
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         terrs = cap.list_territories(page, rqst, campaign)
@@ -105,13 +108,26 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
               + (f" (limited to {limit})" if limit else ""), flush=True)
         if limit:
             terrs = terrs[:limit]
+        terr_paths = []
         for terr in terrs:
             res = cap.capture_territory_stats(page, rqst, campaign, terr,
                                               out_dir, dump=dry_run)
-            specs.append({"thread": cfg.THREAD_DISPOSITIONS,
-                          "caption": f"{res['tag']} — {res['territory']}",
-                          "paths": [res["path"]], "meta": res})
-    return specs
+            terr_paths.append(res["path"])
+        if not terr_paths:
+            continue
+        stack = out_dir / f"dispositions_{cap._slug(tag)}.png"
+        try:
+            cap.stack_images(terr_paths, stack)
+            stacks.append(stack)
+        except Exception as e:  # noqa: BLE001
+            print(f"  {tag} stack failed ({type(e).__name__})", flush=True)
+            stacks.extend(terr_paths)  # fall back to individual images
+        notes.append(f"{tag}={len(terr_paths)}")
+    if not stacks:
+        return []
+    return [{"thread": cfg.THREAD_DISPOSITIONS,
+             "caption": f"Dispositions — {slot}" if slot else "Dispositions",
+             "paths": stacks, "meta": {"note": " ".join(notes)}}]
 
 
 def _post_by_thread(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
@@ -235,7 +251,7 @@ def main(argv=None) -> int:
             specs += _capture_hourly(page, rqst, out_dir, slot, dry_run)
         if args.which in ("dispositions", "all"):
             specs += _capture_dispositions(page, rqst, out_dir, dry_run,
-                                           limit=args.limit)
+                                           limit=args.limit, slot=slot)
 
     # Report captures (and flag any that fell back to a full-page shot or whose
     # on-screen campaign didn't match — the two things worth eyeballing).

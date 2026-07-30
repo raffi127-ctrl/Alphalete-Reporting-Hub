@@ -629,6 +629,31 @@ def add_title_header(src_path: Path, title: str, out_path: Path) -> Path:
     return out_path
 
 
+def stack_images(paths: List[Path], out_path: Path, gap: int = 14) -> Path:
+    """Stack images top-to-bottom into one tall image (common width = the widest).
+    Used to combine a campaign's per-territory dispositions into ONE image so the
+    6:30 drop is 2 images, not 18 posts (Megan 7/30)."""
+    from PIL import Image
+    ims = []
+    for p in paths:
+        try:
+            ims.append(Image.open(p).convert("RGB"))
+        except Exception:
+            continue
+    if not ims:
+        raise RuntimeError("no images to stack")
+    W = max(im.width for im in ims)
+    H = sum(im.height for im in ims) + gap * (len(ims) - 1)
+    canvas = Image.new("RGB", (W, H), (255, 255, 255))
+    y = 0
+    for im in ims:
+        canvas.paste(im, (0, y))
+        y += im.height + gap
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    return out_path
+
+
 def stitch_vertical(panels: List[Tuple[str, Path]], title: str,
                     out_path: Path) -> Path:
     """Stack labeled panels into one tall, narrow image (Megan 7/29 — combine the
