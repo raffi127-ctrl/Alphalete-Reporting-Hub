@@ -72,12 +72,14 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
+        # Today's Activity: ONE shared thread, campaign in the caption.
         specs.append({"thread": cfg.THREAD_TODAYS_ACTIVITY,
                       "caption": f"{ta['tag']} — {slot}", "path": ta["path"],
                       "meta": ta})
-        specs.append({"thread": cfg.THREAD_TIME_TRACKER,
-                      "caption": f"{tt['tag']} — {slot}", "path": tt["path"],
-                      "meta": tt})
+        # Time Tracker: a thread PER campaign (Megan 7/29), so the caption is
+        # just the time slot.
+        specs.append({"thread": f"{cfg.THREAD_TIME_TRACKER} — {tt['tag']}",
+                      "caption": slot, "path": tt["path"], "meta": tt})
     return specs
 
 
@@ -100,9 +102,13 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
 
 
 def _post_by_thread(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
-    """Group reply specs by thread and post each group (preserving order)."""
-    order = [cfg.THREAD_TODAYS_ACTIVITY, cfg.THREAD_TIME_TRACKER,
-             cfg.THREAD_DISPOSITIONS]
+    """Group reply specs by thread and post each group. Thread names are dynamic
+    now (Time Tracker splits per campaign), so group by first-seen order rather
+    than a fixed list."""
+    order = []
+    for s in specs:
+        if s["thread"] not in order:
+            order.append(s["thread"])
     out = []
     for thread in order:
         group = [{"caption": s["caption"], "path": s["path"]}

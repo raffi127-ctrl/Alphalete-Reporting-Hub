@@ -263,21 +263,24 @@ _CONTENT_BOX_JS = r"""
         if (r.height > 350 && r.width > 180 && r.width < 760) { b = box(el); break; } }
       if (!b) b = box(inp.parentElement || inp); }
   } else if (kind === 'time_tracker') {
-    // The two gap cards sit ABOVE the "Time Tracking Data" table. Bound the crop
-    // by that heading so the table is never included (it kept swallowing the
-    // shot). Left/right from the gap-card blocks; top from their top; bottom at
-    // the data-table heading.
+    // The two gap cards sit between the page title and the "Time Tracking Data"
+    // table. Bound VERTICALLY by those two anchors (both always present, even
+    // when the cards are empty) and HORIZONTALLY by the gap-card blocks — so the
+    // data table is never captured and an empty-cards evening still crops right.
+    const title = tight('Time Tracker');           // page title (top of content)
+    const dataHdr = tight('Time Tracking Data');   // heading below the cards
     const under = tight('Reps Under 15 Minute Gap');
     const over = tight('Reps Over 15 Minute Gap');
-    const card = e => { let el=e; for (let i=0;i<4 && el.parentElement;i++){ el=el.parentElement;
-      const r=el.getBoundingClientRect(); if (r.height > 80 && r.width > 200) return el; } return e; };
+    const card = e => { let el=e; for (let i=0;i<5 && el.parentElement;i++){ el=el.parentElement;
+      const r=el.getBoundingClientRect(); if (r.height > 50 && r.width > 250) return el; } return e; };
     const cu = union([under && card(under), over && card(over)]);
-    const dataHdr = tight('Time Tracking Data');
-    if (cu) {
-      const bottom = dataHdr ? Math.min(cu.bottom, dataHdr.getBoundingClientRect().top - 8) : cu.bottom;
-      b = { left: cu.left, top: cu.top, right: cu.right,
-            bottom: Math.max(cu.top + 60, bottom) };
-    }
+    const top = title ? title.getBoundingClientRect().bottom + 8
+                      : (cu ? cu.top : 90);
+    const bottom = dataHdr ? dataHdr.getBoundingClientRect().top - 10
+                          : (cu ? cu.bottom : top + 320);
+    const left = cu ? cu.left : 60;
+    const right = cu ? cu.right : (window.innerWidth - 24);
+    if (bottom > top + 40) b = { left, top, right, bottom };
   } else if (kind === 'territory_stats') {
     // The 3 stat cards, from the "Report By" filter row to the CURRENT PERIOD
     // card. Climb from each card's header to the card block, then union with the
