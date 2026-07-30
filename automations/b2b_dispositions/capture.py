@@ -263,24 +263,16 @@ _CONTENT_BOX_JS = r"""
         if (r.height > 350 && r.width > 180 && r.width < 760) { b = box(el); break; } }
       if (!b) b = box(inp.parentElement || inp); }
   } else if (kind === 'time_tracker') {
-    // The two gap cards sit between the page title and the "Time Tracking Data"
-    // table. Bound VERTICALLY by those two anchors (both always present, even
-    // when the cards are empty) and HORIZONTALLY by the gap-card blocks — so the
-    // data table is never captured and an empty-cards evening still crops right.
-    const title = tight('Time Tracker');           // page title (top of content)
-    const dataHdr = tight('Time Tracking Data');   // heading below the cards
-    const under = tight('Reps Under 15 Minute Gap');
+    // JUST the "Reps Over 15 Minute Gap" card (Megan's blue box, 7/29) — not the
+    // "Under" card, not the data table. Climb from that header to its card block.
     const over = tight('Reps Over 15 Minute Gap');
-    const card = e => { let el=e; for (let i=0;i<5 && el.parentElement;i++){ el=el.parentElement;
-      const r=el.getBoundingClientRect(); if (r.height > 50 && r.width > 250) return el; } return e; };
-    const cu = union([under && card(under), over && card(over)]);
-    const top = title ? title.getBoundingClientRect().bottom + 8
-                      : (cu ? cu.top : 90);
-    const bottom = dataHdr ? dataHdr.getBoundingClientRect().top - 10
-                          : (cu ? cu.bottom : top + 320);
-    const left = cu ? cu.left : 60;
-    const right = cu ? cu.right : (window.innerWidth - 24);
-    if (bottom > top + 40) b = { left, top, right, bottom };
+    if (over) {
+      let el = over, card = over;
+      for (let i=0;i<6 && el.parentElement;i++){ el = el.parentElement;
+        const r = el.getBoundingClientRect();
+        if (r.height > 90 && r.width > 260) { card = el; break; } }
+      b = box(card);
+    }
   } else if (kind === 'territory_stats') {
     // The 3 stat cards, from the "Report By" filter row to the CURRENT PERIOD
     // card. Climb from each card's header to the card block, then union with the
@@ -462,6 +454,62 @@ def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
     return {"view": "territory_stats", "campaign": campaign, "tag": tag,
             "territory_id": terr["id"], "territory": name,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
+
+
+# --- stitch panels into one phone-friendly image ------------------------------
+STITCH_WIDTH = 640          # common panel width (narrow → reads on a phone)
+_PAD = 22
+_BAR = 48
+
+
+def _stitch_font(size: int):
+    for p in ("/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+              "/Library/Fonts/Arial Bold.ttf",
+              "/System/Library/Fonts/SFNSDisplay.ttf"):
+        try:
+            from PIL import ImageFont
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    from PIL import ImageFont
+    return ImageFont.load_default()
+
+
+def stitch_vertical(panels: List[Tuple[str, Path]], title: str,
+                    out_path: Path) -> Path:
+    """Stack labeled panels into one tall, narrow image (Megan 7/29 — combine the
+    hourly views per campaign, phone-first). `panels` = [(label, png_path), ...].
+    Each panel is scaled to STITCH_WIDTH and gets a dark labeled header; a title
+    sits on top. Missing/broken panels are skipped so one bad crop can't sink it."""
+    from PIL import Image, ImageDraw
+    loaded = []
+    for label, p in panels:
+        try:
+            im = Image.open(p).convert("RGB")
+            h = round(im.height * (STITCH_WIDTH / im.width))
+            loaded.append((label, im.resize((STITCH_WIDTH, h))))
+        except Exception:
+            continue
+    if not loaded:
+        raise RuntimeError("no panels to stitch")
+    f_title = _stitch_font(30)
+    f_bar = _stitch_font(22)
+    title_h = 54
+    W = STITCH_WIDTH + _PAD * 2
+    H = title_h + _PAD + sum(_BAR + im.height + _PAD for _, im in loaded)
+    canvas = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    d.text((_PAD, 14), title, font=f_title, fill=(17, 24, 39))
+    y = title_h + _PAD
+    for label, im in loaded:
+        d.rectangle([_PAD, y, W - _PAD, y + _BAR], fill=(32, 41, 57))
+        d.text((_PAD + 14, y + 12), label, font=f_bar, fill=(255, 255, 255))
+        y += _BAR
+        canvas.paste(im, (_PAD, y))
+        y += im.height + _PAD
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    return out_path
 
 
 # --- small helpers ------------------------------------------------------------

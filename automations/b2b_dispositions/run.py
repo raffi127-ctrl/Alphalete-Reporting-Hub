@@ -72,14 +72,27 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
-        # Today's Activity: ONE shared thread, campaign in the caption.
-        specs.append({"thread": cfg.THREAD_TODAYS_ACTIVITY,
-                      "caption": f"{ta['tag']} — {slot}", "path": ta["path"],
-                      "meta": ta})
-        # Time Tracker: a thread PER campaign (Megan 7/29), so the caption is
-        # just the time slot.
-        specs.append({"thread": f"{cfg.THREAD_TIME_TRACKER} — {tt['tag']}",
-                      "caption": slot, "path": tt["path"], "meta": tt})
+        tag = cfg.CAMPAIGN_TAG[campaign]
+        # Stack Today's Activity + Reps Over 15 Min Gap into ONE phone-friendly
+        # image per campaign; all campaigns post into the single "Hourly Activity"
+        # thread (Megan 7/29). Fall back to Today's Activity alone if the stitch
+        # fails, so the hour still posts something.
+        combined = out_dir / f"hourly_{cap._slug(tag)}.png"
+        try:
+            cap.stitch_vertical(
+                [(cfg.PANEL_TODAYS_ACTIVITY, ta["path"]),
+                 (cfg.PANEL_TIME_TRACKER, tt["path"])],
+                title=f"{tag} — {slot}", out_path=combined)
+            path = combined
+        except Exception as e:  # noqa: BLE001
+            print(f"  stitch failed ({type(e).__name__}) — Today's Activity only",
+                  flush=True)
+            path = ta["path"]
+        specs.append({
+            "thread": cfg.THREAD_HOURLY, "caption": f"{tag} — {slot}", "path": path,
+            "meta": {"how": f"TA:{ta.get('how')} TT:{tt.get('how')}",
+                     "campaign_ok": ta.get("campaign_ok") and tt.get("campaign_ok"),
+                     "on_screen": ta.get("on_screen")}})
     return specs
 
 

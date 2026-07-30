@@ -60,14 +60,17 @@ CHANNEL_LABEL = {
     "C0AJQA8P716": "#a-players-b2b",
 }
 
-# Three per-day threads (a bold dated parent; hourly image replies land under it,
-# so each thread reads as a running log of the day). Carlos consolidated the
-# original ATT/Box split into one thread each (Slack, 7/29); ATT + Box both post
-# as replies here, captioned by campaign. Splitting them back out later is a
-# one-line change.
-THREAD_TODAYS_ACTIVITY = "Today's Activity"
-THREAD_TIME_TRACKER = "Time Tracker"
+# TWO per-day threads (Megan 7/29), a bold dated parent with image replies:
+#   * "Hourly Activity" — one STACKED image per campaign (Today's Activity + the
+#     Reps Over 15 Min Gap card), posted hourly. Combined into one phone-friendly
+#     image so Slack stays clean (Megan wanted fewer, taller images for mobile).
+#   * "B2B Dispositions" — one Territory Stats image PER territory, at 6:30pm.
+THREAD_HOURLY = "Hourly Activity"
 THREAD_DISPOSITIONS = "B2B Dispositions"
+
+# Labels drawn on each panel of the stacked hourly image.
+PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
+PANEL_TIME_TRACKER = "REPS OVER 15 MIN GAP"
 
 # --- Schedule (mini-LOCAL / Central) -----------------------------------------
 # Today's Activity + Time Tracker: hourly 12pm..6pm, plus a final at 6:30pm.
