@@ -44,13 +44,21 @@ from typing import Optional, Tuple
 # Hardcoded because the reporting token can neither create a channel (no
 # groups:write) nor LIST them (no channels:read/groups:read), so this can't be
 # resolved by name at runtime. Safe to hardcode: a renamed channel keeps its id.
-REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-informes-capitanes
+REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-emails
 
-# Whose checkmark counts. Slack reports the reacting user, so this is
-# enforceable. Same two as the captainship gate.
+# Whose checkmark counts: EVELYN AND JOLIE, the same two as the captainship gate
+# (Eve, 2026-07-30 — "mismos aprobadores en los dos"). Lucy is in the channel and
+# is the one who POSTS the link, but she does not read the reports, so her
+# checkmark must not release them. Slack reports the reacting user, so this is
+# enforceable: a tick from anyone else leaves the gate closed.
+#
+# Jolie is U0ACBT3JVTP (joliecarc@gmail.com), verified against the channel's own
+# members. NOT D0ACU8GQ7TK — that is the DM conversation with her, and a D-id
+# here would never match a reacting user, so her approval would silently never
+# count.
 APPROVERS = {
-    "U0BCFGCR5PV": "Lucy",
     "U088E2KJEV8": "Evelyn",
+    "U0ACBT3JVTP": "Jolie",
 }
 # Any of Slack's checkmarks — nobody should have to remember which one is "the"
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
