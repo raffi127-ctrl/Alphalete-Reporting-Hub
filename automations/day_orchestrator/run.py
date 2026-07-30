@@ -890,6 +890,12 @@ def _check_post_watch(ds, target, now):
     green, and a MISSED that already alerted isn't re-flipped/re-alerted. Best-
     effort — a watch hiccup must never crash the batch."""
     try:
+        # A watch nothing can satisfy any more (its report moved into the 4am flow,
+        # its wrapper stopped writing the marker, or its LaunchAgent was retired) is
+        # OUR wiring bug, not a report failure — log it as MISCONFIGURED and never
+        # seed it, so it can't page anyone daily. (att_churn, 2026-07-30)
+        for w, why in post_watch.misconfigured_for(registry.this_machine(), target):
+            _log(f"  {w.watch_id}: MISCONFIGURED (not alerting) — {why}")
         for w in post_watch.targets_for(registry.this_machine(), target):
             rs = ds.reports.get(w.watch_id)
             if rs is None or rs.is_terminal():
