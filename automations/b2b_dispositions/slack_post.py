@@ -52,148 +52,79 @@ def preview_dm(specs: List[Dict], today: Optional[dt.date] = None, *,
         uploads = [{"file": str(Path(p)), "filename": Path(p).name}
                    for p in s["paths"] if Path(p).exists()]
         if not uploads:
-            errors.append(f"{s['caption']} (no files)")
+            errors.append(f"{s['title']} (no files)")
             continue
-        comment = f"*[preview → {s['thread']}]*  {s['caption']}"
+        comment = f"*[preview]*  {s['title']}"
         try:
             client.files_upload_v2(file_uploads=uploads, channel=channel,
                                    initial_comment=comment)
-            sent.append(s["caption"])
+            sent.append(s["title"])
             time.sleep(2)
         except Exception as e:  # noqa: BLE001
-            errors.append(f"{s['caption']}: {type(e).__name__} {str(e)[:80]}")
+            errors.append(f"{s['title']}: {type(e).__name__} {str(e)[:80]}")
     return {"to_user": user, "sent": sent, "errors": errors, "ok": not errors}
 
 
-def parent_title(thread_name: str, today: dt.date) -> str:
-    return f"{thread_name} — {today.month}/{today.day}/{today.year}"
+def _short_mdy(today: dt.date) -> str:
+    return f"{today.month}/{today.day}/{today.year % 100:02d}"
 
 
-def parent_text(thread_name: str, today: dt.date) -> str:
-    return f"*{parent_title(thread_name, today)}*"
+def thread_title(prefix: str, slot: str, today: Optional[dt.date] = None) -> str:
+    """Parent text for one run's thread, e.g. 'Hourly Activity 7/30/26 - 4 PM'.
+    ':00' is stripped so on-the-hour slots read '4 PM' (Megan 7/30)."""
+    today = today or dt.date.today()
+    return f"{prefix} {_short_mdy(today)} - {slot.replace(':00', '')}".strip()
 
 
-def find_parent_ts(client, channel: str, thread_name: str,
-                   today: dt.date) -> Optional[str]:
-    """ts of today's parent for `thread_name` in `channel`, or None."""
+def _title_exists(client, channel: str, title: str, today: dt.date) -> bool:
+    """Has this exact titled thread already posted in `channel` today? Guards a
+    duplicate on an orchestrator retry — each hour's title is unique, so a match
+    means this hour already went out."""
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
-    title = parent_title(thread_name, today)
-    resp = client.conversations_history(
-        channel=channel, oldest=str(oldest), limit=200)
+    try:
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200)
+    except Exception:
+        return False
     for msg in resp.get("messages", []):
         if title in (msg.get("text", "") or ""):
-            return msg.get("thread_ts") or msg.get("ts")
-    return None
+            return True
+    return False
 
 
-def ensure_parent(client, channel: str, thread_name: str,
-                  today: dt.date) -> str:
-    ts = find_parent_ts(client, channel, thread_name, today)
-    if ts:
-        return ts
-    resp = client.chat_postMessage(
-        channel=channel, text=parent_text(thread_name, today))
-    return resp.get("ts")
-
-
-def refresh_pin(client, channel: str, thread_name: str, today: dt.date,
-                parent_ts: str) -> None:
-    """Keep TODAY's header pinned in `channel` and unpin any prior day's for this
-    thread — so the current day's thread is always the pinned one at the top
-    (Megan 7/29). Best-effort: needs pins:read + pins:write on the Lucy token; a
-    missing scope just logs, never fails the post."""
-    today_title = parent_title(thread_name, today)
-    try:
-        pins = client.pins_list(channel=channel).get("items", [])
-    except Exception as e:  # noqa: BLE001
-        print(f"  pins_list failed on {cfg.CHANNEL_LABEL.get(channel, channel)} "
-              f"({type(e).__name__}) — is pins:read granted?", flush=True)
-        pins = []
-    for it in pins:
-        m = it.get("message") or {}
-        txt = (m.get("text") or "").replace("&amp;", "&")
-        # A prior day's header for THIS thread: carries the thread name but not
-        # today's dated title.
-        if thread_name in txt and today_title not in txt and m.get("ts"):
-            try:
-                client.pins_remove(channel=channel, timestamp=m["ts"])
-            except Exception:
-                pass
-    try:
-        client.pins_add(channel=channel, timestamp=parent_ts)
-    except Exception as e:  # noqa: BLE001
-        # already_pinned is fine; anything else is likely a scope gap worth a note
-        if "already_pinned" not in str(e):
-            print(f"  pins_add failed on {cfg.CHANNEL_LABEL.get(channel, channel)} "
-                  f"({str(e)[:60]}) — is pins:write granted?", flush=True)
-
-
-def _existing_captions(client, channel: str, thread_ts: str) -> set:
-    """Captions already posted under today's parent (for idempotency). Slack
-    stores '&' as '&amp;' — un-escape so 'AT&T — 1:00 PM' matches."""
-    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=300)
-    out = set()
-    for m in resp.get("messages", []):
-        if m.get("ts") == thread_ts:
-            continue
-        txt = (m.get("text") or "").replace("&amp;", "&")
-        if txt:
-            out.add(txt.strip())
-    return out
-
-
-def post_replies(thread_name: str, replies: List[Dict],
-                 today: Optional[dt.date] = None, *, dry_run: bool = False,
-                 channels: Optional[List[str]] = None) -> Dict:
-    """Post each reply (PNG + caption) under today's `thread_name` parent, in
-    every channel. `replies` = [{'caption': str, 'path': Path}, ...] in order.
-
-    dry_run reports what WOULD post (and to where) without touching Slack.
-    Idempotent: a caption already in the thread is skipped, so re-running the
-    same time-slot never duplicates."""
+def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
+                dry_run: bool = False, channels: Optional[List[str]] = None) -> Dict:
+    """Post ONE new thread per run: a titled parent ('Hourly Activity 7/30/26 -
+    4 PM') plus a single reply carrying the images. NO pinning — each hour is its
+    own thread so nothing gets lost (Megan 7/30). Idempotent per title."""
     today = today or dt.date.today()
     channels = channels or cfg.CHANNELS
-
     if dry_run:
-        return {"dry_run": True, "thread": thread_name,
+        return {"dry_run": True, "title": title,
                 "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels],
-                "parent": parent_text(thread_name, today),
-                "replies": [{"caption": r["caption"],
-                             "files": [Path(p).name for p in r["paths"]]}
-                            for r in replies]}
-
+                "files": [Path(p).name for p in paths]}
     client = smp._client()
     results = []
     for channel in channels:
         clabel = cfg.CHANNEL_LABEL.get(channel, channel)
         try:
-            thread_ts = ensure_parent(client, channel, thread_name, today)
-            refresh_pin(client, channel, thread_name, today, thread_ts)
-            already = _existing_captions(client, channel, thread_ts)
-            posted, skipped = [], []
-            for r in replies:
-                caption = f"*{r['caption']}*"
-                if r["caption"] in already or caption in already:
-                    skipped.append(r["caption"])
-                    continue
-                # One reply message can carry MULTIPLE files (the hourly reply
-                # attaches both campaign images together — Megan 7/29).
-                uploads = [{"file": str(Path(p)), "filename": Path(p).name}
-                           for p in r["paths"] if Path(p).exists()]
-                if not uploads:
-                    skipped.append(f"{r['caption']} (no files)")
-                    continue
-                up = client.files_upload_v2(
-                    file_uploads=uploads, channel=channel, thread_ts=thread_ts,
-                    initial_comment=caption)
-                posted.append({"caption": r["caption"], "ok": up.get("ok")})
-                # Slack posts a big file's message later than a small one queued
-                # after it; pause so replies land in order.
-                time.sleep(3)
-            results.append({"channel": clabel, "thread_ts": thread_ts,
-                            "posted": posted, "skipped": skipped, "ok": True})
+            if _title_exists(client, channel, title, today):
+                results.append({"channel": clabel, "skipped": True, "ok": True})
+                continue
+            uploads = [{"file": str(Path(p)), "filename": Path(p).name}
+                       for p in paths if Path(p).exists()]
+            if not uploads:
+                results.append({"channel": clabel, "ok": False,
+                                "error": "no image files"})
+                continue
+            parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
+            ts = parent.get("ts")
+            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                        thread_ts=ts)
+            results.append({"channel": clabel, "ts": ts,
+                            "ok": up.get("ok", True)})
         except Exception as e:  # noqa: BLE001
             results.append({"channel": clabel, "ok": False,
                             "error": f"{type(e).__name__}: {str(e)[:140]}"})
-    return {"thread": thread_name, "ok": all(r.get("ok") for r in results),
+    return {"title": title, "ok": all(r.get("ok") for r in results),
             "channels": results}

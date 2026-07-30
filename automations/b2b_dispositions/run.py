@@ -64,11 +64,10 @@ def _fmt12(hm) -> str:
 
 
 def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
-                    dry_run: bool) -> List[Dict]:
-    """Today's Activity + Time Tracker for both campaigns -> reply specs, split
-    by thread. Returns [{thread, caption, path, meta}, ...]."""
-    # ONE reply per hour carrying BOTH campaign images (Megan 7/29) — not two
-    # replies. Build a stacked image per campaign, then attach them together.
+                    dry_run: bool, today: dt.date) -> List[Dict]:
+    """Today's Activity + Time Tracker for both campaigns -> ONE thread spec.
+    Each hour is its own thread ("Hourly Activity 7/30/26 - 4 PM") with a single
+    reply carrying both campaign images (Megan 7/30)."""
     paths, notes = [], []
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
@@ -88,13 +87,14 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
             paths.append(ta["path"])
         notes.append(f"{tag}[TA:{ta.get('how')} TT:{tt.get('how')} "
                      f"camp_ok={ta.get('campaign_ok') and tt.get('campaign_ok')}]")
-    return [{"thread": cfg.THREAD_HOURLY, "caption": slot, "paths": paths,
-             "meta": {"note": " ".join(notes)}}]
+    title = sp.thread_title(cfg.THREAD_HOURLY, slot, today)
+    return [{"title": title, "paths": paths, "meta": {"note": " ".join(notes)}}]
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
                           dry_run: bool, limit: int = 0,
-                          slot: str = "") -> List[Dict]:
+                          slot: str = "", today: Optional[dt.date] = None) -> List[Dict]:
+    today = today or _central_now().date()
     """Territory Stats: capture every territory per campaign, then STACK a
     campaign's territories into ONE tall image (each keeps its name header). One
     reply carries both campaign stacks (Megan 7/30 — 2 images at 6:30, not 18
@@ -125,27 +125,15 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
         notes.append(f"{tag}={len(terr_paths)}")
     if not stacks:
         return []
-    return [{"thread": cfg.THREAD_DISPOSITIONS,
-             "caption": f"Dispositions — {slot}" if slot else "Dispositions",
-             "paths": stacks, "meta": {"note": " ".join(notes)}}]
+    title = sp.thread_title(cfg.THREAD_DISPOSITIONS, slot or "6:30 PM", today)
+    return [{"title": title, "paths": stacks, "meta": {"note": " ".join(notes)}}]
 
 
-def _post_by_thread(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
-    """Group reply specs by thread and post each group (first-seen order). Each
-    reply carries `paths` (a list) — the hourly reply attaches BOTH campaign
-    images in one message; a dispositions reply is one territory image."""
-    order = []
-    for s in specs:
-        if s["thread"] not in order:
-            order.append(s["thread"])
-    out = []
-    for thread in order:
-        group = [{"caption": s["caption"], "paths": s["paths"]}
-                 for s in specs if s["thread"] == thread]
-        if not group:
-            continue
-        out.append(sp.post_replies(thread, group, today, dry_run=dry_run))
-    return out
+def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
+    """Each spec is its own thread: a titled parent + one image reply, in both
+    channels (Megan 7/30)."""
+    return [sp.post_thread(s["title"], s["paths"], today, dry_run=dry_run)
+            for s in specs]
 
 
 def main(argv=None) -> int:
@@ -248,10 +236,10 @@ def main(argv=None) -> int:
             pass
         rqst = cap.capture_rqst(page)
         if args.which in ("hourly", "all"):
-            specs += _capture_hourly(page, rqst, out_dir, slot, dry_run)
+            specs += _capture_hourly(page, rqst, out_dir, slot, dry_run, today)
         if args.which in ("dispositions", "all"):
             specs += _capture_dispositions(page, rqst, out_dir, dry_run,
-                                           limit=args.limit, slot=slot)
+                                           limit=args.limit, slot=slot, today=today)
 
     # Report captures (and flag any that fell back to a full-page shot or whose
     # on-screen campaign didn't match — the two things worth eyeballing).
@@ -266,7 +254,7 @@ def main(argv=None) -> int:
             flag.append(m["note"])
         note = ("  " + "; ".join(flag)) if flag else ""
         files = ", ".join(Path(p).name for p in s["paths"])
-        print(f"  [{s['thread']}] {s['caption']}  ->  {files}{note}", flush=True)
+        print(f"  [{s['title']}]  ->  {files}{note}", flush=True)
 
     if args.preview:
         res = sp.preview_dm(specs, today)
@@ -280,11 +268,11 @@ def main(argv=None) -> int:
               flush=True)
         return 0
 
-    results = _post_by_thread(specs, today, dry_run=False)
+    results = _post_specs(specs, today, dry_run=False)
     ok = all(r.get("ok") for r in results)
     print(f"\nPosted. ok={ok}", flush=True)
     for r in results:
-        print(f"  {r['thread']}: ok={r.get('ok')}", flush=True)
+        print(f"  {r['title']}: ok={r.get('ok')}", flush=True)
     return 0 if ok else 1
 
 
