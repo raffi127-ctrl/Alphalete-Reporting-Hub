@@ -56,6 +56,17 @@ _TONE = {"in": {"red": 0.067, "green": 0.333, "blue": 0.8},
          "profit": {"red": 0.094, "green": 0.502, "blue": 0.22}}
 _BORDER = {"style": "SOLID", "width": 1,
            "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
+_THICK = {"style": "SOLID_MEDIUM", "width": 2,
+          "color": {"red": 0.35, "green": 0.35, "blue": 0.35}}
+# Each block gets its own accent so the eye can jump straight to a campaign.
+_ACCENT = {
+    "TOTAL": _HDR_BG,
+    "B2B": {"red": 0.11, "green": 0.28, "blue": 0.53},
+    "BOX": {"red": 0.08, "green": 0.40, "blue": 0.40},
+    "Base": {"red": 0.55, "green": 0.40, "blue": 0.05},
+}
+_REPS_BG = {"red": 0.30, "green": 0.30, "blue": 0.30}
+_FONT = "Calibri"
 
 
 def _log(m):
@@ -256,7 +267,7 @@ def build(*, write: bool = True, log=_log) -> dict:
             "pct", bold=True, tone="profit")
         add("")
 
-    add("REVENUE BROUGHT IN BY REP  (active only \u2014 2 quiet weeks drops off)",
+    add("REVENUE BY REP \u2014 ACTIVE ONLY",
         kind="section", bold=True)
     for n, (rep_row, name) in enumerate(reps):
         rows.append([name] + [f"={q}{info['blocks'][h]['bro']}{rep_row}"
@@ -312,31 +323,41 @@ def build(*, write: bool = True, log=_log) -> dict:
     for f in fmt:
         r, kind, bold, tone = f["i"] + 1, f["kind"], f["bold"], f.get("tone")
         if kind in ("title", "section"):
+            label = rows[f["i"]][0]
+            bg = (_HDR_BG if kind == "title"
+                  else _ACCENT.get(label.split()[0] if label else "", _REPS_BG))
             reqs.append({"repeatCell": {"range": rng(r, r + 1, 0, n_cols),
                 "cell": {"userEnteredFormat": {
-                    "backgroundColor": _HDR_BG if kind == "title" else _SEC_BG,
-                    "horizontalAlignment": "LEFT",
-                    "textFormat": {"bold": True, "fontSize": 11,
-                                   "foregroundColor": (
-                                       _WHITE if kind == "title" else _INK)}}},
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"}})
+                    "backgroundColor": bg,
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "textFormat": {"bold": True, "fontSize": 12 if kind == "title" else 11,
+                                   "fontFamily": _FONT, "foregroundColor": _WHITE}}},
+                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,"
+                          "verticalAlignment,textFormat)"}})
         elif kind in ("money", "pct"):
             cell = {"numberFormat": _MONEY if kind == "money" else _PCT,
                     "horizontalAlignment": "CENTER",
-                    "textFormat": {"bold": bold, "foregroundColor": _TONE.get(tone, _INK)}}
+                    "verticalAlignment": "MIDDLE",
+                    "textFormat": {"bold": bold, "fontFamily": _FONT,
+                                   "foregroundColor": _TONE.get(tone, _INK)}}
             if f.get("band"):
                 cell["backgroundColor"] = _BAND
             reqs.append({"repeatCell": {"range": rng(r, r + 1, 1, n_cols),
                 "cell": {"userEnteredFormat": cell},
                 "fields": "userEnteredFormat(numberFormat,horizontalAlignment,"
-                          "textFormat" + (",backgroundColor" if f.get("band") else "") + ")"}})
-            lbl = {"textFormat": {"bold": bold, "foregroundColor": _INK},
-                   "horizontalAlignment": "LEFT"}
+                          "verticalAlignment,textFormat"
+                          + (",backgroundColor" if f.get("band") else "") + ")"}})
+            lbl = {"textFormat": {"bold": bold, "foregroundColor": _INK,
+                                  "fontFamily": _FONT},
+                   "horizontalAlignment": "CENTER",
+                   "verticalAlignment": "MIDDLE"}
             if f.get("band"):
                 lbl["backgroundColor"] = _BAND
             reqs.append({"repeatCell": {"range": rng(r, r + 1, 0, 1),
                 "cell": {"userEnteredFormat": lbl},
-                "fields": "userEnteredFormat(textFormat,horizontalAlignment"
+                "fields": "userEnteredFormat(textFormat,horizontalAlignment,"
+                          "verticalAlignment"
                           + (",backgroundColor" if f.get("band") else "") + ")"}})
     # Boxed borders around each section, and a highlight on the newest week.
     for f in fmt:
@@ -350,6 +371,14 @@ def build(*, write: bool = True, log=_log) -> dict:
             "left": _BORDER, "right": _BORDER}}},
         "fields": "userEnteredFormat.borders"}})
 
+    # No mergeCells across the title: column A is frozen and Sheets refuses to
+    # merge frozen with non-frozen columns. The full-width band reads fine.
+    reqs.append({"updateBorders": {"range": rng(0, 1, 0, n_cols),
+                                   "bottom": _THICK}})
+    reqs.append({"updateDimensionProperties": {"range": {
+        "sheetId": sid, "dimension": "ROWS", "startIndex": 0,
+        "endIndex": n_rows + 1}, "properties": {"pixelSize": 23},
+        "fields": "pixelSize"}})
     sh.batch_update({"requests": reqs})
     log(f"wrote {DST_TAB!r} (gid {sid})")
     return {"rows": n_rows, "cols": n_cols, "reps": len(reps),
