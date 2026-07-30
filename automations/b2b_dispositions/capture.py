@@ -139,44 +139,41 @@ def campaign_options(page) -> List[Dict]:
 def ensure_campaign(page, rqst: str, campaign: str) -> bool:
     """Make the session's ACTIVE campaign = `campaign`, returning True on success.
 
-    The campaign is a STICKY session-global: invD2DClientId=16 switches to Box,
-    but a no-param nav does NOT switch back to AT&T — so both campaigns end up
-    capturing Box (the 'same people' bug). We read the real invD2DClientId of
-    each option from the dropdown and set the global by navigating Time Tracker
-    (which honors the param) with that id; fall back to clicking the option."""
-    # Load a page that carries the toolbar, then learn each option's real id.
+    The campaign is a STICKY session-global (invD2DClientId=16 -> Box; a no-param
+    nav does NOT revert to AT&T), and the dropdown's options are AJAX-loaded on a
+    REAL open — a JS .click() in patchright's isolated world doesn't populate them.
+    So we drive it with Playwright's TRUSTED locator clicks (real events that fire
+    the site's jQuery/AJAX): open the toggle, then click the campaign's menu item."""
     _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
-    opts = campaign_options(page)
-    print(f"  campaign options: {opts}", flush=True)
-    want = next((o for o in opts if o.get("name") == campaign), None)
-    cid = (want or {}).get("id") or (
-        str(cfg.CAMPAIGN_URL_IDS[campaign])
-        if cfg.CAMPAIGN_URL_IDS.get(campaign) is not None else None)
-
-    if cid:
-        url = (f"https://v2.ownerville.com/index.cfm?p={cfg.PAGE_TIME_TRACKER}"
-               f"&rqst={rqst}&invD2DClientId={cid}")
-        _goto(page, url)
+    _, got = verify_campaign(page, campaign)
+    if got == campaign:
+        return True
+    for _ in range(2):
+        try:
+            page.locator('.D2DClientDropdown, [data-toggle="dropdown"]').first.click(
+                timeout=8000)
+            page.wait_for_timeout(1600)   # let the AJAX menu populate
+            item = page.locator(
+                '.dropdown-menu a, .dropdown-menu li, li a', has_text=campaign).first
+            item.click(timeout=8000)
+            page.wait_for_load_state("networkidle", timeout=20000)
+            page.wait_for_timeout(2500)
+        except Exception as e:  # noqa: BLE001
+            print(f"  campaign click to {campaign!r}: {type(e).__name__} "
+                  f"{str(e).splitlines()[0][:80]}", flush=True)
         _, got = verify_campaign(page, campaign)
         if got == campaign:
             return True
-
-    # Fallback: click the option in the open dropdown.
+    # Still wrong — log the populated menu so the selector can be pinned.
     try:
-        _open_campaign_dropdown(page)
-        page.evaluate(
-            "(c)=>{const a=[...document.querySelectorAll('a,li,span,button,option')]"
-            ".find(x=>((x.innerText||x.textContent||'').trim())===c "
-            "&& x.offsetParent!==null); if(a){a.click(); return true;} return false;}",
-            campaign)
-        page.wait_for_timeout(8000)
-    except Exception as e:  # noqa: BLE001
-        print(f"  campaign click to {campaign!r} errored: {type(e).__name__}",
-              flush=True)
-    _, got = verify_campaign(page, campaign)
-    if got != campaign:
-        print(f"  ⚠ campaign still {got!r} after switching to {campaign!r}",
-              flush=True)
+        page.locator('.D2DClientDropdown, [data-toggle="dropdown"]').first.click(
+            timeout=5000)
+        page.wait_for_timeout(1500)
+        menu = page.locator('.dropdown-menu').first.inner_html(timeout=4000)
+        print(f"  dropdown-menu html: {menu[:400].replace(chr(10),' ')}", flush=True)
+    except Exception:
+        pass
+    print(f"  ⚠ campaign still {got!r} after switching to {campaign!r}", flush=True)
     return got == campaign
 
 
