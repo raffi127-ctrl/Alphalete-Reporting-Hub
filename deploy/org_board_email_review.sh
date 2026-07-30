@@ -1,5 +1,14 @@
 #!/bin/bash
-# Org Sales Board EMAIL — the approval half of the review gate, on the mini.
+# The board EMAILS — the approval half of their review gate, on the mini.
+#
+# THREE emails ride this one agent: the Org Sales Board, the Country Sales Board
+# and the All Units Org Sales Board. They are separate posts with separate
+# approvals (one can send while another still waits), but there is no reason to
+# install three identical watchers on one machine — and a NEW LaunchAgent would
+# mean a manual install on the mini before an approval could ever become an
+# email (Eve, 2026-07-30: "no hace falta el watcher"). This agent is already
+# installed and already fires every 15 minutes in this window; two more Slack
+# reads per tick cost nothing.
 #
 # The 4am orchestrator posts the day's preview for review (review_gate --post,
 # right after the board fill, not before 09:30 and only once yesterday is
@@ -33,11 +42,17 @@ if [ "$HOUR" -lt "$START_HOUR" ]; then
     exit 0
 fi
 
-# Overlap guard: a slow send must not be fought by the next tick.
-if pgrep -f "automations.org_sales_board.review_gate" > /dev/null 2>&1; then
-    echo "[$(date)] org-board email review SKIPPED — previous pass still running"
+# Overlap guard: a slow send must not be fought by the next tick. Covers BOTH
+# gates this agent drives — a country/all-units send in flight has to block the
+# next tick just as an org one does.
+if pgrep -f "automations.org_sales_board.review_gate" > /dev/null 2>&1 || \
+   pgrep -f "automations.board_emails.review_gate" > /dev/null 2>&1; then
+    echo "[$(date)] board email review SKIPPED — previous pass still running"
     exit 0
 fi
+
+# The two boards that ride this agent alongside the Org board.
+BOARDS="country all-units"
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
@@ -55,7 +70,14 @@ export PYTHONPATH="$(pwd)"
 # Drop --distro to fall back to the proving list (Rafael + Megan).
 # "--dry" checks for the approval and stops short of mailing.
 MODE="--send --distro"
-[ "${1:-}" = "--dry" ] && MODE=""
+# The other two carry no --distro: their recipients are fixed in
+# board_emails/boards.py (Rafael + Maud), so "approved" has exactly one
+# destination and there is no wider list to leak into by accident.
+MODE_BOARDS="--send"
+if [ "${1:-}" = "--dry" ]; then
+    MODE=""
+    MODE_BOARDS=""
+fi
 
 LOG_FILE="$LOG_DIR/org-board-email-review-$(date +%Y-%m-%d).log"
 
@@ -66,6 +88,10 @@ LOG_FILE="$LOG_DIR/org-board-email-review-$(date +%Y-%m-%d).log"
 if [ "$HOUR" -ge "$END_HOUR" ]; then
     echo "[$(date)] past ${END_HOUR}:00 — closing the day" >> "$LOG_FILE"
     "$VENV_PY" -u -m automations.org_sales_board.review_gate --close-day >> "$LOG_FILE" 2>&1
+    for B in $BOARDS; do
+        "$VENV_PY" -u -m automations.board_emails.review_gate \
+            --board "$B" --close-day >> "$LOG_FILE" 2>&1
+    done
     exit 0
 fi
 
@@ -82,4 +108,21 @@ if [ "$ST" = "1" ]; then
 fi
 
 echo "[$(date)] finished exit=$ST" >> "$LOG_FILE"
+
+# --- the other two board emails, on the SAME tick -------------------------
+# Country + All Units (automations.board_emails). Each is checked and reminded
+# independently of the Org board and of each other: one board failing to send
+# must not stop the next one being looked at, so the loop never exits early.
+for B in $BOARDS; do
+    echo "[$(date)] check $B (mode: ${MODE_BOARDS:-report-only})" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.board_emails.review_gate \
+        --board "$B" --check $MODE_BOARDS >> "$LOG_FILE" 2>&1
+    BST=$?
+    if [ "$BST" = "1" ]; then
+        "$VENV_PY" -u -m automations.board_emails.review_gate \
+            --board "$B" --remind >> "$LOG_FILE" 2>&1
+    fi
+    echo "[$(date)] $B finished exit=$BST" >> "$LOG_FILE"
+done
+
 exit 0

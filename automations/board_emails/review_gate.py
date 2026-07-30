@@ -42,6 +42,11 @@ from automations.org_sales_board.review_gate import (
 SENT_MARK = "Sent — approved by"
 REMIND_MARK = "reminder: this board email"
 FAILED_MARK = "Could not send"
+# Said once when the day closes with nobody having approved. Without it such a
+# day ends in silence — no approval, no send, no message — which reads exactly
+# like a day that went fine; the only trace is a post with no checkmark,
+# scrolling away under everything else. Same rule the Org board gate learned.
+CLOSED_MARK = "Not sent — nobody approved"
 REMIND_AFTER_HOURS = 3.0
 
 try:
@@ -223,7 +228,8 @@ def report_failure(board: B.Board, run_day: dt.date, rc: int,
         channel=_channel(channel), thread_ts=msg["ts"],
         text=(f"{_mentions()} — {FAILED_MARK}: this is approved, but the send "
               f"failed (exit {rc}). Still retrying every 15 min; if it doesn't "
-              f"clear, check the `board-emails-review` log on the mini."))
+              f"clear, check the `org-board-email-review` log on the mini "
+              f"(the watcher that drives all three board emails)."))
 
 
 def remind(board: B.Board, run_day: dt.date,
@@ -263,6 +269,40 @@ def remind(board: B.Board, run_day: dt.date,
               f":white_check_mark:."))
     if verbose:
         print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
+    return True
+
+
+def close_day(board: B.Board, run_day: dt.date,
+              channel: Optional[str] = None, verbose: bool = True) -> bool:
+    """Say in the thread that the day ended without an approval. True if posted.
+
+    The checker stops at END_HOUR; without this, an unapproved day is the same
+    silence as a day that went fine. Says nothing when the day is decided (an
+    approved day is confirmed, or has its own failure notice) and says it ONCE,
+    because the checker keeps ticking."""
+    msg = _find_post(board, run_day, channel)
+    if msg is None:
+        if verbose:
+            print(f"— nothing posted for {_title(board, run_day)}, "
+                  f"nothing to close", flush=True)
+        return False
+    if _approver_of(msg):
+        if verbose:
+            print("— approved; the send path owns this day", flush=True)
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, CLOSED_MARK):
+        if verbose:
+            print("— already closed once", flush=True)
+        return False
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{_mentions()} — {CLOSED_MARK}: today's {board.name} email did "
+              f"not go out. Approve here and it still will, or leave it and "
+              f"tomorrow's post replaces it."))
+    if verbose:
+        print("✓ day closed unapproved — said so in the thread", flush=True)
     return True
 
 
@@ -314,6 +354,9 @@ def main(argv=None) -> int:
                     help="nudge the channel if still unapproved after "
                          "--after-hours. Nudges once.")
     ap.add_argument("--after-hours", type=float, default=REMIND_AFTER_HOURS)
+    ap.add_argument("--close-day", action="store_true",
+                    help="past the checking window: say once in the thread that "
+                         "nobody approved, so an unapproved day isn't silence.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the preview + PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -334,6 +377,9 @@ def main(argv=None) -> int:
         pdf = build_pdf(board, run_day, build_preview(board, run_day))
         post_review(board, upload_pdf(pdf, folder_name=board.drive_folder),
                     run_day, args.channel)
+        return 0
+    if args.close_day:
+        close_day(board, run_day, args.channel)
         return 0
     if args.remind:
         return 0 if remind(board, run_day, args.after_hours, args.channel) else 1

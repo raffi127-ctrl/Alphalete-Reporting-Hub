@@ -209,6 +209,14 @@ def main(argv=None) -> int:
         print(f"[board_emails] DRY-RUN — not sent. Recipients would be: {to}\n"
               f"  subject: {msg['Subject']}\n"
               f"  preview: {html}", flush=True)
+        # One page listing today's board emails, so opening them is a click and
+        # not a hunt through dated folders. Never fatal: a preview that exists
+        # matters more than the index that points at it.
+        try:
+            from automations.board_emails import review_index
+            review_index.build_index(run_day)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (index not written: {type(e).__name__}: {e})", flush=True)
         print("=== done (dry-run) ===", flush=True)   # Hub success sentinel
         return 0
 
