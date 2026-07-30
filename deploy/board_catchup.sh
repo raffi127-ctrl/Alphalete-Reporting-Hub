@@ -75,14 +75,28 @@ if [ "$(date +%u)" = "1" ]; then
   # mail itself unattended. Recipients stay the proving list (Rafael + Megan).
   echo "[$(date)] MONDAY: posting the board email for review (fill exit $ST)" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.review_gate --post >> "$LOG_FILE" 2>&1
-  # Captainship Report drafts: REMOVED 2026-07-28 (Eve). This used to build them
-  # live here on Monday (creating 12 Gmail drafts), which was the last thing about
-  # the Captainship Reports that touched Gmail without a human asking. They are now
-  # MANUAL ONLY — the orchestrator entry is cadence.weekdays [] too. Trigger them
-  # yourself after the board looks right:
-  #   python -m automations.captainship_drafts.run --dry-run   # build + review
-  #   python -m automations.captainship_drafts.run --send-reviewed
-  echo "[$(date)] MONDAY: Captainship drafts NOT built (manual only)" >> "$LOG_FILE"
+  # Captainship Report drafts: MONDAY'S ONLY PATH. Both orchestrator entries
+  # (captainship_drafts and captainship_drafts_review) run Tue-Sun, so without
+  # this branch Monday is the one day the captains get nothing. It belongs here
+  # rather than in the cadence for the same reason the board email does: last
+  # week's Sunday only lands in the sources through Monday afternoon, so the fill
+  # above IS Monday's real board and this is the first moment the sections these
+  # reports read are complete.
+  #
+  # This is NOT the 2026-07-28 removal coming back. What was pulled then was a
+  # build that created 12 Gmail DRAFTS unasked. --dry-run only writes previews to
+  # output/, and --post only ASKS: the 12 emails are released by a checkmark from
+  # Evelyn or Jolie in #revision-emails, which the review checker picks up. So no
+  # path here can mail a captain.
+  echo "[$(date)] MONDAY: building Captainship drafts (previews only)" >> "$LOG_FILE"
+  if "$VENV_PY" -u -m automations.captainship_drafts.run --dry-run >> "$LOG_FILE" 2>&1; then
+    echo "[$(date)] MONDAY: posting the review link" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.captainship_drafts.review_gate --post >> "$LOG_FILE" 2>&1 ||       echo "[$(date)] MONDAY: review post failed — previews are in output/, ask by hand" >> "$LOG_FILE"
+  else
+    # Deliberately not fatal to $ST: the board fill above succeeded or failed on
+    # its own, and a broken draft build must not report the BOARD as broken.
+    echo "[$(date)] MONDAY: captainship drafts build failed — nothing posted for review" >> "$LOG_FILE"
+  fi
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1

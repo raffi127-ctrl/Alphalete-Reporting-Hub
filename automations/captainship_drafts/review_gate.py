@@ -4,7 +4,7 @@ The daily shape (Eve, 2026-07-29):
 
     run.py --dry-run          build the 12 previews
     review_gate.py --post     one PDF -> Drive -> Lucy posts the link in Slack
-    review_gate.py --check    a checkmark from Lucy or Evelyn fires the send
+    review_gate.py --check    a checkmark from Evelyn or Jolie fires the send
 
 WHY A CHANNEL AND NOT A GROUP DM. The reaction is the approval, so the gate has
 to be able to READ reactions. Reactions ride along on the messages that
@@ -42,13 +42,18 @@ from automations.captainship_drafts import config
 # The private channel with Evelyn, Jolie and Lucy. Set once (Slack blocks the
 # reporting token from creating channels — it has no groups:write), then never
 # again: a renamed channel keeps its id, so this survives a rename.
-REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-informes-capitanes
+REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-emails
 
-# Whose checkmark counts. All three reviewers authorise (Eve, 2026-07-30 —
-# Jolie was review-only for one day). Slack reports the reacting user, so this
-# is enforceable: a checkmark from anyone else leaves the gate closed.
+# Whose checkmark counts: EVELYN AND JOLIE ONLY (Eve, 2026-07-30). Lucy posts
+# the link but does not read the reports, so her tick must not release them.
+# Slack reports the reacting user, so this is enforceable — a checkmark from
+# anyone else leaves the gate closed.
+#
+# Jolie is U0ACBT3JVTP (joliecarc@gmail.com), verified against this channel's
+# own members. NOT D0ACU8GQ7TK: that is the DM conversation with her, and a
+# D-id here could never match a reacting user, so her approval would silently
+# never count and the gate would sit closed with no error to explain it.
 APPROVERS = {
-    "U0BCFGCR5PV": "Lucy",
     "U088E2KJEV8": "Evelyn",
     "U0ACBT3JVTP": "Jolie",
 }
