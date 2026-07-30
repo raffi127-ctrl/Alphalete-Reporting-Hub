@@ -90,10 +90,20 @@ go-live is confirmed (it posts to a team channel — [[feedback_ask_before_slack
 
 ## First day of sales (`first_sale.py`)
 
-Raf's spec (2026-07-30): Tableau keeps order history **forever**, **any** logged
-sale counts (cancelled/inactive included), and rep names are consistent — so a
-rep's first sale date is `min(Order Date)` over every row they appear on, with
-**no** product-type and **no** status filter.
+Raf's spec (2026-07-30): **any** logged sale counts (cancelled/inactive
+included) and rep names are consistent — so a rep's first sale date is
+`min(Order Date)` over every row they appear on, with **no** product-type and
+**no** status filter.
+
+> ⚠️ **History is NOT forever.** Probed 2026-07-30: asking ALLREPS for June 2025
+> returned only 06-25 onward, and June 2024 / June 2023 returned nothing — a
+> rolling **~400-day** window (today − 400 = 2025-06-25, exactly the boundary
+> seen). So a rep whose earliest visible sale sits at that floor may have
+> started well before it. Those reps render **"6/25/2025 or earlier"**, never a
+> fabricated exact day. The floor is measured from what the view actually
+> served, because the window rolls forward daily. Reps who started *inside* the
+> window get a real, exact date. **An exact day for a pre-window rep needs a
+> longer-history source** — open item.
 
 Source is the org-wide `ORDERLOG` / `ALLREPS` `A.Order Log` crosstab (per-order
 rows). The DD product view can't do this — it has no date field, only weekday
