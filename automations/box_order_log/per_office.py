@@ -65,6 +65,36 @@ def box_offices() -> List[Dict[str, str]]:
     return out
 
 
+def probe(from_file: str = "", verbose: bool = True) -> int:
+    """Verification: pull the TEAM ALLEXP view (or a file) and print every distinct
+    'Owner & Office' it returns, with row counts — so we can confirm the pull sees
+    ALL offices from whatever machine runs it, before enabling --post. No filter,
+    no Slack."""
+    import collections
+    from automations.box_order_log import clean
+    src = Path(from_file) if from_file else (
+        boxrun.OUTPUT_DIR / "box_team_orderlog_probe_{}.csv".format(
+            dt.date.today().isoformat()))
+    if not from_file:
+        try:
+            boxrun._pull(src, verbose=verbose, view_url=TEAM_VIEW_URL,
+                         crosstab_sheet=TEAM_CROSSTAB_SHEET)
+        except Exception as exc:                     # noqa: BLE001
+            print("[box probe] team pull failed: {}".format(exc), file=sys.stderr)
+            return 1
+    rows = clean.read_rows(src)
+    col = clean.OWNER_OFFICE_COL
+    if not rows or col not in rows[0]:
+        print("[box probe] ✗ no {!r} column in the export — wrong view?".format(col))
+        return 1
+    counts = collections.Counter((r.get(col) or "").strip() for r in rows)
+    print("[box probe] ALLEXP export has {} row(s), {} distinct office(s):".format(
+        len(rows), len(counts)))
+    for val, n in counts.most_common():
+        print("   {:6d}  {!r}".format(n, val))
+    return 0
+
+
 def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
             verbose: bool = True) -> int:
     offs = box_offices()
@@ -107,11 +137,16 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="box_order_log.per_office")
     ap.add_argument("--post", action="store_true", help="post each office's thread")
+    ap.add_argument("--probe", action="store_true",
+                    help="verify only: pull the team view and list every office it "
+                         "returns (no filter, no post)")
     ap.add_argument("--weeks", type=int, default=6)
     ap.add_argument("--from-file", metavar="CSV",
                     help="use an existing TEAM export instead of pulling")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
+    if args.probe:
+        return probe(from_file=(args.from_file or ""), verbose=not args.quiet)
     return run_all(post=args.post, weeks=args.weeks,
                    from_file=(args.from_file or ""), verbose=not args.quiet)
 
