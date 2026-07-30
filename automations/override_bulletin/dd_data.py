@@ -24,9 +24,13 @@ Rules live in DD_SOURCES.md. In short:
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
+from zoneinfo import ZoneInfo
 
 from automations.override_bulletin import fill as F
+
+CENTRAL = ZoneInfo("America/Chicago")   # [[project_central-time-for-texas-reports]]
 
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 DD_TAB = "Org DDs Ongoing Report"
@@ -40,6 +44,33 @@ LISTS_LABEL = "PODIUM ORG LISTS"
 
 _WEEK_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$")
 _SPLIT_RE = re.compile(r"\(\s*(\d)\s*/\s*(\d)\s*\)")
+
+
+def week_date(label):
+    """The Sunday a '7.19.26' week header names, or None if it isn't one."""
+    m = _WEEK_RE.match((label or "").strip())
+    if not m:
+        return None
+    mo, d, y = (int(x) for x in label.strip().split("."))
+    try:
+        return dt.date(y + 2000 if y < 100 else y, mo, d)
+    except ValueError:
+        return None
+
+
+def fmt_week(date):
+    """A date as the tab writes it — '7.26.26', no zero padding, no %-m
+    (that strftime flag is Mac-only and these run on Windows too)."""
+    return "{}.{}.{:02d}".format(date.month, date.day, date.year % 100)
+
+
+def week_just_ended(today=None):
+    """The most recent Sunday on or before today, in CENTRAL time.
+
+    The bulletin goes out Thursday for the week that ended the Sunday before —
+    so on Thu 7.30 the tab's newest column must be 7.26."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    return today - dt.timedelta(days=(today.weekday() + 1) % 7)
 
 
 def money(s):
@@ -227,6 +258,25 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     # `blocking` is the subset of `problems` that must stop a SEND — a figure we
     # know is wrong, as opposed to one we know is incomplete and label as such.
     problems, blocking = [], []
+
+    # ---- is the newest column actually THIS week's? The week the bulletin
+    # carries is POSITIONAL — the leftmost week header on the tab — and nothing
+    # in this pipeline rolls it; the tab is opened by hand. So a week nobody has
+    # opened yet leaves LAST week's column in front and the bulletin republishes
+    # a week that already went out, with no error anywhere (Eve 2026-07-30: the
+    # 7.19 bulletin, published by hand on the 23rd, went out again on the 30th
+    # because 7.26 had never been added). Stale column = BLOCKING: a wrong week
+    # on the page is a wrong figure, not a short one.
+    _newest = week_date(weeks[0]) if weeks else None
+    _due = week_just_ended()
+    if _newest and _newest != _due:
+        msg = ("the newest week column on '{}' is {} but the week that just "
+               "ended is {} — nothing here rolls the tab, so this would "
+               "republish a week that already went out. Add the {} column and "
+               "fill it first.".format(DD_TAB, weeks[0],
+                                       fmt_week(_due), fmt_week(_due)))
+        problems.append(msg)
+        blocking.append(msg)
 
     # ---- the headline, read straight off the pre-computed 'Total - Raf' row
     headline = next((money(r[wk_cols[0][0]]) for r in vals
