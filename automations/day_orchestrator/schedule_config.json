@@ -4136,6 +4136,25 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "box_order_log_per_office": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "PER-ICD BOX Order Log for onboarded B2B offices that enrolled 'Box Order Log' in Metrics Onboarding -> each posts its OWN Slack thread in its office channel. ONBOARDING-DRIVEN SLACK sibling of box_order_log_roshan (which EMAILS specific owners from a manual registry). Runs automations.box_order_log.per_office: pulls the TEAM ALLEXPORDERLOG view (B2BBOXEnergyTracker/BoxOrderLog/ALLEXPORDERLOG) ONCE, then for each onboarded office with Box enrolled filters the export to that office's exact 'Owner & Office' value (clean.filter_to_owner — verified against Megan's real ALLEXP export 2026-07-29: Carlos 127 / Roshan 794 / Abel 14 sales, unknown owner => 0 rows, case/whitespace tolerant) and posts its thread via box_order_log.run --owner-office/--channel. Carlos's standalone box_order_log post is byte-identical/untouched. DRY by default (base_args empty = build only, NO Slack post); add --post once verified. NO-OP until an office enrolls Box. MACHINE/SESSION-SCOPE — VERIFY FIRST (same finding as box_order_log_roshan): the pull must run where the Tableau session can SEE ALL box owners; Carlos's Lucy 2 session is scoped to himself, so a Lucy 2 pull may return ONLY Carlos. The FIRST dry run (which prints every 'Owner & Office' it finds) MUST confirm ALLEXPORDERLOG returns all offices from the chosen machine before --post is enabled; the mini's org-wide box session (per roshan) is the likely home. Cadence rides the 7-8am window (Box extract lands ~7-8am). Present so `lucy rerun box_order_log_per_office` works (dry). Posting schedule is a STANDALONE LaunchAgent to install once Megan verifies a live per-office post. Registered 2026-07-29.",
+      "display_name": "BOX Order Log (per onboarded office) -> Slack",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.per_office"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "b2b_quality": {
       "on_scheduler": false,
       "_off_scheduler_note": "B2B Quality & Bonus -> #alphalete-gp-sales (VA-replacement Item 5). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.b2b-quality, installed via `lucy rerun install_b2b_quality_agent`) at 5:30am CST daily incl. weekends, retrying q8m to 5:54 \u2014 the window is SHORT on purpose because it must be FINISHED by 6:00 (Megan 2026-07-18): Sales Boards starts at 6:00 and the VA posts by hand ~5:57. Present so `lucy rerun b2b_quality` works. Captures the 3 ATTTRACKER-B2B Tableau views (Tiered Bonus / Activation Rate / Churn Rate, Carlos saved views) via Tableau's Download->Image, crops each to the last row with data in its leading column, then posts them as one dated thread 'B2B Quality & Bonus MM/DD/YYYY' AS LUCY, each titled with YESTERDAY's date. MUST RUN ON LUCY 2 (Carlos's login) \u2014 these are Carlos's custom views and a custom view only carries its owner's SORT for that owner; under Raf's login (Lucy 1) Activation comes back alphabetical and the image is WRONG (verified 2026-07-18: same code, Lucy 1 alphabetical / Lucy 2 sorted). Don't capture from the laptop either \u2014 it evicts Lucy 1's ownerville session holder. DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes to a DM. LIVE 2026-07-19.",
