@@ -170,7 +170,10 @@ def audit(write: bool, log=_log) -> int:
     if not write:
         log("(dry-run: nothing appended, no manifest written)")
         return 0
-    today = dt.date.today().strftime("%-m/%-d/%Y")
+    # NOT strftime("%-m/%-d/%Y") — the %- flag is glibc/BSD-only and raises
+    # ValueError on Windows, so a real (non-dry-run) audit crashed off the mini.
+    _t = dt.date.today()
+    today = "%d/%d/%d" % (_t.month, _t.day, _t.year)
     if new:
         ri.append_rows([[today, "board-audit (mini 4am)", "Sales Board", f, ""]
                         for f in new], value_input_option="RAW")
@@ -216,36 +219,69 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
                 out.append(f"STATIONS: error value {c!r} at r{i}c{j+1} — a "
                            "formula reference broke (deleted row/col?).")
 
-    def fml(a1):
-        m = re.match(r"([A-Z]+)(\d+)", a1)
-        col = 0
-        for ch in m.group(1):
-            col = col * 26 + ord(ch) - 64
-        r = int(m.group(2))
-        row = form[r-1] if len(form) >= r else []
-        return str(row[col-1]) if len(row) >= col else ""
+    def _a1col(j):
+        s, j = "", j + 1
+        while j:
+            j, r = divmod(j - 1, 26)
+            s = chr(65 + r) + s
+        return s
 
-    for cell in ("V5", "X5", "Z5"):
-        f = fml(cell)
-        if f and "'Sales Board'!$B$5:" not in f:
-            out.append(f"STATIONS: checklist {cell} no longer filters the "
-                       "board from $B$5 — top reps are being dropped again.")
-    for cell in ("W5", "Y5", "AA5"):
-        f = fml(cell)
-        if f and ("$D$3:" not in f or "$R$2" not in f or "#REF" in f):
-            out.append(f"STATIONS: new-start list {cell} formula drifted "
-                       "(needs roll $D$3 range + $R$2 week; no #REF).")
-    for cell in ("F6", "F29", "F42", "F55", "F68", "F81", "F94", "F107", "F120"):
-        f = fml(cell)
-        if f and "$B$5:" not in f:
-            out.append(f"STATIONS: Rep List formula {cell} no longer starts "
-                       "at board $B$5 (top-insert drift).")
-
-    week_stn = str(vals[1][17]).strip() if len(vals) > 1 and len(vals[1]) > 17 else ""
+    # The checklist / new-start / Rep List cells used to be PINNED here by
+    # address (V5,X5,Z5 / W5,Y5,AA5 / F6..F120). On 2026-07-21 Stations gained a
+    # column and the whole cluster slid one right (week label R2 -> S2, board
+    # filters -> W5/Y5, roll filters -> X5/Z5) while the Rep List moved off col F
+    # to G+J entirely. Every assertion then fired against the WRONG cell: four
+    # bogus findings every single day, and the col-F loop silently checked empty
+    # cells. Locate them BY FORMULA CONTENT instead — same rule as the rest of
+    # the repo: labels/shape survive a re-layout, indices don't. (2026-07-30)
     week_board = str(sh.worksheet("Sales Board").acell("B2").value or "").strip()
-    if week_stn and week_board and week_stn != week_board:
-        out.append(f"STATIONS: week label R2={week_stn!r} != Sales Board "
-                   f"B2={week_board!r}.")
+    week_ref = ""   # local row-2 week cell, e.g. "$S$2"
+    row2 = vals[1] if len(vals) > 1 else []
+    for j, c in enumerate(row2):
+        if week_board and str(c).strip() == week_board:
+            week_ref = "$%s$2" % _a1col(j)
+            break
+    if week_board and not week_ref:
+        out.append("STATIONS: no row-2 cell carries the Sales Board week "
+                   f"{week_board!r} — the week label moved or went stale.")
+
+    # a roll filter may compare the week either via the local row-2 cell or
+    # straight across to 'Sales Board'!$B$2 — both are in use and both are fine.
+    week_ok = [w for w in (week_ref, "'Sales Board'!$B$2") if w]
+    # a board *list* is a RANGE over the name column ($B$5:$B$56). Matching the
+    # bare prefix '$B$' also caught the roll filters' week comparison
+    # ('Sales Board'!$B$2), reporting three healthy formulas as drifted.
+    BOARD_RANGE = re.compile(r"'Sales Board'!\$B\$(\d+):")
+    n_board = n_roll = n_formula = 0
+    for i, row in enumerate(form, start=1):
+        for j, c in enumerate(row):
+            c = str(c)
+            if not c.startswith("="):
+                continue
+            n_formula += 1
+            at = "%s%d" % (_a1col(j), i)
+            starts = BOARD_RANGE.findall(c)
+            if starts:
+                n_board += 1
+                bad = sorted({s for s in starts if s != "5"})
+                if bad:
+                    out.append(f"STATIONS: board list {at} starts at row "
+                               f"{'/'.join(bad)} instead of 5 — top reps are "
+                               "being dropped again.")
+            if "'Roll Call'!$D$" in c:
+                n_roll += 1
+                if "$D$3:" not in c or "#REF" in c:
+                    out.append(f"STATIONS: new-start list {at} formula drifted "
+                               "(needs the roll $D$3 range; no #REF).")
+                elif week_ok and not any(w in c for w in week_ok):
+                    out.append(f"STATIONS: new-start list {at} no longer "
+                               "compares the current week cell.")
+    # a re-layout that WIPES the filters would otherwise read as clean. Only
+    # meaningful once the tab has formulas at all (an empty grid is a fixture).
+    if n_formula and (not n_board or not n_roll):
+        out.append(f"STATIONS: expected board+roll filter formulas, found "
+                   f"{n_board} board / {n_roll} roll — the tab was re-laid out "
+                   "and these checks are no longer looking at anything.")
 
     known = {_n(n) for _, n in reps} | {
         _n(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}
@@ -260,13 +296,27 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
                         r"pk$|qq|intro |saturday|sunday|early objection|"
                         r"je 9|station )", re.I)
     name_cols = list(range(0, 7)) + list(range(8, 15)) + [89]  # 2026-07-21: +col O (new BOX station col)
+
+    # Only PERSON-SHAPED text is a candidate. The station grid keeps free-text
+    # notes in the same columns as names ('Getting Bills/Closing', 'New T given',
+    # 'need new t'), and every one of them was being reported as a bad name —
+    # three junk entries per day crowding the [:8] cap that real typos need.
+    # A person name here is >=2 tokens, all alphabetic, all capitalised.
+    def _person_shaped(s):
+        toks = s.split()
+        if len(toks) < 2:
+            return False
+        return all(t[:1].isupper() and t.replace("-", "").replace("'", "").isalpha()
+                   for t in toks)
+
     unknown = set()
     for i, row in enumerate(vals, start=1):
         if i < 4:
             continue
         for j in name_cols:
             c = str(row[j]).strip() if len(row) > j else ""
-            if c and " " in c and not LABELS.match(c) and not matches(c):
+            if (c and _person_shaped(c) and not LABELS.match(c)
+                    and not matches(c)):
                 unknown.add(f"{c!r} (r{i})")
     if unknown:
         out.append("STATIONS: name(s) matching nobody on the board/roll — "
