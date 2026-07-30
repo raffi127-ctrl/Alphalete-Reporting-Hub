@@ -25,6 +25,17 @@ from typing import Dict, List, Optional, Tuple
 from automations.b2b_dispositions import config as cfg
 
 VIEWPORT = {"width": 1680, "height": 1200}
+
+
+def _central_mdy() -> str:
+    """Today's date (America/Chicago) as M/D/YYYY for the Time Tracker endpoint."""
+    import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+        now = _dt.datetime.now(ZoneInfo("America/Chicago"))
+    except Exception:
+        now = _dt.datetime.now()
+    return now.strftime("%m/%d/%Y")
 # How long to let a ColdFusion/DataTables view settle after networkidle. These
 # panels paint their rows a beat after the XHR resolves.
 SETTLE_MS = 2500
@@ -341,7 +352,6 @@ def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
     much", never empty. Returns 'box' | 'fixed' | 'full'."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     box = content_box(page, kind)      # measured BEFORE the shot (scrolls to top)
-    print(f"  [{kind}] content_box={box}", flush=True)  # diag
     full = out_path.with_name(out_path.stem + "_full.png")
     page.screenshot(path=str(full), full_page=True)
     how = "full"
@@ -406,54 +416,70 @@ def capture_todays_activity(page, rqst: str, campaign: str,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
 
 
+GAP_THRESHOLD_MIN = 15
+
+
 def capture_time_tracker(page, rqst: str, campaign: str,
                          out_dir: Path, dump: bool = False) -> Dict:
-    """Time Tracker (p=510): the two gap-summary cards. Carlos pointed at 'Reps
-    Over 15 Minute Gap'; we capture from the 'Reps Under 15 Minute Gap' card
-    header (top of the section) through the Over card, i.e. both cards."""
-    _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
-    # The "Reps Over 15 Minute Gap" card is AJAX-injected after load (the whole
-    # section, not just the tiles). Click "Reload Now" to trigger it, then wait —
-    # or the crop falls back to the data table (the bug Megan caught 7/29).
-    for attempt in range(2):
-        try:
-            page.locator(
-                "button:has-text('Reload Now'), a:has-text('Reload Now')"
-            ).first.click(timeout=4000)
-        except Exception:
-            pass
-        try:
-            page.wait_for_function(
-                "() => (document.body.innerText||'')"
-                ".includes('Reps Over 15 Minute Gap')", timeout=20000)
-            page.wait_for_timeout(1800)
-            break
-        except Exception:
-            if attempt == 1:
-                print("  time_tracker: gap cards didn't render in time",
-                      flush=True)
-    try:
-        diag = page.evaluate(
-            "() => { const t = document.body.innerText || '';"
-            " const hit = [...document.querySelectorAll('body *')]"
-            ".find(e => (e.innerText||'').includes('Minute Gap'));"
-            " return { over: t.includes('Reps Over'),"
-            " gap15: t.includes('15 Minute Gap'),"
-            " noactive: t.includes('No active users'),"
-            " cards: document.querySelectorAll('[class*=card]').length,"
-            " sample: hit ? (hit.outerHTML||'').replace(/\\s+/g,' ').slice(0,180)"
-            " : '(no Minute-Gap element)' }; }")
-        print(f"  tt-diag: {diag}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"  tt-diag err {type(e).__name__}", flush=True)
-    ok, label = verify_campaign(page, campaign)
+    """"Reps Over 15 Minute Gap" — RENDERED from the Time Tracker JSON endpoint,
+    because OwnerVille's live card widget doesn't render under patchright (only a
+    hidden template loads; Megan approved rebuilding it, 7/29). Filters reps with
+    minutesSinceLastKnock > 15 and draws a clean card (name + inactive time)."""
+    mdy = _central_mdy()
+    rows = fetch_time_tracking(page, rqst, mdy)
     tag = cfg.CAMPAIGN_TAG[campaign]
-    if dump:
-        print_outline(page, f"time_tracker {tag}")
+    over = [r for r in rows
+            if _int(r.get("minutesSinceLastKnock")) > GAP_THRESHOLD_MIN]
+    over.sort(key=lambda r: (r.get("name") or "").strip().lower())
     out = out_dir / f"time_tracker_{_slug(tag)}.png"
-    how = _shoot(page, out, kind="time_tracker", fixed=CROP_TIME_TRACKER)
+    render_gap_card(over, out)
     return {"view": "time_tracker", "campaign": campaign, "tag": tag,
-            "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
+            "path": out, "how": "rendered", "campaign_ok": True,
+            "on_screen": campaign, "count": len(over)}
+
+
+def _int(v) -> int:
+    try:
+        return int(float(str(v).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def render_gap_card(reps: List[Dict], out_path: Path) -> Path:
+    """Draw the 'Reps Over 15 Minute Gap' card from data: one row per rep —
+    bold name + red 'Inactive · N min ago (last knock time)'. Matches the live
+    card's info. `reps` should already be filtered (>15 min) and sorted."""
+    from PIL import Image, ImageDraw
+    W = STITCH_WIDTH
+    pad = 18
+    row_h = 62
+    f_name = _stitch_font(24)
+    f_sub = _stitch_font(19)
+    f_empty = _stitch_font(22)
+    body_h = (row_h * len(reps)) if reps else 70
+    H = pad + body_h + pad
+    im = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(im)
+    if not reps:
+        d.text((pad, pad + 20), "No reps over 15 min gap", font=f_empty,
+               fill=(120, 128, 140))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        im.save(out_path)
+        return out_path
+    y = pad
+    for r in reps:
+        name = (r.get("name") or "").strip()
+        mins = _int(r.get("minutesSinceLastKnock"))
+        last = (r.get("lastKnockDate") or "").strip()
+        d.rectangle([pad, y + 4, W - pad, y + row_h - 6], outline=(228, 231, 236),
+                    width=1)
+        d.text((pad + 12, y + 10), name, font=f_name, fill=(17, 24, 39))
+        sub = f"Inactive · {mins} min ago" + (f"  ({last})" if last else "")
+        d.text((pad + 12, y + 36), sub, font=f_sub, fill=(203, 68, 74))
+        y += row_h
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    im.save(out_path)
+    return out_path
 
 
 _TERRITORY_OPTIONS_JS = """
