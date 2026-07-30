@@ -91,6 +91,38 @@ def ensure_parent(client, channel: str, thread_name: str,
     return resp.get("ts")
 
 
+def refresh_pin(client, channel: str, thread_name: str, today: dt.date,
+                parent_ts: str) -> None:
+    """Keep TODAY's header pinned in `channel` and unpin any prior day's for this
+    thread — so the current day's thread is always the pinned one at the top
+    (Megan 7/29). Best-effort: needs pins:read + pins:write on the Lucy token; a
+    missing scope just logs, never fails the post."""
+    today_title = parent_title(thread_name, today)
+    try:
+        pins = client.pins_list(channel=channel).get("items", [])
+    except Exception as e:  # noqa: BLE001
+        print(f"  pins_list failed on {cfg.CHANNEL_LABEL.get(channel, channel)} "
+              f"({type(e).__name__}) — is pins:read granted?", flush=True)
+        pins = []
+    for it in pins:
+        m = it.get("message") or {}
+        txt = (m.get("text") or "").replace("&amp;", "&")
+        # A prior day's header for THIS thread: carries the thread name but not
+        # today's dated title.
+        if thread_name in txt and today_title not in txt and m.get("ts"):
+            try:
+                client.pins_remove(channel=channel, timestamp=m["ts"])
+            except Exception:
+                pass
+    try:
+        client.pins_add(channel=channel, timestamp=parent_ts)
+    except Exception as e:  # noqa: BLE001
+        # already_pinned is fine; anything else is likely a scope gap worth a note
+        if "already_pinned" not in str(e):
+            print(f"  pins_add failed on {cfg.CHANNEL_LABEL.get(channel, channel)} "
+                  f"({str(e)[:60]}) — is pins:write granted?", flush=True)
+
+
 def _existing_captions(client, channel: str, thread_ts: str) -> set:
     """Captions already posted under today's parent (for idempotency). Slack
     stores '&' as '&amp;' — un-escape so 'AT&T — 1:00 PM' matches."""
@@ -130,6 +162,7 @@ def post_replies(thread_name: str, replies: List[Dict],
         clabel = cfg.CHANNEL_LABEL.get(channel, channel)
         try:
             thread_ts = ensure_parent(client, channel, thread_name, today)
+            refresh_pin(client, channel, thread_name, today, thread_ts)
             already = _existing_captions(client, channel, thread_ts)
             posted, skipped = [], []
             for r in replies:
