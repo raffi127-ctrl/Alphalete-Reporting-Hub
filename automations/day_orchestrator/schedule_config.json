@@ -1071,7 +1071,7 @@
     },
     "install_jiraiya_bot_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_jiraiya_bot_agent` (re)installs the always-on Jiraiya Socket Mode listener (com.alphalete.jiraiya-bot, KeepAlive). Serves BOTH the /dd popup AND the Weekly Promotion Check-In buttons, so re-run this after pulling code that changes due_diligence/bot.py or promotion_checkin/. REQUIRES the two Jiraiya tokens on this machine (~/.config/recruiting-report/dd-bot-token + dd-app-token) or it crash-loops. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun install_jiraiya_bot_agent` (re)installs the always-on Jiraiya Socket Mode listener (com.alphalete.jiraiya-bot, KeepAlive). Serves BOTH the /dd popup AND the Weekly Promotion Check-In buttons, so re-run this after pulling ANY code the listener imports -- not just due_diligence/bot.py but everything under due_diligence/ (pull.py, first_sale.py, team_render.py, config.py) and promotion_checkin/. It is a long-lived KeepAlive process: `lucy update` pulls the files but the running process keeps the OLD modules in memory, so a /dd silently renders with pre-update code. Caught 2026-07-30: sales filled but the new Start-Date column came out blank because the listener predated the first_sale deploy. REQUIRES the two Jiraiya tokens on this machine (~/.config/recruiting-report/dd-bot-token + dd-app-token) or it crash-loops. weekdays [] = manual only.",
       "display_name": "Install Jiraiya bot listener",
       "source_type": "local",
       "data_sources": [],
