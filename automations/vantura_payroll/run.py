@@ -706,6 +706,17 @@ def main(argv: list[str] | None = None) -> int:
         result = _refresh_and_check(week, raw_range, write=write,
                                     sheet_id=sheet_id)
         summary, checks = result.get("summary"), result.get("checks")
+        # Re-render the clean 'P&L 2026' presentation tab LAST, so it picks up
+        # this week's new block and re-resolves the working tab's row positions
+        # (they drift every time roster rows are added). Never fail the payroll
+        # run over a presentation tab.
+        if sheet_id == SHEET_ID:
+            try:
+                from automations.vantura_payroll import clean_pnl
+                out = clean_pnl.build(write=write, log=_log)
+                _log(f"clean P&L tab: {out}")
+            except Exception as e:  # noqa: BLE001
+                _log(f"clean P&L tab SKIPPED ({e!r}) — payroll itself is fine")
         _kickoff_dm(week, raw_range, summary, checks, send=send)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         _log(f"STOP: {e}")
