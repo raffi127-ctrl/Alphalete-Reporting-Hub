@@ -42,7 +42,9 @@ _APP_PW_ENV = "ALPHALETE_REPORTING_GMAIL_APP_PASSWORD"
 RECIPIENTS: dict[str, List[str]] = {
     "raf": [
         "andrew.sanborn07@gmail.com", "Ayakhafaji02@gmail.com",
-        "burdenb@bgsu.edu", "codycannon1993@gmail.com",
+        # Benjamin Burden: bgsu.edu was his university address; his contact
+        # card carries the gmail. Synced 2026-07-30 with the captainship list.
+        "Benjaminburden02@gmail.com", "codycannon1993@gmail.com",
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
         "edgarmuniz2020@icloud.com", "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
