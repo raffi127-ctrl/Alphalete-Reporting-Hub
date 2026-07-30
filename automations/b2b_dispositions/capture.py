@@ -253,15 +253,21 @@ _CONTENT_BOX_JS = r"""
     return {left:r.left, top:r.top, right:r.right, bottom:r.bottom}; };
   let b = null;
   if (kind === 'todays_activity') {
-    // The rep-list panel: from the search box, climb to the tall/narrow panel
-    // that holds the rows (adapts to the collapsed sidebar).
+    // The rep LIST only (Megan wants it tight — start at the first rep, drop the
+    // "Show Active Reps / Search" bar). Find the panel via the search box for
+    // left/right/bottom, then set the top to just below the search input.
     let inp = document.querySelector(
       'input[placeholder*="owner" i], input[placeholder*="rep" i], input[type="search"]');
-    if (inp) { let el = inp;
+    if (inp) {
+      let el = inp, panel = null;
       for (let i=0;i<7 && el.parentElement;i++){ el = el.parentElement;
         const r = el.getBoundingClientRect();
-        if (r.height > 350 && r.width > 180 && r.width < 760) { b = box(el); break; } }
-      if (!b) b = box(inp.parentElement || inp); }
+        if (r.height > 300 && r.width > 180 && r.width < 760) { panel = el; break; } }
+      const p = panel || inp.parentElement || inp;
+      const pr = p.getBoundingClientRect();
+      const ir = inp.getBoundingClientRect();
+      b = { left: pr.left, top: ir.bottom + 8, right: pr.right, bottom: pr.bottom };
+    }
   } else if (kind === 'time_tracker') {
     // JUST the "Reps Over 15 Minute Gap" card (Megan's blue box, 7/29) — not the
     // "Under" card, not the data table. Climb from that header to its card block.
@@ -395,6 +401,15 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     Over 15 Minute Gap'; we capture from the 'Reps Under 15 Minute Gap' card
     header (top of the section) through the Over card, i.e. both cards."""
     _goto(page, _page_url(cfg.PAGE_TIME_TRACKER, rqst, campaign))
+    # The "Reps Over 15 Minute Gap" card is AJAX-populated a beat after load; wait
+    # for it or the crop falls back to the data table (the bug Megan caught 7/29).
+    try:
+        page.wait_for_function(
+            "() => (document.body.innerText||'').includes('Reps Over 15 Minute Gap')",
+            timeout=18000)
+        page.wait_for_timeout(1500)
+    except Exception:
+        print("  time_tracker: gap cards didn't render in time", flush=True)
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
     if dump:
