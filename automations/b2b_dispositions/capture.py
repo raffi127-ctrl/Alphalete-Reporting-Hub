@@ -432,6 +432,20 @@ def capture_time_tracker(page, rqst: str, campaign: str,
             if attempt == 1:
                 print("  time_tracker: gap cards didn't render in time",
                       flush=True)
+    try:
+        diag = page.evaluate(
+            "() => { const t = document.body.innerText || '';"
+            " const hit = [...document.querySelectorAll('body *')]"
+            ".find(e => (e.innerText||'').includes('Minute Gap'));"
+            " return { over: t.includes('Reps Over'),"
+            " gap15: t.includes('15 Minute Gap'),"
+            " noactive: t.includes('No active users'),"
+            " cards: document.querySelectorAll('[class*=card]').length,"
+            " sample: hit ? (hit.outerHTML||'').replace(/\\s+/g,' ').slice(0,180)"
+            " : '(no Minute-Gap element)' }; }")
+        print(f"  tt-diag: {diag}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"  tt-diag err {type(e).__name__}", flush=True)
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
     if dump:
