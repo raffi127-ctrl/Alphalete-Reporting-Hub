@@ -302,16 +302,25 @@ _CONTENT_BOX_JS = r"""
       b = box(card);
     }
   } else if (kind === 'territory_stats') {
-    // The 3 stat cards, from the "Report By" filter row to the CURRENT PERIOD
-    // card. Climb from each card's header to the card block, then union with the
-    // filter row (which carries the territory name Carlos wants visible).
-    const rb = tight('Report By');
-    const cardEls = ['TODAY', 'SINCE TERRITORY', 'CURRENT PERIOD']
-      .map(t => tight(t))
-      .map(e => { if (!e) return null; let el = e;
-        for (let i=0;i<5 && el.parentElement;i++){ el = el.parentElement;
-          if (el.getBoundingClientRect().height > 200) return el; } return e; });
-    b = union([rb, ...cardEls]);
+    // The 3 stat cards ONLY — no sidebar, no footer (Megan 7/30). Anchor each
+    // card by a label unique to IT ('First Knock' = left card, 'Since Territory
+    // Started' = middle, 'Current Period' = right) and climb to the card block.
+    // Union gives left/right/bottom (tight to the cards); the "Report By" row
+    // only sets the TOP, so the territory name shows without dragging the crop
+    // left into the sidebar.
+    const climbCard = e => { if (!e) return null; let el = e;
+      for (let i=0;i<6 && el.parentElement;i++){ el = el.parentElement;
+        const r = el.getBoundingClientRect();
+        if (r.height > 180 && r.width > 200 && r.width < 900) return el; }
+      return e; };
+    const cu = union([climbCard(tight('First Knock')),
+                      climbCard(tight('Since Territory Started')),
+                      climbCard(tight('Current Period'))]);
+    if (cu) {
+      const rb = tight('Report By');
+      const top = rb ? Math.min(rb.getBoundingClientRect().top, cu.top) : cu.top;
+      b = { left: cu.left, top: top, right: cu.right, bottom: cu.bottom };
+    }
   }
   if (!b) return null;
   return { left:b.left, top:b.top, right:b.right, bottom:b.bottom,
