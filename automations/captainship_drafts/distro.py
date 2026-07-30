@@ -41,7 +41,25 @@ from typing import List, Tuple
 # Matching is case- and spacing-insensitive (contacts_auth._norm), but the
 # WORDS have to match — 'Sahil Team' will not find 'Sahil's Team'.
 GROUPS: dict = {
-    # "sahil": "Sahil's Captainship",
+    # Verified against --list-groups on 2026-07-30. Note the three that do NOT
+    # follow the "<Name>'s Captainship" pattern, and the apostrophe in "Luis'".
+    #
+    # ⚠ "Raf's Captain Team" and "Carlos' Captain Team" are SHARED with the Org
+    # Sales Board email (org_sales_board.screenshot_email.DISTRO_GROUPS) — a
+    # person added there lands on BOTH that captain's report and the org board.
+    # That is how they're already set up; keep it in mind before editing them.
+    "rafael": "Raf's Captain Team",
+    "wayne":  "Wayne's Captain Team",
+    "starr":  "Starr's Captainship",
+    "chan":   "Chan's Captainship",
+    "tony":   "Tony's Captainship",
+    "sahil":  "Sahil's Captainship",
+    "carlos": "Carlos' Captain Team",
+    "eveliz": "Eveliz's Captainship",
+    "luis":   "Luis' Captainship",
+    "khalil": "Khalil's Captainship",
+    "colten": "Colten's Captainship",
+    "jairo":  "Jairo's Captainship",
 }
 
 GROUP_PREFIX = "Captainship - "
