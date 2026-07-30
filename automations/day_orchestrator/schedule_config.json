@@ -1878,7 +1878,7 @@
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,
-      "_note": "MANUAL ONLY since 2026-07-28 (Eve): cadence.weekdays is [] so the 4am orchestrator NEVER auto-runs this \u2014 nothing about the Captainship Reports fires on its own any more. on_scheduler stays true ONLY so registry.load_config keeps the entry and `lucy rerun captainship_drafts` can still find it. Trigger the build by hand (`python -m automations.captainship_drafts.run --dry-run`, or the Hub card's step 1), then send by hand (`--send-reviewed`). To put it back on the clock, restore weekdays [1,2,3,4,5,6]. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS AND NEVER TOUCHES GMAIL: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review. Sending is a deliberate second step Eve triggers from the Hub card ('2. Send the reviewed reports' -> run --send-reviewed), which mails those exact files so a bad number on the Sales Board can still be caught before anything leaves. Changed 2026-07-27 from creating Gmail drafts: a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Prereqs: Sales Board screenshot profile logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) + the Tableau \u00a72 shots (Cancel Rates / Team Stats Breakout) wired. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. Rafael / B2B / NDS are unchanged \u2014 the six new boxes only exist for the 5 fiber captains.",
+      "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau \u00a72 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. Rafael / B2B / NDS are unchanged \u2014 the six new boxes only exist for the 5 fiber captains.",
       "display_name": "Captainship Report Drafts (12)",
       "source_type": "tableau",
       "data_sources": [],
@@ -1889,7 +1889,15 @@
         "--dry-run"
       ],
       "cadence": {
-        "weekdays": []
+        "_note": "Monday (0) EXCLUDED, same reason as the Org Sales Board email: last week's Sunday only lands in the sources through Monday afternoon, so a Monday-morning build would report an undercounted day. Tue-Sun in the morning batch.",
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
@@ -1904,6 +1912,57 @@
       ],
       "verify": null,
       "report_id": "captainship-drafts"
+    },
+    "captainship_drafts_review": {
+      "order": 21,
+      "on_scheduler": true,
+      "_note": "The review half of the Captainship Reports (Eve 2026-07-30). Sends NOTHING: it prints the 12 previews captainship_drafts just built into ONE PDF, drops it in Drive and posts the link in the review channel AS LUCY (the mini's Slack token). The reports go out only when an approver reacts with a checkmark - picked up within 15 min by com.alphalete.captainship-review (deploy/captainship_review.sh, 9am-8pm), which runs review_gate --check --send and mails the reviewed .eml files untouched. Kept as its OWN entry rather than folded into captainship_drafts so a build that half-fails still shows as its own red pill, and so re-posting (`lucy rerun captainship_drafts_review`) never rebuilds the drafts. Re-posting is safe: --post replaces its own earlier post for the same day and refuses to touch one that already carries an approval. depends_on captainship_drafts so it can only run once the previews exist. source_type 'local' - it reads previews off disk and talks to Drive + Slack; no Tableau, no chrome guard. Same shape as org_sales_board_email on purpose: one review habit for both emails, one channel.",
+      "display_name": "Captainship Reports (a revisión)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_drafts.review_gate"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "captainship_drafts"
+      ],
+      "verify": null
+    },
+    "install_captainship_review_agent": {
+      "on_scheduler": false,
+      "_note": "NOT a report - the one-shot installer for com.alphalete.captainship-review, the 15-minute checker that turns a checkmark in the review channel into 12 sent reports (deploy/captainship_review.sh). Run it with `lucy rerun install_captainship_review_agent` after a `lucy update`, and again any time the plist or its window changes. Same pattern as install_org_board_email_review_agent. source_type 'local' skips the chrome guard; read-only w.r.t. every Sheet.",
+      "display_name": "Install Captainship Reports review agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "captainship-review"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
     },
     "install_retail_catchup_agent": {
       "on_scheduler": true,

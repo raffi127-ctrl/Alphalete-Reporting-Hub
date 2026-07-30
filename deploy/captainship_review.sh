@@ -1,0 +1,78 @@
+#!/bin/bash
+# Captainship Reports — the approval half of the review gate, on the mini.
+#
+# The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run) and
+# then posts them for review as ONE PDF (captainship_drafts_review ->
+# review_gate --post). THIS agent is the other half: every 15 minutes it asks
+# Slack whether Lucy or Evelyn put a checkmark on that post, and mails the
+# reviewed .eml files the moment one has. Until then it does nothing.
+#
+# WHY A SEPARATE AGENT and not another orchestrator report: a report runs ONCE a
+# day and goes terminal. Waiting for a human is not a run — it's a watch, and it
+# has to keep looking long after the 12:00 backstop has closed the batch. Same
+# shape as org_board_email_review.sh, deliberately: one review habit, two
+# identical halves.
+#
+# WHY THIS RUNS ON THE MINI AT ALL (Eve, 2026-07-30): the send moved from the
+# Gmail API to SMTP (see automations/captainship_drafts/mailer.py), so the whole
+# flow — build, PDF, post, check, send — now lives on the machine that is always
+# on instead of on Eve's laptop. The previews the send mails are the ones the
+# 4am build wrote HERE; a checker on another box would find an empty output/.
+#
+# IDEMPOTENT: review_gate --check will not send twice. It reads the thread under
+# the review post for its own "Enviado" confirmation, which is a lock every
+# machine and a wiped output/ can all see.
+#
+# Manual test (finds the approval, mails nothing):
+#   bash deploy/captainship_review.sh --dry
+set -u
+cd "$(dirname "$0")/.." || exit 1
+
+START_HOUR=9        # first check of the day (the post lands with the 4am batch)
+END_HOUR=20         # last check — after this, tomorrow's run takes over
+
+HOUR=$(date +%H)
+HOUR=${HOUR#0}
+if [ "$HOUR" -lt "$START_HOUR" ] || [ "$HOUR" -ge "$END_HOUR" ]; then
+    exit 0
+fi
+
+# Overlap guard: mailing 12 reports takes a while and must not be fought by the
+# next tick — that is how a captain gets the same report twice.
+if pgrep -f "automations.captainship_drafts" > /dev/null 2>&1; then
+    echo "[$(date)] captainship review SKIPPED — a captainship run is still going"
+    exit 0
+fi
+
+VENV_PY=".venv/bin/python3.14"
+[ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
+LOG_DIR="output/logs"
+mkdir -p "$LOG_DIR"
+
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+export NO_PROXY='*'
+export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
+export NO_COLOR=1
+export PYTHONPATH="$(pwd)"
+
+# LIVE by default: on a checkmark the 12 reports go to the captains' real
+# recipients (config.py Captain.to). "--dry" checks for the approval and stops
+# short of mailing.
+MODE="--send"
+[ "${1:-}" = "--dry" ] && MODE=""
+
+LOG_FILE="$LOG_DIR/captainship-review-$(date +%Y-%m-%d).log"
+echo "[$(date)] check (mode: ${MODE:-report-only})" >> "$LOG_FILE"
+
+"$VENV_PY" -u -m automations.captainship_drafts.review_gate --check $MODE >> "$LOG_FILE" 2>&1
+ST=$?
+
+# exit 1 = not approved yet (the normal state most of the day). While it waits,
+# let the gate nudge the channel once, 3h after the post — silence fails exactly
+# on the day everyone is busy and nobody notices the captains got nothing.
+if [ "$ST" = "1" ]; then
+    "$VENV_PY" -u -m automations.captainship_drafts.review_gate --remind >> "$LOG_FILE" 2>&1
+fi
+
+echo "[$(date)] finished exit=$ST" >> "$LOG_FILE"
+exit 0

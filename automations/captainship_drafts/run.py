@@ -58,8 +58,30 @@ _OUTPUT_DIR = _REPO_ROOT / "output"
 
 def _sales_board_shots(captain, today, render_dir, *, logfn):
     """(product_summary, units) from the Sales Board — degrades to (None, [])
-    if the screenshot browser isn't logged in / a capture fails, so the rest
-    of the draft still builds (that section shows a 'pending' note)."""
+    if every path fails, so the rest of the draft still builds (that section
+    shows a 'pending' note).
+
+    LOGIN-FREE FIRST (Eve, 2026-07-30). sheet_render reads the same cells and
+    their formatting through the API token and screenshots a local HTML copy, so
+    nothing here needs a Chrome profile signed into Google. That profile is the
+    reason this report lived on Eve's laptop: the session expires every few weeks
+    and the re-login needs 2FA physically at the machine that runs the report,
+    and nobody sits at the mini. Replaying an exported session there was tried
+    and is a dead end — it cost the source machine its session too (see
+    sheet_shot.seed_cookies).
+
+    The old screenshot path stays as the fallback, not out of nostalgia: on a
+    machine that IS signed in it is the ground truth this render was verified
+    against, so a break in the renderer degrades to the real screenshot instead
+    of to a 'pending' note."""
+    from automations.captainship_drafts import sheet_render
+    try:
+        shots = sheet_render.captain_shots(captain.key, captain.flavor,
+                                          render_dir, today=today)
+        return shots.get("product_summary"), shots.get("units") or []
+    except Exception as e:
+        logfn(f"  ⚠ login-free Sales Board render failed for {captain.key} "
+              f"({type(e).__name__}: {e}) — trying the screenshot path")
     try:
         from automations.captainship_drafts import sheet_shot
         shots = sheet_shot.captain_shots(captain.key, captain.flavor,
@@ -136,35 +158,40 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
     rather than silently rebuilt."""
     from email import policy
     from email.parser import BytesParser
-    from automations.shared.gmail_draft import send_message
+    from automations.captainship_drafts.mailer import Mailer
 
     failures = 0
-    for captain in selected:
-        eml = _preview_eml(captain, today)
-        if not eml.exists():
-            failures += 1
-            logfn(f"  ✗ {captain.key}: no preview for {today} at {eml.name} "
-                  f"— run with --dry-run first, then review it")
-            continue
-        recipient = to_override or captain.to
-        if not recipient.strip():
-            failures += 1
-            logfn(f"  ✗ {captain.key}: no recipient in config.py "
-                  f"(RECIPIENTS[{captain.key!r}]) — skipped")
-            continue
-        msg = BytesParser(policy=policy.default).parsebytes(eml.read_bytes())
-        if msg["To"] is None:
-            msg["To"] = recipient
-        else:
-            msg.replace_header("To", recipient)
-        n_to = len([a for a in recipient.split(",") if a.strip()])
-        logfn(f"  sending {captain.key}: {msg['Subject']!r} -> {n_to} "
-              f"recipient(s)")
-        try:
-            send_message(msg, logfn=logfn)
-        except Exception as e:
-            failures += 1
-            logfn(f"  ✗ {captain.key}: send failed: {type(e).__name__}: {e}")
+    # One SMTP login for the whole set (see mailer.py for why SMTP and not the
+    # Gmail API). Opened lazily, so a run where every preview is missing never
+    # touches the network.
+    with Mailer(logfn=logfn) as mailer:
+        for captain in selected:
+            eml = _preview_eml(captain, today)
+            if not eml.exists():
+                failures += 1
+                logfn(f"  ✗ {captain.key}: no preview for {today} at {eml.name} "
+                      f"— run with --dry-run first, then review it")
+                continue
+            recipient = to_override or captain.to
+            if not recipient.strip():
+                failures += 1
+                logfn(f"  ✗ {captain.key}: no recipient in config.py "
+                      f"(RECIPIENTS[{captain.key!r}]) — skipped")
+                continue
+            msg = BytesParser(policy=policy.default).parsebytes(eml.read_bytes())
+            if msg["To"] is None:
+                msg["To"] = recipient
+            else:
+                msg.replace_header("To", recipient)
+            n_to = len([a for a in recipient.split(",") if a.strip()])
+            logfn(f"  sending {captain.key}: {msg['Subject']!r} -> {n_to} "
+                  f"recipient(s)")
+            try:
+                mailer.send(msg)
+                logfn(f"  ✓ {captain.key}: sent")
+            except Exception as e:
+                failures += 1
+                logfn(f"  ✗ {captain.key}: send failed: {type(e).__name__}: {e}")
     return failures
 
 
@@ -393,13 +420,15 @@ def main(argv=None) -> int:
                     f"captainship_sent_{captain.key}_{today:%Y%m%d}.eml")
                 eml.write_bytes(bytes(msg))
                 preview.eml_to_html(eml)
-                from automations.shared.gmail_draft import send_message
+                from automations.captainship_drafts.mailer import send_one
                 # Sweep any leftover draft for this captain+date first, so a
                 # sent report doesn't leave a stale draft someone might open
                 # and re-send (which is exactly how the images get stripped).
+                # Best-effort: on the mini there is no Gmail token to sweep with
+                # (and nothing has created a draft since 2026-07-27).
                 if not args.no_replace:
                     _delete_prior_drafts(captain, today)
-                send_message(msg)
+                send_one(msg)
             elif args.dry_run:
                 _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
                 eml = _OUTPUT_DIR / (
