@@ -41,11 +41,18 @@ BUCKET_ORDER = ("0-30", "30", "60", "90", "120")
 # Body intros, verbatim per the spec. rafael/fiber greet "Hello, team!";
 # b2b/nds greet "Hi, team!". Rendered as an ordered list in the email.
 _INTRO = {
+    # Rafael went 4 -> 9 sections on 2026-07-30 (Eve's list, verbatim). Same
+    # shape as fiber minus the Fiber Activations block, which is not his.
     "rafael": ("Hello, team! Below you'll find:", [
         "Product Summaries Of Sales 💰",
-        "New Internet Ongoing Cancel Metrics ⚠️",
+        "New Int 0-30 Day Cancel Rate ⚠️",
+        "New Int 30-60 Day Cancel Rate 🚨",
         "New Internet Ongoing Churn Metrics 🌐",
         "Wireless Ongoing Churn Metrics 🛜",
+        "ABP % Ongoing Report 💳",
+        "0-30 Day Ongoing Activation Rate ▶️",
+        "30-60 Day Ongoing Activation Rate 🚀",
+        "Ongoing 6+ Days Sales Rate 🤝🏻",
     ]),
     # Fiber went from 4 sections to 10 on 2026-07-29 (Eve's list, verbatim
     # including the emoji): the Tableau Cancel-Rates shot is replaced by the
@@ -86,8 +93,11 @@ _INTRO = {
 #   box:<slot>         -> a one-column-per-day metrics box (see BOX_SOURCES),
 #                         rendered by box_images/daily_box_render
 SECTION_KINDS = {
-    "rafael": ["product_summary", "cancel_tableau", "churn_ni",
-               "churn_wireless"],
+    "rafael": ["product_summary",
+               "box:cancel-0-30", "box:cancel-30-60",
+               "churn_ni", "churn_wireless",
+               "box:abp", "box:activation-0-30", "box:activation-30-60",
+               "box:six-days"],
     "fiber":  ["product_summary", "fiber_activation",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
@@ -152,6 +162,67 @@ def _fiber_boxes(slug: str) -> List[BoxSource]:
                   "ABP % ONGOING REPORT", "abp", "abp"),
         BoxSource(partial(_bx.open_ws, slug), _bx.find_boxes, "6days",
                   "ONGOING 6+ DAYS SALES RATE", "six-days", "abp"),
+    ]
+
+
+# Rafael's reports do NOT share the fiber captains' workbooks — his whole report
+# is its own Sheet (Eve, 2026-07-30), and the same six boxes are spread over
+# FOUR separate tabs instead of the fiber layout's three shared ones. So he gets
+# his own builder rather than a slug passed to _fiber_boxes.
+RAFAEL_SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
+
+RAFAEL_TABS = {
+    "cancel":     "Captainship - Cancel Rate",      # both 0-30 and 30-60 boxes
+    "activation": "Captainship - Activation Rate",  # both 0-30 and 30-60 boxes
+    "abp":        "Local Office - New Internet ABP%",
+    "six_days":   "Captainship - 6 days out",
+}
+
+
+def _raf_ws(tab: str):
+    """Open one tab of Rafael's own workbook. Lazy for the same reason
+    _fiber_boxes is lazy."""
+    from automations.new_internet_churn import fill as _shared
+    return _shared.open_by_key(RAFAEL_SHEET_ID).worksheet(tab)
+
+
+def _rafael_boxes() -> List[BoxSource]:
+    """Rafael's six metric boxes, across the four tabs of his own Sheet.
+
+    The FINDERS are the fiber ones unchanged: his tabs carry the identical box
+    shape, verified live 2026-07-30 (cancel and activation each return 0-30 and
+    30-60; the ABP and 6-days tabs one box each). So this is a different address
+    for the same structure, not a second renderer.
+
+    NOTE the ABP source is 'Local Office - New Internet ABP%' — a LOCAL OFFICE
+    tab, not a captainship one, and it lists ~96 reps against ~15 on the others.
+    That is Eve's choice of source, not a mismatch: it is the ABP report that
+    already gets filled daily, and the ask was to put a PNG of it in the draft."""
+    from functools import partial
+    from automations.captainship_cancel_rate import fill as _cx
+    from automations.captainship_activation_rate import fill as _ax
+    from automations.captainship_abp_6days import fill as _bx
+
+    # cache_key is per TAB: unlike the fiber layout, only the two cancel boxes
+    # and the two activation boxes share a worksheet here.
+    return [
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _cx.find_sections,
+                  "0-30", "NEW INT 0-30 DAY CANCEL RATE", "cancel-0-30",
+                  "raf-cancel"),
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["cancel"]), _cx.find_sections,
+                  "30-60", "NEW INT 30-60 DAY CANCEL RATE", "cancel-30-60",
+                  "raf-cancel"),
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _ax.find_boxes,
+                  "0-30", "0-30 DAY ONGOING ACTIVATION RATE", "activation-0-30",
+                  "raf-activation"),
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["activation"]), _ax.find_boxes,
+                  "30-60", "30-60 DAY ONGOING ACTIVATION RATE",
+                  "activation-30-60", "raf-activation"),
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["abp"]), _bx.find_boxes, "abp",
+                  "ABP % ONGOING REPORT", "abp", "raf-abp"),
+        BoxSource(partial(_raf_ws, RAFAEL_TABS["six_days"]), _bx.find_boxes,
+                  "6days", "ONGOING 6+ DAYS SALES RATE", "six-days",
+                  "raf-six-days"),
     ]
 
 
@@ -316,7 +387,7 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_cap.open_ws_new_int,  _ni_render, "New Internet Churn"),
         ChurnSource(_cap.open_ws_wireless, _wl_render, "Wireless Churn",
                     brand_title=False),
-    ]),
+    ], boxes=_rafael_boxes()),
     # ----- Fiber (Aron retired → Chan; Tony + Sahil added 2026-07-17) -----
     # Wireless churn joined the fiber drafts 2026-07-29. It comes off the
     # per-captain Wireless tabs owners_metrics_churn fills from ONE org-wide

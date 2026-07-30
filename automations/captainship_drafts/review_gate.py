@@ -359,6 +359,10 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="build the PDF, upload it, post the link. RUN ON THE "
                          "MINI so it comes from Lucy.")
+    ap.add_argument("--refresh", action="store_true",
+                    help="rebuild the PDF and update the one already in Drive, "
+                         "WITHOUT posting again. For when a draft is rebuilt "
+                         "after the link went out. Wins over --post.")
     ap.add_argument("--check", action="store_true",
                     help="look for an authorised checkmark; with --send, mail "
                          "the reviewed files when it is there. Run on Eve's box.")
@@ -383,6 +387,19 @@ def main(argv=None) -> int:
 
     if args.pdf_only:
         build_pdf(today)
+        return 0
+    # Checked BEFORE --post on purpose. The scheduler entry's base_args are
+    # ["--post"], so `lucy rerun captainship_drafts_review --refresh` arrives
+    # here as "--post --refresh" and has to mean refresh — otherwise the one
+    # case this exists for could not be triggered the one way it is triggered.
+    if args.refresh:
+        link = upload_pdf(build_pdf(today))
+        # Same name = same day, so upload_pdf updated the file IN PLACE and the
+        # link already posted in Slack now shows the rebuilt PDF. Nothing is
+        # posted: a correction must not ping the approvers a second time with a
+        # second message for them to choose between.
+        print(f"✓ refreshed in place, existing link still valid: {link}",
+              flush=True)
         return 0
     if args.post:
         post_review(upload_pdf(build_pdf(today)), today, args.channel)
