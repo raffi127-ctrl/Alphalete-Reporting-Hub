@@ -72,16 +72,11 @@ def probe(from_file: str = "", verbose: bool = True) -> int:
     no Slack."""
     import collections
     from automations.box_order_log import clean
-    src = Path(from_file) if from_file else (
-        boxrun.OUTPUT_DIR / "box_team_orderlog_probe_{}.csv".format(
-            dt.date.today().isoformat()))
-    if not from_file:
-        try:
-            boxrun._pull(src, verbose=verbose, view_url=TEAM_VIEW_URL,
-                         crosstab_sheet=TEAM_CROSSTAB_SHEET)
-        except Exception as exc:                     # noqa: BLE001
-            print("[box probe] team pull failed: {}".format(exc), file=sys.stderr)
-            return 1
+    try:
+        src = _ensure_team_export(from_file, verbose)
+    except Exception as exc:                          # noqa: BLE001
+        print("[box probe] team pull failed: {}".format(exc), file=sys.stderr)
+        return 1
     rows = clean.read_rows(src)
     col = clean.OWNER_OFFICE_COL
     if not rows or col not in rows[0]:
@@ -95,6 +90,30 @@ def probe(from_file: str = "", verbose: bool = True) -> int:
     return 0
 
 
+# The SHARED all-owners team export — same filename run_owner.py writes/reads, so
+# Roshan's email run + this per-office Slack run + any future owner all reuse ONE
+# pull. Whoever runs first that morning pulls it; everyone else reads the file.
+def _shared_team_file() -> Path:
+    return boxrun.OUTPUT_DIR / "box_order_log_all_{}.csv".format(
+        dt.date.today().isoformat())
+
+
+def _ensure_team_export(from_file: str, verbose: bool) -> Path:
+    """Return a team export path, reusing today's shared file if it's already been
+    pulled (by run_owner or an earlier per-office pass) — one pull serves all."""
+    if from_file:
+        return Path(from_file)
+    shared = _shared_team_file()
+    if shared.exists():
+        if verbose:
+            print("[box] reusing today's shared team export {} (no pull)".format(
+                shared.name))
+        return shared
+    boxrun._pull(shared, verbose=verbose, view_url=TEAM_VIEW_URL,
+                 crosstab_sheet=TEAM_CROSSTAB_SHEET)
+    return shared
+
+
 def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
             verbose: bool = True) -> int:
     offs = box_offices()
@@ -103,16 +122,12 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
               "— nothing to do.")
         return 0
 
-    # Pull the team export ONCE (unless a file is provided), then filter per office.
-    src = Path(from_file) if from_file else (
-        boxrun.OUTPUT_DIR / "box_team_orderlog_{}.csv".format(dt.date.today().isoformat()))
-    if not from_file:
-        try:
-            boxrun._pull(src, verbose=verbose, view_url=TEAM_VIEW_URL,
-                         crosstab_sheet=TEAM_CROSSTAB_SHEET)
-        except Exception as exc:                     # noqa: BLE001
-            print("[box per-office] team pull failed: {}".format(exc), file=sys.stderr)
-            return 1
+    # ONE pull serves every office (reuses the shared box_order_log_all_<date>.csv).
+    try:
+        src = _ensure_team_export(from_file, verbose)
+    except Exception as exc:                         # noqa: BLE001
+        print("[box per-office] team pull failed: {}".format(exc), file=sys.stderr)
+        return 1
 
     rc = 0
     for o in offs:
