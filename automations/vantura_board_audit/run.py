@@ -41,6 +41,92 @@ def _norm(n: str) -> str:
     return " ".join(str(n).lower().split())
 
 
+def _cohort_weeks_old(week_tag: str):
+    """Roll Call col A is an 'M.D' week-ending tag ('6.21', '4.26'). Return how
+    many weeks ago that was, or None if it doesn't parse. Assumes the tag is in
+    the past — a month ahead of today means it belongs to last year."""
+    m = re.match(r"^\s*(\d{1,2})\.(\d{1,2})\s*$", str(week_tag))
+    if not m:
+        return None
+    today = dt.date.today()
+    mo, day = int(m.group(1)), int(m.group(2))
+    for year in (today.year, today.year - 1):
+        try:
+            d = dt.date(year, mo, day)
+        except ValueError:
+            return None
+        if d <= today:
+            return (today - d).days // 7
+    return None
+
+
+def _load_activity(sh, log=_log):
+    """Evidence used to explain WHY someone has no board row:
+      - New DU col A status ('Not Active', '3 - In Training', '5 - Leader')
+        keyed by the col-I name
+      - RAW sale counts + last sale date keyed by col-B rep name
+    Both are name-keyed, so fold in the hidden 'Name Aliases' tab (col A is the
+    board spelling, col B the paid/real one). Any tab going missing degrades to
+    'no evidence' — the caller then just reports the plain missing-row finding
+    rather than crashing the whole audit."""
+    def _alias_map():
+        pairs = {}
+        try:
+            for r in sh.worksheet("Name Aliases").get_all_values()[1:]:
+                if len(r) > 1 and str(r[0]).strip() and str(r[1]).strip():
+                    a, b = _norm(r[0]), _norm(r[1])
+                    pairs.setdefault(a, set()).add(b)
+                    pairs.setdefault(b, set()).add(a)
+        except Exception as e:  # noqa: BLE001
+            log(f"(no Name Aliases tab: {type(e).__name__}) — matching on exact names")
+        return pairs
+
+    alias = _alias_map()
+
+    def _spread(d):
+        """copy each entry onto its aliases so either spelling resolves"""
+        for key in list(d):
+            for other in alias.get(key, ()):
+                d.setdefault(other, d[key])
+        return d
+
+    du = {}
+    try:
+        for r in sh.worksheet("New DU").get_all_values()[1:]:
+            if len(r) > 8 and str(r[8]).strip():
+                du.setdefault(_norm(r[8]), str(r[0]).strip())
+    except Exception as e:  # noqa: BLE001
+        log(f"(no New DU tab: {type(e).__name__}) — status evidence unavailable")
+
+    sales = {}
+    try:
+        for r in sh.worksheet("RAW").get_all_values()[1:]:
+            if len(r) > 1 and str(r[1]).strip():
+                k = _norm(r[1])
+                cnt, last = sales.get(k, (0, ""))
+                when = str(r[2]).strip() if len(r) > 2 else ""
+                sales[k] = (cnt + 1, _later(last, when))
+    except Exception as e:  # noqa: BLE001
+        log(f"(no RAW tab: {type(e).__name__}) — sales evidence unavailable")
+
+    return _spread(du), _spread(sales)
+
+
+def _later(a: str, b: str) -> str:
+    """max of two M/D/YYYY strings, compared as dates not text (7/9 vs 7/26)"""
+    def p(s):
+        for f in ("%m/%d/%Y", "%m/%d/%y"):
+            try:
+                return dt.datetime.strptime(str(s).strip(), f).date()
+            except ValueError:
+                pass
+        return None
+    da, db = p(a), p(b)
+    if da and db:
+        return a if da >= db else b
+    return a or b
+
+
 def audit(write: bool, log=_log) -> int:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
@@ -87,6 +173,7 @@ def audit(write: bool, log=_log) -> int:
     #     "Active" must have a board row. "New Start" status is exempt (they
     #     join the board at the week roll); Terminated/blank are irrelevant.
     board_names = {_norm(n) for _, n in reps}
+    du_status, sales_by_rep = _load_activity(sh, log=log)
     # managers sell occasionally but aren't board reps (Carlos, 2026-07-20)
     EXEMPT = {"carlos hidalgo", "nico murrugarra"}
     def _on_board(n):
@@ -100,12 +187,37 @@ def audit(write: bool, log=_log) -> int:
         n = _norm(r[3])
         if n in EXEMPT:
             continue
-        if not _on_board(n):
+        if _on_board(n):
+            continue
+        # Not on the board. WHY matters — this used to fire one identical
+        # "deleted by accident?" line for everyone, and on 2026-07-30 that was
+        # 8 people of whom only 2 were really missing: 2 had already been closed
+        # out in New DU and 4 were still in training. Split by evidence.
+        who = str(r[3]).strip()
+        cohort = _cohort_weeks_old(str(r[0]) if r else "")
+        du = du_status.get(n, "")
+        sales, last_sale = sales_by_rep.get(n, (0, ""))
+        if sales:
             findings.append(
-                f"MISSING FROM BOARD: '{str(r[3]).strip()}' (roll r{ri}) is "
-                "Active on Roll Call but has no Sales Board row — deleted by "
-                "accident? Re-add via Alphalete menu (their WeekData history "
-                "re-links by name).")
+                f"MISSING FROM BOARD (SELLING): '{who}' (roll r{ri}) has "
+                f"{sales} sale(s) in RAW through {last_sale} but no Sales Board "
+                "row — the campaign totals SUMIFS over board rows only, so "
+                "these sales are missing from the totals. Re-add via Alphalete "
+                "menu (their WeekData history re-links by name).")
+        elif "not active" in du.lower():
+            findings.append(
+                f"ROLL CALL STALE: '{who}' (roll r{ri}) is Active on Roll Call "
+                f"but New DU says {du!r} and they have no sales — close the "
+                "Roll Call status instead of adding a board row.")
+        elif cohort is not None and cohort >= 4:
+            findings.append(
+                f"STALLED TRAINEE: '{who}' (roll r{ri}) is Active, no board row "
+                f"and no sales {cohort} weeks after their roll week — New DU "
+                f"says {du or 'nothing'}. Chase or close them out.")
+        else:
+            # recent cohort, still ramping: expected, nothing to do
+            log(f"not on board (no sales yet, {cohort}w old, New DU "
+                f"{du or 'blank'}): {who}")
 
     # 2. stats-range drift: summary formulas whose rep-block range ends off
     for i, row in enumerate(board_form, start=1):
