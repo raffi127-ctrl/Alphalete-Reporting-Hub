@@ -538,6 +538,9 @@ def capture_territory_stats(page, rqst: str, campaign: str, terr: Dict,
     if dump:
         print_outline(page, f"territory_stats {tag} {name}")
     how = _shoot(page, out, kind="territory_stats", fixed=CROP_TERRITORY_STATS)
+    # Header bar so the territory is obvious at a glance (Megan 7/30). Title-case
+    # the name per house rule.
+    add_title_header(out, f"{tag} — {name.title()}", out)
     return {"view": "territory_stats", "campaign": campaign, "tag": tag,
             "territory_id": terr["id"], "territory": name,
             "path": out, "how": how, "campaign_ok": ok, "on_screen": label}
@@ -578,6 +581,25 @@ def _stitch_font(size: int):
             continue
     from PIL import ImageFont
     return ImageFont.load_default()
+
+
+def add_title_header(src_path: Path, title: str, out_path: Path) -> Path:
+    """Prepend a dark title bar (white text) above an image — e.g. the territory
+    name over a Territory Stats crop, so it's obvious which territory it is."""
+    from PIL import Image, ImageDraw
+    im = Image.open(src_path).convert("RGB")
+    f = _stitch_font(30)
+    bar_h = 56
+    gap = 8
+    W = im.width
+    canvas = Image.new("RGB", (W, bar_h + gap + im.height), (255, 255, 255))
+    d = ImageDraw.Draw(canvas)
+    d.rectangle([0, 0, W, bar_h], fill=(32, 41, 57))
+    d.text((16, 13), title, font=f, fill=(255, 255, 255))
+    canvas.paste(im, (0, bar_h + gap))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    return out_path
 
 
 def stitch_vertical(panels: List[Tuple[str, Path]], title: str,
