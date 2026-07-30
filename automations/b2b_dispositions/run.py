@@ -93,14 +93,18 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
-                          dry_run: bool) -> List[Dict]:
-    """Territory Stats: one shot per territory per campaign."""
+                          dry_run: bool, limit: int = 0) -> List[Dict]:
+    """Territory Stats: one shot per territory per campaign. `limit` > 0 caps the
+    territories per campaign (for a quick crop-check preview without a flood)."""
     specs = []
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         terrs = cap.list_territories(page, rqst, campaign)
         tag = cfg.CAMPAIGN_TAG[campaign]
-        print(f"  {tag}: {len(terrs)} territories", flush=True)
+        print(f"  {tag}: {len(terrs)} territories"
+              + (f" (limited to {limit})" if limit else ""), flush=True)
+        if limit:
+            terrs = terrs[:limit]
         for terr in terrs:
             res = cap.capture_territory_stats(page, rqst, campaign, terr,
                                               out_dir, dump=dry_run)
@@ -147,6 +151,8 @@ def main(argv=None) -> int:
                     help="scan invD2DClientId ids and log which campaign each maps to")
     ap.add_argument("--probe-tt", action="store_true",
                     help="dump the Time Tracker JSON endpoint fields")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
 
     if getattr(args, "probe_tt", False):
@@ -208,7 +214,8 @@ def main(argv=None) -> int:
         if args.which in ("hourly", "all"):
             specs += _capture_hourly(page, rqst, out_dir, slot, dry_run)
         if args.which in ("dispositions", "all"):
-            specs += _capture_dispositions(page, rqst, out_dir, dry_run)
+            specs += _capture_dispositions(page, rqst, out_dir, dry_run,
+                                           limit=args.limit)
 
     # Report captures (and flag any that fell back to a full-page shot or whose
     # on-screen campaign didn't match — the two things worth eyeballing).
