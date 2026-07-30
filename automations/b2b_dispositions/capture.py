@@ -324,6 +324,7 @@ def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
     much", never empty. Returns 'box' | 'fixed' | 'full'."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     box = content_box(page, kind)      # measured BEFORE the shot (scrolls to top)
+    print(f"  [{kind}] content_box={box}", flush=True)  # diag
     full = out_path.with_name(out_path.stem + "_full.png")
     page.screenshot(path=str(full), full_page=True)
     how = "full"
