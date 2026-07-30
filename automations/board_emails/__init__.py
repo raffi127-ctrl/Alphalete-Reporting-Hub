@@ -10,6 +10,10 @@ NOTHING NEW HAD TO BE INSTALLED for that last step: the checkmark is picked up
 by deploy/org_board_email_review.sh, the every-15-min watcher already running on
 the mini, which now checks these two boards alongside the Org board's own email.
 
+Each board's review PDFs land in ONE Drive folder that is reused every day (found
+by name, created only if missing) and pruned to the last 30 — see
+automations/shared/drive_prune.
+
     python -m automations.board_emails.email_send --board country --dry-run
     python -m automations.board_emails.review_gate --board country --post
     python -m automations.board_emails.review_gate --board country --check --send

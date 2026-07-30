@@ -176,7 +176,8 @@ def build_pdf(today: dt.date, verbose: bool = True) -> Path:
 # --------------------------------------------------------------------------
 # 2. Drive
 # --------------------------------------------------------------------------
-def upload_pdf(pdf: Path, verbose: bool = True) -> str:
+def upload_pdf(pdf: Path, verbose: bool = True,
+               keep_last: int = 30) -> str:
     """Put the PDF in Drive and return a link the reviewers can open.
 
     Reuses the fiber_activations Drive token (alphaletereporting, drive.file
@@ -223,6 +224,11 @@ def upload_pdf(pdf: Path, verbose: bool = True) -> str:
                            fields="webViewLink").execute()["webViewLink"]
     if verbose:
         print(f"✓ Drive: {link}", flush=True)
+    # One dated PDF a day would fill this folder forever. Keep the recent ones
+    # and trash the rest — the record of what was approved lives in the Slack
+    # thread, not in a review PDF from three months ago.
+    from automations.shared.drive_prune import prune_folder
+    prune_folder(svc, fid, keep_last, verbose=verbose)
     return link
 
 
