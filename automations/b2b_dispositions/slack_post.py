@@ -34,30 +34,35 @@ PREVIEW_USER = "U04G5HJBGFN"
 
 def preview_dm(specs: List[Dict], today: Optional[dt.date] = None, *,
                user: str = PREVIEW_USER, dry_run: bool = False) -> Dict:
-    """DM each captured PNG to `user` (Megan) for crop/label review — posts
-    NOTHING to the channels. `specs` = [{'thread','caption','path',...}]. This is
-    the reviewable dry-run: the filesystem PNGs live on Lucy 2 where we can't see
-    them, so the preview comes back over Slack."""
+    """DM each reply to `user` (Megan) for review — posts NOTHING to the channels.
+    `specs` = [{'thread','caption','paths':[...]}]. A reply's images go in ONE DM
+    message (matching the real 'both images in one reply'), so the preview shows
+    exactly what the channel will get."""
     today = today or dt.date.today()
     if dry_run:
         return {"dry_run": True, "to_user": user,
-                "dms": [{"caption": s["caption"], "file": Path(s["path"]).name}
+                "dms": [{"caption": s["caption"],
+                         "files": [Path(p).name for p in s["paths"]]}
                         for s in specs]}
+    client = smp._client()
+    uid = smp._resolve_user_id(client, user)
+    channel = client.conversations_open(users=uid)["channel"]["id"]
     sent, errors = [], []
     for s in specs:
-        png = Path(s["path"])
-        comment = f"*[preview → {s['thread']}]*  {s['caption']}"
-        if not png.exists():
-            errors.append(f"{s['caption']} (no file)")
+        uploads = [{"file": str(Path(p)), "filename": Path(p).name}
+                   for p in s["paths"] if Path(p).exists()]
+        if not uploads:
+            errors.append(f"{s['caption']} (no files)")
             continue
+        comment = f"*[preview → {s['thread']}]*  {s['caption']}"
         try:
-            smp.dm_user_with_file(png, user=user, comment=comment,
-                                  file_name=png.name, as_bot=False)
+            client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                   initial_comment=comment)
             sent.append(s["caption"])
+            time.sleep(2)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{s['caption']}: {type(e).__name__} {str(e)[:80]}")
-    return {"to_user": user, "sent": sent, "errors": errors,
-            "ok": not errors}
+    return {"to_user": user, "sent": sent, "errors": errors, "ok": not errors}
 
 
 def parent_title(thread_name: str, today: dt.date) -> str:
@@ -154,7 +159,8 @@ def post_replies(thread_name: str, replies: List[Dict],
                 "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels],
                 "parent": parent_text(thread_name, today),
                 "replies": [{"caption": r["caption"],
-                             "file": Path(r["path"]).name} for r in replies]}
+                             "files": [Path(p).name for p in r["paths"]]}
+                            for r in replies]}
 
     client = smp._client()
     results = []
@@ -166,17 +172,20 @@ def post_replies(thread_name: str, replies: List[Dict],
             already = _existing_captions(client, channel, thread_ts)
             posted, skipped = [], []
             for r in replies:
-                png = Path(r["path"])
                 caption = f"*{r['caption']}*"
                 if r["caption"] in already or caption in already:
                     skipped.append(r["caption"])
                     continue
-                if not png.exists():
-                    skipped.append(f"{r['caption']} (no file)")
+                # One reply message can carry MULTIPLE files (the hourly reply
+                # attaches both campaign images together — Megan 7/29).
+                uploads = [{"file": str(Path(p)), "filename": Path(p).name}
+                           for p in r["paths"] if Path(p).exists()]
+                if not uploads:
+                    skipped.append(f"{r['caption']} (no files)")
                     continue
                 up = client.files_upload_v2(
-                    channel=channel, thread_ts=thread_ts, file=str(png),
-                    filename=png.name, initial_comment=caption)
+                    file_uploads=uploads, channel=channel, thread_ts=thread_ts,
+                    initial_comment=caption)
                 posted.append({"caption": r["caption"], "ok": up.get("ok")})
                 # Slack posts a big file's message later than a small one queued
                 # after it; pause so replies land in order.

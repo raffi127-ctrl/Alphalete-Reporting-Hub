@@ -67,33 +67,29 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
                     dry_run: bool) -> List[Dict]:
     """Today's Activity + Time Tracker for both campaigns -> reply specs, split
     by thread. Returns [{thread, caption, path, meta}, ...]."""
-    specs = []
+    # ONE reply per hour carrying BOTH campaign images (Megan 7/29) — not two
+    # replies. Build a stacked image per campaign, then attach them together.
+    paths, notes = [], []
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
         tag = cfg.CAMPAIGN_TAG[campaign]
-        # Stack Today's Activity + Reps Over 15 Min Gap into ONE phone-friendly
-        # image per campaign; all campaigns post into the single "Hourly Activity"
-        # thread (Megan 7/29). Fall back to Today's Activity alone if the stitch
-        # fails, so the hour still posts something.
         combined = out_dir / f"hourly_{cap._slug(tag)}.png"
         try:
             cap.stitch_vertical(
                 [(cfg.PANEL_TODAYS_ACTIVITY, ta["path"]),
                  (cfg.PANEL_TIME_TRACKER, tt["path"])],
                 title=f"{tag} — {slot}", out_path=combined)
-            path = combined
+            paths.append(combined)
         except Exception as e:  # noqa: BLE001
-            print(f"  stitch failed ({type(e).__name__}) — Today's Activity only",
-                  flush=True)
-            path = ta["path"]
-        specs.append({
-            "thread": cfg.THREAD_HOURLY, "caption": f"{tag} — {slot}", "path": path,
-            "meta": {"how": f"TA:{ta.get('how')} TT:{tt.get('how')}",
-                     "campaign_ok": ta.get("campaign_ok") and tt.get("campaign_ok"),
-                     "on_screen": ta.get("on_screen")}})
-    return specs
+            print(f"  {tag} stitch failed ({type(e).__name__}) — Today's Activity "
+                  f"only", flush=True)
+            paths.append(ta["path"])
+        notes.append(f"{tag}[TA:{ta.get('how')} TT:{tt.get('how')} "
+                     f"camp_ok={ta.get('campaign_ok') and tt.get('campaign_ok')}]")
+    return [{"thread": cfg.THREAD_HOURLY, "caption": slot, "paths": paths,
+             "meta": {"note": " ".join(notes)}}]
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
@@ -110,21 +106,21 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
                                               out_dir, dump=dry_run)
             specs.append({"thread": cfg.THREAD_DISPOSITIONS,
                           "caption": f"{res['tag']} — {res['territory']}",
-                          "path": res["path"], "meta": res})
+                          "paths": [res["path"]], "meta": res})
     return specs
 
 
 def _post_by_thread(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
-    """Group reply specs by thread and post each group. Thread names are dynamic
-    now (Time Tracker splits per campaign), so group by first-seen order rather
-    than a fixed list."""
+    """Group reply specs by thread and post each group (first-seen order). Each
+    reply carries `paths` (a list) — the hourly reply attaches BOTH campaign
+    images in one message; a dispositions reply is one territory image."""
     order = []
     for s in specs:
         if s["thread"] not in order:
             order.append(s["thread"])
     out = []
     for thread in order:
-        group = [{"caption": s["caption"], "path": s["path"]}
+        group = [{"caption": s["caption"], "paths": s["paths"]}
                  for s in specs if s["thread"] == thread]
         if not group:
             continue
@@ -205,11 +201,13 @@ def main(argv=None) -> int:
         flag = []
         if m.get("how") == "full":
             flag.append("FULL-PAGE (crop anchor missed)")
-        if not m.get("campaign_ok"):
+        if "campaign_ok" in m and not m.get("campaign_ok"):
             flag.append(f"campaign on-screen={m.get('on_screen')!r}")
-        note = ("  ⚠ " + "; ".join(flag)) if flag else ""
-        print(f"  [{s['thread']}] {s['caption']}  ->  {Path(s['path']).name}{note}",
-              flush=True)
+        if m.get("note"):
+            flag.append(m["note"])
+        note = ("  " + "; ".join(flag)) if flag else ""
+        files = ", ".join(Path(p).name for p in s["paths"])
+        print(f"  [{s['thread']}] {s['caption']}  ->  {files}{note}", flush=True)
 
     if args.preview:
         res = sp.preview_dm(specs, today)
