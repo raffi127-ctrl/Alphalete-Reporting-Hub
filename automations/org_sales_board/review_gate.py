@@ -65,18 +65,54 @@ APPROVERS = {
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
 
+
+def _mentions() -> str:
+    """The approvers as real Slack mentions, e.g. "<@U08…> <@U0A…>".
+
+    A plain "Evelyn, Jolie" is only text — it lights nothing up, and this
+    channel competes with every other one they are in, so the message just gets
+    lost (Eve, 2026-07-30). "<@ID>" is what actually notifies them, and it
+    renders as @Name so the sentence still reads normally.
+
+    Built from APPROVERS and sorted by display name: the order is stable, and
+    changing who approves changes who gets pinged with no second edit. Same
+    helper, same wording as the captainship gate — one habit, not two."""
+    return " ".join(f"<@{uid}>" for uid, _ in
+                    sorted(APPROVERS.items(), key=lambda kv: kv[1]))
+
+
 # How --check finds the day's post from a run that never spoke to the one that
 # posted it. It used to be a `ORG-BOARD-EMAIL-REVIEW 2026-07-29` line stamped
 # into the message; Eve cut it 2026-07-29 — the reviewers read this message, and
 # a machine code in it is noise to every one of them. The TITLE already carries
 # the date and is already unique per day, so it does the same job with nothing
-# extra on screen. Same for the thread replies: they're matched on their own
-# opening word, and only ever our own messages live in that thread.
-TITLE = "Org Sales Board — correo del"          # + " M/D"
-REMIND_OPENER = "Recordatorio:"
-SENT_OPENER = "Enviado"
-FAILED_OPENER = "No se pudo enviar"
+# extra on screen. Same for the thread replies: they're matched on a distinctive
+# phrase of their own, and only ever our own messages live in that thread.
+#
+# ENGLISH since 2026-07-30 (Eve), to match the captainship gate that shares this
+# channel. The _LEGACY twins are the Spanish strings this used to write: --check
+# still RECOGNISES them so a post made before the switch stays approvable. They
+# are read-only — nothing writes them any more — and can be deleted once no
+# unapproved Spanish post is left in the channel.
+TITLE = "Org Sales Board Email"                 # + " — M/D"
+TITLE_LEGACY = "Org Sales Board — correo del"   # + " M/D"
+REMIND_MARK = "reminder: the Org Sales Board email"
+REMIND_MARK_LEGACY = "Recordatorio:"
+SENT_MARK = "Sent to the distro"
+SENT_MARK_LEGACY = "Enviado"
+FAILED_MARK = "Could not send"
+FAILED_MARK_LEGACY = "No se pudo enviar"
 REMIND_AFTER_HOURS = 3.0
+
+
+def _said(replies, *marks) -> bool:
+    """Has one of our own thread replies already said `marks`?
+
+    Substring, not startswith: the replies now OPEN with the approver mentions,
+    so the phrase that identifies them is no longer the first thing in the text.
+    Safe as a substring because only our own messages live in this thread."""
+    return any(any(m in (r.get("text") or "") for m in marks)
+               for r in replies[1:])
 
 DRIVE_FOLDER_NAME = "Org Sales Board - correos para revisar"
 
@@ -216,10 +252,15 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     reason the message arrives from Lucy."""
     # .month/.day, never %-m — that strftime flag does not exist on Windows and
     # this module runs on both machines.
+    # English, all of it (Eve, 2026-07-30) — the thread replies below match, so
+    # the two halves of one conversation don't switch language, and it reads the
+    # same as the captainship post that shares this channel.
+    # The mentions come from APPROVERS, so changing who approves can't leave the
+    # message pinging the old list.
     text = (f"*{_title(today)}*\n"
             f"{link}\n\n"
-            f"Revisen y reaccionen con :white_check_mark: para que salga. "
-            f"Nada se envía hasta entonces.")
+            f"{_mentions()} — please review and react with "
+            f":white_check_mark: to send it. Nothing goes out until then.")
     cli = _client()
     olds = _all_posts(today, channel)
 
@@ -259,16 +300,28 @@ def _title(today: dt.date) -> str:
     what makes it unique per day — and what --check keys off.
     .month/.day, never %-m: that strftime flag does not exist on Windows."""
     reported = today - dt.timedelta(days=1)
-    return f"{TITLE} {reported.month}/{reported.day}"
+    return f"{TITLE} — {reported.month}/{reported.day}"
+
+
+def _title_legacy(today: dt.date) -> str:
+    """The Spanish title this used to write. Read-only — see TITLE_LEGACY."""
+    reported = today - dt.timedelta(days=1)
+    return f"{TITLE_LEGACY} {reported.month}/{reported.day}"
 
 
 def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
     """Every review post for `today`, newest first. More than one means a rerun
     happened; the captainship gate's posts share this channel and are skipped by
-    the title."""
-    want = _title(today)
+    the title.
+
+    Matches the legacy Spanish title too, so the switch to English on 2026-07-30
+    could not strand a post that was already up and waiting for its checkmark —
+    the checker would simply have stopped finding it and that day's email would
+    never have gone out."""
+    wants = (_title(today), _title_legacy(today))
     hist = _client().conversations_history(channel=_channel(channel), limit=100)
-    return [m for m in hist.get("messages", []) if want in (m.get("text") or "")]
+    return [m for m in hist.get("messages", [])
+            if any(w in (m.get("text") or "") for w in wants)]
 
 
 def _find_post(today: dt.date, channel: Optional[str] = None) -> Optional[dict]:
@@ -300,7 +353,7 @@ def already_sent(today: dt.date, channel: Optional[str] = None) -> bool:
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    return any((r.get("text") or "").startswith(SENT_OPENER) for r in replies[1:])
+    return _said(replies, SENT_MARK, SENT_MARK_LEGACY)
 
 
 def report_failure(today: dt.date, rc: int, channel: Optional[str] = None) -> None:
@@ -316,25 +369,25 @@ def report_failure(today: dt.date, rc: int, channel: Optional[str] = None) -> No
         return
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if any((r.get("text") or "").startswith(FAILED_OPENER) for r in replies[1:]):
+    if _said(replies, FAILED_MARK, FAILED_MARK_LEGACY):
         return
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"{FAILED_OPENER}: está aprobado, pero el envío falló "
-              f"(exit {rc}). Sigo reintentando cada 15 min; si no cambia, "
-              f"revisar el log `org-board-email-review` en la mini."))
+        text=(f"{_mentions()} — {FAILED_MARK}: this is approved, but the send "
+              f"failed (exit {rc}). Still retrying every 15 min; if it doesn't "
+              f"clear, check the `org-board-email-review` log on the mini."))
 
 
 def confirm_sent(today: dt.date, who: str, to_note: str = "",
                  channel: Optional[str] = None) -> None:
     """Reply in-thread that it went out. Doubles as the once-a-day lock, so it
-    must keep starting with SENT_OPENER."""
+    must keep containing SENT_MARK."""
     msg = _find_post(today, channel)
     if msg is None:
         return
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"{SENT_OPENER} :white_check_mark: — aprobó {who}"
+        text=(f"{SENT_MARK} :white_check_mark: — approved by {who}"
               f"{(' · ' + to_note) if to_note else ''}"))
 
 
@@ -364,17 +417,16 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
-    if any((r.get("text") or "").startswith(REMIND_OPENER) for r in replies[1:]):
+    if _said(replies, REMIND_MARK, REMIND_MARK_LEGACY):
         if verbose:
             print("— already reminded once", flush=True)
         return False
-    names = " o ".join(sorted(APPROVERS.values()))
-    # Must keep starting with REMIND_OPENER — that is what stops it repeating.
+    # Must keep containing REMIND_MARK — that is what stops it repeating.
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"{REMIND_OPENER} el correo del Org Sales Board sigue sin aprobar "
-              f"({age_h:.0f}h). No se envió nada todavía — hace falta un "
-              f":white_check_mark: de {names}."))
+        text=(f"{_mentions()} — {REMIND_MARK} is still unapproved "
+              f"({age_h:.0f}h). Nothing has been sent; it needs a "
+              f":white_check_mark:."))
     if verbose:
         print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
     return True
