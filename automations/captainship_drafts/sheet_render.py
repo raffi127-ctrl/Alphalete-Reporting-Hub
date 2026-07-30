@@ -21,6 +21,7 @@ Public API mirrors sheet_shot so run.py can swap paths with no other change:
 """
 from __future__ import annotations
 
+import atexit
 import datetime as dt
 import html as _html
 from pathlib import Path
@@ -250,26 +251,67 @@ def _build_html(grid: dict, ncols: int, *,
 </tbody></table></body></html>"""
 
 
+# ONE browser for the whole run, not one per image. A full build renders ~36 of
+# these (12 captains x Product Summary + 2 unit charts), and launching Chrome
+# per image is what pushed the first unattended run on the mini past its 45-min
+# timeout. The browser is opened on first use and closed at exit; a context is
+# per scale because device_scale_factor is fixed at creation.
+_RENDER: dict = {}          # scale -> (playwright, browser, context)
+
+
+def _render_ctx(scale: float):
+    got = _RENDER.get(scale)
+    if got is not None:
+        return got[2]
+    p = sync_playwright().start()
+    try:
+        browser = p.chromium.launch(channel="chrome", headless=True)
+    except Exception:       # noqa: BLE001 — no system Chrome: use the bundled one
+        browser = p.chromium.launch(headless=True)
+    ctx = browser.new_context(device_scale_factor=scale,
+                              viewport={"width": 2400, "height": 2000})
+    _RENDER[scale] = (p, browser, ctx)
+    return ctx
+
+
+def close_renderer() -> None:
+    """Shut the shared browser down. Registered atexit, so callers never have to
+    remember — but exposed for a long-lived process that wants the memory back."""
+    for p, browser, ctx in list(_RENDER.values()):
+        for close in (ctx.close, browser.close, p.stop):
+            try:
+                close()
+            except Exception:   # noqa: BLE001 — teardown must not raise
+                pass
+    _RENDER.clear()
+
+
+atexit.register(close_renderer)
+
+
 def _render_html_to_png(html: str, out_path: Path, *, scale: float = 2.0,
                         fonts_present: bool = False) -> Path:
     """Screenshot the #grid table of `html` to `out_path` at `scale`x. Pure
     local render — no navigation to Google, no login, nothing to expire."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(channel="chrome", headless=True)
-        except Exception:
-            browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(device_scale_factor=scale,
-                                  viewport={"width": 2400, "height": 2000})
-        page = ctx.new_page()
-        page.set_content(html, wait_until="networkidle")
-        # Give web fonts a beat to swap in before we freeze the pixels.
-        page.wait_for_timeout(1200 if fonts_present else 300)
+    page = _render_ctx(scale).new_page()
+    try:
+        # 'load', not 'networkidle': the only network here is the Google Fonts
+        # stylesheet, and networkidle waits out its own 500ms quiet period on
+        # every single render — 30s of it when the font CDN is slow, which is
+        # dead time multiplied by ~36. The font wait below is the part that
+        # actually matters, and it is bounded.
+        page.set_content(html, wait_until="load")
+        if fonts_present:
+            try:
+                page.wait_for_function("document.fonts.status === 'loaded'",
+                                       timeout=4000)
+            except Exception:   # noqa: BLE001 — a stalled CDN falls back to a
+                page.wait_for_timeout(600)      # web-safe face, never to a hang
         page.locator("#grid").screenshot(path=str(out_path))
-        ctx.close()
-        browser.close()
+    finally:
+        page.close()
     return out_path
 
 

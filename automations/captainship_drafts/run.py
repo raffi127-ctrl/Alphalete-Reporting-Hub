@@ -312,6 +312,14 @@ def _normalize_sizes(built, *, logfn=print) -> None:
 
 
 def main(argv=None) -> int:
+    # Flush every line as it is printed. Under the orchestrator stdout is a pipe,
+    # so Python block-buffers it and a run killed by its timeout takes the whole
+    # log with it — the first unattended run on the mini hit the 45-minute cap
+    # and left 12 lines of venv warnings and no clue where it had got to.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:       # noqa: BLE001 — diagnostics must never break a run
+        pass
     ap = argparse.ArgumentParser(prog="captainship_drafts")
     ap.add_argument("--date", default=None,
                     help="Override today's date (YYYY-MM-DD).")
