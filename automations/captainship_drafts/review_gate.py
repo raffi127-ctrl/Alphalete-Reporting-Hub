@@ -44,11 +44,13 @@ from automations.captainship_drafts import config
 # again: a renamed channel keeps its id, so this survives a rename.
 REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-informes-capitanes
 
-# Whose checkmark counts. Jolie is in the channel to review, NOT to authorise
-# (Eve, 2026-07-29). Slack reports the reacting user, so this is enforceable.
+# Whose checkmark counts. All three reviewers authorise (Eve, 2026-07-30 —
+# Jolie was review-only for one day). Slack reports the reacting user, so this
+# is enforceable: a checkmark from anyone else leaves the gate closed.
 APPROVERS = {
     "U0BCFGCR5PV": "Lucy",
     "U088E2KJEV8": "Evelyn",
+    "U0ACBT3JVTP": "Jolie",
 }
 # Any of Slack's checkmarks — nobody should have to remember which one is "the"
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
@@ -61,7 +63,7 @@ MARKER = "CAPTAINSHIP-REVIEW"
 REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
 # Hours after the post, not a clock time — the build is triggered by hand once
 # the Sales Board is complete, so it lands at a different hour every day.
-REMIND_AFTER_HOURS = 3.0
+REMIND_AFTER_HOURS = 2.0
 
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 DRIVE_FOLDER_NAME = "Captainship Reports - para revisar"
@@ -215,10 +217,15 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     # .month/.day, never %-m — that strftime flag does not exist on Windows and
     # this module runs on both machines.
     reported = today - dt.timedelta(days=1)
-    text = (f"*Informes de capitanes — {reported.month}/{reported.day}*\n"
+    # English, all of it (Eve, 2026-07-30) — the reminder in the thread below
+    # matches, so the two halves of one conversation don't switch language.
+    # Names come from APPROVERS so adding an approver can't leave the message
+    # naming the old list.
+    names = ", ".join(sorted(APPROVERS.values()))
+    text = (f"*Captainship Reports — {reported.month}/{reported.day}*\n"
             f"{link}\n\n"
-            f"Revisen y reaccionen con :white_check_mark: para que salgan. "
-            f"Autorizan Lucy o Evelyn. Nada se envía hasta entonces.\n"
+            f"Please review and react with :white_check_mark: to send them. "
+            f"Approvers: {names}. Nothing goes out until then.\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
     r = _client().chat_postMessage(channel=_channel(channel), text=text,
                                    unfurl_links=False)
@@ -285,12 +292,12 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         if verbose:
             print("— already reminded once", flush=True)
         return False
-    names = " o ".join(sorted(APPROVERS.values()))
+    names = ", ".join(sorted(APPROVERS.values()))
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"Recordatorio: los informes de capitanes siguen sin aprobar "
-              f"({age_h:.0f}h). No se envió nada todavía — hace falta un "
-              f":white_check_mark: de {names}.\n`{REMIND_MARKER}`"))
+        text=(f"Reminder: the captainship reports are still unapproved "
+              f"({age_h:.0f}h). Nothing has been sent — they need a "
+              f":white_check_mark: from {names}.\n`{REMIND_MARKER}`"))
     if verbose:
         print(f"✓ reminder posted ({age_h:.1f}h unapproved)", flush=True)
     return True
