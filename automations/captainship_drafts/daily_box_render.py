@@ -19,11 +19,12 @@ TWO DELIBERATE DIFFERENCES from the churn render:
     conditional formatting as a cell color (effectiveFormat ignores it), so the
     RULES are fetched and evaluated here against each value. A tab with no
     rules renders plain, exactly as before.
-  * Every roster row is drawn, including a rep who is blank or 0% today. The
-    churn image hides those on purpose (Raf wants Slack to show only ACTIVE
+  * Every rep WITH A PERCENTAGE is drawn, including one sitting at 0%. The
+    churn image hides zeros on purpose (Raf wants Slack to show only ACTIVE
     churn), but on these boxes 0% is the story — a 0% activation rate is the
-    number the captain most needs to see, and a blank means Tableau had nothing
-    for that rep, which is also worth seeing.
+    number the captain most needs to see. Reps with NO percentage at all are
+    hidden (Eve, 2026-07-30): a blank row is not information, and on a
+    Local Office roster there can be 70 of them against 26 real ones.
 """
 from __future__ import annotations
 
@@ -233,6 +234,26 @@ def render_box(
     dates, avg, reps = data["dates"], data["avg"], data["reps"]
     rules = _cf_rules(ws)
 
+    # Drop reps carrying NO percentage at all — every report, not just ABP
+    # (Eve, 2026-07-30: "solo queremos ver los que tienen %"). A roster row with
+    # nothing in it is not information, and on the Local Office ABP tab there
+    # are 70 of them against 26 real ones, which is the difference between a
+    # 2440px strip and a box you can read in an email.
+    #
+    # 0% IS a percentage and STAYS. That is the whole distinction: a 0%
+    # activation rate is the number the captain most needs to see, while a blank
+    # only means the source had nothing for that rep. Filtering on "falsy" would
+    # have quietly thrown the zeros away with the blanks.
+    #
+    # A rep is kept if ANY shown column has a value, not just today's: they are
+    # on the image because their history is on the image, and hiding a row whose
+    # earlier days are drawn would erase data the reader can see.
+    roster = len(reps)
+    reps = [r for r in reps
+            if any((r[2][i] if i < len(r[2]) else "").strip()
+                   for i in range(shown))]
+    hidden = roster - len(reps)
+
     f11 = _font(11)
     f11b = _font(11, bold=True)
     f14b = _font(14, bold=True)
@@ -299,9 +320,13 @@ def render_box(
     y += HEADER_BAR_H
 
     if not reps:
+        # Two different stories, and the reader needs to tell them apart: an
+        # empty tab is someone's setup still pending, while a full roster with
+        # no percentages is a real (bad) reading for the day.
+        note = ("(nobody has a % yet today)" if hidden
+                else "(no reps on this tab yet)")
         d.rectangle([x, y, x + inner_w, y + ROW_H], fill=ROW_BG)
-        d.text((x + 12, y + 4), "(no reps on this tab yet)",
-               fill=(140, 140, 140), font=f11)
+        d.text((x + 12, y + 4), note, fill=(140, 140, 140), font=f11)
         img.save(out_path)
         return out_path
 
