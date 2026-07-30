@@ -174,7 +174,11 @@ RAFAEL_SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
 RAFAEL_TABS = {
     "cancel":     "Captainship - Cancel Rate",      # both 0-30 and 30-60 boxes
     "activation": "Captainship - Activation Rate",  # both 0-30 and 30-60 boxes
-    "abp":        "Local Office - New Internet ABP%",
+    # ABP is his CAPTAINSHIP's, not his local office's (Eve, 2026-07-30). The
+    # office tab was the wrong 145-person population for a captainship email —
+    # right metric, wrong people. Eve split ABP and 6-days-out onto one tab
+    # each so neither report has to live with the other's merged cells.
+    "abp":        "Captainship - ABP",
     "six_days":   "Captainship - 6 days out",
 }
 

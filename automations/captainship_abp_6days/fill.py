@@ -37,6 +37,18 @@ TABS = {
     "chan":  "ABP & 6 days out - Chan (ATT Fiber)",
     "tony":  "ABP & 6 days out - Tony (ATT Fiber)",
     "sahil": "ABP & 6 days out - Sahil (ATT Fiber)",
+    # Rafael, added 2026-07-30. His ABP is the same metric off the same
+    # crosstab, but it is NOT in this workbook and his tab carries ONLY the ABP
+    # box — his 6-days-out is a separate tab in the same Sheet, filled by
+    # captainship_raf_metrics. find_boxes is label-driven, so a tab with one box
+    # simply returns one box and the writer fills what it finds.
+    "rafael": "Captainship - ABP",
+}
+
+# Slug -> the workbook its tab lives in, when that is not SHEET_ID. Rafael's
+# whole report is its own Sheet; the five fiber captains share theirs.
+SHEET_OVERRIDE = {
+    "rafael": "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8",
 }
 
 # Box key -> marker substring in col A (uppercase, whitespace-normalized).
@@ -59,7 +71,8 @@ write_today = _act.write_today
 
 
 def open_ws(slug: str):
-    return _shared.open_by_key(SHEET_ID).worksheet(TABS[slug])
+    return _shared.open_by_key(
+        SHEET_OVERRIDE.get(slug, SHEET_ID)).worksheet(TABS[slug])
 
 
 def find_boxes(ws) -> dict:

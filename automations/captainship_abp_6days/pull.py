@@ -42,7 +42,11 @@ BOXES = tuple(BOX_COLUMNS)
 
 # Report slug -> `Captain's Bonus Teams` cell value. Shared with the sibling
 # reports so an SFDC team rename is fixed in ONE place.
-CAPTAIN_TEAM = _act.CAPTAIN_TEAM
+# Rafael is added HERE and not in the activation report's copy on purpose: he
+# has no activation-rate tab in that workbook, so teaching that module his team
+# would advertise a report that does not exist. A team rename for the five fiber
+# captains is still a one-place fix upstream.
+CAPTAIN_TEAM = {**_act.CAPTAIN_TEAM, "rafael": "Raf's Team"}
 
 # One download per PROCESS, shared by all captains — the view is identical for
 # every one of them.
