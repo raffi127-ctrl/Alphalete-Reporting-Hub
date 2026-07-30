@@ -366,7 +366,11 @@ RECIPIENTS: dict = {
     "khalil": [
         "agonzalezz25@outlook.com", "CarlosHidalgo349@gmail.com",
         "dylanjtwaddle@gmail.com", "isaiah.revelle@gmail.com",
-        "n.lucio326@gmail.com", "KhalilImmansour@gmail.com",
+        # 2026-07-30: was "KhalilImmansour@..." — an extra capital I that made
+        # every scheduled send bounce 550 5.1.1 while a hand-resend (Gmail
+        # autocompletes the contact) went through. Real address, as it appears
+        # on the Org Sales Board / Bulletin distro: Khalilmmansour (two m's).
+        "n.lucio326@gmail.com", "Khalilmmansour@gmail.com",
         "maudmiller4@gmail.com", "maxamed.hersi6292@gmail.com",
         "raffi127@gmail.com", "zaid.m.arabiyat@gmail.com",
     ],
