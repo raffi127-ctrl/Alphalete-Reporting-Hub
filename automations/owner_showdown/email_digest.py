@@ -34,6 +34,73 @@ def _rows_html(rows: List[Tuple[int, str, object]], value_label: str) -> str:
             f"{value_label}</td></tr>{''.join(body)}</table>")
 
 
+def build_winner(sales_champ: Tuple[str, object],
+                 rep_champ: Tuple[str, object]) -> Dict[str, str]:
+    """Sept 1 champions email body (the champions flyer carries the visual)."""
+    subject = "🏆 August Owner Showdown — the champions"
+    sn, sv = sales_champ
+    rn, rv = rep_champ
+    rv_txt = f"+{rv}" if isinstance(rv, int) and rv >= 0 else str(rv)
+    html = (
+        f"<div style='font-family:Arial,sans-serif;max-width:560px'>"
+        f"<h2 style='margin:0 0 12px'>🏆 August Owner Showdown — Champions</h2>"
+        f"<p style='color:#333;line-height:1.5'>That's a wrap on August. "
+        f"Congratulations to our two $5,000 winners:</p>"
+        f"<p style='line-height:1.6'>💻 <b>Personal Sales</b> — {sn} "
+        f"(<b>{sv}</b> new-internet sales)<br>"
+        f"📈 <b>Rep Count Growth</b> — {rn} (<b>{rv_txt}</b> reps since Aug 2)</p>"
+        f"<p><a href='{SHEET_URL}'>See the final tab →</a></p>"
+        f"<img src='cid:flyer' style='width:100%;max-width:560px;border-radius:12px'></div>")
+    text = (f"August Owner Showdown — Champions\n\n"
+            f"Personal Sales: {sn} ({sv} new-internet sales)\n"
+            f"Rep Count Growth: {rn} ({rv_txt} reps since Aug 2)\n\n"
+            f"Final tab: {SHEET_URL}")
+    return {"subject": subject, "html": html, "text": text}
+
+
+def send_email(subject: str, html: str, text: str, png_path=None,
+               dry_run: bool = False, tag: str = "owner-showdown") -> None:
+    """Send To=Raf, CC=Megan, with the flyer PNG inline (cid:flyer).
+    dry_run writes an .eml and does not send."""
+    import smtplib, ssl, datetime as _dt
+    from email.message import EmailMessage
+    from pathlib import Path
+    from automations.scheduled_6_days_out.email_send import (
+        FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password)
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = FROM_ADDR
+    msg["To"] = TO_EMAIL
+    if CC_EMAILS:
+        msg["Cc"] = ", ".join(CC_EMAILS)
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
+    if png_path:
+        html_part = msg.get_payload()[-1]
+        with open(png_path, "rb") as f:
+            html_part.add_related(f.read(), maintype="image", subtype="png",
+                                  cid="flyer")
+    recipients = [TO_EMAIL] + list(CC_EMAILS)
+    if dry_run:
+        out = Path(__file__).resolve().parents[2] / "output" / "logs"
+        out.mkdir(parents=True, exist_ok=True)
+        eml = out / f"{tag}-{_dt.datetime.now():%Y%m%d-%H%M%S}.eml"
+        eml.write_bytes(bytes(msg))
+        print(f"[owner-showdown] DRY-RUN wrote {eml} (would send to "
+              f"{', '.join(recipients)})", flush=True)
+        return
+    try:
+        ctx = ssl.create_default_context(cafile=__import__("certifi").where())
+    except Exception:
+        ctx = ssl.create_default_context()
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
+        s.login(FROM_ADDR, app_password())
+        s.send_message(msg, to_addrs=recipients)
+    print(f"[owner-showdown] sent '{subject}' to {', '.join(recipients)}",
+          flush=True)
+
+
 def build(sales_rows: List[Tuple[int, str, object]],
           rep_rows: List[Tuple[int, str, object]],
           run_date: dt.date) -> Dict[str, str]:
@@ -47,6 +114,8 @@ def build(sales_rows: List[Tuple[int, str, object]],
         f"<h2 style='margin:0 0 2px'>🏆 August Owner Showdown</h2>"
         f"<div style='color:#666;margin-bottom:16px'>Standings as of {ds} · "
         f"$5,000 to each winner</div>"
+        f"<img src='cid:flyer' style='width:100%;max-width:560px;border-radius:12px;"
+        f"margin-bottom:8px'>"
         f"<h3 style='margin:18px 0 6px'>💻 Personal Sales "
         f"<span style='color:#888;font-weight:400'>(new-internet, month-to-date)"
         f"</span></h3>{_rows_html(sales_rows, 'NEW INT')}"

@@ -25,6 +25,13 @@ from automations.owner_showdown import roster, sheet_fill, tableau_pull
 
 SANDBOX_TAB = "KTS SANDBOX"
 
+# Competition window. The daily scheduler run no-ops outside this (the card is
+# temporary; removed after 8/31). Personal counts Aug 1–31; the Sept 1 run
+# sends the champions email off the final standings.
+COMP_START = dt.date(2026, 8, 1)
+COMP_END = dt.date(2026, 9, 1)
+REP_SUNDAYS = [dt.date(2026, 8, d) for d in (2, 9, 16, 23, 30)]
+
 
 def _current_we_sunday(today: dt.date) -> dt.date:
     """Week-ending Sunday (Mon..Sun week) for `today`."""
@@ -69,8 +76,17 @@ def _run(args) -> int:
     ws, sh = sheet_fill.open_tab(tab)
     vals = ws.get_all_values()
 
+    # Window guard: on the real scheduler (no --date/--sandbox/--dry-run), skip
+    # cleanly outside Aug 1–Sep 1 so the temp card doesn't churn in September.
+    if (not args.date and not args.sandbox and not args.dry_run
+            and not (COMP_START <= today <= COMP_END)):
+        print(f"  outside competition window ({COMP_START}–{COMP_END}); "
+              f"nothing to do.", flush=True)
+        return 0
+
     do_personal = not args.repcount_only
     do_rep = not args.personal_only
+    personal_rows = rep_rows = None
 
     # --- pull from Tableau (one ownerville session) ---
     sales = {}
@@ -104,6 +120,8 @@ def _run(args) -> int:
         rows_plan, unmatched = sheet_fill.plan_personal(sec, merged)
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("PERSONAL PRODUCTION", sec, rows_plan, unmatched, a1)
+        personal_rows = [(i, r["name"], r["total"])
+                         for i, r in enumerate(rows_plan, 1)]
 
     # --- REP COUNT (Sundays only) ---
     if do_rep:
@@ -112,19 +130,51 @@ def _run(args) -> int:
         is_sunday = today.weekday() == 6 or (args.date and we == today)
         cur_sunday = today if today in sec.date_cols else we
         if counts and cur_sunday in sec.date_cols:
-            snap = {o: c for o, c in counts.items() if o in roster.REPCOUNT_SET}
+            # 0-fill missing competitors too (Raf: "if they have 0, enter 0").
+            snap = {o: counts.get(o, 0) for o in roster.REPCOUNT_SET}
             snapshots[cur_sunday] = snap
             print(f"  rep-count snapshot stored for {cur_sunday} "
-                  f"({len(snap)} competitors matched)", flush=True)
+                  f"({len(snap)} competitors)", flush=True)
         elif counts:
             print(f"  ⚠ run date/week {cur_sunday} is not a Sunday column — "
                   f"rep count NOT written (polls are Sundays only)", flush=True)
         rows_plan, unmatched = sheet_fill.plan_repcount(sec, snapshots)
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("REP COUNT (growth)", sec, rows_plan, unmatched, a1)
+        rep_rows = [(i, r["name"], r["total"])
+                    for i, r in enumerate(rows_plan, 1)]
 
     print(f"\n{'(dry-run — nothing written)' if args.dry_run else 'written ✓'}",
           flush=True)
+
+    # --- email (To Raf, CC Megan) ---
+    # Auto: Sundays 8/2–8/30 → standings digest; Sept 1 → champions. --email
+    # forces the due one; --no-email suppresses. A dry-run/sandbox email writes
+    # an .eml (no real send) so we can preview safely.
+    is_winner_day = (today == COMP_END) or args.winner
+    is_sunday_digest = (today in REP_SUNDAYS)
+    want_email = args.email or is_winner_day or (is_sunday_digest and not args.no_email)
+    if want_email and personal_rows is not None and rep_rows is not None:
+        from automations.owner_showdown import email_digest as ed, flyer_render as fr
+        from pathlib import Path
+        import tempfile
+        eml_dry = args.dry_run or args.sandbox
+        png = Path(tempfile.gettempdir()) / f"showdown_{today}.png"
+        try:
+            if is_winner_day:
+                sc = (personal_rows[0][1], personal_rows[0][2])
+                rc = (rep_rows[0][1], rep_rows[0][2])
+                fr.render_png(fr.fill_champions(sc, rc), png)
+                m = ed.build_winner(sc, rc)
+            else:
+                fr.render_png(fr.fill_standings(personal_rows, rep_rows), png)
+                m = ed.build(personal_rows, rep_rows, today)
+            ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
+                          dry_run=eml_dry,
+                          tag="winner" if is_winner_day else "standings")
+        except Exception:
+            print("  ⚠ email step failed:", flush=True)
+            traceback.print_exc()
     return 0
 
 
@@ -139,6 +189,12 @@ def main(argv=None):
     p.add_argument("--personal-only", action="store_true")
     p.add_argument("--repcount-only", action="store_true")
     p.add_argument("--skip-download", action="store_true")
+    p.add_argument("--email", action="store_true",
+                   help="force the due email (standings, or champions on 9/1)")
+    p.add_argument("--no-email", action="store_true",
+                   help="suppress the Sunday email even on a Sunday")
+    p.add_argument("--winner", action="store_true",
+                   help="force the champions (winner) email")
     args = p.parse_args(argv)
     try:
         return _run(args)
