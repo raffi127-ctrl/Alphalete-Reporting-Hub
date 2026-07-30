@@ -75,6 +75,19 @@ WORKING_REACTION = os.environ.get("DD_WORKING_REACTION", "hourglass_flowing_sand
 
 
 # --- Lazy default resolvers (import heavy modules only when actually pulling) -
+def _bare_view(url: str) -> str:
+    """Strip any query string off a view URL.
+
+    The product view is the ONE source we week-filter: opt_phase._week_url()
+    appends the week filter with a literal '?', so a URL that already carries a
+    query (Tableau's UI copies them with '?:iid=1') produces a second '?' and
+    Tableau silently drops the filter — every week then returns the SAME
+    unfiltered crosstab, which is what made the weekly sales columns go flat.
+    Paste-from-browser URLs are the norm, so sanitize instead of trusting them.
+    """
+    return (url or "").split("?", 1)[0]
+
+
 def product_source() -> tuple:
     from automations.recruiting_report.opt_phase import PRODUCT_SALES_SHEET
     # DDfullyEXP (Megan 2026-07-28): fully rep-expanded, NO rep/owner filter, so
@@ -82,8 +95,8 @@ def product_source() -> tuple:
     # filter that dropped reps (e.g. Corrieonna Johnson, Aden Berhane's newer team).
     default = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
-               "e594b76d-504f-4868-8c4a-ec18893bebb8/DDfullyEXP?:iid=1")
-    return (PRODUCT_VIEW_URL or default, PRODUCT_SHEET or PRODUCT_SALES_SHEET)
+               "e594b76d-504f-4868-8c4a-ec18893bebb8/DDfullyEXP")
+    return (_bare_view(PRODUCT_VIEW_URL or default), PRODUCT_SHEET or PRODUCT_SALES_SHEET)
 
 
 def metrics_ni_source() -> tuple:

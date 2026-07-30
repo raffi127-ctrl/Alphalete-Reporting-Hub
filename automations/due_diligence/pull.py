@@ -433,6 +433,22 @@ def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
     return people, misses
 
 
+def _identical_weeks(d: Path, wk_order) -> bool:
+    """True when every weekly product crosstab is byte-identical — the signature
+    of a week filter that didn't apply (2026-07-30: a '?' already in the view URL
+    made opt_phase._week_url append a second one, so Tableau ignored the filter
+    and all 8 weeks came back as the same unfiltered pull, flattening the sales
+    columns). Existence + non-zero size can't catch that, so check it explicitly."""
+    import hashlib
+    p = _team_paths(d, wk_order)["product"]
+    digests = set()
+    for f in p.values():
+        if not (f.exists() and f.stat().st_size > 0):
+            return False
+        digests.add(hashlib.md5(f.read_bytes()).hexdigest())
+    return len(p) > 1 and len(digests) == 1
+
+
 def harvest_dd(*, weeks: int = None, anchor=None, page=None, verbose: bool = False) -> dict:
     """Nightly job: pull the shared crosstabs ONCE into today's cache dir so any
     same-day /dd request is instant (reads the cache, no live pull)."""
@@ -446,6 +462,10 @@ def harvest_dd(*, weeks: int = None, anchor=None, page=None, verbose: bool = Fal
             _download_team_files(d, wk_order, p, verbose, gaps)
     else:
         _download_team_files(d, wk_order, page, verbose, gaps)
+    if _identical_weeks(d, wk_order):
+        gaps.append("BROKEN: all 8 weekly product crosstabs are identical — the "
+                    "week filter didn't apply (check for a '?' query string on "
+                    "DD_PRODUCT_VIEW_URL). Weekly sales would render flat.")
     return {"dir": str(d), "complete": _cache_complete(d, wk_order), "gaps": gaps}
 
 
