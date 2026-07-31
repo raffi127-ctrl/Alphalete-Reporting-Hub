@@ -148,21 +148,76 @@ def _chunks(seq, n=500):
         yield seq[i:i + n]
 
 
+def _retry(fn, tries: int = 6, base: float = 2.0):
+    """Retry a People API call through 429 rate-limit errors with exponential
+    backoff (the read/write quota is 90/min/user)."""
+    import time
+    from googleapiclient.errors import HttpError
+    for i in range(tries):
+        try:
+            return fn()
+        except HttpError as e:  # noqa: PERF203
+            status = getattr(getattr(e, "resp", None), "status", None)
+            if status in (429, 503) and i < tries - 1:
+                time.sleep(base * (2 ** i))
+                continue
+            raise
+
+
+def _all_contacts_by_email(svc) -> dict:
+    """canonical email -> resourceName for every contact in the account, via ONE
+    paginated connections read (cheap) instead of a per-email search (2 reads each,
+    which blows the 90/min quota on a bulk populate)."""
+    from automations.fiber_owners_distro.roster import canonical
+    out: dict = {}
+    token = None
+    while True:
+        resp = _retry(lambda: svc.people().connections().list(
+            resourceName="people/me", pageSize=1000,
+            personFields="emailAddresses", pageToken=token).execute())
+        for p in resp.get("connections", []) or []:
+            rn = p.get("resourceName")
+            for e in (p.get("emailAddresses") or []):
+                v = (e.get("value") or "").strip()
+                if v and rn:
+                    out.setdefault(canonical(v), rn)
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    return out
+
+
 def apply_adds(svc, group: dict, adds: List[Tuple[str, str]]) -> List[str]:
-    """Add (email, name) people to the group, creating contacts as needed.
-    Returns the list of emails for which a new contact was created."""
+    """Add (email, name) people to the group, creating contacts as needed. Uses one
+    bulk contacts read + batchCreateContacts (200/call) so it stays under the People
+    API quota even on an 84-owner initial populate. Idempotent + resumable."""
+    from automations.fiber_owners_distro.roster import canonical
+    existing = _all_contacts_by_email(svc)
     created: List[str] = []
     rns: List[str] = []
+    to_create: List[Tuple[str, str]] = []
     for email_, name in adds:
-        rn = _find_contact_by_email(svc, email_)
-        if rn is None:
-            rn = _create_contact(svc, name, email_)
-            created.append(email_)
-        rns.append(rn)
+        rn = existing.get(canonical(email_))
+        if rn:
+            rns.append(rn)
+        else:
+            to_create.append((email_, name))
+    for i in range(0, len(to_create), 200):
+        chunk = to_create[i:i + 200]
+        body = {"contacts": [
+            {"contactPerson": {"names": [{"givenName": n or e}],
+                               "emailAddresses": [{"value": e}]}}
+            for e, n in chunk], "readMask": "emailAddresses"}
+        resp = _retry(lambda b=body: svc.people().batchCreateContacts(body=b).execute())
+        for r in resp.get("createdPeople", []) or []:
+            rn = (r.get("person") or {}).get("resourceName")
+            if rn:
+                rns.append(rn)
+        created += [e for e, _ in chunk]
     for chunk in _chunks(rns):
-        svc.contactGroups().members().modify(
+        _retry(lambda c=chunk: svc.contactGroups().members().modify(
             resourceName=group["resourceName"],
-            body={"resourceNamesToAdd": chunk}).execute()
+            body={"resourceNamesToAdd": c}).execute())
     return created
 
 
