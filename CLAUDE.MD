@@ -35,6 +35,15 @@ fluff. I need clear visuals and concise communications.
   on ONE preview tab first (default: Marcellus Butler on the ATT
   Program - Focus Report). Wait for my "looks good, roll out" before
   touching the other tabs.
+- **Regeneraste drafts que ya estaban a revisión? Mismo link.** Si el
+  link de revisión ya salió al canal y después rearmás los borradores,
+  corré `review_gate.py --refresh` — rehace el PDF y lo pisa en Drive,
+  así el link que la gente ya tiene abierto muestra la versión nueva.
+  Nunca un post nuevo con un link nuevo: es como alguien termina
+  aprobando lo que ya arreglaste. A propósito NO vuelve a postear, para
+  no darles dos mensajes entre los que elegir. Ojo con un caso: si ese
+  día ya tenía ✅, avisame — ese tilde quedó puesto sobre un PDF que ya
+  no existe. Mismo criterio para cualquier otro reporte con gate.
 - **Prompt me to commit — I forget.** Repo lives on GitHub
   (raffi127-ctrl/Alphalete-Reporting-Hub). Don't auto-commit, but
   whenever we finish a working session or a report reaches a working
