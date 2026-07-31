@@ -59,6 +59,10 @@ class ReportState:
     last_reason: str = ""
     last_attempt_ts: Optional[str] = None
     waiting_on: Optional[str] = None          # which source it's blocked on (for the email)
+    # Last readiness verdict said "nothing to do" rather than "data hasn't landed"
+    # (readiness.Readiness.nothing_to_do). The noon backstop reads this to retire
+    # the report SKIPPED instead of MISSED_NOT_READY.
+    nothing_to_do: bool = False
     missing: List[str] = field(default_factory=list)  # specific blanks from reconcile
     display_name: str = ""
     hub_run_id: Optional[str] = None          # open Hub Activity "started" row (yellow pill); None = no live pill
@@ -83,11 +87,13 @@ class DayState:
     # ---- transitions ----
     def set(self, report_id: str, status: str, reason: str = "",
             waiting_on: Optional[str] = None, missing: Optional[List[str]] = None,
-            bump_attempt: bool = False) -> None:
+            bump_attempt: bool = False, nothing_to_do: Optional[bool] = None) -> None:
         rs = self.reports[report_id]
         rs.status = status
         rs.last_reason = reason
         rs.waiting_on = waiting_on
+        if nothing_to_do is not None:
+            rs.nothing_to_do = nothing_to_do
         if missing is not None:
             rs.missing = missing
         if bump_attempt:

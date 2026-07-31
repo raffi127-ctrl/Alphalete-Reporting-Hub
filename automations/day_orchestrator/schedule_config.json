@@ -5195,7 +5195,7 @@
       "display_name": "SCI Campaigns",
       "source_type": "email",
       "data_sources": [],
-      "_note": "Auto-ingest: Adriana Nowrouzi (anowrouzi@aptel.com) emails 'Residential Telecom Tracker - RANKED - Week Ending M.D.YYYY' to alphaletereporting@gmail.com most Fridays, with a RANKED PDF + a 'Campaign Totals By Day' PDF. Fills the 'SCI Campaigns' tab of the Alphalete Org/Captainship workbook (13 campaign rows x the week's MM/DD/YY column; 'Total Units' is a sheet formula). The week comes from the SUBJECT, not the clock - the email for a Saturday week-ending lands the FOLLOWING Friday and has slipped to Sunday, so the run fills every tracker week not yet on the tab and is idempotent + self-healing after a missed Friday. Fri+Sat cadence gives a late send one more shot. readiness._probe_email gates on an unfilled week actually being in the inbox. LIVE ON PROD since 2026-07-27 (Eve's call): writes the real 'SCI Campaigns' tab and DMs 'WE <m.d.yyyy> complete' to Rafael/Maud/Megan under the 'SCI Campaigns' thread. Pinned to machine 'Lucy 1' (the mini) so the DM sends AS Lucy — the Lucy bot token lives only there; off the mini it would fall back to the per-user token and post from whoever ran it. Backfilled WE 3.28 + 5.23 -> 7.18.2026 (10 weeks, 130 cells) with --notify OFF so the one-time catch-up didn't fire 10 DMs.",
+      "_note": "Auto-ingest: Adriana Nowrouzi (anowrouzi@aptel.com) emails 'Residential Telecom Tracker - RANKED - Week Ending M.D.YYYY' to alphaletereporting@gmail.com most Fridays, with a RANKED PDF + a 'Campaign Totals By Day' PDF. Fills the 'SCI Campaigns' tab of the Alphalete Org/Captainship workbook (13 campaign rows x the week's MM/DD/YY column; 'Total Units' is a sheet formula). The week comes from the SUBJECT, not the clock - the email for a Saturday week-ending lands the FOLLOWING Friday and has slipped to Sunday, so the run fills every tracker week not yet on the tab and is idempotent + self-healing after a missed Friday. Fri+Sat+Sun cadence gives a late send two more shots — Sunday was added 2026-07-31 (Eve) because 'has slipped to Sunday' had already happened twice in 8 weeks (WE 6.27 arrived Sun 7/5, WE 7.18 arrived Sun 7/26) and BOTH needed a hand-run to catch up: a Fri+Sat cadence cannot see a Sunday email until the next Friday. An extra pass costs ~3 min and is a silent no-op when there's nothing new. readiness._probe_email gates on an unfilled week actually being in the inbox; when it reports nothing to do, the noon backstop now retires the report SKIPPED rather than MISSED (it used to post a red Hub card + a #claudecorrections fix-block every quiet Friday). LIVE ON PROD since 2026-07-27 (Eve's call): writes the real 'SCI Campaigns' tab and DMs 'WE <m.d.yyyy> complete' to Rafael/Maud/Megan under the 'SCI Campaigns' thread. Pinned to machine 'Lucy 1' (the mini) so the DM sends AS Lucy — the Lucy bot token lives only there; off the mini it would fall back to the per-user token and post from whoever ran it. Backfilled WE 3.28 + 5.23 -> 7.18.2026 (10 weeks, 130 cells) with --notify OFF so the one-time catch-up didn't fire 10 DMs.",
       "command": [
         "automations.sci_campaigns.run"
       ],
@@ -5207,7 +5207,8 @@
       "cadence": {
         "weekdays": [
           4,
-          5
+          5,
+          6
         ]
       },
       "priority": "P2",

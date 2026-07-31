@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from dataclasses import asdict
 
 from automations.day_orchestrator import run as R
 from automations.day_orchestrator import state
@@ -233,6 +234,47 @@ class FailureAlertTest(unittest.TestCase):
         self._sweep(ds)                       # must not raise
         # still marked sent, so a flapping SMTP can't turn into an email storm
         self.assertEqual(ds.failure_alerts_sent, ["a"])
+
+
+class BackstopNothingToDoTest(unittest.TestCase):
+    """The noon backstop's two flavours of "not ready" (Eve 2026-07-31).
+
+    sci_campaigns waits all morning for Adriana's tracker email; its probe
+    deliberately reports NOT-ready when the tab is already current, so the
+    orchestrator keeps circling back in case the mail lands at 5pm. The backstop
+    then retired that as MISSED_NOT_READY, which closed its Hub pill red and fired
+    a #claudecorrections fix-block — every Friday she sent late, for a report doing
+    exactly what it was built to do. A probe that says "nothing to do" now retires
+    SKIPPED (quiet); one that says "data never landed" still MISSES (alerts)."""
+
+    def _waiting(self, **kw):
+        ds = state.DayState(date="2026-07-31")
+        for rid, nothing_to_do in kw.items():
+            ds.reports[rid] = state.ReportState(report_id=rid)
+            ds.set(rid, state.STILL_TRYING, reason=f"{rid} reason",
+                   waiting_on=f"{rid} reason", nothing_to_do=nothing_to_do)
+        return ds
+
+    def test_nothing_to_do_is_skipped_not_missed(self):
+        ds = self._waiting(sci_campaigns=True, some_tableau=False)
+        R._apply_backstop(ds, 20)
+        self.assertEqual(ds.reports["sci_campaigns"].status, state.SKIPPED)
+        self.assertIn("nothing to do", ds.reports["sci_campaigns"].last_reason)
+        # a report genuinely still waiting on data is untouched by this
+        self.assertEqual(ds.reports["some_tableau"].status, state.MISSED_NOT_READY)
+
+    def test_a_stale_session_still_wins(self):
+        ds = self._waiting(x=True)
+        ds.set("x", state.STILL_TRYING, reason="ownerville session stale",
+               waiting_on="ownerville session stale", nothing_to_do=True)
+        R._apply_backstop(ds, 20)
+        self.assertEqual(ds.reports["x"].status, state.BLOCKED_SESSION)
+
+    def test_state_file_survives_the_new_field(self):
+        """Old day_state JSON (written before the field existed) still loads."""
+        rs = state.ReportState(report_id="a")
+        raw = {k: v for k, v in asdict(rs).items() if k != "nothing_to_do"}
+        self.assertFalse(state.ReportState(**raw).nothing_to_do)
 
 
 if __name__ == "__main__":

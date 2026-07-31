@@ -218,15 +218,27 @@ def _orchestrator_ids(cfg, target_date) -> set:
         from automations.day_orchestrator.hub_publish import _HUB_CARD
     except Exception:  # noqa: BLE001
         _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
     wd = target_date.weekday()
     ids = set()
     raw = cfg.raw.get("reports", {})
 
     def _add(rid):
         ids.add(rid)
-        card = _HUB_CARD.get(rid)
-        if card:
-            ids.add(card)
+        # Every id this report could appear under in Hub Activity. _HUB_CARD only
+        # covers the HAND-mapped reports; most orchestrator reports get their card
+        # from hub_coverage's slug rule (underscores -> hyphens) or CURATED_ALIAS,
+        # and those were missing here — so the Activity row (written under the CARD
+        # id) never matched the skip set. sci_campaigns then got alerted as a
+        # STANDALONE report on 2026-07-31, with a paste-block insisting it "runs on
+        # its OWN agent, not the day-orchestrator loop" when it does exactly the
+        # opposite (Eve 2026-07-31).
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
 
     # Paused-on-purpose reports: read from RAW, since load_config drops every
     # on_scheduler:false entry before cfg.reports is built.

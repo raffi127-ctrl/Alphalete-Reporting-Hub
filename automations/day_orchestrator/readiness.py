@@ -36,6 +36,15 @@ _UNKNOWN_PROBE_ALERTED: set = set()
 class Readiness:
     ready: bool
     reason: str
+    # "Not ready" has two very different meanings and the noon backstop needs to
+    # tell them apart. The usual one is "the data hasn't landed yet" — if it never
+    # lands, that's a MISS and a human should hear about it. The other is "there
+    # is genuinely nothing to do" (sci_campaigns: the tab is already current
+    # through the newest tracker email Adriana has sent). Both must block the run,
+    # but only the first is a failure. Set this on the second — run._apply_backstop
+    # then retires the report SKIPPED instead of MISSED_NOT_READY, so a normal
+    # quiet week stops posting a red card + a fix-block (Eve 2026-07-31).
+    nothing_to_do: bool = False
 
 
 # ---------------- session warmth ----------------
@@ -180,9 +189,16 @@ class ReadinessCache:
                     return Readiness(
                         True, f"{len(todo)} unfilled tracker week(s) in the "
                               f"inbox (newest WE {ses.we_label(todo[-1])})")
+                # Not ready, but NOT a miss: every week Adriana has sent is
+                # already on the tab. She mails a Saturday week-ending the
+                # FOLLOWING Friday, usually late in the day, and it has slipped
+                # to Sunday twice — so a Friday that ends with nothing to fill is
+                # the normal case, not a fault. nothing_to_do keeps the noon
+                # backstop from calling it MISSED (Eve 2026-07-31).
                 return Readiness(
                     False, f"no new tracker email — {tab!r} is current through "
-                           f"WE {ses.we_label(max(inbox))}")
+                           f"WE {ses.we_label(max(inbox))}",
+                    nothing_to_do=True)
             return Readiness(True, "email — no probe wired; running on schedule")
         except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
             return Readiness(

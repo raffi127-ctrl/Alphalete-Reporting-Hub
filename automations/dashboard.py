@@ -4238,9 +4238,10 @@ AUTOMATED_REPORTS = [
             "**13 campaign rows** (pulled from the email's two PDFs). When a week "
             "lands it DMs **Rafael, Maud & Megan**.\n\n"
             "WHEN IT RUNS\n"
-            "**Friday & Saturday.** It reads the week off the email subject and "
-            "fills any tracker week not yet on the tab — so a late email heals "
-            "itself on the next run, and re-running is safe."
+            "**Friday, Saturday & Sunday.** It reads the week off the email "
+            "subject and fills any tracker week not yet on the tab — so a late "
+            "email heals itself on the next run, and re-running is safe. Sunday "
+            "is there because Adriana's send has twice landed on one."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
@@ -4252,7 +4253,10 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "sci_campaigns",
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [4, 5],   # Friday + Saturday (a late send gets a 2nd shot)
+            # Fri + Sat + Sun: a late send gets two more shots. Sunday added
+            # 2026-07-31 — WE 6.27 arrived Sun 7/5 and WE 7.18 Sun 7/26, and a
+            # Fri+Sat cadence can't see either until the NEXT Friday.
+            "weekdays": [4, 5, 6],
             "time": "4 AM flow (when data's ready)",
             "estimated_minutes": 3,
         },

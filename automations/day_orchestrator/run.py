@@ -316,8 +316,12 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
         Hub's 2h staleness window across a long wait.
       • terminal report that still holds an open pill (e.g. backstop flipped it to
         MISSED/BLOCKED outside the run loop) → close it so it doesn't hang yellow:
-        green for DONE/INCOMPLETE, red otherwise.
-    SKIPPED (not scheduled today) is terminal and never carried a pill → no-op."""
+        green for DONE/INCOMPLETE, NEUTRAL for SKIPPED, red otherwise.
+    SKIPPED gets its own 'skipped' status rather than red: a report skipped for not
+    being scheduled today never carried a pill at all, but one the backstop skips
+    for having nothing to do (see _apply_backstop) DID carry one all morning —
+    closing that red is how a healthy quiet day got reported as a failure
+    (Eve 2026-07-31). Green would be just as wrong; nothing ran."""
     if dry_run or simulate:
         return
     from automations.day_orchestrator import hub_publish
@@ -327,11 +331,20 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
         try:
             if rs.is_terminal():
                 if rs.hub_run_id:
-                    good = rs.status in (state.DONE, state.INCOMPLETE)
+                    if rs.status == state.SKIPPED:
+                        # Neither green nor red. 'skipped' isn't in the
+                        # dashboard's finished-run statuses, so the row clears the
+                        # yellow pill (it's no longer 'started') without counting
+                        # as a run: the card doesn't claim a fill that never
+                        # happened, and nobody gets paged for a quiet day.
+                        _status = "skipped"
+                    elif rs.status in (state.DONE, state.INCOMPLETE):
+                        _status = "success"
+                    else:
+                        _status = "failed"
                     hub_publish.publish_done(
                         rs.report_id, rs.display_name,
-                        status="success" if good else "failed",
-                        run_id=rs.hub_run_id)
+                        status=_status, run_id=rs.hub_run_id)
                     rs.hub_run_id = None
             else:  # non-terminal → keep it visibly in-progress
                 if rs.hub_run_id:
@@ -688,7 +701,8 @@ def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
             # Distinguish a stale session (alert!) from data-not-ready.
             if "session" in rd.reason.lower():
                 _maybe_session_alert(cfg, ds, rd.reason, channel, email_dry)
-            ds.set(r.report_id, state.STILL_TRYING, reason=rd.reason, waiting_on=rd.reason)
+            ds.set(r.report_id, state.STILL_TRYING, reason=rd.reason, waiting_on=rd.reason,
+                   nothing_to_do=rd.nothing_to_do)
             _log(f"  {r.report_id}: still trying — {rd.reason}")
         return None
 
@@ -921,6 +935,15 @@ def _apply_backstop(ds, stale_after):
         if rs.waiting_on and "session" in (rs.waiting_on or "").lower():
             ds.set(rs.report_id, state.BLOCKED_SESSION,
                    reason="ownerville session never recovered by noon")
+        elif rs.nothing_to_do:
+            # Its readiness probe wasn't waiting on late data — it said there was
+            # genuinely nothing to fill (sci_campaigns on a week Adriana hasn't
+            # mailed yet). Retiring that MISSED_NOT_READY published a red Hub card
+            # and a #claudecorrections fix-block every quiet Friday, for a report
+            # that was working exactly as designed (Eve 2026-07-31). SKIPPED is the
+            # honest terminal state: nothing was scheduled to happen, and nothing did.
+            ds.set(rs.report_id, state.SKIPPED,
+                   reason=f"nothing to do today ({rs.last_reason or 'n/a'})")
         else:
             ds.set(rs.report_id, state.MISSED_NOT_READY,
                    reason=f"data never ready by noon (last: {rs.last_reason or 'n/a'})")
