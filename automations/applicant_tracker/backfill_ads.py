@@ -115,10 +115,18 @@ def load_rows(ws, rownums):
 
 # ---- step 2: what the site says today ------------------------------------
 def scrape_ads(app, office_ids, targets, log=print):
-    """{(owner, ident): [ad, ...]} for every target date, plus the offices that
-    couldn't be read. ONE report load per office serves all the dates."""
+    """Everything the site lists for the target dates, as consumable entries:
+        entries   [{owner, ident, email, ad, used}]
+        index     (owner, ident) -> [entry]      exact identity, same owner
+        by_ident  ident          -> [entry]      identity across owners
+        by_email  email          -> [entry]      the drift-tolerant fallback
+    plus the offices that couldn't be read. ONE report load per office serves
+    all the dates — scrape_at navigates away, so every href is collected from
+    that single load first."""
+    entries = []
     index = {}
     by_ident = {}
+    by_email = {}
     skipped = []
     for office_id in office_ids:
         try:
@@ -142,8 +150,13 @@ def scrape_ads(app, office_ids, targets, log=print):
                     if not ad:
                         continue
                     key = _ident(r[0], r[1], r[2], r[3], r[6])
-                    index.setdefault((_norm(owner), key), []).append(ad)
-                    by_ident.setdefault(key, []).append((_norm(owner), ad))
+                    e = {"owner": _norm(owner), "ident": key,
+                         "email": _norm(r[2]), "ad": ad, "used": False}
+                    entries.append(e)
+                    index.setdefault((e["owner"], key), []).append(e)
+                    by_ident.setdefault(key, []).append(e)
+                    if e["email"]:
+                        by_email.setdefault(e["email"], []).append(e)
                     found += 1
             log("  [{}] {}: {} ad(s) read".format(office_id, owner, found))
         except OfficeNotAvailable as e:
@@ -154,54 +167,81 @@ def scrape_ads(app, office_ids, targets, log=print):
                 type(e).__name__, str(e)[:100])))
             log("  ! [{}] error: {}: {}".format(
                 office_id, type(e).__name__, str(e)[:120]))
-    return index, by_ident, skipped
+    return {"entries": entries, "index": index,
+            "by_ident": by_ident, "by_email": by_email}, skipped
 
 
 # ---- step 3: pair them up -------------------------------------------------
-def match(rows, index, by_ident):
+def _take(pool):
+    """First unconsumed entry in a pool (each scraped Ad is handed out once)."""
+    for e in pool or []:
+        if not e["used"]:
+            return e
+    return None
+
+
+def match(scrape, rows):
     """Pair each candidate sheet row with a scraped Ad. Returns
-    (fills {rownum: ad}, misses [(rownum, reason, identity)]).
+    (fills {rownum: ad}, notes [(rownum, reason, identity)]).
+
+    Three ways to pair, strongest first:
+      1. (owner, identity) — the normal case.
+      2. identity alone, when the owner string drifted since the import.
+      3. EMAIL alone, when the record itself was edited after the import (a
+         recruiter fixing a name, a corrected phone). Email is unique per
+         applicant here, so this is a real match, not a guess — but it only
+         fires when exactly one unconsumed ad carries that email, and it's
+         reported so the count is auditable.
+    Anything left is deliberately NOT guessed at: the row stays blank.
 
     Two applicants can share an identity (the same person applying to two ads in
     the same minute). Those rows are indistinguishable from each other, so the
     ads are handed out in order — the multiset lands correct even though no
     single pairing is provable."""
-    fills, misses = {}, []
-    used = {}
+    index, by_ident = scrape["index"], scrape["by_ident"]
+    by_email = scrape["by_email"]
+    fills, notes = {}, []
     for n in sorted(rows):
         row = rows[n]
-        owner, key = _norm(row[0]), _ident(row[1], row[2], row[3], row[4], row[7])
-        pool = index.get((owner, key))
-        why = ""
-        if pool is None:
-            # The owner string is whatever select_office returned the day of the
-            # import; if that drifted, fall back to identity alone rather than
-            # leaving a row unfilled — but only when it's unambiguous.
-            alt = by_ident.get(key)
-            if alt:
-                owners = set(o for o, _ in alt)
-                if len(owners) == 1:
-                    pool = [ad for _, ad in alt]
-                    owner = list(owners)[0]
-                    why = "owner mismatch (matched on identity alone)"
-                else:
-                    misses.append((n, "same applicant under {} owners — "
-                                      "ambiguous".format(len(owners)), key))
-                    continue
-        if not pool:
-            misses.append((n, "no matching applicant in today's scrape", key))
+        owner = _norm(row[0])
+        key = _ident(row[1], row[2], row[3], row[4], row[7])
+        email = _norm(row[3])
+
+        e = _take(index.get((owner, key)))
+        if e is None:
+            alt = by_ident.get(key) or []
+            owners = set(x["owner"] for x in alt)
+            if len(owners) == 1:
+                e = _take(alt)
+                if e is not None:
+                    notes.append((n, "FILLED — owner string drifted; matched on "
+                                     "identity", key))
+            elif len(owners) > 1:
+                notes.append((n, "ambiguous: same applicant under {} owners"
+                                 .format(len(owners)), key))
+                continue
+        if e is None and email:
+            same = [x for x in (by_email.get(email) or []) if not x["used"]]
+            if len(same) == 1:
+                e = same[0]
+                notes.append((n, "FILLED — record edited since import; matched "
+                                 "on email", key))
+            elif len(same) > 1:
+                notes.append((n, "ambiguous: {} unclaimed ads share this email"
+                                 .format(len(same)), key))
+                continue
+        if e is None:
+            # Nothing on that day's detail page carries this applicant — they
+            # were taken off the call list after the import (dedup / removed
+            # from process). The Ad is not recoverable from this source.
+            seen = bool(by_email.get(email)) if email else False
+            notes.append((n, "not on that day's detail page any more"
+                             + (" (all their ads already claimed)" if seen
+                                else " — applicant removed since import"), key))
             continue
-        i = used.get((owner, key), 0)
-        if i >= len(pool):
-            misses.append((n, "more sheet rows than scraped ads for this "
-                              "applicant ({} rows, {} ads)".format(
-                                  i + 1, len(pool)), key))
-            continue
-        used[(owner, key)] = i + 1
-        fills[n] = pool[i]
-        if why:
-            misses.append((n, "FILLED — " + why, key))
-    return fills, misses
+        e["used"] = True
+        fills[n] = e["ad"]
+    return fills, notes
 
 
 def _runs(rownums):
@@ -251,19 +291,25 @@ def run(dates=None, office_ids=None) -> None:
 
     print("Re-scraping ApplicantStream...")
     with session() as app:
-        index, by_ident, skipped = scrape_ads(app, offices, targets)
+        scrape, skipped = scrape_ads(app, offices, targets)
+    print("Ads read from the site: {}".format(len(scrape["entries"])))
 
-    fills, misses = match(rows, index, by_ident)
+    fills, notes = match(scrape, rows)
     written = write_ads(ws, fills)
 
     print("\n--- RESULT ---")
     print("Rows needing an Ad : {}".format(len(rownums)))
     print("Ads written        : {}{}".format(
         written, " (dry-run, nothing sent)" if sheets.DRY_RUN else ""))
-    unfilled = [m for m in misses if not m[1].startswith("FILLED")]
-    noted = [m for m in misses if m[1].startswith("FILLED")]
+    unfilled = [m for m in notes if not m[1].startswith("FILLED")]
+    noted = [m for m in notes if m[1].startswith("FILLED")]
     if noted:
         print("Filled with a note : {}".format(len(noted)))
+        kinds = {}
+        for _, why, _k in noted:
+            kinds[why] = kinds.get(why, 0) + 1
+        for why, cnt in sorted(kinds.items(), key=lambda kv: -kv[1]):
+            print("  • {} row(s): {}".format(cnt, why))
     print("Still unfilled     : {}".format(len(unfilled)))
     reasons = {}
     for _, why, _k in unfilled:
