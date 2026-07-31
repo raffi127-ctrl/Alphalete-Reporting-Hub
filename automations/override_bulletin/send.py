@@ -80,11 +80,11 @@ DD_CHANNELS = [
 ]
 # Preview recipient for --preview (Megan only, before the distro goes live).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
-# Soft-launch distro for --test (Megan 2026-07-24): run it a WEEK to this small
-# group, email only / no Slack, before flipping to the full org distro. Megan,
-# Eve (the VA), Carlos, Raf.
-TEST_TO = ["Meganhidalgo1191@gmail.com", "alphaletereporting@gmail.com",
-           "CarlosHidalgo349@gmail.com", "raffi127@gmail.com"]
+# Soft-launch distro for --test: email only / no Slack, before flipping to the
+# full org distro. Megan 2026-07-30 narrowed it to just Megan / Raf / Carlos
+# (dropped Eve/alphaletereporting@) for the tomorrow review send.
+TEST_TO = ["Meganhidalgo1191@gmail.com", "raffi127@gmail.com",
+           "CarlosHidalgo349@gmail.com"]
 
 STATE_DIR = Path.home() / ".config" / "recruiting-report"
 STATE_PATH = STATE_DIR / "override_bulletin_last_sent.txt"
@@ -488,6 +488,24 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
 
     send_email(build_email(png_path, week_label, to_addrs))
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
+    # FLAG GAPS (Megan 2026-07-30 "send fast, flag gaps"): we send with whatever's
+    # in — like the VA — but post a heads-up to #claudecorrections-and-requests
+    # listing any captain/program numbers that hadn't posted yet, so someone can
+    # re-send with --force once they land. Best-effort; a failed alert never
+    # affects the send that already went.
+    if unsourced and do_send:
+        try:
+            from automations.shared import slack_metrics_post as smp
+            smp._client().chat_postMessage(
+                channel="#claudecorrections-and-requests",
+                text=("⚠ Override Bulletin WE {} sent (to {}) with {} captain/"
+                      "program number(s) not yet posted: {}. Re-send with --force "
+                      "once they land to fold them in.".format(
+                          week_label, "test group" if test else "full distro",
+                          len(unsourced), ", ".join(unsourced))))
+            print("posted gap heads-up to #claudecorrections-and-requests")
+        except Exception as e:  # noqa: BLE001
+            print("⚠ gap alert failed ({}: {})".format(type(e).__name__, str(e)[:120]))
     if do_send:                                   # test or full — record the week
         mark_sent(week_label)
     result["published"] = True
