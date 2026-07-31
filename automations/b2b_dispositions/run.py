@@ -157,9 +157,28 @@ def main(argv=None) -> int:
                     help="dump the Time Tracker JSON endpoint fields")
     ap.add_argument("--probe-terr", action="store_true",
                     help="dump every <select> on the dispositions page")
+    ap.add_argument("--probe-ta", action="store_true",
+                    help="capture network requests on the Today's Activity page")
     ap.add_argument("--limit", type=int, default=0,
                     help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
+
+    if getattr(args, "probe_ta", False):
+        from automations.shared.tableau_patchright import ownerville_session
+        with ownerville_session(headless=args.headless) as page:
+            rqst = cap.capture_rqst(page)
+            cap.ensure_campaign(page, rqst, cfg.CAMPAIGN_ATT)
+            reqs = []
+            page.on("request", lambda r: reqs.append(r.url))
+            cap._goto(page, cap._page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst,
+                      cfg.CAMPAIGN_ATT))
+            page.wait_for_timeout(4000)
+            hits = [u for u in reqs
+                    if (".cfc" in u or "json" in u.lower() or "method=" in u)
+                    and "index.cfm" not in u]
+            for u in sorted(set(hits))[:15]:
+                print("  TA-req:", u[:200], flush=True)
+        return 0
 
     if getattr(args, "probe_terr", False):
         from automations.shared.tableau_patchright import ownerville_session
