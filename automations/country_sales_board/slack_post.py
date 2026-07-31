@@ -9,8 +9,8 @@ WHAT IT CAPTURES — and why it is NOT one range. The All Campaigns tab is small
 enough to screenshot end to end; this one is not. It runs to row 310 and column
 BC (54 cols), because the leaderboard carries 52 weeks of frozen history. A
 full-tab render is one unreadable postage stamp, and a single contiguous range
-covering both blocks would drag in the ~135 rows of day block and WE history
-sitting between them. So we render TWO blocks and stitch them into one image:
+covering everything would drag in the WE history stack nobody reads in an
+email. So we render THREE blocks and stitch them into one image, in tab order:
 
   1. THE BOARD — row 1 through the leaderboard's TOTALS row, cols A..J:
      title + Product Summary + Current vs Prior (Mon..Sun and Grand Total,
@@ -18,14 +18,20 @@ sitting between them. So we render TWO blocks and stitch them into one image:
      Grand Total off the summary), then the full rep ranking with the live week
      in col C and the 7 most recent frozen weeks beside it for trend.
 
-  2. THE DELTA UNITS CHART — the per-rep 'Total for week' triplet plus ALL
+  2. THE DAILY SALES BREAKDOWN — the day block ('Fiber - All Units'), every rep
+     by day with the running week total and their last two weeks, cols A..L
+     (Eve 2026-07-31: the draft had the summary and the deltas but not the raw
+     per-day numbers they are computed from). See `daily_range`.
+
+  3. THE DELTA UNITS CHART — the per-rep 'Total for week' triplet plus ALL
      SEVEN DAYS, each as This week / Last week / Delta (Eve 2026-07-27: the
      first version omitted this block entirely and she asked for every day).
      Columns B..Z; anything narrower drops days off the right.
 
-Both blocks are located by LABEL every run — the leaderboard by its header, the
-delta box by org_sales_board's own find_delta_tables — so an inserted row or a
-new rep never silently crops the image. [[feedback_no_hardcoded_columns]]
+All three blocks are located by LABEL every run — the leaderboard by its header,
+the day block by the finder the fill itself writes through, the delta box by
+org_sales_board's own find_delta_tables — so an inserted row or a new rep never
+silently crops the image. [[feedback_no_hardcoded_columns]]
 
 HISTORY_WEEKS is the one display choice left as a constant: how many frozen
 leaderboard weeks to show beside the live one.
@@ -124,9 +130,35 @@ def _pick_client(prefer_bot: bool = False):
     return smp._client(), False
 
 
+def daily_range(grid) -> str:
+    """The DAILY SALES BREAKDOWN box — the per-rep day block.
+
+    Eve 2026-07-31: the draft went out with the board and the delta chart but
+    without this, which is the one place the raw per-day numbers live. The
+    block is col-A label 'Fiber - All Units', a weekday header row, the
+    day-of-month row under it, ~75 rep rows and a Totals row.
+
+    Columns A..L, and L is not optional: A is the rank, B the name, C..I the
+    seven days, J the running week total, and K/L each rep's last-week and
+    previous-week totals — stopping at J would show the week with nothing to
+    compare it against, which is the same complaint that put the delta chart
+    in this image in the first place.
+
+    Located by LABEL via the same finder the fill writes through, so the render
+    and the write can never disagree about where the block is."""
+    from automations.org_sales_board.fill_section import find_daily_section
+    from automations.org_sales_board.rollover import a1col
+    from automations.country_sales_board.fill import BLOCK_LABEL
+
+    a = find_daily_section(grid, BLOCK_LABEL)
+    last_col = a.running_total_col + 2          # J -> L (last / previous week)
+    return f"A{a.header_row}:{a1col(last_col)}{a.totals_row}"
+
+
 def capture_ranges(grid) -> list[str]:
     """The A1 ranges to render, found by LABEL so an inserted row can't crop
-    them: [the board, the delta units chart]."""
+    them: [the board, the daily sales breakdown, the delta units chart] —
+    in the order they appear on the tab."""
     from automations.org_sales_board import rollover as org_ro
     from automations.org_sales_board.rollover import a1col
     from automations.country_sales_board import rollover as cr
@@ -134,9 +166,19 @@ def capture_ranges(grid) -> list[str]:
     lb = cr.find_leaderboard(grid)
     board = f"A1:{a1col(2 + 1 + HISTORY_WEEKS)}{lb['totals_row']}"
 
+    # The daily breakdown must never take the whole image down with it: the
+    # board and the delta chart are still worth sending if this one block
+    # can't be located.
+    try:
+        daily = [daily_range(grid)]
+    except Exception as e:                                  # noqa: BLE001
+        print(f"  ⚠ daily sales breakdown not located ({type(e).__name__}: {e})"
+              f" — sending the board without it")
+        daily = []
+
     tables = org_ro.find_delta_tables(grid)
     if not tables:
-        return [board]
+        return [board] + daily
     t = tables[0]
     hdr = t["header_row"]                      # the This week/Last week/Delta row
     # Each day is a 3-col triplet starting at its 'This week' column, so the
@@ -160,7 +202,7 @@ def capture_ranges(grid) -> list[str]:
     # hdr - 1 is the day-name row above it ('Monday'…'Sunday') — include it or
     # the triplets have no labels.
     delta = f"B{hdr - 1}:{a1col(last_col)}{last_row}"
-    return [board, delta]
+    return [board] + daily + [delta]
 
 
 def _stitch(paths: list[Path], out: Path) -> Path:
