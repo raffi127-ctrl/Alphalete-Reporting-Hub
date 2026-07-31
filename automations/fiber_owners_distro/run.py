@@ -272,7 +272,7 @@ def phase_finalize_all(dry_run: bool = True, force: bool = False) -> int:
 
 
 def phase_post(account: str, group: str, xlsx: Path, edate: dt.datetime,
-               dry_run: bool = True) -> int:
+               dry_run: bool = True, create_group: bool = False) -> int:
     """Phase 1: apply ADDs + stale-dup cleanup now; post true departures to Slack
     with a 24h objection window; save pending state for phase_finalize."""
     from automations.fiber_owners_distro import contacts_write, notify
@@ -282,8 +282,13 @@ def phase_post(account: str, group: str, xlsx: Path, edate: dt.datetime,
     svc = contacts_write._service(account)
     grp = contacts_write.find_group(svc, group)
     if grp is None:
-        print(f"group {group!r} not found in {account}.")
-        return 2
+        if create_group and not dry_run:
+            grp = svc.contactGroups().create(
+                body={"contactGroup": {"name": group}}).execute()
+            print(f"created group {group!r} in {account}")
+        else:
+            print(f"group {group!r} not found in {account} — pass --create-group.")
+            return 2
     kept, _d, _e = build_target(xlsx)
     target = [(o.email, o.name) for o in kept]
     protect = list(load_keep().keys()) + roster.all_roster_emails(xlsx)
@@ -380,7 +385,7 @@ def main(argv=None) -> int:
     if args.phase == "post":
         if args.account:
             return phase_post(args.account, args.group, xlsx, edate,
-                              dry_run=not args.send)
+                              dry_run=not args.send, create_group=args.create_group)
         return phase_post_all(xlsx, edate, dry_run=not args.send,
                               create_group=args.create_group)
 
