@@ -1140,18 +1140,28 @@ def lookup_resume_phone(page):
     newpg = None
     try:
         newpg = page.context.new_page()
-        newpg.goto(href, wait_until="domcontentloaded", timeout=30000)
-        # The resume is a JS-rendered page and the real phone can sit in the header
-        # contact line ("City, ST ZIP | +1... | email") while the body shows
-        # "Teléfono: [Información reservada]". Poll the WHOLE page (not the first
-        # 2500 chars) until a real phone renders (Megan 7/30: Yelitza's number was
-        # missed by the old short/early scan).
-        for _ in range(12):                       # ~12s of polling
-            body = newpg.evaluate("() => (document.body.innerText || '')")
-            for m in _PHONE_RE.finditer(body):
-                digits = re.sub(r"\D", "", m.group(0))
-                if 10 <= len(digits) <= 11:        # a real US number
-                    return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+        try:
+            newpg.goto(href, wait_until="domcontentloaded", timeout=45000)
+        except Exception:  # noqa: BLE001
+            pass
+        # employers.indeed.com throws a Cloudflare 'Just a moment…' interstitial;
+        # patchright clears it if we wait. Poll until real content appears (title/
+        # body no longer the challenge), THEN scan the WHOLE page for the phone —
+        # it can be in the header ("City, ST ZIP | +1… | email") while the body
+        # shows "[Información reservada]" (Megan 7/30: Yelitza + Cloudflare misses).
+        for _ in range(28):                        # ~28s (Cloudflare + JS render)
+            try:
+                title = (newpg.title() or "").lower()
+                body = newpg.evaluate("() => (document.body.innerText || '')")
+            except Exception:  # noqa: BLE001
+                title, body = "", ""
+            challenged = ("just a moment" in title or "just a moment" in body.lower()
+                          or "verify you are human" in body.lower())
+            if not challenged and body:
+                for m in _PHONE_RE.finditer(body):
+                    digits = re.sub(r"\D", "", m.group(0))
+                    if 10 <= len(digits) <= 11:     # a real US number
+                        return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
             newpg.wait_for_timeout(1000)
         return None, f"no phone on resume (title={newpg.title()[:40]!r})"
     except Exception as e:  # noqa: BLE001
