@@ -498,11 +498,16 @@ def _rollup(d, weeks):
         nm = (v.get("avg") or v.get("own"))["name"].lower()
         return 1 if "org" in nm else 2
 
-    def own_week(v):
-        o = v.get("own")
-        return D.money(o["weeks"][0]) if o and o["weeks"] else -1
+    def avg_val(v):
+        # Avg DD 2026 (the table's first data column) — the sort key for both the
+        # orgs section and the campaigns section (Megan 2026-07-30: "averages
+        # sorted highest to least in both sections").
+        a = v.get("avg")
+        return D.money(a["total"]) if a and a.get("total") else -1
 
-    ordered = sorted(rows.items(), key=lambda kv: (grp(*kv), -own_week(kv[1])))
+    # Org-wide line pinned first (grp 0), then the orgs (grp 1) and campaigns
+    # (grp 2) each ranked by Avg DD, highest to least.
+    ordered = sorted(rows.items(), key=lambda kv: (grp(*kv), -avg_val(kv[1])))
 
     body, prev = [], None
     for k, v in ordered:
