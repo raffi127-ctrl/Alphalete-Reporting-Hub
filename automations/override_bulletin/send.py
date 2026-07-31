@@ -203,6 +203,24 @@ def post_slack(png_paths, caption, filenames, channels=None):
     return out
 
 
+CORRECTIONS_CHANNEL = "#claudecorrections-and-requests"
+
+
+def alert_corrections(text):
+    """Post a data-gap heads-up to #claudecorrections-and-requests (Megan
+    2026-07-30: look for all data each week; if something isn't there, notify us
+    in Slack but still send). Best-effort — a failed alert never stops the send."""
+    try:
+        from automations.shared import slack_metrics_post as smp
+        smp._client().chat_postMessage(channel=CORRECTIONS_CHANNEL, text=text)
+        print("posted data-gap alert to {}".format(CORRECTIONS_CHANNEL))
+        return True
+    except Exception as e:  # noqa: BLE001
+        print("⚠ could not post corrections alert ({}: {})".format(
+            type(e).__name__, str(e)[:120]))
+        return False
+
+
 def caption_for(week_label):
     md = ".".join((week_label or "").split(".")[:2])
     return "🏆 Alphalete Organization Override Bulletin — WE {}".format(md)
@@ -222,7 +240,7 @@ def dd_caption(week_label):
 
 
 def send_dd(*, do_send=False, preview=False, test=False, force=False,
-            out_dir=None, credico="auto"):
+            notify=False, out_dir=None, credico="auto"):
     """Build → render → (optionally) publish the DD / Organization bulletin.
 
     Two pages: the leaders page and the by-ICD breakdown. Dry run by default —
@@ -287,17 +305,29 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
                 "png": [str(p) for p in png_paths], "to": to_addrs,
                 "missing": missing, "blocking": blocking}
 
+    # Data-gap alert (Megan 2026-07-30): look for all data each week; if a source
+    # isn't in yet (Credico pending, a missing DD row, a stale week), post a
+    # heads-up to #claudecorrections-and-requests — but STILL send. Credico's own
+    # timing is unpredictable, so it must never hold the whole org bulletin.
+    gaps = list(blocking)
+    if d.get("credico_pending"):
+        gaps.append("Credico not available this week — bulletin sent without it, "
+                    "re-send to fold it in once it posts")
+    if do_send and notify and gaps:
+        alert_corrections("⚠ DD Bulletin WE {} sent with data gap(s):\n• {}".format(
+            week_label, "\n• ".join(gaps[:10])))
+
     # A blocking problem means a figure ON THE PAGE is wrong, not just short.
-    # Preview still goes out — that is how a broken one gets looked at — but the
-    # org does not see it until the problem is gone or someone overrides on purpose.
-    if blocking and do_send and not force:
-        print("\nREFUSING TO SEND — {} blocking problem(s) above. Fix them, or "
-              "pass --force to publish anyway.".format(len(blocking)))
+    # In NOTIFY (go-live) mode we alert and send anyway (above); otherwise the
+    # org does not see it until it is fixed or someone overrides with --force.
+    if blocking and do_send and not force and not notify:
+        print("\nREFUSING TO SEND — {} blocking problem(s) above. Fix them, pass "
+              "--force, or use --notify to alert-and-send.".format(len(blocking)))
         return {"published": False, "reason": "blocking problems",
                 "week": week_label, "blocking": blocking}
-    if blocking and do_send and force:
-        print("\n⚠ --force: publishing with {} blocking problem(s) "
-              "UNRESOLVED.".format(len(blocking)))
+    if blocking and do_send and (force or notify):
+        print("\n⚠ publishing with {} blocking problem(s) — alerted to {}.".format(
+            len(blocking), CORRECTIONS_CHANNEL))
     if missing and do_send:
         raise SystemExit("refusing to send: contact group(s) missing: {}. Fix the "
                          "group name(s) in alphaletereporting@gmail.com's contacts "
@@ -485,6 +515,10 @@ def main(argv=None):
     ap.add_argument("--no-credico", action="store_true",
                     help="--dd: read the DD tab as it stands, without folding "
                          "Credico in (diagnostic; never for a real send)")
+    ap.add_argument("--notify", action="store_true",
+                    help="--dd go-live: alert #claudecorrections on any data gap "
+                         "(Credico pending / missing row / stale week) and send "
+                         "anyway, instead of refusing")
     ap.add_argument("--out-dir", default=None)
     a = ap.parse_args(argv)
     if a.send and a.preview:
@@ -495,7 +529,8 @@ def main(argv=None):
         raise SystemExit("--test and --preview are mutually exclusive")
     if a.dd:
         send_dd(do_send=a.send, preview=a.preview, test=a.test, force=a.force,
-                out_dir=a.out_dir, credico=False if a.no_credico else "auto")
+                notify=a.notify, out_dir=a.out_dir,
+                credico=False if a.no_credico else "auto")
         return 0
     send(tab=a.tab, do_send=a.send, preview=a.preview, test=a.test, force=a.force,
          out_dir=a.out_dir)

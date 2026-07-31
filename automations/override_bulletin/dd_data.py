@@ -153,12 +153,17 @@ def _fold_credico(credico, week_label, by_key, aliases, problems, blocking):
             owners, notes, offices = C.pull(week_label, aliases=aliases,
                                             verbose=False)
         except Exception as e:  # noqa: BLE001
-            msg = (f"Credico is NOT folded in ({type(e).__name__}: "
-                   f"{str(e).splitlines()[0][:160]}) — on Lucy 1 run "
-                   f"`lucy rerun credico_fetch` first")
+            # Credico posts on its OWN (weird) schedule, so "not available yet" is
+            # NOT a send-stopper (Megan 2026-07-30): the bulletin still goes out,
+            # carries a small "Credico not available this week" note, and an alert
+            # fires to #claudecorrections. It is re-captured the moment Credico
+            # posts. So: pending flag, a NOTE, never blocking.
+            msg = (f"Credico not available this week ({type(e).__name__}) — "
+                   f"the bulletin sent without it; on Lucy 1 `lucy rerun "
+                   f"credico_fetch` then re-send to fold it in")
             problems.append(msg)
-            blocking.append(msg)
             info["error"] = msg
+            info["pending"] = True
             return info
     else:
         owners, notes, offices = credico, [], []
@@ -510,7 +515,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     return {"weeks": weeks, "icds": icds, "podium": podium, "headline": headline,
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
             "totals": totals, "org_count": len(icds), "problems": problems,
-            "blocking": blocking, "credico": credico_info}
+            "blocking": blocking, "credico": credico_info,
+            "credico_pending": bool(credico_info and credico_info.get("pending"))}
 
 
 if __name__ == "__main__":

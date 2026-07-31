@@ -414,6 +414,17 @@ def _org_tables(podium):
     return f'<div class="orggrid">{col_html}</div>'
 
 
+def _credico_note(d):
+    """A small note when Credico hasn't posted yet — the bulletin still goes out,
+    this just says the Credico owners' figures aren't in this week (Megan
+    2026-07-30: Credico's timing is unpredictable, flag it small rather than
+    holding the whole bulletin)."""
+    if not d.get("credico_pending"):
+        return ""
+    return ('<div class="note">&lowast; Credico not available this week &mdash; '
+            'affected owners update once it posts</div>')
+
+
 def _adoption_key(podium):
     """The '* adoption' legend, for the page footer — shown only when an
     adoption is actually on the page, so the red '*' is never cryptic."""
@@ -573,6 +584,7 @@ def page1(d):
 {_head("ORGANIZATION BULLETIN", f"Week Ending {weeks[0] if weeks else ''}")}
 <div class="hero"><div class="k">Organization Total DD</div>
   <div class="v">{_fmt(d["headline"])}</div></div>
+{_credico_note(d)}
 <div class="sect">Alphalete Organizational Leaders</div>
 {_podium(d["podium"][:FEATURED])}
 {_org_tables(d["podium"])}
