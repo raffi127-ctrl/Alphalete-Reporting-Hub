@@ -213,7 +213,8 @@ def recent_active(values: list, row: int,
     return False
 
 
-def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
+def detect_went_dark(values: list, sections: dict, parsed: dict,
+                     exempt=None) -> dict:
     """Roster reps ABSENT from today's pull for a tier they were RECENTLY ACTIVE
     in — the Eveliz-Roca failure: a rep dropped from a Tableau view's filter (or
     renamed past the alias) makes the pull 'succeed' minus her, so her row
@@ -233,7 +234,15 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
     drop out of the pull once she's let go (Selena Powers 2026-07-06). Flagging
     her as dark would block the run's retry and hold the Hub card red forever.
     Her stale row is surfaced separately (advisory) by the report's
-    ti.alert_terminated() hook, not here."""
+    ti.alert_terminated() hook, not here.
+
+    `exempt` (set/iterable of names, case-insensitive) is NEVER dark either — for
+    reps who are guaranteed to be in the view yet can legitimately have zero
+    activity in a window. The captain of a captainship view is the canonical case:
+    the view IS his own team, so he can't be dropped from it, and a quiet week
+    (no personal activations → no crosstab row) was hard-failing the run as a
+    false 'went dark' (Rafael Hidalgo on Raf's Team, 2026-07-31)."""
+    exempt_lc = {str(n).strip().lower() for n in (exempt or ())}
     reps = parsed.get("reps", {})
     present_lc = {nm.lower() for nm, pd in reps.items()
                   if isinstance(pd, dict)
@@ -256,6 +265,8 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
                 continue
             disp = (values[row - 1][0].strip()
                     if len(values) >= row and values[row - 1] else name_lc)
+            if name_lc in exempt_lc or disp.strip().lower() in exempt_lc:
+                continue
             if _is_terminated(disp):
                 continue
             if recent_active(values, row):

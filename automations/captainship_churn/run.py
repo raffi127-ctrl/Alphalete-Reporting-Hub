@@ -36,6 +36,16 @@ REPORTS = [
      "captainship_wireless_churn.csv"),
 ]
 
+# Both views (RAFSTEAMCHURN / RafWirelessTeam) are pre-filtered to Raf's Team —
+# so the captain, Rafael Hidalgo, is ALWAYS in the filter by definition; he can't
+# be dropped from his own team's view. A "went dark" on him is therefore never a
+# real removal (the Eveliz-Roca case the guard exists for) — it only means he
+# personally had zero activations in the pull window, which emits no crosstab row
+# and read as a false disappearance that hard-failed the whole run (2026-07-31).
+# Exempt the captain so a quiet week reads clean, not ❌; every other rep still
+# hard-flags on a genuine drop. [[feedback_flag_unfilled_cells]]
+CAPTAIN_EXEMPT = {"Rafael Hidalgo"}
+
 
 def _apply_aliases(parsed: dict, aliases: dict) -> dict:
     """Map every parsed rep name through the ICD Aliases sheet to its
@@ -88,7 +98,8 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     # the run reads INCOMPLETE, not a silent green DONE. [[feedback_flag_unfilled_cells]]
     went_dark: dict = {}
     try:
-        went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
+        went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed,
+                                          exempt=CAPTAIN_EXEMPT)
         if went_dark:
             for p, names in went_dark.items():
                 print(f"  ⚠ {p}-day WENT DARK (on tab + recent data, absent from "
