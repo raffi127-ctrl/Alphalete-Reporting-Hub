@@ -351,6 +351,38 @@ def print_outline(page, label: str) -> None:
           flush=True)
 
 
+def dismiss_overlays(page) -> None:
+    """Close/remove modals + dark backdrops so the screenshot isn't dimmed. An
+    OwnerVille promo modal ("Applicant… / Learn") with a semi-transparent dark
+    backdrop was tinting the whole page grey (Carlos 7/31). Press Escape, then
+    strip any known overlay + any fixed, page-covering, high-z element (a
+    dimming backdrop, whatever its class), and hide open dialogs."""
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    try:
+        page.evaluate(
+            "() => {"
+            " ['.modal-backdrop','.sweet-overlay','.swal-overlay',"
+            "'.swal2-container','#activeFullscreenOverlay','.fullscreen-overlay',"
+            "'.introjs-overlay','.introjs-helperLayer']"
+            ".forEach(s=>document.querySelectorAll(s).forEach(e=>e.remove()));"
+            " [...document.querySelectorAll('body *')].forEach(e=>{"
+            " const s=getComputedStyle(e), r=e.getBoundingClientRect();"
+            " if(s.position==='fixed' && r.width>window.innerWidth*0.8"
+            " && r.height>window.innerHeight*0.8"
+            " && (parseInt(s.zIndex)||0)>=1000) e.remove(); });"
+            " document.querySelectorAll('.modal,[role=\"dialog\"],.sweet-alert,"
+            ".swal2-popup,.bootbox,.introjs-tooltip')"
+            ".forEach(e=>{e.style.display='none';});"
+            " document.body.classList.remove('modal-open','swal2-shown',"
+            "'swal2-height-auto'); document.body.style.overflow=''; }")
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+
 def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
            pad_bottom: int = 0) -> str:
     """Full-page screenshot, then PIL-crop to the view's real content. Two crop
@@ -360,6 +392,7 @@ def _shoot(page, out_path: Path, *, kind: str, fixed=None, pad: int = 14,
     located. Full-page can never come back blank, so a miss degrades to "too
     much", never empty. Returns 'box' | 'fixed' | 'full'."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    dismiss_overlays(page)             # strip any dimming modal/backdrop first
     box = content_box(page, kind)      # measured BEFORE the shot (scrolls to top)
     full = out_path.with_name(out_path.stem + "_full.png")
     page.screenshot(path=str(full), full_page=True)
