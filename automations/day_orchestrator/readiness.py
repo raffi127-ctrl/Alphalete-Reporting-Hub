@@ -204,6 +204,9 @@ class ReadinessCache:
         if ptype == "box_daily":
             return self._probe_box_daily(source_id, probe)
 
+        if ptype == "tracker_extract":
+            return self._probe_tracker_extract(source_id, probe)
+
         if ptype == "att_orderlog":
             return self._probe_att_orderlog(source_id, probe)
 
@@ -213,7 +216,78 @@ class ReadinessCache:
         if ptype == "org_board_filled":
             return self._probe_org_board_filled(source_id, probe)
 
+        if ptype == "dd_week":
+            return self._probe_dd_week(source_id, probe)
+
         return Readiness(False, f"unknown probe type {ptype!r}")
+
+    def _probe_dd_week(self, source_id: str, probe: dict) -> Readiness:
+        """Ready when the ORG DD Detail extract has THIS WEEK's deposits — so the
+        DD bulletin runs on the current week's numbers, never last week's (the
+        7/30 miss). DD is weekly (cl.DD Week = Sat/Sun deposit dates), so we can't
+        use the generic day-coverage probe (its target is 'today'); we compare the
+        extract's newest DD week against the week that just ended.
+
+        Copies the VA exactly: she does it Thursday morning and sends by 10am with
+        whatever's posted. So this HOLDS until the week is in, but FAILS OPEN at
+        `fallback_hhmm` (default 09:30) — past it, run anyway so the send still
+        lands by her 10am deadline. The hard_block in dd_data is the final net: if
+        it fails open onto a still-empty week, the send refuses rather than post a
+        blank one."""
+        import datetime as _dt
+        fallback = str(probe.get("fallback_hhmm", "09:30"))
+        try:
+            fb_h, fb_m = (int(x) for x in fallback.split(":"))
+            now = _dt.datetime.now()
+            if (now.hour, now.minute) >= (fb_h, fb_m):
+                return Readiness(True, f"past {fallback} — running to hit the 10am "
+                                       f"deadline (dd_data hard_block still guards "
+                                       f"an empty week)")
+        except Exception:  # noqa: BLE001
+            pass
+
+        view_url = probe.get("view_url")
+        crosstab_sheet = probe.get("crosstab_sheet", "ORG DD Detail")
+        date_col = probe.get("date_col", "cl.DD Week")
+        min_rows = int(probe.get("min_rows", 20))
+        if not view_url:
+            return Readiness(False, "dd_week probe misconfigured (need view_url)")
+        try:
+            from automations.shared.tableau_patchright import download_crosstab_patchright
+            from automations.override_bulletin.dd_data import week_just_ended
+        except Exception as e:  # noqa: BLE001
+            return Readiness(False, f"cannot import dd_week deps ({e})")
+
+        due = week_just_ended()
+        out = Path(tempfile.gettempdir()) / f"probe_{source_id.replace(':', '_')}.csv"
+        try:
+            download_crosstab_patchright(view_url, crosstab_sheet, out, verbose=False)
+        except Exception as e:  # noqa: BLE001
+            line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+            return Readiness(False, f"DD extract not pullable yet ({line})")
+
+        import csv as _csv
+        try:
+            with open(out, newline="", encoding="utf-8-sig") as f:
+                rows = list(_csv.DictReader(f))
+        except Exception as e:  # noqa: BLE001
+            return Readiness(False, f"cannot read DD probe CSV ({e})")
+        if len(rows) < min_rows:
+            return Readiness(False, f"DD extract thin ({len(rows)} rows) — still filling")
+        # newest deposit date -> its week-ending Sunday
+        newest = None
+        for r in rows:
+            d = _parse_date(r.get(date_col, ""))
+            if d and (newest is None or d > newest):
+                newest = d
+        if newest is None:
+            return Readiness(False, f"no parseable dates in {date_col!r}")
+        newest_we = newest + dt.timedelta(days=(6 - newest.weekday()))  # -> Sunday
+        if newest_we >= due:
+            return Readiness(True, f"DD week {newest_we.isoformat()} is in "
+                                   f"(need >= {due.isoformat()})")
+        return Readiness(False, f"DD extract only through week {newest_we.isoformat()}, "
+                                f"waiting on {due.isoformat()}")
 
     def _probe_org_board_filled(self, source_id: str, probe: dict) -> Readiness:
         """Not a Tableau extract — the BOARD ITSELF. Ready once yesterday's column
@@ -311,6 +385,35 @@ class ReadinessCache:
         # no-orders day (max date never reaches the check).
         check = self.target_date - dt.timedelta(days=int(probe.get("days_back", 1)))
         return Readiness(*_csv_covers_date(out, _fr.DATE_COL, check, min_rows))
+
+    def _probe_tracker_extract(self, source_id: str, probe: dict) -> Readiness:
+        """Is the Tableau EXTRACT behind a set of daily country tracker boards
+        refreshed for the latest completed reporting day?
+
+        Closes the gap Megan hit 2026-07-29 ("trackers were sent out today
+        without being updated and we ran them anyway"): tableau_screenshots
+        carried `data_sources: []`, and an empty list makes report_ready() check
+        session warmth and then answer "all sources ready" — so nothing gated the
+        boards on data at all. The boards are captured as IMAGES, so there is no
+        crosstab in the run to inspect; this probe pulls the crosstab that
+        org_sales_board already pulls off the same workbook every morning (same
+        view, same worksheet, same parser, week-pinned + :refresh=yes) and checks
+        its max date reaches the completed day.
+
+        All of the config lives in automations.tableau_screenshots.freshness —
+        one entry per EXTRACT, not per board, because a refresh is workbook-wide
+        (3 pulls cover 8 boards). FAIL-OPEN past `fallback_hhmm` and on any error,
+        like every other gate here: it may hold the run for a couple of hours, it
+        may never skip it. A board whose extract is still stale when the run
+        proceeds is held out of the thread and flagged by run.py, not posted as
+        though it were fresh."""
+        extract_id = probe.get("extract") or source_id
+        try:
+            from automations.tableau_screenshots import freshness as _fr
+        except Exception as e:  # noqa: BLE001 — code problem, not data: fail-open
+            return Readiness(True, f"tracker freshness import failed ({e}) — running")
+        ok, why = _fr.extract_ready(extract_id, self.target_date)
+        return Readiness(ok, why)
 
     def _probe_box_daily(self, source_id: str, probe: dict) -> Readiness:
         """Box (B2BBOXEnergyTracker/BoxDailyTracker) is the ORG Sales Board's

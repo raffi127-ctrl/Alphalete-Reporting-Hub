@@ -27,6 +27,17 @@
     "gate_unprobed_sources": false
   },
   "sources": {
+    "tableau:dd_detail": {
+      "label": "ORG DD Detail (weekly direct deposits)",
+      "probe": {
+        "type": "dd_week",
+        "view_url": "https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/DDDETAILORG",
+        "crosstab_sheet": "ORG DD Detail",
+        "date_col": "cl.DD Week",
+        "min_rows": 20,
+        "fallback_hhmm": "09:30"
+      }
+    },
     "tableau:order_log": {
       "label": "60-day Order Log",
       "probe": {
@@ -4759,7 +4770,9 @@
       "_off_scheduler_note": "Weekly step for the DD bulletin: pull this week's fees-excluded figure for the four special-case names (Justin/Marcos/Karrington/Milan) from the Tableau ORG DD Detail crosstab and write it into the 'ICD (Special Cases)' section on the Org DDs Ongoing Report tab, current-week column — building their 4-week history one week at a time (the DD Detail view only serves the current week). DRY-RUN by default; base_args carries --accumulate only, so it PRINTS what it would write. Add --write to actually write. Only ever touches the special rows' current-week cell, below the headline formulas. LUCY 1 (Raf's Tableau login).",
       "display_name": "DD — accumulate special-case weekly DD",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:dd_detail"
+      ],
       "command": [
         "automations.override_bulletin.dd_search"
       ],
@@ -4811,7 +4824,9 @@
       "_off_scheduler_note": "Populate the tab's current-week column for EVERY Active-YES owner from OUR Tableau mapping (ORG DD Detail), combining the week's Sat+Sun deposit dates and folding Credico — the switch off the VA hand-fill (Megan 2026-07-30). DRY-RUN by default: base_args carries --populate only, so it PRINTS the per-owner diff vs the tab and writes nothing (VA still fills the tab during the transition). Add --write to go live. Never overwrites a Credico owner's cell when Credico is unavailable. Depends on credico_fetch so the fold has data. LUCY 1.",
       "display_name": "DD — populate all owners from our mapping",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:dd_detail"
+      ],
       "command": [
         "automations.override_bulletin.dd_search"
       ],
