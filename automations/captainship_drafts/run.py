@@ -170,7 +170,8 @@ def _preview_eml(captain: config.Captain, today: dt.date) -> Path:
 
 
 def _send_reviewed(selected, today: dt.date, *, to_override=None,
-                   logfn=print) -> int:
+                   allow_unreviewed: bool = False,
+                   allow_incomplete: bool = False, logfn=print) -> int:
     """Send the .eml files --dry-run already wrote for `today`, untouched.
 
     This is the approval gate. It deliberately does NOT rebuild: re-reading the
@@ -183,6 +184,39 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
     from automations.captainship_drafts.mailer import Mailer
 
     failures = 0
+    # GUARD 1 — are these the files that were reviewed? The PDF the approvers
+    # tick lives in Drive (shared); the .eml this mails live in output/ (per
+    # machine). On 2026-07-31 those diverged: the mini built and posted, Eve's
+    # box rebuilt the drafts after a fix and refreshed the Drive PDF in place,
+    # so the approved PDF showed corrected reports while the mini still held
+    # the broken .eml — and the mini is what sent. Twelve captainships went out
+    # with a blank Product Summary that nobody had approved. Refusing here is
+    # the only place that can catch it, because it is the only place that sees
+    # both the local files and the reviewed stamp.
+    if not allow_unreviewed:
+        try:
+            from automations.captainship_drafts import review_gate
+            want = review_gate.reviewed_digest(today)
+            have = review_gate.eml_digest(today)
+        except Exception as e:      # noqa: BLE001 — a check that cannot run
+            want = have = None      # must not become a reason not to send
+            logfn(f"  ⚠ could not verify the previews against the reviewed PDF "
+                  f"({type(e).__name__}: {e}) — sending unverified")
+        if want and have and want != have:
+            logfn(f"  ✗ REFUSING TO SEND: these previews are not the ones that "
+                  f"were reviewed (reviewed {want}, on this machine {have}).\n"
+                  f"    The PDF the approvers ticked was built from a DIFFERENT "
+                  f"set of .eml files — most likely on the other machine.\n"
+                  f"    Rebuild here (`run.py --dry-run`), re-run "
+                  f"`review_gate.py --refresh`, and get a fresh checkmark. "
+                  f"--allow-unreviewed overrides this.")
+            return len(selected)
+        if want and have:
+            logfn(f"  ✓ previews match the reviewed PDF ({have})")
+        elif not want:
+            logfn("  ⚠ the reviewed PDF carries no fingerprint (built before "
+                  "this check existed) — sending unverified")
+
     # One SMTP login for the whole set (see mailer.py for why SMTP and not the
     # Gmail API). Opened lazily, so a run where every preview is missing never
     # touches the network.
@@ -203,6 +237,21 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
                       f"— skipped")
                 continue
             msg = BytesParser(policy=policy.default).parsebytes(eml.read_bytes())
+            # GUARD 2 — never mail a report that still says a section could not
+            # be captured. Independent of guard 1 on purpose: that one proves
+            # the files match what was reviewed, this one proves the files are
+            # worth sending at all. A report whose Product Summary is an empty
+            # yellow box is not a report, whoever ticked it.
+            if not allow_incomplete:
+                body = msg.get_body(preferencelist=("html",))
+                html = body.get_content() if body is not None else ""
+                if email_build.PENDING_MARK in html:
+                    failures += 1
+                    n = html.count(email_build.PENDING_MARK)
+                    logfn(f"  ✗ {captain.key}: NOT SENT — {n} section(s) still "
+                          f"read '{email_build.PENDING_MARK}'. Fix the source "
+                          f"and rebuild, or --allow-incomplete to send anyway.")
+                    continue
             if msg["To"] is None:
                 msg["To"] = recipient
             else:
@@ -390,6 +439,15 @@ def main(argv=None) -> int:
                          "nothing, re-reads no sheet, so what goes out cannot "
                          "differ from what you approved. This is the approval "
                          "gate: --dry-run first, look, then this.")
+    ap.add_argument("--allow-unreviewed", action="store_true",
+                    help="With --send-reviewed: mail even when these "
+                         "previews are not the ones the approved PDF "
+                         "was built from. Only when you know why they "
+                         "differ.")
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="With --send-reviewed: mail reports that still "
+                         "show a 'could not be captured' note. Off by "
+                         "default — a blank section is not a report.")
     ap.add_argument("--to", default=None, metavar="ADDR",
                     help="With --send: send to ADDR instead of the captains' "
                          "real distribution lists. Use this to test a real "
@@ -426,7 +484,9 @@ def main(argv=None) -> int:
 
     if args.send_reviewed:
         # Nothing to capture — this path only mails what's already on disk.
-        n = _send_reviewed(selected, today, to_override=args.to)
+        n = _send_reviewed(selected, today, to_override=args.to,
+                           allow_unreviewed=args.allow_unreviewed,
+                           allow_incomplete=args.allow_incomplete)
         if n:
             print(f"\n✗ {n} captain(s) not sent.")
             return 1

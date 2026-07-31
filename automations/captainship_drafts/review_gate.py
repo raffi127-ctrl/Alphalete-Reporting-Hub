@@ -176,8 +176,61 @@ def build_pdf(today: dt.date, verbose: bool = True) -> Path:
 # --------------------------------------------------------------------------
 # 2. Drive
 # --------------------------------------------------------------------------
+def preview_emls(today: dt.date) -> list[Tuple[str, Path]]:
+    """[(captain key, preview .eml)] for `today` — the files --send-reviewed
+    actually mails, as opposed to the .html the PDF is printed from."""
+    return [(cap.key, _OUTPUT_DIR / f"captainship_draft_{cap.key}_{today:%Y%m%d}.eml")
+            for cap in config.CAPTAINS]
+
+
+def eml_digest(today: dt.date) -> str:
+    """Fingerprint of the day's .eml SET — what was reviewed, file for file.
+
+    Why this exists (2026-07-31, and it cost a real send): the artefact people
+    approve is the PDF, which lives in Drive and is therefore SHARED. The
+    artefact that gets mailed is output/*.eml, which is per-machine. Nothing
+    tied the two together. The mini built the drafts and posted the link; the
+    same drafts were rebuilt on Eve's box after a fix and the Drive PDF was
+    updated in place — so the reviewers approved corrected reports while the
+    mini still held the broken .eml, and the send mailed those. The gate had no
+    way to notice, because the only thing it checked was that SOMEONE had
+    ticked SOME message.
+
+    A missing preview hashes as "missing" rather than being skipped: a set of
+    eleven is not the set of twelve that was approved."""
+    import hashlib
+    h = hashlib.sha256()
+    for key, path in preview_emls(today):
+        h.update(key.encode())
+        h.update(hashlib.sha256(path.read_bytes()).digest()
+                 if path.exists() else b"missing")
+    return h.hexdigest()[:16]
+
+
+def reviewed_digest(today: dt.date, verbose: bool = False) -> Optional[str]:
+    """The digest stamped on the Drive PDF when it was uploaded, or None.
+
+    Read from Drive rather than from the Slack message on purpose: Drive is the
+    one store BOTH machines can write, so a --refresh from either of them keeps
+    the stamp true. Editing the Slack post would only work from the machine
+    that posted it."""
+    from googleapiclient.discovery import build
+    from automations.fiber_activations import drive_auth
+    svc = build("drive", "v3", credentials=drive_auth.load_credentials(),
+                cache_discovery=False)
+    name = f"captainship_reports_{today:%Y%m%d}.pdf"
+    q = f"name = '{name}' and trashed = false"
+    files = svc.files().list(q=q, spaces="drive",
+                             fields="files(id,description)").execute().get("files", [])
+    if not files:
+        if verbose:
+            print(f"— no {name} in Drive", flush=True)
+        return None
+    return files[0].get("description") or None
+
+
 def upload_pdf(pdf: Path, verbose: bool = True,
-               keep_last: int = 30) -> str:
+               keep_last: int = 30, description: str = "") -> str:
     """Put the PDF in Drive and return a link the reviewers can open.
 
     Reuses the fiber_activations Drive token (alphaletereporting, drive.file
@@ -210,14 +263,18 @@ def upload_pdf(pdf: Path, verbose: bool = True,
     q = f"name = '{pdf.name}' and '{fid}' in parents and trashed = false"
     existing = svc.files().list(q=q, spaces="drive",
                                 fields="files(id)").execute().get("files", [])
+    # The digest of the .eml set this PDF was printed from, stamped on the file
+    # so the SENDING machine can prove it holds the same set — see eml_digest.
+    body = {"description": description} if description else {}
     if existing:
         # Same name = same day. Update in place so a rebuild keeps the link the
         # reviewers may already be looking at.
         file_id = existing[0]["id"]
-        svc.files().update(fileId=file_id, media_body=media).execute()
+        svc.files().update(fileId=file_id, media_body=media,
+                           body=body or None).execute()
     else:
         file_id = svc.files().create(
-            body={"name": pdf.name, "parents": [fid]},
+            body={"name": pdf.name, "parents": [fid], **body},
             media_body=media, fields="id").execute()["id"]
 
     link = svc.files().get(fileId=file_id,
@@ -515,7 +572,7 @@ def main(argv=None) -> int:
     # here as "--post --refresh" and has to mean refresh — otherwise the one
     # case this exists for could not be triggered the one way it is triggered.
     if args.refresh:
-        link = upload_pdf(build_pdf(today))
+        link = upload_pdf(build_pdf(today), description=eml_digest(today))
         # Same name = same day, so upload_pdf updated the file IN PLACE and the
         # link already posted in Slack now shows the rebuilt PDF. Nothing is
         # posted: a correction must not ping the approvers a second time with a
@@ -524,7 +581,8 @@ def main(argv=None) -> int:
               flush=True)
         return 0
     if args.post:
-        post_review(upload_pdf(build_pdf(today)), today, args.channel)
+        post_review(upload_pdf(build_pdf(today), description=eml_digest(today)),
+                    today, args.channel)
         return 0
     if args.remind:
         return 0 if remind(today, args.after_hours, args.channel) else 1

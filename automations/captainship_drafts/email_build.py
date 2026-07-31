@@ -35,6 +35,12 @@ from automations.scheduled_6_days_out.email_send import (
 
 _FONT_STACK = "Arial,Helvetica,sans-serif"
 
+# The sentence every 'pending' note carries. It is a CONSTANT because the send
+# path greps for it: run.py --send-reviewed refuses to mail a report that still
+# shows one. Change the wording here and the guard follows; inline it back into
+# the f-string and the guard silently stops matching.
+PENDING_MARK = "could not be captured on this run"
+
 
 def _intro_html(captain: Captain) -> str:
     greeting, items = captain.intro
@@ -56,7 +62,7 @@ def _pending(what: str, why: str = "") -> str:
               f'{_html.escape(why)}</div>') if why else ""
     return (f'<div style="font-size:12px;color:#9a6b00;background:#fff4d6;'
             f'border:1px solid #f0d271;border-radius:4px;padding:8px 10px;'
-            f'margin:4px 0 10px">— {what} could not be captured on this run '
+            f'margin:4px 0 10px">— {what} {PENDING_MARK} '
             f'(re-run after fixing the source) —{reason}</div>')
 
 
