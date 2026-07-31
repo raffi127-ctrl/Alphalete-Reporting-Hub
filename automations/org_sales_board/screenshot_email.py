@@ -342,8 +342,13 @@ def section_ranges(g) -> List[Tuple[str, str]]:
                     f"A{ps}:{_colletter(_last_col(g, ps, ps_end))}{ps_end}"))
     lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)   # skip the r1 title cell
     top = _top_org_range(g, ps_end, lb or 1) if ps else None
+    # BETWEEN Product Summary and the ALPHALETE ORG leaderboard (Eve,
+    # 2026-07-31). It is the whole org, Carlos and Colten included, so it reads
+    # as the second half of the summary at the top — not as one of the three
+    # per-org boxes that close the email. It was briefly moved down to lead that
+    # closing group; it belongs here.
     if top:
-        out.append(top)            # right after Product Summary — Eve 2026-07-31
+        out.append(top)
     if lb:
         end = _block_end(g, lb)
         first_val = next((c for c in range(3, len(g[lb - 1]) + 1)
@@ -504,18 +509,37 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     msg["Subject"] = f"Alphalete Org Sales Board {day.month}/{day.day}"
     # Every image is self-labeled (its own red title bar), so no typed headers
     # and no top banner — just the screenshots stacked (Megan 2026-07-03).
-    parts, cids = [], []
+    #
+    # ONE IMAGE PER TABLE ROW. They used to be bare <img> tags concatenated into
+    # a <div>, and an <img> is an INLINE element: Gmail rescales the screenshots
+    # to fit its reading pane and then flows whatever fits onto the same line —
+    # which is why the 7/30 email arrived with the boxes SIDE BY SIDE, two per
+    # row, in an order nobody could follow (Eve, 2026-07-31). It looked right in
+    # the preview because a browser had the width to give each one its own line.
+    #
+    # A presentation table with one <tr><td> per image is the layout every mail
+    # client honours: a table row cannot flow next to another one, so the stack
+    # stays a stack in Gmail, Outlook and on a phone. display:block kills the
+    # inline baseline gap under each image too. No floats, one image per cell.
+    rows, cids = [], []
     for name, path in images:
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
-        parts.append(
-            f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
-            f'border:1px solid #ddd;margin:0 0 16px">')
-    # 'ALPHALETE ORG' banner, constrained to the table width (not full-page).
-    banner = ('<div style="background:#d9d9d9;text-align:center;padding:10px;'
-              'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb;'
-              'max-width:1000px;width:100%;box-sizing:border-box;margin:0 0 16px">'
-              'ALPHALETE ORG</div>')
+        rows.append(
+            '<tr><td style="padding:0 0 16px">'
+            f'<img src="cid:{cid}" alt="{name}" '
+            'style="display:block;max-width:100%;height:auto;'
+            'border:1px solid #ddd">'
+            '</td></tr>')
+    # 'ALPHALETE ORG' banner — its own row, so it caps the stack.
+    banner = ('<tr><td style="padding:0 0 16px">'
+              '<div style="background:#d9d9d9;text-align:center;padding:10px;'
+              'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb'
+              '">ALPHALETE ORG</div></td></tr>')
+    stack = ('<table role="presentation" cellpadding="0" cellspacing="0" '
+             'border="0" width="100%" style="max-width:1000px;'
+             'border-collapse:collapse">'
+             + banner + "".join(rows) + '</table>')
     # Copy-vs-VA comparison breakdown chart: RETIRED 2026-07-21 (Megan). The VA
     # tab is no longer hand-filled and Eve verifies the automation directly, so
     # the chart only produced false "missed pull" rows off the bottom
@@ -527,8 +551,7 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     cid_photo = make_msgid()[1:-1]
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
-        + banner
-        + "".join(parts)
+        + stack
         + '<div style="font-size:13px;margin-top:4px">Best,</div><br>'
         + _signature_html(f"<{cid_photo}>")
         + '</div>')
