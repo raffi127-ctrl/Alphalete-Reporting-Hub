@@ -38,7 +38,8 @@ def _we_key(week_mdy: str) -> str:
 # --------------------------------------------------------------------------
 RAF_PNL_WORKBOOK = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 RAF_PNL_TAB = "Raf PNL 2026"
-RAF_CAPTAIN_ROW = 335        # "Captain Override" row
+RAF_CAPTAIN_LABEL = "Captain Override"   # find the row BY this label — never hardcode
+RAF_CAPTAIN_ROW = 335        # legacy fallback only (Raf inserts rows; the row drifts)
 
 
 def _money(raw):
@@ -54,10 +55,15 @@ def _money(raw):
 def raf_captain_override(week_mdy: str, ws=None):
     """Raf's Captain Override for the given sheet week (e.g. '7.12.26').
 
-    Reads Raf PNL 2026 row 335 at the target week's WE block — the value sits in
-    the block's Profit/Loss column, i.e. the WE-header column + 2 (the label
-    'Captain Override' is one cell left, under 'Got Paid'). Returns the amount or
-    None if the week/value isn't present."""
+    Reads Raf PNL 2026 at the target week's WE block. Each block lays its rows out
+    as [WE-header | label | value | ...], so the amount sits in the WE-header
+    column + 2 and the label 'Captain Override' one cell left of it (base + 1).
+
+    The row is found BY that label, never hardcoded: Raf inserts rows into the PNL
+    (it drifted from 335 to 348 the week of 2026-07-26 — row 335 became "JD's
+    Bonus" $2,357.92 while the real Captain Override was $16,267.50), so a fixed
+    row silently reads a neighbouring line. Returns the amount, or None if the
+    week column or the label isn't present."""
     if ws is None:
         from automations.recruiting_report import fill as _fill
         ws = _fill._client().open_by_key(RAF_PNL_WORKBOOK).worksheet(RAF_PNL_TAB)
@@ -67,8 +73,14 @@ def raf_captain_override(week_mdy: str, ws=None):
     base = next((i for i, h in enumerate(header) if (h or "").strip() == want), None)
     if base is None:
         return None
+    lcol, vcol = base + 1, base + 2          # label | Profit/Loss value of the block
+    for row in vals:
+        if lcol < len(row) and (row[lcol] or "").strip() == RAF_CAPTAIN_LABEL:
+            return _money(row[vcol]) if vcol < len(row) else None
+    # Label not found in this block (unexpected) — fall back to the legacy row so
+    # we return *something* rather than silently zeroing, but this path is wrong if
+    # the sheet shifted; the label search above is the correct one.
     row = vals[RAF_CAPTAIN_ROW - 1] if RAF_CAPTAIN_ROW - 1 < len(vals) else []
-    vcol = base + 2                                  # Profit/Loss col of the block
     return _money(row[vcol]) if vcol < len(row) else None
 
 
