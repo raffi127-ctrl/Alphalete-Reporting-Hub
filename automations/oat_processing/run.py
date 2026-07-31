@@ -1141,14 +1141,18 @@ def lookup_resume_phone(page):
     try:
         newpg = page.context.new_page()
         newpg.goto(href, wait_until="domcontentloaded", timeout=30000)
-        newpg.wait_for_timeout(2500)
-        body = newpg.evaluate("() => (document.body.innerText || '')")
-        # The resume header shows name / email / phone / city. Take the first phone
-        # that looks real (>= 10 digits), skipping the office callback numbers.
-        for m in _PHONE_RE.finditer(body[:2500]):
-            digits = re.sub(r"\D", "", m.group(0))
-            if len(digits) >= 10:
-                return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+        # The resume is a JS-rendered page and the real phone can sit in the header
+        # contact line ("City, ST ZIP | +1... | email") while the body shows
+        # "Teléfono: [Información reservada]". Poll the WHOLE page (not the first
+        # 2500 chars) until a real phone renders (Megan 7/30: Yelitza's number was
+        # missed by the old short/early scan).
+        for _ in range(12):                       # ~12s of polling
+            body = newpg.evaluate("() => (document.body.innerText || '')")
+            for m in _PHONE_RE.finditer(body):
+                digits = re.sub(r"\D", "", m.group(0))
+                if 10 <= len(digits) <= 11:        # a real US number
+                    return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
+            newpg.wait_for_timeout(1000)
         return None, f"no phone on resume (title={newpg.title()[:40]!r})"
     except Exception as e:  # noqa: BLE001
         return None, f"resume open err: {type(e).__name__}"

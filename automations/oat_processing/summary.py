@@ -122,8 +122,11 @@ def build_html(date: dt.date, t: dict, last_scan: str = "") -> str:
     removed_rows = _rows_html(t["removed"], lambda it: [
         who_src(it), f'<td>{_esc(it["reason"]) or "duplicate"}</td>',
         '<td><span class="pill">Removed</span></td>'])
+    # Don't show the raw activity 'reason' here — it's the initial CLASSIFY reason
+    # (often stale, e.g. 'no phone…' for one whose resume number WAS found and who
+    # then routed to re-text). Show the real, consistent status instead (Megan 7/30).
     retext_rows = _rows_html(t["retext"], lambda it: [
-        who_src(it), f'<td>{_esc(it["reason"])}</td>',
+        who_src(it), '<td>gone quiet &gt; 1 week · thread older than this month</td>',
         '<td><span class="pill" style="--c:var(--flag);--cbg:var(--flag-bg)">'
         'Flagged · re-text</span></td>'])
     nophone_rows = _rows_html(t["nophone"], lambda it: [
