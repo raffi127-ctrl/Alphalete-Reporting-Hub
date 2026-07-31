@@ -155,6 +155,122 @@ def _state_path(account: str, group: str) -> Path:
     return OUT_DIR / f"pending-{account.split('@')[0]}-{slug}.json"
 
 
+# Both distros mirror the same national Fiber+Hybrid roster (Eve 2026-07-27):
+# Raf's personal list + a matching group in the reporting account. A target only
+# becomes active once its account has a read-write Contacts token, so alphalete-
+# reporting auto-joins the moment its token is installed — no code change.
+ALL_TARGETS = [
+    ("raffi127@gmail.com", "ATT Fiber Owners"),
+    ("alphaletereporting@gmail.com", "ATT Fiber Owners"),
+]
+COMBINED_STATE = OUT_DIR / "pending-fiber-owners.json"
+
+
+def active_targets() -> List[Tuple[str, str]]:
+    from automations.fiber_owners_distro import contacts_write
+    return [(a, g) for a, g in ALL_TARGETS if contacts_write.token_path(a).exists()]
+
+
+def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
+                   create_group: bool = False) -> int:
+    """Sync EVERY active target (Raf + reporting) off one roster, apply adds +
+    stale-dup cleanup per account, then post ONE combined ✅/❌ thread whose lines
+    remove the person from every list they're on."""
+    from automations.fiber_owners_distro import contacts_write, notify
+    targets = active_targets()
+    if not targets:
+        print("no target has a read-write Contacts token yet — authorize first.")
+        return 2
+    kept, _d, _e = build_target(xlsx)
+    target = [(o.email, o.name) for o in kept]
+    protect = list(load_keep().keys()) + roster.all_roster_emails(xlsx)
+    stamp = edate.strftime("%Y-%m-%d")
+    print(f"phase POST ({'dry-run' if dry_run else 'LIVE'}) — roster {stamp} — "
+          f"targets: {', '.join(a for a, _ in targets)}")
+
+    dep_index: Dict[str, dict] = {}          # canonical email -> combined departure
+    for account, group in targets:
+        svc = contacts_write._service(account)
+        grp = contacts_write.find_group(svc, group)
+        if grp is None:
+            if create_group and not dry_run:
+                grp = svc.contactGroups().create(
+                    body={"contactGroup": {"name": group}}).execute()
+                print(f"  {account}: created group {group!r}")
+            else:
+                print(f"  {account}: group {group!r} not found — pass --create-group "
+                      "to create it. Skipping this target.")
+                continue
+        plan = contacts_write.plan_sync(svc, grp, target, protect)
+        print(f"  {account}: +{len(plan['add'])} add, "
+              f"{len(plan['stale_duplicates'])} stale-dup, "
+              f"{len(plan['true_departures'])} departure(s)")
+        if not dry_run:
+            contacts_write.apply_adds(svc, grp, plan["add"])
+            contacts_write.remove_members(svc, grp, plan["stale_duplicates"])
+        for m in plan["true_departures"]:
+            canons = {roster.canonical(e) for e in m["emails"]}
+            hit = next((dep_index[c] for c in canons if c in dep_index), None)
+            if hit is None:
+                hit = {"name": m["name"], "emails": list(m["emails"]), "removals": []}
+            for e in m["emails"]:
+                if e not in hit["emails"]:
+                    hit["emails"].append(e)
+            for c in canons:
+                dep_index[c] = hit
+            hit["removals"].append({"account": account, "group": group,
+                                    "resourceName": m["resourceName"]})
+
+    departures, seen = [], set()
+    for d in dep_index.values():
+        if id(d) not in seen:
+            seen.add(id(d))
+            departures.append(d)
+
+    posted = notify.post_departures(departures, stamp, dry_run=dry_run)
+    if not dry_run and posted:
+        COMBINED_STATE.write_text(json.dumps({
+            "channel": notify.CHANNEL_ID, "parent_ts": posted["parent_ts"],
+            "roster_date": stamp, "posted_at": dt.datetime.now().isoformat(),
+            "candidates": posted["candidates"]}, indent=2), encoding="utf-8")
+        print(f"  posted {len(posted['candidates'])} ICD line(s) w/ ✅/❌ across "
+              f"{len(targets)} list(s); window open 24h.")
+    return 0
+
+
+def phase_finalize_all(dry_run: bool = True, force: bool = False) -> int:
+    """+24h: remove each un-vouched departure from EVERY list it's on."""
+    from automations.fiber_owners_distro import contacts_write, notify
+    if not COMBINED_STATE.exists():
+        print("no pending departures thread — nothing to finalize.")
+        return 0
+    state = json.loads(COMBINED_STATE.read_text(encoding="utf-8"))
+    hrs = (dt.datetime.now() - dt.datetime.fromisoformat(state["posted_at"])).total_seconds() / 3600
+    if hrs < 24 and not force:
+        print(f"objection window not elapsed ({hrs:.1f}h of 24h). Re-run later or --force.")
+        return 0
+    to_remove, kept = notify.read_decisions(state["parent_ts"], state["candidates"],
+                                            state["channel"])
+    n_lists = sum(len(c.get("removals", [])) for c in to_remove)
+    print(f"phase FINALIZE ({'dry-run' if dry_run else 'LIVE'}): remove "
+          f"{len(to_remove)} ICD(s) across {n_lists} list-entries, {len(kept)} kept (✅).")
+    for m in to_remove:
+        print(f"   - {m['name']} from {[r['account'] for r in m.get('removals', [])]}")
+    if not dry_run:
+        for m in to_remove:
+            for rem in m.get("removals", []):
+                svc = contacts_write._service(rem["account"])
+                grp = contacts_write.find_group(svc, rem["group"])
+                if grp:
+                    contacts_write.remove_members(
+                        svc, grp, [{"resourceName": rem["resourceName"]}])
+        notify.post_summary(state["parent_ts"], to_remove, kept,
+                            channel=state["channel"], dry_run=False)
+        COMBINED_STATE.unlink()
+        print("  removed from all lists + posted summary; state cleared.")
+    return 0
+
+
 def phase_post(account: str, group: str, xlsx: Path, edate: dt.datetime,
                dry_run: bool = True) -> int:
     """Phase 1: apply ADDs + stale-dup cleanup now; post true departures to Slack
@@ -230,8 +346,9 @@ def phase_finalize(account: str, group: str, dry_run: bool = True,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Sync AT&T Fiber Owners distro from "
                                              "Kelly's weekly roster.")
-    ap.add_argument("--account", default=DEFAULT_ACCOUNT,
-                    help="Google account whose Contacts group to reset.")
+    ap.add_argument("--account", default=None,
+                    help="Single account to sync. Omit to sync ALL active targets "
+                         "(Raf + reporting) in one combined run — the scheduled path.")
     ap.add_argument("--group", default=DEFAULT_GROUP,
                     help="Contact group (distribution list) name.")
     ap.add_argument("--roster", help="Path to a roster .xlsx (skip IMAP fetch).")
@@ -242,13 +359,17 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="Actually write (default is a dry-run). Applies to --phase "
                          "post/finalize.")
+    ap.add_argument("--create-group", action="store_true",
+                    help="With --send post, create the group if it doesn't exist yet.")
     ap.add_argument("--force", action="store_true",
                     help="With --phase finalize, skip the 24h window check.")
     args = ap.parse_args(argv)
 
     if args.phase == "finalize":
-        return phase_finalize(args.account, args.group, dry_run=not args.send,
-                              force=args.force)
+        if args.account:
+            return phase_finalize(args.account, args.group, dry_run=not args.send,
+                                  force=args.force)
+        return phase_finalize_all(dry_run=not args.send, force=args.force)
 
     if args.roster:
         xlsx = Path(args.roster)
@@ -257,9 +378,13 @@ def main(argv=None) -> int:
         xlsx, edate = roster.fetch_latest_roster()
 
     if args.phase == "post":
-        return phase_post(args.account, args.group, xlsx, edate, dry_run=not args.send)
+        if args.account:
+            return phase_post(args.account, args.group, xlsx, edate,
+                              dry_run=not args.send)
+        return phase_post_all(xlsx, edate, dry_run=not args.send,
+                              create_group=args.create_group)
 
-    preview(xlsx, edate, args.account, args.group)
+    preview(xlsx, edate, args.account or DEFAULT_ACCOUNT, args.group)
     return 0
 
 

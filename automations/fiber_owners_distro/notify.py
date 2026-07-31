@@ -96,12 +96,10 @@ def post_departures(departures: List[dict], roster_date: str,
         reply = cli.chat_postMessage(
             channel=channel, thread_ts=parent_ts,
             text=f"*{clean_name(d['name'])}* — removed tomorrow if not ✅")
-        ts = reply["ts"]
         # Do NOT pre-seed ✅/❌: the poster's identity would count as an approver
         # vote (the laptop token is Megan), and a pre-filled reaction reads as if
         # someone already decided. Approvers add their own from a clean slate.
-        cands.append({"name": d["name"], "emails": d.get("emails") or [],
-                      "resourceName": d["resourceName"], "reply_ts": ts})
+        cands.append({**d, "reply_ts": reply["ts"]})   # carry name/emails/removals
     return {"parent_ts": parent_ts, "candidates": cands}
 
 

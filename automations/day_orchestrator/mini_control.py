@@ -1660,6 +1660,13 @@ def _action_set_contacts_token(args: str) -> tuple[bool, str]:
     import shlex
     import shutil
     raw = (args or "").strip()
+    # Optional leading "<account> <json>" (for alphaletereporting); bare JSON →
+    # raffi127 (back-compat with the first install).
+    account = "raffi127@gmail.com"
+    head = raw.split(None, 1)
+    if head and "@" in head[0] and "{" not in head[0]:
+        account = head[0].strip()
+        raw = head[1].strip() if len(head) > 1 else ""
     parsed = None
     for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
         cand = (cand or "").strip()
@@ -1671,15 +1678,14 @@ def _action_set_contacts_token(args: str) -> tuple[bool, str]:
         except Exception:  # noqa: BLE001
             continue
     if parsed is None:
-        return False, ("set_contacts_token needs the contacts-rw-token-raffi127.json "
-                       "CONTENTS (a JSON object) as Args")
+        return False, ("set_contacts_token needs the contacts-rw token JSON as Args "
+                       "(optionally prefixed with the account email)")
     if not parsed.get("refresh_token"):
         return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
     if not (parsed.get("client_id") and parsed.get("client_secret")):
         return False, "token JSON has no client_id/client_secret — must be self-contained"
 
     from automations.fiber_owners_distro import contacts_write as cw
-    account = "raffi127@gmail.com"
     path = cw.token_path(account)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1705,7 +1711,7 @@ def _action_set_contacts_token(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return True, (f"token written to {path} but verify errored "
                       f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
-    return True, f"Contacts (raffi127) read-write token installed + verified (People API OK, {n}+ groups)"
+    return True, f"Contacts ({account}) read-write token installed + verified (People API OK, {n}+ groups)"
 
 
 def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
