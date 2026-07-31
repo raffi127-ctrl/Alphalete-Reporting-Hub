@@ -22,6 +22,7 @@ from pathlib import Path
 from automations.canceled_orders import pull, fill, render
 from automations.recruiting_report import fill as rfill
 from automations.shared import slack_metrics_post
+from automations.shared import single_owner_dedup
 
 
 # Team rosters — sourced from CB Activations (Raf|Starr) Crosstab Grand-Total
@@ -73,13 +74,21 @@ def _run_single_owner(owner: str, order_start: dt.date, end: dt.date,
           f"window, Owner = {owner})...")
     rows = pull.parse_and_filter(csv_path, {owner},
                                  status_window=(status_start, end))
-    print(f"  ✓ {owner}: {len(rows)} canceled")
+    # Match Raf's #alphalete-sales behavior: post only what's NEW since the last
+    # run, not the whole 30-day Status-Date window. The multi-tab main() flow
+    # gets this from fill.find_new_rows (Sheet dedup); the single-owner path has
+    # no Sheet, so dedup against a per-owner cache instead. persist only on a
+    # real run — a --dry-run preview must not mark rows as seen.
+    new_rows = single_owner_dedup.filter_new(
+        owner, rows, ("Customer Name", "SPM #"), "canceled_orders",
+        persist=not dry_run)
+    print(f"  ✓ {owner}: {len(rows)} in 30-day window, {len(new_rows)} new to post")
 
     print("Step 3: Slack post to today's Metrics thread...")
     try:
-        if rows:
+        if new_rows:
             img_path = Path(tempfile.gettempdir()) / "canceled_orders_single.png"
-            render.render(rows, img_path)
+            render.render(new_rows, img_path)
             res = slack_metrics_post.post_reply_with_image(
                 img_path, comment="🚫 Canceled Orders",
                 react_emoji="no_entry_sign", dry_run=dry_run)
