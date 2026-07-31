@@ -91,6 +91,14 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing ICDs")
 
+    # Re-point any pulled name that has NO row at the row the tab already has
+    # for that person (alias siblings). Runs BEFORE the went-dark check so a
+    # reversed 'ICD Aliases' row — canonical typed as the ownerville variant,
+    # 'Rafael Hidalgo' → 'Rafael Hidalgo TX' (2026-07-31) — can't read as one
+    # ghost ICD appearing plus the real rep going dark. insert_missing_reps
+    # calls it again; the second pass is a no-op.
+    fill.reconcile_parsed_to_roster(sections, parsed, logfn=print)
+
     # Detect reps that WENT DARK — read the tab BEFORE inserting today's column
     # (recent-history cols + rep_rows indices still valid). A rep on the roster +
     # recently active but missing from today's pull was dropped from the Tableau

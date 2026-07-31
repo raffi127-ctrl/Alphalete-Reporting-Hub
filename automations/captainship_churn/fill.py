@@ -26,6 +26,7 @@ def open_ws_wireless():
 # the new_internet_churn / wireless_churn modules use.
 find_sections               = _shared.find_sections
 insert_missing_reps         = _shared.insert_missing_reps
+reconcile_parsed_to_roster  = _shared.reconcile_parsed_to_roster
 insert_two_cols_at_b        = _shared.insert_two_cols_at_b
 today_already_filled        = _shared.today_already_filled
 _merge_section_headers      = _shared._merge_section_headers

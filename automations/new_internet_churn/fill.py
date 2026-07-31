@@ -276,6 +276,67 @@ def detect_went_dark(values: list, sections: dict, parsed: dict,
     return out
 
 
+def reconcile_parsed_to_roster(sections: dict, parsed: dict, *,
+                               logfn=print) -> dict:
+    """Re-point a pulled name at the row the tab ALREADY has whenever the two
+    spellings are the same person under 'ICD Aliases'. Mutates
+    parsed['reps'] in place; returns {new_name: old_name} for logging.
+
+    Guards the reversed-alias-row failure. A row typed into 'ICD Aliases' with
+    the columns backwards — canonical = the OWNERVILLE variant, e.g.
+    'Rafael Hidalgo' → 'Rafael Hidalgo TX' (Eve 2026-07-31) — makes the
+    runner's alias step rename every pulled name to a spelling the tab has
+    never used. The rep then reads as BOTH a new ICD (ghost row inserted,
+    today's numbers land there) and as WENT DARK on her real row, which
+    freezes with no history. Same shape as the 9 reversed rows of 2026-06-04.
+
+    The alias sheet is consulted UNDIRECTED (get_search_candidates already
+    resolves both ways), so this catches a bad row whichever way round it was
+    typed, and is a no-op on a correct table: a name that already has a row is
+    never touched, and a genuinely new ICD has no alias sibling on the tab.
+    """
+    reps = parsed.get("reps", {})
+    if not reps or not sections:
+        return {}
+    roster_lc = {nm for sect in sections.values() for nm in sect["rep_rows"]}
+    orphans = [n for n in reps if n.lower() not in roster_lc]
+    if not orphans:
+        return {}
+    try:
+        from automations.focus_office_att.aliases import (
+            load_aliases as _la, get_search_candidates as _gsc)
+        raw = _la()
+    except Exception as e:  # noqa: BLE001 — a guard must never break the fill
+        logfn(f"  (roster reconcile skipped: {type(e).__name__}: {str(e)[:80]})")
+        return {}
+    if not raw:
+        return {}
+
+    renamed: dict = {}
+    for name in orphans:
+        hit = next((c.lower() for c in _gsc(name, raw)
+                    if c.lower() != name.lower() and c.lower() in roster_lc),
+                   None)
+        if hit is None:
+            continue
+        logfn(f"  ↺ '{name}' has no row but '{hit}' does, and 'ICD Aliases' "
+              f"says they're the same person — filling the EXISTING row "
+              f"instead of inserting a duplicate. Check the alias row's "
+              f"direction (col A = external variant, col B = sheet spelling).")
+        periods = reps.pop(name)
+        # If the SAME pull already carried the tab's spelling too, merge into
+        # that key (case-insensitively) — two keys differing only in case both
+        # resolve to one row, so the second write would silently win.
+        target = next((k for k in reps if k.lower() == hit), hit)
+        if target in reps:
+            for p, slot in periods.items():
+                reps[target].setdefault(p, {}).update(slot)
+        else:
+            reps[target] = periods
+        renamed[target] = name
+    return renamed
+
+
 def insert_missing_reps(
     ws,
     sections: dict,
@@ -293,10 +354,16 @@ def insert_missing_reps(
     Inserts happen BOTTOM-section-first so earlier section row indices
     don't shift mid-loop. Each section's `header_row` references are
     re-resolved from the live grid after the inserts complete.
+
+    A name with no row is first run past `reconcile_parsed_to_roster` — an
+    alias sibling already on the tab means it's the SAME person under a
+    different spelling, so we fill her row rather than insert a duplicate.
     """
     reps = parsed.get("reps", {})
     if not reps:
         return {}
+    reconcile_parsed_to_roster(sections, parsed, logfn=logfn)
+    reps = parsed.get("reps", {})
 
     # Identify the bottom-most existing rep row per section. That's the
     # anchor — new rows insert just AFTER it (i.e. row + 1).
