@@ -73,7 +73,12 @@ GOLD_LT = "#E7CE86"
 # Distro email goes to two contact groups on alphaletereporting@gmail.com
 # (resolved by name via automations.shared.contacts_auth at send time).
 EMAIL_FROM = "alphaletereporting@gmail.com"
-EMAIL_GROUPS = ["Alphalete Org Owners", "Bulletins"]
+# The VA emails the bulletin to FOUR contact groups (Loom 48:14): the org owners,
+# BOTH captain teams, and the bulletins distro. We had only 2 — the captain teams
+# were missing (Megan 2026-07-30 Loom review). Names match the groups in
+# alphaletereporting@'s contacts (same as org_sales_board's captain-team groups).
+EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
+                "Carlos' Captain Team", "Bulletins"]
 # Slack targets for the posted image (VA sent to both).
 SLACK_CHANNELS = ["#alphalete-sales", "#rafs-office-recruiting"]
 
