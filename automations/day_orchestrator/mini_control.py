@@ -104,7 +104,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
-                    "set_contacts_token", "sheets_login", "set_sheets_cookies"}
+                    "set_contacts_token", "set_contacts_ro_token",
+                    "sheets_login", "set_sheets_cookies"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
