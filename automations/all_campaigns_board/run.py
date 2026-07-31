@@ -104,9 +104,16 @@ def run(*, dry_run: bool = True, today: dt.date = None,
     missing = []
     for key, per in pull.items():
         wk = sum(per.get(agg.ALL_CAMPAIGNS_METRIC, {}).values())
-        if wk > 0 and not (fs._candidates_for(
-                name_index.get(key, [key])[0], raw_aliases) & board_keys):
-            missing.append((name_index.get(key, [key])[0], wk))
+        raw = name_index.get(key, [key])[0]
+        # Someone Eve deleted by hand is not "missing" — she took them off on
+        # purpose (Kevin Driggs, Selena Powers, 2026-07-31). Without this the
+        # run flags them every day they sell and exits 75, so the Hub card sits
+        # INCOMPLETE forever over a decision that was already made. Same list
+        # the roster sync refuses to re-add from, so the two can't drift.
+        if raw.strip().lower() in rs.EXCLUDE or key in rs.EXCLUDE:
+            continue
+        if wk > 0 and not (fs._candidates_for(raw, raw_aliases) & board_keys):
+            missing.append((raw, wk))
     if missing:
         logfn("  ⚠ campaign rep(s) with production but NO All Campaigns row "
               "(add a row or alias — their sales are NOT in the ranking): "
