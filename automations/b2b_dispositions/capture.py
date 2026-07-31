@@ -417,14 +417,15 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
     try:
-        names = page.evaluate(
-            "() => { const inp=document.querySelector('input[placeholder*=\"owner\" i],"
-            "input[placeholder*=\"rep\" i]'); if(!inp) return []; let p=inp;"
-            " for(let i=0;i<7&&p.parentElement;i++){p=p.parentElement;"
-            " const r=p.getBoundingClientRect(); if(r.height>300&&r.width<760)break;}"
-            " return [...p.querySelectorAll('*')].map(e=>(e.innerText||'').trim())"
-            ".filter(t=>t && t.length<40 && /[A-Za-z]{3}/.test(t)).slice(0,10); }")
-        print(f"  TA-diag [{campaign}] label={label!r} reps={names[:8]}", flush=True)
+        diag = page.evaluate(
+            "() => { const url=location.href;"
+            " const dates=[...new Set(((document.body.innerText||'')"
+            ".match(/\\d{1,2}\\/\\d{1,2}\\/\\d{4}/g))||[])].slice(0,4);"
+            " const inps=[...document.querySelectorAll('input')].map(i=>"
+            "({name:i.name||i.id||'', type:i.type, val:(i.value||'').slice(0,20)}))"
+            ".filter(i=>/date/i.test(i.name)||/\\d{1,2}\\/\\d{1,2}/.test(i.val));"
+            " return {url, dates, dateInputs: inps}; }")
+        print(f"  TA-diag [{campaign}] label={label!r} {diag}", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"  TA-diag err {type(e).__name__}", flush=True)
     if dump:
