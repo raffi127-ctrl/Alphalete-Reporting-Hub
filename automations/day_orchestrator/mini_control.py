@@ -1645,6 +1645,81 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
     return True, f"Gmail token installed + verified: mailbox {who}"
 
 
+def _action_set_contacts_ro_token(args: str) -> tuple[bool, str]:
+    """Install the alphaletereporting READ-ONLY Contacts token on THIS machine —
+    the one `shared.contacts_auth` uses to expand the distro groups that address
+    the Org Sales Board email.
+
+    WHY THIS EXISTS. That token died on 2026-07-31 and took the Org board email
+    with it: `expand_groups` raised RefreshError('invalid_grant: Token has been
+    expired or revoked'), the send exited 1, and the gate reported "Could not
+    send" every 15 minutes. Re-authorizing is a BROWSER flow, and nobody can sit
+    at the mini — but the flow does not have to run there. Eve authorizes on her
+    own machine (the redirect is to HER localhost), and the refresh token that
+    comes out works from anywhere. This ships it.
+
+    `set_contacts_token` (the neighbour above) writes the raffi127 read-WRITE
+    token that fiber_owners_distro uses — a DIFFERENT file for a different job.
+    Pointing this at the same path would have quietly left contacts_auth broken.
+
+    Args is the contents of ~/.config/recruiting-report/contacts-token.json.
+    Backs up any existing token, writes it 0600, then verifies by expanding a
+    group through the very loader the report uses. NEVER echoes the token.
+
+    The token transits the control Sheet's Args cell — redact that cell once
+    this shows 'done'."""
+    import json
+    import shlex
+    import shutil
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    if parsed is None:
+        return False, ("set_contacts_ro_token needs the contacts-token.json "
+                       "contents as Args")
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    if not (parsed.get("client_id") and parsed.get("client_secret")):
+        return False, "token JSON has no client_id/client_secret — must be self-contained"
+
+    from automations.shared import contacts_auth as ca
+    path = ca.CONTACTS_TOKEN_PATH
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify the way the report does — a token that writes but won't refresh
+    # here is the failure we are trying to end, so prove it before saying done.
+    try:
+        to, missing = ca.expand_groups(["Alphalete Org Owners"])
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify FAILED "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if missing:
+        return True, f"token written + refreshes, but group(s) not found: {missing}"
+    return True, (f"Contacts read-only token installed + verified — "
+                  f"'Alphalete Org Owners' expands to {len(to)} address(es)")
+
+
 def _action_set_contacts_token(args: str) -> tuple[bool, str]:
     """Install the raffi127 read-WRITE Google Contacts token on THIS machine so
     fiber_owners_distro can sync the "ATT Fiber Owners" group unattended. Args is
@@ -2038,6 +2113,7 @@ ACTIONS = {
     "set_gbp_token": _action_set_gbp_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_contacts_token": _action_set_contacts_token,
+    "set_contacts_ro_token": _action_set_contacts_ro_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "restart_hub": _action_restart_hub,

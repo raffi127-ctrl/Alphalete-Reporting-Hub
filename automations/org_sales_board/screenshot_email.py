@@ -731,6 +731,41 @@ def main(argv=None) -> int:
     return 0
 
 
+_DISTRO_SEED = Path(__file__).resolve().parent / "distro_fallback.json"
+_DISTRO_CACHE = (Path(__file__).resolve().parents[2] / "output" / "distro_cache"
+                 / "alphalete_org_owners.json")
+
+
+def _cache_distro(emails: List[str]) -> None:
+    """Remember a GOOD expansion. Best-effort — caching must never fail a send."""
+    import json
+    try:
+        _DISTRO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _DISTRO_CACHE.write_text(json.dumps(
+            {"group": DISTRO_GROUPS[0], "as_of": dt.date.today().isoformat(),
+             "emails": emails}, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _last_known_distro() -> Tuple[List[str], str]:
+    """The newest list we have without the People API: the runtime cache if a
+    live expansion has ever succeeded on this machine, else the checked-in seed.
+    Returns (emails, 'as-of date · source')."""
+    import json
+    best: Tuple[List[str], str] = ([], "")
+    for path, label in ((_DISTRO_CACHE, "cached from a live expansion"),
+                        (_DISTRO_SEED, "checked-in seed")):
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        emails = [e for e in (d.get("emails") or []) if e]
+        if emails and d.get("as_of", "") >= best[1][:10]:
+            best = (emails, f"{d.get('as_of', '?')} · {label}")
+    return best
+
+
 def _recipients(a) -> Optional[List[str]]:
     """Resolve the recipient list from the flags. None = refuse to send (the
     caller returns 2) — an under-sent distro is worse than no email."""
@@ -738,7 +773,31 @@ def _recipients(a) -> Optional[List[str]]:
         return [x.strip() for x in a.to.split(",") if x.strip()]
     if a.distro:
         from automations.shared.contacts_auth import expand_groups
-        to, missing = expand_groups(DISTRO_GROUPS)
+        try:
+            to, missing = expand_groups(DISTRO_GROUPS)
+        except Exception as e:  # noqa: BLE001
+            # A DEAD CONTACTS TOKEN MUST NOT SWALLOW THE EMAIL. On 2026-07-31
+            # the token came back 'invalid_grant: expired or revoked', this
+            # raised, the process died with exit 1, and the gate reported "Could
+            # not send" every 15 minutes with an approved board sitting there.
+            # Re-authorizing is a browser flow and nobody can sit at the mini, so
+            # a Contacts outage would have meant no board email for days.
+            # Same call the 6-days-out emails already make: fall back to the last
+            # good list and SAY SO — never silently. [[feedback_fill_but_flag]]
+            fallback, since = _last_known_distro()
+            if not fallback:
+                print(f"[screenshot_email] NOT SENT — contacts lookup failed "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:120]}) and "
+                      f"there is no cached distro to fall back on.", flush=True)
+                return None
+            print(f"[screenshot_email] ⚠ CONTACTS LOOKUP FAILED "
+                  f"({type(e).__name__}: {str(e).splitlines()[0][:120]}).\n"
+                  f"    Falling back to the last known distro: "
+                  f"{len(fallback)} address(es), {since}. Anyone added to "
+                  f"'{DISTRO_GROUPS[0]}' since then will NOT get this email — "
+                  f"re-authorize Contacts (mini_control set_contacts_ro_token).",
+                  flush=True)
+            return fallback
         if missing:                         # fail loudly — never silently under-send
             print(f"[screenshot_email] NOT SENT — distro group(s) not found: "
                   f"{missing}. Check the names match the contacts groups.", flush=True)
@@ -748,6 +807,7 @@ def _recipients(a) -> Optional[List[str]]:
                   flush=True)
             return None
         print(f"[screenshot_email] distro expanded to {len(to)} address(es)", flush=True)
+        _cache_distro(to)
         return to
     return PREVIEW_TO if a.preview else PROVING_TO
 
