@@ -3060,7 +3060,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "fiber-owners-distro",
-        "name": "AT&T Fiber Owners List",
+        "name": "AT&T Fiber Owners — Email Distro Sync",
         "creator": "Raf & Claude",
         "emoji": "🐺",
         "color": "#F59E0B",
