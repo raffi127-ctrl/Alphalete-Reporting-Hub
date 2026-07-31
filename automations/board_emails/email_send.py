@@ -33,7 +33,10 @@ from automations.board_emails import boards as B
 from automations.org_sales_board.screenshot_email import (
     send as _smtp_send, preview_html,
 )
-from automations.scheduled_6_days_out.email_send import FROM_ADDR
+from automations.scheduled_6_days_out.email_send import (
+    FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
+    _signature_html, _circular_photo_png,
+)
 
 # Texas company — the reported day is Central, never the machine clock. The mini
 # and Eve's box sit in different zones and a UTC-evening run would otherwise
@@ -129,16 +132,28 @@ def build_email(board: B.Board, images: List[Tuple[str, Path]],
               f'color:{board.banner_fg};border:1px solid #bbb;max-width:1000px;'
               f'width:100%;box-sizing:border-box;margin:0 0 16px">'
               f'{board.name.upper()}</div>')
+    # Evelyn signs every automated email this account sends (Eve, 2026-07-31) —
+    # the same block as the captainship reports and the 6-days-out emails, built
+    # from ONE definition in scheduled_6_days_out so a change to her title or
+    # photo lands everywhere at once. It replaces the old grey "Auto-generated
+    # from the board" line: these go to Rafael and Maud, and a report from a
+    # person reads as something a person stands behind.
+    cid_photo = make_msgid()[1:-1]
     html = ('<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
             + banner + "".join(parts)
-            + '<div style="font-size:11px;color:#888;margin-top:6px">'
-              'Auto-generated from the board. — Alphalete Reporting</div></div>')
-    msg.set_content(f"{board.name} — see the HTML version for the screenshot.")
+            + '<div style="font-size:13px;margin-top:4px">Best,</div><br>'
+            + _signature_html(f"<{cid_photo}>")
+            + '</div>')
+    msg.set_content(f"{board.name} — see the HTML version for the screenshot.\n\n"
+                    f"Best,\nEvelyn Sobrino")
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
     for cid, path in cids:
         html_part.add_related(Path(path).read_bytes(), "image", "png",
                               cid=f"<{cid}>")
+    html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
+                          maintype="image", subtype="png",
+                          cid=f"<{cid_photo}>")
     return msg
 
 

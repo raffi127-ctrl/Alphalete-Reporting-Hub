@@ -43,6 +43,7 @@ from automations.recruiting_report.fill import (
 )
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password,
+    PHOTO_EMBED_PX, PHOTO_IMG, _signature_html, _circular_photo_png,
 )
 
 # Rollout recipient tiers (Megan 2026-07-03).
@@ -284,6 +285,33 @@ def _bottom_org_ranges(g, start: int = None) -> List[Tuple[str, str]]:
     return out
 
 
+def _top_org_range(g, after: int, before: int) -> Optional[Tuple[str, str]]:
+    """The TOP 'RAF ORG - Current vs Prior Weeks' box — the one that sits
+    between Product Summary and the ALPHALETE ORG leaderboard.
+
+    This is the WHOLE org, Carlos and Colten included, which is what makes it
+    different from the bottom 'RAF ORG (w/out Carlos & Colten)' box that closes
+    the email. It was dropped on 2026-07-29 as "the same table twice over" and
+    Eve asked for it back on 2026-07-31: the two answer different questions, and
+    this is the one that belongs at the top, right under the summary.
+
+    Bounded by ROWS WE FOUND (`after` = the end of Product Summary, `before` =
+    the leaderboard header) rather than searched for globally, so the four
+    bottom Current-vs-Prior boxes can't be picked up here by mistake."""
+    import re
+    for r in range(after + 1, max(after + 1, before)):
+        text = (_cell(g, r, 1) + " " + _cell(g, r, 2)).lower().strip()
+        if not re.search(r"\borg\b.*current vs prior", text):
+            continue
+        # Same bottom edge as the other Current-vs-Prior boxes: the 4-week
+        # average row. The frozen week-by-week history under it stays out.
+        end = next((x for x in range(r, min(r + 16, before))
+                    if _cell(g, x, 2).lower().startswith("sales ( 4 week")), None)
+        if end:
+            return ("top_org_current_vs_prior", f"A{r}:J{end}")
+    return None
+
+
 def section_ranges(g) -> List[Tuple[str, str]]:
     """Return [(name, 'A1:Z9'), …] for the full email, by label:
 
@@ -298,17 +326,24 @@ def section_ranges(g) -> List[Tuple[str, str]]:
       length and are the Captainship Reports' job, not this one's.
       `_captainship_ranges` is kept below, uncalled, so putting them back is a
       one-line change.
-    - The TOP 'RAF ORG - Current vs Prior Weeks' (row ~16, the whole org WITH
-      Carlos and Colten) is OUT too — it's the same table twice over. The one
-      Eve asked for is the bottom 'RAF ORG (w/out Carlos & Colten)', which now
-      leads the closing trio.
+    - The TOP 'RAF ORG - Current vs Prior Weeks' (row ~16) was taken out the
+      same day as "the same table twice over" and PUT BACK on 2026-07-31: it is
+      the whole org WITH Carlos and Colten, where the bottom 'RAF ORG (w/out
+      Carlos & Colten)' box that leads the closing trio is Rafael's own. Two
+      different questions, so both are in — the top one right under Product
+      Summary, where Eve reads it. See `_top_org_range`.
     """
     out = []
     ps = _label_row(g, "Product Summary", col=1)
+    ps_end = 0
     if ps:
-        end = _block_end(g, ps)
-        out.append(("product_summary", f"A{ps}:{_colletter(_last_col(g, ps, end))}{end}"))
+        ps_end = _block_end(g, ps)
+        out.append(("product_summary",
+                    f"A{ps}:{_colletter(_last_col(g, ps, ps_end))}{ps_end}"))
     lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)   # skip the r1 title cell
+    top = _top_org_range(g, ps_end, lb or 1) if ps else None
+    if top:
+        out.append(top)            # right after Product Summary — Eve 2026-07-31
     if lb:
         end = _block_end(g, lb)
         first_val = next((c for c in range(3, len(g[lb - 1]) + 1)
@@ -485,20 +520,28 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     # tab is no longer hand-filled and Eve verifies the automation directly, so
     # the chart only produced false "missed pull" rows off the bottom
     # leaderboard/history tables. Removed from the board email.
+    # Evelyn signs it (Eve, 2026-07-31), from the single definition in
+    # scheduled_6_days_out — the same block the captainship reports carry. It
+    # replaces the grey "Auto-generated" line: this goes to the whole owner
+    # distro, and a report from a person reads as one somebody stands behind.
+    cid_photo = make_msgid()[1:-1]
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
         + banner
         + "".join(parts)
-        + '<div style="font-size:11px;color:#888;margin-top:6px">'
-        'Auto-generated from the Sales Board (copy tab). '
-        '— Alphalete Reporting</div></div>')
+        + '<div style="font-size:13px;margin-top:4px">Best,</div><br>'
+        + _signature_html(f"<{cid_photo}>")
+        + '</div>')
     msg.set_content("Alphalete Org Sales Board — see the HTML version for the "
-                    "screenshots.")
+                    "screenshots.\n\nBest,\nEvelyn Sobrino")
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
     for cid, path in cids:
         html_part.add_related(Path(path).read_bytes(), "image", "png",
                               cid=f"<{cid}>")
+    html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
+                          maintype="image", subtype="png",
+                          cid=f"<{cid_photo}>")
     return msg
 
 
