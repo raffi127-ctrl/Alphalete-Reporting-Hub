@@ -1140,6 +1140,13 @@ def lookup_resume_phone(page):
     newpg = None
     try:
         newpg = page.context.new_page()
+        # Cloudflare's challenge JS only runs in a FOREGROUND tab (browsers throttle
+        # background tabs), so bring the resume tab to front or it hangs forever on
+        # 'Just a moment…' (Megan 7/30). The OAT tab is restored in `finally`.
+        try:
+            newpg.bring_to_front()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             newpg.goto(href, wait_until="domcontentloaded", timeout=45000)
         except Exception:  # noqa: BLE001
