@@ -39,6 +39,33 @@ from automations.owners_metrics_churn import pull, fill
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
 
+def _reconcile(sections: dict, parsed: dict, *, logfn=print) -> dict:
+    """Re-point a pulled name with no row onto the row the tab ALREADY has,
+    when 'ICD Aliases' says the two spellings are one person.
+
+    Delegates to `new_internet_churn.fill.reconcile_parsed_to_roster` — the
+    shared guard against a REVERSED alias row (canonical typed as the
+    ownerville variant, 'Carlos Hidalgo' → 'Carlos Hidalgo TX', 2026-07-31).
+    A reversed row makes `_apply_aliases` rename every pulled name to a
+    spelling the tab has never used, which breaks the tab two ways at once: a
+    GHOST row is inserted and takes the day's numbers while the real row
+    freezes.
+
+    Called HERE, before detect_went_dark, and not only from inside
+    insert_missing_reps: the runner decides went-dark FIRST, so a reconcile
+    that happens later still leaves the run flagged INCOMPLETE for a rep whose
+    row did in fact fill. That's how Carlos Hidalgo (B2B) held the report
+    INCOMPLETE on 2026-07-31 after the alias row had already been corrected.
+
+    Resolved lazily via getattr so this module keeps running against a checkout
+    that predates the shared helper.
+    """
+    fn = getattr(fill, "reconcile_parsed_to_roster", None)
+    if fn is None:
+        return {}
+    return fn(sections, parsed, logfn=logfn) or {}
+
+
 def _apply_aliases(parsed: dict, aliases: dict) -> dict:
     """Post-process a parsed dict: map every rep name through the
     aliases sheet so the runner's downstream matching against the
@@ -255,6 +282,21 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing ICDs")
 
+    # Read the grid ONCE and reuse it for the reconcile + both went-dark
+    # checks below — nothing writes in between, so re-fetching only burns a
+    # Sheets call.
+    tab_values = ws.get_all_values()
+
+    # A pulled name with no row that 'ICD Aliases' ties to a row the tab DOES
+    # have is the same person under a second spelling — re-point it onto the
+    # existing row FIRST. insert_missing_reps runs this too, but that's after
+    # the went-dark verdict below, so on its own it fills the row correctly and
+    # still leaves the run flagged INCOMPLETE (Carlos Hidalgo B2B, 2026-07-31).
+    try:
+        _reconcile(sections, parsed, logfn=print)
+    except Exception as e:  # noqa: BLE001 — a guard must never break the fill
+        print(f"  (roster reconcile skipped: {type(e).__name__}: {str(e)[:80]})")
+
     # Detect reps that WENT DARK — read the tab BEFORE inserting today's column
     # (so the recent-history columns + rep_rows indices are still valid). A rep on
     # the roster + recently active, but missing from today's pull, means she was
@@ -262,7 +304,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     # Eveliz-Roca case). Surfaced so the run flags INCOMPLETE, not a silent DONE.
     went_dark: dict = {}
     try:
-        went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
+        went_dark = fill.detect_went_dark(tab_values, sections, parsed)
         # An old-label row whose canonical (alias-resolved) name is ALREADY
         # filling under its correct name isn't dark — it's the same rep under a
         # stale label. E.g. a "Blue Mendoza" row left over after the rep was
@@ -292,8 +334,12 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
             print(f"  ↳ backfilled {nm} from {program} all-teams churn "
                   f"(moved captainships — kept on this tab)")
         if backfilled:
-            # Re-detect: backfilled reps are now present in `parsed`, so they clear.
-            went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
+            # Re-detect: backfilled reps are now present in `parsed`, so they
+            # clear. Re-apply _drop_aliased_present too — a raw re-detect puts
+            # the stale-label rows straight back and undoes the filter above.
+            went_dark = _drop_aliased_present(
+                fill.detect_went_dark(tab_values, sections, parsed),
+                parsed, aliases)
 
     already_filled = fill.today_already_filled(ws, sections, today)
     skip_insert = already_filled and not args.force_insert

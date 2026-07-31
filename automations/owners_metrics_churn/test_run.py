@@ -224,5 +224,38 @@ class DropAliasedPresent(unittest.TestCase):
             omc._drop_aliased_present(went_dark, {"reps": {}}, {}), went_dark)
 
 
+class ReconcileRunsBeforeTheWentDarkCheck(unittest.TestCase):
+    """A REVERSED 'ICD Aliases' row (canonical typed as the ownerville variant,
+    'Carlos Hidalgo' -> 'Carlos Hidalgo TX', 2026-07-31) renames every pulled
+    name to a spelling the tab has never used: a ghost row takes the day's
+    numbers and the real row freezes.
+
+    `reconcile_parsed_to_roster` fixes the FILL, but it lives inside
+    insert_missing_reps -- which the runner calls AFTER it has already decided
+    went-dark. So the row filled and the report still read INCOMPLETE. The
+    runner has to reconcile first."""
+
+    def test_reconcile_is_a_noop_without_the_shared_helper(self):
+        """Older checkout / helper absent -> no crash, no change."""
+        with mock.patch.object(omc.fill, "reconcile_parsed_to_roster", None):
+            self.assertEqual(omc._reconcile({}, {"reps": {}}), {})
+
+    def test_reconcile_delegates_to_the_shared_helper(self):
+        fake = mock.Mock(return_value={"Carlos Hidalgo": "Carlos Hidalgo TX"})
+        sections, parsed = {"0-30": {}}, {"reps": {}}
+        with mock.patch.object(omc.fill, "reconcile_parsed_to_roster", fake):
+            got = omc._reconcile(sections, parsed, logfn=lambda *_a: None)
+        self.assertEqual(got, {"Carlos Hidalgo": "Carlos Hidalgo TX"})
+        self.assertIs(fake.call_args.args[0], sections,
+                      "the live sections must be passed through, not a copy")
+        self.assertIs(fake.call_args.args[1], parsed,
+                      "reconcile mutates parsed in place — pass the real dict")
+
+    def test_helper_returning_none_is_normalized(self):
+        with mock.patch.object(omc.fill, "reconcile_parsed_to_roster",
+                               mock.Mock(return_value=None)):
+            self.assertEqual(omc._reconcile({}, {"reps": {}}), {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -124,6 +124,9 @@ today_already_filled         = _shared.today_already_filled
 _merge_section_headers       = _shared._merge_section_headers
 write_today                  = _shared.write_today
 detect_went_dark             = _shared.detect_went_dark
+# Added with the reversed-alias guard; getattr so this module still imports
+# against a checkout that predates it.
+reconcile_parsed_to_roster   = getattr(_shared, "reconcile_parsed_to_roster", None)
 recent_active                = _shared.recent_active
 sort_sections_via_sortrange  = _shared.sort_sections_via_sortrange
 unhide_all_rep_rows          = _shared.unhide_all_rep_rows
