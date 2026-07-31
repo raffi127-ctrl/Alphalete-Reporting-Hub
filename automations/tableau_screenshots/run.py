@@ -226,6 +226,83 @@ def _gate_email_sources(selected: list) -> tuple:
     return kept, dropped
 
 
+def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
+    """Measure each tracker's Tableau extract and HOLD any board whose extract
+    hasn't reached the latest completed reporting day. Returns {board_id: why}.
+
+    Megan 2026-07-29: "trackers were sent out today without being updated and we
+    ran them anyway — I thought we had a guard set up for that?" There was no
+    guard. The orchestrator gate (data_sources -> readiness._probe_tracker_extract)
+    now holds the whole run while an extract is behind, but it FAIL-OPENS at 06:30
+    so it can never skip the trackers — and past that floor the run proceeds with
+    whatever Tableau has. This is the other half: a board that is still stale when
+    the run proceeds is held out of the thread and flagged, instead of being
+    photographed and posted as though it were fresh (fill-but-flag).
+
+    "Held" reuses Box's machinery end to end: pages.mark_late() drops the board
+    from this run's selection, the thread header still lists it with the "data
+    lands ~7am" note, and the ~7am --late-only catch-up posts it. Nothing is
+    silently dropped.
+
+    Never holds on a probe ERROR — only on a confirmed "the extract has not
+    refreshed". A broken probe must not keep a good board off the thread."""
+    from automations.tableau_screenshots import freshness as fr
+    # Only the boards the morning run would post: permanently-late (Box) and
+    # email-sourced boards have their own gates.
+    candidates = [p["id"] for p in pages_mod.PAGES
+                  if not p.get("late") and p.get("source") != "email"]
+    print("\n=== FRESHNESS GATE ===", flush=True)
+    tgt = fr.target_day(today)
+    print(f"  extracts must have data through "
+          f"{tgt.isoformat() if tgt else 'n/a'}", flush=True)
+    try:
+        held, _verdicts = fr.stale_boards(candidates, today, verbose=True)
+    except Exception as e:                            # noqa: BLE001 — fail open
+        print(f"  ⚠ freshness check errored ({type(e).__name__}: {str(e)[:120]}) "
+              f"— posting every board (a broken gate never holds a report)",
+              flush=True)
+        return {}
+    for bid, why in fr.UNGATED.items():
+        if bid in candidates:
+            print(f"   • {bid}: NOT GATED — {why}", flush=True)
+    if not held:
+        print("  ✓ every gated extract is fresh", flush=True)
+    fr.write_held(today, held)
+    if held:
+        pages_mod.mark_late(held.keys())
+        for bid, why in held.items():
+            title = (pages_mod.by_id(bid) or {}).get("title") or bid
+            print(f"  ⏸ HOLDING {title} — {why}; listed in the header as still "
+                  f"coming, posted by the ~7am catch-up", flush=True)
+        _alert_held(today, held, dry_run=dry_run)
+    return held
+
+
+def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
+    """Tell #claudecorrections-and-requests, in real time, that a board was held
+    for a stale extract (Megan's standing rule: every fail / glitch / missed part
+    posts there). Best-effort — an alert must never sink the run."""
+    lines = [f"*Tableau Country Trackers — {len(held)} board(s) held for stale "
+             f"data* ({today.isoformat()})"]
+    for bid, why in held.items():
+        title = (pages_mod.by_id(bid) or {}).get("title") or bid
+        lines.append(f"• {title} — {why}")
+    lines += [
+        "",
+        "Held, not posted: the board is listed in today's thread header as still "
+        "coming and the ~7am catch-up posts it once its extract lands.",
+        "Post it by hand once the data is in:",
+        "`python -m automations.tableau_screenshots.run --only "
+        + ",".join(held) + " --fresh`",
+    ]
+    try:
+        from automations.day_orchestrator import notify
+        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run)
+    except Exception as e:                            # noqa: BLE001
+        print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
+              flush=True)
+
+
 def _capture_one(spec: dict, page, out_dir: Path, force_crop):
     """Capture ONE tracker to a PNG. Dispatches on the spec's source: an
     email-sourced tracker (pages.py `source: "email"`) renders from its daily
@@ -313,6 +390,20 @@ def main(argv=None) -> int:
                          "day the source data was wrong when the first thread "
                          "went out — pair with --fresh so the images are "
                          "re-captured, and --include-late so Box is in it too.")
+    ap.add_argument("--updated", action="store_true",
+                    help="Tag every channel's parent header with a bold "
+                         "*UPDATED* after the title, so a corrected thread is "
+                         "obvious next to an earlier wrong one. Appended only — "
+                         "the title itself is unchanged, so find_thread_ts still "
+                         "matches today's parent on a later retry.")
+    ap.add_argument("--no-freshness-gate", action="store_true",
+                    help="Post every board even if its Tableau extract hasn't "
+                         "refreshed yet. By default a board whose extract is "
+                         "still on yesterday's data is HELD out of the thread "
+                         "(listed in the header as still coming, posted by the "
+                         "~7am catch-up) rather than posted as if it were fresh. "
+                         "Use only when you deliberately want today's render, "
+                         "stale or not.")
     ap.add_argument("--header-note", default=None,
                     help="One italic line under the thread title (e.g. why a "
                          "second thread exists). Used with --new-thread.")
@@ -335,6 +426,27 @@ def main(argv=None) -> int:
         raise SystemExit("--new-thread and --retitle-only are mutually exclusive.")
 
     today = dt.date.today()
+    # FRESHNESS GATE — runs BEFORE the selection, because holding a stale board
+    # works by marking it late, and _select() reads lateness.
+    #   normal run   measure each extract; hold + flag whatever is stale.
+    #   --late-only  don't re-measure: pick up whatever THIS MORNING held, so the
+    #                ~7am catch-up posts those boards alongside Box. It posts them
+    #                even if the extract is still behind — the catch-up is the
+    #                last stop, and a late board beats a missing one.
+    #   --only       bypassed entirely: naming a board means you want that board.
+    held: dict = {}
+    if args.retitle_only or args.inspect or args.no_freshness_gate:
+        pass
+    elif args.late_only:
+        from automations.tableau_screenshots import freshness as _fr
+        held = _fr.read_held(today)
+        if held:
+            pages_mod.mark_late(held.keys())
+            print(f"  ↺ catch-up also carries {len(held)} board(s) this morning "
+                  f"held for stale data: {', '.join(held)}", flush=True)
+    elif not args.only:
+        held = _hold_stale_boards(today, dry_run=args.dry_run)
+
     selected = _select(args.only, late_only=args.late_only,
                        include_late=args.include_late)
     out_dir = Path(args.out_dir)
@@ -546,14 +658,16 @@ def main(argv=None) -> int:
             result = sp.post_all(captures, post_pages, today, dry_run=True,
                                  replace=args.replace, org=org,
                                  new_thread=args.new_thread,
-                                 note=args.header_note or "")
+                                 note=args.header_note or "",
+                                 updated=args.updated)
             print(f"\n  [{org}] would post to {', '.join(result['channels'])} as "
                   f"{sp.header_title(today)}", flush=True)
         print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
               f"posted NOTHING.", flush=True)
         run_manifest.write_manifest(
             report_id, ok=bool(not failed), failed=failed, kind="tracker",
-            note="dry run")
+            note="dry run" + (f"; {len(held)} board(s) held for a stale extract: "
+                              f"{', '.join(held)}" if held else ""))
         return 1 if failed else 0
 
     posted_ok, posted_bad, status_rows = [], [], []
@@ -575,7 +689,8 @@ def main(argv=None) -> int:
             result = sp.post_all(captures, post_pages, today,
                                  replace=args.replace, org=org,
                                  new_thread=args.new_thread,
-                                 note=args.header_note or "")
+                                 note=args.header_note or "",
+                                 updated=args.updated)
         except Exception as e:                        # noqa: BLE001
             result = {"ok": False, "channels": [],
                       "error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -653,9 +768,20 @@ def main(argv=None) -> int:
     # so it never pages. But it MUST be visible: the note names it and the count,
     # so "posted 7 of 8 — VZ+FTR source not in yet" surfaces in the run summary /
     # Hub detail instead of a silent "all 8".
-    total_morning = len([p for p in pages_mod.PAGES if not pages_mod.is_late(p)])
-    ok = (not missing_trackers) and not posted_bad
-    parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in missing_trackers]
+    # Count against the boards the morning run is PERMANENTLY responsible for —
+    # `p.get("late")`, not pages_mod.is_late(), which also counts boards held for
+    # a stale extract today. Using is_late() here would shrink the denominator to
+    # match what we posted and print a clean "7 of 7" over a board we deliberately
+    # held: exactly the silent pass that let 7/29's stale thread go out.
+    total_morning = len([p for p in pages_mod.PAGES if not p.get("late")])
+    held_titles = [(pages_mod.by_id(i) or {}).get("title") or i for i in held]
+    # A held board makes the run INCOMPLETE, never FAILED: ok=False + exit 0 is
+    # the soft path (Hub flags it, reconcile can self-heal, no 4:31am page), and
+    # the data really is missing from today's thread until the catch-up posts it.
+    ok = (not missing_trackers) and not posted_bad and not held
+    parts = ([sp.ORG_LABEL[o] for o in posted_bad]
+             + [f"tracker:{f}" for f in missing_trackers]
+             + [f"stale:{i}" for i in held])
     # A channel miss re-posts exactly the missed channels; a lone capture gap
     # re-captures just that tracker (self-heals a transient Tableau flake; a board
     # whose SOURCE isn't in yet — e.g. an email tracker — stays flagged, softly).
@@ -681,6 +807,10 @@ def main(argv=None) -> int:
         f"posted {total_morning - len(gated_out)} of {total_morning} boards — "
         f"{', '.join(omitted_boards)} omitted (source .xlsx not in yet; reposts "
         f"once it lands)" if gated_out else "",
+        f"{len(held)} board(s) HELD — Tableau extract not refreshed: "
+        + "; ".join(f"{t} ({held[i]})" for i, t in zip(held, held_titles))
+        + " — listed in the header as still coming, posted by the ~7am catch-up"
+        if held else "",
     ]))
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",

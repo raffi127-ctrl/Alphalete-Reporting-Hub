@@ -181,9 +181,38 @@ def by_id(page_id: str) -> dict | None:
     return next((p for p in PAGES if p["id"] == page_id), None)
 
 
+# Boards marked late for THIS PROCESS ONLY, because their Tableau extract was
+# measured stale this morning (freshness.stale_boards). Runtime, never written
+# back to PAGES: `late` above is a permanent property of a board, staleness is a
+# property of one day. Marking a stale board late reuses the machinery Box
+# already has end-to-end -- it drops out of the morning selection, is listed in
+# the thread header as still coming, and the ~7am --late-only catch-up picks it
+# up -- so a stale board is held and flagged instead of posted as if it were
+# fresh (Megan 2026-07-29: "trackers were sent out today without being updated").
+_RUNTIME_LATE = set()
+
+
+def mark_late(page_ids) -> None:
+    """Treat these board ids as late for the rest of this process."""
+    for pid in page_ids or ():
+        _RUNTIME_LATE.add(pid)
+
+
+def clear_runtime_late() -> None:
+    """Drop every runtime lateness mark (tests; a re-run inside one process)."""
+    _RUNTIME_LATE.clear()
+
+
+def runtime_late_ids() -> list:
+    """Board ids marked late at runtime (stale extract), not in pages.py."""
+    return [p["id"] for p in PAGES if p["id"] in _RUNTIME_LATE]
+
+
 def is_late(spec: dict) -> bool:
-    """True for a board whose data isn't current at 4:31am (see `late` above)."""
-    return bool(spec.get("late"))
+    """True for a board whose data isn't current at 4:31am -- either permanently
+    (the `late` field above) or just today (marked by mark_late because its
+    extract was measured stale)."""
+    return bool(spec.get("late")) or spec.get("id") in _RUNTIME_LATE
 
 
 def late_ids() -> list:

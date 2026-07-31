@@ -213,7 +213,11 @@ def _legacy_title(today: dt.date) -> str:
 LATE_NOTE = "_(data lands ~7am — image posts then)_"
 
 
-def header_text(pages: list, today: dt.date, pending_late=(), note: str = "") -> str:
+UPDATED_TAG = "*UPDATED*"
+
+
+def header_text(pages: list, today: dt.date, pending_late=(), note: str = "",
+                updated: bool = False) -> str:
     """Bold dated title + one ':react: Title' line per tracker (parent message).
 
     A tracker id in `pending_late` gets a note after its name: it IS listed, in
@@ -222,10 +226,17 @@ def header_text(pages: list, today: dt.date, pending_late=(), note: str = "") ->
     automation broke — which is exactly the report we got. The catch-up run drops
     the note when it posts the image.
 
-    `note` is a free-text italic line under the title — used when a SECOND thread
-    goes up the same day (see --new-thread) so readers know which one to trust.
-    The title itself is never changed: find_thread_ts matches on it."""
-    lines = [f"*{header_title(today)}*"]
+    `updated` APPENDS a bold *UPDATED* to the title line, so a corrected second
+    thread is telling apart from the morning's at a glance (the whole reason to
+    post one). `note` adds a free-text italic line under it — the "why".
+
+    Both are strictly APPENDED: header_title() itself is never changed, because
+    find_thread_ts matches today's parent on that exact string. Tagging the title
+    in place would make a later retry miss the thread it just posted."""
+    title = f"*{header_title(today)}*"
+    if updated:
+        title += f"  {UPDATED_TAG}"
+    lines = [title]
     if note:
         lines.append(f"_{note}_")
     pending = set(pending_late or ())
@@ -263,7 +274,7 @@ def find_thread_ts(client, channel: str, today: dt.date):
 
 def ensure_thread(client, channel: str, pages: list, today: dt.date,
                   pending_late=(), *, new_thread: bool = False,
-                  note: str = "") -> dict:
+                  note: str = "", updated: bool = False) -> dict:
     """Find today's tracker parent in `channel` or create it (bold header, Lucy).
     A parent still carrying the legacy title is RETITLED in place, so today's
     thread ends up reading the same as every other channel's.
@@ -291,7 +302,8 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date,
         print(f"  {channel}: --new-thread — posting a SECOND thread for today; "
               f"the existing one is left untouched", flush=True)
     resp = client.chat_postMessage(
-        channel=channel, text=header_text(pages, today, pending_late, note))
+        channel=channel,
+        text=header_text(pages, today, pending_late, note, updated))
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
@@ -378,7 +390,7 @@ def delete_image_replies(client, channel: str, thread_ts: str, pages: list,
 def _post_to_channel(client, channel: str, captures: list, pages: list,
                      today: dt.date, replace: bool = False,
                      late_all=(), *, new_thread: bool = False,
-                     note: str = "") -> dict:
+                     note: str = "", updated: bool = False) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
     channel. A failure in one channel is caught by the caller so the others still
     post.
@@ -404,7 +416,7 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
     # the note a fresh header carries AND, after a late run posts, what's left.
     pending_late = [i for i in (late_all or []) if i not in set(mine)]
     thread = ensure_thread(client, channel, pages, today, pending_late,
-                           new_thread=new_thread, note=note)
+                           new_thread=new_thread, note=note, updated=updated)
     thread_ts = thread["thread_ts"]
     removed = 0
     already = (set() if thread["created"]
@@ -449,8 +461,9 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
     # Best-effort: the image is what matters, and a stale note beats a failed run.
     if not thread["created"] and (set(mine) & set(late_all or ())):
         try:
-            client.chat_update(channel=channel, ts=thread_ts,
-                               text=header_text(pages, today, pending_late))
+            client.chat_update(
+                channel=channel, ts=thread_ts,
+                text=header_text(pages, today, pending_late, note, updated))
         except Exception as e:  # noqa: BLE001
             print(f"  {channel}: header note not cleared ({type(e).__name__}) — "
                   f"image posted fine", flush=True)
@@ -577,7 +590,7 @@ def retitle_today(pages: list, today: dt.date | None = None,
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
              org: str = DEFAULT_ORG, new_thread: bool = False,
-             note: str = "") -> dict:
+             note: str = "", updated: bool = False) -> dict:
     """Post the thread + one image reply per captured tracker, to every channel
     this ORG posts into. `captures` is (spec, png_path) in post order; `pages` is
     the full ordered list used to build the header (so the header lists every
@@ -613,7 +626,7 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
             "org": org,
             "channels": list(channels),
             "pending_late": pending_late,
-            "header": header_text(pages, today, pending_late, note),
+            "header": header_text(pages, today, pending_late, note, updated),
             "replies": [
                 {"file": Path(p).name, "caption": reply_caption(spec, today),
                  "react": spec["react"]}
@@ -652,7 +665,8 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
             channel_results.append(
                 _post_to_channel(client, channel, captures, pages, today,
                                  replace=replace, late_all=late_all,
-                                 new_thread=new_thread, note=note))
+                                 new_thread=new_thread, note=note,
+                                 updated=updated))
         except Exception as e:
             channel_results.append(
                 {"channel": channel, "ok": False,

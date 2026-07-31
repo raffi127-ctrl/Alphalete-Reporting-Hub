@@ -26,6 +26,12 @@ from typing import Dict, Optional, Tuple
 from automations.day_orchestrator import registry
 
 
+# Sources we've already alerted about for an unknown probe type, deduped for the
+# life of the process so the circle-back passes don't spam corrections with the
+# same misconfiguration.
+_UNKNOWN_PROBE_ALERTED: set = set()
+
+
 @dataclass
 class Readiness:
     ready: bool
@@ -219,7 +225,49 @@ class ReadinessCache:
         if ptype == "dd_week":
             return self._probe_dd_week(source_id, probe)
 
-        return Readiness(False, f"unknown probe type {ptype!r}")
+        # An unknown probe type means the report's CONFIG names a probe this
+        # running build doesn't implement — the split that took the Tableau
+        # country trackers down on 2026-07-31. schedule_config gated them on
+        # 'tracker_extract' one commit BEFORE readiness learned that probe type;
+        # the mini had the config but not the handler, so every pass returned
+        # NOT-ready. The report circled all morning and was abandoned — no
+        # capture, no post, and (because "never became ready" is not "ran and
+        # failed") no failure email. A gate silently starved a report to death.
+        #
+        # FAIL OPEN instead: a gate must never skip a report (Megan's standing
+        # rule), and a probe this build can't run is a WIRING bug, not evidence
+        # the data is missing. Run ungated and fire a one-shot alert so the
+        # misconfiguration is loud, not silent.
+        self._alert_unknown_probe(source_id, ptype)
+        return Readiness(True, f"MISCONFIGURED: unknown probe type {ptype!r} — "
+                               f"running UNGATED (fix {source_id}'s probe wiring)")
+
+    def _alert_unknown_probe(self, source_id: str, ptype: str) -> None:
+        """One-shot heads-up that a source names a probe type this build can't
+        run, so a config/code split can never again silently starve a report.
+        Best-effort and deduped per source for the life of the process — an alert
+        must never break the pass it describes."""
+        if source_id in _UNKNOWN_PROBE_ALERTED:
+            return
+        _UNKNOWN_PROBE_ALERTED.add(source_id)
+        try:
+            from automations.day_orchestrator import notify
+            notify.post_alert(
+                "",
+                ["*Readiness misconfigured — running a report UNGATED*",
+                 f"• source `{source_id}` names probe type `{ptype}`, which this "
+                 f"build doesn't implement.",
+                 "",
+                 "Failing open so the report still runs (a gate never skips a "
+                 "report), but its data-freshness gate is NOT active until the "
+                 "probe handler is deployed. Usually a half-shipped change — the "
+                 "config gates on a probe whose code isn't on this machine yet. "
+                 "Fix by deploying the handler, or reverting the source's probe "
+                 "wiring."],
+                tag="readiness-unknown-probe")
+        except Exception as e:  # noqa: BLE001 — an alert must never sink the pass
+            print(f"[readiness] unknown-probe alert skipped ({source_id}): {e}",
+                  flush=True)
 
     def _probe_dd_week(self, source_id: str, probe: dict) -> Readiness:
         """Ready when the ORG DD Detail extract has THIS WEEK's deposits — so the
