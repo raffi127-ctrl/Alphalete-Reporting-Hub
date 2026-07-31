@@ -64,11 +64,22 @@ def _load_activity(sh, log=_log):
     """Evidence used to explain WHY someone has no board row:
       - New DU col A status ('Not Active', '3 - In Training', '5 - Leader')
         keyed by the col-I name
-      - RAW sale counts + last sale date keyed by col-B rep name
-    Both are name-keyed, so fold in the hidden 'Name Aliases' tab (col A is the
-    board spelling, col B the paid/real one). Any tab going missing degrades to
-    'no evidence' — the caller then just reports the plain missing-row finding
-    rather than crashing the whole audit."""
+      - RAW sale counts, last sale date AND a per-week-ending breakdown, keyed
+        by col-B rep name
+      - the RAW week tags themselves, most-recent-closed first
+
+    The per-week breakdown exists because a lifetime count answers the wrong
+    question (2026-07-31): Olivia Dittmer's 80 sales read as "actively selling"
+    while her weeks were 32/15/18/10/2 — she was on her way out. RAW col C
+    'Sale Date' is NOT a reliable recency signal either: her whole 7.26 week
+    carries a blank Sale Date, so a max-of-col-C put her last sale at 7/15 and
+    ranked her STALER than someone who genuinely stopped two weeks earlier.
+    Recency comes off the col-A week tag, which is always populated.
+
+    All three are name-keyed, so fold in the hidden 'Name Aliases' tab (col A
+    is the board spelling, col B the paid/real one). Any tab going missing
+    degrades to 'no evidence' — the caller then just reports the plain
+    missing-row finding rather than crashing the whole audit."""
     def _alias_map():
         pairs = {}
         try:
@@ -98,18 +109,26 @@ def _load_activity(sh, log=_log):
     except Exception as e:  # noqa: BLE001
         log(f"(no New DU tab: {type(e).__name__}) — status evidence unavailable")
 
-    sales = {}
+    sales, weeks = {}, set()
     try:
         for r in sh.worksheet("RAW").get_all_values()[1:]:
             if len(r) > 1 and str(r[1]).strip():
                 k = _norm(r[1])
-                cnt, last = sales.get(k, (0, ""))
+                cnt, last, by_wk = sales.get(k, (0, "", None))
+                by_wk = dict(by_wk or {})
+                wk = str(r[0]).strip()
+                if _cohort_weeks_old(wk) is not None:
+                    weeks.add(wk)
+                    by_wk[wk] = by_wk.get(wk, 0) + 1
                 when = str(r[2]).strip() if len(r) > 2 else ""
-                sales[k] = (cnt + 1, _later(last, when))
+                sales[k] = (cnt + 1, _later(last, when), by_wk)
     except Exception as e:  # noqa: BLE001
         log(f"(no RAW tab: {type(e).__name__}) — sales evidence unavailable")
 
-    return _spread(du), _spread(sales)
+    # most-recent closed week first; _cohort_weeks_old handles the year rollover
+    # so 12.27 sorts before 1.3 instead of after it.
+    order = sorted(weeks, key=_cohort_weeks_old)
+    return _spread(du), _spread(sales), order
 
 
 def _later(a: str, b: str) -> str:
@@ -168,12 +187,40 @@ def audit(write: bool, log=_log) -> int:
                 "tenure tag is frozen and stats may miss them. Re-add via "
                 "Alphalete menu > Add (or add their Roll Call row).")
 
+    # 1a2. TERMINATION BATCH NOT CLOSED (added 2026-07-31). Roll Call col M
+    #      "Date Gone" and col B "Status" must agree: a row with a leave date is
+    #      not Active. On 2026-07-31 fifteen rows carried a 7/21-7/30 Date Gone
+    #      and were still Active — a whole termination batch where the dates got
+    #      entered and the statuses never flipped. That one contradiction
+    #      explained EVERY "missing from the board" name the audit was chasing
+    #      through sales history, so check it before inferring anything.
+    #      Reported as one grouped finding: 15 separate lines would blow past
+    #      the per-run cap and bury the typos this tab exists to surface.
+    def _gone_date(r):
+        return str(r[12]).strip() if len(r) > 12 else ""
+
+    open_terms = [(ri, str(r[3]).strip(), _gone_date(r))
+                  for ri, r in enumerate(roll, start=1)
+                  if len(r) > 12 and str(r[1]).strip() == "Active"
+                  and str(r[3]).strip() and _gone_date(r)]
+    if open_terms:
+        who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g in open_terms)
+        findings.append(
+            f"TERMINATION BATCH NOT CLOSED: {len(open_terms)} Roll Call row(s) "
+            f"still say Active but carry a Date Gone — {who}. Set col B to "
+            "'Terminated'. Until then they count as active headcount and the "
+            "audit reports them as missing from the Sales Board.")
+
     # 1b. reverse direction (added 2026-07-20 after Edgar's board row vanished
     #     mid-morning with no alert): every roll person whose status shows
     #     "Active" must have a board row. "New Start" status is exempt (they
     #     join the board at the week roll); Terminated/blank are irrelevant.
     board_names = {_norm(n) for _, n in reps}
-    du_status, sales_by_rep = _load_activity(sh, log=log)
+    du_status, sales_by_rep, raw_weeks = _load_activity(sh, log=log)
+    # "still selling" = sold in either of the last two CLOSED weeks. One week is
+    # too tight (a rep can miss a week and be fine); the current week is never
+    # in RAW yet, so it can't be the yardstick.
+    recent_weeks, shown_weeks = raw_weeks[:2], raw_weeks[:3]
     # managers sell occasionally but aren't board reps (Carlos, 2026-07-20)
     EXEMPT = {"carlos hidalgo", "nico murrugarra"}
     def _on_board(n):
@@ -189,6 +236,11 @@ def audit(write: bool, log=_log) -> int:
             continue
         if _on_board(n):
             continue
+        if _gone_date(r):
+            # already named in the grouped termination finding above; the
+            # missing board row is a SYMPTOM of the open status, not a
+            # separate problem, and re-listing it here doubled the noise.
+            continue
         # Not on the board. WHY matters — this used to fire one identical
         # "deleted by accident?" line for everyone, and on 2026-07-30 that was
         # 8 people of whom only 2 were really missing: 2 had already been closed
@@ -196,14 +248,23 @@ def audit(write: bool, log=_log) -> int:
         who = str(r[3]).strip()
         cohort = _cohort_weeks_old(str(r[0]) if r else "")
         du = du_status.get(n, "")
-        sales, last_sale = sales_by_rep.get(n, (0, ""))
-        if sales:
+        sales, last_sale, by_wk = sales_by_rep.get(n, (0, "", {}))
+        recent = sum(by_wk.get(w, 0) for w in recent_weeks)
+        trace = ", ".join("%s=%d" % (w, by_wk.get(w, 0)) for w in shown_weeks)
+        if recent:
             findings.append(
                 f"MISSING FROM BOARD (SELLING): '{who}' (roll r{ri}) has "
-                f"{sales} sale(s) in RAW through {last_sale} but no Sales Board "
-                "row — the campaign totals SUMIFS over board rows only, so "
-                "these sales are missing from the totals. Re-add via Alphalete "
-                "menu (their WeekData history re-links by name).")
+                f"{sales} sale(s) in RAW ({trace}) but no Sales Board row — "
+                "the campaign totals SUMIFS over board rows only, so these "
+                "sales are missing from the totals. Re-add via Alphalete menu "
+                "(their WeekData history re-links by name).")
+        elif sales:
+            findings.append(
+                f"STOPPED SELLING: '{who}' (roll r{ri}) is Active on Roll Call "
+                f"with {sales} lifetime sale(s) but none in the last "
+                f"{len(recent_weeks)} closed weeks ({trace}) and no board row — "
+                f"New DU says {du or 'nothing'}. Confirm they are gone and "
+                "close the Roll Call status; do NOT add a board row.")
         elif "not active" in du.lower():
             findings.append(
                 f"ROLL CALL STALE: '{who}' (roll r{ri}) is Active on Roll Call "
