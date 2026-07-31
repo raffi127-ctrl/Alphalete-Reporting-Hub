@@ -108,7 +108,16 @@ def _tableau_shots(captain, today, render_dir, *, logfn, errors=None):
     and the rest of the draft still builds (a failed pull must never post a
     wrong-looking image)."""
     try:
-        from automations.captainship_drafts import tableau_shot
+        from automations.captainship_drafts import sheet_render, tableau_shot
+        # §1's renderer holds a LIVE sync-playwright in this thread, and a
+        # second sync_playwright().start() in the same thread dies with "you are
+        # using Playwright Sync API inside the asyncio loop". §1 runs first, so
+        # from the moment the shared browser landed EVERY §2 Tableau shot in a
+        # full build failed — all six B2B/NDS captains lost their Team Stats
+        # Breakout while a single-captain `-m ...tableau_shot carlos` worked
+        # fine, which is what made it look like a flaky Tableau session.
+        # Closing here costs one browser relaunch for the next captain's §1.
+        sheet_render.close_renderer()
         path = tableau_shot.captain_tableau_shot(
             captain.key, captain.flavor, render_dir, today=today, logfn=logfn)
     except Exception as e:
