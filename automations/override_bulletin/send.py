@@ -240,7 +240,7 @@ def dd_caption(week_label):
 
 
 def send_dd(*, do_send=False, preview=False, test=False, force=False,
-            notify=False, out_dir=None, credico="auto"):
+            notify=False, to=None, out_dir=None, credico="auto"):
     """Build → render → (optionally) publish the DD / Organization bulletin.
 
     Two pages: the leaders page and the by-ICD breakdown. Dry run by default —
@@ -264,13 +264,17 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
     names = [p.name for p in png_paths]
 
     subject, caption = dd_subject(week_label), dd_caption(week_label)
-    if preview:
+    if to:                                 # explicit recipient override (a one-off
+        to_addrs, missing = list(to), []   # small-audience send, e.g. tomorrow's
+    elif preview:                          # Raf/Carlos/Megan run)
         to_addrs, missing = list(PREVIEW_TO), []
     elif test:
         to_addrs, missing = list(TEST_TO), []
     else:
         to_addrs, missing = recipients()
-    slack_on = do_send and not test        # test mode is email-only
+    # A custom `to` is a small-audience email, so keep Slack off unless it's a
+    # real full-distro send.
+    slack_on = do_send and not test and not to
 
     print("\nweek        : {}".format(week_label))
     print("headline    : ${:,.2f} across {} active ICDs".format(
@@ -352,8 +356,8 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
     send_email(build_email(png_paths, week_label, to_addrs, subject=subject,
                            title="Alphalete Organization Bulletin"))
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
-    if do_send:
-        mark_sent(week_label, state_path)
+    if do_send and not to:                 # a custom `to` is a one-off — don't
+        mark_sent(week_label, state_path)  # burn the week's send-state on it
     result["published"] = True
     return result
 
