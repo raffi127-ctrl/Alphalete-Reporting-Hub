@@ -22,6 +22,7 @@ Signature reused verbatim from scheduled_6_days_out.email_send.
 from __future__ import annotations
 
 import datetime as dt
+import html as _html
 from email.message import EmailMessage
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -42,11 +43,21 @@ def _intro_html(captain: Captain) -> str:
             f'<ol style="font-size:14px;margin:6px 0 16px 0">{lis}</ol>')
 
 
-def _pending(what: str) -> str:
+def _pending(what: str, why: str = "") -> str:
+    """The honest 'this section has no image' note.
+
+    `why` is the exception the capture died on, carried through the bundle's
+    'errors' map. Without it the note is unactionable: the reason only ever
+    existed as one line in the run's log, on whichever machine built the draft,
+    so Eve reading the report had no way to tell a Tableau session that expired
+    from a captain whose Sales Board header got renamed. Printed small and last
+    so the section still reads as a status note, not a stack trace."""
+    reason = (f'<div style="font-size:11px;color:#7a5600;margin-top:4px">'
+              f'{_html.escape(why)}</div>') if why else ""
     return (f'<div style="font-size:12px;color:#9a6b00;background:#fff4d6;'
             f'border:1px solid #f0d271;border-radius:4px;padding:8px 10px;'
             f'margin:4px 0 10px">— {what} could not be captured on this run '
-            f'(re-run after fixing the source) —</div>')
+            f'(re-run after fixing the source) —{reason}</div>')
 
 
 def _slug_slot(s: str) -> str:
@@ -105,11 +116,15 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
                   bundle: dict, imgs: _Images) -> str:
     head = (f'<div style="font-size:16px;font-weight:bold;margin:18px 0 6px">'
             f'{n}. {heading}</div>')
+    # Why this section's capture failed, keyed by bundle key — run.py fills it
+    # as it catches each failure. Absent key = no recorded reason.
+    err = bundle.get("errors") or {}
     body = ""
     if kind == "product_summary":
         ps = bundle.get("product_summary")
         body += (imgs.img(ps, slot="product-summary") if ps
-                 else _pending("Product Summary screenshot"))
+                 else _pending("Product Summary screenshot",
+                               err.get("product_summary", "")))
         units = bundle.get("units") or []
         body += ('<div style="font-size:14px;font-weight:bold;margin:14px 0 4px">'
                  'CAPTAINSHIP UNITS:</div>')
@@ -117,32 +132,39 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
             for i, (caption, path) in enumerate(units):
                 body += imgs.img(path, slot=f"units-{i}", caption=caption)
         else:
-            body += _pending("Captainship Units screenshot")
+            # Same capture as the Product Summary above, so it fails for the
+            # same reason — reuse it rather than leave this half bare.
+            body += _pending("Captainship Units screenshot",
+                             err.get("units") or err.get("product_summary", ""))
     elif kind == "fiber_activation":
         fa = bundle.get("fiber_activation")
         body += (imgs.img(fa, slot="fiber-activations") if fa
-                 else _pending("Fiber Activations PNG"))
+                 else _pending("Fiber Activations PNG",
+                               err.get("fiber_activation", "")))
     elif kind == "cancel_tableau":
         ct = bundle.get("cancel_tableau")
         body += (imgs.img(ct, slot="cancel-rates") if ct
-                 else _pending("Cancel-Rates Tableau shot"))
+                 else _pending("Cancel-Rates Tableau shot",
+                               err.get("cancel_tableau", "")))
     elif kind == "teamstats_tableau":
         ts = bundle.get("teamstats_tableau")
         body += (imgs.img(ts, slot="team-stats") if ts
-                 else _pending("Team Stats Breakout Tableau shot"))
+                 else _pending("Team Stats Breakout Tableau shot",
+                               err.get("teamstats_tableau", "")))
     elif kind.startswith("box:"):
         # One-column-per-day metrics box (cancel / activation / ABP / 6-days).
         slot = kind.split(":", 1)[1]
         path = (bundle.get("boxes") or {}).get(slot)
         body += (imgs.img(path, slot=slot) if path
-                 else _pending(f"{heading} box"))
+                 else _pending(f"{heading} box",
+                               err.get(f"box:{slot}") or err.get("boxes", "")))
     elif kind in ("churn_ni", "churn_wireless"):
         items = bundle.get(kind) or []
         if items:
             for i, (_caption, path) in enumerate(items):
                 body += imgs.img(path, slot=f"{kind.replace('_', '-')}-{i}")
         else:
-            body += _pending("churn images")
+            body += _pending("churn images", err.get(kind, ""))
     return head + body
 
 
@@ -187,8 +209,9 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     bundle keys: product_summary(Path), units([(cap,Path)]),
     fiber_activation(Path), cancel_tableau(Path), teamstats_tableau(Path),
     churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]),
-    boxes({slot: Path}).  Missing keys render as a per-section 'pending'
-    note."""
+    boxes({slot: Path}), errors({bundle key: reason}).  Missing keys render as
+    a per-section 'pending' note, carrying that key's reason when there is
+    one."""
     msg = EmailMessage()
     msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR

@@ -56,10 +56,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OUTPUT_DIR = _REPO_ROOT / "output"
 
 
-def _sales_board_shots(captain, today, render_dir, *, logfn):
+def _sales_board_shots(captain, today, render_dir, *, logfn, errors=None):
     """(product_summary, units) from the Sales Board — degrades to (None, [])
     if every path fails, so the rest of the draft still builds (that section
-    shows a 'pending' note).
+    shows a 'pending' note carrying the LAST path's reason, recorded into
+    `errors`).
 
     LOGIN-FREE FIRST (Eve, 2026-07-30). sheet_render reads the same cells and
     their formatting through the API token and screenshots a local HTML copy, so
@@ -75,13 +76,15 @@ def _sales_board_shots(captain, today, render_dir, *, logfn):
     against, so a break in the renderer degrades to the real screenshot instead
     of to a 'pending' note."""
     from automations.captainship_drafts import sheet_render
+    _render_err = ""
     try:
         shots = sheet_render.captain_shots(captain.key, captain.flavor,
                                           render_dir, today=today)
         return shots.get("product_summary"), shots.get("units") or []
     except Exception as e:
+        _render_err = f"{type(e).__name__}: {e}"
         logfn(f"  ⚠ login-free Sales Board render failed for {captain.key} "
-              f"({type(e).__name__}: {e}) — trying the screenshot path")
+              f"({_render_err}) — trying the screenshot path")
     try:
         from automations.captainship_drafts import sheet_shot
         shots = sheet_shot.captain_shots(captain.key, captain.flavor,
@@ -89,10 +92,16 @@ def _sales_board_shots(captain, today, render_dir, *, logfn):
         return shots.get("product_summary"), shots.get("units") or []
     except Exception as e:
         logfn(f"  ⚠ Sales Board screenshots skipped for {captain.key}: {e}")
+        # Both paths are down: name the render's reason in the email itself.
+        # The screenshot fallback's own error is the less useful of the two —
+        # on an unattended machine it is always "not signed into Google", which
+        # is expected there and tells nobody anything.
+        if errors is not None:
+            errors["product_summary"] = f"{_render_err or e}"
         return None, []
 
 
-def _tableau_shots(captain, today, render_dir, *, logfn):
+def _tableau_shots(captain, today, render_dir, *, logfn, errors=None):
     """(cancel_tableau, teamstats_tableau) for one captain — only the one its
     flavor uses is populated; the other stays None. Degrades to None on any
     failure OR an unconfigured source, so that §2 section shows a 'pending' note
@@ -104,6 +113,10 @@ def _tableau_shots(captain, today, render_dir, *, logfn):
             captain.key, captain.flavor, render_dir, today=today, logfn=logfn)
     except Exception as e:
         logfn(f"  ⚠ Tableau §2 shot skipped for {captain.key}: {e}")
+        if errors is not None:
+            key = ("cancel_tableau" if captain.flavor in ("rafael", "fiber")
+                   else "teamstats_tableau")
+            errors[key] = f"{type(e).__name__}: {e}"
         path = None
     if captain.flavor in ("rafael", "fiber"):
         return path, None      # (cancel_tableau, teamstats_tableau)
@@ -204,6 +217,10 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     captain yielded no images. Email assembly happens later (in main), AFTER
     cross-captain size normalization, so same-flavor sections share one size."""
     logfn(f"\n--- {captain.key} ({captain.display_name}, {captain.flavor}) ---")
+    # bundle key -> why that capture failed. email_build prints it under the
+    # section's 'pending' note, so a blank section in a report Eve is reading
+    # says what broke instead of sending her back to a log on another machine.
+    errors: dict = {}
     churn = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
     # The daily metric boxes (cancel / activation / ABP / 6-days). Never fatal:
     # a box that can't be read is left out of the bundle and its section says
@@ -213,6 +230,7 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ metric boxes skipped for {captain.key}: "
               f"{type(e).__name__}: {e}")
+        errors["boxes"] = f"{type(e).__name__}: {e}"
         boxes = {}
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
     churn_ni = [c for c in churn if not c[0].lower().startswith("wireless")]
@@ -220,8 +238,10 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     if skip_sheets:
         logfn("  (‑‑skip-sheets) Sales Board screenshots skipped")
         ps, units = None, []
+        errors["product_summary"] = "skipped by --skip-sheets"
     else:
-        ps, units = _sales_board_shots(captain, today, render_dir, logfn=logfn)
+        ps, units = _sales_board_shots(captain, today, render_dir, logfn=logfn,
+                                       errors=errors)
 
     # Only pull a Tableau shot if a section actually renders one. Since
     # 2026-07-29 the fiber drafts read their cancel rates off the sheet boxes
@@ -233,10 +253,12 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     if skip_tableau or not wants_tableau:
         if skip_tableau:
             logfn("  (‑‑skip-tableau) Tableau §2 shot skipped")
+            errors["cancel_tableau"] = "skipped by --skip-tableau"
+            errors["teamstats_tableau"] = "skipped by --skip-tableau"
         cancel_tableau, teamstats_tableau = None, None
     else:
         cancel_tableau, teamstats_tableau = _tableau_shots(
-            captain, today, render_dir, logfn=logfn)
+            captain, today, render_dir, logfn=logfn, errors=errors)
 
     bundle = {
         "product_summary": ps,
@@ -251,7 +273,14 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         "fiber_activation": (fiber_png.fiber_activation_png(
             captain.key, today, render_dir, logfn=logfn)
             if captain.flavor == "fiber" else None),
+        # Why anything above is missing (see _pending in email_build).
+        "errors": errors,
     }
+    # A box that rendered into nothing is a per-slot miss, not a whole-tab
+    # failure — say which slot rather than leaving that one section mute.
+    for _h, _k in captain.sections:
+        if _k.startswith("box:") and _k.split(":", 1)[1] not in boxes:
+            errors.setdefault(_k, "no box rendered for this slot on this run")
     n_imgs = sum([ps is not None, len(units), len(churn), len(boxes),
                   cancel_tableau is not None, teamstats_tableau is not None,
                   bundle["fiber_activation"] is not None])

@@ -62,14 +62,36 @@ def _index_to_col(idx: int) -> str:
     return s
 
 
+def _retrying(call, *, tries: int = 4, base: float = 5.0):
+    """Run `call`, retrying a RATE-LIMIT / transient server error with backoff.
+
+    Only 429 and 5xx are retried — a 403 or a bad range is a real error and
+    must surface immediately instead of costing 30s of sleeping first. This
+    exists because the failure it absorbs is invisible in the output: a 429
+    mid-build made §1 render a 'pending' note, so a report went out looking
+    complete-but-empty rather than failing loudly."""
+    import time
+    for attempt in range(tries):
+        try:
+            return call()
+        except Exception as e:      # noqa: BLE001 — classified by message below
+            msg = str(e)
+            transient = ("429" in msg or "RESOURCE_EXHAUSTED" in msg
+                         or "Quota exceeded" in msg or "500" in msg
+                         or "503" in msg or "Internal error" in msg)
+            if not transient or attempt == tries - 1:
+                raise
+            time.sleep(base * (2 ** attempt))       # 5s, 10s, 20s
+
+
 def _fetch_grid(col_start: str, col_end: str, row_start: int,
                 row_end: int) -> dict:
     """Grid data (values + effectiveFormat + merges + col widths + row heights)
     for the A1 window, read through the API token. 1-based inclusive rows."""
     ws = _open_ws()
     a1 = f"'{ws.title}'!{col_start}{row_start}:{col_end}{row_end}"
-    meta = ws.spreadsheet.fetch_sheet_metadata(
-        {"includeGridData": "true", "ranges": a1})
+    meta = _retrying(lambda: ws.spreadsheet.fetch_sheet_metadata(
+        {"includeGridData": "true", "ranges": a1}))
     sheet = meta["sheets"][0]
     data = sheet["data"][0]
     return {
@@ -295,6 +317,20 @@ def _render_html_to_png(html: str, out_path: Path, *, scale: float = 2.0,
     local render — no navigation to Google, no login, nothing to expire."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return _screenshot(html, out_path, scale, fonts_present)
+    except Exception:       # noqa: BLE001 — see below
+        # The browser is SHARED across all 12 captains, so if it dies (the mini
+        # is small and these pages are large) every later captain inherits a
+        # dead handle and loses §1 — the first captains look perfect and the
+        # rest are blank, with nothing in the report saying why. Drop the
+        # corpse and rebuild once; a second failure is a real error and raises.
+        close_renderer()
+        return _screenshot(html, out_path, scale, fonts_present)
+
+
+def _screenshot(html: str, out_path: Path, scale: float,
+                fonts_present: bool) -> Path:
     page = _render_ctx(scale).new_page()
     try:
         # 'load', not 'networkidle': the only network here is the Google Fonts
@@ -311,7 +347,10 @@ def _render_html_to_png(html: str, out_path: Path, *, scale: float = 2.0,
                 page.wait_for_timeout(600)      # web-safe face, never to a hang
         page.locator("#grid").screenshot(path=str(out_path))
     finally:
-        page.close()
+        try:
+            page.close()
+        except Exception:   # noqa: BLE001 — a dead browser must not mask the
+            pass            # real error the caller is about to retry on
     return out_path
 
 

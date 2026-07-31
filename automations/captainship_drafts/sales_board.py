@@ -65,7 +65,13 @@ _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 _TOTAL_FOR_WEEK = "total for week"
 
 
+@lru_cache(maxsize=1)
 def _open_ws():
+    """The Sales Board worksheet, opened ONCE per process.
+
+    Cached because opening it is not free: open_by_key fetches the workbook
+    metadata and .worksheet() the tab list, so every uncached call was two API
+    reads before the real one. A 12-captain build called this ~250 times."""
     return _rf._client().open_by_key(SALES_BOARD_ID).worksheet(SALES_BOARD_TAB)
 
 
@@ -88,8 +94,19 @@ class CaptainBlocks:
     units: List[UnitsBlock]
 
 
+@lru_cache(maxsize=1)
 def _values() -> List[List[str]]:
-    """All cell values of the Sales Board tab, fetched once per process."""
+    """All cell values of the Sales Board tab, fetched once per process.
+
+    The docstring said "once per process" from the start; the cache that made
+    it true was missing. Uncached, a 12-captain build re-read this ~2000-row
+    tab about 25 times (every captain: once here, once inside ps_shot_plan,
+    once per prior_day_columns) — with the two opens above, roughly 20 API
+    reads per captain. Google's Sheets read quota is 60/min/user, so a build
+    reliably tripped it around the THIRD captain and every captain after that
+    lost §1 to a 429 while the first two looked perfect. The row layout is
+    already frozen for the process by discover_blocks' own cache, so holding
+    the values beside it changes nothing about what a run sees."""
     return _open_ws().get_all_values()
 
 
