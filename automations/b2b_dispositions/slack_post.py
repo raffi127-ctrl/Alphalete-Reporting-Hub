@@ -76,6 +76,33 @@ def thread_title(prefix: str, slot: str, today: Optional[dt.date] = None) -> str
     return f"{prefix} {_short_mdy(today)} - {slot.replace(':00', '')}".strip()
 
 
+def retitle_today(old_title: str, new_title: str,
+                  today: Optional[dt.date] = None) -> Dict:
+    """chat_update today's parent whose text contains `old_title` -> `new_title`,
+    in every channel. Runs as Lucy (the author) — only the message's author can
+    edit it. One-off cleanup (e.g. dropping an errant '(Final)' tag)."""
+    today = today or dt.date.today()
+    client = smp._client()
+    out = []
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    for channel in cfg.CHANNELS:
+        clabel = cfg.CHANNEL_LABEL.get(channel, channel)
+        try:
+            resp = client.conversations_history(
+                channel=channel, oldest=str(oldest), limit=200)
+            hit = next((m for m in resp.get("messages", [])
+                        if old_title in (m.get("text") or "")), None)
+            if not hit:
+                out.append(f"{clabel}: not found")
+                continue
+            client.chat_update(channel=channel, ts=hit["ts"],
+                               text=f"*{new_title}*")
+            out.append(f"{clabel}: updated")
+        except Exception as e:  # noqa: BLE001
+            out.append(f"{clabel}: FAIL {type(e).__name__} {str(e)[:60]}")
+    return {"old": old_title, "new": new_title, "results": out}
+
+
 def _title_exists(client, channel: str, title: str, today: dt.date) -> bool:
     """Has this exact titled thread already posted in `channel` today? Guards a
     duplicate on an orchestrator retry — each hour's title is unique, so a match
@@ -92,15 +119,33 @@ def _title_exists(client, channel: str, title: str, today: dt.date) -> bool:
     return False
 
 
+def _find_parent_ts(client, channel: str, title: str, today: dt.date):
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200)
+    except Exception:
+        return None
+    for m in resp.get("messages", []):
+        if title in (m.get("text") or ""):
+            return m.get("thread_ts") or m.get("ts")
+    return None
+
+
 def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
-                dry_run: bool = False, channels: Optional[List[str]] = None) -> Dict:
+                dry_run: bool = False, channels: Optional[List[str]] = None,
+                repost: bool = False) -> Dict:
     """Post ONE new thread per run: a titled parent ('Hourly Activity 7/30/26 -
     4 PM') plus a single reply carrying the images. NO pinning — each hour is its
-    own thread so nothing gets lost (Megan 7/30). Idempotent per title."""
+    own thread so nothing gets lost (Megan 7/30). Idempotent per title.
+
+    repost=True: find TODAY's existing parent with this title and add the images
+    as a NEW reply to it (for re-posting corrected photos into a thread whose old
+    photos were deleted); creates the parent only if it doesn't exist."""
     today = today or dt.date.today()
     channels = channels or cfg.CHANNELS
     if dry_run:
-        return {"dry_run": True, "title": title,
+        return {"dry_run": True, "title": title, "repost": repost,
                 "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels],
                 "files": [Path(p).name for p in paths]}
     client = smp._client()
@@ -108,21 +153,26 @@ def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
     for channel in channels:
         clabel = cfg.CHANNEL_LABEL.get(channel, channel)
         try:
-            if _title_exists(client, channel, title, today):
-                results.append({"channel": clabel, "skipped": True, "ok": True})
-                continue
             uploads = [{"file": str(Path(p)), "filename": Path(p).name}
                        for p in paths if Path(p).exists()]
             if not uploads:
                 results.append({"channel": clabel, "ok": False,
                                 "error": "no image files"})
                 continue
-            parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
-            ts = parent.get("ts")
+            ts = None
+            if repost:
+                ts = _find_parent_ts(client, channel, title, today)
+            elif _title_exists(client, channel, title, today):
+                results.append({"channel": clabel, "skipped": True, "ok": True})
+                continue
+            if ts is None:
+                parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
+                ts = parent.get("ts")
             up = client.files_upload_v2(file_uploads=uploads, channel=channel,
                                         thread_ts=ts)
             results.append({"channel": clabel, "ts": ts,
-                            "ok": up.get("ok", True)})
+                            "ok": up.get("ok", True),
+                            "mode": "repost" if repost else "new"})
         except Exception as e:  # noqa: BLE001
             results.append({"channel": clabel, "ok": False,
                             "error": f"{type(e).__name__}: {str(e)[:140]}"})

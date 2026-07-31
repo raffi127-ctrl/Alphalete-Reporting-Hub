@@ -132,10 +132,13 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
     return [{"title": title, "paths": stacks, "meta": {"note": " ".join(notes)}}]
 
 
-def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool) -> List[Dict]:
+def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
+                repost: bool = False) -> List[Dict]:
     """Each spec is its own thread: a titled parent + one image reply, in both
-    channels (Megan 7/30)."""
-    return [sp.post_thread(s["title"], s["paths"], today, dry_run=dry_run)
+    channels (Megan 7/30). repost=True adds the images to TODAY's existing
+    same-titled thread instead of creating a new one."""
+    return [sp.post_thread(s["title"], s["paths"], today, dry_run=dry_run,
+                           repost=repost)
             for s in specs]
 
 
@@ -162,9 +165,22 @@ def main(argv=None) -> int:
                     help="dump every <select> on the dispositions page")
     ap.add_argument("--probe-ta", action="store_true",
                     help="capture network requests on the Today's Activity page")
+    ap.add_argument("--repost", action="store_true",
+                    help="add images to TODAY's existing same-titled thread "
+                         "(re-post corrected photos) instead of a new thread")
+    ap.add_argument("--fix-disp-title", action="store_true",
+                    help="retitle today's dispositions parent to drop '(Final)'")
     ap.add_argument("--limit", type=int, default=0,
                     help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
+
+    if getattr(args, "fix_disp_title", False):
+        today = _central_now().date()
+        old = sp.thread_title(cfg.THREAD_DISPOSITIONS, "6:30 PM (Final)", today)
+        new = sp.thread_title(cfg.THREAD_DISPOSITIONS, "6:30 PM", today)
+        res = sp.retitle_today(old, new, today)
+        print(f"  retitle: {res}", flush=True)
+        return 0
 
     if getattr(args, "probe_ta", False):
         from automations.shared.tableau_patchright import ownerville_session
@@ -309,7 +325,7 @@ def main(argv=None) -> int:
               flush=True)
         return 0
 
-    results = _post_specs(specs, today, dry_run=False)
+    results = _post_specs(specs, today, dry_run=False, repost=args.repost)
     ok = all(r.get("ok") for r in results)
     print(f"\nPosted. ok={ok}", flush=True)
     for r in results:
