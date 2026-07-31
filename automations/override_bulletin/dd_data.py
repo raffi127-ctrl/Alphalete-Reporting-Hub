@@ -262,7 +262,12 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
 
     # `blocking` is the subset of `problems` that must stop a SEND — a figure we
     # know is wrong, as opposed to one we know is incomplete and label as such.
-    problems, blocking = [], []
+    # `hard_block` is stronger still: things that mean the WHOLE bulletin is wrong
+    # (a stale week, or a current week with no real data in yet). A hard block is
+    # NEVER overridable — not by --notify, not by --force — because sending it is
+    # exactly what must never happen again (Megan 2026-07-30). Soft gaps (Credico
+    # late) alert-and-send; a wrong/empty week never sends.
+    problems, blocking, hard_block = [], [], []
 
     # ---- is the newest column actually THIS week's? The week the bulletin
     # carries is POSITIONAL — the leftmost week header on the tab — and nothing
@@ -275,13 +280,13 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     _newest = week_date(weeks[0]) if weeks else None
     _due = week_just_ended()
     if _newest and _newest != _due:
-        msg = ("the newest week column on '{}' is {} but the week that just "
-               "ended is {} — nothing here rolls the tab, so this would "
-               "republish a week that already went out. Add the {} column and "
-               "fill it first.".format(DD_TAB, weeks[0],
-                                       fmt_week(_due), fmt_week(_due)))
+        msg = ("WRONG WEEK: the newest column on '{}' is {} but the week that "
+               "just ended is {} — this would republish a week that already went "
+               "out (exactly what happened 7/30). NOT sending. Roll the {} column "
+               "and fill it first.".format(DD_TAB, weeks[0], fmt_week(_due),
+                                           fmt_week(_due)))
         problems.append(msg)
-        blocking.append(msg)
+        hard_block.append(msg)
 
     # ---- the headline, read straight off the pre-computed 'Total - Raf' row
     headline = next((money(r[wk_cols[0][0]]) for r in vals
@@ -512,10 +517,26 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         tracked.append({"name": m["owner"], "campaign": "Credico", "org": "",
                         "total": "", "weeks": [m["amount"]] + [""] * (len(weeks) - 1),
                         "why": "Credico deposits · not in the total"})
+    # ---- is the CURRENT week's data actually in? A right-labelled column that
+    # nobody has filled yet (rolled early, before Tableau posted) would send an
+    # empty/thin bulletin — the same "wrong on the page" failure as a stale week,
+    # so it HARD-blocks too. Floors: a real week has a large headline and dozens
+    # of owners earning; near-zero on either means the extract hasn't landed.
+    _owners_paid = sum(1 for r in icds if (r.get("weeks") or [0])[0])
+    if not hard_block and ((headline or 0) < 50000 or _owners_paid < 15):
+        msg = ("CURRENT WEEK LOOKS EMPTY: week {} on '{}' has headline {} and only "
+               "{} owner(s) with DD — the extract almost certainly hasn't posted "
+               "yet. NOT sending a thin week.".format(
+                   weeks[0] if weeks else "?", DD_TAB,
+                   "${:,.0f}".format(headline) if headline else "$0",
+                   _owners_paid))
+        problems.append(msg)
+        hard_block.append(msg)
+
     return {"weeks": weeks, "icds": icds, "podium": podium, "headline": headline,
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
             "totals": totals, "org_count": len(icds), "problems": problems,
-            "blocking": blocking, "credico": credico_info,
+            "blocking": blocking, "hard_block": hard_block, "credico": credico_info,
             "credico_pending": bool(credico_info and credico_info.get("pending"))}
 
 

@@ -101,6 +101,33 @@
         "fallback_hhmm": "08:00"
       }
     },
+    "tableau:tracker_att": {
+      "label": "ATTTRACKER2_1-D2D extract — AT&T Country trackers (att_country, att_country_internet_only)",
+      "_note": "Freshness gate for the 4:31am Tableau Country Trackers (Megan 2026-07-29: 'trackers were sent out today without being updated and we ran them anyway — I thought we had a guard set up for that?'). There was no guard: the report carried data_sources [], and an EMPTY list makes readiness.report_ready() check Tableau session warmth and then return 'all sources ready', so nothing gated the boards on data. type tracker_extract -> readiness._probe_tracker_extract -> tableau_screenshots.freshness.extract_ready(). The boards are captured as IMAGES (Download->Image), so there is no crosstab in the run to check; the probe pulls the crosstab org_sales_board already pulls off the SAME workbook every morning (proven view + worksheet + parser, week-pinned, :refresh=yes) and confirms its max date reaches the latest COMPLETED reporting day. ONE probe per EXTRACT, not per board — a refresh is workbook-wide, so 3 pulls cover 8 boards. fallback_hhmm 06:30 = fail-open floor: ~2h of circle-back after 4:31, then it RUNS ANYWAY (a gate must never skip a report). A board whose extract is still stale when the run proceeds is HELD out of the thread and flagged INCOMPLETE by run.py — listed in the header as still coming and posted by the ~7am --late-only catch-up — never posted as if it were fresh.",
+      "probe": {
+        "type": "tracker_extract",
+        "extract": "tableau:tracker_att",
+        "fallback_hhmm": "06:30"
+      }
+    },
+    "tableau:tracker_nds": {
+      "label": "NDS-SNRES-ATT-OOFWorkbook extract — NDS Tracker board",
+      "_note": "Same tracker_extract gate as tableau:tracker_att; reuses org_sales_board's NDS_SPEC (ProductSalesSummaryRep / 'Sales By ICD (Weekly View)'), the pull that already runs daily off this workbook. fallback_hhmm 06:30 fail-open floor.",
+      "probe": {
+        "type": "tracker_extract",
+        "extract": "tableau:tracker_nds",
+        "fallback_hhmm": "06:30"
+      }
+    },
+    "tableau:tracker_b2b": {
+      "label": "ATTTRACKER-B2B extract — B2B AT&T trackers (b2b_att_country, _cru, b2b_d2d_consolidated, order_tiered_bonus)",
+      "_note": "Same tracker_extract gate as tableau:tracker_att; reuses org_sales_board's B2B_SPEC (D2D1-PAGERV3 / 'Sales By ICD (ATT) (V2)'), the pull that already runs daily off this workbook. NOTE b2b_box rides its own tableau:box_daily gate on the ~7am catch-up and is NOT covered here. fallback_hhmm 06:30 fail-open floor.",
+      "probe": {
+        "type": "tracker_extract",
+        "extract": "tableau:tracker_b2b",
+        "fallback_hhmm": "06:30"
+      }
+    },
     "tableau:captainship_bonus_raf": {
       "label": "Raf CaptainsBonus activations (weekly per-rep, no date col)",
       "_note": "Readiness for the Tuesday Raf Captainship Bonus 4am move (Megan 2026-07-28). The CaptainsBonus crosstab is week-filtered per rep with NO date column, and a 0-activation week still lists every roster rep, so 'week populated' = Grand Total activations > 0. type captainship_bonus -> readiness._probe_captainship_bonus, which calls raf_captainship_bonus.tableau_pull.probe_ready (one light patchright crosstab). fallback_hhmm 10:00 = the old send time: past then it RUNS ANYWAY, and the report's own zero-rep abort is the final net.",
@@ -3438,10 +3465,14 @@
     "tableau_screenshots": {
       "order": 5,
       "on_scheduler": true,
-      "_note": "LIVE daily Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts the 7 boards whose data IS current at 4:31 -- B2B Box is `late: True` in pages.py and rides the tableau_screenshots_box catch-up at ~7am instead, because its extract doesn't refresh until then (see that report's note). The header still lists Box in its normal slot, flagged as still coming. ONE run captures the boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
+      "_note": "LIVE daily Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts the 7 boards whose data IS current at 4:31 -- B2B Box is `late: True` in pages.py and rides the tableau_screenshots_box catch-up at ~7am instead, because its extract doesn't refresh until then (see that report's note). The header still lists Box in its normal slot, flagged as still coming. ONE run captures the boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN']. FRESHNESS GATE WIRED 2026-07-30 (Megan 7/29: 'trackers were sent out today without being updated and we ran them anyway'). data_sources was [] — which readiness.report_ready() treats as 'all sources ready' after a session-warmth check — so NOTHING gated these boards on data freshness. Now gated on the three extracts behind them (tableau:tracker_att / _nds / _b2b), each a tracker_extract probe with an 06:30 fail-open floor: the pass circles back while an extract is behind, and past 06:30 it runs regardless (a gate never skips a report). quantum_fiber is NOT gated (no verified crosstab worksheet on RES-LumenSalesTrackervMZ — see freshness.UNGATED and --discover); b2b_box keeps its own tableau:box_daily gate on the ~7am catch-up. Belt-and-braces: run.py re-checks at capture time and HOLDS + flags any board whose extract is still stale (listed in the header as still coming, picked up by the ~7am --late-only run) rather than posting stale numbers as if fresh.",
       "display_name": "Tableau Country Trackers",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:tracker_att",
+        "tableau:tracker_nds",
+        "tableau:tracker_b2b"
+      ],
       "command": [
         "automations.tableau_screenshots.run"
       ],
@@ -4759,7 +4790,8 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--roll"
+        "--roll",
+        "--write"
       ],
       "cadence": {
         "weekdays": [
@@ -4784,7 +4816,8 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--populate"
+        "--populate",
+        "--write"
       ],
       "cadence": {
         "weekdays": [
@@ -4987,6 +5020,7 @@
       "freshness_target": null,
       "depends_on": [
         "credico_fetch",
+        "dd_populate",
         "dd_special_accumulate",
         "dd_headshots_sync"
       ],
@@ -5006,8 +5040,8 @@
       ],
       "base_args": [
         "--dd",
-        "--test",
-        "--send"
+        "--send",
+        "--notify"
       ],
       "cadence": {
         "weekdays": [

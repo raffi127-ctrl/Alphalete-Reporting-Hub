@@ -313,6 +313,20 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
     # isn't in yet (Credico pending, a missing DD row, a stale week), post a
     # heads-up to #claudecorrections-and-requests — but STILL send. Credico's own
     # timing is unpredictable, so it must never hold the whole org bulletin.
+    # HARD block — a stale week or an empty current week means the WHOLE bulletin
+    # is wrong. It NEVER sends, not with --notify, not with --force. This is the
+    # "what happened 7/30 must never happen again" guarantee (Megan 2026-07-30):
+    # it refuses and alerts, so a wrong week is a no-send + a Slack heads-up.
+    hard = d.get("hard_block") or []
+    if hard and do_send:
+        alert_corrections("⛔ DD Bulletin NOT SENT WE {} — {}".format(
+            week_label, hard[0]))
+        print("\n⛔ HARD BLOCK — NOT SENDING ({} problem(s)):".format(len(hard)))
+        for h in hard:
+            print("   {}".format(h))
+        return {"published": False, "reason": "hard block", "week": week_label,
+                "hard_block": hard}
+
     gaps = list(blocking)
     if d.get("credico_pending"):
         gaps.append("Credico not available this week — bulletin sent without it, "
