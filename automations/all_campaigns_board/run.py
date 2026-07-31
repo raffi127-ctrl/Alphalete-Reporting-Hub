@@ -30,6 +30,7 @@ from automations.recruiting_report.fill import open_by_key
 from automations.org_sales_board import fill_section as fs
 from automations.all_campaigns_board import aggregate as agg
 from automations.all_campaigns_board import rollover as rj
+from automations.all_campaigns_board import roster as rs
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -53,7 +54,8 @@ def _find_ws(sh, title: str):
 
 def run(*, dry_run: bool = True, today: dt.date = None,
         source_tab: str = SOURCE_TAB, target_tab: str = TARGET_TAB,
-        enable_rollover: bool = False, logfn=print) -> dict:
+        enable_rollover: bool = False, enable_roster: bool = True,
+        logfn=print) -> dict:
     today = today or dt.datetime.now(CENTRAL).date()
     sh = open_by_key(SHEET_ID)
     src_ws = _find_ws(sh, source_tab)
@@ -76,6 +78,15 @@ def run(*, dry_run: bool = True, today: dt.date = None,
             logfn(f"  ⚠ rollover NEEDED (board on {rcur!r}, target {rtgt!r}) but "
                   f"--enable-rollover not set — skipping the roll (fill only)")
     copy_grid = src_ws.get_all_values()
+
+    # Roster sync BEFORE the fill: a person added to a campaign section of the
+    # Copy tab gets a row in all three people blocks (Eve, 2026-07-30), so the
+    # fill below writes their days in the same run instead of flagging them.
+    roster_summary = None
+    if enable_roster:
+        roster_summary = rs.sync(tgt_ws, copy_grid, today, dry_run=dry_run,
+                                 logfn=logfn)
+
     pull, name_index = agg.build_pull(copy_grid, today, logfn=logfn)
 
     tgt_grid = tgt_ws.get_all_values()
@@ -116,6 +127,7 @@ def run(*, dry_run: bool = True, today: dt.date = None,
             "unmatched_board_rows": plan.unmatched,
             "missing_from_board": [n for n, _ in missing],
             "writes": len(plan.updates),
+            "roster": roster_summary,
             "rollover": rollover_summary}
 
 
@@ -128,11 +140,15 @@ def main(argv=None):
     ap.add_argument("--target-tab", default=TARGET_TAB)
     ap.add_argument("--enable-rollover", action="store_true",
                     help="allow the Tuesday rollover to run (off until validated)")
+    ap.add_argument("--no-add-missing", action="store_true",
+                    help="do NOT add campaign reps who have no row on the "
+                         "board (the roster sync is on by default)")
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.today) if args.today else None
     summary = run(dry_run=not args.apply, today=today,
                   source_tab=args.source_tab, target_tab=args.target_tab,
-                  enable_rollover=args.enable_rollover)
+                  enable_rollover=args.enable_rollover,
+                  enable_roster=not args.no_add_missing)
     print(f"=== summary: {summary} ===")
     # INCOMPLETE if a rep on the board never matched the pull, or a producing
     # rep has no board row — mirrors the ORG board's fill-but-flag exit.
