@@ -416,6 +416,17 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     _goto(page, _page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst, campaign))
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
+    try:
+        names = page.evaluate(
+            "() => { const inp=document.querySelector('input[placeholder*=\"owner\" i],"
+            "input[placeholder*=\"rep\" i]'); if(!inp) return []; let p=inp;"
+            " for(let i=0;i<7&&p.parentElement;i++){p=p.parentElement;"
+            " const r=p.getBoundingClientRect(); if(r.height>300&&r.width<760)break;}"
+            " return [...p.querySelectorAll('*')].map(e=>(e.innerText||'').trim())"
+            ".filter(t=>t && t.length<40 && /[A-Za-z]{3}/.test(t)).slice(0,10); }")
+        print(f"  TA-diag [{campaign}] label={label!r} reps={names[:8]}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"  TA-diag err {type(e).__name__}", flush=True)
     if dump:
         print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
