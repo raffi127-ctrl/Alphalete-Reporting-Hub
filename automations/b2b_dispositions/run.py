@@ -125,7 +125,10 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
         notes.append(f"{tag}={len(terr_paths)}")
     if not stacks:
         return []
-    title = sp.thread_title(cfg.THREAD_DISPOSITIONS, slot or "6:30 PM", today)
+    # Dispositions posts once a day, so "(Final)" is meaningless here (Megan
+    # 7/30) — that tag only belongs on the hourly. Strip it.
+    clean_slot = (slot or "6:30 PM").replace(" (Final)", "")
+    title = sp.thread_title(cfg.THREAD_DISPOSITIONS, clean_slot, today)
     return [{"title": title, "paths": stacks, "meta": {"note": " ".join(notes)}}]
 
 
