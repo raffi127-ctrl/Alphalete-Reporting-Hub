@@ -165,19 +165,38 @@ def main(argv=None) -> int:
 
     if getattr(args, "probe_ta", False):
         from automations.shared.tableau_patchright import ownerville_session
+        mdy = _central_now().strftime("%m/%d/%Y")
+        firstjs = ("() => { const inp=document.querySelector("
+                   "'input[placeholder*=\"owner\" i]'); let p=inp;"
+                   " for(let i=0;i<7&&p&&p.parentElement;i++){p=p.parentElement;"
+                   " const r=p.getBoundingClientRect(); if(r.height>300&&r.width<760)break;}"
+                   " return p?[...p.querySelectorAll('*')].map(e=>(e.innerText||'')"
+                   ".trim()).filter(t=>/[A-Za-z]{4} [A-Za-z]/.test(t)&&t.length<40)"
+                   ".slice(0,4):[]; }")
         with ownerville_session(headless=args.headless) as page:
             rqst = cap.capture_rqst(page)
             cap.ensure_campaign(page, rqst, cfg.CAMPAIGN_ATT)
-            reqs = []
-            page.on("request", lambda r: reqs.append(r.url))
             cap._goto(page, cap._page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst,
                       cfg.CAMPAIGN_ATT))
+            dp = page.evaluate("() => [...document.querySelectorAll('input')]"
+                ".filter(i=>/date/i.test(i.name||i.id||'')).map(i=>"
+                "({name:i.name||i.id,val:i.value}))")
+            print(f"  TA2 datepickers={dp}", flush=True)
+            print(f"  TA2 before reps={page.evaluate(firstjs)}", flush=True)
+            # Try setting each datepicker to today + fire change; then re-read.
+            page.evaluate(
+                "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
+                " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
+                " i.dispatchEvent(new Event('input',{bubbles:true}));"
+                " i.dispatchEvent(new Event('change',{bubbles:true})); } } }", mdy)
             page.wait_for_timeout(4000)
-            hits = [u for u in reqs
-                    if (".cfc" in u or "json" in u.lower() or "method=" in u)
-                    and "index.cfm" not in u]
-            for u in sorted(set(hits))[:15]:
-                print("  TA-req:", u[:200], flush=True)
+            print(f"  TA2 after-setdate reps={page.evaluate(firstjs)}", flush=True)
+            # Also try a URL date param.
+            for pnm in ("date", "searchDate", "startDate"):
+                cap._goto(page, cap._page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst,
+                          cfg.CAMPAIGN_ATT, f"&{pnm}={mdy}"))
+                print(f"  TA2 url {pnm}={mdy} reps={page.evaluate(firstjs)}",
+                      flush=True)
         return 0
 
     if getattr(args, "probe_terr", False):
