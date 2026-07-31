@@ -44,13 +44,18 @@ CHANNEL_ID = os.environ.get("FIBER_DISTRO_SLACK_CHANNEL", "C075PCEL92M")  # #l10
 KEEP_EMOJI = "white_check_mark"     # ✅  keep
 REMOVE_EMOJI = "x"                   # ❌  confirm removal
 
-# Only these people's reactions count (Raf 2026-07-27). Eve pending — add her ID.
+# Only these people's reactions count (Raf 2026-07-27).
 APPROVERS: Dict[str, str] = {
     "Eve": "U088E2KJEV8",     # Evelyn Sobrino
     "Raf": "U045Z8N0ZQC",     # Rafael Hidalgo
     "Megan": "U04G5HJBGFN",   # Megan Hines
     "Maud": "U045USN7NCD",    # Maud Miller
 }
+
+# Who gets @-tagged on every removal thread so they're alerted to pending removals
+# (Megan 2026-07-27: just Eve & Maud — Raf/Megan don't need the weekly ping). Their
+# ✅ still counts either way (that's APPROVERS, above).
+MENTION_IDS: List[str] = [APPROVERS["Eve"], APPROVERS["Maud"]]
 
 
 def _client():
@@ -73,7 +78,9 @@ def post_departures(departures: List[dict], roster_date: str,
     {parent_ts, candidates:[{name,emails,resourceName,reply_ts}]} (None if none)."""
     if not departures:
         return None
-    parent_text = "🐺 *ICDs being removed from Email Contacts* — ✅ keep · ❌ remove"
+    tags = " ".join(f"<@{uid}>" for uid in MENTION_IDS)
+    parent_text = ("🐺 *ICDs being removed from Email Contacts* — ✅ keep · ❌ remove"
+                   + (f"\n{tags}" if tags else ""))
 
     if dry_run:
         from pathlib import Path
