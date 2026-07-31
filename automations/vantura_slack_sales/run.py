@@ -97,6 +97,14 @@ KNOWN_USERS = {
     "U0BH1NR6933": "Valerie Salazar",
     "U0BGZS3BRPU": "Wendy Flores",
     "U09P15V7WUC": "Monica",
+    "U0B8VSF1RBM": "Monica",               # second account, same rep — and the
+    # one she actually posts from. Her sales read as an unnamed id and landed
+    # on no row at all: 7/28 BOX 1 and 7/30 BOX 2, which Jolie caught by hand
+    # (2026-07-31). Teammates tag EITHER id in the shout-out list, never both
+    # in one post, which is the tell that they are one person; the thread on
+    # each of those posts is "MONICA MONICA MONICA".
+    "U0B4FJABKPF": "Esmeralda",            # BOX; thread hype "ESMEEEEEE"
+    "U0ATA7VUVE0": "Melanie",              # BOX through 7/14, no board row now
     "U047D64M0RW": "Nico Murrugarra",
     # B2B (AT&T lines and fiber)
     "U0ATXM9KYPM": "Jacob Ortega",
@@ -348,7 +356,20 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
         for f in dict.fromkeys(rec["flags"]):
             log(f"      ! {f}")
     for author, rec in unmatched:
-        log(f"  ! NOT A {campaign} REP ON THE BOARD: {author} — {rec['count']}")
+        # Two very different problems, and telling them apart matters. A NAME
+        # we can't place on the board is a board question. A raw "U0B8VSF1RBM"
+        # is a hole in KNOWN_USERS — the rep is real, sold, and their row reads
+        # 0. That is exactly how Monica Hernandez lost 7/28 and 7/30: the line
+        # below said "NOT A BOX REP: U0B8VSF1RBM" and nobody can read an id.
+        if any(p.author == p.author_id for p in rec["posts"]):
+            log(f"  !! UNKNOWN SLACK USER {author} — {rec['count']} {campaign} "
+                f"sale(s), IN THE TOTAL BUT ON NO REP'S ROW")
+            log("      Slack gave no name for this id. Open one of the posts "
+                "below in Slack: the thread replies shout the rep's name. Then "
+                "add the id to KNOWN_USERS in this file.")
+        else:
+            log(f"  ! NOT A {campaign} REP ON THE BOARD: {author} — "
+                f"{rec['count']}")
         for p in rec["posts"]:
             log(f"      {p.when.astimezone(TZ).strftime('%H:%M')}  {p.excerpt}")
 
