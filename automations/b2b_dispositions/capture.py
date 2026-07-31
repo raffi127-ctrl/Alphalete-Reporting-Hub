@@ -414,20 +414,22 @@ def capture_todays_activity(page, rqst: str, campaign: str,
     the meaningful content is the left panel; the right pane is empty until a rep
     is picked."""
     _goto(page, _page_url(cfg.PAGE_TODAYS_ACTIVITY, rqst, campaign))
+    # The Today's Activity datepicker PERSISTS a stale date (found stuck on
+    # 07/07/2026 — the session's last-used day), so the rep list showed the wrong
+    # day (Megan 7/30). Force it to today, fire change, and wait for the list to
+    # refresh before capturing.
+    try:
+        page.evaluate(
+            "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
+            " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
+            " i.dispatchEvent(new Event('input',{bubbles:true}));"
+            " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
+            _central_mdy())
+        page.wait_for_timeout(3500)
+    except Exception:
+        pass
     ok, label = verify_campaign(page, campaign)
     tag = cfg.CAMPAIGN_TAG[campaign]
-    try:
-        diag = page.evaluate(
-            "() => { const url=location.href;"
-            " const dates=[...new Set(((document.body.innerText||'')"
-            ".match(/\\d{1,2}\\/\\d{1,2}\\/\\d{4}/g))||[])].slice(0,4);"
-            " const inps=[...document.querySelectorAll('input')].map(i=>"
-            "({name:i.name||i.id||'', type:i.type, val:(i.value||'').slice(0,20)}))"
-            ".filter(i=>/date/i.test(i.name)||/\\d{1,2}\\/\\d{1,2}/.test(i.val));"
-            " return {url, dates, dateInputs: inps}; }")
-        print(f"  TA-diag [{campaign}] label={label!r} {diag}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"  TA-diag err {type(e).__name__}", flush=True)
     if dump:
         print_outline(page, f"todays_activity {tag}")
     out = out_dir / f"todays_activity_{_slug(tag)}.png"
