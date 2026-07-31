@@ -105,6 +105,53 @@ def _colletter(c):
     return rowcol_to_a1(1, c)[:-1]
 
 
+def _colnum(letters: str) -> int:
+    """'A' -> 1, 'L' -> 12. The inverse of _colletter."""
+    n = 0
+    for ch in letters.upper():
+        n = n * 26 + (ord(ch) - 64)
+    return n
+
+
+def column_pixels(sh, gid: int) -> List[int]:
+    """Each column's width ON THE SHEET, in sheet pixels (hidden columns → 0).
+
+    Read from the tab, never a table of numbers in here: a column someone
+    widens has to change the email with it. See `_range_width_px`."""
+    meta = _retry(lambda: sh.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),"
+                   "data(columnMetadata(pixelSize,hiddenByUser)))"}))
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("sheetId") != gid:
+            continue
+        data = s.get("data") or [{}]
+        return [0 if c.get("hiddenByUser") else int(c.get("pixelSize") or 100)
+                for c in (data[0].get("columnMetadata") or [])]
+    return []
+
+
+def _range_width_px(colpx: List[int], rng: str) -> int:
+    """How wide 'A24:F87' is on the sheet, in sheet pixels.
+
+    WHY THIS EXISTS. The Sheets PDF export is fit-to-WIDTH, so every block comes
+    back the same number of image pixels wide however many columns it has: the
+    six-column A:F leaderboard and a twelve-column A:L daily table both fill the
+    page. Showing them all at the same width in the email then blew the
+    leaderboard up to ~1.9x the text size of the tables around it (Eve,
+    2026-07-31: "la letra casi el doble de grande").
+
+    Sizing each image against the WIDEST block instead puts one sheet pixel at
+    the same size in every image — the proportions the board actually has in
+    Sheets. Returns 0 when the range can't be read, and build_email falls back
+    to the old equal-width layout rather than guessing."""
+    import re
+    m = re.match(r"^([A-Z]+)\d+:([A-Z]+)\d+$", rng.strip().upper())
+    if not m or not colpx:
+        return 0
+    a, b = _colnum(m.group(1)), _colnum(m.group(2))
+    return sum(colpx[c - 1] for c in range(a, b + 1) if c - 1 < len(colpx))
+
+
 def _daily_section_ranges(g) -> List[Tuple[str, str]]:
     """The 8 daily section tables between the ORG leaderboard and the first
     captainship block. Each: header row (col A = section name, col C = 'Monday',
@@ -458,8 +505,12 @@ def _set_rows_hidden(sh, gid: int, spans: List[Tuple[int, int]], hidden: bool) -
         _retry(lambda: sh.batch_update({"requests": reqs}))
 
 
-def capture(out_dir: Path) -> List[Tuple[str, Path]]:
-    """Render each section of the COPY tab → PNGs via PDF export. [(name, path)]."""
+def capture(out_dir: Path) -> List[Tuple[str, Path, int]]:
+    """Render each section of the COPY tab → PNGs via PDF export.
+
+    Returns [(name, path, sheet_width_px)]. The third item is how wide the block
+    is ON THE SHEET, which is what lets the email show them all at one scale
+    instead of stretching each to the same width — see `_range_width_px`."""
     sh = open_by_key(SHEET_ID)
     ws = _retry(lambda: sh.worksheet(SANDBOX_TAB))
     grid = _retry(ws.get_all_values)
@@ -469,6 +520,7 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
         raise RuntimeError("no sections found on the copy tab — template changed?")
     out_dir.mkdir(parents=True, exist_ok=True)
     token = _access_token()
+    colpx = column_pixels(sh, gid)
     print(f"[screenshot_email] rendering {len(ranges)} section(s) from copy tab "
           f"(gid={gid})", flush=True)
     # The captainship WE-history stacks live in hidden rows; the PDF export skips
@@ -488,8 +540,10 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
             if i:
                 time.sleep(2)      # gentle pacing so the export endpoint doesn't 429
             p = _export_png(gid, rng, out_dir / f"{name}.png", token)
-            print(f"    {name:26} {rng}  -> {p.name}", flush=True)
-            out.append((name, p))
+            w = _range_width_px(colpx, rng)
+            print(f"    {name:26} {rng:14} {w or '?':>5}px sheet  -> {p.name}",
+                  flush=True)
+            out.append((name, p, w))
     finally:
         rehide = [(a + 1, b) for (a, b) in spans if b > a]   # keep 1st week visible
         if rehide:
@@ -497,7 +551,7 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
     return out
 
 
-def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
+def build_email(images: List[Tuple], to_addrs: List[str],
                 day: dt.date) -> EmailMessage:
     """`day` is the day the numbers are FOR — yesterday, not the run date (Eve
     2026-07-29). The board only ever carries completed days, so a 7/29 run shows
@@ -521,14 +575,28 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     # client honours: a table row cannot flow next to another one, so the stack
     # stays a stack in Gmail, Outlook and on a phone. display:block kills the
     # inline baseline gap under each image too. No floats, one image per cell.
+    #
+    # AND EACH ONE IS AS WIDE AS ITS BLOCK IS ON THE SHEET, not all the same
+    # (Eve, 2026-07-31). Every image arrives from a fit-to-width export, so they
+    # are all the same pixel width whatever they contain; at equal widths the
+    # narrow six-column leaderboard rendered ~1.9x the text size of the daily
+    # tables. Scaled against the widest block, one sheet pixel is the same size
+    # in all of them. Percentages of the wrapper, never px, so the proportions
+    # hold in a narrow reading pane too.
+    widths = [(rest[0] if rest else 0) for (_n, _p, *rest) in images]
+    widest = max(widths) if widths else 0
+    scaled = all(w > 0 for w in widths) and widest > 0
     rows, cids = [], []
-    for name, path in images:
+    for (name, path, *_rest), w in zip(images, widths):
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
+        # A manifest written before the widths existed has none; that day keeps
+        # the old equal-width look rather than being guessed at.
+        size = (f"width:{100 * w / widest:.2f}%" if scaled else "max-width:100%")
         rows.append(
             '<tr><td style="padding:0 0 16px">'
             f'<img src="cid:{cid}" alt="{name}" '
-            'style="display:block;max-width:100%;height:auto;'
+            f'style="display:block;{size};height:auto;'
             'border:1px solid #ddd">'
             '</td></tr>')
     # 'ALPHALETE ORG' banner — its own row, so it caps the stack.
@@ -536,8 +604,12 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
               '<div style="background:#d9d9d9;text-align:center;padding:10px;'
               'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb'
               '">ALPHALETE ORG</div></td></tr>')
+    # 1200px, was 1000: the daily tables are the widest block and now set the
+    # size of everything else, so the stack reads small if the wrapper is tight.
+    # Gmail still shrinks the lot to fit its pane — the proportions are what
+    # survive, which is the point.
     stack = ('<table role="presentation" cellpadding="0" cellspacing="0" '
-             'border="0" width="100%" style="max-width:1000px;'
+             'border="0" width="100%" style="max-width:1200px;'
              'border-collapse:collapse">'
              + banner + "".join(rows) + '</table>')
     # Copy-vs-VA comparison breakdown chart: RETIRED 2026-07-21 (Megan). The VA
@@ -572,19 +644,26 @@ def out_dir_for(day: dt.date) -> Path:
     return Path("output") / "sales_board_shots" / day.isoformat()
 
 
-def _write_manifest(out_dir: Path, images: List[Tuple[str, Path]]) -> Path:
-    """Record the ORDER the images go in the email. --send-reviewed mails these
-    exact files rather than re-capturing: what was approved is what goes out,
-    even if the board moved between the review post and the checkmark."""
+def _write_manifest(out_dir: Path, images: List[Tuple]) -> Path:
+    """Record the ORDER the images go in the email, and how wide each block is
+    on the sheet. --send-reviewed mails these exact files rather than
+    re-capturing: what was approved is what goes out, even if the board moved
+    between the review post and the checkmark. `sheet_px` rides along so the
+    send lays them out at exactly the scale the reviewed preview did."""
     import json
+    rows = [{"name": n, "file": Path(f).name, "sheet_px": (rest[0] if rest else 0)}
+            for (n, f, *rest) in images]
     p = out_dir / "manifest.json"
-    p.write_text(json.dumps([{"name": n, "file": Path(f).name} for n, f in images],
-                            indent=2), encoding="utf-8")
+    p.write_text(json.dumps(rows, indent=2), encoding="utf-8")
     return p
 
 
-def reviewed_images(day: dt.date) -> List[Tuple[str, Path]]:
-    """The day's captured images, in email order, from the manifest."""
+def reviewed_images(day: dt.date) -> List[Tuple[str, Path, int]]:
+    """The day's captured images, in email order, from the manifest.
+
+    `sheet_px` is 0 for a manifest written before the widths existed; the email
+    then keeps the old equal-width layout rather than mis-scaling a day that has
+    already been approved."""
     import json
     out_dir = out_dir_for(day)
     man = out_dir / "manifest.json"
@@ -593,8 +672,9 @@ def reviewed_images(day: dt.date) -> List[Tuple[str, Path]]:
             f"no manifest in {out_dir} — nothing was captured for "
             f"{day:%Y-%m-%d}. Build the preview first (--dry-run).")
     rows = json.loads(man.read_text(encoding="utf-8"))
-    images = [(r["name"], out_dir / r["file"]) for r in rows]
-    missing = [str(p) for _n, p in images if not p.exists()]
+    images = [(r["name"], out_dir / r["file"], int(r.get("sheet_px") or 0))
+              for r in rows]
+    missing = [str(p) for _n, p, _w in images if not p.exists()]
     if missing:
         raise RuntimeError(f"manifest lists files that are gone: {missing}")
     return images
@@ -729,7 +809,8 @@ def main(argv=None) -> int:
     out_dir = out_dir_for(today)
     images = capture(out_dir)
     _write_manifest(out_dir, images)
-    print(f"[screenshot_email] saved: {[str(p) for _n, p in images]}", flush=True)
+    print(f"[screenshot_email] saved: {[str(p) for _n, p, *_ in images]}",
+          flush=True)
 
     to = _recipients(a)
     if to is None:
