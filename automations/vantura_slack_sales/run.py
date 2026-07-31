@@ -71,6 +71,9 @@ KNOWN_USERS = {
     "U0B958DGNHX": "Christopher Rivera",
     "U0AU21DH8RL": "Emmanuel Nieto",
     "U0AQN5YHV4G": "Ibukunoluwa Ogunlola",
+    "U0BAM3S005T": "Ibukunoluwa Ogunlola",  # second account (Eve 2026-07-31);
+    # his 7/13 Base sale landed on no row. The thread only calls him "EL TWIN",
+    # which is why the id sat unnamed — he and Obade Ogunlola are brothers.
     "U0BGA938M5E": "Juan Miranda",
     "U0BD56X1H40": "Charley Perez",
     "U0A64Q4KZM0": "Pablo Deleon",
@@ -104,7 +107,13 @@ KNOWN_USERS = {
     # in one post, which is the tell that they are one person; the thread on
     # each of those posts is "MONICA MONICA MONICA".
     "U0B4FJABKPF": "Esmeralda",            # BOX; thread hype "ESMEEEEEE"
-    "U0ATA7VUVE0": "Melanie",              # BOX through 7/14, no board row now
+    # BOX through 7/14, then nothing. She has NO row on the board — not even a
+    # 'T' one, though every other terminated rep keeps theirs — and Roll Call
+    # carries her as Terminated (wk 4.26 BOX, and a 4.12 B2B row stamped
+    # "T Sat Jun 20 2026"). That conflicts with her still training new starts in
+    # weeks 7.19 and 7.26 and selling on 7/10 and 7/14, so the record is stale
+    # somewhere. Mapped anyway: if she posts again the log says her NAME.
+    "U0ATA7VUVE0": "Melanie Hernandez",
     "U047D64M0RW": "Nico Murrugarra",
     # B2B (AT&T lines and fiber)
     "U0ATXM9KYPM": "Jacob Ortega",
