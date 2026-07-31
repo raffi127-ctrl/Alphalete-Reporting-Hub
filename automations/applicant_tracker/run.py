@@ -63,7 +63,13 @@ L_BOB = "Total Daily Bob"
 L_TRAINING = "Total Training"
 L_TRAINING_SHOWED = "Training Showed Up"
 
-N_CALL_COLS = 7   # Call List tab -> B..H
+# The "Sent to Call List" detail table has 8 data cols (First, Last, Email,
+# Phone, Rating, Job Board, Date and Time, Ad) — the SAME off-by-one that hit 2R
+# below. 7 stopped at Date and Time and dropped the Ad (sheet col I), so every
+# Call List row imported with a blank Ad. It only became visible on 2026-07-28,
+# when the morning phase moved into the 4am flow and the Call List started
+# landing in full every day. Paste starts at B, so 8 fills B..I.
+N_CALL_COLS = 8   # Call List tab -> B..I
 # The "Total Second Interviews" detail table has 10 data cols (First, Last,
 # Email, Phone, Rating, 1STR, 2ND, Job Board, Date and Time, Ad). 9 stopped at
 # Date and Time and dropped the Ad (BD) — every 2R Retention row imported with a
@@ -84,7 +90,8 @@ def clean_owner_name(name: str) -> str:
 
 
 # ---- MORNING: Call List + 2R Status (reads YESTERDAY) --------------------
-def _morning_office(app, ws_call, ws_2r, office_id: str, header: str) -> None:
+def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
+                    ad_blank: list) -> None:
     owner = app.select_office(office_id)  # raw owner (Call List keeps the state)
 
     # ONE report load -> collect every detail href this phase needs.
@@ -102,6 +109,14 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str) -> None:
         sheets.paste_block(ws_call, start, "A", [[owner]] * len(call_rows))
         sheets.paste_block(ws_call, start, "B", call_rows)
         print(f"  [{office_id}] {owner}: Call List +{len(call_rows)} (row {start})")
+        # The Ad is the LAST data col. A whole office landing with a blank Ad is
+        # how the 7-vs-8 column miss hid for days — nobody sees a silently
+        # narrow paste. Flag it so the next column the site adds gets caught the
+        # next morning instead of by Francia. [[feedback_flag_unfilled_cells]]
+        if all(not (r[-1] or "").strip() for r in call_rows if r):
+            ad_blank.append(str(office_id))
+            print(f"  ⚠ [{office_id}] {owner}: every Call List row has a BLANK Ad "
+                  f"— the detail table's columns probably moved (N_CALL_COLS)")
     else:
         print(f"  [{office_id}] {owner}: no Call List for {header}")
 
@@ -199,12 +214,14 @@ def run(phase: str, target: dt.date | None = None) -> None:
 
     failed: list[str] = []
     no_access: list[str] = []
+    ad_blank: list[str] = []
     with session() as app:
         for office_id in config.OFFICE_IDS:
             print(f"[{office_id}] selecting office...")
             try:
                 if phase == "morning":
-                    _morning_office(app, ws_call, ws_2r, office_id, header)
+                    _morning_office(app, ws_call, ws_2r, office_id, header,
+                                    ad_blank)
                 else:
                     _evening_office(app, ws_2r, office_id, header)
             except OfficeNotAvailable as e:
@@ -229,6 +246,11 @@ def run(phase: str, target: dt.date | None = None) -> None:
         print(f"!! {len(no_access)} of {total} office(s) are NOT VISIBLE to this "
               f"login ({config.__name__} OFFICE_IDS): {', '.join(no_access)} — "
               "this repeats nightly until access is granted or the id is removed")
+    if ad_blank:
+        print(f"!! {len(ad_blank)} of {total} office(s) imported the Call List "
+              f"with a BLANK Ad: {', '.join(ad_blank)} — check whether the "
+              "'Sent to Call List' detail table gained/moved a column "
+              f"(N_CALL_COLS is {N_CALL_COLS})")
 
     # Report completion for the Hub pill. Only real (non-dry) runs count.
     #
@@ -245,19 +267,28 @@ def run(phase: str, target: dt.date | None = None) -> None:
         # Any office that did NOT sync (a genuine error OR a no-access gap) goes
         # to #claudecorrections-and-requests so the miss is seen even though the
         # pill is green. Best-effort — a Slack hiccup never fails the run.
-        if failed or no_access:
+        if failed or no_access or ad_blank:
             try:
                 from automations.day_orchestrator import notify
                 from automations.day_orchestrator.registry import load_config
+                missed = len(failed) + len(no_access)
                 lines = ["🗂️ *Applicant Tracker — {} run: {} of {} office(s) "
-                         "did not sync*".format(
-                             phase, len(failed) + len(no_access), total)]
+                         "did not sync*".format(phase, missed, total)
+                         if missed else
+                         "🗂️ *Applicant Tracker — {} run: all {} office(s) "
+                         "synced, but something looks off*".format(phase, total)]
                 if no_access:
                     lines.append("• No access ({}): {}".format(
                         len(no_access), ", ".join(no_access)))
                 if failed:
                     lines.append("• Errored ({}): {}".format(
                         len(failed), ", ".join(failed)))
+                if ad_blank:
+                    lines.append(
+                        "• Call List imported with a BLANK Ad ({}): {} — the "
+                        "'Sent to Call List' detail table may have gained or "
+                        "moved a column".format(len(ad_blank),
+                                                ", ".join(ad_blank)))
                 notify._post_corrections(load_config(), None, lines,
                                          dry_run=False,
                                          tag="applicant-tracker-gaps")
