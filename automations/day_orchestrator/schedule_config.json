@@ -228,6 +228,26 @@
       "timeout_minutes": 25,
       "machine": "Lucy 1"
     },
+    "applicant_ad_backfill": {
+      "on_scheduler": false,
+      "_note": "ONE-SHOT REPAIR (Megan 2026-07-31): fills the blank Ad on Call List rows imported while N_CALL_COLS was 7 (fixed in 7885ab5) — 2026-07-28..07-30, ~3,200 rows. Re-scrapes the 'Sent to Call List' detail pages on Lucy 1's warm rcaptain session and matches sheet rows to scraped rows BY APPLICANT IDENTITY (first, last, email, phone, date-and-time), never by row position; writes col I only, only where it's already blank. `lucy rerun applicant_ad_backfill --dry-run` first — the dry run does the full browser pass and writes nothing. Pass --date YYYY-MM-DD (repeatable) to repair another day; the default dates must sit in the CURRENT Sun-Sat retention week or the report load won't have their columns. Not on the scheduler and not a Hub card: once the three days are filled this has nothing left to do.",
+      "display_name": "Applicant Tracker: Call List Ad backfill (one-shot)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.applicant_tracker.backfill_ads"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 40,
+      "machine": "Lucy 1"
+    },
     "applicant_sync_morning": {
       "on_scheduler": true,
       "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). MOVED INTO THE 4am FLOW (Megan 2026-07-28): runs in the orchestrator's sequential pass on Lucy 1, gated `after` daily_focus. WHY this is now safe from the old collision — daily_focus and this share the SAME rcaptain ApplicantStream login, and back when this was a SEPARATE 6:45am launchd it could overlap the still-running 4am batch (16/17 + no-session-token failures). The orchestrator runs reports ONE AT A TIME, and `after: daily_focus` makes this PENDING until daily_focus reaches a terminal state, so the two logins can never be concurrent. `after` (not depends_on) is deliberate: a FAILED/absent daily_focus (e.g. Saturday, when focus isn't scheduled) must NOT strand the sync — the login is free either way. order 2 keeps it right behind daily_focus (order 1) so the Call List lands early. The standalone com.alphalete.applicant-morning launchd is retired via disable_applicant_morning_agent (must be booted out or the Call List double-appends — no de-dupe). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange).",
