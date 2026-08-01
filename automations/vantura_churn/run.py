@@ -27,6 +27,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from automations.recruiting_report import fill as _fill_shared
 from automations.vantura_churn import compute, fill, pull
 
 REPORT_ID = "vantura-churn"
@@ -36,11 +37,31 @@ REPORT_ID = "vantura-churn"
 # 2026-07-21 each office now writes its OWN sheet's LUCY CHURN tab.
 ATEF_SHEET_ID = "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30"
 
+# Jamis Garay (Atomic Marketing) — onboarded 2026-07-31. His board's churn tab
+# is spelled 'Lucy Churn'; tab lookup is case-tolerant now, but the name is
+# recorded as the sheet actually spells it.
+JAMIS_SHEET_ID = "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU"
+
 OWNER_CFG = [
     # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
     ("carlos", "CARLOS HIDALGO", fill.SHEET_ID, fill.TAB_CHURN_CARLOS, True),
     ("atef", "ATEF CHOUDHURY", ATEF_SHEET_ID, "LUCY CHURN", False),
+    ("jamis", "JAMIS GARAY", JAMIS_SHEET_ID, "Lucy Churn", False),
 ]
+
+# Offices NOT yet in the default `--owner both` daily run. They are fully
+# configured and run on demand (`--owner <key>`), but stay out of the unattended
+# batch until one clean verified run proves their numbers.
+#
+# WHY THIS EXISTS (2026-08-01): reconciliation is all-or-nothing — ONE office
+# whose computed churn doesn't match the CHURN RATES dashboard sets `problems`,
+# and the run then writes NOTHING for ANY office. So a brand-new office joining
+# the 4am batch un-verified can silently zero out Carlos's and Atef's boards
+# too. Staging costs one flag; the alternative costs everyone's data.
+#
+# TO PROMOTE: run `--owner jamis --dry-run` on Lucy 2 (needs Carlos's Tableau
+# session), confirm it reconciles, then delete the key from this set.
+STAGED = {"jamis"}
 
 
 def _activation_cfg():
@@ -57,6 +78,27 @@ def _activation_cfg():
                  "ATTTRACKER-B2B/ACTIVATIONRATES/"
                  "9cfd3e6c-b221-47a6-8699-bd8eb524fd6e/AtefEXP?:iid=1",
                  "Atef EXP", "ATEF CHOUDHURY"),
+        # JAMIS — no Jamis-scoped saved view exists yet (his onboarding row has
+        # per_office_views {}), and "Owner & Office" can NOT be URL-sliced, so
+        # there is no way to hand Tableau an office-filtered view here. Use the
+        # ALL-TEAM view and let the OWNER FILTER HAPPEN IN CODE: parse_rep_rates
+        # and parse_rates both drop every row whose "Owner & Office" doesn't
+        # start with the prefix, so isolation does not depend on the view. Two
+        # guards back it: parse_rep_rates RAISES when the prefix matches no rows
+        # (never silently posts the team), and reconcile_reps requires the rep
+        # rows to add up to Jamis's own office totals.
+        #
+        # UNVERIFIED until a `--owner jamis --dry-run` on Lucy 2: whether this
+        # team view exposes the 'Activation Office' worksheet the per-rep list
+        # needs (Carlos's CARLOSLOCALEXPANDED was picked for exactly that). If
+        # it doesn't, parse_rep_rates fails loudly naming the missing columns —
+        # the fix is then Carlos saving a JamisEXPANDED view (add-b2b-office.md,
+        # "What Carlos makes") and swapping the URL on this one line.
+        "jamis": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                  "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                  "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
+                  "CarlosTeamViewExpanded?:iid=1",
+                  "Carlos Team View Expanded", "JAMIS GARAY"),
     }
 
 
@@ -187,7 +229,9 @@ def main(argv=None) -> int:
                     help="diagnostics only: dump what the ACTIVATION RATES "
                          "view exports (columns, bucket captions, Carlos's "
                          "rows) to the 'Vantura Diag' tab. LUCY 2 ONLY.")
-    ap.add_argument("--owner", choices=("both", "carlos", "atef"),
+    # Choices come from OWNER_CFG so adding an office is ONE table row, not a
+    # row plus a literal here that silently rejects the new key.
+    ap.add_argument("--owner", choices=tuple(["both"] + [k for k, *_ in OWNER_CFG]),
                     default="both")
     ap.add_argument("--today", default=None,
                     help="override 'today' (YYYY-MM-DD) — testing only")
@@ -242,8 +286,16 @@ def main(argv=None) -> int:
         r = _shot.post_report(ws, day=today, dry_run=args.no_post, log=log)
         log(f"post-only result: {r}")
         return 0
+    # `--owner both` = the promoted offices only; naming an office explicitly
+    # always runs it (that's how a STAGED office gets its verification run).
     owners = [o for o in OWNER_CFG
-              if args.owner in ("both", o[0])]
+              if (o[0] == args.owner
+                  or (args.owner == "both" and o[0] not in STAGED))]
+    staged_skipped = [o[0] for o in OWNER_CFG
+                      if args.owner == "both" and o[0] in STAGED]
+    if staged_skipped:
+        log("STAGED (not in the daily batch): " + ", ".join(staged_skipped)
+            + " — run `--owner <key> --dry-run` to verify, then clear STAGED.")
     if args.carlos_only:
         owners = [(k, prefix, sid, tab, False)
                   for k, prefix, sid, tab, _act in owners if k == "carlos"]
@@ -369,27 +421,33 @@ def main(argv=None) -> int:
         return 0
 
     # ------------------------------------------------------------- writes
+    churn_ws = {}               # office key -> its resolved churn worksheet
     for key, prefix, sid, tab, has_act in owners:
         sh = fill.open_sheet(sid)   # each office writes its OWN board
-        log(f"▶ updating '{tab}' on sheet {sid[:8]}…")
+        # Resolve the tab ONCE, case-tolerantly (a hand-duplicated board spells
+        # it 'Lucy Churn', not 'LUCY CHURN' — Jamis, 2026-08-01), and reuse the
+        # handle: 4 lookups per office was also 4 Sheets calls per office.
+        ws = _fill_shared.worksheet_ci(sh, tab)
+        churn_ws[key] = ws
+        log(f"▶ updating '{ws.title}' on sheet {sid[:8]}…")
         # Self-heal the 'Viewing:' dropdown: editing the tab's headers can
         # leave the validation on one cell and the FILTER reading another,
         # which silently breaks product switching. No-op when they agree.
         try:
-            fill.repair_viewing_dropdown(sh.worksheet(tab), log=log)
+            fill.repair_viewing_dropdown(ws, log=log)
         except Exception as e:  # noqa: BLE001 — never block the daily write
             log(f"  ⚠ dropdown check skipped: {e}")
         # A duplicated churn tab doesn't inherit the hidden helper columns,
         # so R:AE sit in plain view next to the report. No-op once hidden.
         try:
-            fill.hide_helper_columns(sh.worksheet(tab), log=log)
+            fill.hide_helper_columns(ws, log=log)
         except Exception as e:  # noqa: BLE001
             log(f"  ⚠ helper-column hide skipped: {e}")
-        fill.update_churn_tab(sh.worksheet(tab), results[key]["summary"]["base"],
+        fill.update_churn_tab(ws, results[key]["summary"]["base"],
                               results[key]["helper"], log=log)
         if rates_by_office.get(key):
             office, reps = rates_by_office[key]
-            fill.update_activation_rates(sh.worksheet(tab), office, reps, log=log)
+            fill.update_activation_rates(ws, office, reps, log=log)
         if has_act and not args.skip_activations:
             log(f"▶ updating '{fill.TAB_ACTIVATIONS}'…")
             act = compute.activations_rows(results[key]["lines"], today)
@@ -404,12 +462,17 @@ def main(argv=None) -> int:
     # --dry-run holds it. Best-effort: a Slack hiccup must not fail a run that
     # already wrote the board correctly.
     if not args.skip_post:
-        carlos_tab = next((t for k, _p, _s, t, _a in owners if k == "carlos"),
-                          None)
-        if carlos_tab:
+        # CARLOS'S OWN worksheet — churn_ws[key], never `sh`. `sh` is whatever
+        # board the write loop happened to end on, and every office board has a
+        # churn tab by the same name, so `sh.worksheet(carlos_tab)` posted the
+        # LAST office's tab into Carlos's thread (it was reading ATEF's board;
+        # found 2026-08-01). Exactly the isolation failure that halted the jamis
+        # trackers a day earlier — one office's numbers under another's name.
+        carlos_ws = churn_ws.get("carlos")
+        if carlos_ws:
             try:
                 from automations.vantura_churn import shot as _shot
-                _shot.post_report(sh.worksheet(carlos_tab), day=today,
+                _shot.post_report(carlos_ws, day=today,
                                   dry_run=args.dry_run or args.no_post,
                                   log=log)
             except Exception as e:  # noqa: BLE001 — never fail a good write

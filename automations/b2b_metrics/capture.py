@@ -69,15 +69,50 @@ def _require_fresh_gate(lines, log=print) -> None:
 
 
 # --- #6 / #7 : screenshots of the LUCY CHURN tab ---------------------------
+def _assert_rolloff_has_data(ws, o: B2BOffice) -> None:
+    """#6's blank-guard — the twin of #7's 'no rep rows' check.
+
+    A board whose churn tab has never been written renders the FULL template —
+    title, tier legend, column headers — with an empty rolloff list and a lone
+    '#N/A' under 'Days Left'. That posts as a confident-looking screenshot of
+    nothing (Jamis's board, 2026-08-01), which is worse than a gap: it reads as
+    'no churn this week'. #7 already refuses to post blank; #6 didn't.
+
+    Row positions are read from the tab's OWN 'Days Left' header rather than
+    hardcoded — these boards are hand-duplicated and drift.
+    """
+    col_a = ws.get("A1:A200")
+    # EXACT match on the header cell, not 'contains': row 2's help text reads
+    # "Days left = (Posted+30) - Today...", so a substring match anchors on the
+    # caption and waves every blank board through.
+    hdr = next((i for i, r in enumerate(col_a, 1)
+                if r and str(r[0]).strip().lower() == "days left"), None)
+    if hdr is None:
+        return          # unknown layout — don't invent a reason to skip
+    for r in col_a[hdr:]:
+        v = str(r[0]).strip() if r else ""
+        # '#N/A' / '#REF!' are the unwritten-board signature, not data.
+        if v and not v.startswith("#"):
+            return
+    raise ValueError(
+        "customer_churn: no rolloff rows on {!r} (churn board not written yet "
+        "— vantura_churn hasn't run for this office) — skip rather than post "
+        "an empty template".format(ws.title))
+
+
 def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
     """#6 customer_churn = the tab's main block (0-30 Day Rolloff List); #7
     activation_by_rep = the rep chart at AE:AF. Both via the Sheets export
     endpoint (vantura_churn.shot)."""
-    from automations.recruiting_report.fill import open_by_key
+    from automations.recruiting_report.fill import open_by_key, worksheet_ci
     from automations.vantura_churn import shot
 
-    ws = open_by_key(o.sheet_id).worksheet(o.churn_tab)
+    # worksheet_ci, not .worksheet(): office boards are hand-duplicated and the
+    # churn tab's casing drifts ('Lucy Churn' vs 'LUCY CHURN' — Jamis's board,
+    # 2026-08-01). Match tolerantly so a new office doesn't fail at 4am.
+    ws = worksheet_ci(open_by_key(o.sheet_id), o.churn_tab)
     if which == "customer_churn":
+        _assert_rolloff_has_data(ws, o)
         rng = shot.visible_range(ws)
         out = out_dir / "customer_churn.png"
     elif which == "activation_by_rep":

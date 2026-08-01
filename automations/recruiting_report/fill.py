@@ -284,6 +284,36 @@ def open_sheet():
     return open_by_key(SPREADSHEET_ID)
 
 
+def worksheet_ci(sh, title: str):
+    """Worksheet by title, TOLERANT of case + spacing — returns the real tab.
+
+    gspread's `worksheet()` matches the title byte-for-byte, so a board whose
+    tab reads 'Lucy Churn' raises WorksheetNotFound when config says
+    'LUCY CHURN' (2026-08-01: Jamis's board, the whole reason this exists).
+    Every office board is hand-made from a duplicate, so the casing drifts —
+    matching exactly is a per-office landmine that only fires in the 4am run.
+
+    Exact match wins (a board with BOTH spellings keeps today's behaviour);
+    otherwise fall back to a case-insensitive, whitespace-collapsed compare and
+    return the tab as the SHEET actually spells it. The error message lists the
+    real tab names, so the next mismatch is one glance instead of a bisect."""
+    try:
+        return _retry(sh.worksheet, title)
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+
+    def _norm(s):
+        return " ".join(str(s or "").strip().lower().split())
+
+    want = _norm(title)
+    for ws in _retry(sh.worksheets):
+        if _norm(ws.title) == want:
+            return ws
+    raise gspread.exceptions.WorksheetNotFound(
+        "no tab {!r} on {!r} (case-insensitive). Tabs: {}".format(
+            title, sh.title, ", ".join(w.title for w in sh.worksheets())))
+
+
 def load_mapping() -> dict:
     return json.loads(MAPPING_PATH.read_text())
 

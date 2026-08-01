@@ -377,11 +377,22 @@ def _merge_onboarded() -> None:
                            "channel_name": p.get("channel_name", ""),
                            "report_keys": p.get("report_keys") or p.get("slugs") or []})
         _cp = tuple(_plans) if (_ok and len(_plans) > 1) else tuple()
+        # Board TAB NAMES are per-office: an onboarded board is a hand-made
+        # duplicate, so its churn / order-log tabs can be spelled differently
+        # (Jamis's is 'Lucy Churn', not 'LUCY CHURN'). Carry them from the JSON
+        # when present; the B2BOffice defaults still apply when they're absent.
+        # Matching is case-tolerant at read time (fill.worksheet_ci), so this is
+        # only needed for a genuinely different NAME, not different casing.
+        _tabs = {}
+        for _f in ("churn_tab", "order_log_tab"):
+            if (r.get(_f) or "").strip():
+                _tabs[_f] = r[_f].strip()
         try:
             OFFICES[key] = B2BOffice(
                 key=key, label=r.get("label") or f"{key.title()}'s B2B Office",
                 owner=r.get("owner", ""), channel_id=r.get("channel_id", ""),
                 channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
+                **_tabs,
                 owner_office=r.get("owner_office", ""),
                 view_overrides=overrides, channel_plans=_cp)
             ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
