@@ -4797,8 +4797,7 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--accumulate",
-        "--write"
+        "--accumulate"
       ],
       "cadence": {
         "weekdays": [
@@ -4823,8 +4822,7 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--roll",
-        "--write"
+        "--roll"
       ],
       "cadence": {
         "weekdays": [
@@ -4851,8 +4849,7 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--populate",
-        "--write"
+        "--populate"
       ],
       "cadence": {
         "weekdays": [
