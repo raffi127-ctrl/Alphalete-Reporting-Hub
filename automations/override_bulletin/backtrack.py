@@ -111,16 +111,20 @@ def _sheet_cell(vals, row, col):
     return P._num_locale(vals[row - 1][col])
 
 
-def raf_fresh_for_week(week_mdy, *, page=None, verbose=True):
+def raf_fresh_for_week(week_mdy, *, period_num=None, page=None, verbose=True):
     """Rafael's freshly re-pulled (captain, special) for a past week.
 
     These are the two components backtrack could NOT re-source before — it trusted
     whatever section 2 already held, so a special the VA later REVISED sat stale
     (his 7.12-6.14 froze ~$3k high after a downward revision, 2026-08-01). Both are
     full-history sources, unlike the DD captains: captain from Raf PNL (by label),
-    special from Payout-Raf-wow (matched by the week's Processed-Week date). Best
-    effort — a flaky/absent pull returns None for that component and the caller
-    keeps its on-sheet value."""
+    special from Payout-Raf-wow (matched by the week's Processed-Week date).
+
+    `period_num` is the RETAIL period the week lives in — pass the value from the
+    summary scan, NOT the calendar month: near a period edge a week (6.21, 6.28)
+    sits in the NEXT retail period (7), so Raf-wow's month-6 export wouldn't carry
+    it. We still try the month period as a fallback candidate. Best effort — a
+    flaky/absent pull returns None and the caller keeps the on-sheet value."""
     cap = spec = None
     try:
         cap = P.raf_captain_override(week_mdy)
@@ -131,9 +135,16 @@ def raf_fresh_for_week(week_mdy, *, page=None, verbose=True):
         m, d, y = week_mdy.split(".")
         wh = "{}/{}/20{}".format(int(m), int(d), y[-2:])
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        spec = P.raf_special_override(wh, OUT_DIR / "raf-bt.csv",
-                                      period=P.period_for(week_mdy, style="num"),
-                                      page=page, verbose=verbose)
+        # retail period first (from the scan), month as a fallback candidate
+        periods = []
+        if period_num:
+            periods.append("Period {}".format(period_num))
+        periods.append(P.period_for(week_mdy, style="num"))
+        for per in dict.fromkeys(periods):        # de-dup, keep order
+            spec = P.raf_special_override(wh, OUT_DIR / "raf-bt.csv",
+                                          period=per, page=page, verbose=verbose)
+            if spec is not None:
+                break
     except Exception as e:  # noqa: BLE001
         if verbose:
             print("  (raf special unavailable: {})".format(type(e).__name__))
@@ -220,6 +231,16 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
     raf_key = F.canon("Rafael Hidalgo", aliases)
     all_changes, cache = [], {}
     with tableau_session(headless=True, verbose=verbose) as page:
+        # Retail-period map (week -> period) so Rafael's special is pulled from the
+        # period that actually carries the week, not its calendar month (6.21/6.28
+        # live in period 7, not 6). Best-effort; falls back to month per-week.
+        try:
+            _sw, week_period, _rb = R._scan_summary(page, OUT_DIR, verbose=verbose)
+        except Exception as e:  # noqa: BLE001
+            if verbose:
+                print("  (period scan unavailable: {}; using month)".format(
+                    type(e).__name__))
+            week_period = {}
         for wk in targets:
             regular, used = regular_for_week(wk, page=page, verbose=verbose,
                                              cache=cache)
@@ -230,7 +251,8 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
             # Rafael's captain (PNL) + special (Raf-wow) are re-pullable for a past
             # week — re-source them so a revised special self-corrects instead of
             # sitting stale in section 2.
-            raf_cap, raf_spec = raf_fresh_for_week(wk, page=page, verbose=verbose)
+            raf_cap, raf_spec = raf_fresh_for_week(
+                wk, period_num=week_period.get(wk), page=page, verbose=verbose)
             changes, unmatched, col = plan_week(ws, vals, wk, roster, captains,
                                                 regular, raf=(raf_key, raf_cap, raf_spec))
             print("\n{} (from {}): {} cell(s) drifted".format(
