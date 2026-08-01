@@ -278,6 +278,18 @@ _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn
 _STUCK_AFTER_MIN = 90
 
 
+def _bg_check_has_new_emails():
+    """True/False if we can tell whether any background-check emails arrived in the
+    last day; None if the source can't be reached (no Gmail app password on this
+    machine, IMAP hiccup, etc.). Used to distinguish bg_check_sync's benign
+    'nothing to sync' day from a real 'didn't run' miss. Best-effort — never raises."""
+    try:
+        from automations.bg_check_sync import email_source
+        return len(email_source.fetch_events(since_days=1)) > 0
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2):
     """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
     all' (no Activity row today). Derived from the shared log itself, so it needs no
@@ -388,10 +400,20 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
             continue
         if now.hour < info["start_hour"] + _DIDNT_RUN_GRACE_HOURS:
             continue   # too early to call it missing
+        # An event-driven report (bg_check_sync) with no run today usually just
+        # means nothing arrived to process — not a stall. Peek at its source before
+        # crying "didn't run": no new emails → a benign NO_NEW note; new emails
+        # waiting but unsynced → keep the real MISSED (a genuine miss worth fixing).
+        # Megan 2026-08-01. Probe is best-effort — if we can't tell, alert as MISSED.
+        kind = "MISSED"
+        status = "did not run today"
+        if cid == "bg_check_sync" and _bg_check_has_new_emails() is False:
+            kind = "NO_NEW"
+            status = "no new emails"
         try:
             notify.send_standalone_alert(
-                cfg, name=info["name"], report_id=cid, kind="MISSED",
-                status="did not run today",
+                cfg, name=info["name"], report_id=cid, kind=kind,
+                status=status,
                 when=f"usually starts ~{info['start_hour']}:00", day=day_human,
                 machine_label=_machine_label(info["machine"], lucy2_hosts),
                 dry_run=dry_run)

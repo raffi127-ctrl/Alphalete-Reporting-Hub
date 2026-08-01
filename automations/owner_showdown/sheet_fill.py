@@ -83,7 +83,15 @@ class Section:
         return max([self.totals_col] + list(self.date_cols.values()))
 
 
-def discover(vals: List[List[str]], section_label: str) -> Section:
+# The running-total column is labeled per section: PERSONAL PRODUCTION calls it
+# "TOTALS", while REP COUNT (a growth battle) calls it "INCREASE AMOUNT". Both
+# occupy the same slot (col C) and feed the same totals_col, so discover accepts
+# either header rather than hard-coding one.
+TOTALS_LABELS = ("TOTALS", "INCREASE AMOUNT")
+
+
+def discover(vals: List[List[str]], section_label: str,
+             totals_labels: Tuple[str, ...] = TOTALS_LABELS) -> Section:
     # locate the section header cell
     hdr_row = hdr_col = None
     for i, row in enumerate(vals):
@@ -96,18 +104,21 @@ def discover(vals: List[List[str]], section_label: str) -> Section:
     if hdr_row is None:
         raise RuntimeError(f"section label {section_label!r} not found on tab")
 
+    wanted = {t.strip().upper() for t in totals_labels}
     date_row = hdr_row + 1
     drow = vals[date_row]
     totals_col = None
     date_cols: Dict[dt.date, int] = {}
     for j, c in enumerate(drow):
-        if c.strip().upper() == "TOTALS":
+        if c.strip().upper() in wanted:
             totals_col = j
         d = _parse_date(c)
         if d:
             date_cols[d] = j
     if totals_col is None:
-        raise RuntimeError(f"{section_label}: no TOTALS column in row {date_row+1}")
+        raise RuntimeError(
+            f"{section_label}: no totals column "
+            f"({' / '.join(totals_labels)}) in row {date_row+1}")
     if not date_cols:
         raise RuntimeError(f"{section_label}: no date columns parsed")
     name_col = 1  # col B (rank in A, name in B) — verified by layout

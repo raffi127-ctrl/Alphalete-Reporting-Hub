@@ -119,6 +119,12 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         if kind == "MISSED":
             title = f":no_entry_sign: *{name}* — didn't run today on {lbl}"
             err = f"no run recorded today ({status})" + (f" · {when}" if when else "")
+        elif kind == "NO_NEW":
+            # Event-driven report with genuinely nothing to do — NOT a failure.
+            # Megan 2026-08-01: say "no new emails", don't cry "didn't run".
+            title = f":information_source: *{name}* — no new emails today on {lbl}"
+            err = ("no new background-check emails came in, so there was nothing "
+                   "to sync" + (f" · {when}" if when else ""))
         elif kind == "INCOMPLETE":
             title = f":warning: *{name}* — ran partial on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
@@ -131,7 +137,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
-        parent = [f"*Error:* {err}"]
+        parent = [f"{'*Status:*' if kind == 'NO_NEW' else '*Error:*'} {err}"]
         ts = _post_corrections(cfg, title, parent, dry_run,
                                tag=f"standalone-{report_id}")
         if ts:
@@ -154,6 +160,15 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                     "If it's stuck, paste this to Claude:",
                     "```", claude, "```",
                     "_Reply here and we'll sort it out in this thread._",
+                ]
+            elif kind == "NO_NEW":
+                # Benign FYI — nothing broke, nothing to run. No paste-to-Claude.
+                reply = [
+                    f"Nothing to sync today — no new background-check emails have "
+                    f"come in, so there's no update to write. This is normal on a "
+                    f"quiet day, not a miss.",
+                    "_If you were expecting results in and don't see them, reply "
+                    "here and we'll check._",
                 ]
             else:
                 claude = (
@@ -181,10 +196,17 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             return True
         # fall through to email if the Slack post didn't land
     # Email fallback / non-Slack path.
-    subj = f"⚠️ [{lbl}] {name} {kind} — {day}"
-    text = (f"A {lbl} report didn't run clean.\n\nReport: {name} "
-            f"(report_id: {report_id})\nStatus: {status}\n"
-            + (f"When: {when}\n" if when else ""))
+    if kind == "NO_NEW":
+        subj = f"ℹ️ [{lbl}] {name} — no new emails — {day}"
+        text = (f"No new background-check emails came in on {lbl}, so there was "
+                f"nothing to sync today.\n\nReport: {name} "
+                f"(report_id: {report_id})\n"
+                + (f"When: {when}\n" if when else ""))
+    else:
+        subj = f"⚠️ [{lbl}] {name} {kind} — {day}"
+        text = (f"A {lbl} report didn't run clean.\n\nReport: {name} "
+                f"(report_id: {report_id})\nStatus: {status}\n"
+                + (f"When: {when}\n" if when else ""))
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
             f"{_esc(text).replace(chr(10), '<br>')}</div>")
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"standalone-{report_id}")
