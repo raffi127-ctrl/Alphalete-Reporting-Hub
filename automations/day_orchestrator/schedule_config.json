@@ -1920,9 +1920,9 @@
     },
     "all_units_board_email": {
       "order": 10.1,
-      "on_scheduler": true,
-      "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
-      "display_name": "All Units Org Sales Board Email (a revisi\u00f3n)",
+      "on_scheduler": false,
+      "_note": "RETIRED 2026-07-31 — on_scheduler false. The All Units board is no longer its own email; it is the second section of the Alphalete Org Sales Board email, under a labelled divider (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Eve: 'lo que antes eran dos mails, hay que juntarlos en uno'. The board entry is gone from board_emails.boards, so this command would now exit with 'unknown board all-units' — switched off rather than deleted so the history of what used to run here stays readable. PRIOR BEHAVIOUR: BUILDS AND POSTS FOR REVIEW — it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini — it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
+      "display_name": "All Units Org Sales Board Email (a revisión)",
       "source_type": "local",
       "data_sources": [],
       "command": [

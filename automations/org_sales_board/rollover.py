@@ -609,6 +609,87 @@ def find_delta_tables(grid: List[List[str]]) -> List[dict]:
     return out
 
 
+def delta_block_range(grid: List[List[str]], table: dict) -> str:
+    """The A1 range that SHOWS a delta table — for a screenshot, not a write.
+
+    Lives here, beside find_delta_tables, because both the Country board and the
+    All Units board render this block into their email and the two derivations
+    have to stay identical; they were copy-pasted once and that is exactly how a
+    fix to one silently leaves the other cropped.
+
+    Four things this gets right that a naive f-string does not:
+
+    • Starts at col B, not A — col A is the rank gutter and the block's own header
+      sits in B.
+
+    • Starts one row ABOVE the header, which is the 'Monday'…'Sunday' row. The
+      header row alone is just 'This week / Last week / Delta' repeated seven times
+      with nothing saying which day each triplet belongs to.
+
+    • Pulls the country-wide TOTALS row back in. find_delta_tables stops at the
+      first row with no NAME in col B, and that is precisely what the totals row
+      looks like — blank name, numbers across every triplet. Dropping it cuts the
+      single most-read line of the block.
+
+    • TRIMS THE DAYS THAT HAVE NOT HAPPENED (Eve 2026-07-31). The block is 25
+      columns — B is the rep, C/D/E the 'Total for week' triplet, then seven more
+      triplets, one per day. Mid-week four of those days are all zeros and '-100%',
+      and each costs ~12% of the width the real days need: 25 columns in a mail
+      column puts the text at ~4px tall. Cutting at the LAST DAY WITH SALES makes
+      every remaining column proportionally bigger. The block widens on its own as
+      the week fills and a closed week still shows all seven, so nothing has to be
+      re-tuned and no day with numbers is ever dropped.
+
+    Splitting the block up instead was tried and rejected: the names live in col B,
+    so a Fri–Sun image (R..Z) would be a wall of numbers with nothing naming its
+    rows, and an A1 range cannot skip the middle. A narrow name+totals strip
+    (`B..E`) beside it reads fine but is 4 columns over ~80 rows, so it renders
+    very tall and Eve cut it — "queda muy feo". The block stays whole and gets a
+    wider cap in the email instead (shared.board_email_html.WIDE_PX).
+    """
+    hdr = table["header_row"]
+    last_row = max(table["data_rows"]) if table.get("data_rows") else hdr
+    day_cols = sorted(table["this_cols"])          # each day's 'This week' column
+    rows = table.get("data_rows") or [hdr + 1]
+
+    # A day HAPPENED if any rep has a non-zero 'This week' value under it. Reading
+    # the REPS and not the Totals row matters: a blank day's totals row still
+    # carries a formula-produced 0, and 0 is exactly what a blank day looks like.
+    # Anything unparseable counts as sales — better a column too many than
+    # silently cutting a day that has numbers.
+    def happened(c: int) -> bool:
+        for r in rows:
+            v = _cell(grid, r - 1, c - 1).replace(",", "").strip()
+            if not v:
+                continue
+            try:
+                if float(v) != 0:
+                    return True
+            except ValueError:
+                return True
+        return False
+
+    live = [c for c in day_cols if happened(c)]
+    if live:
+        # Every day UP TO the last live one — never punch a hole in the middle. A
+        # genuinely zero Wednesday between two selling days is real data.
+        last_col = max(live) + 2
+    elif day_cols:
+        last_col = day_cols[0] + 2                 # nothing sold yet: keep day one
+    else:
+        last_col = 5                               # no day triplets at all: B..E
+
+    # The TOTALS row: find_delta_tables stopped at it because col B is blank.
+    if last_row + 1 <= len(grid):
+        nxt = grid[last_row]
+        name = str(nxt[1]).strip() if len(nxt) > 1 else ""
+        vals = [str(nxt[c - 1]).strip() for c in range(3, last_col + 1)
+                if c - 1 < len(nxt)]
+        if not name and any(vals):
+            last_row += 1
+    return f"B{hdr - 1}:{a1col(last_col)}{last_row}"
+
+
 def plan_delta_rollover(ws, table: dict):
     """Freeze each per-day 'This week' VALUE into its 'Last week' cell (the
     next column). The Total/Delta columns are formulas and auto-recompute, so

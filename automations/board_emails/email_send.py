@@ -28,6 +28,7 @@ from typing import List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from automations.board_emails import boards as B
+from automations.shared import board_email_html as _beh
 # SMTP and the preview renderer live with the Org board email — one sender, one
 # preview format for every screenshot email we mail.
 from automations.org_sales_board.screenshot_email import (
@@ -66,27 +67,34 @@ def out_dir_for(board: B.Board, run_day: dt.date) -> Path:
 
 # ------------------------------------------------------------------ capture
 def capture(board: B.Board, run_day: dt.date, *, verbose: bool = True) -> List[Tuple[str, Path]]:
-    """Render the board and COPY the PNG into the day's folder.
+    """Render the board's blocks and COPY each PNG into the day's folder.
 
-    The copy matters: each board's slack_post writes to one fixed filename that
-    tomorrow's run overwrites. --send-reviewed has to be able to mail the image
-    that was approved, which may be hours old, so it gets its own dated copy."""
-    png, rng = board.build_png()
+    The copy matters: each board's slack_post writes to fixed filenames that
+    tomorrow's run overwrites. --send-reviewed has to be able to mail the images
+    that were approved, which may be hours old, so they get their own dated copy."""
+    parts, rng = board.build_pngs()
     out_dir = out_dir_for(board, run_day)
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / f"{board.key}.png"
-    shutil.copyfile(png, dest)
+    images = []
+    for name, png, sheet_px in parts:
+        dest = out_dir / f"{name}.png"
+        shutil.copyfile(png, dest)
+        # sheet_px rides along so the email can size each block against the
+        # widest one instead of stretching them all to the same width.
+        images.append((name, dest, sheet_px))
     if verbose:
-        print(f"[board_emails] {board.name}: {rng} -> {dest} "
-              f"({dest.stat().st_size // 1024} KB)", flush=True)
-    return [(board.key, dest)]
+        total = sum(p.stat().st_size for _n, p, _w in images) // 1024
+        print(f"[board_emails] {board.name}: {rng} -> {len(images)} image(s) in "
+              f"{out_dir} ({total} KB)", flush=True)
+    return images
 
 
 def write_manifest(board: B.Board, run_day: dt.date,
                    images: List[Tuple[str, Path]]) -> Path:
     p = out_dir_for(board, run_day) / "manifest.json"
-    p.write_text(json.dumps([{"name": n, "file": Path(f).name} for n, f in images],
-                            indent=2), encoding="utf-8")
+    p.write_text(json.dumps(
+        [{"name": n, "file": Path(f).name, "sheet_px": (rest[0] if rest else 0)}
+         for (n, f, *rest) in images], indent=2), encoding="utf-8")
     return p
 
 
@@ -99,8 +107,12 @@ def reviewed_images(board: B.Board, run_day: dt.date) -> List[Tuple[str, Path]]:
             f"no manifest in {out_dir} — nothing was captured for "
             f"{run_day:%Y-%m-%d}. Build the preview first (--dry-run).")
     rows = json.loads(man.read_text(encoding="utf-8"))
-    images = [(r["name"], out_dir / r["file"]) for r in rows]
-    missing = [str(p) for _n, p in images if not p.exists()]
+    # sheet_px is 0 on a manifest written before the widths existed; the email
+    # then keeps the old equal-width layout rather than mis-scaling a day that
+    # has already been approved.
+    images = [(r["name"], out_dir / r["file"], int(r.get("sheet_px") or 0))
+              for r in rows]
+    missing = [str(p) for _n, p, _w in images if not p.exists()]
     if missing:
         raise RuntimeError(f"manifest lists files that are gone: {missing}")
     return images
@@ -121,17 +133,23 @@ def build_email(board: B.Board, images: List[Tuple[str, Path]],
     msg["To"] = ", ".join(to_addrs)
     msg["Subject"] = subject_for(board, run_day)
 
-    parts, cids = [], []
-    for _name, path in images:
+    # LAYOUT comes from shared.board_email_html — the SAME single-column table the
+    # Org Sales Board email uses. It was duplicated here and the two copies drifted;
+    # a legibility fix had to be made twice. One <tr><td> per image, because Gmail
+    # lays bare <img> tags out two per row as soon as they fit side by side and the
+    # on-disk browser preview does not reproduce it.
+    # [[project_email-images-need-a-table-not-bare-img]]
+    widest = _beh.scale_of(images)
+    rows, cids = [], []
+    rows.append(_beh.banner_row(board.name.upper(),
+                                bg=board.banner_bg, fg=board.banner_fg))
+    for entry in images:
+        name, path = entry[0], entry[1]
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
-        parts.append(f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
-                     f'border:1px solid #ddd;margin:0 0 16px">')
-    banner = (f'<div style="background:{board.banner_bg};text-align:center;'
-              f'padding:10px;font-size:22px;font-weight:bold;'
-              f'color:{board.banner_fg};border:1px solid #bbb;max-width:1000px;'
-              f'width:100%;box-sizing:border-box;margin:0 0 16px">'
-              f'{board.name.upper()}</div>')
+        rows.append(_beh.image_row(cid, alt=str(name),
+                                   width_px=_beh.sheet_px(entry),
+                                   widest_px=widest))
     # Evelyn signs every automated email this account sends (Eve, 2026-07-31) —
     # the same block as the captainship reports and the 6-days-out emails, built
     # from ONE definition in scheduled_6_days_out so a change to her title or
@@ -139,11 +157,9 @@ def build_email(board: B.Board, images: List[Tuple[str, Path]],
     # from the board" line: these go to Rafael and Maud, and a report from a
     # person reads as something a person stands behind.
     cid_photo = make_msgid()[1:-1]
-    html = ('<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
-            + banner + "".join(parts)
-            + '<div style="font-size:13px;margin-top:4px">Best,</div><br>'
-            + _signature_html(f"<{cid_photo}>")
-            + '</div>')
+    rows.append(_beh.text_row('Best,<br><br>'
+                              + _signature_html(f"<{cid_photo}>")))
+    html = _beh.document(rows)
     msg.set_content(f"{board.name} — see the HTML version for the screenshot.\n\n"
                     f"Best,\nEvelyn Sobrino")
     msg.add_alternative(html, subtype="html")
@@ -184,6 +200,13 @@ def main(argv=None) -> int:
                     help="capture + build + write the preview, but DON'T send")
     ap.add_argument("--to", default=None,
                     help="comma-separated recipients instead of the board's own")
+    ap.add_argument("--draft", action="store_true",
+                    help="land the built email as a Gmail DRAFT and send nothing. "
+                         "For checking the layout in a real mail client — the "
+                         "on-disk preview.html renders differently from Gmail. "
+                         "DO NOT press Send on the draft: Gmail's compose window "
+                         "strips inline images out of what it sends. "
+                         "[[project_captainship-gmail-cid-scramble]]")
     ap.add_argument("--send-reviewed", action="store_true",
                     help="mail the image ALREADY captured for --date (from the "
                          "manifest); capture nothing. This is what the review "
@@ -216,6 +239,18 @@ def main(argv=None) -> int:
     images = capture(board, run_day)
     write_manifest(board, run_day, images)
     msg = build_email(board, images, to, run_day)
+
+    if a.draft:
+        from automations.shared.gmail_draft import create_draft
+        (out_dir / "preview.eml").write_bytes(bytes(msg))
+        (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
+        create_draft(msg)
+        print(f"[board_emails] DRAFT created — nothing sent. To: {to}\n"
+              f"  subject: {msg['Subject']}\n"
+              f"  {sum(p.stat().st_size for _n, p, _w in images) // 1024} KB of "
+              f"images across {len(images)} block(s)", flush=True)
+        print("=== done (draft) ===", flush=True)
+        return 0
 
     if a.dry_run:
         (out_dir / "preview.eml").write_bytes(bytes(msg))

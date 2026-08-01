@@ -51,7 +51,9 @@ import sys
 from pathlib import Path
 
 from automations.recruiting_report.fill import open_by_key
-from automations.org_sales_board.screenshot_email import _export_png, _access_token
+from automations.org_sales_board.screenshot_email import (
+    _export_png, _access_token, stitch_vertical, column_pixels, _range_width_px,
+)
 from automations.shared import slack_metrics_post as smp
 from automations.country_sales_board.run import SHEET_ID, PROD_TAB, CENTRAL
 
@@ -155,95 +157,81 @@ def daily_range(grid) -> str:
     return f"A{a.header_row}:{a1col(last_col)}{a.totals_row}"
 
 
-def capture_ranges(grid) -> list[str]:
-    """The A1 ranges to render, found by LABEL so an inserted row can't crop
-    them: [the board, the daily sales breakdown, the delta units chart] —
-    in the order they appear on the tab."""
+def capture_ranges(grid) -> list[tuple[str, str]]:
+    """The [(name, A1 range)] to render, found by LABEL so an inserted row can't
+    crop them: the board, the daily sales breakdown, the delta units chart — in
+    the order they appear on the tab."""
     from automations.org_sales_board import rollover as org_ro
     from automations.org_sales_board.rollover import a1col
     from automations.country_sales_board import rollover as cr
 
     lb = cr.find_leaderboard(grid)
-    board = f"A1:{a1col(2 + 1 + HISTORY_WEEKS)}{lb['totals_row']}"
+    out = [("board", f"A1:{a1col(2 + 1 + HISTORY_WEEKS)}{lb['totals_row']}")]
 
     # The daily breakdown must never take the whole image down with it: the
     # board and the delta chart are still worth sending if this one block
     # can't be located.
     try:
-        daily = [daily_range(grid)]
+        out.append(("daily", daily_range(grid)))
     except Exception as e:                                  # noqa: BLE001
         print(f"  ⚠ daily sales breakdown not located ({type(e).__name__}: {e})"
               f" — sending the board without it")
-        daily = []
 
     tables = org_ro.find_delta_tables(grid)
     if not tables:
-        return [board] + daily
-    t = tables[0]
-    hdr = t["header_row"]                      # the This week/Last week/Delta row
-    # Each day is a 3-col triplet starting at its 'This week' column, so the
-    # block's last column is the final day's Delta.
-    last_col = max(t["this_cols"]) + 2
-    last_row = max(t["data_rows"]) if t.get("data_rows") else hdr
-
-    # find_delta_tables stops at the first row with no NAME in col B — which is
-    # exactly what the chart's country-wide TOTALS row looks like (blank col B,
-    # then 7409 / 7286 / 1.69% and the per-day totals). Dropping it would cut the
-    # single most useful line of the block, so pull it back in: one row past the
-    # last rep, blank name, but numbers in the triplet columns.
-    if last_row + 1 <= len(grid):
-        nxt = grid[last_row]
-        name = str(nxt[1]).strip() if len(nxt) > 1 else ""
-        vals = [str(nxt[c - 1]).strip() for c in range(3, last_col + 1)
-                if c - 1 < len(nxt)]
-        if not name and any(vals):
-            last_row += 1
-
-    # hdr - 1 is the day-name row above it ('Monday'…'Sunday') — include it or
-    # the triplets have no labels.
-    delta = f"B{hdr - 1}:{a1col(last_col)}{last_row}"
-    return [board] + daily + [delta]
-
-
-def _stitch(paths: list[Path], out: Path) -> Path:
-    """Stack the rendered blocks into ONE image, left-aligned on a white canvas
-    sized to the widest. Deliberately PADS rather than SCALES — the two blocks
-    render at different widths (10 cols vs 25), and resampling either one to
-    match would soften text that is already small in the delta chart."""
-    from PIL import Image
-    ims = [Image.open(p).convert("RGB") for p in paths]
-    if len(ims) == 1:
-        ims[0].save(out)
         return out
-    w = max(i.width for i in ims)
-    h = sum(i.height for i in ims) + STITCH_GAP_PX * (len(ims) - 1)
-    canvas = Image.new("RGB", (w, h), (255, 255, 255))
-    y = 0
-    for im in ims:
-        canvas.paste(im, (0, y))
-        y += im.height + STITCH_GAP_PX
-    canvas.save(out)
+    # The delta block's own range derivation lives beside find_delta_tables, so
+    # this board and the All Units board can't drift apart on it. It already
+    # trims the days that haven't happened; the email paints it at WIDE_PX.
+    out.append(("delta", org_ro.delta_block_range(grid, tables[0])))
     return out
+
+
+def render_parts(tab: str = TARGET_TAB, rngs: list[str] | None = None
+                 ) -> tuple[list[tuple[str, Path, int]], str]:
+    """Render each block to its OWN PNG. [(name, path, sheet_px)], plus the
+    ranges joined for logging.
+
+    `sheet_px` is how wide the block is ON THE SHEET. The email scales every
+    image against the widest block so one sheet pixel is the same size in all of
+    them; without it the narrow board block would be blown up to the width of the
+    delta chart and its text would come out nearly twice the size.
+
+    This is what the EMAIL uses. Stitching the blocks pads the narrow ones out to
+    the width of the 25-column delta chart, so in a 900px mail column the board
+    and the daily table were painted at ~75% of the space available to them and
+    the numbers came out unreadable (Eve 2026-07-31). One image per block, one
+    table row per image, and each gets the full column."""
+    sh = open_by_key(SHEET_ID)
+    ws = _find_ws(sh, tab)
+    blocks = (capture_ranges(ws.get_all_values()) if rngs is None
+              else [(f"block{i}", r) for i, r in enumerate(rngs)])
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    token = _access_token()
+    colpx = column_pixels(sh, ws.id)
+    parts = []
+    for name, rng in blocks:
+        p = OUT_DIR / f"country_{name}.png"
+        # spreadsheet_id is REQUIRED here: _export_png defaults to the ORG
+        # board's workbook, and this tab lives in ATT Program - Focus Report.
+        _export_png(ws.id, rng, p, token, spreadsheet_id=SHEET_ID)
+        parts.append((f"country_{name}", p, _range_width_px(colpx, rng)))
+    return parts, " + ".join(r for _n, r in blocks)
+
+
+def build_pngs(tab: str = TARGET_TAB, rngs: list[str] | None = None
+               ) -> tuple[list[tuple[str, Path, int]], str]:
+    """Per-block images, for the EMAIL."""
+    return render_parts(tab, rngs)
 
 
 def build_png(tab: str = TARGET_TAB,
               rngs: list[str] | None = None) -> tuple[Path, str]:
-    sh = open_by_key(SHEET_ID)
-    ws = _find_ws(sh, tab)
-    if rngs is None:
-        rngs = capture_ranges(ws.get_all_values())
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    """ONE stitched image, for the SLACK DM — which takes a single file."""
+    parts, rng = render_parts(tab, rngs)
     out = OUT_DIR / "country_sales_board.png"
-    token = _access_token()
-    parts = []
-    for i, rng in enumerate(rngs):
-        # spreadsheet_id is REQUIRED here: _export_png defaults to the ORG
-        # board's workbook, and this tab lives in ATT Program - Focus Report.
-        p = OUT_DIR / f"_part{i}.png"
-        _export_png(ws.id, rng, p, token, spreadsheet_id=SHEET_ID)
-        parts.append(p)
-    _stitch(parts, out)
-    return out, " + ".join(rngs)
+    stitch_vertical([p for _n, p, _w in parts], out, gap=STITCH_GAP_PX)
+    return out, rng
 
 
 def main(argv=None) -> int:

@@ -51,8 +51,11 @@ if pgrep -f "automations.org_sales_board.review_gate" > /dev/null 2>&1 || \
     exit 0
 fi
 
-# The two boards that ride this agent alongside the Org board.
-BOARDS="country all-units"
+# The boards that ride this agent alongside the Org board.
+# 'all-units' was dropped 2026-07-31: the All Units board is now a section of the
+# Org board's own email, so its checkmark is the Org email's checkmark. Leaving it
+# here would make every tick fail with "unknown board all-units".
+BOARDS="country"
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"

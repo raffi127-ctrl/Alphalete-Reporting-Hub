@@ -41,6 +41,7 @@ from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
 from automations.recruiting_report.fill import (
     open_by_key, _retry, SCOPES, OAUTH_TOKEN_PATH,
 )
+from automations.shared import board_email_html as _beh
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password,
     PHOTO_EMBED_PX, PHOTO_IMG, _signature_html, _circular_photo_png,
@@ -66,6 +67,27 @@ DISTRO_GROUPS = ["Alphalete Org Owners"]
 # DISTRO_GROUPS += ["Carlos' Captain Team", "Raf's Captain Team"]
 
 _LB_WEEKS = 4          # leaderboard columns to show: this week + 3 prior (== the email)
+
+# RASTER RESOLUTION for every board screenshot in every board email — this
+# module's own, the Country board's, the All Units board's. ONE constant because
+# they all render through _export_png.
+#
+# 2.0 doubles the pixels the PDF is rasterised at (200 -> 400 dpi, or 320 -> 640
+# on the fit-to-page path). It is NOT an upscale: the export is vector, so the
+# glyphs are genuinely re-drawn at twice the size. The emails paint these into a
+# 900-CSS-px column (shared.board_email_html.DISPLAY_PX), which is 1800 device
+# pixels on any retina screen — under-rendering was the whole reason the numbers
+# looked pixelated when Eve enlarged them (2026-07-31). Raising DISPLAY_PX
+# without raising this re-breaks it, and vice versa: they are a pair.
+RENDER_SCALE = 2.0
+
+# The All Units Org Sales Board is a SECOND SECTION of this email as of
+# 2026-07-31 (Eve: "lo que antes eran dos mails, hay que juntarlos en uno"). Its
+# images carry this name prefix; build_email puts the labelled divider in front
+# of the first one. It used to be its own mail via automations.board_emails —
+# that board entry is retired and its orchestrator slot switched off, so the
+# board is delivered exactly once.
+ALLUNITS_PREFIX = "allunits_"
 
 
 def _cell(g, r, c):
@@ -414,7 +436,8 @@ def _access_token() -> str:
 
 
 def _export_png(gid: int, rng: str, out_path: Path, token: str,
-                spreadsheet_id: str | None = None) -> Path:
+                spreadsheet_id: str | None = None,
+                scale: float = None) -> Path:
     """Render one A1 range of a tab to a trimmed PNG via the Sheets PDF export
     endpoint — exact-sheet look (colors/fonts/borders), no browser.
 
@@ -423,10 +446,15 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
     `gid` alone is not enough, since the export URL needs the file too, and a
     gid from another workbook silently renders the wrong sheet. Used by
     country_sales_board.slack_post, whose tab lives in the ATT Program - Focus
-    Report workbook."""
+    Report workbook.
+
+    `scale` multiplies the RASTER DPI (default RENDER_SCALE). It does not stretch
+    a small image — the PDF is vector, so a higher DPI genuinely re-renders the
+    text at more pixels."""
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
     import time
+    scale = RENDER_SCALE if scale is None else scale
     base = (f"https://docs.google.com/spreadsheets/d/"
             f"{spreadsheet_id or SHEET_ID}/export?format=pdf"
             f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
@@ -434,11 +462,26 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
             f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
 
     def _fetch(extra):
-        for attempt in range(5):       # export endpoint 429s on rapid requests
+        # The export endpoint 429s on rapid requests, and this email is the
+        # heaviest user of it: 14 Org sections + 4 All Units blocks, each of which
+        # may need a SECOND fetch when the first paginates — ~36 requests in a
+        # run. The old ladder (5 tries, 5s..25s, ~75s of patience) ran out
+        # mid-render and killed the whole email over one throttled block
+        # (2026-07-31). Retry-After is honoured when Google sends it, else back
+        # off 8s..64s over 8 tries — ~4½ minutes, which is longer than any
+        # per-minute window it is enforcing.
+        for attempt in range(8):
             r = requests.get(base + extra,
                              headers={"Authorization": f"Bearer {token}"}, timeout=90)
-            if r.status_code == 429:
-                time.sleep(5 * (attempt + 1))
+            if r.status_code in (429, 503):
+                wait = 8 * (attempt + 1)
+                try:
+                    wait = max(wait, int(r.headers.get("Retry-After", 0)))
+                except (TypeError, ValueError):
+                    pass
+                print(f"    …export {rng} throttled ({r.status_code}), "
+                      f"retry {attempt + 1}/8 in {wait}s", flush=True)
+                time.sleep(wait)
                 continue
             r.raise_for_status()
             return r.content
@@ -447,11 +490,11 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
     # Default: fit-to-WIDTH, landscape (crisp for the wide short tables). If that
     # paginates (a tall block like the leaderboard), re-render fit-to-PAGE so the
     # whole thing lands on ONE page — no stitch seam / mid-table gap.
-    dpi = 200
+    dpi = round(200 * scale)
     doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
     if doc.page_count > 1:
         doc = fitz.open(stream=_fetch("&portrait=true&scale=4"), filetype="pdf")
-        dpi = 320                      # fit-to-page shrinks — raise DPI to stay crisp
+        dpi = round(320 * scale)       # fit-to-page shrinks — raise DPI to stay crisp
 
     def _trim(im):
         bg = Image.new("RGB", im.size, (255, 255, 255))
@@ -478,6 +521,34 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
+
+
+def stitch_vertical(paths: List[Path], out: Path, gap: int = 28) -> Path:
+    """Stack rendered blocks into ONE image, left-aligned on a white canvas sized
+    to the widest, with a white gutter between them.
+
+    Deliberately PADS rather than SCALES: blocks render at different widths (a
+    10-column summary vs a 25-column delta chart) and resampling the narrow one
+    up to match would soften text instead of enlarging it.
+
+    Used for the SLACK DMs, which take a single file. The EMAILS do not stitch —
+    they send one image per block so each one gets the full 900px column instead
+    of being padded down to whatever fraction of the widest block it occupies.
+    That padding is what made the narrow tables unreadable in the mail."""
+    from PIL import Image
+    ims = [Image.open(p).convert("RGB") for p in paths]
+    if len(ims) == 1:
+        ims[0].save(out)
+        return out
+    w = max(i.width for i in ims)
+    h = sum(i.height for i in ims) + gap * (len(ims) - 1)
+    canvas = Image.new("RGB", (w, h), (255, 255, 255))
+    y = 0
+    for im in ims:
+        canvas.paste(im, (0, y))
+        y += im.height + gap
+    canvas.save(out)
+    return out
 
 
 def _stack_row_spans(ranges) -> List[Tuple[int, int]]:
@@ -548,7 +619,48 @@ def capture(out_dir: Path) -> List[Tuple[str, Path, int]]:
         rehide = [(a + 1, b) for (a, b) in spans if b > a]   # keep 1st week visible
         if rehide:
             _set_rows_hidden(sh, gid, rehide, hidden=True)
+    out.extend(capture_all_units(out_dir))
     return out
+
+
+def capture_all_units(out_dir: Path) -> List[Tuple[str, Path, int]]:
+    """The All Units Org Sales Board's blocks, appended to this email's images.
+
+    Rendered by the board's OWN module (all_campaigns_board.slack_post), which is
+    also what its Slack DM uses — so the section here can never disagree with the
+    board's other channel, and a change to the board's shape is still fixed in
+    one place. This function only decides that it goes in this mail.
+
+    NEVER FATAL. The Org board is the bulk of the email and it going out without
+    the All Units section beats it not going out at all, so a failure here logs
+    and returns nothing. A silently missing section is visible — the divider and
+    the images are simply absent — unlike a swallowed exception mid-board."""
+    try:
+        import shutil
+        from automations.all_campaigns_board.slack_post import build_pngs
+        parts, rng = build_pngs()
+        # COPY into this email's dated folder. The board's own renderer writes to
+        # one fixed filename that tomorrow's run overwrites, and --send-reviewed
+        # mails the files the manifest names — which may be hours old by the time
+        # a checkmark lands. Without the copy the approved Org sections would go
+        # out beside a NEWER All Units board.
+        out_dir.mkdir(parents=True, exist_ok=True)
+        copied = []
+        for name, p, w in parts:
+            dest = out_dir / f"{name}.png"
+            shutil.copyfile(p, dest)
+            # `w` is the block's width ON THE SHEET, carried through so the All
+            # Units blocks scale against the Org ones instead of each section
+            # having its own private idea of full width.
+            copied.append((name, dest, w))
+        print(f"[screenshot_email] All Units section: {rng} "
+              f"-> {len(copied)} image(s)", flush=True)
+        return copied
+    except Exception as e:  # noqa: BLE001
+        print(f"[screenshot_email] ⚠ All Units section SKIPPED "
+              f"({type(e).__name__}: {e}) — mailing the Org board alone",
+              flush=True)
+        return []
 
 
 def build_email(images: List[Tuple], to_addrs: List[str],
@@ -561,57 +673,39 @@ def build_email(images: List[Tuple], to_addrs: List[str],
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to_addrs)
     msg["Subject"] = f"Alphalete Org Sales Board {day.month}/{day.day}"
-    # Every image is self-labeled (its own red title bar), so no typed headers
-    # and no top banner — just the screenshots stacked (Megan 2026-07-03).
+    # Every image is self-labeled (its own red title bar), so no typed headers —
+    # just the screenshots stacked under the board banner (Megan 2026-07-03).
     #
-    # ONE IMAGE PER TABLE ROW. They used to be bare <img> tags concatenated into
-    # a <div>, and an <img> is an INLINE element: Gmail rescales the screenshots
-    # to fit its reading pane and then flows whatever fits onto the same line —
-    # which is why the 7/30 email arrived with the boxes SIDE BY SIDE, two per
-    # row, in an order nobody could follow (Eve, 2026-07-31). It looked right in
-    # the preview because a browser had the width to give each one its own line.
-    #
-    # A presentation table with one <tr><td> per image is the layout every mail
-    # client honours: a table row cannot flow next to another one, so the stack
-    # stays a stack in Gmail, Outlook and on a phone. display:block kills the
-    # inline baseline gap under each image too. No floats, one image per cell.
-    #
-    # AND EACH ONE IS AS WIDE AS ITS BLOCK IS ON THE SHEET, not all the same
-    # (Eve, 2026-07-31). Every image arrives from a fit-to-width export, so they
-    # are all the same pixel width whatever they contain; at equal widths the
-    # narrow six-column leaderboard rendered ~1.9x the text size of the daily
-    # tables. Scaled against the widest block, one sheet pixel is the same size
-    # in all of them. Percentages of the wrapper, never px, so the proportions
-    # hold in a narrow reading pane too.
-    widths = [(rest[0] if rest else 0) for (_n, _p, *rest) in images]
-    widest = max(widths) if widths else 0
-    scaled = all(w > 0 for w in widths) and widest > 0
+    # LAYOUT lives in shared.board_email_html, not here — the Country board email
+    # had a second copy of it and the two had drifted. Both lessons that layout
+    # encodes are documented there: one <tr><td> per image (Gmail flows bare
+    # <img> tags two-per-row and the browser preview hides it), and each image
+    # sized to its block's real width ON THE SHEET so one sheet pixel is the same
+    # size in every image.
+    # ONE scale for the whole mail, Org sections and All Units alike, so the same
+    # ten-column table is the same size on both sides of the divider. The delta
+    # chart is excluded from setting it (see board_email_html.FULL_BLEED) — it is
+    # half again as wide as anything else and would otherwise shrink every normal
+    # table to ~63px per column.
+    widest = _beh.scale_of(images)
     rows, cids = [], []
-    for (name, path, *_rest), w in zip(images, widths):
+    rows.append(_beh.banner_row("ALPHALETE ORG"))
+    seen_allunits = False
+    for entry in images:
+        name, path = entry[0], entry[1]
+        # The All Units board rides in THIS email now (Eve 2026-07-31: "lo que
+        # antes eran dos mails, hay que juntarlos en uno"). Its images are the
+        # ones named allunits_*, and the divider goes in front of the first of
+        # them — derived from the names so the manifest stays a flat list and
+        # --send-reviewed needs no second concept.
+        if not seen_allunits and str(name).startswith(ALLUNITS_PREFIX):
+            rows.append(_beh.separator_row())
+            seen_allunits = True
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
-        # A manifest written before the widths existed has none; that day keeps
-        # the old equal-width look rather than being guessed at.
-        size = (f"width:{100 * w / widest:.2f}%" if scaled else "max-width:100%")
-        rows.append(
-            '<tr><td style="padding:0 0 16px">'
-            f'<img src="cid:{cid}" alt="{name}" '
-            f'style="display:block;{size};height:auto;'
-            'border:1px solid #ddd">'
-            '</td></tr>')
-    # 'ALPHALETE ORG' banner — its own row, so it caps the stack.
-    banner = ('<tr><td style="padding:0 0 16px">'
-              '<div style="background:#d9d9d9;text-align:center;padding:10px;'
-              'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb'
-              '">ALPHALETE ORG</div></td></tr>')
-    # 1200px, was 1000: the daily tables are the widest block and now set the
-    # size of everything else, so the stack reads small if the wrapper is tight.
-    # Gmail still shrinks the lot to fit its pane — the proportions are what
-    # survive, which is the point.
-    stack = ('<table role="presentation" cellpadding="0" cellspacing="0" '
-             'border="0" width="100%" style="max-width:1200px;'
-             'border-collapse:collapse">'
-             + banner + "".join(rows) + '</table>')
+        rows.append(_beh.image_row(cid, alt=str(name),
+                                   width_px=_beh.sheet_px(entry),
+                                   widest_px=widest))
     # Copy-vs-VA comparison breakdown chart: RETIRED 2026-07-21 (Megan). The VA
     # tab is no longer hand-filled and Eve verifies the automation directly, so
     # the chart only produced false "missed pull" rows off the bottom
@@ -621,14 +715,12 @@ def build_email(images: List[Tuple], to_addrs: List[str],
     # replaces the grey "Auto-generated" line: this goes to the whole owner
     # distro, and a report from a person reads as one somebody stands behind.
     cid_photo = make_msgid()[1:-1]
-    html = (
-        '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
-        + stack
-        + '<div style="font-size:13px;margin-top:4px">Best,</div><br>'
-        + _signature_html(f"<{cid_photo}>")
-        + '</div>')
-    msg.set_content("Alphalete Org Sales Board — see the HTML version for the "
-                    "screenshots.\n\nBest,\nEvelyn Sobrino")
+    rows.append(_beh.text_row('Best,<br><br>'
+                              + _signature_html(f"<{cid_photo}>")))
+    html = _beh.document(rows)
+    msg.set_content("Alphalete Org Sales Board + All Units Org Sales Board — "
+                    "see the HTML version for the screenshots.\n\n"
+                    "Best,\nEvelyn Sobrino")
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
     for cid, path in cids:
@@ -744,6 +836,13 @@ def main(argv=None) -> int:
                          "the People API (needs contacts_auth authorized)")
     ap.add_argument("--force", action="store_true",
                     help="skip the board-fill-complete guard (manual/laptop testing)")
+    ap.add_argument("--draft", action="store_true",
+                    help="land the built email as a Gmail DRAFT and send nothing. "
+                         "For checking the layout in a real mail client — Gmail "
+                         "lays images out differently from the on-disk preview. "
+                         "DO NOT press Send on the draft: Gmail's compose window "
+                         "strips inline images out of what it sends. "
+                         "[[project_captainship-gmail-cid-scramble]]")
     ap.add_argument("--send-reviewed", action="store_true",
                     help="mail the images ALREADY captured for --date (from the "
                          "manifest) — no re-capture. What was approved is what "
@@ -781,7 +880,9 @@ def main(argv=None) -> int:
     # machine-local + stale on the box that didn't run the fill, and a manual click
     # is a human decision, so the play button must always run). [[feedback_hub_run_anywhere]]
     import os as _os
-    _manual = a.force or _os.environ.get("HUB_MANUAL_RUN")
+    # --draft never mails anyone, so it is held to the same standard as --dry-run:
+    # the guards below are about not SENDING a partial board.
+    _manual = a.force or _os.environ.get("HUB_MANUAL_RUN") or a.draft
     if not (a.dry_run or _manual):
         ok, why = board_fill_ok()
         if not ok:
@@ -817,6 +918,18 @@ def main(argv=None) -> int:
         return 2
     # Subject carries YESTERDAY — the day the board's numbers are for.
     msg = build_email(images, to, today - dt.timedelta(days=1))
+
+    if a.draft:
+        from automations.shared.gmail_draft import create_draft
+        (out_dir / "preview.eml").write_bytes(bytes(msg))
+        (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
+        create_draft(msg)
+        print(f"[screenshot_email] DRAFT created — nothing sent. To: {to}\n"
+              f"  subject: {msg['Subject']}\n"
+              f"  {sum(p.stat().st_size for _n, p, *_ in images) // 1024} KB of "
+              f"images across {len(images)} block(s)", flush=True)
+        print("=== done (draft) ===", flush=True)
+        return 0
 
     if a.dry_run:
         eml = out_dir / "preview.eml"
