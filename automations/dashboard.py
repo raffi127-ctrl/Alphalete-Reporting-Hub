@@ -1818,6 +1818,55 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        "id": "interview-audit-bot-colten",
+        "name": "2nd Round Interview Auditor — Colten (24/7)",
+        "creator": "Colten & Claude",
+        "emoji": "🎙️",
+        # Amber = an ONGOING self-running job, matching the other continuous Ops
+        # cards. Second workspace instance of the audit bot (Colten's Slack).
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        # The card's link opens Colten's live scorecard (public, no login).
+        "sheet_url": "https://raffi127-ctrl.github.io/colten-scorecard-x8k3/",
+        "description": "Colten's workspace instance. Reps DM their 2nd-round interview recording → Gemini grades it → scored PDF back in ~90 sec. Keeps a live scorecard (office & rep rankings) and DMs Colten a daily 2 PM PDF with a retire/bring-back picker.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Same bot as the main 2nd Round Interview Auditor, running as its "
+            "own isolated instance in **Colten's Slack workspace** (separate roster, "
+            "scorecard, and tokens).\n"
+            "**•** A rep DMs their 2nd-round interview recording → the bot grades it "
+            "against our 11-frame framework and DMs back a scored PDF (Posture / D2D "
+            "/ Pay / Overall) in **~60–90 sec**.\n"
+            "**•** Before sending a score it asks the rep their **owner**, so every "
+            "submission is credited to the right office.\n"
+            "**•** Keeps a **live scorecard** — office & rep rankings, submissions, "
+            "and the weekly trend — always current:\n"
+            "https://raffi127-ctrl.github.io/colten-scorecard-x8k3/\n"
+            "**•** DMs **Colten** a **daily 2 PM PDF** of the scorecard, with a "
+            "**manage-reps picker**: retire reps who've left, or bring a retired "
+            "rep back with all their data.\n"
+            "**•** A retired rep who submits again returns automatically, starting "
+            "fresh at 1 submission.\n\n"
+            "WHEN IT RUNS\n"
+            "**Continuously, 24/7** on Lucy 1 (its own LaunchAgent — separate from "
+            "the 4 AM orchestrator). The daily digest fires at **2 PM Central**. A "
+            "quiet card is the *normal, healthy* state."
+        ),
+        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own service in Colten's workspace, independent of the 4 AM orchestrator. Not a Hub-run report — nothing to trigger from here.",
+        # Continuous service: self_scheduled + hide_schedule keep it out of the
+        # 4am batch, the due-today counter, and time/DUE pills (no single run time).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "2:00 PM",
+            "time_label": "24/7 · 2 PM digest",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
+    {
         "id": "due-diligence-bot",
         "name": "Due Diligence Bot — Jiraiya (24/7)",
         "creator": "Raf & Claude",
@@ -11683,6 +11732,9 @@ else:  # st.session_state.view == "user"
             # no run-status reported back) → permanent orange OPS pill like the
             # other always-on cards. (Megan 2026-07-28)
             "[class*='interview-audit-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # 2nd Round Interview Auditor — Colten instance (second workspace, same
+            # always-on OPS bot) → permanent orange OPS pill like the others.
+            "[class*='interview-audit-bot-colten__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Due Diligence Bot (Jiraiya) — 24/7 Socket Mode service on Lucy 1,
             # triggered by /dd (no scheduled run reports back) → permanent orange
             # OPS pill like the other always-on cards. (Megan 2026-07-28)
