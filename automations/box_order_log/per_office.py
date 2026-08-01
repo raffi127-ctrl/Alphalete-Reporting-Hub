@@ -129,6 +129,19 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
         print("[box per-office] team pull failed: {}".format(exc), file=sys.stderr)
         return 1
 
+    # Opportunistically refresh the onboarding form's Owner & Office pick list from
+    # this same export (it carries every owner). Best-effort — a cache miss just
+    # means the form falls back to free-text, so a failure here never sinks Box.
+    try:
+        from automations.office_onboarding import tableau_owners, store
+        from automations.recruiting_report.fill import _client
+        store.set_client(_client())
+        n = tableau_owners.refresh_from_box_export(src, updated=dt.date.today().isoformat())
+        if verbose and n >= 0:
+            print("[box per-office] refreshed 'Tableau Owners' pick list ({} owners)".format(n))
+    except Exception:                                # noqa: BLE001
+        pass
+
     rc = 0
     for o in offs:
         if not o["owner_office"] or not o["channel_id"]:

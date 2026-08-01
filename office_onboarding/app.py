@@ -341,12 +341,44 @@ def form_view() -> None:
     # character-for-character (case, brackets, punctuation).
     owner_office = ""
     if family == "b2b":
-        owner_office = st.text_input(
-            "Owner & Office (Tableau) *", key="on_owner_office",
-            placeholder="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
-            help="Copy this EXACTLY as it appears in Tableau's 'Owner & Office' "
-                 "filter — case, brackets and all. B2B churn + activation slice on "
-                 "it; if it's off by a character those sections come back empty.")
+        # Pick from the REAL Tableau "Owner & Office" values (cached to the
+        # "Tableau Owners" tab by the daily Box pull) so a wrong string can't
+        # silently blank churn + activation — the jamis MIDSPIRE-vs-JAMIS-GARAY
+        # trap (2026-08-01). Free-text stays as a guided fallback for an owner not
+        # in the cache yet.
+        try:
+            from automations.office_onboarding import tableau_owners
+            _known = tableau_owners.known_owners()
+        except Exception:  # noqa: BLE001 — no cache = fall back to free-text
+            _known = []
+        _prefill = (st.session_state.get("on_owner_office", "") or "").strip()
+        _TYPE_IT = "➕ Not listed — type it exactly as Tableau shows"
+        if _known:
+            _opts = [""] + _known + [_TYPE_IT]
+            _idx = (_opts.index(_prefill) if _prefill in _known
+                    else (_opts.index(_TYPE_IT) if _prefill else 0))
+            _pick = st.selectbox(
+                "Owner & Office (Tableau) *", options=_opts, index=_idx,
+                key="on_owner_office_pick",
+                help="Pick the owner exactly as Tableau's 'Owner & Office' filter "
+                     "spells it — B2B churn + activation slice on this, and a wrong "
+                     "value silently returns EMPTY. Not in the list? choose the last "
+                     "option and type it.")
+            if _pick == _TYPE_IT:
+                owner_office = st.text_input(
+                    "Type the exact 'Owner & Office' value *", key="on_owner_office",
+                    placeholder="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
+                    help="In Tableau open any B2B board's 'Owner & Office' filter and "
+                         "copy the value verbatim — case, brackets, commas and all.")
+            else:
+                owner_office = _pick
+        else:
+            owner_office = st.text_input(
+                "Owner & Office (Tableau) *", key="on_owner_office",
+                placeholder="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
+                help="Copy this EXACTLY as it appears in Tableau's 'Owner & Office' "
+                     "filter — case, brackets and all. B2B churn + activation slice "
+                     "on it; if it's off by a character those sections come back empty.")
         if not owner_office.strip():
             st.caption("⚠️ Required for B2B — churn + activation won't fill without it.")
 
