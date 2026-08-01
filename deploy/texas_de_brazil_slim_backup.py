@@ -1,14 +1,13 @@
 
-"""Steak on the Line — Texas de Brazil monthly competition.
-Builds the flyer+standings PDF; with --send, posts to Slack
-(#alphalete-sales + #alphalete-lvl1-chat) + iMessage as Lucy on Lucy 1.
-Month auto-derived. Comment-light for the 50K cell limit; full src in repo."""
+"""Steak on the Line — Texas de Brazil monthly competition. Builds the
+flyer+standings PDF; with --send posts to Slack + iMessage as Lucy on Lucy 1.
+Month auto-derived. Comment-light for the 50K cell cap; full src in repo."""
 
 import os, re, sys, html, glob, shutil, subprocess, tempfile, unicodedata, datetime, importlib, json, calendar, argparse
 from collections import defaultdict
 
 def _ensure(pkg):
-    """Import a package, pip-installing it on first run if missing (no terminal needed)."""
+    """Import a package, pip-installing it on first run if missing."""
     try:
         return importlib.import_module(pkg)
     except ImportError:
@@ -35,8 +34,10 @@ MONTH_NAME = datetime.date(COMP_YEAR, COMP_MONTH, 1).strftime("%B")
 MONTH_UP   = MONTH_NAME.upper()
 MONTH_LAST = calendar.monthrange(COMP_YEAR, COMP_MONTH)[1]
 WIN        = 10
-
-OUTPUT_PDF = os.path.expanduser(f"~/Downloads/Steak on the Line - {MONTH_NAME}.pdf")
+PERIOD     = f"{COMP_YEAR}-{COMP_MONTH:02d}"
+# Best Car Ride Leader retired from AUGUST on (Raf, 2026-07-31). Gated on the
+# competition PERIOD, not today, so July still renders with it.
+CAR_ON     = PERIOD < "2026-08"
 
 MANUAL_INPUTS = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_manual.json")
 
@@ -48,8 +49,7 @@ LEADERS_STATE = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_l
 EXCLUDE      = {"Rafael Hidalgo"}
 ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Randy Amoa",
                 "Sebastian Guerrero": "SABASTIN GUERRERO",
-
-                "Chole Johnson": "Chloe Johnson",   # sales board WE 7.26 C4 typo; fixed at source 2026-07-28, kept as a guard
+                "Chole Johnson": "Chloe Johnson",
 
                 "Drew": "Andrew Sanborn", "D": "Deavion Allen", "Zoey": "Zoria Johnson",
                 "Al": "Algemar Kennel"}
@@ -74,7 +74,7 @@ ADJUSTMENTS = {
     "Algemar Kennel": 15,
 }
 
-EXCLUDE_NEW_LEADERS = {"Giselle Loredo"}   # dropped everywhere even if a machine's state auto-detected it
+EXCLUDE_NEW_LEADERS = {"Giselle Loredo"}   # dropped even if auto-detected
 
 POS_HERE = {"Here", "H+DC", "RT", "H+LM"}
 LATE_PEN = {"Late"}
@@ -100,9 +100,7 @@ def norm(name):
     return re.sub(r"\s+", " ", n).strip()
 
 def akey(raw):
-    """Roster key for a raw sheet name: strip parentheticals/accents, then fold
-    known spelling variants through ALIAS (matched raw OR post-norm). Every
-    reader goes through this so one ALIAS row fixes a name everywhere."""
+    # norm + ALIAS: one ALIAS row fixes a name in every reader
     s = str(raw).strip()
     if s in ALIAS:
         return norm(ALIAS[s])
@@ -110,8 +108,7 @@ def akey(raw):
     return norm(ALIAS.get(n, n))
 
 def resolve_roster(name, rized):
-    """Match a name/nickname to a full roster key: exact (after ALIAS), else a
-    unique first-name prefix (last-initial narrowed). None if ambiguous."""
+    """Name/nickname -> roster key: exact, else unique first-name prefix."""
     if not name:
         return None
     n = akey(name)
@@ -143,12 +140,16 @@ def fv(x):
     try: return float(x)
     except (TypeError, ValueError): return 0.0
 
+def roster_end(raw):
+    """True at the TOTALS row closing a roster (blank rows are GAPS, not the end)."""
+    return isinstance(raw, str) and raw.strip().upper().startswith("TOTAL")
+
 def newest(pattern):
     fs = glob.glob(pattern)
     return max(fs, key=os.path.getmtime) if fs else None
 
 def find_chrome():
-    """Locate Chrome/Chromium on macOS, Windows, or Linux."""
+    """Locate Chrome/Chromium (mac/win/linux)."""
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
         p = shutil.which(name)
         if p:
@@ -179,7 +180,7 @@ def sales_week_tabs(wb):
     return sorted(tabs, key=k)
 
 def tab_week_dates(tabname):
-    """The 7 calendar dates (chronological) for the week ENDING on the WE date."""
+    """The 7 dates of the week ENDING on the WE date."""
     m = re.search(r"WE\s+(\d{1,2})\.(\d{1,2})", tabname)
     if not m:
         raise ValueError("no WE date in tab name")
@@ -226,8 +227,12 @@ def read_sales(sales_file):
             rc_date[rc] = dt
         for r in rows[shr + 1:]:
             raw = r[2] if len(r) > 2 else None
-            if not (isinstance(raw, str) and raw.strip()):
+            # Roster ends at TOTALS; a blank row is a GAP. Breaking on one cut
+            # this to 16 of 75 reps after a re-sort left holes (2026-07-31).
+            if roster_end(raw):
                 break
+            if not (isinstance(raw, str) and raw.strip()):
+                continue
             name = akey(raw); rec = sales[name]
             for rc in rc_cols:
                 dt = rc_date.get(rc)
@@ -266,18 +271,18 @@ def read_recruiting(recruit_file):
     june = {}
     for r in rows[2:]:
         nm = r[0] if len(r) > 0 else None
-        if not (isinstance(nm, str) and nm.strip()):
+        if roster_end(nm):
             break
+        if not (isinstance(nm, str) and nm.strip()):
+            continue
         june[nm.strip()] = (fv(r[3] if len(r) > 3 else 0),
                             fv(r[6] if len(r) > 6 else 0))
     wb.close()
     return june
 
 def read_leadership(sales_file):
-    """From the latest weekly tab, read each rep's Leadership Status (CJ),
-    Trainer (CD) and Best Car Ride Leader (CK). Columns are located by HEADER
-    TEXT (not fixed letters) so it survives layout shifts. Returns
-    {norm_name: {"status": str, "trainer": raw str, "best": bool}}."""
+    """Latest weekly tab -> {name: {status, trainer, best}}. Columns found by HEADER
+    TEXT, not fixed letters, so a layout shift can't silently misread."""
     wb = openpyxl.load_workbook(sales_file, read_only=True, data_only=True)
     out = {}
     for tab in reversed(sales_week_tabs(wb)):
@@ -302,8 +307,10 @@ def read_leadership(sales_file):
             continue
         for r in rows[shr + 1:]:
             raw = r[2] if len(r) > 2 else None
-            if not (isinstance(raw, str) and raw.strip()):
+            if roster_end(raw):
                 break
+            if not (isinstance(raw, str) and raw.strip()):
+                continue
             name = akey(raw)
             status = r[c_status] if c_status < len(r) else None
             trainer = r[c_train] if (c_train is not None and c_train < len(r)) else None
@@ -318,9 +325,8 @@ def read_leadership(sales_file):
     return out
 
 def update_leaders_state(leadership):
-    """Baseline each rep's Leadership Status; accumulate NEW LEADERS (moved UP to
-    'Level 1' after first sighting; Trainer gets Break-a-Leader too) + CAR-RIDE
-    ('BEST'). First sighting only seeds baseline. Returns (promotions, car)."""
+    """Baseline each rep's status, then accumulate promotions to 'Level 1' and
+    car-ride 'BEST'. First sighting only seeds. Returns (promotions, car)."""
     try:
         state = json.loads(open(LEADERS_STATE).read())
     except Exception:
@@ -349,12 +355,11 @@ def update_leaders_state(leadership):
     except Exception as e:
         print(f"(couldn't save leaders state: {e})")
     if first_run:
-        print(f"Leaders baseline set for {len(baseline)} reps (no detections on first run)")
+        print(f"Leaders baseline set for {len(baseline)} reps")
     return promos, cars
 
 def load_leaders_state():
-    """Read-only view of the accumulated auto-detected leaders for display
-    (the flyer). Returns (promotions, car_names)."""
+    """Read-only view of auto-detected leaders, for the flyer."""
     try:
         state = json.loads(open(LEADERS_STATE).read())
     except Exception:
@@ -364,10 +369,8 @@ def load_leaders_state():
     return state.get("new_leaders") or [], state.get("car_ride") or []
 
 def load_manual_inputs():
-    """Read the Hub-typed weekly additions (accumulating for the month) and
-    return (promotions, solo_leaders, car_ride). Each 'new leaders' line is
-    'Promoter > New Leader' (a promotion pair) or just 'New Leader' (solo).
-    Any parse trouble or missing file -> empty lists (never crashes the run)."""
+    """Hub-typed additions -> (promotions, solo, car_ride). A line is
+    'Promoter > New Leader' or just 'New Leader'. Never raises."""
     prom, solo, car = [], [], []
     try:
         data = json.loads(open(MANUAL_INPUTS).read())
@@ -393,11 +396,8 @@ def load_manual_inputs():
     return prom, solo, car
 
 def load_dinner():
-    """Look up THIS competition month's dinner date from the Hub-typed schedule
-    (manual inputs -> dinner_schedule["YYYY-MM"] = {"day":..,"time":..}). Falls back
-    to the legacy single dinner_day/dinner_time, then to DINNER_*_DEFAULT
-    ("TO BE DETERMINED"). Maud sets dates 2 months ahead on the card, so the flyer
-    should always have the real date."""
+    """This month's dinner date from dinner_schedule["YYYY-MM"], else the legacy
+    dinner_day/time, else "TO BE DETERMINED"."""
     day, time = DINNER_DAY_DEFAULT, DINNER_TIME_DEFAULT
     try:
         data = json.loads(open(MANUAL_INPUTS).read())
@@ -457,7 +457,7 @@ def build_board(sales_file, recruit_file):
         key = resolve_roster(nm, rized)
         if key:
             rized[key]["brk_p"] += 15
-    for nm in car_leaders:
+    for nm in (car_leaders if CAR_ON else []):
         key = resolve_roster(nm, rized)
         if key:
             rized[key]["car_p"] += CARRIDE_PTS
@@ -482,10 +482,12 @@ def build_board(sales_file, recruit_file):
 def esc(s): return html.escape(str(s))
 
 BOARD_CSS = """
-  @page { size: 12.5in 26in; margin: 0; }
+  /* Page OVERSIZED on purpose: the poster grows into it and crop_board() trims
+     the tail. 26in + overflow:hidden silently cut the bottom ranks (2026-07-31). */
+  @page { size: 12.5in 70in; margin: 0; }
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .poster{ width:1200px; height:2496px; position:relative; overflow:hidden;
+  .poster{ width:1200px; min-height:2496px; position:relative; overflow:visible;
     background: radial-gradient(circle at 50% 8%, rgba(212,175,55,.18), transparent 34%),
       linear-gradient(180deg,#120606 0%, #1c0808 26%, #0c0404 100%);
     font-family: Georgia,'Times New Roman',serif; color:#f6efe1; padding-bottom:60px;}
@@ -562,15 +564,16 @@ LEGEND = ('<div class="legend"><h3>How Points Are Scored</h3><div class="lgrid">
     '<div><span>Break a Leader</span><span class="p">+15</span></div>'
     '<div><span>3 Internet in 1 Day</span><span class="p">+10</span></div>'
     '<div><span>5 Energy in 1 Day</span><span class="p">+10</span></div>'
-    '<div><span>Best Car Ride Leader</span><span class="p">+10</span></div>'
-    '<div><span>Late</span><span class="n">&minus;5</span></div>'
+    + ('<div><span>Best Car Ride Leader</span><span class="p">+10</span></div>' if CAR_ON else '')
+    + '<div><span>Late</span><span class="n">&minus;5</span></div>'
     '<div><span>Off / STF / No-Answer</span><span class="n">&minus;10</span></div>'
     '</div></div>')
 NOTE = ('<div class="note">Sales &amp; attendance month-to-date (no Sunday off-day penalty) &bull; '
     f'recruiting {MONTH_NAME} MTD &bull; ties broken by most 2nd-round closes.<br>'
     'Columns: 2RD=2nd-round closes &bull; NEW=new starts showed &bull; INT=Internet pts &bull; DTV &bull; '
     'NL=New Line &bull; ENG=Energy &bull; ATT=attendance net &bull; BRK=Break-a-Leader &bull; '
-    '3IN=3-internet-day &bull; E3=3-energy-day &bull; CAR=Best Car Ride Leader.</div>')
+    '3IN=3-internet-day &bull; E3=3-energy-day'
+    + (' &bull; CAR=Best Car Ride Leader.' if CAR_ON else '.') + '</div>')
 
 def medal_card(rank, r):
     colors = {1: ("#f0c75e", "#9a7611", "1st"), 2: ("#d9d9e0", "#7d7d86", "2nd"), 3: ("#e0a36b", "#8a5a2b", "3rd")}
@@ -593,7 +596,8 @@ def trow(rank, r):
             f'<td>{r["dtv_p"]:.0f}</td><td>{r["nl_p"]:.0f}</td><td>{r["eng_p"]:.0f}</td>'
             f'<td class="att">{r["att_p"]:+.0f}</td>'
             f'<td class="bkr">{brk}</td><td class="bkr">{i3}</td><td class="bkr">{e5}</td>'
-            f'<td class="bkr">{car}</td><td class="tot">{r["total"]:.0f}</td></tr>')
+            + (f'<td class="bkr">{car}</td>' if CAR_ON else '')
+            + f'<td class="tot">{r["total"]:.0f}</td></tr>')
 
 def detailed_table(rows, start):
     body = []
@@ -601,10 +605,10 @@ def detailed_table(rows, start):
         rank = start + i
         body.append(trow(rank, r))
         if rank == WIN:
-            body.append('<tr class="cut"><td colspan="14">&#9733; Top 10 &mdash; these eat steak &#9733;</td></tr>')
+            body.append(f'<tr class="cut"><td colspan="{14 if CAR_ON else 13}">&#9733; Top 10 &mdash; these eat steak &#9733;</td></tr>')
     return ('<table class="board"><thead><tr><th>#</th><th>Rep</th><th>2RD</th><th>NEW</th>'
             '<th>INT</th><th>DTV</th><th>NL</th><th>ENG</th><th>ATT</th><th>BRK</th><th>3IN</th>'
-            '<th>E3</th><th>CAR</th><th>TOT</th>'
+            '<th>E3</th>' + ('<th>CAR</th>' if CAR_ON else '') + '<th>TOT</th>'
             '</tr></thead><tbody>' + "\n".join(body) + "</tbody></table>")
 
 def board_html(board, through):
@@ -723,7 +727,7 @@ FLYER_TEMPLATE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
       <div class="bcard"><div class="big">+15</div><div class="cap"><b>BREAK A LEADER</b><br>15 pts to you <i>&amp;</i> 15 to the new leader</div></div>
       <div class="bcard"><div class="big">+10</div><div class="cap"><b>3 INTERNET IN A DAY</b><br>hit 3 in one day &mdash; instant bonus</div></div>
       <div class="bcard"><div class="big">+10</div><div class="cap"><b>3 ENERGY IN A DAY</b><br>hit 3 in one day &mdash; instant bonus</div></div>
-      <div class="bcard"><div class="big">+10</div><div class="cap"><b>BEST CAR RIDE LEADER</b><br>top car-ride leader earns the bonus</div></div>
+      <!--CAR--><div class="bcard"><div class="big">+10</div><div class="cap"><b>BEST CAR RIDE LEADER</b><br>top car-ride leader earns the bonus</div></div><!--/CAR-->
       <div class="bcard"><div class="big">&minus;10</div><div class="cap"><b>OFF / STF / NO-ANSWER</b><br>points come off the board</div></div>
     </div>
   </div>
@@ -742,12 +746,12 @@ FLYER_TEMPLATE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <div class="plist">
 __PROMO_ROWS__
   </div>
-  <div class="gold-rule" style="margin-top:40px;"></div>
+  <!--CAR--><div class="gold-rule" style="margin-top:40px;"></div>
   <h1 style="font-size:72px; margin-top:16px;">BEST CAR RIDE<span class="gold" style="font-size:50px;">LEADER &middot; __MONTH_UP__</span></h1>
   <div class="promo-sub">Top car-ride leader of the week &mdash; <b>+10 points.</b></div>
   <div class="plist">
 __CARRIDE_ROWS__
-  </div>
+  </div><!--/CAR-->
   <div class="promo-note">Confirmed manually &bull; updated weekly</div>
 </div>
 </body></html>"""
@@ -774,7 +778,8 @@ def flyer_html():
         f'<span class="pts">+10</span></div>'
         for nm in cars]
     dinner_day, dinner_time = load_dinner()
-    html_out = FLYER_TEMPLATE.replace("__PROMO_ROWS__", "\n".join(prom_rows))
+    tpl = FLYER_TEMPLATE if CAR_ON else re.sub(r"<!--CAR-->.*?<!--/CAR-->", "", FLYER_TEMPLATE, flags=re.S)
+    html_out = tpl.replace("__PROMO_ROWS__", "\n".join(prom_rows))
     html_out = html_out.replace("__CARRIDE_ROWS__", "\n".join(car_rows))
     html_out = html_out.replace("__MONTHNAME__", esc(MONTH_NAME))
     html_out = html_out.replace("__WINDOW__", f"{MONTH_UP} 1 &ndash; {MONTH_UP} {MONTH_LAST}")
@@ -791,11 +796,22 @@ def render_pdf(chrome, html_str, out_pdf, tmpdir):
                     f"--print-to-pdf={out_pdf}", html_path],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+def crop_board(pdf, pad=26):
+    """Trim the blank tail off the oversized standings page (never clips)."""
+    fitz = _ensure_fitz(); doc = fitz.open(pdf)
+    for pg in doc:
+        pm = pg.get_pixmap(dpi=36); buf, last = pm.samples, 0
+        for y in range(pm.height):
+            row = buf[y * pm.stride: y * pm.stride + pm.width * pm.n]
+            if any(row[i] < 246 for i in range(0, len(row), pm.n * 4)):
+                last = y
+        bottom = min(pg.rect.height, (last + 1) / 36.0 * 72.0 + pad)
+        pg.set_cropbox(fitz.Rect(0, 0, pg.rect.width, bottom))
+    out = pdf + ".c.pdf"; doc.save(out); doc.close(); return out
+
 def fetch_from_drive(sheet_id, label, workdir):
-    """Export a Google Sheet to a temp .xlsx using the Hub's shared login, so no
-    manual download is needed. Returns the file path, or None if the Hub login
-    isn't importable/authorized (e.g. run standalone) so the caller can fall back
-    to Downloads."""
+    """Sheet -> temp .xlsx via the Hub login. None if unavailable, so the caller
+    falls back to ~/Downloads."""
     try:
         from automations.recruiting_report import fill as _fill
     except Exception:
@@ -822,14 +838,12 @@ SLACK_CHANNELS = [
 ]
 
 IMESSAGE_GROUP   = os.environ.get("TDB_IMESSAGE_GROUP", "Alphalete A-Team Chat🔥🔥")
-IMESSAGE_CHAT_ID = os.environ.get("TDB_IMESSAGE_CHAT_ID", "")  # iMessage OFF 2026-07-22 (Apple disabled it); empty default = send_imessage skips
-IMESSAGE_TO      = [x.strip() for x in os.environ.get("TDB_IMESSAGE_TO", "").split(",") if x.strip()]
+IMESSAGE_CHAT_ID = os.environ.get("TDB_IMESSAGE_CHAT_ID", "")  # iMessage OFF 2026-07-22; empty = skip
 IMESSAGE_TEXT  = "🥩 TEXAS DE BRAZIL COMPETITION STANDINGS"
 
 def post_slack(pdf_path, *, dry_run=True):
-    """Post the PDF as a top-level message to each configured channel AS Lucy
-    (bot token), matching Maud's manual 'PDF' post. Channels with no id are
-    skipped (logged). Lucy must be a member of each channel to upload."""
+    """Post the PDF to each configured channel as Lucy. Lucy must be a member to
+    upload; channels with no id are skipped."""
     results = []
     for name, cid in SLACK_CHANNELS:
         if not cid:
@@ -864,9 +878,7 @@ def _ensure_fitz():
         import fitz; return fitz
 
 def _crop_trailing_black(path, thresh=28, pad=24):
-    """Trim the near-black space below the content — the posters are a fixed tall
-    print size, so a short board leaves a big black tail. Keeps full width + the
-    top; only crops the empty bottom."""
+    """Trim the near-black tail below the content; full width + top kept."""
     try:
         from PIL import Image
     except ImportError:
@@ -879,9 +891,8 @@ def _crop_trailing_black(path, thresh=28, pad=24):
         im.crop((0, 0, w, bbox[3] + pad)).save(path)
 
 def pdf_to_pngs(pdf_path, outdir, dpi=100):
-    """Render each PDF page to a PNG (trailing black cropped). iMessage transmits
-    inline IMAGES to a group reliably, whereas a PDF document attachment often shows
-    on the sender but never reaches the other members' phones."""
+    """Each PDF page -> PNG. iMessage delivers inline images to a group reliably; a
+    PDF attachment often shows on the sender but reaches nobody else."""
     fitz = _ensure_fitz()
     doc = fitz.open(pdf_path); out = []
     for i, page in enumerate(doc):
@@ -893,10 +904,8 @@ def pdf_to_pngs(pdf_path, outdir, dpi=100):
     return out
 
 def send_imessage(image_paths, *, dry_run=True):
-    """Text the A-Team group on Lucy 1 (macOS only): the header line + one inline
-    PNG per page. Best-effort; failures logged, never fatal. A `delay` after each
-    image lets Messages finish UPLOADING to the group before we exit — otherwise
-    the image shows on the sender but not the recipients."""
+    """Text the A-Team group (macOS only): header + one PNG per page. The delay
+    after each image lets Messages finish uploading, else recipients get nothing."""
     if sys.platform != "darwin":
         print("  iMessage: SKIPPED — not macOS"); return {"skipped": "not_darwin"}
     if not IMESSAGE_CHAT_ID:
@@ -926,9 +935,9 @@ def send_imessage(image_paths, *, dry_run=True):
     return {"sent": ok}
 
 def main():
-    ap = argparse.ArgumentParser(description="Steak on the Line — Texas de Brazil monthly competition")
+    ap = argparse.ArgumentParser(description="Steak on the Line")
     ap.add_argument("--send", action="store_true",
-                    help="actually deliver (Slack channels + iMessage). Default: dry-run, no sends.")
+                    help="actually deliver (Slack + iMessage). Default: dry-run.")
     ap.add_argument("--dry-run", action="store_true", help="force dry-run even with --send")
     ap.add_argument("--no-slack", action="store_true", help="skip Slack (iMessage-only test)")
     args, _ = ap.parse_known_args()
@@ -938,9 +947,9 @@ def main():
         sales_file = fetch_from_drive(SALES_SHEET_ID, "Sales board", workdir) or newest(SALES_GLOB)
         recruit_file = fetch_from_drive(RECRUIT_SHEET_ID, "Recruiting", workdir) or newest(RECRUIT_GLOB)
         if not sales_file:
-            sys.exit(f"ERROR: no sales data (Drive fetch failed and nothing matching:\n  {SALES_GLOB})")
+            sys.exit(f"ERROR: no sales data (Drive failed, nothing at {SALES_GLOB})")
         if not recruit_file:
-            sys.exit(f"ERROR: no recruiting data (Drive fetch failed and nothing matching:\n  {RECRUIT_GLOB})")
+            sys.exit(f"ERROR: no recruiting data (Drive failed, nothing at {RECRUIT_GLOB})")
         print(f"Sales board : {sales_file}")
         print(f"Recruiting  : {recruit_file}")
         chrome = find_chrome()
@@ -952,6 +961,7 @@ def main():
             board_pdf = os.path.join(tmp, "board.pdf")
             render_pdf(chrome, flyer_html(), flyer_pdf, tmp)
             render_pdf(chrome, board_html(board, through), board_pdf, tmp)
+            board_pdf = crop_board(board_pdf)
             w = PdfWriter()
             w.append(flyer_pdf)
             w.append(board_pdf)
