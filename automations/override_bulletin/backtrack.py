@@ -104,6 +104,42 @@ def regular_for_week(week_mdy, *, page=None, verbose=True, cache=None):
     return combined, used
 
 
+def _sheet_cell(vals, row, col):
+    """Numeric value at (1-based row, 0-based col) on the sheet, or None."""
+    if not row or row - 1 >= len(vals) or col >= len(vals[row - 1]):
+        return None
+    return P._num_locale(vals[row - 1][col])
+
+
+def raf_fresh_for_week(week_mdy, *, page=None, verbose=True):
+    """Rafael's freshly re-pulled (captain, special) for a past week.
+
+    These are the two components backtrack could NOT re-source before — it trusted
+    whatever section 2 already held, so a special the VA later REVISED sat stale
+    (his 7.12-6.14 froze ~$3k high after a downward revision, 2026-08-01). Both are
+    full-history sources, unlike the DD captains: captain from Raf PNL (by label),
+    special from Payout-Raf-wow (matched by the week's Processed-Week date). Best
+    effort — a flaky/absent pull returns None for that component and the caller
+    keeps its on-sheet value."""
+    cap = spec = None
+    try:
+        cap = P.raf_captain_override(week_mdy)
+    except Exception as e:  # noqa: BLE001
+        if verbose:
+            print("  (raf captain unavailable: {})".format(type(e).__name__))
+    try:
+        m, d, y = week_mdy.split(".")
+        wh = "{}/{}/20{}".format(int(m), int(d), y[-2:])
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        spec = P.raf_special_override(wh, OUT_DIR / "raf-bt.csv",
+                                      period=P.period_for(week_mdy, style="num"),
+                                      page=page, verbose=verbose)
+    except Exception as e:  # noqa: BLE001
+        if verbose:
+            print("  (raf special unavailable: {})".format(type(e).__name__))
+    return cap, spec
+
+
 def cap_special_on_sheet(vals, captains, key, col):
     """The captain/special total ALREADY on the sheet for this person + week.
 
@@ -121,12 +157,20 @@ def cap_special_on_sheet(vals, captains, key, col):
     return (P._num_locale(row[col]) or 0.0) if col < len(row) else 0.0
 
 
-def plan_week(ws, vals, week_mdy, roster, captains, regular):
+def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
     """[(row, name, old, new)] cells whose value has drifted, plus [names] we
-    couldn't source for this week."""
+    couldn't source for this week.
+
+    `raf` = (raf_key, fresh_captain, fresh_special) when Rafael's PNL/Raf-wow were
+    re-pulled this run. His section-1 total is rebuilt from those fresh components
+    (each falling back to its on-sheet sub-row if the pull came back None), and his
+    Captain / Special sub-rows in section 2 are corrected too — the rest of the
+    roster still rebuilds as `fresh regular + the section-2 total on the sheet`,
+    because their captains (DD) can't be re-sourced for a past week."""
     col = F.week_col(ws, week_mdy, header=vals[0])
     if col is None:
         return [], [], None
+    raf_key = raf[0] if raf else None
     changes, unmatched = [], []
     for key, (row, active, disp) in roster.items():
         if not active:
@@ -135,11 +179,27 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular):
         if reg is None:
             unmatched.append(disp)
             continue                       # never zero a person out on a re-read
-        new = round(reg + cap_special_on_sheet(vals, captains, key, col), 2)
+        if key == raf_key:
+            rc = captains.get(raf_key, {})
+            cap = raf[1] if raf[1] is not None else _sheet_cell(vals, rc.get("captain"), col)
+            spc = raf[2] if raf[2] is not None else _sheet_cell(vals, rc.get("special"), col)
+            capspec = (cap or 0) + (spc or 0)
+        else:
+            capspec = cap_special_on_sheet(vals, captains, key, col)
+        new = round(reg + capspec, 2)
         old = P._num_locale(vals[row - 1][col]) if (
             row - 1 < len(vals) and col < len(vals[row - 1])) else None
         if old is None or abs(new - old) > TOLERANCE:
             changes.append((row, disp, old, new))
+    # Rafael's section-2 Captain / Special sub-rows, when freshly re-pulled.
+    if raf_key and raf_key in captains:
+        for comp, val in (("captain", raf[1]), ("special", raf[2])):
+            r = captains[raf_key].get(comp)
+            if not r or val is None:
+                continue
+            old = _sheet_cell(vals, r, col)
+            if old is None or abs(round(val, 2) - old) > TOLERANCE:
+                changes.append((r, "Rafael Hidalgo ({})".format(comp), old, round(val, 2)))
     return changes, unmatched, col
 
 
@@ -157,6 +217,7 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
     print("backtrack {} week(s) on {!r}: {}".format(
         len(targets), tab, ", ".join(targets)))
 
+    raf_key = F.canon("Rafael Hidalgo", aliases)
     all_changes, cache = [], {}
     with tableau_session(headless=True, verbose=verbose) as page:
         for wk in targets:
@@ -166,8 +227,12 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
                 print("\n{}: source carries no data for this week — left alone".format(wk))
                 continue
             regular = F.rekey(regular, aliases)
+            # Rafael's captain (PNL) + special (Raf-wow) are re-pullable for a past
+            # week — re-source them so a revised special self-corrects instead of
+            # sitting stale in section 2.
+            raf_cap, raf_spec = raf_fresh_for_week(wk, page=page, verbose=verbose)
             changes, unmatched, col = plan_week(ws, vals, wk, roster, captains,
-                                                regular)
+                                                regular, raf=(raf_key, raf_cap, raf_spec))
             print("\n{} (from {}): {} cell(s) drifted".format(
                 wk, " + ".join(used) or "?", len(changes)))
             for _row, name, old, new in changes:
