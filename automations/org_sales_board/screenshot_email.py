@@ -804,6 +804,37 @@ def send(msg: EmailMessage) -> None:
         s.send_message(msg)
 
 
+def _draft(msg: EmailMessage, out_dir: Path, images: List[Tuple]) -> None:
+    """Land `msg` as a Gmail draft for review, and write the on-disk preview too.
+
+    RETRIES THE UPLOAD. This email is ~9MB of inline PNGs and the render that
+    produced them takes ~4 minutes; a single dropped connection on the upload used
+    to throw away the whole run (ConnectionResetError, 2026-08-01). Three attempts
+    with a short backoff, and `--draft --send-reviewed` re-uploads from the images
+    already on disk so even an exhausted retry costs nothing to redo."""
+    import time
+    from automations.shared.gmail_draft import create_draft
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "preview.eml").write_bytes(bytes(msg))
+    (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
+    for attempt in range(3):
+        try:
+            create_draft(msg)
+            break
+        except Exception as e:  # noqa: BLE001 — any transport failure is retryable
+            if attempt == 2:
+                raise
+            print(f"[screenshot_email] draft upload failed "
+                  f"({type(e).__name__}), retry {attempt + 1}/2", flush=True)
+            time.sleep(5 * (attempt + 1))
+    kb = sum(Path(p).stat().st_size for _n, p, *_ in images) // 1024
+    print(f"[screenshot_email] DRAFT created — nothing sent. To: {msg['To']}\n"
+          f"  subject: {msg['Subject']}\n"
+          f"  {kb} KB of images across {len(images)} block(s)\n"
+          f"  preview: {out_dir / 'preview.html'}", flush=True)
+    print("=== done (draft) ===", flush=True)
+
+
 def board_fill_ok() -> Tuple[bool, str]:
     """The email must reflect a COMPLETE fill. Reads the board's run manifest and
     returns (ok, reason). Safe to send ONLY when today's fill is data-complete —
@@ -862,6 +893,14 @@ def main(argv=None) -> int:
         if to is None:
             return 2
         msg = build_email(images, to, today - dt.timedelta(days=1))
+        if a.draft:
+            # --draft ON TOP OF --send-reviewed: rebuild the mail from the images
+            # already on disk and re-upload, capturing nothing. The 18-block
+            # render takes ~4 minutes and the Gmail upload is ~9MB, so a dropped
+            # connection on the last step used to cost the whole render
+            # (ConnectionResetError, 2026-08-01). Now it costs one retry.
+            _draft(msg, out_dir_for(today), images)
+            return 0
         if a.dry_run:
             print(f"[screenshot_email] DRY-RUN — not sent. Would go to: {to}",
                   flush=True)
@@ -920,15 +959,7 @@ def main(argv=None) -> int:
     msg = build_email(images, to, today - dt.timedelta(days=1))
 
     if a.draft:
-        from automations.shared.gmail_draft import create_draft
-        (out_dir / "preview.eml").write_bytes(bytes(msg))
-        (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
-        create_draft(msg)
-        print(f"[screenshot_email] DRAFT created — nothing sent. To: {to}\n"
-              f"  subject: {msg['Subject']}\n"
-              f"  {sum(p.stat().st_size for _n, p, *_ in images) // 1024} KB of "
-              f"images across {len(images)} block(s)", flush=True)
-        print("=== done (draft) ===", flush=True)
+        _draft(msg, out_dir, images)
         return 0
 
     if a.dry_run:

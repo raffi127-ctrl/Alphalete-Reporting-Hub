@@ -173,6 +173,35 @@ def build_email(board: B.Board, images: List[Tuple[str, Path]],
     return msg
 
 
+def _draft(msg: EmailMessage, out_dir: Path, images: List[Tuple]) -> None:
+    """Land `msg` as a Gmail draft for review, and write the on-disk preview too.
+
+    RETRIES THE UPLOAD: these mails carry several MB of inline PNGs and a single
+    dropped connection should not throw away the render that produced them
+    (ConnectionResetError on the Org board, 2026-08-01)."""
+    import time
+    from automations.shared.gmail_draft import create_draft
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "preview.eml").write_bytes(bytes(msg))
+    (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
+    for attempt in range(3):
+        try:
+            create_draft(msg)
+            break
+        except Exception as e:  # noqa: BLE001 — any transport failure is retryable
+            if attempt == 2:
+                raise
+            print(f"[board_emails] draft upload failed ({type(e).__name__}), "
+                  f"retry {attempt + 1}/2", flush=True)
+            time.sleep(5 * (attempt + 1))
+    kb = sum(Path(p).stat().st_size for _n, p, *_ in images) // 1024
+    print(f"[board_emails] DRAFT created — nothing sent. To: {msg['To']}\n"
+          f"  subject: {msg['Subject']}\n"
+          f"  {kb} KB of images across {len(images)} block(s)\n"
+          f"  preview: {out_dir / 'preview.html'}", flush=True)
+    print("=== done (draft) ===", flush=True)
+
+
 def _recipients(board: B.Board, override: Optional[str]) -> List[str]:
     if override:
         return [x.strip() for x in override.split(",") if x.strip()]
@@ -225,6 +254,12 @@ def main(argv=None) -> int:
         print(f"[board_emails] mailing {len(images)} reviewed image(s) from "
               f"{out_dir_for(board, run_day)}", flush=True)
         msg = build_email(board, images, to, run_day)
+        if a.draft:
+            # --draft ON TOP OF --send-reviewed: rebuild from the images already
+            # on disk and re-upload, capturing nothing. A dropped connection on
+            # the upload should not cost a whole re-render.
+            _draft(msg, out_dir_for(board, run_day), images)
+            return 0
         if a.dry_run:
             print(f"[board_emails] DRY-RUN — not sent. Would go to: {to}", flush=True)
             print("=== done (dry-run) ===", flush=True)
@@ -241,15 +276,7 @@ def main(argv=None) -> int:
     msg = build_email(board, images, to, run_day)
 
     if a.draft:
-        from automations.shared.gmail_draft import create_draft
-        (out_dir / "preview.eml").write_bytes(bytes(msg))
-        (out_dir / "preview.html").write_text(preview_html(msg), encoding="utf-8")
-        create_draft(msg)
-        print(f"[board_emails] DRAFT created — nothing sent. To: {to}\n"
-              f"  subject: {msg['Subject']}\n"
-              f"  {sum(p.stat().st_size for _n, p, _w in images) // 1024} KB of "
-              f"images across {len(images)} block(s)", flush=True)
-        print("=== done (draft) ===", flush=True)
+        _draft(msg, out_dir, images)
         return 0
 
     if a.dry_run:
