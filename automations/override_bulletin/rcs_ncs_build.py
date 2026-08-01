@@ -20,7 +20,8 @@ from automations.override_bulletin.dd_build import _shot
 from automations.override_bulletin import rcs_ncs_data as D
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "override_bulletin"
-RED = "#E5484D"
+MET = "#3FB950"   # goal-MET green (Megan 2026-07-31) — a hit goal reads as
+#                   'achieved', matching the DD bulletin's green=positive convention.
 
 
 def _num(v):
@@ -98,7 +99,7 @@ def _ring(value, goal, center, over, small=False):
     circ = 2 * math.pi * r
     pct = 1.0 if over else max(0.0, min(1.0, (value / goal) if goal else 0))
     off = circ * (1 - pct)
-    col = RED if over else GOLD
+    col = MET if over else GOLD
     fs = 12 if small else 15
     return (f'<svg width="66" height="66" viewBox="0 0 76 76">'
             f'<circle cx="38" cy="38" r="{r}" fill="none" stroke="#2b2620" '
@@ -108,7 +109,7 @@ def _ring(value, goal, center, over, small=False):
             f'stroke-dashoffset="{off:.1f}" stroke-linecap="round" '
             f'transform="rotate(-90 38 38)"/>'
             f'<text x="38" y="43" text-anchor="middle" '
-            f'fill="{RED if over else GOLD_LT}" font-size="{fs}" font-weight="bold" '
+            f'fill="{MET if over else GOLD_LT}" font-size="{fs}" font-weight="bold" '
             f'font-family="Georgia">{center}</text></svg>')
 
 
@@ -133,8 +134,9 @@ def _card(c, rank):
 
 def _section(title, sub, cards, start):
     body = "".join(_card(c, start + i) for i, c in enumerate(cards))
+    subline = f'<div class="ss">{sub}</div>' if sub else ""
     return (f'<div class="sect"><div class="sh">{title}</div>'
-            f'<div class="ss">{sub}</div></div><div class="row">{body}</div>')
+            f'{subline}</div><div class="row">{body}</div>')
 
 
 def _quals(q):
@@ -164,8 +166,8 @@ def build(data=None, out_dir: Path = OUT_DIR):
   <div class="title">UP AND COMING RCs AND NCs</div>
   <div class="subt">Week Ending {_week_label(data["week"])}</div></div>
 <div class="rule"></div>
-{_section("National Consultants", "Road to Greatness", ncs, 1)}
-{_section("Regional Consultants", "Road to RC", rcs, len(ncs) + 1)}
+{_section("Road to Greatness", "", ncs, 1)}
+{_section("Road to RC", "", rcs, len(ncs) + 1)}
 {_quals(data["qualifications"])}
 <div class="foot">Learn More.  Dream More.  Do More.</div>
 </body></html>"""
