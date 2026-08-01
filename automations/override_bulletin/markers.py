@@ -96,6 +96,54 @@ def read_markers(ws):
     return out
 
 
+def _annotation_row(vals, kind):
+    """1-based row of the kind's annotation row, located by its column-A label and
+    the presence of P#-YYYY markers (the label alone is ambiguous — see
+    read_markers). Falls back to a bare label row if none carry markers yet."""
+    label = _ROW_LABELS[kind]
+    fallback = None
+    for i, r in enumerate(vals):
+        if not r or " ".join((r[0] or "").split()).lower() != label:
+            continue
+        if any(_PERIOD.match((c or "").strip()) for c in r[1:]):
+            return i + 1
+        fallback = fallback or (i + 1)
+    return fallback
+
+
+def has_marker(ws, kind, period):
+    """True if a marker for (kind, period) already exists anywhere on the row."""
+    return any(m["kind"] == kind and m["period"] == period
+               for m in read_markers(ws))
+
+
+def set_marker(ws, kind, period, col, *, dry_run=True):
+    """Write a PENDING (red) P#-YYYY marker for `kind` at 0-based `col`.
+
+    Red = the money hasn't been placed yet; the reconcile pass (plan_placements /
+    apply_placements) turns it black when the ledger carries it. This is what the
+    VA used to type by hand; auto-setting it on the first week of a new period lets
+    the existing, tested placement machinery drop the special on the right week.
+    Idempotent by contract — callers check has_marker() first."""
+    vals = ws.get_all_values()
+    row = _annotation_row(vals, kind)
+    if row is None:
+        raise RuntimeError("no {!r} annotation row on {!r}".format(
+            _ROW_LABELS[kind], ws.title))
+    a1 = "{}{}".format(F._col_letter(col), row)
+    if dry_run:
+        print("[dry-run] would set {} marker {} at {} (red/pending)".format(
+            kind, period, a1))
+        return a1
+    if ws.title == F.LIVE_TAB:
+        raise RuntimeError("refusing to write the live tab {!r} — sandbox only".format(
+            F.LIVE_TAB))
+    ws.update([[period]], a1, value_input_option="USER_ENTERED")
+    ws.format(a1, {"textFormat": {"foregroundColor":
+                                  {"red": 0.85, "green": 0, "blue": 0}}})
+    return a1
+
+
 def ledger_needles(kind, period):
     """Explanation substrings that identify this period's ledger rows.
 

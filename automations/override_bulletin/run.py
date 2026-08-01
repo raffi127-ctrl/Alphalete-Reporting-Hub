@@ -281,6 +281,33 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         _do_backtrack(tab, backtrack_weeks, write, verbose)
         return section1, section2, unmatched
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
+
+    # ---- auto-set the SPECIAL marker when this week STARTS a new retail period.
+    # A period-N special posts at period end and DISPLAYS on the first week of
+    # period N+1 (P6->6.21, P7->7.19). The VA typed that marker by hand; without
+    # it the special is an orphan and never lands — that is how Colten's
+    # $38,224.16 was missed on 7.19 (2026-08-01). Setting it red here lets the
+    # reconcile pass just below place it once the ledger carries it. Boundary is
+    # read from the period map (never guessed): this week's period differs from
+    # the previous week's. Best-effort; a failure never blocks the fill.
+    try:
+        wk_list = sheet_weeks(ws)                      # newest-first
+        if week_mdy in wk_list:
+            i = wk_list.index(week_mdy)
+            prev_wk = wk_list[i + 1] if i + 1 < len(wk_list) else None
+            cur_per = week_period.get(week_mdy)
+            prev_per = week_period.get(prev_wk) if prev_wk else None
+            if cur_per and prev_per and cur_per != prev_per:
+                pnum = cur_per - 1 or 13
+                pyear = year if cur_per > 1 else year - 1
+                prior = f"P{pnum}-{pyear}"
+                if not M.has_marker(ws, M.SPECIAL, prior):
+                    M.set_marker(ws, M.SPECIAL, prior, col, dry_run=not write)
+                    print(f"auto-set SPECIAL marker {prior} on {week_mdy} "
+                          f"(first week of period {cur_per})")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ auto-marker skipped: {type(e).__name__}: {e}")
+
     # ---- late Special/Credico: place any PENDING period whose money has landed.
     # Placement is never derived — the marker row says which week a period belongs
     # in; a period with no marker is reported, not guessed. The red->black flip
