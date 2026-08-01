@@ -1,0 +1,598 @@
+
+"""Texas de Brazil competition — DATA LAYER (git-tracked).
+
+Config + all data reads (sales board, recruiting, leadership, terminated reps)
+and build_board. Extracted from the Report-Library report module (which is a
+git-ignored Sheet cell capped at 50K chars) so the heavy logic lives in git and
+the cell stays lean. The report does `from automations.day_orchestrator.tdb_data
+import *` and keeps only the HTML/PDF rendering + Slack/iMessage delivery."""
+
+import os, re, sys, html, glob, shutil, subprocess, tempfile, unicodedata, datetime, importlib, json, calendar, argparse
+from collections import defaultdict
+
+def _ensure(pkg):
+    """Import a package, pip-installing it on first run if missing."""
+    try:
+        return importlib.import_module(pkg)
+    except ImportError:
+        print(f"Installing {pkg} (one-time)...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", pkg], check=True)
+        return importlib.import_module(pkg)
+
+_ensure("openpyxl")
+_ensure("pypdf")
+import openpyxl
+from pypdf import PdfWriter
+
+SALES_SHEET_ID   = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
+RECRUIT_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SALES_GLOB   = os.path.expanduser("~/Downloads/Alphalete SALES BOARD 2025*.xlsx")
+RECRUIT_GLOB = os.path.expanduser("~/Downloads/All in One Local Office - Raf*.xlsx")
+RECRUIT_TAB  = "2nd rds %s"
+ESTIMATED_MINUTES = 2
+
+_anchor    = datetime.date.today() - datetime.timedelta(days=1)
+COMP_YEAR  = int(os.environ.get("TDB_COMP_YEAR")  or _anchor.year)
+COMP_MONTH = int(os.environ.get("TDB_COMP_MONTH") or _anchor.month)
+MONTH_NAME = datetime.date(COMP_YEAR, COMP_MONTH, 1).strftime("%B")
+MONTH_UP   = MONTH_NAME.upper()
+MONTH_LAST = calendar.monthrange(COMP_YEAR, COMP_MONTH)[1]
+WIN        = 10
+PERIOD     = f"{COMP_YEAR}-{COMP_MONTH:02d}"
+# Best Car Ride Leader retired from AUGUST on (Raf, 2026-07-31). Gated on the
+# competition PERIOD, not today, so July still renders with it.
+CAR_ON     = PERIOD < "2026-08"
+
+MANUAL_INPUTS = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_manual.json")
+
+DINNER_DAY_DEFAULT  = "TO BE DETERMINED"
+DINNER_TIME_DEFAULT = ""
+
+LEADERS_STATE = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_leaders_state.json")
+
+EXCLUDE      = {"Rafael Hidalgo"}
+ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Randy Amoa",
+                "Sebastian Guerrero": "SABASTIN GUERRERO",
+                "Chole Johnson": "Chloe Johnson",
+
+                "Drew": "Andrew Sanborn", "D": "Deavion Allen", "Zoey": "Zoria Johnson",
+                "Al": "Algemar Kennel"}
+
+PROMOTIONS_BY_MONTH = {
+    "2026-07": [
+        ("Willie Henderson", "Jessie Gomez"),
+        ("Willie Henderson", "Jordan Ruiz"),
+        ("Safiya Mahmoud", "Abel Mireles"),
+    ],
+}
+SOLO_LEADERS_BY_MONTH = {
+}
+CAR_RIDE_LEADERS_BY_MONTH = {
+    "2026-07": [
+        "Jordan Ruiz",
+        "Kaleb Muvunyi",
+    ],
+}
+
+# Manual point corrections, scoped BY MONTH so a one-off fix never leaks into the
+# next month. Key = 'YYYY-MM'. Empty months need no entry.
+ADJUSTMENTS_BY_MONTH = {
+    "2026-07": {"Algemar Kennel": 15},
+}
+
+EXCLUDE_NEW_LEADERS = {"Giselle Loredo"}   # dropped even if auto-detected
+
+POS_HERE = {"Here", "H+DC", "RT", "H+LM"}
+LATE_PEN = {"Late"}
+OFF_PEN  = {"Off", "STF", "O-NA"}
+REMOVE   = {"T"}
+
+HERE_PTS      = 3
+SHOW_PTS      = 10
+ENERGY_PTS    = 1
+ENERGY5_BONUS = 10
+CARRIDE_PTS   = 10
+
+INT_OFF    = 6
+DTV_OFF    = 4
+NL_OFF     = 3
+ENERGY_OFF = 2
+DAY_OFF    = 7
+
+def norm(name):
+    n = re.sub(r"\([^)]*\)", " ", str(name))
+    n = unicodedata.normalize("NFKD", n)
+    n = "".join(c for c in n if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", n).strip()
+
+def akey(raw):
+    # norm + ALIAS: one ALIAS row fixes a name in every reader
+    s = str(raw).strip()
+    if s in ALIAS:
+        return norm(ALIAS[s])
+    n = norm(s)
+    return norm(ALIAS.get(n, n))
+
+def resolve_roster(name, rized):
+    """Name/nickname -> roster key: exact, else unique first-name prefix."""
+    if not name:
+        return None
+    n = akey(name)
+    if not n:
+        return None
+    if n in rized:
+        return n
+    toks = n.lower().split()
+    first = toks[0]
+    cands = []
+    for k in rized:
+        kt = k.lower().split()
+        if not kt:
+            continue
+        if kt[0].startswith(first) or first.startswith(kt[0]):
+            cands.append(k)
+    if len(toks) >= 2 and len(cands) > 1:
+        nar = [k for k in cands if len(k.lower().split()) >= 2
+               and k.lower().split()[1].startswith(toks[1])]
+        if nar:
+            cands = nar
+    cands = list(dict.fromkeys(cands))
+    return cands[0] if len(cands) == 1 else None
+
+def numv(x):
+    return float(x) if isinstance(x, (int, float)) else 0.0
+
+def fv(x):
+    try: return float(x)
+    except (TypeError, ValueError): return 0.0
+
+def roster_end(raw):
+    """True at the TOTALS row closing a roster (blank rows are GAPS, not the end)."""
+    return isinstance(raw, str) and raw.strip().upper().startswith("TOTAL")
+
+def newest(pattern):
+    fs = glob.glob(pattern)
+    return max(fs, key=os.path.getmtime) if fs else None
+
+def find_chrome():
+    """Locate Chrome/Chromium (mac/win/linux)."""
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        p = shutil.which(name)
+        if p:
+            return p
+    cands = []
+    if sys.platform == "darwin":
+        cands += [os.path.join(os.sep, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+                  os.path.join(os.sep, "Applications", "Chromium.app", "Contents", "MacOS", "Chromium")]
+    elif sys.platform.startswith("win"):
+        for base in (os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+                     os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
+                     os.environ.get("LOCALAPPDATA", "")):
+            if base:
+                cands.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
+    else:
+        cands += ["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium",
+                  "/snap/bin/chromium"]
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    sys.exit("ERROR: Google Chrome not found. Install Chrome, then re-run.")
+
+def sales_week_tabs(wb):
+    tabs = [n for n in wb.sheetnames if re.match(r"Sales Board WE \d", n)]
+    def k(n):
+        m = re.search(r"WE\s+(\d{1,2})\.(\d{1,2})", n)
+        return (int(m.group(1)), int(m.group(2))) if m else (99, 99)
+    return sorted(tabs, key=k)
+
+def tab_week_dates(tabname):
+    """The 7 dates of the week ENDING on the WE date."""
+    m = re.search(r"WE\s+(\d{1,2})\.(\d{1,2})", tabname)
+    if not m:
+        raise ValueError("no WE date in tab name")
+    mo, dy = int(m.group(1)), int(m.group(2))
+    end = datetime.date(COMP_YEAR, mo, dy)
+    return [end - datetime.timedelta(days=6 - i) for i in range(7)]
+
+def read_sales(sales_file):
+    wb = openpyxl.load_workbook(sales_file, read_only=True, data_only=True)
+    sales = defaultdict(lambda: {"int": 0.0, "dtv": 0.0, "nl": 0.0, "energy": 0.0,
+                                 "here": 0, "late": 0, "off": 0, "int3": 0, "energy5": 0})
+    daily = defaultdict(dict)   # name -> {iso_date: {per-day raw + attendance}} for the drill-down
+    removed = {}
+    through = None
+    today = datetime.date.today()
+    for tab in sales_week_tabs(wb):
+        try:
+            dates = tab_week_dates(tab)
+        except ValueError:
+            continue
+        if not any(d.month == COMP_MONTH and d.year == COMP_YEAR for d in dates):
+            continue
+        ws = wb[tab]
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        try:
+            shr = next(i for i, r in enumerate(rows)
+                       if any(isinstance(c, str) and c.strip() == "Roll Call" for c in r))
+        except StopIteration:
+            continue
+        rc_cols = [j for j, c in enumerate(rows[shr]) if isinstance(c, str) and c.strip() == "Roll Call"]
+        daterow = rows[shr - 1]
+        label2date = {d.day: d for d in dates}
+
+        rc_date = {}
+        for i, rc in enumerate(rc_cols):
+            lbl = daterow[rc - DAY_OFF] if rc - DAY_OFF >= 0 else None
+            dt = None
+            if lbl is not None:
+                try:
+                    dt = label2date.get(int(lbl))
+                except (TypeError, ValueError):
+                    dt = None
+            if dt is None and i < len(dates):
+                dt = dates[i]
+            rc_date[rc] = dt
+        for r in rows[shr + 1:]:
+            raw = r[2] if len(r) > 2 else None
+            # Roster ends at TOTALS; a blank row is a GAP. Breaking on one cut
+            # this to 16 of 75 reps after a re-sort left holes (2026-07-31).
+            if roster_end(raw):
+                break
+            if not (isinstance(raw, str) and raw.strip()):
+                continue
+            name = akey(raw); rec = sales[name]
+            for rc in rc_cols:
+                dt = rc_date.get(rc)
+                if dt is None or dt.month != COMP_MONTH or dt.year != COMP_YEAR:
+                    continue
+                if dt >= today:
+                    continue
+                is_sun = dt.weekday() == 6
+                dayint = numv(r[rc - INT_OFF]); dayeng = numv(r[rc - ENERGY_OFF])
+                daydtv = numv(r[rc - DTV_OFF]); daynl = numv(r[rc - NL_OFF])
+                rec["int"] += dayint; rec["dtv"] += daydtv; rec["nl"] += daynl
+                rec["energy"] += dayeng
+                if dayint >= 3:
+                    rec["int3"] += 1
+                if dayeng >= 3:
+                    rec["energy5"] += 1
+                got = dayint > 0 or dayeng > 0
+                v = r[rc]
+                att = None   # (label, pts) for this day's attendance code, if any
+                if isinstance(v, str) and v.strip():
+                    got = True
+                    v = v.strip()
+                    if v in REMOVE: removed[name] = v
+                    elif v in POS_HERE:
+                        rec["here"] += 1; att = ("Here / On-Time / Dress", HERE_PTS)
+                    elif v in LATE_PEN:
+                        if not is_sun:
+                            rec["late"] += 1; att = ("Late", -5)
+                    elif v in OFF_PEN:
+                        if not is_sun:
+                            rec["off"] += 1; att = ("Off / STF / No-Answer", -10)
+                if dayint or daydtv or daynl or dayeng or att:
+                    daily[name][dt.isoformat()] = {
+                        "int": dayint, "dtv": daydtv, "nl": daynl, "eng": dayeng,
+                        "int3": dayint >= 3, "eng3": dayeng >= 3, "att": att,
+                    }
+                if got and (through is None or dt > through):
+                    through = dt
+    wb.close()
+    return sales, removed, through, daily
+
+
+def _rep_days(daymap):
+    """Per-rep day-by-day point items for the drill-down. Each item is
+    [label, points, count, unit] — count/unit are None for flat bonuses and
+    attendance. Each day's items sum to that day's swing; every point here is
+    date-attributable (sales board)."""
+    out = []
+    for iso in sorted(daymap):
+        d = daymap[iso]
+        items = []
+        if d["int"]:  items.append(["Internet", d["int"] * 2, int(d["int"]), 2])
+        if d["int3"]: items.append(["3+ Internet", 10, None, None])
+        if d["eng"]:  items.append(["Energy", d["eng"] * ENERGY_PTS, int(d["eng"]), ENERGY_PTS])
+        if d["eng3"]: items.append(["3+ Energy", ENERGY5_BONUS, None, None])
+        if d["dtv"]:  items.append(["DTV", d["dtv"], int(d["dtv"]), 1])
+        if d["nl"]:   items.append(["New Line", d["nl"], int(d["nl"]), 1])
+        if d["att"]:  items.append([d["att"][0], d["att"][1], None, None])
+        if items:
+            out.append({"d": iso, "items": items, "tot": sum(p for _, p, _, _ in items)})
+    return out
+
+def terminated_reps(sales_file):
+    """akey names with a 'T' (terminate) roll-call code anywhere on the board.
+
+    Month-independent on purpose: a rep terminated in ANY week is dropped from the
+    flyer going forward, so we never celebrate a promotion / car-ride for someone
+    who's no longer with the company. Board points are handled separately (read_sales
+    already excludes T'd reps), so this only cleans up the promotions display."""
+    out = set()
+    try:
+        wb = openpyxl.load_workbook(sales_file, read_only=True, data_only=True)
+    except Exception:
+        return out
+    for tab in sales_week_tabs(wb):
+        ws = wb[tab]
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        try:
+            shr = next(i for i, r in enumerate(rows)
+                       if any(isinstance(c, str) and c.strip() == "Roll Call" for c in r))
+        except StopIteration:
+            continue
+        rc_cols = [j for j, c in enumerate(rows[shr]) if isinstance(c, str) and c.strip() == "Roll Call"]
+        for r in rows[shr + 1:]:
+            raw = r[2] if len(r) > 2 else None
+            if roster_end(raw):
+                break
+            if not (isinstance(raw, str) and raw.strip()):
+                continue
+            for c in rc_cols:
+                v = r[c] if c < len(r) else None
+                if isinstance(v, str) and v.strip() in REMOVE:
+                    out.add(akey(raw)); break
+    wb.close()
+    return out
+
+def read_recruiting(recruit_file):
+    """Per-month 2nd-round accepts + new-starts-showed for the COMPETITION month.
+
+    The tab lays out one block PER MONTH side by side, each headed
+    '<Month> BOB Call / Stats' (Accepted col) with a 'New starts showed' col and
+    its own 'Leader Name' column. We find the block whose header names MONTH_NAME
+    and read only that one — so July counts July, August counts August, and a
+    month with no block yet correctly scores ZERO (no stale carry-over). Columns
+    are located by header, never fixed index."""
+    wb = openpyxl.load_workbook(recruit_file, read_only=True, data_only=True)
+    ws = wb[RECRUIT_TAB]
+    rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    out = {}
+    if len(rows) < 2:
+        wb.close(); return out
+    h0, h1 = rows[0], rows[1]
+    target = MONTH_NAME.lower()
+    acc_col = name_col = show_col = None
+    for j, c in enumerate(h0):
+        if isinstance(c, str) and "bob call" in c.lower() and target in c.lower():
+            acc_col = j
+            for k in range(j, -1, -1):                       # block's Leader Name (to the left)
+                if isinstance(h0[k], str) and h0[k].strip().lower() == "leader name":
+                    name_col = k; break
+            for k in range(j, min(j + 8, len(h0))):          # 'New starts showed' (to the right)
+                if isinstance(h0[k], str) and "new starts showed" in h0[k].strip().lower():
+                    show_col = k; break
+            break
+    if acc_col is None or name_col is None:
+        print(f"Recruiting: no '{MONTH_NAME}' block on {RECRUIT_TAB!r} yet — 0 recruiting points this month")
+        wb.close(); return out
+    for r in rows[2:]:
+        nm = r[name_col] if name_col < len(r) else None
+        if roster_end(nm):
+            break
+        if not (isinstance(nm, str) and nm.strip()):
+            continue
+        acc = fv(r[acc_col]) if acc_col < len(r) else 0.0
+        show = fv(r[show_col]) if (show_col is not None and show_col < len(r)) else 0.0
+        out[nm.strip()] = (acc, show)
+    wb.close()
+    return out
+
+def read_leadership(sales_file):
+    """Latest weekly tab -> {name: {status, trainer, best}}. Columns found by HEADER
+    TEXT, not fixed letters."""
+    wb = openpyxl.load_workbook(sales_file, read_only=True, data_only=True)
+    out = {}
+    for tab in reversed(sales_week_tabs(wb)):
+        ws = wb[tab]
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+        try:
+            shr = next(i for i, r in enumerate(rows)
+                       if any(isinstance(c, str) and c.strip() == "Roll Call" for c in r))
+        except StopIteration:
+            continue
+
+        def find_col(label):
+            for r in rows[:shr + 1]:
+                for j, c in enumerate(r):
+                    if isinstance(c, str) and c.strip().lower() == label:
+                        return j
+            return None
+        c_status = find_col("leadership status")
+        c_train = find_col("trainer")
+        c_best = find_col("best car ride leader")
+        if c_status is None:
+            continue
+        for r in rows[shr + 1:]:
+            raw = r[2] if len(r) > 2 else None
+            if roster_end(raw):
+                break
+            if not (isinstance(raw, str) and raw.strip()):
+                continue
+            name = akey(raw)
+            status = r[c_status] if c_status < len(r) else None
+            trainer = r[c_train] if (c_train is not None and c_train < len(r)) else None
+            best = r[c_best] if (c_best is not None and c_best < len(r)) else None
+            out[name] = {
+                "status": status.strip() if isinstance(status, str) else "",
+                "trainer": trainer.strip() if isinstance(trainer, str) else "",
+                "best": isinstance(best, str) and best.strip().upper() == "BEST",
+            }
+        break
+    wb.close()
+    return out
+
+def update_leaders_state(leadership):
+    """Accumulate promotions to 'Level 1' + car-ride 'BEST'; first sighting seeds."""
+    try:
+        state = json.loads(open(LEADERS_STATE).read())
+    except Exception:
+        state = {}
+
+    if (state.get("period") or _current_period()) != _current_period():
+        state = {}
+    baseline = state.get("baseline") or {}
+    promos = state.get("new_leaders") or []
+    cars = state.get("car_ride") or []
+    first_run = not baseline
+    detected = {p[1] for p in promos}
+    car_set = set(cars)
+    for nm, d in leadership.items():
+        if nm not in baseline:
+            baseline[nm] = d["status"]
+        elif d["status"] == "Level 1" and baseline[nm] != "Level 1" and nm not in detected:
+            promos.append([d["trainer"], nm]); detected.add(nm)
+        if d.get("best") and nm not in car_set:
+            cars.append(nm); car_set.add(nm)
+    try:
+        os.makedirs(os.path.dirname(LEADERS_STATE), exist_ok=True)
+        with open(LEADERS_STATE, "w") as fh:
+            json.dump({"period": _current_period(), "baseline": baseline,
+                       "new_leaders": promos, "car_ride": cars}, fh, indent=2)
+    except Exception as e:
+        print(f"(couldn't save leaders state: {e})")
+    if first_run:
+        print(f"Leaders baseline set for {len(baseline)} reps")
+    return promos, cars
+
+def load_leaders_state():
+    """Read-only view of auto-detected leaders, for the flyer."""
+    try:
+        state = json.loads(open(LEADERS_STATE).read())
+    except Exception:
+        return [], []
+    if (state.get("period") or _current_period()) != _current_period():
+        return [], []
+    return state.get("new_leaders") or [], state.get("car_ride") or []
+
+def load_manual_inputs():
+    """Hub-typed additions -> (promotions, solo, car_ride). Never raises."""
+    prom, solo, car = [], [], []
+    try:
+        data = json.loads(open(MANUAL_INPUTS).read())
+    except Exception:
+        return prom, solo, car
+    for line in str(data.get("new_leaders_text", "") or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ">" in line:
+            a, b = line.split(">", 1)
+            a, b = a.strip(), b.strip()
+            if a and b:
+                prom.append((a, b))
+            elif b:
+                solo.append(b)
+        else:
+            solo.append(line)
+    for line in str(data.get("car_ride_text", "") or "").splitlines():
+        line = line.strip()
+        if line:
+            car.append(line)
+    return prom, solo, car
+
+def load_dinner():
+    """This month's dinner date from dinner_schedule["YYYY-MM"], else the legacy
+    dinner_day/time, else "TO BE DETERMINED"."""
+    day, time = DINNER_DAY_DEFAULT, DINNER_TIME_DEFAULT
+    try:
+        data = json.loads(open(MANUAL_INPUTS).read())
+    except Exception:
+        return day, time
+    entry = (data.get("dinner_schedule") or {}).get(_current_period()) or {}
+    d = str(entry.get("day", "") or "").strip() or str(data.get("dinner_day", "") or "").strip()
+    t = str(entry.get("time", "") or "").strip() or str(data.get("dinner_time", "") or "").strip()
+    return (d or day), (t or time)
+
+def _current_period():
+    """The competition period key ('YYYY-MM') used to auto-reset month state."""
+    return f"{COMP_YEAR}-{COMP_MONTH:02d}"
+
+def build_board(sales_file, recruit_file):
+    sales, removed, through, daily = read_sales(sales_file)
+    recruit = read_recruiting(recruit_file)
+    m_prom, m_solo, m_car = load_manual_inputs()
+    a_prom, a_car = update_leaders_state(read_leadership(sales_file))
+    _mp = _current_period()
+    _excl = {norm(x) for x in EXCLUDE_NEW_LEADERS}
+    promotions   = [(p, q) for (p, q) in dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]) if norm(q) not in _excl]
+    solo_leaders = [q for q in dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo) if norm(q) not in _excl]
+    car_leaders  = list(dict.fromkeys(CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car))
+    if a_prom or a_car:
+        print(f"Auto-detected: {len(a_prom)} new leaders, {len(a_car)} car-ride")
+    if m_prom or m_solo or m_car:
+        print(f"Manual overrides: {len(m_prom)} promotions, {len(m_solo)} solo, {len(m_car)} car-ride")
+
+    rized = {}
+    for name, s in sales.items():
+        if name in EXCLUDE or name in removed:
+            continue
+        rized[name] = {
+            "name": name, "int_p": s["int"] * 2, "dtv_p": s["dtv"], "nl_p": s["nl"],
+            "eng_p": s["energy"] * ENERGY_PTS,
+            "att_p": s["here"] * HERE_PTS - s["late"] * 5 - s["off"] * 10,
+            # att_p split out so the scoring log can show losses on their own
+            # (tdb_scoring_log). here_p + late_p + off_p == att_p.
+            "here_p": s["here"] * HERE_PTS, "late_p": -s["late"] * 5, "off_p": -s["off"] * 10,
+            "i3_p": s["int3"] * 10, "e5_p": s["energy5"] * ENERGY5_BONUS,
+            "acc": 0.0, "show": 0.0, "acc_p": 0.0, "show_p": 0.0, "brk_p": 0.0, "car_p": 0.0,
+            "adj_p": 0.0,
+        }
+    ci = {k.lower(): k for k in rized}
+    for rn, (acc, show) in recruit.items():
+        key = akey(rn)
+        # case-only spelling differences between the two sheets must still match
+        key = key if key in rized else ci.get(key.lower(), key)
+        if key in EXCLUDE or key not in rized:
+            continue
+        rized[key]["acc"] += acc; rized[key]["show"] += show
+        rized[key]["acc_p"] += acc * 5; rized[key]["show_p"] += show * SHOW_PTS
+    unmatched = []
+    for promoter, newleader in promotions:
+        for nm in (promoter, newleader):
+            key = resolve_roster(nm, rized)
+            if key:
+                rized[key]["brk_p"] += 15
+            elif str(nm).strip():
+                unmatched.append(nm)
+    for nm in solo_leaders:
+        key = resolve_roster(nm, rized)
+        if key:
+            rized[key]["brk_p"] += 15
+    for nm in (car_leaders if CAR_ON else []):
+        key = resolve_roster(nm, rized)
+        if key:
+            rized[key]["car_p"] += CARRIDE_PTS
+        elif str(nm).strip():
+            unmatched.append(nm)
+    if unmatched:
+        print("Unmatched names (no points; check spelling / give me the nickname): "
+              + ", ".join(sorted(set(str(u).strip() for u in unmatched))))
+    for nm, pts in ADJUSTMENTS_BY_MONTH.get(_mp, {}).items():
+        key = resolve_roster(nm, rized)
+        if key:
+            rized[key]["adj_p"] += pts
+
+    board = list(rized.values())
+    for r in board:
+        r["total"] = (r["int_p"] + r["dtv_p"] + r["nl_p"] + r["att_p"] + r["eng_p"]
+                      + r["acc_p"] + r["show_p"] + r["brk_p"] + r["i3_p"]
+                      + r["e5_p"] + r["car_p"] + r["adj_p"])
+        # Drill-down: date-attributable day rows + the month-level bonuses that
+        # have no single date. days' swings + month_extra == total.
+        r["days"] = _rep_days(daily.get(r["name"], {}))
+        # [label, points, count, unit] — count/unit None where there's no natural
+        # multiplier (Adjustment). Lets the drill-down show "2nd Round 9 × +5".
+        month_extra = [
+            ["2nd Round", r["acc_p"], int(r["acc"]), 5],
+            ["New Start Showed", r["show_p"], int(r["show"]), 10],
+            ["Break-a-Leader", r["brk_p"], int(round(r["brk_p"] / 15)), 15],
+            ["Adjustment", r["adj_p"], None, None],
+        ]
+        if CAR_ON:
+            month_extra.insert(2, ["Car Ride", r["car_p"], int(round(r["car_p"] / CARRIDE_PTS)), CARRIDE_PTS])
+        r["month_extra"] = [it for it in month_extra if it[1]]
+    board.sort(key=lambda x: (-x["total"], -x["acc"], x["name"]))
+    return board, through
+
