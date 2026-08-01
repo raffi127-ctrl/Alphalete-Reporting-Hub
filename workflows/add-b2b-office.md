@@ -80,8 +80,20 @@ Confirm the LUCY CHURN tab's activation cells (E5/F5, AE:AF) fill after vantura 
   so the new office shows up automatically.
 
 ## Gotchas (learned 2026-07-21..23)
-- **"Owner & Office" can NOT be URL-sliced** (compound value w/ embedded CR) — that's
-  why churn/activation need per-office saved views, not a `?Owner & Office=` slice.
+- ~~**"Owner & Office" can NOT be URL-sliced**~~ **— WRONG, corrected 2026-08-01.**
+  It slices fine. It just needs TWO escapes, and gives a silently EMPTY view when
+  either is missing (which is what made it look impossible):
+    1. the member has an embedded **carriage return** before the office suffix
+       (`JAMIS GARAY\r [atomic marketing, inc.]`) → must survive as `%0D`. Values
+       typed into the onboarding form lose it, so the code restores it.
+    2. a **comma** in the value is Tableau's multi-value *separator*, so
+       `[atomic marketing, inc.]` was read as two members and neither matched →
+       escape it as `\,`.
+  `capture._tableau_filter_value()` does both. Carlos's own office name has no
+  comma, which is why this went unnoticed until an office whose name had one.
+  **Consequence: steps under "What Carlos makes" are NO LONGER NEEDED** for a new
+  office — the shared team views slice per office, which is what the all-team
+  split was for. Carlos's and Atef's existing saved views still work and stay.
 - **Activation sort is per-office**: baked view → skip the click (`baked_sort_views`);
   un-baked view → the "0-7 Days" click sorts it. A wrong choice posts it unsorted.
 - **Deploy AFTER noon**: the Lucy 2 orchestrator runs 4am→noon; an `update` during
