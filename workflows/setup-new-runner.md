@@ -24,7 +24,15 @@ Installs Python + packages + Chromium + the app. (If a stale venv breaks it:
 ```
 cd ~/recruiting-report && .venv/bin/python -m automations.recruiting_report.sheets_auth
 ```
-Sign in as the account with the sheets this machine writes.
+Sign in as **alphaletereporting@gmail.com** (standard since 2026-08-01 — one
+reporting identity on every runner, not a per-machine human account).
+
+Before you do this on an EXISTING machine, check that alphaletereporting has
+**Editor** on every sheet that machine touches — these reports write, and a
+view-only share still 403s on write. The blocking one is the **Mini Control
+queue** sheet: a runner that can't write its result row can't be driven
+remotely any more, and fixing that needs someone physically at the machine.
+`lucy --machine "<name>" sheets_whoami` prints what the current token can open.
 
 ## 3. Creds files (paste the SECRETS at the machine — never via the queue)
 Ownerville + AppStream logins (this machine's own accounts):

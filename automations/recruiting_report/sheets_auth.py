@@ -7,9 +7,24 @@ a Chrome would stall every report, 2026-07-04). So the one-time consent lives
 here instead. Run this ONCE on each machine that runs reports; it opens a
 browser, you sign in, and it writes the token fill.py then reuses.
 
-The token is authorized as raffi127@gmail.com (Rafael Hidalgo), scoped to
-spreadsheets — that account has the ~52 ICD tabs + Tableau Custom Views. Sign in
-as raffi127, NOT alphaletereporting (that's the Gmail-drafts account).
+The token is authorized as alphaletereporting@gmail.com, scoped to spreadsheets
+(Megan 2026-08-01: "just like everything else" — one service identity for every
+report surface, rather than a per-machine human account).
+
+HISTORY, because this reversed on purpose: until 2026-08-01 this said "sign in
+as raffi127, NOT alphaletereporting", added with this file on 2026-07-06
+(82e8c9b) on the reasoning that raffi127 holds the ~52 ICD tabs + the Tableau
+Custom Views. That reasoning still has teeth — the recruiting/focus workbooks
+are RESTRICTED (no link sharing) and several are owned by other people
+(Alphaletemarketing, maudmiller4), so alphaletereporting only reaches them if
+it has been shared in explicitly.
+
+BEFORE re-authing a machine to this account, confirm alphaletereporting has
+EDITOR (not just view — these reports write) on every sheet that machine
+touches. The blocking one is the Mini Control queue sheet: a runner that can't
+write its result row can no longer be driven remotely, and recovering that
+needs someone physically at the machine. `lucy --machine "<name>" sheets_whoami`
+reports what the machine's current token can actually open.
 
 Token: ~/.config/recruiting-report/oauth-token.json  (gitignored, NEVER commit)
 Reuses the same OAuth client (oauth-client.json) the installer drops in.
@@ -25,7 +40,7 @@ from pathlib import Path
 # Mirror fill.py exactly (kept local so this script imports nothing heavy —
 # fill.py pulls in gspread etc. and resolves the sheet config at import time).
 SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEETS_ACCOUNT = "raffi127@gmail.com"   # the account with the ICD tabs
+SHEETS_ACCOUNT = "alphaletereporting@gmail.com"   # the shared reporting identity
 
 _CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
 OAUTH_CLIENT_PATH = _CONFIG_DIR / "oauth-client.json"
@@ -35,7 +50,7 @@ OAUTH_TOKEN_PATH = _CONFIG_DIR / "oauth-token.json"
 def authorize() -> None:
     """Run the one-time interactive OAuth flow and save the Sheets token.
 
-    Opens the default browser; sign in as raffi127@gmail.com and approve the
+    Opens the default browser; sign in as alphaletereporting@gmail.com and approve the
     spreadsheets scope. Writes the token to OAUTH_TOKEN_PATH so fill.py (and
     every report through it) can read/refresh it non-interactively afterward.
     """
@@ -58,7 +73,7 @@ def authorize() -> None:
         prompt="consent",
         authorization_prompt_message=(
             "Opening your browser to authorize Google Sheets access.\n"
-            f"➡  Sign in as {SHEETS_ACCOUNT} (NOT alphaletereporting) and approve.\n"
+            f"➡  Sign in as {SHEETS_ACCOUNT} and approve the Sheets scope.\n"
             "If it doesn't open, copy this URL into your browser:\n{url}"),
         success_message=(
             "Done — you can close this tab and return to the terminal."),
