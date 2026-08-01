@@ -124,8 +124,25 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
       section2 = {row: value}    — CAPTAIN/SPECIAL captain & special sub-rows
       unmatched = [display_name] — active people absent from the regular pull
     """
-    from automations.override_bulletin.pulls import raf_captain_override
+    from automations.override_bulletin.pulls import raf_captain_override, _num_locale
     section1, section2, unmatched = {}, {}, []
+
+    # PRESERVE-ON-EMPTY: re-filling a PAST week (e.g. run --week 7.19 --force, or a
+    # backtrack) re-pulls the ORG summary fine, but the DD Detail download only
+    # carries the CURRENT week — so every past-week captain comes back None. Left
+    # as 0 that silently drops the captain from the section-1 combined total while
+    # section 2 still shows it (exactly what broke 7.19's Colten/Carlos/Jairo/…
+    # on 2026-08-01). So when a source can't re-supply a captain/special, fall
+    # back to the value ALREADY on the sheet for this week (what the original fill
+    # wrote), the same rule backtrack uses. A fresh (rolled, blank) current-week
+    # column has no existing value, so first-fills are unchanged.
+    _col = week_col(ws, week_mdy) if ws is not None else None
+    _vals = ws.get_all_values() if (ws is not None and _col is not None) else None
+
+    def _on_sheet(row):
+        if _vals is None or not row or row - 1 >= len(_vals) or _col >= len(_vals[row - 1]):
+            return None
+        return _num_locale(_vals[row - 1][_col])
 
     # Section 2 first — captain/special per captain — so section 1 can add them.
     cap_special_total = {}
@@ -135,6 +152,11 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
         if key == canon("Rafael Hidalgo", aliases):
             cap = raf_captain_override(week_mdy, ws=None)
         spc = special.get(key)
+        # A source that couldn't re-supply this past week keeps what's on the sheet.
+        if cap is None and rows.get("captain"):
+            cap = _on_sheet(rows["captain"])
+        if spc is None and rows.get("special"):
+            spc = _on_sheet(rows["special"])
         if rows.get("captain") and cap is not None:
             section2[rows["captain"]] = cap
         if rows.get("special") and spc is not None:
