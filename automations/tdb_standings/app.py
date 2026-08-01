@@ -66,14 +66,19 @@ def _num(x):
 def parse_grid(values):
     """Locate header (#, REP NAME, MONTH TOTALS, day dates) and return reps sorted
     high->low with their per-day swings."""
+    # The public CSV export blanks the '#' and 'MONTH TOTALS' header cells, so we
+    # anchor on 'REP NAME' and use the template's fixed adjacency (# | REP NAME |
+    # MONTH TOTALS | dates...) when those labels are missing.
     hrow = rank_c = name_c = total_c = None
     for i, row in enumerate(values[:5]):
         low = [str(c).strip().lower() for c in row]
-        if "rep name" in low and "month totals" in low:
-            hrow, name_c, total_c = i, low.index("rep name"), low.index("month totals")
-            rank_c = low.index("#") if "#" in low else None
+        if "rep name" in low:
+            hrow, name_c = i, low.index("rep name")
+            total_c = low.index("month totals") if "month totals" in low else (
+                name_c + 1 if name_c + 1 < len(low) else None)
+            rank_c = low.index("#") if "#" in low else (name_c - 1 if name_c >= 1 else None)
             break
-    if hrow is None:
+    if hrow is None or total_c is None:
         return [], []
     hdr = values[hrow]
     day_cols = []
@@ -102,7 +107,8 @@ def parse_grid(values):
 
 CSS = """
 <style>
-.block-container{max-width:1120px;padding-top:1.2rem}
+.block-container{max-width:1120px;padding-top:3.5rem}
+[data-testid="stHeader"]{background:transparent}
 .stApp{background:radial-gradient(120% 60% at 50% -8%,rgba(179,18,26,.26),transparent 46%),linear-gradient(180deg,#160b08,#0c0404 40%,#0a0705)}
 .hero{text-align:center;margin-bottom:6px}
 .kick{font-size:12px;letter-spacing:6px;color:#caa14a;text-transform:uppercase;font-weight:700}
