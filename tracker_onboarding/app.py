@@ -147,20 +147,27 @@ def form_view() -> None:
     # ---- 2. Trackers to post ---------------------------------------------
     st.divider()
     st.markdown("### 2. Trackers to post")
-    catalog = S.tracker_catalog()
+    # Only UNIVERSAL national boards are enrollable here. Opt-in boards
+    # (opt_in_only in tableau_screenshots.pages, e.g. order_tiered_bonus) are
+    # OWNER-SCOPED — their Tableau URL is hardcoded to one owner's saved view
+    # (AtefExp), so posting one to a different office's channel shows THAT owner's
+    # numbers (the jamis→Atef isolation failure, 2026-08-01). A per-office
+    # ranking belongs in that office's b2b_metrics thread, which slices by owner.
+    # So they are deliberately NOT offered as tracker options.
+    catalog = [t for t in S.tracker_catalog() if not t["opt_in"]]
     if not catalog:
         st.error("Couldn't load the tracker list (tableau_screenshots.pages "
                  "import failed). The form can't build the checklist.")
         catalog = []
-    st.caption("Check the trackers this office should get. The number sets the "
-               "order they appear in the post (lower = earlier). Opt-in trackers "
-               "are unchecked by default.")
+    st.caption("Check the trackers this office should get. These are the "
+               "org-wide boards every sales channel receives. The number sets "
+               "the order they appear in the post (lower = earlier).")
     default_on = set(S.default_selection())
     picked: list = []            # (tracker_id, order)
     for i, t in enumerate(catalog):
         oc1, oc2 = st.columns([6, 1])
         with oc1:
-            lbl = f"{t['emoji']} {t['title']}" + ("  · opt-in" if t["opt_in"] else "")
+            lbl = f"{t['emoji']} {t['title']}"
             on = st.checkbox(lbl, value=(t["id"] in default_on), key=f"trk_{t['id']}")
         with oc2:
             order = st.number_input("order", 1, 99, i + 1, key=f"ord_{t['id']}",

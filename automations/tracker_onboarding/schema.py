@@ -82,9 +82,21 @@ def validate(rec: TrackerRecord, *,
         problems.append("Channel name is empty.")
     if not rec.trackers:
         problems.append("No trackers selected — check at least one.")
-    known = {t["id"] for t in tracker_catalog()}
+    cat = tracker_catalog()
+    known = {t["id"] for t in cat}
+    # Owner-scoped / opt-in boards are hardcoded to one owner's Tableau view and
+    # would post THAT owner's numbers into this office's channel (the jamis→Atef
+    # isolation failure, 2026-08-01). They are never a valid per-office enrollment
+    # — per-office rankings come through b2b_metrics, which slices by owner.
+    opt_in = {t["id"] for t in cat if t.get("opt_in")}
     if known:
         for tid in rec.trackers:
             if tid not in known:
                 problems.append(f"Unknown tracker id {tid!r}.")
+            elif tid in opt_in:
+                problems.append(f"Tracker {tid!r} is owner-scoped (opt-in) and "
+                                "can't be enrolled per office — it would post "
+                                "another owner's numbers. It's excluded on "
+                                "purpose; that office gets its own ranking via "
+                                "its metrics thread.")
     return problems
