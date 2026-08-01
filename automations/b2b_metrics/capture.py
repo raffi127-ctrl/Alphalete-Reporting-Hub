@@ -231,9 +231,38 @@ def _sliced_url(o: B2BOffice, view_key: str) -> str:
         return o.view_url(view_key)
     from urllib.parse import quote
     field = VIEW_META.get(view_key, {}).get("filter_field", OWNER_FIELD)
-    value = o.slice_value(field)
+    value = _tableau_filter_value(o.slice_value(field))
     base = o.view_url(view_key).split("?")[0]
-    return "{}?{}={}".format(base, quote(field), quote(value))
+    return "{}?{}={}".format(base, quote(field), quote(value, safe="\\"))
+
+
+def _tableau_filter_value(value: str) -> str:
+    """Make a dimension member safe to pass as a Tableau URL filter value.
+
+    "Owner & Office" CAN be URL-sliced — the long-standing note that it can't
+    (workflows/add-b2b-office.md) was wrong, and cost this project two hand-built
+    saved views per office plus a run of blank captures. It needs TWO escapes,
+    and it silently returns an EMPTY view when either is missing:
+
+      1. the member carries an embedded CARRIAGE RETURN before the office suffix
+         ("JAMIS GARAY\\r [atomic marketing, inc.]"), which must survive as %0D.
+         Values recorded through the onboarding form lose it, so restore it.
+      2. a COMMA inside the value is Tableau's multi-value SEPARATOR — an office
+         like "[atomic marketing, inc.]" is otherwise read as two members, and
+         neither matches. Escape it as "\\,".
+
+    Proven live on ATTTRACKER-B2B/CHURNRATES/ALLTEAMSEXP, 2026-08-01: with only
+    one of the two, every filter reads "(None)" and the table is empty; with both,
+    the view scopes to that office's reps. Carlos's own office has no comma in
+    its name, which is why this never surfaced until an office that did.
+    """
+    v = str(value or "")
+    if not v:
+        return v
+    # Restore the CR the form drops: "NAME [office]" -> "NAME\r [office]".
+    if "\r" not in v and " [" in v:
+        v = v.replace(" [", "\r [", 1)
+    return v.replace(",", "\\,")
 
 
 # Which views need the sort/crop rep-table handling (Activation + the 3 Churn

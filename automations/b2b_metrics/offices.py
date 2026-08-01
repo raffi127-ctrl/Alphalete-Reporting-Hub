@@ -387,25 +387,13 @@ def _merge_onboarded() -> None:
         for _f in ("churn_tab", "order_log_tab"):
             if (r.get(_f) or "").strip():
                 _tabs[_f] = r[_f].strip()
-        # AUTO-SKIP the views that CANNOT be sliced to this office (2026-08-01).
-        # The shared TEAM views for churn + activation filter on "Owner & Office",
-        # a compound value with an embedded CR that Tableau URL filters do not
-        # match — that's why Carlos and Atef each ride a per-office SAVED VIEW
-        # instead. An onboarded office has no saved views (per_office_views is
-        # empty until someone builds them), so those captures fall back to the
-        # team view and post either an EMPTY panel or the WHOLE TEAM's numbers
-        # into that office's own channel. Jamis got exactly that.
-        #
-        # So: no per-office override for an "Owner & Office" view -> don't post
-        # it. Wrong numbers under an office's name are worse than a missing
-        # section, and his churn + activation are already covered in the SAME
-        # thread by the sheet-sourced customer_churn + activation_by_rep, which
-        # are owner-isolated in code and reconciled before they're written.
-        # Self-lifting: supply the saved view and the skip disappears.
-        _auto_skip = frozenset(
-            k for k, meta in VIEW_META.items()
-            if meta.get("filter_field") == OWNER_OFFICE_FIELD and k not in overrides
-        )
+        # NO auto-skip any more (2026-08-01, same day it was added). It existed
+        # because the "Owner & Office" team views appeared un-sliceable and an
+        # onboarded office was posting blank churn/activation panels. Proven
+        # wrong the same afternoon against the live view: they slice fine once
+        # the value carries BOTH escapes Tableau needs — see
+        # capture._tableau_filter_value. So an onboarded office needs no saved
+        # views at all, which is the all-team design this registry was built for.
         try:
             OFFICES[key] = B2BOffice(
                 key=key, label=r.get("label") or f"{key.title()}'s B2B Office",
@@ -413,8 +401,7 @@ def _merge_onboarded() -> None:
                 channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
                 **_tabs,
                 owner_office=r.get("owner_office", ""),
-                view_overrides=overrides, skip_views=_auto_skip,
-                channel_plans=_cp)
+                view_overrides=overrides, channel_plans=_cp)
             ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
             if unmapped:
                 ex["_unmapped_views"] = unmapped   # need a manual view_overrides edit
