@@ -439,6 +439,18 @@ def main(argv=None) -> int:
         import os
         os.environ["B2B_REQUIRE_FRESH"] = "1"
 
+    # --dry-run WINS over --post. It used to be documented as merely "the
+    # explicit form of the default", which is only true when nothing else
+    # supplied --post — and the orchestrator's base_args for this report ARE
+    # `--all --post`. So `lucy rerun b2b_metrics --office jamis --dry-run`
+    # (the command workflows/add-b2b-office.md tells you to run to VERIFY an
+    # office) appended --dry-run to --post and posted for real, into live
+    # office channels. Nobody typing --dry-run means "post anyway".
+    if args.dry_run and args.post:
+        print("  [--dry-run overrides --post — capturing only, nothing will "
+              "be posted]")
+        args.post = False
+
     if args.check:
         problems = _off.validate()
         print("office table:", "CLEAN" if not problems else "PROBLEMS")
