@@ -61,7 +61,14 @@ OWNER_CFG = [
 #
 # TO PROMOTE: run `--owner jamis --dry-run` on Lucy 2 (needs Carlos's Tableau
 # session), confirm it reconciles, then delete the key from this set.
-STAGED = {"jamis"}
+#
+# EMPTY as of 2026-08-01: jamis promoted the same day. He cleared the bar this
+# set exists for — a live `--owner jamis` run on Lucy 2 reconciled against the
+# CHURN RATES dashboard and wrote his board (203/62/11 activations, 24 reps
+# with 0-30 data), and reconcile_reps confirmed the per-rep rows sum to HIS
+# office totals rather than the team's. He's in the nightly `--owner both`
+# batch now. Keep the mechanism — the next office onboarded needs it.
+STAGED: set = set()
 
 
 def _activation_cfg():
