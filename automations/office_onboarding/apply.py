@@ -101,7 +101,11 @@ def _schedule_entry(rec: OnboardingRecord, order_hint: float) -> dict:
         "source_type": "tableau",
         "data_sources": ["tableau:order_log"],
         "command": [rec.runner_module()],
-        "base_args": ["--office", rec.key, "--live"],
+        # The post flag differs per runner: office_metrics (D2D) uses --live,
+        # b2b_metrics uses --post. A hardcoded --live made every B2B office's
+        # schedule entry crash ("unrecognized arguments: --live"), 2026-07-31.
+        "base_args": ["--office", rec.key,
+                      "--post" if rec.family == "b2b" else "--live"],
         "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6]},
         "priority": "P1",
         "freshness_target": None,
