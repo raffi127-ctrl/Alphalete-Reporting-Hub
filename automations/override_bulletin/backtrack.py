@@ -64,12 +64,19 @@ def periods_for(week_mdy):
     return ["Period {}-{}".format(year, m), "Period {}-{}".format(prev_y, prev_m)]
 
 
-def regular_for_week(week_mdy, *, page=None, verbose=True, cache=None):
-    """{canonical_owner: regular override} for one past week, combined across
-    every period that carries it. Returns (amounts, periods_used).
+def regular_for_week(week_mdy, *, period=None, page=None, verbose=True, cache=None):
+    """{canonical_owner: regular override} for one past week. Returns (amounts,
+    periods_used).
+
+    `period` (from the summary scan) is the RETAIL period that actually carries
+    the week — when given it is used ALONE and is authoritative. 7.19 lives in
+    period 8, so the old month-based guess pulled period 7's crosstab, which hands
+    back an EMPTY/partial 7.19 column and made the backtrack propose ZEROING real
+    values (the 7.19 corruption). Only when the retail period is unknown do we fall
+    back to periods_for's month guess (and combine, in case the week splits).
 
     `cache` memoizes the parsed crosstab per period so re-checking four weeks in
-    the same month costs ONE download, not four."""
+    the same period costs ONE download, not four."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
     cache = cache if cache is not None else {}
     m, d, y = week_mdy.split(".")
@@ -77,7 +84,7 @@ def regular_for_week(week_mdy, *, page=None, verbose=True, cache=None):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     combined, used = {}, []
-    for period in periods_for(week_mdy):
+    for period in ([period] if period else periods_for(week_mdy)):
         if period not in cache:
             try:
                 url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", period)
@@ -180,9 +187,9 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
     because their captains (DD) can't be re-sourced for a past week."""
     col = F.week_col(ws, week_mdy, header=vals[0])
     if col is None:
-        return [], [], None
+        return [], [], [], None
     raf_key = raf[0] if raf else None
-    changes, unmatched = [], []
+    changes, unmatched, suspicious = [], [], []
     for key, (row, active, disp) in roster.items():
         if not active:
             continue
@@ -200,6 +207,15 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
         new = round(reg + capspec, 2)
         old = P._num_locale(vals[row - 1][col]) if (
             row - 1 < len(vals) and col < len(vals[row - 1])) else None
+        # SAFETY GUARD: never let a re-pull ZERO a cell that holds a real value.
+        # A regular that comes back ~0 for someone who had a real override is the
+        # signature of a PARTIAL / wrong-PERIOD pull (Period 7 handing back an empty
+        # 7.19 column), NOT a genuine correction — that is what silently corrupted
+        # 7.19. Skip it and REPORT rather than write the zero. A real drop-to-zero
+        # is rare and safer surfaced than auto-applied.
+        if abs(new) < 1.0 and old is not None and abs(old) > 1.0:
+            suspicious.append((disp, old, new))
+            continue
         if old is None or abs(new - old) > TOLERANCE:
             changes.append((row, disp, old, new))
     # Rafael's section-2 Captain / Special sub-rows, when freshly re-pulled.
@@ -209,9 +225,12 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
             if not r or val is None:
                 continue
             old = _sheet_cell(vals, r, col)
+            if abs(round(val, 2)) < 1.0 and old is not None and abs(old) > 1.0:
+                suspicious.append(("Rafael Hidalgo ({})".format(comp), old, val))
+                continue
             if old is None or abs(round(val, 2) - old) > TOLERANCE:
                 changes.append((r, "Rafael Hidalgo ({})".format(comp), old, round(val, 2)))
-    return changes, unmatched, col
+    return changes, unmatched, suspicious, col
 
 
 def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=True):
@@ -242,8 +261,12 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
                     type(e).__name__))
             week_period = {}
         for wk in targets:
-            regular, used = regular_for_week(wk, page=page, verbose=verbose,
-                                             cache=cache)
+            m, _d, y = wk.split(".")
+            wk_year = 2000 + int(y) if int(y) < 100 else int(y)
+            per_num = week_period.get(wk)
+            retail_period = "Period {}-{}".format(wk_year, per_num) if per_num else None
+            regular, used = regular_for_week(wk, period=retail_period, page=page,
+                                             verbose=verbose, cache=cache)
             if not regular:
                 print("\n{}: source carries no data for this week — left alone".format(wk))
                 continue
@@ -252,13 +275,20 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
             # week — re-source them so a revised special self-corrects instead of
             # sitting stale in section 2.
             raf_cap, raf_spec = raf_fresh_for_week(
-                wk, period_num=week_period.get(wk), page=page, verbose=verbose)
-            changes, unmatched, col = plan_week(ws, vals, wk, roster, captains,
-                                                regular, raf=(raf_key, raf_cap, raf_spec))
+                wk, period_num=per_num, page=page, verbose=verbose)
+            changes, unmatched, suspicious, col = plan_week(
+                ws, vals, wk, roster, captains, regular,
+                raf=(raf_key, raf_cap, raf_spec))
             print("\n{} (from {}): {} cell(s) drifted".format(
                 wk, " + ".join(used) or "?", len(changes)))
             for _row, name, old, new in changes:
                 print("    {:<28} {} -> {}".format(name[:28], old, new))
+            if suspicious:
+                # A real value re-pulled as ~0 = partial/wrong-period pull. NOT
+                # written; surfaced so a human (or the next clean pass) handles it.
+                print("    ⚠ SKIPPED {} suspicious zero(s) — kept the on-sheet "
+                      "value: {}".format(len(suspicious), ", ".join(
+                          "{} ({}→{})".format(n, o, nw) for n, o, nw in suspicious)))
             if unmatched:
                 print("    no source row ({}): {}".format(
                     len(unmatched), ", ".join(unmatched)))
