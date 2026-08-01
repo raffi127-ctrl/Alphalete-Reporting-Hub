@@ -330,23 +330,61 @@ def _rng(r0, c0, r1, c1):
     return "%s%d:%s%d" % (_a1_col(c0), r0 + 1, _a1_col(c1), r1 + 1)
 
 
+# Human-readable AND app-parseable item labels (the live page parses these back
+# into the click-through drill-down). Keep round-trip stable.
+_ITEM_SHORT = {
+    "Internet": "Internet", "3+ Internet": "3+ Int", "Energy": "Energy",
+    "3+ Energy": "3+ Eng", "DTV": "DTV", "New Line": "New Line",
+    "Here / On-Time / Dress": "Here", "Late": "Late", "Off / STF / No-Answer": "Off/STF",
+    "2nd Round": "2nd Round", "New Start Showed": "New Start Showed",
+    "Break-a-Leader": "Break-a-Leader", "Car Ride": "Car Ride", "Adjustment": "Adjustment",
+}
+
+
+def _sgn(n):
+    n = round(n)
+    return ("+%d" % n) if n >= 0 else ("%d" % n)
+
+
+def _fmt_item(it):
+    """[label, pts, count, unit] -> 'Internet 5×+2' (count×unit) or 'Here +3'."""
+    label, pts = it[0], it[1]
+    count = it[2] if len(it) > 2 else None
+    unit = it[3] if len(it) > 3 else None
+    s = _ITEM_SHORT.get(label, label)
+    if count is not None and unit is not None:
+        return "%s %d×%s" % (s, count, _sgn(unit))
+    return "%s %s" % (s, _sgn(pts))
+
+
+def _cell(items, tot):
+    """Multi-line cell: signed day total on line 1, one item per line below."""
+    if not items:
+        return ""
+    return "\n".join([_sgn(tot)] + [_fmt_item(it) for it in items])
+
+
 def _locate_daygrid(values):
-    """Find the header row + the rank/name/total columns and the run of day
-    columns after 'MONTH TOTALS'. Robust to the template placeholder ('MM/DD/YY')
-    or already-filled dates. Returns (hrow, rank_c, name_c, total_c, [day_cols])."""
+    """Header row + rank/name/total cols, the run of DATE day-columns after
+    'MONTH TOTALS', and the 'Monthly Bonus' column (existing or the next free col).
+    Day columns are date headers only (contain '/'), so the bonus column isn't
+    mistaken for a 32nd day. Returns (hrow, rank_c, name_c, total_c, day_cols, bonus_c)."""
     for i, row in enumerate(values[:5]):
         m = {_norm_h(c): j for j, c in enumerate(row) if isinstance(c, str) and c.strip()}
         name_c = next((m[k] for k in ("rep name", "rep", "name") if k in m), None)
         total_c = next((m[k] for k in ("month totals", "total", "total points", "points") if k in m), None)
         if name_c is not None and total_c is not None:
             rank_c = next((m[k] for k in ("#", "rank", "place", "pos") if k in m), None)
-            day_cols = []
             hdr = row
+            day_cols = []
             c = total_c + 1
-            while c < len(hdr) and str(hdr[c]).strip() and len(day_cols) < 40:
+            while c < len(hdr) and "/" in str(hdr[c]) and len(day_cols) < 40:
                 day_cols.append(c); c += 1
-            return i, rank_c, name_c, total_c, day_cols
-    return None, None, None, None, []
+            bonus_c = next((j for k, j in m.items() if "bonus" in k), None)
+            if bonus_c is None:
+                bonus_c = (day_cols[-1] + 1) if day_cols else (total_c + 1)
+            return i, rank_c, name_c, total_c, day_cols, bonus_c
+    return None, None, None, None, [], None
 
 
 def fill_month_tab(board, period, month_name, comp_year, dry_run=False):
@@ -370,12 +408,12 @@ def fill_month_tab(board, period, month_name, comp_year, dry_run=False):
         except _gs.WorksheetNotFound:
             tmpl = sh.worksheet(TEMPLATE_TAB)
             ws = sh.duplicate_sheet(source_sheet_id=tmpl.id, new_sheet_name=title, insert_sheet_index=1)
-        hrow, rank_c, name_c, total_c, day_cols = _locate_daygrid(ws.get_all_values())
+        hrow, rank_c, name_c, total_c, day_cols, bonus_c = _locate_daygrid(ws.get_all_values())
         if name_c is None or total_c is None:
             return {"ok": False, "tab": title, "url": sheet_url(),
                     "error": "template header not found (need 'REP NAME' + 'MONTH TOTALS')"}
 
-        cols = [c for c in [rank_c, name_c, total_c] if c is not None] + day_cols
+        cols = [c for c in [rank_c, name_c, total_c, bonus_c] if c is not None] + day_cols
         first_c, last_c = min(cols), max(cols)
         width = last_c - first_c + 1
         start = hrow + 1                                   # 0-based first data row
@@ -383,16 +421,21 @@ def fill_month_tab(board, period, month_name, comp_year, dry_run=False):
         block = [["" for _ in range(width)] for _ in range(height)]
         iso_of = {k: datetime.date(yr, mo, k + 1).isoformat() for k in range(ndays)}
         for i, r in enumerate(rows):
-            daymap = {d["d"]: d["tot"] for d in r.get("days", [])}
+            daymap = {d["d"]: d for d in r.get("days", [])}
             if rank_c is not None:
                 block[i][rank_c - first_c] = i + 1
             block[i][name_c - first_c] = r.get("name", "")
             block[i][total_c - first_c] = round(r.get("total", 0))
             for k, ci in enumerate(day_cols):
                 if k < ndays:
-                    v = daymap.get(iso_of[k])
-                    if v:
-                        block[i][ci - first_c] = round(v)
+                    d = daymap.get(iso_of[k])
+                    if d and d.get("items"):
+                        block[i][ci - first_c] = _cell(d["items"], d.get("tot", 0))
+            if bonus_c is not None:
+                me = r.get("month_extra", [])
+                if me:
+                    block[i][bonus_c - first_c] = _cell(me, sum(x[1] for x in me))
+        # RAW so the leading '+' on a day's total isn't read as a formula.
         reqs = [{"range": _rng(start, first_c, start + height - 1, last_c), "values": block}]
         if day_cols:
             hspan = ["" for _ in range(day_cols[-1] - day_cols[0] + 1)]
@@ -400,7 +443,9 @@ def fill_month_tab(board, period, month_name, comp_year, dry_run=False):
                 if k < ndays:
                     hspan[ci - day_cols[0]] = "%d/%d/%s" % (mo, k + 1, str(yr)[2:])
             reqs.append({"range": _rng(hrow, day_cols[0], hrow, day_cols[-1]), "values": [hspan]})
-        ws.batch_update(reqs, value_input_option="USER_ENTERED")
+        if bonus_c is not None:
+            reqs.append({"range": _rng(hrow, bonus_c, hrow, bonus_c), "values": [["Monthly Bonus"]]})
+        ws.batch_update(reqs, value_input_option="RAW")
         try:
             ws.freeze(rows=hrow + 1, cols=(name_c + 1))
         except Exception:

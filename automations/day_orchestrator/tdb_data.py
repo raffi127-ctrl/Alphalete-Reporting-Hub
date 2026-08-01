@@ -50,7 +50,7 @@ DINNER_TIME_DEFAULT = ""
 
 LEADERS_STATE = os.path.expanduser("~/recruiting-report/output/texas_de_brazil_leaders_state.json")
 
-EXCLUDE      = {"Rafael Hidalgo"}
+EXCLUDE      = {"Rafael Hidalgo", "Joshua Mascorro"}   # not competing reps (owners/mgmt)
 ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Randy Amoa",
                 "Sebastian Guerrero": "SABASTIN GUERRERO",
                 "Chole Johnson": "Chloe Johnson",
