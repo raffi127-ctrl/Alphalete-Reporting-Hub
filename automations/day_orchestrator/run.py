@@ -105,6 +105,88 @@ def _log(msg: str) -> None:
     print(f"[{_now().replace(microsecond=0).isoformat()}] {msg}", flush=True)
 
 
+# Derived registry artifacts that the onboarding forms' `onboard_apply` writes
+# into the working tree. Committed main is the reviewed truth, so on a blocked
+# fast-forward these — and ONLY these — may be reset to HEAD to clear the drift
+# (they are regenerable from the onboarding Sheet via apply). Any OTHER local
+# edit blocks the pull and is left untouched + alerted, never swept up.
+_DERIVED_REGISTRIES = (
+    "automations/tableau_screenshots/onboarded_trackers.json",
+    "automations/office_metrics/onboarded_offices.json",
+    "automations/b2b_metrics/onboarded_offices.json",
+)
+
+
+def _self_update(*, dry_run: bool) -> None:
+    """Pull the latest COMMITTED code before the day's run, so a reviewed fix or
+    HALT reaches this runner on its own — reports are spawned as fresh
+    subprocesses, so they pick up whatever this pull lands.
+
+    Why this exists: 2026-08-01 a committed tracker-halt never reached the mini —
+    nothing in the morning flow pulled, so the stale runner re-posted wrong data
+    a second day. The forms' onboard_apply also writes DERIVED registry files
+    into the working tree; that drift diverges from committed AND autostash-
+    resurrects, which is what turned the halt into a manual git_stash firefight.
+
+    Fail-OPEN: any problem logs (and, when a real edit blocks the pull, alerts the
+    corrections channel) and returns. A self-update must NEVER block the run or
+    touch anything but the known derived registries. Off under --dry-run, and
+    disableable with ORCH_SELF_UPDATE=0.
+    """
+    if dry_run or os.environ.get("ORCH_SELF_UPDATE", "1") != "1":
+        return
+
+    def git(*a, timeout=90):
+        return subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                              capture_output=True, text=True, timeout=timeout)
+
+    try:
+        if git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() != "main":
+            _log("self-update: not on main — skipping (production runs on main)")
+            return
+        git("fetch", "--quiet", "origin", "main")
+        behind = git("rev-list", "--count", "HEAD..origin/main").stdout.strip()
+        if behind in ("", "0"):
+            return
+        if git("pull", "--ff-only", "--quiet").returncode == 0:
+            _log(f"self-update: pulled {behind} commit(s) from origin/main")
+            return
+        # Blocked. Reset drift ONLY if every dirty TRACKED file is a known derived
+        # registry (committed wins for those); otherwise leave the tree untouched.
+        dirty = [ln for ln in git("status", "--porcelain").stdout.splitlines()
+                 if ln.strip() and not ln.startswith("??")]
+        tracked = {ln[3:].strip() for ln in dirty}
+        stray = tracked - set(_DERIVED_REGISTRIES)
+        if stray:
+            _log(f"self-update: pull blocked by non-registry edits {sorted(stray)} "
+                 f"— staying on current code ({behind} behind)")
+            try:
+                from automations.day_orchestrator import notify
+                notify.post_alert(
+                    "🔄 Runner couldn't self-update",
+                    [f"`{REPO_ROOT.name}` is {behind} commit(s) behind origin/main "
+                     "and a fast-forward is blocked by local edits:",
+                     *[f"• `{f}`" for f in sorted(stray)],
+                     "Running on the CURRENT (possibly stale) code today. Resolve "
+                     "on the machine (commit or `git stash`) so tomorrow pulls "
+                     "clean — a committed fix/HALT won't reach this runner until "
+                     "then."],
+                    tag="self-update-blocked", dry_run=dry_run)
+            except Exception:  # noqa: BLE001 — an alert must never break the run
+                pass
+            return
+        for f in sorted(tracked):
+            git("checkout", "--", f)
+        if git("pull", "--ff-only", "--quiet").returncode == 0:
+            _log(f"self-update: reset registry drift ({', '.join(sorted(tracked))})"
+                 f" and pulled {behind} commit(s)")
+        else:
+            _log("self-update: still blocked after registry reset — staying on "
+                 "current code")
+    except Exception as e:  # noqa: BLE001 — a self-update must never break the day
+        _log(f"self-update skipped ({type(e).__name__}: {str(e)[:120]})")
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Day orchestrator (Mac mini scheduler).")
     ap.add_argument("--date")
@@ -122,6 +204,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "--dry-run (reports still write nothing). Use this for "
                          "the dry-run week so the summaries actually arrive.")
     args = ap.parse_args(argv)
+
+    # Pull committed fixes/HALTs before anything reads config or spawns reports,
+    # so this runner never runs a second day on code Megan already fixed upstream.
+    _self_update(dry_run=bool(args.dry_run or args.simulate))
 
     cfg = registry.load_config()
     s = cfg.settings
