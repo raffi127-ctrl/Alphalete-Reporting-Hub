@@ -309,3 +309,104 @@ def write_board(board, period, month_name, comp_year, through=None,
     except Exception as e:  # noqa: BLE001 — logging must never break delivery
         return {"ok": False, "tab": title, "gid": None, "url": sheet_url(),
                 "reps": len(rows), "error": "%s: %s" % (type(e).__name__, e)}
+
+
+# ---------------------------------------------------------------------------
+# PER-DAY month tab (Megan's TEMPLATE layout: '#', 'REP NAME', 'MONTH TOTALS',
+# then one column per calendar day). Auto-creates the month tab from TEMPLATE and
+# fills the daily grid, sorted highest->lowest. This is the layout wired into the
+# daily run (build_board attaches r['days'] = [{'d': iso, 'tot': swing}, ...]).
+# ---------------------------------------------------------------------------
+_MONTHS = {m: i for i, m in enumerate(
+    ["January", "February", "March", "April", "May", "June", "July",
+     "August", "September", "October", "November", "December"], 1)}
+
+
+def _month_num(name):
+    return _MONTHS.get(str(name).strip().title(), 1)
+
+
+def _rng(r0, c0, r1, c1):
+    return "%s%d:%s%d" % (_a1_col(c0), r0 + 1, _a1_col(c1), r1 + 1)
+
+
+def _locate_daygrid(values):
+    """Find the header row + the rank/name/total columns and the run of day
+    columns after 'MONTH TOTALS'. Robust to the template placeholder ('MM/DD/YY')
+    or already-filled dates. Returns (hrow, rank_c, name_c, total_c, [day_cols])."""
+    for i, row in enumerate(values[:5]):
+        m = {_norm_h(c): j for j, c in enumerate(row) if isinstance(c, str) and c.strip()}
+        name_c = next((m[k] for k in ("rep name", "rep", "name") if k in m), None)
+        total_c = next((m[k] for k in ("month totals", "total", "total points", "points") if k in m), None)
+        if name_c is not None and total_c is not None:
+            rank_c = next((m[k] for k in ("#", "rank", "place", "pos") if k in m), None)
+            day_cols = []
+            hdr = row
+            c = total_c + 1
+            while c < len(hdr) and str(hdr[c]).strip() and len(day_cols) < 40:
+                day_cols.append(c); c += 1
+            return i, rank_c, name_c, total_c, day_cols
+    return None, None, None, None, []
+
+
+def fill_month_tab(board, period, month_name, comp_year, dry_run=False):
+    """Auto-create '<Month> <Year>' from TEMPLATE (once) and fill the per-day grid
+    ranked highest->lowest: rank, name, MONTH TOTALS (full competition total), and
+    each day's point swing in its date column. Only the grid columns are touched,
+    so any preview panel to the side survives. Never raises."""
+    import datetime
+    title = "%s %s" % (month_name, comp_year)
+    rows = sorted(board, key=lambda r: (-r.get("total", 0), r.get("name", "")))
+    if dry_run:
+        return {"ok": True, "tab": title, "reps": len(rows), "url": sheet_url(), "dry_run": True}
+    try:
+        import gspread as _gs
+        yr, mo = int(comp_year), _month_num(month_name)
+        import calendar as _cal
+        ndays = _cal.monthrange(yr, mo)[1]
+        sh = _fill.open_by_key(SHEET_ID)
+        try:
+            ws = sh.worksheet(title)
+        except _gs.WorksheetNotFound:
+            tmpl = sh.worksheet(TEMPLATE_TAB)
+            ws = sh.duplicate_sheet(source_sheet_id=tmpl.id, new_sheet_name=title, insert_sheet_index=1)
+        hrow, rank_c, name_c, total_c, day_cols = _locate_daygrid(ws.get_all_values())
+        if name_c is None or total_c is None:
+            return {"ok": False, "tab": title, "url": sheet_url(),
+                    "error": "template header not found (need 'REP NAME' + 'MONTH TOTALS')"}
+
+        cols = [c for c in [rank_c, name_c, total_c] if c is not None] + day_cols
+        first_c, last_c = min(cols), max(cols)
+        width = last_c - first_c + 1
+        start = hrow + 1                                   # 0-based first data row
+        height = max(len(rows) + 6, 60)                    # extra rows clear stale reps
+        block = [["" for _ in range(width)] for _ in range(height)]
+        iso_of = {k: datetime.date(yr, mo, k + 1).isoformat() for k in range(ndays)}
+        for i, r in enumerate(rows):
+            daymap = {d["d"]: d["tot"] for d in r.get("days", [])}
+            if rank_c is not None:
+                block[i][rank_c - first_c] = i + 1
+            block[i][name_c - first_c] = r.get("name", "")
+            block[i][total_c - first_c] = round(r.get("total", 0))
+            for k, ci in enumerate(day_cols):
+                if k < ndays:
+                    v = daymap.get(iso_of[k])
+                    if v:
+                        block[i][ci - first_c] = round(v)
+        reqs = [{"range": _rng(start, first_c, start + height - 1, last_c), "values": block}]
+        if day_cols:
+            hspan = ["" for _ in range(day_cols[-1] - day_cols[0] + 1)]
+            for k, ci in enumerate(day_cols):
+                if k < ndays:
+                    hspan[ci - day_cols[0]] = "%d/%d/%s" % (mo, k + 1, str(yr)[2:])
+            reqs.append({"range": _rng(hrow, day_cols[0], hrow, day_cols[-1]), "values": [hspan]})
+        ws.batch_update(reqs, value_input_option="USER_ENTERED")
+        try:
+            ws.freeze(rows=hrow + 1, cols=(name_c + 1))
+        except Exception:
+            pass
+        return {"ok": True, "tab": title, "gid": ws.id, "url": sheet_url(ws.id),
+                "reps": len(rows), "days_filled": ndays, "dry_run": False}
+    except Exception as e:  # noqa: BLE001 — logging must never break delivery
+        return {"ok": False, "tab": title, "url": sheet_url(),
+                "error": "%s: %s" % (type(e).__name__, e)}
