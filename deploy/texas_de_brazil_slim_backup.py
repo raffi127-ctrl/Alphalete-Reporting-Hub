@@ -282,7 +282,7 @@ def read_recruiting(recruit_file):
 
 def read_leadership(sales_file):
     """Latest weekly tab -> {name: {status, trainer, best}}. Columns found by HEADER
-    TEXT, not fixed letters, so a layout shift can't silently misread."""
+    TEXT, not fixed letters."""
     wb = openpyxl.load_workbook(sales_file, read_only=True, data_only=True)
     out = {}
     for tab in reversed(sales_week_tabs(wb)):
@@ -325,8 +325,7 @@ def read_leadership(sales_file):
     return out
 
 def update_leaders_state(leadership):
-    """Baseline each rep's status, then accumulate promotions to 'Level 1' and
-    car-ride 'BEST'. First sighting only seeds. Returns (promotions, car)."""
+    """Accumulate promotions to 'Level 1' + car-ride 'BEST'; first sighting seeds."""
     try:
         state = json.loads(open(LEADERS_STATE).read())
     except Exception:
@@ -369,8 +368,7 @@ def load_leaders_state():
     return state.get("new_leaders") or [], state.get("car_ride") or []
 
 def load_manual_inputs():
-    """Hub-typed additions -> (promotions, solo, car_ride). A line is
-    'Promoter > New Leader' or just 'New Leader'. Never raises."""
+    """Hub-typed additions -> (promotions, solo, car_ride). Never raises."""
     prom, solo, car = [], [], []
     try:
         data = json.loads(open(MANUAL_INPUTS).read())
@@ -439,8 +437,11 @@ def build_board(sales_file, recruit_file):
             "acc": 0.0, "show": 0.0, "acc_p": 0.0, "show_p": 0.0, "brk_p": 0.0, "car_p": 0.0,
             "adj_p": 0.0,
         }
+    ci = {k.lower(): k for k in rized}
     for rn, (acc, show) in recruit.items():
         key = akey(rn)
+        # case-only spelling differences between the two sheets must still match
+        key = key if key in rized else ci.get(key.lower(), key)
         if key in EXCLUDE or key not in rized:
             continue
         rized[key]["acc"] += acc; rized[key]["show"] += show
@@ -891,8 +892,7 @@ def _crop_trailing_black(path, thresh=28, pad=24):
         im.crop((0, 0, w, bbox[3] + pad)).save(path)
 
 def pdf_to_pngs(pdf_path, outdir, dpi=100):
-    """Each PDF page -> PNG. iMessage delivers inline images to a group reliably; a
-    PDF attachment often shows on the sender but reaches nobody else."""
+    """Each PDF page -> PNG; iMessage delivers inline images to a group reliably."""
     fitz = _ensure_fitz()
     doc = fitz.open(pdf_path); out = []
     for i, page in enumerate(doc):
@@ -904,8 +904,8 @@ def pdf_to_pngs(pdf_path, outdir, dpi=100):
     return out
 
 def send_imessage(image_paths, *, dry_run=True):
-    """Text the A-Team group (macOS only): header + one PNG per page. The delay
-    after each image lets Messages finish uploading, else recipients get nothing."""
+    """Text the A-Team group (macOS only). The delay after each image lets Messages
+    finish uploading, else recipients get nothing."""
     if sys.platform != "darwin":
         print("  iMessage: SKIPPED — not macOS"); return {"skipped": "not_darwin"}
     if not IMESSAGE_CHAT_ID:

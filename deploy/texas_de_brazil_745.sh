@@ -60,13 +60,20 @@ echo "[$(date)] Texas de Brazil daily run starting (extra args: ${*:-none})" > "
 "$VENV_PY" -u -m automations.day_orchestrator.library_self_heal june_texas_de_brazil_monthly_competition >> "$LOG_FILE" 2>&1 || true
 
 # Sync the Hub-card dinner date + backfill leaders from the shared 'TdB Manual
-# Inputs' store into this machine's local JSON (dinner_schedule + leaders text).
+# Inputs' store into this machine's local JSON (dinner_schedule + leaders text),
+# and PULL the auto-detected leaders other machines have seen. The detections
+# used to live only in this machine's local json, so a run from the laptop paid
+# out fewer Break-a-Leader / car-ride bonuses than the same run on the mini.
 "$VENV_PY" -u -m automations.day_orchestrator.tdb_sync_inputs >> "$LOG_FILE" 2>&1 || true
 
 # LIVE by default (--send). Any extra arg (e.g. --dry-run) is appended and wins.
 if [ "$#" -eq 0 ]; then set -- --send; fi
 "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
+
+# PUSH back what THIS run just auto-detected, so the next run on any other
+# machine pays it out too. (Same command — the sync is a two-way union.)
+"$VENV_PY" -u -m automations.day_orchestrator.tdb_sync_inputs >> "$LOG_FILE" 2>&1 || true
 
 echo "[$(date)] Texas de Brazil run finished exit=$ST" >> "$LOG_FILE"
 

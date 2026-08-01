@@ -26,6 +26,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SEED_FILE = _REPO_ROOT / "deploy" / "texas_de_brazil_manual_inputs.json"
 LOCAL_INPUTS = Path.home() / "recruiting-report" / "output" / "texas_de_brazil_manual.json"
+LOCAL_LEADERS = Path.home() / "recruiting-report" / "output" / "texas_de_brazil_leaders_state.json"
 
 
 def _current_period() -> str:
@@ -100,17 +101,70 @@ def sync(*, period: str | None = None) -> dict:
     return {"ok": True, "period": period, "changed": changed, "local": str(LOCAL_INPUTS)}
 
 
+def sync_leaders(*, period: str | None = None) -> dict:
+    """Two-way UNION of this machine's auto-detected leaders with the shared
+    store, so a report run from any machine pays out every Break-a-Leader and
+    car-ride bonus — not just the ones this machine happened to witness.
+
+    Only new_leaders / car_ride cross machines; `baseline` stays local (see
+    tdb_leaders_store). Union-only, current period only, never raises."""
+    period = period or _current_period()
+    try:
+        state = json.loads(LOCAL_LEADERS.read_text()) if LOCAL_LEADERS.exists() else {}
+        if not isinstance(state, dict):
+            state = {}
+    except Exception:
+        state = {}
+    # A stale-period local file is about to be reset by the report anyway; treat
+    # its detections as belonging to that other month, not this one.
+    same = str(state.get("period") or period) == period
+    local_p = [list(p) for p in (state.get("new_leaders") or [])] if same else []
+    local_c = list(state.get("car_ride") or []) if same else []
+
+    try:
+        from automations.day_orchestrator import tdb_leaders_store as store
+        merged = store.merge(period, local_p, local_c, by="sync")
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "reason": f"store unreachable: {type(e).__name__}: {e}"}
+
+    gained_p = [p for p in merged["new_leaders"]
+                if p[1].lower() not in {str(x[1]).lower() for x in local_p}]
+    gained_c = [n for n in merged["car_ride"] if n.lower() not in {x.lower() for x in local_c}]
+    if gained_p or gained_c:
+        state["period"] = period
+        state.setdefault("baseline", state.get("baseline") or {})
+        state["new_leaders"] = merged["new_leaders"]
+        state["car_ride"] = merged["car_ride"]
+        try:
+            LOCAL_LEADERS.parent.mkdir(parents=True, exist_ok=True)
+            LOCAL_LEADERS.write_text(json.dumps(state, indent=2, ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "reason": f"local write failed: {type(e).__name__}: {e}"}
+    return {"ok": True, "period": period, "pulled_leaders": [p[1] for p in gained_p],
+            "pulled_car": gained_c, "shared_total": len(merged["new_leaders"]),
+            "shared_car": len(merged["car_ride"])}
+
+
 def main() -> int:
     r = sync()
     if not r.get("ok"):
         print(f"[tdb_sync_inputs] skipped — {r.get('reason')}")
-        return 0
-    if r.get("changed"):
+    elif r.get("changed"):
         print(f"[tdb_sync_inputs] synced {r['period']} -> {r['local']}")
         for c in r["changed"]:
             print(f"[tdb_sync_inputs]   {c}")
     else:
         print(f"[tdb_sync_inputs] {r['period']} already up to date")
+
+    L = sync_leaders()
+    if not L.get("ok"):
+        print(f"[tdb_sync_inputs] leaders skipped — {L.get('reason')}")
+    else:
+        if L["pulled_leaders"] or L["pulled_car"]:
+            print(f"[tdb_sync_inputs] leaders pulled from other machines: "
+                  f"promotions={L['pulled_leaders']} car_ride={L['pulled_car']}")
+        print(f"[tdb_sync_inputs] leaders shared for {L['period']}: "
+              f"{L['shared_total']} promotion(s), {L['shared_car']} car-ride")
     return 0
 
 
