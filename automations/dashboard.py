@@ -4097,32 +4097,36 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "all-units-board-email",
-        "name": "All Units Org Sales Board Email",
+        "id": "all-units-board",
+        "name": "All Units Org Sales Board",
         "creator": "Eve & Claude",
         "emoji": "📦",
         "color": "#7C3AED",
         "category": "📊 Metrics",
-        "description": "Emails an exact-sheet screenshot of the 'All Campaigns Org Sales Board' tab to Rafael and Maud Miller. Behind the #revision-emails review gate: nothing goes out until Evelyn or Jolie puts a checkmark on the day's post.",
+        "description": "Fills the 'All Campaigns Org Sales Board' tab: every rep's daily units summed across ALL campaigns, one line per person. Its screenshot rides in the Org Sales Board email — this board no longer sends a mail of its own.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Renders the whole All Campaigns Org Sales Board tab with the SAME "
-            "function its Slack DM uses (Sheets PDF export — exact "
-            "colors/fonts/borders, no browser), builds the email, and posts it "
-            "for review. The captured range is measured from the tab's own "
-            "content each run, so a new rep or campaign row is included "
-            "automatically.\n\n"
-            "THE REVIEW GATE\n"
-            "The 4am flow posts the day's PDF in #revision-emails (not before "
-            "09:30) and mails nothing. A ✅ from Evelyn or Jolie releases it, "
-            "picked up within 15 minutes by the watcher on the mini. The send "
-            "mails the image ALREADY captured — what was approved is what goes "
-            "out, even if the board moves in between.\n\n"
-            "WHO GETS IT\n"
-            "Rafael + Maud Miller only.\n\n"
-            "THE SUBJECT SAYS YESTERDAY\n"
-            "The board only ever holds completed days, so a run on the 30th is "
-            "showing the 29th's sales."
+            "Reads the eight campaign daily sections off the ORG board's Copy "
+            "tab, sums each rep across all of them, and writes the Mon-Sun day "
+            "values into this board's 'All Units' section. Everything else on "
+            "the tab is formula-driven and auto-derives: running week total, "
+            "the weekly leaderboard column, Product Summary, vs-Prior and the "
+            "Grand Total.\n\n"
+            "SHEET-DRIVEN\n"
+            "Fills every rep row already on the board (0 if they had no sales) "
+            "and never transcribes the source name list. A rep who sold on a "
+            "campaign but has NO row here is FLAGGED, not silently dropped, so "
+            "a new rep can't vanish from the ranking.\n\n"
+            "ITS EMAIL LIVES IN THE ORG BOARD EMAIL (2026-07-31)\n"
+            "This board used to mail Rafael + Maud on its own, behind its own "
+            "#revision-emails gate. Eve merged the two: its four blocks are now "
+            "a second section of the Alphalete Org Sales Board email, under a "
+            "divider, and one checkmark releases both. Use the Org Sales Board "
+            "Email card to build or send it — there is nothing to send "
+            "here.\n\n"
+            "RUNS AFTER THE ORG BOARD\n"
+            "It reads what the ORG board's fill just wrote, so it is scheduled "
+            "behind it and would show yesterday's numbers if run first."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/"
@@ -4130,35 +4134,31 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
-            "time": "9:30 AM",
             "estimated_minutes": 3,
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Posted for review in #revision-emails — it sends when Evelyn or Jolie ticks it.",
+            "message_success": "✅ Board filled. Its screenshot goes out inside the Org Sales Board email.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
             {
-                "label": "Build + post for review",
+                "label": "Fill the board",
                 "icon": "▶",
                 "primary": True,
-                "help": "Captures the board, builds the email, uploads the PDF and posts the link in #revision-emails. Sends nothing.",
-                "module": "automations.board_emails.review_gate",
-                "args_fn": lambda: ["--board", "all-units", "--post"],
+                "help": "Writes today's per-rep day values to the board (and rolls the week over on a Tuesday).",
+                "module": "automations.all_campaigns_board.run",
+                "args_fn": lambda: ["--apply", "--enable-rollover"],
             },
             {
-                "label": "Preview only (no Slack)",
+                "label": "Preview only (no writes)",
                 "icon": "👁",
-                "help": "Builds output/board_emails/all-units/<date>/preview.html and stops. No Drive, no Slack, no email.",
-                "module": "automations.board_emails.email_send",
-                "args_fn": lambda: ["--board", "all-units", "--dry-run"],
+                "help": "Shows exactly what would be written and touches nothing. This is the module's default.",
+                "module": "automations.all_campaigns_board.run",
+                "args_fn": lambda: [],
             },
         ],
     },
-    # The Country Sales Board pair, kept adjacent to the Org Sales Board cards
-    # above because they're the same shape: a fill card, then the Slack DM that
-    # renders what the fill just wrote.
     {
         "id": "country-sales-board",
         "name": "Country Sales Board",
