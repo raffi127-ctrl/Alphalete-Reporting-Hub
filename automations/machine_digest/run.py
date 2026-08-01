@@ -256,9 +256,15 @@ def _orchestrator_ids(cfg, target_date) -> set:
 
 def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
-    else 'Lucy 1' — so a both-machine alert says which box it ran on."""
+    'the mini' for the scheduler Mac mini, else 'Lucy 1' — so an alert names the
+    box it actually ran on. The scheduler mini runs the single-session ownerville
+    reports (STF Field Check, etc.); defaulting those to 'Lucy 1' sent people to
+    the wrong machine to diagnose them. Lucy-2 check stays first so Carlos's own
+    Mac mini (a lucy2_host) is still labeled 'Lucy 2'."""
     if lucy2_hosts and _machine_matches(row_machine, lucy2_hosts, exact=False):
         return "Lucy 2"
+    if "alphaletes-mac-mini" in (row_machine or "").lower():
+        return "the mini"
     return "Lucy 1"
 
 
@@ -296,10 +302,12 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
         if not cid:
             continue
-        rec = seen.setdefault(cid, {"days": set(), "hours": [], "machine": "", "name": cid})
+        rec = seen.setdefault(cid, {"days": set(), "hour_by_day": {}, "machine": "", "name": cid})
         rec["days"].add(d)
         try:
-            rec["hours"].append(_dt.datetime.fromisoformat(started).hour)
+            h = _dt.datetime.fromisoformat(started).hour
+            # keep the EARLIEST start on each day (a day may hold several runs)
+            rec["hour_by_day"][d] = min(h, rec["hour_by_day"].get(d, h))
         except Exception:
             pass
         rec["machine"] = str(r.get("Machine") or "") or rec["machine"]
@@ -307,7 +315,17 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     out = {}
     for cid, rec in seen.items():
         if last_week in rec["days"] and len(rec["days"]) >= min_days:
-            out[cid] = {"start_hour": min(rec["hours"]) if rec["hours"] else 0,
+            # Anchor "usual start" to the MOST RECENT same-weekday, NOT min() across
+            # the whole window. A one-off cluster of early/test runs on some past
+            # same-weekday (e.g. STF's install day 2026-07-17 had 19:xx test runs on
+            # top of its real 23:00 run) would otherwise drag start_hour hours earlier
+            # for weeks and fire a bogus "didn't run" alert every same-weekday before
+            # the report's real nightly time. last_week is guaranteed present by the
+            # gate above; fall back to the window min only if its hour didn't parse.
+            start_hour = rec["hour_by_day"].get(last_week)
+            if start_hour is None:
+                start_hour = min(rec["hour_by_day"].values()) if rec["hour_by_day"] else 0
+            out[cid] = {"start_hour": start_hour,
                         "machine": rec["machine"], "name": rec["name"]}
     return out
 

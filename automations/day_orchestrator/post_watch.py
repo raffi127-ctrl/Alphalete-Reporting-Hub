@@ -160,13 +160,13 @@ WATCH_TARGETS: List[WatchTarget] = [
     WatchTarget(
         report_id="stf_field_check",
         display_name="STF Field Check (post watch)",
-        machine="Lucy 1",
+        machine="the mini",   # ownerville is single-session → runs on the scheduler mini, not a Lucy box
         deadline="07:00",   # last night's 23:00 run should have left its marker
         marker_glob="output/logs/.stf-field-check-done-{date}",
         prior_day=True,     # runs 23:00 → check YESTERDAY's marker this morning
         note="last night's 23:00 STF Field Check left no done-marker — its launchd "
              "entry may have stopped firing",
-        rerun_hint="on Lucy 1: bash deploy/stf_field_check_11pm.sh",
+        rerun_hint="on the mini: bash deploy/stf_field_check_11pm.sh",
         wrapper="deploy/stf_field_check_11pm.sh",
         agent="stf-field-check-11pm",
     ),
