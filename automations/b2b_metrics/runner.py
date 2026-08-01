@@ -236,7 +236,7 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
 
 def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         channel_override: str = None, today: dt.date = None, force: bool = False,
-        log=print) -> dict:
+        new_thread: bool = False, log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
     # Capture/post in the SAME resolved order the header enumerates (plan-aware,
@@ -253,7 +253,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     # (normally just the deferred order-log), not the whole thread. Cheap: thread
     # state is a Sheet read, no Slack client. Skipped under --force (which exists
     # to re-post) and --channel (a verification post with its own scratch thread).
-    if post and not force and not channel_override and not getattr(o, "channel_plans", ()):
+    if (post and not force and not new_thread and not channel_override
+            and not getattr(o, "channel_plans", ())):
         import automations.b2b_quality.run as _bq
         _tgts = [o.channel_id] + [c for c, _n in o.mirror_channels
                                   if c != o.channel_id]
@@ -350,6 +351,16 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         state = bq._load_state(today, chan)
         already = list(state.get("posted") or [])
         ts = state.get("thread_ts") or bq.find_thread_ts(client, chan, today)
+        # --new-thread: abandon the stored thread and open a fresh one. Needed
+        # when the stored ts no longer names a live message in THIS channel —
+        # a deleted parent, or a ts that belongs to another channel. Slack does
+        # not error on that: files_upload_v2 quietly drops thread_ts and the
+        # section lands at CHANNEL ROOT, so the thread silently unravels into
+        # loose images (Jamis, 2026-08-01). We can't detect it by reading —
+        # Lucy's token can't read these channels — so this is the manual lever.
+        if new_thread:
+            log("  [{}] --new-thread: ignoring stored ts={}".format(chan, ts))
+            ts, already = None, []
         if not ts:
             ts = client.chat_postMessage(
                 channel=chan, text=header_text(o, today)).get("ts")
@@ -414,6 +425,10 @@ def main(argv=None) -> int:
                          "shows the full captured image)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
+    ap.add_argument("--new-thread", action="store_true",
+                    help="abandon today's stored thread and open a fresh one "
+                         "(use when the parent was deleted or the sections "
+                         "landed at channel root instead of in the thread)")
     ap.add_argument("--force", action="store_true",
                     help="re-post even items already in today's thread state "
                          "(backfill a fixed item over a bad one). Pair with "
@@ -498,7 +513,8 @@ def main(argv=None) -> int:
         o = _off.get(key)
         try:
             res = run(o, post=args.post, only=args.only, dm=args.dm,
-                      channel_override=args.channel, today=today, force=args.force)
+                      channel_override=args.channel, today=today, force=args.force,
+                      new_thread=args.new_thread)
             print("\nresult ({}):".format(key), res)
             missed = res.get("missed") or []
             present = res.get("present") or []
