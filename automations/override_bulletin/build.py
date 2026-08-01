@@ -77,8 +77,15 @@ EMAIL_FROM = "alphaletereporting@gmail.com"
 # BOTH captain teams, and the bulletins distro. We had only 2 — the captain teams
 # were missing (Megan 2026-07-30 Loom review). Names match the groups in
 # alphaletereporting@'s contacts (same as org_sales_board's captain-team groups).
+# Distro = Eve's final list (Slack, confirmed by Raf 2026-07-31 / Eve 8-01): the
+# original 4 groups plus Jairo's, Starr's, and Colten's Captainships. Verify the
+# three new groups exist in Google Contacts with the right members on the
+# AUTHORIZED runner (the laptop's contacts auth returns degenerate data) before
+# the first full send.
 EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
-                "Carlos' Captain Team", "Bulletins"]
+                "Carlos' Captain Team", "Bulletins",
+                "Jairo's Captainship", "Starr's Captainship",
+                "Colten's Captainship"]
 # Slack targets for the posted image (VA sent to both).
 SLACK_CHANNELS = ["#alphalete-sales", "#rafs-office-recruiting"]
 
