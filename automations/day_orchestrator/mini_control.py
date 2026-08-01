@@ -105,7 +105,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "sheets_login", "set_sheets_cookies"}
+                    "sheets_login", "set_sheets_cookies", "sheets_whoami"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -806,6 +806,85 @@ def _action_ping(args: str) -> tuple[bool, str]:
     queue. No side effects; used to verify the deploy."""
     import socket
     return True, f"pong from {socket.gethostname()} @ {_now()}"
+
+
+def _action_sheets_whoami(args: str) -> tuple[bool, str]:
+    """READ-ONLY: what Google identity does THIS machine's Sheets token use, and
+    which office boards can it actually open?
+
+    Why this exists (2026-08-01): Jamis's B2B board 403'd on Lucy 2 while other
+    boards opened, and there was no way to answer 'which account IS Lucy 2?'
+    without a person at the machine. A spreadsheets-scoped OAuth token can NOT
+    self-report its email — Google's tokeninfo returns no `sub`/`email` for that
+    grant and userinfo 401s — so the answer has to be triangulated: the token's
+    own recorded account (when the flow saved one), plus a per-board open test
+    whose FULL error body is printed rather than swallowed.
+
+    Prints NO secrets: client-id tail only, never the token or refresh token.
+
+    A per-board 403 means 'this identity isn't on that file'. A failure at
+    REFRESH instead means the token itself is dead — a different fix (re-auth)
+    than adding a share. This tells the two apart in one run.
+    """
+    import json as _json
+    from pathlib import Path as _P
+
+    tok = _P.home() / ".config" / "recruiting-report" / "oauth-token.json"
+    out = [f"sheets token: {tok}"]
+    if not tok.exists():
+        return False, "\n".join(out + ["MISSING — run sheets_auth on this machine"])
+    try:
+        j = _json.loads(tok.read_text())
+    except Exception as e:  # noqa: BLE001
+        return False, "\n".join(out + [f"unreadable: {e}"])
+    cid = str(j.get("client_id") or "")
+    # Project number (the leading segment), not the trailing '…googleusercontent
+    # .com' every client shares — that tail distinguishes nothing.
+    out.append("recorded account: {!r}   oauth client: {}".format(
+        j.get("account") or "(none — the auth flow didn't save one)",
+        cid.split("-")[0] or "?"))
+    out.append(f"scopes: {j.get('scopes')}   expiry: {j.get('expiry')}")
+
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        creds = Credentials.from_authorized_user_file(
+            str(tok), ["https://www.googleapis.com/auth/spreadsheets"])
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                out.append("refresh: OK (token was expired, refreshed cleanly)")
+            else:
+                return False, "\n".join(out + [
+                    "refresh: IMPOSSIBLE (no refresh token) — TOKEN IS DEAD, "
+                    "re-auth with sheets_auth on this machine"])
+        else:
+            out.append("refresh: not needed (token still valid)")
+        import gspread
+        gc = gspread.authorize(creds)
+    except Exception as e:  # noqa: BLE001
+        return False, "\n".join(out + [
+            f"AUTH FAILED: {type(e).__name__}: {e} — the token itself is the "
+            "problem (re-auth), NOT sheet sharing"])
+
+    # Per-board open test. Names are the B2B office boards; a 403 here is a
+    # per-FILE denial for whatever identity the token carries.
+    boards = [
+        ("carlos", "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"),
+        ("atef", "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30"),
+        ("jamis", "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU"),
+    ]
+    for name, key in boards:
+        try:
+            out.append(f"  {name:7} OPEN OK — {gc.open_by_key(key).title!r}")
+        except Exception as e:  # noqa: BLE001
+            cause = getattr(e, "__cause__", None)
+            resp = getattr(cause, "response", None)
+            code = getattr(resp, "status_code", None)
+            body = (getattr(resp, "text", "") or "")[:300].replace("\n", " ")
+            out.append(f"  {name:7} {type(e).__name__} http={code} {body}")
+    out.append("READ-ONLY probe — nothing was written or posted.")
+    return True, "\n".join(out)
 
 
 def _action_diag(args: str) -> tuple[bool, str]:
@@ -2131,6 +2210,7 @@ ACTIONS = {
     "set_sheets_cookies": _action_set_sheets_cookies,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
+    "sheets_whoami": _action_sheets_whoami,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,
 }
