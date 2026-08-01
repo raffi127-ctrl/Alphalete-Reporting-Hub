@@ -105,7 +105,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "sheets_login", "set_sheets_cookies", "sheets_whoami"}
+                    "sheets_login", "set_sheets_cookies", "sheets_whoami",
+                    "clear_untracked"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -806,6 +807,69 @@ def _action_ping(args: str) -> tuple[bool, str]:
     queue. No side effects; used to verify the deploy."""
     import socket
     return True, f"pong from {socket.gethostname()} @ {_now()}"
+
+
+# Paths that a materializing action (onboard_apply) writes into the working tree
+# as UNTRACKED, and that are ALSO committed upstream. That exact combination is
+# what makes `git pull --ff-only` abort with "untracked working tree files would
+# be overwritten by merge" — which silently STRANDS a runner: every deploy fails,
+# the machine drifts further behind, and no whitelisted action could fix it
+# (git_stash skips untracked files by design). Lucy 2 sat 15 commits behind for
+# 11 hours on exactly this, 2026-08-01.
+#
+# An ALLOWLIST, deliberately — not a path argument and emphatically not
+# `git clean -fdx`, which would also wipe the browser-profile and extractor-cache
+# directories that live untracked next to these and take a login to rebuild.
+CLEARABLE_STRAYS = (
+    "automations/b2b_metrics/onboarded_offices.json",
+    "automations/office_metrics/onboarded_offices.json",
+)
+
+
+def _action_clear_untracked(args: str) -> tuple[bool, str]:
+    """Move ONE known stray untracked file aside so a blocked `update` can pull.
+
+    Safe by construction, in four ways:
+      * allowlist only — CLEARABLE_STRAYS, nothing else, no wildcards
+      * refuses directories (the caches/profiles next door are directories)
+      * refuses anything git reports as TRACKED — that's git_stash's job
+      * MOVES to output/stray-backups/ rather than deleting, so it's recoverable
+        the same way git_stash is
+
+    The file is committed upstream, so the very next `update` restores it.
+    """
+    import shutil
+    from pathlib import Path as _P
+
+    rel = (args or "").strip()
+    allowed = ", ".join(CLEARABLE_STRAYS)
+    if not rel:
+        return False, f"clear_untracked needs a path. allowed: {allowed}"
+    if rel not in CLEARABLE_STRAYS:
+        return False, (f"{rel!r} is not clearable — this action is an ALLOWLIST, "
+                       f"not a git clean. allowed: {allowed}")
+
+    target = _P(REPO_ROOT) / rel
+    if not target.exists():
+        return True, f"{rel} already absent — nothing to clear"
+    if target.is_dir():
+        return False, (f"{rel} is a DIRECTORY — refusing (single files only; a "
+                       "directory here would be a profile/cache, not a stray)")
+
+    p = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--short", "--", rel],
+                       capture_output=True, text=True, timeout=60)
+    line = (p.stdout or "").strip()
+    if not line.startswith("??"):
+        return False, (f"{rel} is NOT untracked (git says {line or 'clean'!r}) — "
+                       "refusing. Tracked edits belong in git_stash.")
+
+    backup_dir = _P(REPO_ROOT) / "output" / "stray-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    dest = backup_dir / "{}.{}.bak".format(target.name, _now().replace(":", "-"))
+    shutil.move(str(target), str(dest))
+    return True, ("moved {} -> output/stray-backups/{} (RECOVERABLE — moved, not "
+                  "deleted). `update` will now restore it as a tracked file."
+                  .format(rel, dest.name))
 
 
 def _action_sheets_whoami(args: str) -> tuple[bool, str]:
@@ -2211,6 +2275,7 @@ ACTIONS = {
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "sheets_whoami": _action_sheets_whoami,
+    "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,
 }
