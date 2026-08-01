@@ -44,7 +44,13 @@ export PYTHONPATH="$(pwd)"
 
 # send.py builds both pages itself (dd_send calls dd_build), so this one command
 # is the whole report — no separate build step to keep in sync.
-ARGS=(--dd --test --send)
+# FULL-ORG GO-LIVE (Megan 2026-07-31): --dd --send --notify = both contact groups
+# ("Alphalete Org Owners" + "Bulletins") + the 3 Slack channels, and on any data
+# gap (Credico pending / missing row) it alerts #claudecorrections and sends anyway
+# rather than refusing. A stale/empty week still HARD-blocks (never republishes).
+# The RCs/NCs companion below mirrors this → both go full to the org. To pull back
+# to the 4-person soft-launch group, restore ARGS=(--dd --test --send).
+ARGS=(--dd --send --notify)
 [ "${1:-}" = "--dry" ] && ARGS=(--dd)
 
 LOG_FILE="$LOG_DIR/dd-bulletin-$(date +%Y-%m-%d-%H%M%S).log"
