@@ -30,6 +30,7 @@ from __future__ import annotations  # Lucy 1 / mini run Python 3.9
 
 import argparse
 import datetime as dt
+import time
 
 from . import config
 from . import sheets
@@ -258,19 +259,43 @@ def _runs(rownums):
 
 def write_ads(ws, fills, log=print):
     """Write column I only, in contiguous runs. RAW so an Ad that starts with
-    '[' or '=' lands as the literal text it is."""
+    '[' or '=' lands as the literal text it is.
+
+    ONE batched request per chunk of runs, NOT one request per run: the rows
+    that can't be filled break the span into ~190 runs, and 190 back-to-back
+    ws.update() calls tripped Sheets' 'write requests per minute per user' cap
+    mid-run (429, 2026-07-31) — leaving the repair half-done. batch_update
+    sends them as a single write. Re-running is safe either way: only blank-Ad
+    rows are ever candidates, so anything already filled is skipped."""
     if not fills:
         return 0
-    written = 0
+    payload = []
     for start, end in _runs(list(fills)):
-        values = [[fills[n]] for n in range(start, end + 1)]
-        rng = "I{}:I{}".format(start, end)
-        if sheets.DRY_RUN:
-            log("    [dry-run] would write {} cell(s) into {}".format(
-                len(values), rng))
-        else:
-            ws.update(rng, values, value_input_option="RAW")
-        written += len(values)
+        payload.append({"range": "I{}:I{}".format(start, end),
+                        "values": [[fills[n]] for n in range(start, end + 1)]})
+    written = sum(len(p["values"]) for p in payload)
+    if sheets.DRY_RUN:
+        log("    [dry-run] would write {} cell(s) across {} run(s) in {} "
+            "batched request(s)".format(
+                written, len(payload), (len(payload) + 199) // 200))
+        return written
+    for i in range(0, len(payload), 200):
+        chunk = payload[i:i + 200]
+        for attempt in range(5):
+            try:
+                ws.batch_update(chunk, value_input_option="RAW")
+                break
+            except Exception as e:  # noqa: BLE001 — 429/503 are worth waiting out
+                if "429" not in str(e) and "Quota" not in str(e) and attempt == 0:
+                    raise
+                if attempt == 4:
+                    raise
+                wait = 20 * (attempt + 1)
+                log("    (write throttled: retrying in {}s)".format(wait))
+                time.sleep(wait)
+        log("    wrote {} cell(s) [{} of {} run(s)]".format(
+            sum(len(c["values"]) for c in chunk),
+            min(i + 200, len(payload)), len(payload)))
     return written
 
 
