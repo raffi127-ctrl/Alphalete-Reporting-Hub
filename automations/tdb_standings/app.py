@@ -150,29 +150,60 @@ def rep_row(r, show_days):
         cls, medal, _html.escape(r["name"]), chips, r["total"])
 
 
-def main():
+def _recent_titles(n=4):
+    """Current month + the previous n-1, as 'Month YYYY' (newest first)."""
     now = datetime.datetime.now()
-    title = now.strftime("%B %Y")
+    out, y, mo = [], now.year, now.month
+    for _ in range(n):
+        out.append((datetime.date(y, mo, 1).strftime("%B %Y"), y == now.year and mo == now.month))
+        mo -= 1
+        if mo == 0:
+            mo, y = 12, y - 1
+    return out
+
+
+@st.cache_data(ttl=120)
+def month_status(title):
+    """(reps, live) — live = the competition has real points this month."""
+    try:
+        reps, _ = parse_grid(load_month(title))
+    except Exception:
+        return [], False
+    return reps, any(r["total"] for r in reps)
+
+
+def main():
     st.markdown(CSS, unsafe_allow_html=True)
+    # Pick the default month: the current month if it has real points, else the
+    # most recent month that does (so during a fresh month the link still shows
+    # the last live board instead of an empty one).
+    cands = _recent_titles()
+    statuses = {t: month_status(t) for t, _ in cands}
+    have = [t for t, _ in cands if statuses[t][0]]          # months with a roster
+    live = [t for t, _ in cands if statuses[t][1]]          # months with real points
+    cur = cands[0][0]
+    default = cur if statuses[cur][1] else (live[0] if live else (have[0] if have else cur))
+
     st.markdown(
         '<div class="hero"><div class="kick">Texas de Brazil Competition</div>'
         '<div class="brand">Steak on the <em>Line</em></div>'
-        '<div class="month">%s · Standings</div>'
-        '<div class="prize">🥩 Top 10 earn their seat at the table</div></div>' % title.upper(),
+        '<div class="prize">🥩 Top 10 earn their seat at the table</div></div>',
         unsafe_allow_html=True)
-    try:
-        values = load_month(title)
-    except Exception as e:
-        st.warning("Standings for %s aren't posted yet. (%s)" % (title, type(e).__name__))
-        return
-    reps, _ = parse_grid(values)
+
+    c1, c2, c3 = st.columns([3, 2, 2])
+    q = c1.text_input("Find your name", "", placeholder="Type a rep's name…").strip().lower()
+    opts = have or [cur]
+    title = c2.selectbox("Month", opts, index=opts.index(default) if default in opts else 0)
+    show_days = c3.toggle("Show daily breakdown", value=True)
+    st.markdown('<div class="month" style="text-align:center;margin:-4px 0 10px">%s · Standings</div>' % title.upper(),
+                unsafe_allow_html=True)
+
+    reps = statuses.get(title, (None, None))[0]
+    if reps is None:
+        reps, _ = parse_grid(load_month(title))
     if not reps:
         st.info("The %s board hasn't started yet — check back once the competition is underway." % title)
         return
-
-    c1, c2 = st.columns([3, 2])
-    q = c1.text_input("Find your name", "", placeholder="Type a rep's name…").strip().lower()
-    show_days = c2.toggle("Show daily breakdown", value=True)
 
     shown = [r for r in reps if not q or q in r["name"].lower()]
     html_out = ""
