@@ -17,5 +17,25 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "jamis",
+    "label": "#jamis-leaders",
+    "owner": "Jamis Garay",
+    "channel_ids": [
+      "C0BM7P0HPCJ"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr",
+      "order_tiered_bonus"
+    ]
   }
 ]
