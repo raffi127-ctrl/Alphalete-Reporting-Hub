@@ -47,13 +47,20 @@ OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
 def _pull(dest: Path, verbose: bool = True, view_url: str = "",
-          crosstab_sheet: str = "") -> Path:
+          crosstab_sheet: str = "", today: Optional[dt.date] = None) -> Path:
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
+    from . import window
+    # Force the Start/End Date filters to a wide window every run. The SCI
+    # source view's saved date range drifts (found pinned to a 2-day window
+    # 2026-08-01, which truncated the feed to 2 reps) and we can't stop it, so
+    # we override it at pull time. See window.py.
+    start, end = window.default_window(today)
+    hook = window.date_window_hook(start, end, verbose=verbose)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
             view_url or VIEW_URL, crosstab_sheet or CROSSTAB_SHEET, dest,
-            verbose=verbose, page=page)
+            verbose=verbose, page=page, pre_export=hook)
 
 
 def _describe(sales, stats) -> str:
@@ -177,7 +184,7 @@ def main(argv: Optional[list] = None) -> int:
         src = OUTPUT_DIR / "box_order_log_{}.csv".format(today.isoformat())
         try:
             _pull(src, verbose=verbose, view_url=(args.view_url or ""),
-                  crosstab_sheet=(args.crosstab_sheet or ""))
+                  crosstab_sheet=(args.crosstab_sheet or ""), today=today)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()

@@ -44,12 +44,18 @@ CROSSTAB_SHEET = "Order Log"      # same worksheet Carlos's pull uses
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _pull(dest: Path, verbose: bool = True) -> Path:
+def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None) -> Path:
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
+    from . import window
+    # Same SCI date-filter drift hits the base view (all owners) — force the
+    # window so per-owner pulls (Roshan et al.) never truncate. See window.py.
+    start, end = window.default_window(today)
+    hook = window.date_window_hook(start, end, verbose=verbose)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
-            BASE_VIEW_URL, CROSSTAB_SHEET, dest, verbose=verbose, page=page)
+            BASE_VIEW_URL, CROSSTAB_SHEET, dest, verbose=verbose, page=page,
+            pre_export=hook)
 
 
 def _owners_present(sales) -> List[str]:
@@ -113,7 +119,7 @@ def main(argv: Optional[list] = None) -> int:
     else:
         src = OUTPUT_DIR / "box_order_log_all_{}.csv".format(today.isoformat())
         try:
-            _pull(src, verbose=verbose)
+            _pull(src, verbose=verbose, today=today)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
