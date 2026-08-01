@@ -92,6 +92,10 @@ DD_STATE_PATH = STATE_DIR / "dd_bulletin_last_sent.txt"
 # Separate state for the soft-launch test send, so a week of test emails never
 # marks the real distro as "already sent".
 DD_TEST_STATE_PATH = STATE_DIR / "dd_bulletin_test_last_sent.txt"
+# "Up and Coming RCs and NCs" — the email-only companion sent right after the DD
+# bulletin (own idempotency state, separate test state).
+RCS_STATE_PATH = STATE_DIR / "rcs_ncs_last_sent.txt"
+RCS_TEST_STATE_PATH = STATE_DIR / "rcs_ncs_test_last_sent.txt"
 
 
 def _channels(dd=False):
@@ -239,6 +243,11 @@ def dd_caption(week_label):
     return "🏆 Alphalete Organization Bulletin — WE {}".format(md)
 
 
+def rcs_ncs_subject(week_label):
+    md = ".".join((week_label or "").split(".")[:2])
+    return "Alphalete Up and Coming RCs and NCs - WE {}".format(md)
+
+
 def send_dd(*, do_send=False, preview=False, test=False, force=False,
             notify=False, to=None, out_dir=None, credico="auto"):
     """Build → render → (optionally) publish the DD / Organization bulletin.
@@ -374,6 +383,70 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
         mark_sent(week_label, state_path)  # burn the week's send-state on it
     result["published"] = True
     return result
+
+
+def send_rcs_ncs(*, do_send=False, preview=False, test=False, force=False,
+                 notify=False, to=None, out_dir=None):
+    """Publish the "Up and Coming RCs and NCs" infographic — EMAIL ONLY, never
+    Slack (Megan/Eve: same distros as the DD bulletin, no Slack, no body). Built
+    right after the DD bulletin; it reuses dd_data for the wire figures + week, so
+    it inherits the DD hard_block — a wrong/empty DD week never sends a bogus board
+    either. Default is a dry run; --preview = Megan only, --test = the 4-person
+    group, --send = the full distros. Own idempotency state."""
+    from automations.override_bulletin import rcs_ncs_build as RB
+    from automations.override_bulletin import rcs_ncs_data as R
+    from automations.override_bulletin import dd_data as D
+    out = Path(out_dir) if out_dir else RB.OUT_DIR
+
+    dd = D.load()                      # drives wire + week; carries hard_block
+    data = R.load(dd=dd)
+    png = RB.render_png(RB.build(data=data, out_dir=out), out_dir=out)
+    week_label = data["week"]
+    subject = rcs_ncs_subject(week_label)
+
+    if to:
+        to_addrs, missing = list(to), []
+    elif preview:
+        to_addrs, missing = list(PREVIEW_TO), []
+    elif test:
+        to_addrs, missing = list(TEST_TO), []
+    else:
+        to_addrs, missing = recipients()
+
+    hard = dd.get("hard_block") or []
+    print("\nRCs/NCs   : week {}".format(week_label))
+    print("subject   : {}".format(subject))
+    print("email to  : {} address(es){}".format(
+        len(to_addrs), "" if not missing else " (⚠ groups missing: {})".format(
+            ", ".join(missing))))
+    print("hard-block: {}".format("none" if not hard else hard[0]))
+
+    if not (do_send or preview):
+        print("DRY RUN — nothing sent.")
+        return {"published": False, "dry_run": True, "week": week_label,
+                "png": str(png), "to": to_addrs}
+
+    # A wrong/empty DD week means the board's wire figures are wrong too — never
+    # send it, alert instead (same guarantee as the DD bulletin).
+    if hard and do_send:
+        alert_corrections("⛔ RCs/NCs NOT SENT WE {} — {}".format(week_label, hard[0]))
+        print("⛔ HARD BLOCK — NOT SENDING: {}".format(hard[0]))
+        return {"published": False, "reason": "hard block", "week": week_label}
+    if missing and do_send:
+        raise SystemExit("refusing: contact group(s) missing: {}".format(
+            ", ".join(missing)))
+
+    state = RCS_TEST_STATE_PATH if test else RCS_STATE_PATH
+    if do_send and not to and already_sent(week_label, state) and not force:
+        print("ALREADY SENT for {} — not sending again.".format(week_label))
+        return {"published": False, "reason": "already sent", "week": week_label}
+
+    send_email(build_email(str(png), week_label, to_addrs, subject=subject,
+                           title="Alphalete Up and Coming RCs and NCs"))
+    print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
+    if do_send and not to:
+        mark_sent(week_label, state)
+    return {"published": True, "week": week_label, "png": str(png), "to": to_addrs}
 
 
 def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
@@ -555,6 +628,10 @@ def main(argv=None):
                     help="--dd go-live: alert #claudecorrections on any data gap "
                          "(Credico pending / missing row / stale week) and send "
                          "anyway, instead of refusing")
+    ap.add_argument("--rcs-ncs", dest="rcs_ncs", action="store_true",
+                    help="publish the 'Up and Coming RCs and NCs' infographic "
+                         "(email only, no Slack) — the companion sent right after "
+                         "the DD bulletin")
     ap.add_argument("--out-dir", default=None)
     a = ap.parse_args(argv)
     if a.send and a.preview:
@@ -563,6 +640,10 @@ def main(argv=None):
         raise SystemExit("--no-credico only applies to --dd")
     if a.test and a.preview:
         raise SystemExit("--test and --preview are mutually exclusive")
+    if a.rcs_ncs:
+        send_rcs_ncs(do_send=a.send, preview=a.preview, test=a.test,
+                     force=a.force, notify=a.notify, out_dir=a.out_dir)
+        return 0
     if a.dd:
         send_dd(do_send=a.send, preview=a.preview, test=a.test, force=a.force,
                 notify=a.notify, out_dir=a.out_dir,

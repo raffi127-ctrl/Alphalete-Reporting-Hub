@@ -70,5 +70,25 @@ else
 fi
 [ -n "$_PUB" ] && "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_bulletin','DD / Organization Bulletin','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 
+# --- Up and Coming RCs and NCs — the EMAIL-ONLY companion sent right after the DD
+# bulletin (Megan 2026-07-31). It reuses the DD data, so it self-guards the SAME
+# three ways: a stale/empty week hard-blocks it, it records its own week (never
+# double-emails), and it mirrors the DD's mode here (--test → the 4-person group,
+# full → both contact groups). So it stays in lock-step: the pass that sends the
+# DD bulletin sends this too, and every other pass holds it.
+RCS_ARGS=("${ARGS[@]/--dd/--rcs-ncs}")
+echo "[$(date)] rcs-ncs starting (mode: ${RCS_ARGS[*]})" >> "$LOG_FILE"
+"$VENV_PY" -u -m automations.override_bulletin.send "${RCS_ARGS[@]}" >> "$LOG_FILE" 2>&1
+RST=$?
+echo "[$(date)] rcs-ncs finished exit=$RST" >> "$LOG_FILE"
+if [ "$RST" -ne 0 ]; then
+    _RPUB=failed
+elif grep -q "^emailed .*Up and Coming RCs and NCs" "$LOG_FILE"; then
+    _RPUB=success
+else
+    _RPUB=""
+fi
+[ -n "$_RPUB" ] && "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('rcs_ncs','Up and Coming RCs and NCs','$_RPUB')" >> "$LOG_FILE" 2>&1 || true
+
 # A held pass exits 0 — a correct hold, not a failure; the next pass tries again.
 exit $ST
