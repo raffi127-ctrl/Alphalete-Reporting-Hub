@@ -10,8 +10,13 @@ Run locally:   streamlit run automations/tdb_standings/app.py
 Deploy:        Streamlit Community Cloud -> point at this file -> add the Google
                OAuth token to st.secrets (see automations/tdb_standings/README).
 """
+import csv
 import datetime
 import html as _html
+import io
+import json
+import urllib.parse
+import urllib.request
 
 import streamlit as st
 
@@ -21,25 +26,34 @@ DINNER_FALLBACK = "TBA"
 st.set_page_config(page_title="Steak on the Line — Standings", page_icon="🥩", layout="wide")
 
 
-def _client():
-    """gspread client. On Lucy 1 the report's OAuth token is on disk; on Streamlit
-    Cloud drop the same token JSON into st.secrets['gcp_oauth']."""
+@st.cache_data(ttl=120)
+def load_month(title):
+    """Rows for the given month tab. Tries the PUBLIC CSV first (works when the
+    Sheet is 'Anyone with link -> Viewer' — then Streamlit Cloud needs NO secrets),
+    and falls back to an authenticated read (the report's local token, or the raw
+    OAuth JSON pasted into st.secrets['gcp_oauth_json'])."""
+    # 1) public, credential-free
+    try:
+        url = ("https://docs.google.com/spreadsheets/d/%s/gviz/tq?tqx=out:csv&sheet=%s"
+               % (SHEET_ID, urllib.parse.quote(title)))
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        raw = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", "replace")
+        rows = list(csv.reader(io.StringIO(raw)))
+        if any("rep name" in " ".join(r).lower() for r in rows[:5]):
+            return rows
+    except Exception:
+        pass
+    # 2) authenticated
     try:
         from automations.recruiting_report import fill as _fill
-        return _fill._client()
+        cl = _fill._client()
     except Exception:
         import gspread
         from google.oauth2.credentials import Credentials
-        info = dict(st.secrets["gcp_oauth"])
-        creds = Credentials.from_authorized_user_info(
-            info, ["https://www.googleapis.com/auth/spreadsheets"])
-        return gspread.authorize(creds)
-
-
-@st.cache_data(ttl=120)
-def load_month(title):
-    sh = _client().open_by_key(SHEET_ID)
-    return sh.worksheet(title).get_all_values()
+        info = json.loads(st.secrets["gcp_oauth_json"])
+        cl = gspread.authorize(Credentials.from_authorized_user_info(
+            info, ["https://www.googleapis.com/auth/spreadsheets"]))
+    return cl.open_by_key(SHEET_ID).worksheet(title).get_all_values()
 
 
 def _num(x):
