@@ -27,7 +27,7 @@ import datetime
 
 from automations.recruiting_report import fill as _fill
 
-SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # shared library Sheet
+SHEET_ID = "1zlgrL36ly67xl_XU5okJ6yjHbpcx1F_eurtA09m-DaM"   # 'Texas de Brazil — Scoring Log' (all TdB data together)
 TAB = "TdB Leaders State"
 HEADERS = ["Period", "New Leaders", "Car Ride", "Updated By", "Updated At"]
 _LAST_COL = chr(ord("A") + len(HEADERS) - 1)   # 'E'
