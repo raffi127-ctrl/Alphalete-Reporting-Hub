@@ -1158,11 +1158,14 @@ def lookup_resume_phone(page):
         return None, "no view-resume link"
     newpg = None
     try:
-        # 1) Preferred: real click on the link → opens the resume in a new tab.
+        # 1) Preferred: CMD+CLICK the link → opens the raw signed URL in a new tab,
+        #    bypassing the link's onclick (which otherwise forces an Indeed login).
+        #    This is exactly Megan's manual move (2026-08-02: "hold command + click
+        #    View resume → opens without having to log into Indeed").
         if loc is not None:
             try:
                 with page.context.expect_page(timeout=15000) as pi:
-                    loc.click(timeout=8000)
+                    loc.click(timeout=8000, modifiers=["Meta"])
                 newpg = pi.value
             except Exception:  # noqa: BLE001
                 newpg = None
