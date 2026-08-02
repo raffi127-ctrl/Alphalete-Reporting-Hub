@@ -262,6 +262,48 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
 
 
+def _is_findings_report(rs) -> bool:
+    """True when this report is a data-quality AUDIT — its last manifest was
+    written with kind='finding' (e.g. the Vantura board audit). Those runs list
+    open findings, not failed fills: the channel post stays a one-line count and
+    the detail goes in-thread, with no re-run / paste-to-Claude block (a human
+    fixes the source, re-running the audit won't). Best-effort: any read problem
+    falls back to the normal fill-report path."""
+    try:
+        from automations.shared import run_manifest
+        m = run_manifest.read_manifest(rs.report_id)
+        return bool(m) and m.get("kind") == "finding"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _post_findings_corrections(cfg, rs, label, dry_run):
+    """A data-quality audit's findings → a CONCISE parent (name + count, 'details
+    in thread') and a threaded reply listing the findings. No re-run/paste-to-
+    Claude: these are fixed on the source (the board), not by re-running the audit
+    (Megan 2026-08-02)."""
+    n = len(rs.missing)
+    title = f":warning: *{label}* — {n or 'some'} open data-quality finding(s)"
+    parent = [f"*Found:* {n or 'some'} board data-quality issue(s) — details in "
+              "thread. Logged to the board's ‘Report an Issue’ tab."]
+    ts = _post_corrections(cfg, title, parent, dry_run,
+                           tag=f"finding-{rs.report_id}")
+    if not ts:
+        return None
+    reply = ["*Open findings:*"]
+    reply += [f"   • {f}" for f in rs.missing]
+    reply += [
+        "",
+        "_These are fixed on the board itself (Roll Call statuses, Stations "
+        "formulas, etc.), not by re-running this audit — they'll clear from this "
+        "alert once the board is corrected._",
+        "_Reply here if you want a hand._",
+    ]
+    _post_corrections(cfg, "", reply, dry_run,
+                      tag=f"finding-{rs.report_id}-details", thread_ts=ts)
+    return ts
+
+
 def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
     """One problem report → a concise PARENT post (report name + the error) plus a
     threaded REPLY that carries the details (what to re-run, which ICDs were left
@@ -269,6 +311,16 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     2026-07-23: the post itself is the name + error; the how-to-fix and the extras
     live in the thread so the channel skims clean and each fix happens in-thread."""
     label = rs.display_name or rs.report_id
+
+    # A data-quality AUDIT (kind='finding' manifest) is a special case: its
+    # "missing" items are full-sentence findings, not fill targets, and there's
+    # nothing to re-run — a human fixes the board. Dumping every finding into the
+    # channel makes a wall of text (Megan 2026-08-02: the Vantura board audit "is
+    # too long in the channel"). Keep the PARENT to a one-line count and push the
+    # finding text into the thread; skip the re-run / paste-to-Claude boilerplate.
+    if kind == "INCOMPLETE" and _is_findings_report(rs):
+        return _post_findings_corrections(cfg, rs, label, dry_run)
+
     # Split the missing units into TERMINATED (on the terminated-ICD list — should
     # be REMOVED from the report, a re-run won't help) vs LIVE (actually failed —
     # worth re-running). Megan 2026-07-23: tell us when a missing ICD is terminated
