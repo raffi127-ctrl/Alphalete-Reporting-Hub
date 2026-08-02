@@ -99,6 +99,30 @@ _HUB_CARD = {
     # vantura_churn / the captainship bonuses above). Its runner now calls
     # publish_done; this line is what makes that call land on the card.
     "b2b_metrics": "b2b-metrics",
+    # Onboarded B2B offices (office_onboarding) run as their OWN scheduler entries
+    # (jamis_metrics -> b2b_metrics.runner --office jamis) but belong on the ONE
+    # consolidated B2B Metrics card, same as the D2D per-office feeds map to
+    # office-metrics above. They're already in b2b_metrics.offices.ORDER (via
+    # _merge_onboarded), so the card's re-run buttons already list them — this line
+    # just routes their pill to that card and stops hub_coverage from
+    # auto-registering a standalone library card (Megan 2026-08-02: "the 1 hub card
+    # says who they are running for"). Add an onboarded office = one line here.
+    "jamis_metrics": "b2b-metrics",
+    # Weekly Promotion Check-In posts BOTH its passes (Mon 6pm + 7:15pm final)
+    # under report_id "promo_checkin", and that card counts them via daily_runs:2
+    # (the 2-phase pill). The Mon/Final install-agent plists got scanned into their
+    # OWN auto-registered cards (promo_checkin_mon / promo_checkin_final) — dupes of
+    # the one card. Route them to it so hub_coverage stops recreating them (Megan
+    # 2026-08-02: "these 2 promo checkins should be 1 phase card").
+    "promo_checkin_mon": "promo_checkin",
+    "promo_checkin_final": "promo_checkin",
+    # B2B Dispositions runs on Lucy 2 (deploy/b2b_dispositions.sh, hourly 12-6pm +
+    # 6:30 final). Its two launchd plists got scanned into standalone auto cards
+    # (b2b_dispositions_hourly / _final) that landed on the WRONG (Lucy 1) profile —
+    # dupes of the one real card "b2b_dispositions". Fold them into it (Megan
+    # 2026-08-02: "these 2 run on lucy 2 but are on the lucy 1 profile").
+    "b2b_dispositions_hourly": "b2b_dispositions",
+    "b2b_dispositions_final": "b2b_dispositions",
     # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
     # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",
