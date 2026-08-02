@@ -6824,10 +6824,18 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                 # endpoints so a 4-pass card is exactly orange/amber/yellow/green
                 # at 1/2/3/4, a 2-pass card goes orange→green, and a 9-pass card
                 # sweeps the ramp. See [[reference_hub_card_rendering_rules]].
-                if _done <= 1:
-                    return "phase1"                       # orange
-                _pos = (_done - 1) / max(_daily_runs - 1, 1)
-                return "phase2" if _pos <= 0.5 else "phase3"   # amber / yellow
+                # Colour by FRACTION complete, not pass index, so ONE ramp
+                # scales to any phase count (Megan 2026-08-02): a 2-phase card is
+                # orange at 1/2 then green (her "orange on phase 1, green on
+                # phase 2"), a 4-phase card hits yellow/orange/light-green at
+                # 1/2/3, a 9-pass card sweeps the whole ramp.
+                #   yellow (early) → orange (mid) → light-green (late) → green.
+                _f = _done / _daily_runs
+                if _f <= 0.40:
+                    return "phase1"        # yellow
+                if _f <= 0.70:
+                    return "phase2"        # orange
+                return "phase3"            # light green
             if _s in (None, "success"):
                 return "up" if _day == today else "miss"
             # nothing succeeded and the latest attempt was not a success → fall
@@ -6951,8 +6959,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
                              "miss": "– ", "running": "🔄 ",
-                             "progress": "🟡 ", "phase1": "🟠 ",
-                             "phase2": "🟡 ", "phase3": "🟡 "}.get(_stat, "")
+                             "progress": "🟡 ", "phase1": "🟡 ",
+                             "phase2": "🟠 ", "phase3": "🔵 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Multi-run card mid-day: show how many passes have landed
                     # (e.g. "(1/3 done)") so the amber pill says WHY it isn't
@@ -11644,13 +11652,16 @@ else:  # st.session_state.view == "user"
             # 8am pass, with 11:30am + 4pm still due). Amber = on track but not
             # finished; it turns green only once the LAST pass lands.
             "[class*='__calstat_progress'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important}"
-            # UNIVERSAL PHASE RAMP (Megan 2026-07-29): a multi-pass card warms
-            # orange → amber → yellow → green as its passes land. phase1/2/3 are
-            # the pre-green steps; the LAST pass turns it __calstat_ok (green).
-            # Same 3 hues every phased card uses — no per-card pill hacks.
-            "[class*='__calstat_phase1'] button{background:#FFE0C2!important;color:#7C2D12!important;border-color:#FB923C!important}"
-            "[class*='__calstat_phase2'] button{background:#FDE7C0!important;color:#7A4E06!important;border-color:#F59E0B!important}"
-            "[class*='__calstat_phase3'] button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important}"
+            # UNIVERSAL PHASE RAMP (Megan 2026-08-02): a phased card ramps
+            # yellow → orange → teal → green as its phases land — four visibly
+            # DISTINCT hues (the old amber/yellow pair read as the same colour;
+            # teal is the "almost done" step, clearly not the mint finished
+            # green). phase1/2/3 are the pre-green steps, coloured by fraction
+            # complete; the final phase turns it __calstat_ok (green). Same ramp
+            # every phased card uses — no per-card pill hacks.
+            "[class*='__calstat_phase1'] button{background:#FEF08A!important;color:#713F12!important;border-color:#EAB308!important}"
+            "[class*='__calstat_phase2'] button{background:#FED7AA!important;color:#7C2D12!important;border-color:#F97316!important}"
+            "[class*='__calstat_phase3'] button{background:#99F6E4!important;color:#115E59!important;border-color:#14B8A6!important}"
             # Shared TESTING (pink) / IN-REVIEW (purple) states — first-class so a
             # card can be flagged without a bespoke selector. Scoped :not(ok/fail)
             # so a real run still greens/reds. (Megan 2026-07-29)
