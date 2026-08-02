@@ -167,7 +167,13 @@ def _run(args) -> int:
                 fr.render_png(fr.fill_champions(sc, rc), png)
                 m = ed.build_winner(sc, rc)
             else:
-                fr.render_png(fr.fill_standings(personal_rows, rep_rows), png)
+                # Days STILL AHEAD, not counting today (which is in progress):
+                # last comp day is Aug 31 (COMP_END = Sep 1), so Aug 1 → 30 left,
+                # Aug 30 → 1 left (Megan 2026-08-01).
+                days_left = (COMP_END - today).days - 1
+                fr.render_png(
+                    fr.fill_standings(personal_rows, rep_rows,
+                                      days_left=days_left), png)
                 m = ed.build(personal_rows, rep_rows, today)
             ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
                           dry_run=eml_dry,

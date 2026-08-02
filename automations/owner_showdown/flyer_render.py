@@ -20,9 +20,10 @@ def _medal(rank: int) -> str:
 
 
 def _ol(rows: List[Tuple[int, str, object]], unit: str) -> str:
-    """rows: [(rank, name, value)] high→low. value '' renders as an em dash."""
+    """rows: [(rank, name, value)] high→low. value '' renders as an em dash.
+    Lists EVERY owner (Raf 2026-08-01: whole field on the flyer, not just top 10)."""
     out = []
-    for rank, name, val in rows[:10]:
+    for rank, name, val in rows:
         lead = " lead" if rank == 1 else ""
         vtxt = (f"{val} <span class=\"u\">{unit}</span>" if val not in ("", None)
                 else "—")
@@ -33,8 +34,10 @@ def _ol(rows: List[Tuple[int, str, object]], unit: str) -> str:
     return "\n".join(out)
 
 
-def fill_standings(sales_rows, rep_rows) -> str:
-    """Return standings HTML with the two Top-10 lists swapped in."""
+def fill_standings(sales_rows, rep_rows, days_left=None) -> str:
+    """Return standings HTML with the two full-field lists swapped in.
+    days_left (Raf 2026-08-01): if given, the timeline rail's middle becomes a
+    live countdown ("N Days Left") instead of the static "31 Days"."""
     html = STANDINGS_TPL.read_text(encoding="utf-8")
     # Each board's <ol>…</ol> is replaced by generated rows. There are exactly
     # two <ol> blocks (personal, then rep) in template order.
@@ -47,6 +50,11 @@ def fill_standings(sales_rows, rep_rows) -> str:
     # replace right-to-left so spans stay valid
     html = html[:ols[1].start()] + new_rep + html[ols[1].end():]
     html = html[:ols[0].start()] + new_personal + html[ols[0].end():]
+    if days_left is not None:
+        n = max(0, int(days_left))
+        unit = "Day" if n == 1 else "Days"
+        # no-op if the template's rail text changed
+        html = html.replace("→ 31 Days →", f"→ {n} {unit} Left →")
     return html
 
 
@@ -77,10 +85,18 @@ def render_png(html: str, out_png: Path, width: int = 880) -> Path:
         page = browser.new_page(viewport={"width": width, "height": 900},
                                 device_scale_factor=2)
         page.set_content(html, wait_until="networkidle")
-        # Neutralize the min-height:100vh so the page sizes exactly to content:
-        # full_page capture then has no empty void below AND can't clip the
-        # footer. The gradient background still fills the captured area.
-        page.add_style_tag(content="body{min-height:0!important}")
+        # The body is display:flex and won't grow past the viewport, so full_page
+        # would clip the footer flush to the bottom edge. Measure the real content
+        # height (.flyer), then size the canvas to it PLUS a bottom margin and pin
+        # the body to that height so its gradient fills the breathing room below
+        # the footer (Raf 2026-08-01: full field looked cut off).
+        bottom_margin = 56
+        content_h = page.evaluate("document.documentElement.scrollHeight")
+        total_h = content_h + bottom_margin
+        page.set_viewport_size({"width": width, "height": total_h})
+        page.add_style_tag(
+            content=f"body{{min-height:{total_h}px!important;"
+                    f"align-items:flex-start!important}}")
         page.screenshot(path=str(out_png), full_page=True)
         browser.close()
     return out_png
