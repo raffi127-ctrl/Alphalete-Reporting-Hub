@@ -54,6 +54,14 @@ _HUB_CARD = {
     "org_sales_board_email": "sales-board-screenshot-email",
     "country_sales_board_email": "country-sales-board-email",
     "all_units_board_email": "all-units-board-email",
+    # The daily 'All Units' board FILL (all_campaigns_board, runs right after the
+    # org board every day) was self-wiring to its own auto-registered
+    # all_campaigns_board card, leaving the real hand-built "All Units Org Sales
+    # Board" card (all-units-board) permanently white even though the fill
+    # succeeds daily. Route the fill's pill to the real card (Megan 2026-08-02 —
+    # the 7/31 repoint pointed the card at the board but never wired the publish).
+    # The dupe all_campaigns_board library card is deleted alongside this.
+    "all_campaigns_board": "all-units-board",
     # The daily Slack POST of the board (replaces the VA's manual post) — a
     # separate card from the board FILL above. Publishes only when it actually
     # posts, not on every 25-min pass.
