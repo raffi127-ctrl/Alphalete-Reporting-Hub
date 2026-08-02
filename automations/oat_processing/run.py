@@ -740,6 +740,107 @@ def _walk_to_and_remove(page, first, last, max_hops: int = 80) -> str:
     return "not_found"
 
 
+# --- Route-through-your-browser no-phone flow (Megan 2026-08-02) --------------- #
+# The bot can't pass Indeed's Cloudflare on resume pages, but Megan's real Chrome
+# can. So: (1) emit_nophone_resumes walks the queue and writes each no-phone
+# applicant + their 'View resume' URL to a Sheet tab; (2) a human/Claude-in-Chrome
+# opens those URLs in a real browser and fills the phone column; (3)
+# fill_nophone_from_tab reads the phones back, walks to each applicant, types the
+# number and sends to AI.
+_NOPHONE_TAB = "OAT_NoPhone_Resumes"
+_NOPHONE_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+
+
+def _nophone_ws(create=False):
+    from automations.recruiting_report import fill as _fill
+    sh = _fill._client().open_by_key(_NOPHONE_SHEET)
+    try:
+        return sh.worksheet(_NOPHONE_TAB)
+    except Exception:  # noqa: BLE001
+        if create:
+            return sh.add_worksheet(title=_NOPHONE_TAB, rows=300, cols=5)
+        raise
+
+
+def emit_nophone_resumes(page, max_hops: int = 80) -> int:
+    """Walk the OAT queue and write every no-phone applicant + their 'View resume'
+    URL to the OAT_NoPhone_Resumes tab (cols: name, resume_url, phone, status).
+    A real browser then fills the phone column; fill_nophone_from_tab sends them."""
+    out = [["name", "resume_url", "phone", "status"]]
+    seen: set = set()
+    for _ in range(max_hops):
+        a = read_current_applicant(page)
+        who = f"{a.first_name} {a.last_name}".strip()
+        key = f"{a.email}|{who}".lower()
+        if not who or key in seen:
+            if not advance_to_next(page):
+                break
+            continue
+        seen.add(key)
+        if not (a.cell_phone or a.phone):        # no phone on file
+            href = _view_resume_href(page)
+            if href:
+                out.append([who, href, "", ""])
+                _log(f"    [emit-nophone] {who} -> resume url captured")
+        if not advance_to_next(page):
+            break
+    ws = _nophone_ws(create=True)
+    ws.clear()
+    ws.update(out, "A1", value_input_option="RAW")
+    _log(f"[oat] emit-nophone-resumes: wrote {len(out)-1} applicants to {_NOPHONE_TAB}")
+    return 0
+
+
+def _walk_to_and_fill_send(page, first, last, phone, max_hops: int = 80) -> str:
+    """Walk OAT to the named applicant, TYPE the phone into Phone/Cell, and Send to
+    AI. Returns the do_send_ai outcome / 'not_found' / 'fill_failed'."""
+    seen: set = set()
+    for _ in range(max_hops):
+        a = read_current_applicant(page)
+        who = f"{a.first_name} {a.last_name}".strip().lower()
+        if _name_matches(a, first, last):
+            if not _fill_phone_field(page, phone):
+                return "fill_failed"
+            page.wait_for_timeout(900)
+            _log(f"    [fill-send] {a.first_name} {a.last_name} phone {phone} -> Send to AI")
+            return do_send_ai(page, a, True)
+        key = f"{a.email}|{who}"
+        if key in seen:
+            break
+        seen.add(key)
+        if not advance_to_next(page):
+            break
+    return "not_found"
+
+
+def fill_nophone_from_tab(page) -> int:
+    """Read OAT_NoPhone_Resumes: for each applicant whose phone column was filled
+    (by the real-browser resume scrape) and not yet done, walk to them, type the
+    number, and Send to AI. Marks status back on the tab."""
+    ws = _nophone_ws(create=False)
+    rows = ws.get_all_records()
+    done = 0
+    for i, r in enumerate(rows):
+        phone = re.sub(r"\D", "", str(r.get("phone", "")))
+        status = str(r.get("status", "")).strip().lower()
+        if len(phone) < 10 or status in ("sent", "sent_override", "done"):
+            continue
+        nm = str(r.get("name", "")).split()
+        first = nm[0] if nm else ""
+        last = " ".join(nm[1:]) if len(nm) > 1 else ""
+        st = _walk_to_and_fill_send(page, first, last, phone)
+        _log(f"[oat] fill-nophone {r.get('name')} -> {st}")
+        try:
+            ws.update_cell(i + 2, 4, st)          # col D = status
+        except Exception:  # noqa: BLE001
+            pass
+        if st in ("sent", "sent_override"):
+            done += 1
+        open_oat(page)                            # clean page for the next one
+    _log(f"[oat] fill-nophone-from-tab: sent {done}")
+    return 0
+
+
 def _armed_retext(page, a: Applicant, days, live: bool) -> str:
     """Shared re-text handler for BOTH re-text paths (do_retext_then_remove AND
     do_send_ai's >1wk block). Armed (live + config.RETEXT_ARMED): text the quiet
@@ -1431,7 +1532,8 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         probe_resume_flag: bool = False,
         retext_test: str = None, retext_send: str = None,
         remove_applicant: str = None, retext_names: str = None,
-        probe_search_term: str = None, _attempt: int = 1) -> int:
+        probe_search_term: str = None, emit_nophone: bool = False,
+        fill_nophone: bool = False, _attempt: int = 1) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -1471,6 +1573,14 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 open_oat(page)
                 probe_search(page, probe_search_term)
                 return 0
+
+            if emit_nophone:
+                open_oat(page)
+                return emit_nophone_resumes(page)
+
+            if fill_nophone:
+                open_oat(page)
+                return fill_nophone_from_tab(page)
 
             if retext_names:
                 # Re-text applicants who've left the OAT queue. Semicolon list of
@@ -1798,6 +1908,14 @@ def main(argv=None) -> int:
     p.add_argument("--reset-activity", action="store_true", dest="reset_activity",
                    help="Archive today's activity log + flag queues (.bak) so the "
                         "scorecard restarts fresh; no browser, stop")
+    p.add_argument("--emit-nophone-resumes", action="store_true",
+                   dest="emit_nophone",
+                   help="Walk the queue; write every no-phone applicant + resume URL "
+                        f"to the {_NOPHONE_TAB} tab for a real browser to scrape; stop")
+    p.add_argument("--fill-nophone-from-tab", action="store_true",
+                   dest="fill_nophone",
+                   help=f"Read {_NOPHONE_TAB}; for each applicant whose phone was "
+                        "filled by the browser scrape, type it in + Send to AI; stop")
     args = p.parse_args(argv)
 
     if args.reset_activity:
@@ -1809,7 +1927,8 @@ def main(argv=None) -> int:
                probe_resume_flag=args.probe_resume,
                retext_test=args.retext_test, retext_send=args.retext_send,
                remove_applicant=args.remove_applicant, retext_names=args.retext_names,
-               probe_search_term=args.probe_search_term)
+               probe_search_term=args.probe_search_term,
+               emit_nophone=args.emit_nophone, fill_nophone=args.fill_nophone)
 
 
 if __name__ == "__main__":
