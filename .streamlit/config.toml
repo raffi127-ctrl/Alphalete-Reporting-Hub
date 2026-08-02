@@ -1,6 +1,11 @@
+# Global Streamlit theme — applies to EVERY app run from this repo (the Hub AND
+# the tdb_standings page). The Hub must be light/white; the standings page styles
+# ITS OWN dark background + colors via injected CSS in tdb_standings/app.py, so it
+# stays dark regardless of what's here. Keep this LIGHT so the Hub renders white.
+# (A dark theme here on 2026-07-31 turned the whole Hub black — a31415e.)
 [theme]
-base = "dark"
+base = "light"
 primaryColor = "#e7c878"
-backgroundColor = "#0e0a08"
-secondaryBackgroundColor = "#17100c"
-textColor = "#f6efe1"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f2ec"
+textColor = "#1a1a1a"
