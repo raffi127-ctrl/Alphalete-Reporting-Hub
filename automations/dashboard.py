@@ -5966,7 +5966,11 @@ def _hub_recent_runs(days: int = 14) -> list[dict]:
     out = []
     for r in _hub_activity_rows():
         status = str(r.get("Status", "")).lower()
-        if status not in ("success", "partial", "failed", "stopped"):
+        # 'skipped' = the report RAN its readiness scan and correctly found nothing
+        # to do (SCI: no new tracker email). That's a healthy outcome, not a no-run,
+        # so surface it — the grid colors it a distinct "scanned" blue instead of
+        # leaving it white/dead (Megan 2026-08-02).
+        if status not in ("success", "partial", "failed", "stopped", "skipped"):
             continue
         ts = _parse_hub_ts(r.get("Ended At") or r.get("Started At"))
         if ts is None or ts < cutoff:
@@ -6889,6 +6893,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             return "ok"
         if _s == "partial":                   # some parts landed, some missed
             return "partial"                  # orange, NOT red — it mostly worked
+        if _s == "skipped":                   # ran its readiness scan, nothing to do
+            return "scanned"                  # healthy — distinct blue, not white/dead
         if _s is None:                        # no run recorded
             return "up" if _day == today else "miss"
         if _s in ("running", "started", "in progress", "in-progress"):
@@ -7011,7 +7017,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
-                             "miss": "– ", "running": "🔄 ",
+                             "miss": "– ", "running": "🔄 ", "scanned": "🔍 ",
                              "progress": "🟡 ", "phase1": "🟡 ",
                              "phase2": "🟠 ", "phase3": "🔵 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
@@ -7054,6 +7060,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         "phase3": "Phase 3 done (yellow) — final pass still due today",
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
+                        "scanned": "Ran its scan — nothing new to do today (healthy)",
                         "up": "Open this report to run it",
                         "running": "Running now — open to watch",
                     }.get(_stat, "Open this report to run it")
@@ -11721,6 +11728,11 @@ else:  # st.session_state.view == "user"
             "[class*='__calstat_review']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
+            # 'scanned' — the report RAN its readiness scan and found nothing to do
+            # (SCI: no new tracker email). A healthy, successful outcome, so it gets
+            # its own calm BLUE — distinct from green (did work), white/miss (never
+            # ran) and red (failed). (Megan 2026-08-02)
+            "[class*='__calstat_scanned'] button{background:#DBEAFE!important;color:#1E3A8A!important;border-color:#93C5FD!important}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
             # RingCentral Auto-Read is a background OPS automation — always show its
             # pill in the orange OPS color, regardless of run-status (its launchd
