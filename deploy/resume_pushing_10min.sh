@@ -112,19 +112,9 @@ case " $* " in
       case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
       _n=$((_n + 1))
       echo "$_n" > "$_STREAK_FILE"
-      # rc=3 is the extractor STALL (run.py's ExtractionStalled) — a DEFINITIVE
-      # wedge, already confirmed by a cap-timeout with no count drop, so escalate
-      # on the FIRST one (threshold 1). Every other non-zero exit (login Cloudflare
-      # blip = 2, crashes) keeps the streak-of-3 suppression so a lone blip the
-      # next 10-min tick resolves never pings.
-      if [ "$ST" -eq 3 ]; then _threshold=1; else _threshold="$FAIL_STREAK"; fi
-      if [ "$_n" -ge "$_threshold" ] && [ ! -f "$_OUTAGE_FILE" ]; then
-        echo "[$(date)] failure (streak $_n, exit=$ST, threshold $_threshold) — publishing FAILED to the Hub" >> "$LOG_FILE"
+      if [ "$_n" -ge "$FAIL_STREAK" ] && [ ! -f "$_OUTAGE_FILE" ]; then
+        echo "[$(date)] failure streak $_n/$FAIL_STREAK — publishing FAILED to the Hub" >> "$LOG_FILE"
         _publish failed && touch "$_OUTAGE_FILE" || true
-        # Slack the same re-seed nudge appstream_watch sends for a dead session —
-        # nobody's ever at the mini, so the local osascript notice below is unseen;
-        # this DMs Megan + Eve. Once per outage (guarded by $_OUTAGE_FILE above).
-        "$VENV_PY" -c "from automations.shared import appstream_watch; appstream_watch.ping_resume_pushing_stall()" >> "$LOG_FILE" 2>&1 || true
         _NOTIFY=1
       else
         echo "[$(date)] transient bad pass (streak $_n/$FAIL_STREAK, exit=$ST) — treated as a SKIP, not published" >> "$LOG_FILE"
@@ -136,8 +126,6 @@ case " $* " in
         # first-clean-pass branch below would never fire).
         echo "[$(date)] recovered after a published outage — publishing SUCCESS" >> "$LOG_FILE"
         _publish success && rm -f "$_OUTAGE_FILE" || true
-        # Symmetric '✅ recovered' DM so whoever re-seeded knows it's clear.
-        "$VENV_PY" -c "from automations.shared import appstream_watch; appstream_watch.ping_resume_pushing_recovered()" >> "$LOG_FILE" 2>&1 || true
         touch "$_PUB_STAMP"
       elif [ ! -f "$_PUB_STAMP" ]; then
         _publish success && touch "$_PUB_STAMP" || true
