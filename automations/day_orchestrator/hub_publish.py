@@ -340,8 +340,35 @@ def _find_open_row_for_card(ws, card: str):
     return hit
 
 
+def _alert_failure(report_id: str, report_name: str) -> None:
+    """Post a ONE-per-day failure alert to #claudecorrections-and-requests when a
+    report closes 'failed' — so a silently-failing standalone agent (whose wrapper
+    doesn't alert on its own) gets seen, not just a red pill nobody's watching.
+    Deduped per report per day via a marker file: a 5/10-min job that keeps failing
+    must NOT spam the channel every tick. Best-effort — never raises into the run.
+    The orchestrator opts out (alert_on_fail=False) — it sends its own richer
+    failure summary with a paste-to-Claude block. (Megan 2026-08-02)"""
+    try:
+        from pathlib import Path as _P
+        marker = (_P(__file__).resolve().parents[2] / "output" / "logs"
+                  / f".failalert-{report_id}-{dt.date.today().isoformat()}")
+        if marker.exists():
+            return
+        from automations.day_orchestrator import notify
+        notify.post_alert(
+            f"❌ {report_name} failed",
+            [f"`{report_id}` closed a run with status **FAILED** on "
+             f"{socket.gethostname()}.",
+             "Open its Hub card for the log, then re-run it."],
+            tag=f"failalert-{report_id}")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("")
+    except Exception:
+        pass
+
+
 def publish_done(report_id: str, report_name: str, status: str = "success",
-                 run_id: str | None = None) -> bool:
+                 run_id: str | None = None, *, alert_on_fail: bool = True) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
     UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
     flips running->done and doesn't leave a dangling yellow pill. With no run_id,
@@ -365,11 +392,16 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         if row:
             ws.update_cell(row, 8, status)                        # Status
             ws.update([[now]], f"I{row}", value_input_option="RAW")   # Ended At
-            return True
-        ws.append_row(
-            [uuid.uuid4().hex[:12], now, card, report_name, "Mini (auto)",
-             socket.gethostname(), "", status, now],
-            value_input_option="RAW")
+        else:
+            ws.append_row(
+                [uuid.uuid4().hex[:12], now, card, report_name, "Mini (auto)",
+                 socket.gethostname(), "", status, now],
+                value_input_option="RAW")
+        # A hard failure alerts Slack (deduped) so it can't fail silently. Only
+        # 'failed' — NOT 'partial' (mostly worked) or 'skipped'/'scanned' (healthy
+        # no-op). The orchestrator passes alert_on_fail=False (its own summary).
+        if alert_on_fail and str(status).lower() == "failed":
+            _alert_failure(report_id, report_name)
         return True
     except Exception:
         return False

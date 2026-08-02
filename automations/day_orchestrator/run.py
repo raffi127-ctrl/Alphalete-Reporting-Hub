@@ -430,7 +430,8 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
                         _status = "failed"
                     hub_publish.publish_done(
                         rs.report_id, rs.display_name,
-                        status=_status, run_id=rs.hub_run_id)
+                        status=_status, run_id=rs.hub_run_id,
+                        alert_on_fail=False)  # orchestrator sends its own summary
                     rs.hub_run_id = None
             else:  # non-terminal → keep it visibly in-progress
                 if rs.hub_run_id:
@@ -486,7 +487,8 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
                 hub_publish.publish_done(
                     r.report_id, r.display_name,
                     status=hub_publish.final_status(r.report_id, ok=False),
-                    run_id=rs.hub_run_id)
+                    run_id=rs.hub_run_id,
+                    alert_on_fail=False)  # orchestrator sends its own summary
             except Exception:
                 pass
             rs.hub_run_id = None
