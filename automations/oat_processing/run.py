@@ -1231,6 +1231,23 @@ def probe_resume(page) -> None:
          f"cell={a.cell_phone!r}")
     href = _view_resume_href(page)
     _log(f"[resume] view-resume href: {str(href)[:110]}")
+    if href:
+        # Also stash the FULL url to a Sheet cell so it can be opened/tested in a
+        # real browser (Cloudflare-passing) — the 'route through your browser' path.
+        try:
+            from automations.recruiting_report import fill as _fill
+            sh = _fill._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                wsx = sh.worksheet("OAT_Resume_URL")
+            except Exception:  # noqa: BLE001
+                wsx = sh.add_worksheet(title="OAT_Resume_URL", rows=10, cols=3)
+            wsx.update([["name", "resume_url"],
+                        [f"{a.first_name} {a.last_name}", href]], "A1",
+                       value_input_option="RAW")
+            _log("[resume] wrote full url to tab OAT_Resume_URL")
+        except Exception as e:  # noqa: BLE001
+            _log(f"[resume] url-write err: {type(e).__name__}")
     if not href:
         # dump anchor texts across frames for diagnosis
         for i, fr in enumerate(page.frames):
