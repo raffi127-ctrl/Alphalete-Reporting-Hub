@@ -3115,15 +3115,19 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         "category": "🎯 Fiber",
         "assignees": ["Lucy 1"],
-        # Own weekend cadence (Sat post / Sun finalize) via the orchestrator —
-        # hide the DUE/schedule pills + keep it out of the 4am batch tallies
-        # (same as bg-check-sync). Real cadence lives in the breakdown.
+        # Runs INSIDE the Sat + Sun 4am orchestrator batch, so it belongs in the
+        # MORNING BATCH section with NO clock time on the pill (Megan 2026-08-02:
+        # "if it's in the 4am run it goes in the morning run section, no time on
+        # the pill"). self_scheduled:False puts it there; hide_schedule keeps a
+        # time off the pill; weekdays [5,6] means it's only expected on the
+        # weekend, so weekday passes don't flag it. The Sat/Sun split is the
+        # per-day WHAT, not a clock time.
         "hide_schedule": True,
-        "self_scheduled": True,
+        "self_scheduled": False,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [5, 6],
-            "time_label": "Sat ~4 AM — add owners + post departures · Sun ~4 AM — finalize removals",
+            "time_label": "Sat: add owners + post departures · Sun: finalize removals",
             "estimated_minutes": 2,
         },
         "description": "Keeps Raf's “AT&T Fiber Owners” email list matched to Kelly's weekly roster — adds new owners, and removes ones who left after a 24-hour ✅/❌ check in #l10-alphalete.",
