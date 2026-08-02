@@ -18,22 +18,6 @@ SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=893154737")
 
 
-def _rows_html(rows: List[Tuple[int, str, object]], value_label: str) -> str:
-    body = []
-    for rank, name, val in rows:
-        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"{rank}.")
-        body.append(
-            f"<tr><td style='padding:4px 10px 4px 0'>{medal}</td>"
-            f"<td style='padding:4px 12px 4px 0;font-family:Georgia,serif'>"
-            f"{name}</td>"
-            f"<td style='padding:4px 0;text-align:right;font-weight:700'>"
-            f"{val}</td></tr>")
-    return (f"<table style='border-collapse:collapse'>"
-            f"<tr><td></td><td style='color:#888;font-size:12px'>OWNER</td>"
-            f"<td style='color:#888;font-size:12px;text-align:right'>"
-            f"{value_label}</td></tr>{''.join(body)}</table>")
-
-
 def build_winner(sales_champ: Tuple[str, object],
                  rep_champ: Tuple[str, object]) -> Dict[str, str]:
     """Sept 1 champions email body (the champions flyer carries the visual)."""
@@ -116,14 +100,10 @@ def build(sales_rows: List[Tuple[int, str, object]],
         f"$5,000 to each winner</div>"
         f"<img src='cid:flyer' style='width:100%;max-width:560px;border-radius:12px;"
         f"margin-bottom:8px'>"
-        f"<h3 style='margin:18px 0 6px'>💻 Personal Sales "
-        f"<span style='color:#888;font-weight:400'>(new-internet, month-to-date)"
-        f"</span></h3>{_rows_html(sales_rows, 'NEW INT')}"
-        f"<h3 style='margin:22px 0 6px'>📈 Rep Count Growth "
-        f"<span style='color:#888;font-weight:400'>(vs. Aug 2 baseline)</span>"
-        f"</h3>{_rows_html(rep_rows, 'GROWTH')}"
-        f"<div style='margin-top:22px'><a href='{SHEET_URL}'>Open the live "
-        f"tracker →</a></div></div>")
+        # Flyer already shows both leaderboards — the text tables below were
+        # redundant (Megan 2026-08-01). Keep just the flyer + the live-sheet link.
+        f"<div style='margin-top:18px'><a href='{SHEET_URL}'>Open the live "
+        f"sheet →</a></div></div>")
 
     def _txt(rows):
         return "\n".join(f"  {r}. {n} — {v}" for r, n, v in rows)
