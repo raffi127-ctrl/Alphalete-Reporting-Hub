@@ -2770,14 +2770,14 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         "category": "🎯 Recruiting",
         "self_scheduled": True,
-        "description": "The full Monday flow on one pill. 11am/4pm/7:15pm emails "
-                       "the owners to fill the recognition sheet. 2pm pulls each "
-                       "campaign's qualifying reps from Tableau (Fiber, NDS, B2B, "
-                       "BOX, Costco, Revenue) into the Leader's Call tab. 7:30pm "
-                       "builds the widescreen deck (campaigns + Revenue + the "
-                       "Leadership Promotions finale) and posts it to "
-                       "#top-leaders-alphalete-org + #alphalete-gp-sales as Lucy — "
-                       "finished before the 8pm call.",
+        "description": "The Monday recognition build. 2pm pulls each campaign's "
+                       "qualifying reps from Tableau (Fiber, NDS, B2B, BOX, Costco, "
+                       "Revenue) into the Leader's Call tab. 7:30pm builds the "
+                       "widescreen deck (campaigns + Revenue + the Leadership "
+                       "Promotions finale) and posts it to #top-leaders-alphalete-org "
+                       "+ #alphalete-gp-sales as Lucy — finished before the 8pm call. "
+                       "(The Monday reminder emails are their own card now — Promo "
+                       "Reminder Email.)",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills the **Leader's Call** tab with the week's recognition "
@@ -2789,25 +2789,25 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "**Mondays.** Each campaign view's 'This Week' = the just-"
             "completed week, so the run recognizes the finished week.\n\n"
-            "DELIVERY — the pill climbs through Monday (4 steps)\n"
-            "1. **11:00am** — emails the owners to fill the recognition sheet.\n"
-            "2. **4:00pm** — second reminder email.\n"
-            "3. **7:15pm** — 🚨 final-call email.\n"
-            "4. **7:30pm** — builds the widescreen deck (campaigns + Revenue + the "
+            "DELIVERY (two steps)\n"
+            "1. **2:00pm** — pulls every Tableau campaign and writes the Leader's "
+            "Call tab (no send).\n"
+            "2. **7:30pm** — builds the widescreen deck (campaigns + Revenue + the "
             "Leadership Promotions finale, read from the recognition sheet with "
             "notes tidied up) and posts the PDF to **#top-leaders-alphalete-org** + "
-            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call.\n\n"
-            "The 2pm campaign pull writes the tab in between (no send). The tile "
-            "stays **amber (X/4)** as each step lands and goes **green** once the "
-            "deck posts; if the day ends short it reads **orange**."
+            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call. The "
+            "tile goes **green** once the deck posts.\n\n"
+            "The Monday reminder emails (11am / 4pm / 7:15pm) that nudge owners to "
+            "fill the recognition sheet are their **own card now — Promo Reminder "
+            "Email**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=1296972441#gid=1296972441"),
         "assignees": ["Lucy 1"],
-        # Monday flow fires 4 times: 3 reminder emails (11am/4pm/7:15pm) + the
-        # 7:30pm deck post. daily_runs=4 makes the pill climb grey → amber "X/4"
-        # → green (orange if the day ends short), same as BG Check Sync / Car-Rides.
-        "daily_runs": 4,
+        # Greens when the 7:30pm deck posts (the 2pm pull writes the tab but
+        # doesn't publish a pill). The 3 Monday reminder emails moved to their own
+        # "Promo Reminder Email" card (promo-reminder-email) 2026-08-02 (Megan), so
+        # this is no longer a 4-step pill — it's a single deliverable: the deck.
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday — pill climbs 1/4 (11am) → 4/4 green (7:30pm)
@@ -2848,6 +2848,76 @@ AUTOMATED_REPORTS = [
                         "existing Leader's Call thread (not a new post).",
                 "module": "automations.leaders_call.run",
                 "args_fn": lambda: ["--repost"],
+            },
+        ],
+    },
+    {
+        "id": "promo-reminder-email",
+        "name": "Promo Reminder Email",
+        "creator": "Maud & Claude",
+        "emoji": "📧",
+        "color": "#0EA5E9",
+        "category": "🎯 Recruiting",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "owners_call_reminder",
+        "self_scheduled": True,
+        # Three Monday email sends (11am / 4pm / 7:15pm final) — daily_runs makes
+        # the pill climb 1/3 → 2/3 → 3/3 green as they land (yellow→orange→teal→
+        # green ramp). Split out of the Leader's Call card 2026-08-02 (Megan) so
+        # the recognition-sheet nudges are their own thing, not folded into the
+        # Monday deck flow.
+        "daily_runs": {"0": 3},
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "7:15 PM",   # last send drives the sort; all three shown in time_label
+            "time_label": "Mon 11 AM · 4 PM · 7:15 PM (final)",
+            "estimated_minutes": 2,
+        },
+        "description": "Emails the owners/ICDs three Monday reminders — 11 AM, 4 PM, "
+                       "and a 7:15 PM final call — to fill in their office promotions "
+                       "on the recognition sheet before the Leader's Call. Sent from "
+                       "the reporting Gmail to the 'Org. Call Invite' Contacts distro.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Each **Monday** it emails the owners/ICDs a reminder to fill in their "
+            "office promotions on the **recognition sheet** before the Leader's "
+            "Call.\n\n"
+            "THE THREE SENDS (the pill climbs as each lands)\n"
+            "1. **11:00 AM** — first reminder.\n"
+            "2. **4:00 PM** — second reminder.\n"
+            "3. **7:15 PM** — 🚨 final call, last chance before the 8pm call.\n\n"
+            "WHO GETS IT\n"
+            "The **'Org. Call Invite'** Google Contacts distro (Megan maintains it; "
+            "membership changes are picked up each run). Sent from the reporting "
+            "Gmail.\n\n"
+            "WHEN IT RUNS\n"
+            "**Monday only**, on its own LaunchAgent on Lucy 1 (the mini). The deck "
+            "build itself is the separate **Leader's Call** card."
+        ),
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Reminder emailed to the Org. Call Invite distro.",
+            "message_failed": "❌ Send failed — check the log above (usually the "
+                              "distro list or the Gmail app password).",
+        },
+        "actions": [
+            {
+                "label": "Send a reminder now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Emails the recognition-sheet reminder to the Org. Call "
+                        "Invite distro now (7pm+ auto-uses the final-call wording).",
+                "module": "automations.owners_call_reminder.run",
+                "args_fn": lambda: ["--send"],
+            },
+            {
+                "label": "Preview (writes .eml, sends nothing)",
+                "icon": "👁",
+                "help": "Builds the email to output/ without sending — safe anytime.",
+                "module": "automations.owners_call_reminder.run",
+                "args_fn": lambda: [],
             },
         ],
     },

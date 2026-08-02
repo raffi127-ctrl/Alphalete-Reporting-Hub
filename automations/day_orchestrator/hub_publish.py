@@ -134,10 +134,12 @@ _HUB_CARD = {
     # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
     # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",
-    # The 3 Monday reminder emails (11am/4pm/7:15pm) share the Leader's Call card
-    # so its pill climbs 1/4 → 3/4 (amber) as they send, then 4/4 (green) when the
-    # 7:30pm deck posts. daily_runs=4 on the card counts these 4 success rows.
-    "owners_call_reminder": "leaders-call",
+    # The 3 Monday reminder emails (11am/4pm/7:15pm) are their OWN card now —
+    # "Promo Reminder Email" (promo-reminder-email, daily_runs {"0":3}) — split out
+    # of the Leader's Call card 2026-08-02 (Megan). Each send publishes a success
+    # here so that card's pill climbs 1/3 → 3/3 green. Leader's Call is now just
+    # its deck (leaders_call above).
+    "owners_call_reminder": "promo-reminder-email",
     "bg_check_sync": "bg-check-sync",
     # New-Start Follow-Up's Saturday roll-call + nudges (and Sunday checklist)
     # run as their own launchd jobs, not the 4am batch. Each live pass publishes
