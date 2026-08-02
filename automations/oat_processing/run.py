@@ -1130,25 +1130,55 @@ def _view_resume_href(page):
     return None
 
 
+def _view_resume_link(page):
+    """Return (frame, locator) for the clickable 'View resume →' link, or (None, None)."""
+    for xp in ("xpath=//a[contains(@href,'indeed') and contains(translate("
+               "normalize-space(.),'VIEWRESUME','viewresume'),'view resume')]",
+               "xpath=//a[contains(@href,'candidates/resume')]",
+               "xpath=//a[contains(translate(normalize-space(.),'VIEWRESUME',"
+               "'viewresume'),'view resume')]"):
+        for fr in page.frames:
+            try:
+                loc = fr.locator(xp).first
+                if loc.count() > 0:
+                    return fr, loc
+            except Exception:  # noqa: BLE001
+                continue
+    return None, None
+
+
 def lookup_resume_phone(page):
-    """Open the applicant's Indeed resume (signed URL from 'View resume') in a new
-    page and pull the first phone number. Returns (phone_or_None, detail). No Indeed
-    login needed — the URL token authorizes it (Megan confirmed)."""
+    """Open the applicant's Indeed resume and pull the first phone number. Prefer
+    CLICKING the 'View resume' link (real gesture + referer + in-session nav — the
+    way Megan opens it), which gets past Cloudflare where a cold page.goto now hits
+    the 'Just a moment…' block (2026-08-02). Falls back to loading the signed href."""
+    fr, loc = _view_resume_link(page)
     href = _view_resume_href(page)
-    if not href:
+    if loc is None and not href:
         return None, "no view-resume link"
     newpg = None
     try:
-        newpg = page.context.new_page()
+        # 1) Preferred: real click on the link → opens the resume in a new tab.
+        if loc is not None:
+            try:
+                with page.context.expect_page(timeout=15000) as pi:
+                    loc.click(timeout=8000)
+                newpg = pi.value
+            except Exception:  # noqa: BLE001
+                newpg = None
+        # 2) Fallback: cold-load the signed URL in a new tab.
+        if newpg is None and href:
+            newpg = page.context.new_page()
+            try:
+                newpg.goto(href, wait_until="domcontentloaded", timeout=45000)
+            except Exception:  # noqa: BLE001
+                pass
+        if newpg is None:
+            return None, "could not open resume tab"
         # Cloudflare's challenge JS only runs in a FOREGROUND tab (browsers throttle
-        # background tabs), so bring the resume tab to front or it hangs forever on
-        # 'Just a moment…' (Megan 7/30). The OAT tab is restored in `finally`.
+        # background tabs), so bring the resume tab to front. OAT tab restored below.
         try:
             newpg.bring_to_front()
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            newpg.goto(href, wait_until="domcontentloaded", timeout=45000)
         except Exception:  # noqa: BLE001
             pass
         # employers.indeed.com throws a Cloudflare 'Just a moment…' interstitial;
