@@ -2872,7 +2872,7 @@ AUTOMATED_REPORTS = [
             "frequency": "weekly",
             "weekdays": [0],   # Monday
             "time": "7:15 PM",   # last send drives the sort; all three shown in time_label
-            "time_label": "Mon 11 AM · 4 PM · 7:15 PM (final)",
+            "time_label": "11 AM · 4 PM · 7:15 PM (final)",
             "estimated_minutes": 2,
         },
         "description": "Emails the owners/ICDs three Monday reminders — 11 AM, 4 PM, "

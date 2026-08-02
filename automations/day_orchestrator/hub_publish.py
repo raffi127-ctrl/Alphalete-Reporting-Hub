@@ -140,6 +140,13 @@ _HUB_CARD = {
     # here so that card's pill climbs 1/3 → 3/3 green. Leader's Call is now just
     # its deck (leaders_call above).
     "owners_call_reminder": "promo-reminder-email",
+    # Fiber Owners email-distro sync: two orchestrator runs on Lucy 1 — Sat
+    # 'post' (add owners + post departures for a 24h review) and Sun 'finalize'
+    # (remove the approved departures). Neither report_id was mapped, so the
+    # orchestrator ran them but never published — the card sat white forever.
+    # Route both to the card so it greens on each run day (Megan 2026-08-02).
+    "fiber_owners_distro_post": "fiber-owners-distro",
+    "fiber_owners_distro_finalize": "fiber-owners-distro",
     "bg_check_sync": "bg-check-sync",
     # New-Start Follow-Up's Saturday roll-call + nudges (and Sunday checklist)
     # run as their own launchd jobs, not the 4am batch. Each live pass publishes
