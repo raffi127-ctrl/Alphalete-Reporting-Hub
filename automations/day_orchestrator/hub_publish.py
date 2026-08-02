@@ -147,6 +147,11 @@ _HUB_CARD = {
     # Route both to the card so it greens on each run day (Megan 2026-08-02).
     "fiber_owners_distro_post": "fiber-owners-distro",
     "fiber_owners_distro_finalize": "fiber-owners-distro",
+    # DD Thursday prep is one card now — "DD — Weekly Prep" (the dd_populate card,
+    # daily_runs {"3":2}). dd_week_roll (rolls the week column) runs first, then
+    # dd_populate (fills owners) — both publish here so the pill climbs 1/2 -> 2/2
+    # green on Thursday (Megan 2026-08-02: "should these consolidate into 1 card").
+    "dd_week_roll": "dd_populate",
     "bg_check_sync": "bg-check-sync",
     # New-Start Follow-Up's Saturday roll-call + nudges (and Sunday checklist)
     # run as their own launchd jobs, not the 4am batch. Each live pass publishes
