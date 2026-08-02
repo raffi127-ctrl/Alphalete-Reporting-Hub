@@ -4032,71 +4032,6 @@ AUTOMATED_REPORTS = [
     # Board email above — capture, post for review, send on a checkmark — but
     # one module (automations.board_emails) driving both boards.
     {
-        "id": "country-sales-board-email",
-        "name": "Country Sales Board Email",
-        "creator": "Eve & Claude",
-        "emoji": "🌎",
-        "color": "#0D9488",
-        "category": "📊 Metrics",
-        "description": "Emails an exact-sheet screenshot of the Country Sales Board (the board + the per-day delta units chart) to Rafael and Maud Miller. Behind the #revision-emails review gate: nothing goes out until Evelyn or Jolie puts a checkmark on the day's post.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Renders the Country Sales Board with the SAME function its Slack "
-            "DM uses (Sheets PDF export — exact colors/fonts/borders, no "
-            "browser), builds the email, and posts it for review.\n\n"
-            "WHAT'S IN THE IMAGE\n"
-            "• the board: title + Product Summary + Current vs Prior, then the "
-            "rep leaderboard with the live week and the 7 most recent frozen "
-            "weeks\n"
-            "• the delta units chart: every rep's This week / Last week / Delta "
-            "for all seven days\n"
-            "Both blocks are found by LABEL every run, so an inserted row or a "
-            "new rep can't silently crop the image.\n\n"
-            "THE REVIEW GATE\n"
-            "The 4am flow posts the day's PDF in #revision-emails (not before "
-            "09:30) and mails nothing. A ✅ from Evelyn or Jolie releases it, "
-            "picked up within 15 minutes by the watcher on the mini. The send "
-            "mails the image ALREADY captured — what was approved is what goes "
-            "out, even if the board moves in between.\n\n"
-            "WHO GETS IT\n"
-            "Rafael + Maud Miller only.\n\n"
-            "THE SUBJECT SAYS YESTERDAY\n"
-            "The board only ever holds completed days, so a run on the 30th is "
-            "showing the 29th's sales."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/"
-                      "edit?gid=1121646560"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "9:30 AM",
-            "estimated_minutes": 3,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Posted for review in #revision-emails — it sends when Evelyn or Jolie ticks it.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Build + post for review",
-                "icon": "▶",
-                "primary": True,
-                "help": "Captures the board, builds the email, uploads the PDF and posts the link in #revision-emails. Sends nothing.",
-                "module": "automations.board_emails.review_gate",
-                "args_fn": lambda: ["--board", "country", "--post"],
-            },
-            {
-                "label": "Preview only (no Slack)",
-                "icon": "👁",
-                "help": "Builds output/board_emails/country/<date>/preview.html and stops. No Drive, no Slack, no email.",
-                "module": "automations.board_emails.email_send",
-                "args_fn": lambda: ["--board", "country", "--dry-run"],
-            },
-        ],
-    },
-    {
         "id": "all-units-board",
         "name": "All Units Org Sales Board",
         "creator": "Eve & Claude",
@@ -4166,7 +4101,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌎",
         "color": "#0D9488",
         "category": "📊 Metrics",
-        "description": "Fills the Country Sales Board tab from Tableau (ATT Tracker 2.1 - D2D → 'D2D Page 1 - This Week') and rolls the week over every Tuesday. Writes the REAL tab — the one the country reads.",
+        "description": "Two phases on one card: (1) the 4am fill writes the Country Sales Board tab from Tableau and rolls the week over every Tuesday — the REAL tab the country reads; (2) at 9:30 AM an exact-sheet screenshot is emailed to Rafael & Maud, after Evelyn or Jolie ✅s it in #revision-emails. The pill is orange after the fill, green once the email sends.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls the D2D **'This Week'** crosstab and writes only the "
@@ -4185,7 +4120,15 @@ AUTOMATED_REPORTS = [
             "After writing, it confirms **yesterday** carries numbers; a "
             "blank/zero day **fails on purpose** so you get an alert, not a "
             "silently empty board. Unmatched names fill **0** and are flagged — "
-            "fix a selling rep's spelling drift on the **ICD Aliases** sheet."
+            "fix a selling rep's spelling drift on the **ICD Aliases** sheet.\n\n"
+            "PHASE 2 — 9:30 AM EMAIL\n"
+            "After the fill, a second step emails an exact-sheet screenshot "
+            "(board + per-day delta chart) to **Rafael + Maud**. It posts the "
+            "day's image in **#revision-emails** (not before 9:30) and sends "
+            "nothing until **Evelyn or Jolie** ✅s it — the mini's watcher picks "
+            "up the approval within 15 min and mails exactly what was approved. "
+            "The card's pill turns **green** once that email goes out; until then "
+            "it sits **orange** (fill done, email pending)."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
@@ -4194,6 +4137,12 @@ AUTOMATED_REPORTS = [
         # Needs the warm ownerville/Tableau session, which lives on the runner.
         "run_machine": "Lucy 1",
         "run_rerun_id": "country_sales_board",
+        # TWO-PHASE card (Megan 2026-08-02): phase 1 = the 4am fill, phase 2 =
+        # the 9:30am screenshot email (report country-sales-board-email). The
+        # pill is orange after the fill and turns green once the email sends —
+        # one card for the chained pair instead of two. Reports still run
+        # separately; this only merges the Hub display.
+        "phases": ["country-sales-board", "country-sales-board-email"],
         "schedule": {
             "frequency": "daily",
             "time": "4 AM flow (when data's ready)",
@@ -6800,6 +6749,46 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
     except Exception:
         _running_ids = set()
 
+    def _ramp(_done: int, _total: int) -> str:
+        """Fraction-based phase colour: yellow → orange → teal as _done climbs
+        toward _total, green (ok) once complete. Shared by daily_runs cards
+        (passes of ONE report) and `phases` cards (a chain of DIFFERENT reports)
+        so both ramp identically — a 2-phase card is orange at 1/2 then green; a
+        4-phase card hits yellow/orange/teal at 1/2/3; a 9-pass card sweeps it."""
+        if _done >= _total:
+            return "ok"
+        _f = _done / _total
+        if _f <= 0.40:
+            return "phase1"        # yellow
+        if _f <= 0.70:
+            return "phase2"        # orange
+        return "phase3"            # teal
+
+    def _phase_status(_phases: list, _day: dt.date) -> tuple:
+        """Pill for a card whose progress is a CHAIN of different reports
+        (Country Sales Board = the 4am fill, then the 9:30am email). Returns
+        (status, done_count). Green when every phase succeeded that day; ramps
+        yellow→orange→teal as phases land; RED if any phase failed. A phase that
+        simply hasn't run YET is pending, not a failure — so the card sits on the
+        ramp between phases rather than reading red or green early."""
+        if _day > today:
+            return "up", 0
+        _sts = [_cal_statuses.get((_p, _day)) for _p in _phases]
+        _done = sum(1 for _s in _sts if _s == "success")
+        _n = len(_phases)
+        if _done >= _n:
+            return "ok", _done
+        _RUNNING = ("running", "started", "in progress", "in-progress")
+        _failed = any(_s not in (None, "success") and _s not in _RUNNING
+                      for _s in _sts)
+        if _failed:
+            return "fail", _done
+        if _done > 0:
+            if _day != today:
+                return "partial", _done      # past day, chain never finished
+            return _ramp(_done, _n), _done
+        return ("up" if _day == today else "miss"), _done
+
     def _cal_status(_rid: str, _day: dt.date, _daily_runs: int = 1) -> str:
         """Per-card outcome for a day: ok / partial / progress / fail / miss / up.
 
@@ -6817,25 +6806,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             if _done > 0:
                 if _day != today:
                     return "partial"          # past day, never finished
-                # TODAY, mid-run: universal phase ramp (Megan 2026-07-29). The
-                # pill warms from orange → amber → yellow toward green as passes
-                # land — first completed pass = orange, the pass just before done
-                # = yellow, green (ok) reserved for the LAST pass. Anchored on the
-                # endpoints so a 4-pass card is exactly orange/amber/yellow/green
-                # at 1/2/3/4, a 2-pass card goes orange→green, and a 9-pass card
-                # sweeps the ramp. See [[reference_hub_card_rendering_rules]].
-                # Colour by FRACTION complete, not pass index, so ONE ramp
-                # scales to any phase count (Megan 2026-08-02): a 2-phase card is
-                # orange at 1/2 then green (her "orange on phase 1, green on
-                # phase 2"), a 4-phase card hits yellow/orange/light-green at
-                # 1/2/3, a 9-pass card sweeps the whole ramp.
-                #   yellow (early) → orange (mid) → light-green (late) → green.
-                _f = _done / _daily_runs
-                if _f <= 0.40:
-                    return "phase1"        # yellow
-                if _f <= 0.70:
-                    return "phase2"        # orange
-                return "phase3"            # light green
+                return _ramp(_done, _daily_runs)   # today, mid-run
             if _s in (None, "success"):
                 return "up" if _day == today else "miss"
             # nothing succeeded and the latest attempt was not a success → fall
@@ -6953,8 +6924,16 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
                     # plain = upcoming). Status is encoded in the button key
                     # (__calstat_<status>) which the injected CSS colors.
-                    _dr_today = _expected_runs(_r, _day)
-                    _stat = _cal_status(_r["id"], _day, _dr_today)
+                    # A `phases` card chains DIFFERENT reports (fill → email);
+                    # a daily_runs card counts passes of its OWN report.
+                    _phases = _r.get("phases")
+                    if _phases:
+                        _dr_today = len(_phases)
+                        _stat, _phase_done = _phase_status(_phases, _day)
+                    else:
+                        _dr_today = _expected_runs(_r, _day)
+                        _stat = _cal_status(_r["id"], _day, _dr_today)
+                        _phase_done = _cal_counts.get((_r["id"], _day), 0)
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
@@ -6967,8 +6946,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # green yet. Parenthesized + "done" so a bare "6/7" jammed
                     # after the name doesn't read like a date (e.g. June 7).
                     if _stat in ("progress", "phase1", "phase2", "phase3"):
-                        _label += (f" ({_cal_counts.get((_r['id'], _day), 0)}"
-                                   f"/{_dr_today} done)")
+                        _label += f" ({_phase_done}/{_dr_today} done)"
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
