@@ -4216,63 +4216,6 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "country-sales-board-slack",
-        # Name carries the destination, same convention as the Org board's card.
-        "name": "Country Sales Board → Rafael, Maud & Evelyn (DM)",
-        "creator": "Eve & Claude",
-        "emoji": "📸",
-        "color": "#0EA5E9",
-        "category": "📊 Metrics",
-        "description": "SUSPENDED — the automatic daily DM is off (Eve 2026-07-28); the board is filled day by day only. 'Post Now' still sends it by hand: one shared group DM as Lucy to Rafael Hidalgo, Maud Miller and Evelyn Sobrino.",
-        "breakdown": (
-            "SUSPENDED (Eve 2026-07-28)\n"
-            "The **automatic daily DM is OFF**. The **Post Now** button below "
-            "still sends it by hand.\n\n"
-            "WHAT IT DOES (when on)\n"
-            "DMs an image of the Country Sales Board — exactly as it looks on "
-            "the sheet — as **one shared group DM** (as Lucy) to Rafael, Maud "
-            "& Evelyn, titled with yesterday's date."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
-                      "?gid=1121646560#gid=1121646560"),
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "country_sales_board_slack",
-        # Suspended 2026-07-28 — off the scheduler, run by hand from this card.
-        # Kept on a daily cadence ONLY so it still renders a pill (forced PURPLE
-        # via the calstat override) to read as "paused / revisit with Eve";
-        # hide_schedule keeps it out of the due-today / overdue tallies.
-        "hide_schedule": True,
-        "schedule": {
-            "frequency": "daily",
-            "time": None,
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Country Sales Board sent to Rafael, Maud & Evelyn.",
-            "message_failed": "❌ Send failed — check the log above, fix, then re-run.",
-        },
-        "actions": [
-            {
-                "label": "Post Now",
-                "icon": "▶",
-                "primary": True,
-                "help": "Renders the board and SENDS it to the group DM (Rafael, Maud, Evelyn) as Lucy.",
-                "module": "automations.country_sales_board.slack_post",
-                "args_fn": lambda: ["--post"],
-            },
-            {
-                "label": "Preview (build image, no send)",
-                "icon": "👁",
-                "help": "Builds the PNG into output/country_sales_board/ and resolves the recipients, but sends nothing.",
-                "module": "automations.country_sales_board.slack_post",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
         "id": "sci-campaigns",
         "name": "SCI Campaigns",
         "creator": "Eve & Claude",
@@ -11758,8 +11701,6 @@ else:  # st.session_state.view == "user"
             "[class*='owner-showdown__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCF3B8!important;color:#6B5A0A!important;border-color:#EAB308!important;opacity:1!important;animation:none!important}"
             # Org Sales Board — LIVE daily report: no pin, it greens on a real run
             # and reds on failure like any other batch report. (Megan 2026-07-29)
-            # Country Sales Board → DM — SUSPENDED, purple revisit item. (7/28)
-            "[class*='country-sales-board-slack__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             # Car-Rides Cleanup / Sales Board Fill / New-Start Follow-Up are
             # multi-pass. NO custom pill — they use the default phase pill:
             # colorless at rest, YELLOW while a pass is in progress, GREEN when
