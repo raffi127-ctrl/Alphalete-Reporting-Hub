@@ -1385,6 +1385,42 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                         pass
                 except Exception as e:
                     _log("[cdp] form login error: " + str(e)[:160])
+            # Cloudflare's managed challenge clears in a real Chrome, just not in
+            # the ~3s waited above — proven by the --warm probe (console rendered
+            # after a longer poll). So before giving up, POLL for the console to
+            # render (re-driving the login form if it surfaces once the challenge
+            # clears). A warm profile with no challenge finds #searchMC immediately
+            # and pays no penalty; only a re-challenged run waits — and it now
+            # self-heals inline instead of failing and re-copying a cold Default.
+            if page.locator("#searchMC").count() == 0:
+                import time as _t2
+                _deadline = _t2.time() + WARM_LOGIN_POLL_S
+                _drove = False
+                while _t2.time() < _deadline:
+                    if page.locator("#searchMC").count() > 0:
+                        break
+                    if not _drove and (
+                            page.locator(tp._PASSWORD_SELECTOR).count() > 0
+                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                        try:
+                            tp._drive_login_form(page, True,
+                                                 username=creds.appstream_username(),
+                                                 password=creds.appstream_password())
+                            _drove = True
+                        except Exception:  # noqa: BLE001
+                            pass
+                    page.wait_for_timeout(5000)
+                if page.locator("#searchMC").count() > 0:
+                    _log(f"[cdp] console rendered after a Cloudflare poll "
+                         f"(≤{WARM_LOGIN_POLL_S}s) — challenge auto-cleared.")
+                    try:
+                        _st = ctx.storage_state()
+                        if any(c.get("name", "").startswith("rqst_")
+                               for c in _st.get("cookies", [])):
+                            import json as _json
+                            tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
+                    except Exception:  # noqa: BLE001
+                        pass
             mc = page.locator("#searchMC").count()
             _log(f"[cdp] logged_in check: #searchMC={mc}")
             if mc == 0:
