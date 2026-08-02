@@ -112,8 +112,14 @@ case " $* " in
       case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
       _n=$((_n + 1))
       echo "$_n" > "$_STREAK_FILE"
-      if [ "$_n" -ge "$FAIL_STREAK" ] && [ ! -f "$_OUTAGE_FILE" ]; then
-        echo "[$(date)] failure streak $_n/$FAIL_STREAK — publishing FAILED to the Hub" >> "$LOG_FILE"
+      # rc=3 is the extractor STALL (run.py's ExtractionStalled) — a DEFINITIVE
+      # wedge, already confirmed by a cap-timeout with no count drop, so escalate
+      # on the FIRST one (threshold 1). Every other non-zero exit (login Cloudflare
+      # blip = 2, crashes) keeps the streak-of-3 suppression so a lone blip the
+      # next 10-min tick resolves never pings.
+      if [ "$ST" -eq 3 ]; then _threshold=1; else _threshold="$FAIL_STREAK"; fi
+      if [ "$_n" -ge "$_threshold" ] && [ ! -f "$_OUTAGE_FILE" ]; then
+        echo "[$(date)] failure (streak $_n, exit=$ST, threshold $_threshold) — publishing FAILED to the Hub" >> "$LOG_FILE"
         _publish failed && touch "$_OUTAGE_FILE" || true
         # Slack the same re-seed nudge appstream_watch sends for a dead session —
         # nobody's ever at the mini, so the local osascript notice below is unseen;

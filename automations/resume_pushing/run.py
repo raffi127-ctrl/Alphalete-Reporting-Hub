@@ -71,7 +71,14 @@ OFFICE_ID = "11580"
 OFFICE_HINT = "CARLOS HIDALGO"
 TABLE = "#table-batch-resume"        # v2 DataTable id (from the Cowork skill)
 
-EXTRACT_WAIT_SECONDS = 180           # let one Resume-Helper batch finish
+# Per-cycle wait for the Resume-Helper popup to flip to 'Reset'. A healthy batch
+# reaches Reset FAST — measured 29–47s across the known-good 2026-07-19 run — so
+# this is set to ~4× the worst healthy batch, not the old 25-min (1500s) cap. The
+# cap only bounds a cycle that never sees Reset; a healthy run always exits early
+# on Reset. Keeping it tight means a WEDGED cycle (extractor stuck, no Reset, no
+# count drop) is caught in ~3 min instead of grinding 25 — the difference between
+# a ~3-min and a ~3-hour time-to-alert. See extract_loop's cap+no-drop fast-bail.
+EXTRACT_CAP_SECONDS = 180
 MAX_EXTRACT_CYCLES = 30              # safety cap (≤50 resumes/cycle → ~1500)
 MAX_SEND_PASSES = 8                  # safety cap for the send loop
 
@@ -315,14 +322,20 @@ def _extract_wait_v2(page, tag: str = "") -> bool:
     return True
 
 
-def run_extract_once(page) -> bool:
+def run_extract_once(page) -> str:
     """One extraction pass, THE v2 way the user does it by hand: click the Resume
     Helper robot launcher (a plugin-injected square in the top-right), then 'Start'
     in its popup (rendered in the plugin's shadow DOM). The plugin opens an
     extractor tab that downloads + parses the resumes and fills phones; AppStream's
     own AI clears the human-check. Done when the popup flips to 'Reset' (100%).
     NOTE: clicking the page's native 'Auto Extract Resumes' button instead just
-    hangs on 'Processing…' forever — the robot popup is the only path that works."""
+    hangs on 'Processing…' forever — the robot popup is the only path that works.
+
+    Returns HOW the pass ended so extract_loop can tell a wedge from slow work:
+      "reset" — the popup flipped to Reset (batch genuinely finished)
+      "cap"   — hit the wait cap with no Reset (either a big batch still grinding,
+                or a wedged extractor — extract_loop disambiguates via the count)
+      ""      — couldn't even start (plugin/popup missing); a hard skip."""
     import time as _t
     # open the popup if it isn't already showing Start
     st = _shadow_find(page, "Start")
@@ -330,25 +343,26 @@ def run_extract_once(page) -> bool:
         c = _robot_center(page)
         if c is None:
             _log("[extract] robot launcher not found (plugin not injected?) — skip")
-            return False
+            return ""
         page.mouse.click(c[0], c[1])
         page.wait_for_timeout(2500)
         st = _shadow_find(page, "Start")
     if st is None:
         _log("[extract] Resume Helper popup opened but 'Start' not found")
-        return False
+        return ""
     page.mouse.click(st[0], st[1])
     _log("[extract] Resume Helper → Start clicked; extracting (AI clears the check)")
     t0 = _t.time()
     page.wait_for_timeout(5000)                 # let the run kick off
-    while _t.time() - t0 < 1500:                # ≤25 min for a big batch
+    while _t.time() - t0 < EXTRACT_CAP_SECONDS:
         if _shadow_find(page, "Reset") is not None:
             _log(f"[extract] batch finished after {int(_t.time() - t0)}s (Reset shown)")
             page.wait_for_timeout(1500)
-            return True
+            return "reset"
         page.wait_for_timeout(6000)
-    _log("[extract] extraction wait hit the 25-min cap — moving on")
-    return True
+    _log(f"[extract] extraction wait hit the {EXTRACT_CAP_SECONDS // 60}-min cap "
+         f"— moving on")
+    return "cap"
 
 
 def extract_loop(page, dry_run: bool) -> int:
@@ -387,7 +401,8 @@ def extract_loop(page, dry_run: bool) -> int:
                     f"{OFFICE_ID}. Bailing so the next pass self-heals.")
         cycles += 1
         _log(f"[extract] cycle {cycles}: {remaining} ready — running Resume Helper")
-        if not run_extract_once(page):
+        res = run_extract_once(page)
+        if not res:
             break
         # Reload and re-read (the elapsed timer is not a reliable done-signal).
         try:
@@ -395,6 +410,19 @@ def extract_loop(page, dry_run: bool) -> int:
         except Exception:
             pass
         page.wait_for_timeout(3000)
+        # Fast wedge detection: a cap-timeout (extractor never flipped to Reset)
+        # that ALSO cleared nothing this cycle is a definitive wedge — bail after
+        # ONE cycle instead of waiting out STALL_CYCLES. A big-but-healthy batch
+        # can hit the cap too, but it DROPS the count (partial progress), so this
+        # only fires on a truly stuck extractor. Halves time-to-alert.
+        if res == "cap":
+            after = ready_for_extraction(page)
+            if after is not None and after >= remaining:
+                raise ExtractionStalled(
+                    f"{after} ready — extractor hit the "
+                    f"{EXTRACT_CAP_SECONDS // 60}-min cap with no drop "
+                    f"(was {remaining}); wedged — likely a stale Cloudflare "
+                    f"clearance on office {OFFICE_ID}. Bailing after 1 cycle.")
     else:
         _log(f"[extract] hit safety cap ({MAX_EXTRACT_CYCLES} cycles) — stopping")
 

@@ -22,9 +22,11 @@ class _FakePage:
         pass
 
 
-def _drive(counts):
+def _drive(counts, res="reset"):
     """Run extract_loop with ready_for_extraction returning `counts` in order
-    (repeating the last value once exhausted, for the final end-count read)."""
+    (repeating the last value once exhausted, for the final end-count read).
+    `res` is what run_extract_once returns each cycle: "reset" (clean finish) or
+    "cap" (hit the wait cap with no Reset — the fast-bail signal)."""
     it = iter(counts)
     last = [counts[-1]]
 
@@ -36,7 +38,7 @@ def _drive(counts):
 
     orig_read, orig_once = R.ready_for_extraction, R.run_extract_once
     R.ready_for_extraction = _read
-    R.run_extract_once = lambda page: True
+    R.run_extract_once = lambda page: res
     try:
         return R.extract_loop(_FakePage(), dry_run=False)
     finally:
@@ -61,6 +63,17 @@ class StallGuardTest(unittest.TestCase):
     def test_slow_but_progressing_never_stalls(self):
         # Drops every cycle, just slowly -> must NOT false-positive.
         self.assertEqual(_drive([80, 60, 55, 30, 5, 0]), 0)
+
+    def test_cap_with_no_drop_bails_after_one_cycle(self):
+        # run_extract_once hit the cap (no Reset) AND the count didn't move ->
+        # definitive wedge, bail after ONE cycle (don't wait out STALL_CYCLES).
+        with self.assertRaises(R.ExtractionStalled):
+            _drive([76, 76, 76], res="cap")
+
+    def test_cap_but_dropping_is_a_healthy_big_batch(self):
+        # A big batch can hit the cap yet still DROP the count (partial progress);
+        # that's healthy-slow, not a wedge -> must complete, never raise.
+        self.assertEqual(_drive([120, 70, 20, 0], res="cap"), 0)
 
 
 if __name__ == "__main__":
