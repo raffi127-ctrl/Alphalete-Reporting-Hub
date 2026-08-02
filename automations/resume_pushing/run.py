@@ -1211,6 +1211,116 @@ def _flush_diag(tab: str = "RP Diag") -> None:
         print(f"DIAG sheet err: {e}", flush=True)
 
 
+# How long the keep-warm gives Cloudflare's MANAGED (JS) challenge to auto-clear.
+# The real q10min run only waits a fixed ~3s after navigating, which is too short
+# for the interstitial to resolve — so a run that hits a re-challenge fails even
+# though a real Chrome WOULD have passed it a few seconds later. The keep-warm
+# polls up to this long, so the challenge clears, a fresh cf_clearance is minted,
+# and the profile is left warm for the next real run to reuse.
+WARM_LOGIN_POLL_S = 90
+
+
+def _cdp_warm(force_fresh: bool = True) -> int:
+    """KEEP-WARM: open the real Chrome, let Cloudflare's managed challenge auto-
+    clear, confirm the AppStream console (#searchMC) renders, then PERSIST the
+    profile so the q10min runs reuse a fresh cf_clearance + live session instead
+    of re-copying a cold, stale-clearance Default. No office switch / extract /
+    send — this only refreshes the session.
+
+    WHY: the self-heal re-copies the everyday Default profile on a login failure,
+    but nothing keeps THAT profile's Cloudflare clearance fresh, so once it goes
+    stale every copy is stale and the report fails back-to-back for days. This job
+    is what keeps it fresh, hands-off. Returns 0 if the console rendered (warm), 2
+    if Cloudflare never cleared within WARM_LOGIN_POLL_S (a real block, surfaced —
+    not silently retried)."""
+    import os
+    import subprocess
+    import time as _t
+    from patchright.sync_api import sync_playwright
+    from automations.shared import tableau_patchright as tp
+    from automations.shared import creds
+    _LOG_BUFFER.clear()
+
+    dst = _copy_default_profile(force_fresh=force_fresh)
+    _log(f"[warm] profile {'fresh-copied from Default' if force_fresh else 'reused'}; "
+         f"plugin present: {os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
+    proc = _launch_cdp_chrome()
+    _log(f"[warm] launched real Chrome pid={proc.pid}; waiting 22s for startup")
+    _t.sleep(22)
+    rc = 2
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            # Inject any saved session, then land on the console URL so Cloudflare
+            # (if it re-challenges) starts resolving.
+            tp._reuse_appstream_storage_state(ctx, page, True)
+            try:
+                page.goto("https://applicantstream.com/index.cfm",
+                          wait_until="domcontentloaded")
+            except Exception:
+                pass
+            # POLL for up to WARM_LOGIN_POLL_S: the console (#searchMC) means we're
+            # in; a visible login form means Cloudflare cleared but the session is
+            # stale, so drive the form once; anything else is the interstitial —
+            # wait it out. This generous wait is the whole point vs the real run.
+            deadline = _t.time() + WARM_LOGIN_POLL_S
+            drove_login = False
+            while _t.time() < deadline:
+                if page.locator("#searchMC").count() > 0:
+                    break
+                if not drove_login and (
+                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
+                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    try:
+                        tp._drive_login_form(page, True,
+                                             username=creds.appstream_username(),
+                                             password=creds.appstream_password())
+                        drove_login = True
+                    except Exception as e:  # noqa: BLE001
+                        _log("[warm] form login error: " + str(e)[:140])
+                page.wait_for_timeout(5000)
+            mc = page.locator("#searchMC").count()
+            _log(f"[warm] after ≤{WARM_LOGIN_POLL_S}s poll: #searchMC={mc} "
+                 f"(drove_login={drove_login})")
+            if mc > 0:
+                # Warm: persist the fresh session + keep the seed marker so the next
+                # q10min run REUSES this profile (fresh clearance) instead of
+                # re-copying a cold Default.
+                try:
+                    _st = ctx.storage_state()
+                    if any(c.get("name", "").startswith("rqst_")
+                           for c in _st.get("cookies", [])):
+                        import json as _json
+                        tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
+                        _log("[warm] saved a fresh AppStream session for reuse")
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    open(_CDP_SEED_MARKER, "w").close()
+                except Exception:  # noqa: BLE001
+                    pass
+                _log("[warm] OK — console rendered; profile is WARM for the next run")
+                rc = 0
+            else:
+                _log(f"[warm][STOP] Cloudflare never cleared / login incomplete in "
+                     f"{WARM_LOGIN_POLL_S}s — a real block, not a timing miss.")
+                rc = 2
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        _log("[warm] ERROR: " + str(e)[:200])
+        _log(traceback.format_exc()[-400:])
+    finally:
+        try:
+            proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+        _flush_diag("RP Warm Diag")
+    return rc
+
+
 def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
              send_only: bool = False, extract_only: bool = False,
              inspect: bool = False, debug: bool = False) -> int:
@@ -1735,8 +1845,15 @@ def main() -> int:
     ap.add_argument("--extract-smart", action="store_true",
                     help="One extraction round timed by the extractor's own tab opening/closing "
                          "(no fixed timer), then reload + snap. You clear the captcha if it pops.")
+    ap.add_argument("--warm", action="store_true",
+                    help="KEEP-WARM: open real Chrome, let Cloudflare's managed challenge "
+                         "auto-clear (generous poll), confirm the console, then persist the "
+                         "profile so the q10min runs reuse a fresh clearance. No extract/send. "
+                         "Runs on a frequent LaunchAgent so the source profile is never stale.")
     args = ap.parse_args()
 
+    if args.warm:
+        return _cdp_warm()
     if args.inspect_plugin:
         return _inspect_plugin()
     if args.probe:
