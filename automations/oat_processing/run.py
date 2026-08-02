@@ -1189,7 +1189,7 @@ def lookup_resume_phone(page):
         # body no longer the challenge), THEN scan the WHOLE page for the phone —
         # it can be in the header ("City, ST ZIP | +1… | email") while the body
         # shows "[Información reservada]" (Megan 7/30: Yelitza + Cloudflare misses).
-        for _ in range(28):                        # ~28s (Cloudflare + JS render)
+        for _i in range(60):                       # ~60s (Cloudflare can be slow)
             try:
                 title = (newpg.title() or "").lower()
                 body = newpg.evaluate("() => (document.body.innerText || '')")
@@ -1197,6 +1197,8 @@ def lookup_resume_phone(page):
                 title, body = "", ""
             challenged = ("just a moment" in title or "just a moment" in body.lower()
                           or "verify you are human" in body.lower())
+            if _i in (10, 25, 45):                  # log progress so we see if it clears
+                _log(f"    [resume] t+{_i}s title={title[:30]!r} challenged={challenged}")
             if not challenged and body:
                 for m in _PHONE_RE.finditer(body):
                     digits = re.sub(r"\D", "", m.group(0))
