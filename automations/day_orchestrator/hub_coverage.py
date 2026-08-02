@@ -398,6 +398,11 @@ _INFRA_AGENTS = {
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",
+    # frontier-sunday-6pm is just the Sunday timer that runs opt_frontier --email;
+    # opt_frontier already owns the curated 'Frontier OPT Data Pull' card, so this
+    # wrapper is deliberately card-less. Without this it registered a duplicate
+    # ('Frontier Sunday 6Pm') that confused the two — deleted 2026-08-02.
+    "frontier-sunday-6pm",
 }
 # Wrapper module segments that are PREP steps (run before the real report), so a
 # naive first-`-m` grab would resolve the wrong module (e.g. stf's chrome_guard).
