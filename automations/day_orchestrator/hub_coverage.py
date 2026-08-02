@@ -83,8 +83,27 @@ def slug(report_id: str) -> str:
     return report_id.replace("_", "-").strip("-")
 
 
+# Background plumbing + auto-registered sub-step/dupe stubs that must NEVER carry a
+# Hub card of their own (they never publish a real run — they self-registered when
+# hub_coverage scanned an agent/plist, cluttering the Hub with permanently-white
+# cards). Listed explicitly so a plain row-delete STICKS — without this, the next
+# sync() recreates them. jiraiya_bot is deliberately NOT here (Megan wants the /dd
+# + promo listener visible as a card). Swept 2026-08-02. [[reference_hub_card_rendering_rules]]
+_NOT_A_REPORT = frozenset({
+    # background machinery (not a report anyone runs)
+    "day_orchestrator", "card_scheduler", "session_holder", "keep_awake",
+    "mini_control", "board_probe", "orchestrator_schedule_guard", "lucy2_digest",
+    "bg_check_watchdog", "due_diligence_watch", "harvest_proof_1pm", "proof_order_log",
+    # auto-registered sub-step / dupe stubs of a real card (never published)
+    "applicant_morning", "applicant_evening", "appstream_morning", "leaders_call_mon",
+    "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
+    "override_bulletin_send_fri", "brand_audit_noon", "car_rides_cleanup",
+    "harvest_prime",
+})
+
+
 def is_internal(report_id: str) -> bool:
-    return bool(_SKIP_RE.match(report_id))
+    return report_id in _NOT_A_REPORT or bool(_SKIP_RE.match(report_id))
 
 
 # ---------------------------------------------------------------- card inventory
