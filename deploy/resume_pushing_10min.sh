@@ -115,6 +115,10 @@ case " $* " in
       if [ "$_n" -ge "$FAIL_STREAK" ] && [ ! -f "$_OUTAGE_FILE" ]; then
         echo "[$(date)] failure streak $_n/$FAIL_STREAK — publishing FAILED to the Hub" >> "$LOG_FILE"
         _publish failed && touch "$_OUTAGE_FILE" || true
+        # Slack the same re-seed nudge appstream_watch sends for a dead session —
+        # nobody's ever at the mini, so the local osascript notice below is unseen;
+        # this DMs Megan + Eve. Once per outage (guarded by $_OUTAGE_FILE above).
+        "$VENV_PY" -c "from automations.shared import appstream_watch; appstream_watch.ping_resume_pushing_stall()" >> "$LOG_FILE" 2>&1 || true
         _NOTIFY=1
       else
         echo "[$(date)] transient bad pass (streak $_n/$FAIL_STREAK, exit=$ST) — treated as a SKIP, not published" >> "$LOG_FILE"
@@ -126,6 +130,8 @@ case " $* " in
         # first-clean-pass branch below would never fire).
         echo "[$(date)] recovered after a published outage — publishing SUCCESS" >> "$LOG_FILE"
         _publish success && rm -f "$_OUTAGE_FILE" || true
+        # Symmetric '✅ recovered' DM so whoever re-seeded knows it's clear.
+        "$VENV_PY" -c "from automations.shared import appstream_watch; appstream_watch.ping_resume_pushing_recovered()" >> "$LOG_FILE" 2>&1 || true
         touch "$_PUB_STAMP"
       elif [ ! -f "$_PUB_STAMP" ]; then
         _publish success && touch "$_PUB_STAMP" || true

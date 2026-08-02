@@ -75,6 +75,27 @@ EXTRACT_WAIT_SECONDS = 180           # let one Resume-Helper batch finish
 MAX_EXTRACT_CYCLES = 30              # safety cap (≤50 resumes/cycle → ~1500)
 MAX_SEND_PASSES = 8                  # safety cap for the send loop
 
+# Consecutive extract cycles with NO net drop in "Ready For Extraction" before we
+# declare the extractor wedged and BAIL with a non-zero exit. A healthy run clears
+# ≤50/cycle, so a ~70-deep queue drops on the very FIRST cycle; two cycles with
+# zero downward progress means the extractor isn't clearing — typically a stale
+# Cloudflare clearance on the office-11580 resume documents (the console still
+# logs in, but the per-resume reads are challenged). Bailing FAST (~two cycles,
+# not the 30-cycle / ~11-hour safety cap) is the whole point: launchd keeps ONE
+# instance per label, so a wedged run silently blocks every later q10min pass AND
+# the fresh-profile self-heal never gets a turn (it only fires when a run ENDS).
+# A fast non-zero exit lets the next pass re-copy a fresh profile (self-heal) and
+# lets the deploy wrapper's fail-streak notifier fire so a human gets pinged to
+# re-seed. See extract_loop.
+STALL_CYCLES = 2
+
+
+class ExtractionStalled(RuntimeError):
+    """The extract loop ran but 'Ready For Extraction' never dropped — the
+    extractor is wedged (usually a stale Cloudflare clearance on the resume-document
+    reads). Raised so the run exits non-zero FAST instead of grinding the full
+    safety cap, so the next pass self-heals and the fail-streak notifier fires."""
+
 
 _LOG_BUFFER: list = []
 
@@ -340,6 +361,8 @@ def extract_loop(page, dry_run: bool) -> int:
         return start or 0
 
     cycles = 0
+    best = None          # lowest "ready" count seen — real downward progress only
+    stall = 0            # consecutive cycles with no drop below `best`
     while cycles < MAX_EXTRACT_CYCLES:
         remaining = ready_for_extraction(page)
         if remaining is None:
@@ -348,6 +371,20 @@ def extract_loop(page, dry_run: bool) -> int:
         if remaining <= 0:
             _log("[extract] Ready For Extraction = 0 — extraction complete")
             break
+        # Stall guard: compare against the LOWEST count seen (not just the prior
+        # cycle) so new applicants arriving mid-run can't mask a wedged extractor
+        # by inflating the count. Only genuine downward progress resets the streak.
+        if best is None or remaining < best:
+            best = remaining
+            stall = 0
+        else:
+            stall += 1
+            if stall >= STALL_CYCLES:
+                raise ExtractionStalled(
+                    f"{remaining} ready — no drop across {stall} cycle(s) "
+                    f"(best={best}, start={start}); extractor not clearing the "
+                    f"queue — likely a stale Cloudflare clearance on office "
+                    f"{OFFICE_ID}. Bailing so the next pass self-heals.")
         cycles += 1
         _log(f"[extract] cycle {cycles}: {remaining} ready — running Resume Helper")
         if not run_extract_once(page):
@@ -1315,6 +1352,14 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 _log(f"[cdp] still ready/not-extracted: {remaining}")
             _log(f"[cdp] applicants sent to call list: {sent}")
             rc = 0
+    except ExtractionStalled as e:
+        # Fast, DISTINCT non-zero exit (rc=3) — not a generic crash. The deploy
+        # wrapper counts this toward the fail streak (→ Sosumi + publish FAILED),
+        # and the next q10min pass re-copies a fresh profile to self-heal.
+        _log("[cdp] EXTRACTOR STALLED: " + str(e)[:260])
+        _log("[cdp] exiting rc=3 so the next pass self-heals and the fail-streak "
+             "notifier can fire (a stale clearance needs a re-seed).")
+        rc = 3
     except Exception as e:
         import traceback
         _log("[cdp] ERROR: " + str(e)[:220])

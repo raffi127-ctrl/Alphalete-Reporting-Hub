@@ -204,6 +204,50 @@ def _reseed_alert_text(stale, when: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Resume Pushing (office 11580) escalation — a failure mode the session-expiry
+# watch above can't see. Resume Pushing shares the AppStream session, so a DEAD
+# session already surfaces in watch(). But it can also wedge with a LIVE login:
+# the console logs in, yet the per-resume reads are Cloudflare-challenged, so
+# extraction never clears. That has no readable expiry to predict, so the q10min
+# fail-streak wrapper calls these once it has confirmed a real outage / recovery —
+# giving Resume Pushing the same "a human gets pinged, then it self-heals" path
+# daily_focus gets from watch(). Best-effort; never raise (a notifier must not
+# break the run).
+# ---------------------------------------------------------------------------
+
+def ping_resume_pushing_stall(dry_run: bool = False) -> None:
+    """DM Megan + Eve that Resume Pushing (office 11580) is wedged and needs a
+    one-time re-seed. Called by the deploy wrapper once the fail streak confirms a
+    real outage (once per outage, so it can't spam)."""
+    try:
+        text = (
+            "⚠️ *Resume Pushing (office 11580) is stalled.* It logs in fine, but "
+            "resume extraction isn't clearing the queue — usually a stale "
+            "Cloudflare clearance on the resume documents. Fresh passes keep "
+            "re-copying the profile but can't clear this one on their own; it "
+            "needs a one-time re-seed:\n"
+            f"```{_reseed_cmd()}```\n"
+            "The moment it's re-seeded the next 10-min pass picks up on its own — "
+            "nothing else to touch.")
+        _alert(text, dry_run)
+    except Exception as e:  # noqa: BLE001
+        print(f"[appstream_watch] (resume-pushing stall ping failed: "
+              f"{type(e).__name__}: {str(e)[:100]})")
+
+
+def ping_resume_pushing_recovered(dry_run: bool = False) -> None:
+    """DM Megan + Eve that Resume Pushing recovered after a published outage — the
+    symmetric '✅ healthy again' note watch() sends for a re-seeded session."""
+    try:
+        _alert("✅ *Resume Pushing (office 11580) recovered* — a pass extracted and "
+               "sent cleanly after the outage. Card's green again; nothing to do.",
+               dry_run)
+    except Exception as e:  # noqa: BLE001
+        print(f"[appstream_watch] (resume-pushing recovery ping failed: "
+              f"{type(e).__name__}: {str(e)[:100]})")
+
+
+# ---------------------------------------------------------------------------
 # The watch — one evaluation
 # ---------------------------------------------------------------------------
 
