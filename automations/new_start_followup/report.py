@@ -117,8 +117,29 @@ class Reconciliation:
 def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
           client=None) -> Reconciliation:
     ros = roster_mod.load()
-    monday, tab, starts = obcl.read_new_starts(monday)
-    owed = obcl.counts_by_interviewer(starts)
+    if monday is None:
+        monday = obcl.upcoming_monday()
+
+    # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
+    # via Claude vision. The live OBCL tab carries people we're NOT moving forward
+    # with + duplicate rows, so we no longer derive the roster from it (Raf
+    # 2026-08-03). Fall back to the OBCL sheet only if the screenshot is missing.
+    from automations.new_start_followup import screenshot_roster
+    try:
+        rows = screenshot_roster.fetch_roster_rows(monday.isoformat())
+        owed = {}
+        for r in rows:
+            intv = (r.get("interviewer") or "").strip()
+            if intv:
+                owed[intv] = owed.get(intv, 0) + 1
+        tab = "Aisha's screenshot"
+        print("[roster] Aisha's screenshot: {} new starts across {} interviewers"
+              .format(sum(owed.values()), len(owed)))
+    except Exception as exc:  # noqa: BLE001
+        print("WARNING: screenshot roster unavailable ({}); falling back to the "
+              "OBCL sheet.".format(exc))
+        monday, tab, starts = obcl.read_new_starts(monday)
+        owed = obcl.counts_by_interviewer(starts)
 
     if friday is None:
         friday = monday - dt.timedelta(days=3)
@@ -301,7 +322,8 @@ def render_checklist(rec: Reconciliation) -> str:
         lines.append(line)
 
     lines.append("")
-    lines.append("_auto by Lucy · source: OBCL tab '{}'_".format(rec.tab))
+    src = rec.tab if rec.tab == "Aisha's screenshot" else "OBCL tab '{}'".format(rec.tab)
+    lines.append("_auto by Lucy · source: {}_".format(src))
     return "\n".join(lines)
 
 
