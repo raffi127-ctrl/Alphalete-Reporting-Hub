@@ -482,18 +482,35 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
         return all(t[:1].isupper() and t.replace("-", "").replace("'", "").isalpha()
                    for t in toks)
 
+    # Every station block repeats a header row ("Territory Leader | Rep #1 |
+    # ... | <station names>"), and the station/pitch labels sitting in it are
+    # person-shaped: 'Garden Theory' (r28, 2026-08-03), 'Early Objection'
+    # (r28, 2026-07-21), 'Intro-Close' (r41). Whitelisting them one at a time
+    # in LABELS is a losing game — those labels change whenever the pitch
+    # does. Skip the header rows themselves; no rep name lives on one.
+    def _header_row(row):
+        return bool({str(c).strip().lower() for c in row[:8]}
+                    & {"territory leader", "rep #1", "rep list"})
+
     unknown = set()
     for i, row in enumerate(vals, start=1):
-        if i < 4:
+        if i < 4 or _header_row(row):
             continue
         for j in name_cols:
             c = str(row[j]).strip() if len(row) > j else ""
             if (c and _person_shaped(c) and not LABELS.match(c)
                     and not matches(c)):
-                unknown.add(f"{c!r} (r{i})")
-    if unknown:
-        out.append("STATIONS: name(s) matching nobody on the board/roll — "
-                   "typo or stale identity: " + ", ".join(sorted(unknown)[:8]))
+                unknown.add((c, i))
+    # ONE finding per name, name FIRST. These used to be one grouped line, and
+    # 'Report an Issue' dedupes on a finding's first 60 chars — which for a
+    # grouped line is the boilerplate prefix, identical every time. So the
+    # 'Garden Theory' finding of 2026-08-03 was silently swallowed by a
+    # 'Early Objection' row from 7/21 still sitting in the last 40 rows: the
+    # run logged "1 finding logged" and appended nothing. Leading with the
+    # name puts the distinguishing text inside the dedupe key.
+    for c, i in sorted(unknown)[:8]:
+        out.append(f"STATIONS: {c!r} (r{i}) matches nobody on the board or the "
+                   "roll — typo or stale identity.")
     return out
 
 
