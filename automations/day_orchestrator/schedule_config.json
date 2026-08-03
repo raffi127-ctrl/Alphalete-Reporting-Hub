@@ -2153,7 +2153,7 @@
       "order": 21,
       "on_scheduler": true,
       "_note": "The review half of the Captainship Reports (Eve 2026-07-30). Sends NOTHING: it prints the 12 previews captainship_drafts just built into ONE PDF, drops it in Drive and posts the link in the review channel AS LUCY (the mini's Slack token). The reports go out only when an approver reacts with a checkmark - picked up within 15 min by com.alphalete.captainship-review (deploy/captainship_review.sh, 9am-8pm), which runs review_gate --check --send and mails the reviewed .eml files untouched. Kept as its OWN entry rather than folded into captainship_drafts so a build that half-fails still shows as its own red pill, and so re-posting (`lucy rerun captainship_drafts_review`) never rebuilds the drafts. Re-posting is safe: --post replaces its own earlier post for the same day and refuses to touch one that already carries an approval. depends_on captainship_drafts so it can only run once the previews exist. source_type 'local' - it reads previews off disk and talks to Drive + Slack; no Tableau, no chrome guard. Same shape as org_sales_board_email on purpose: one review habit for both emails, one channel.",
-      "display_name": "Captainship Reports (a revisi\u00f3n)",
+      "display_name": "Captainship Reports (in review)",
       "source_type": "local",
       "data_sources": [],
       "command": [

@@ -1054,6 +1054,13 @@ def _read_shared_library() -> list[dict]:
                             "car_rides_cleanup", "new_start_followup_sat",
                             "leaders_call_mon", "override_bulletin_send_fri",
                             "texas_de_brazil_745",
+                            # Phase-2 review reports that feed a merged 2-phase
+                            # card via phases=[...] — hide their auto-registered
+                            # duplicates so each isn't a second card. The Country
+                            # one lingered after the 8/2 merge (the hardcoded card
+                            # was deleted but the library dupe wasn't). (Megan 8/3)
+                            "captainship_drafts_review",
+                            "country_sales_board_email",
                             # utility / build-aid / duplicate handles (Megan 7/28):
                             "alphalete_org_retail", "harvest_prime",
                             "haytham_metrics", "vantura_sara_preflight",
@@ -3283,65 +3290,91 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "captainship-drafts",
-        "name": "Captainship Report Drafts (12)",
+        "name": "Captainship Reports",
         "creator": "Eve & Claude",
         "emoji": "✉️",
         "color": "#8E7CC3",
         "category": "📊 Metrics",
-        "description": "Builds the 12 Captainship Report emails as Gmail DRAFTS in alphaletereporting@gmail.com (Rafael + 5 fiber + 3 B2B + 3 NDS). Nothing is sent — a human fills the recipient and hits send.",
+        # TWO-PHASE card (Megan 2026-08-03): phase 1 = the 4am build of the 12
+        # previews (report captainship-drafts), phase 2 = the Slack review post
+        # + send-on-checkmark (report captainship_drafts_review). Same shape as
+        # the Country Sales Board card: the pill is orange after the build and
+        # turns green once the reports send. The two reports still run
+        # separately — this only merges the Hub display. Was two cards
+        # ("Captainship Report Drafts (12)" + the auto-registered "Captainship
+        # Reports (a revisión)" library card, now hidden via the skip-set in
+        # _read_shared_library).
+        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn or Jolie mails the exact files reviewed. Pill is orange after the build, green once sent.",
         "breakdown": (
-            "WHAT IT DOES\n"
-            "**•** Screenshots each captain's **Product Summary + Captainship "
-            "Units** off the *Copy of Alphalete ORG Sales Board* tab (§1).\n"
-            "**•** Adds the §2 Tableau shot — **Cancel Rates** for Rafael/fiber, "
-            "**Team Stats Breakout** for B2B/NDS — plus the daily **Fiber "
-            "Activations** PNG for fiber captains.\n"
-            "**•** Drops in the filled **churn** buckets (§3/§4).\n"
-            "**•** Creates all 12 as drafts. **Re-running REPLACES** that "
-            "captain's draft for the same date instead of piling up duplicates.\n\n"
-            "WHICH DAY EACH SECTION SHOWS\n"
-            "**•** **Sales / Captainship Units → the PRIOR day.** A Monday run "
-            "reports Sunday.\n"
-            "**•** **Churn and Fiber Activations → TODAY.**\n"
-            "That split is deliberate. Passing a back-dated `--date` to make the "
-            "subject read differently walks **every** section back a day — that "
-            "is what produced the 7/26 batch showing sales only through "
-            "Saturday. Let it use the real run date.\n\n"
+            "PHASE 1 — BUILD (4am flow)\n"
+            "**•** Builds all 12 previews to output/ — Product Summary + "
+            "Captainship Units, the churn buckets, and each captain's metric "
+            "boxes (cancel rate, activation rate, ABP %, 6+ days out). Fiber "
+            "adds the Fiber Activations PNG; B2B/NDS add the Team Stats "
+            "Breakout shot.\n"
+            "**•** Sends nothing. Re-running **replaces** that captain's "
+            "preview for the day — no duplicates.\n\n"
+            "DATES (deliberate split)\n"
+            "**•** Sales / Captainship Units → the **PRIOR day** (a Tuesday run "
+            "reports Monday).\n"
+            "**•** Churn / Fiber Activations → **TODAY**.\n"
+            "Don't pass a back-dated `--date` — it walks every section back a "
+            "day.\n\n"
+            "PHASE 2 — REVIEW + SEND (Slack)\n"
+            "**•** The 12 previews print to one PDF; **Lucy posts the link in "
+            "#revision-emails**.\n"
+            "**•** A **✅ from Evelyn or Jolie** sends the exact files reviewed "
+            "(mini's watcher, within 15 min) — what goes out can't differ from "
+            "what was approved.\n"
+            "**•** Pill turns **green** when sent, **orange** until then. "
+            "**Send now — override** is the fallback if no ✅ comes.\n\n"
             "WHEN IT RUNS\n"
-            "**On the scheduler, Tue–Sun**, and only AFTER the Sales Board fill, "
-            "both churn runs, and Captainship Activations have finished — so it "
-            "never builds off a half-published board. If it fails, the "
-            "orchestrator's failure alert fires.\n\n"
-            "IF §1 COMES BACK EMPTY\n"
-            "A section reading *'could not be captured on this run'* means the "
-            "**Sales Board screenshot profile is signed out** on the runner, not "
-            "a Gmail image problem. Fix: `sheets_login check` on the mini, then "
-            "`sheets_login` (a human has to clear Google 2FA on its screen)."
+            "Tue–Sun, after the Sales Board fill, both churn runs, and the "
+            "per-captain metric fills — never off a half-built board. Either "
+            "phase failing fires the orchestrator alert.\n\n"
+            "IF A SECTION IS BLANK\n"
+            "*'Could not be captured on this run'* = the Sales Board render is "
+            "signed out on the runner. Fix: `sheets_login check` on the mini, "
+            "then `sheets_login` (a human clears Google 2FA there)."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2_iCFDdmBBLPQNQ8x8xLQPTUOJcxHOMRj5RWu6E/edit"),
         "assignees": ["Lucy 1"],
+        # Phase 2 posts to Slack AS LUCY using the mini's token — route Hub-
+        # triggered runs to Lucy 1 so a manual "Post to Slack" click can't post
+        # from a laptop under the wrong user (same reason Country Sales Board
+        # pins run_machine).
+        "run_machine": "Lucy 1",
+        "phases": ["captainship-drafts", "captainship_drafts_review"],
         "schedule": {"frequency": "daily", "weekdays": [1, 2, 3, 4, 5, 6],
                      "time": "4 AM flow (when data's ready)", "estimated_minutes": 12},
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Step 1 done — the 12 reports are in output/ as .html. Open them, check the numbers, then press 'Send the reviewed reports'.",
-            "message_failed": "❌ Run failed. If §1 is blank the screenshot profile is signed out — run `sheets_login` on the mini.",
+            "message_success": "✅ Built — the 12 previews are in output/ as .html. Open them, check the numbers, then press 'Post to Slack for approval' (or let the 4am flow post it).",
+            "message_failed": "❌ Run failed. If §1 is blank the Sales Board render is signed out — run `sheets_login` on the mini.",
         },
         "actions": [
             {
                 "label": "1. Build + review the 12",
                 "icon": "👁",
                 "primary": True,
-                "help": "Builds all 12 reports and writes them to output/ as .html you can open in a browser. Sends nothing and touches nothing in Gmail. Check the numbers here first.",
+                "help": "Builds all 12 reports and writes them to output/ as .html you can open in a browser. Sends nothing and posts nothing. Check the numbers here first.",
                 "module": "automations.captainship_drafts.run",
                 "args_fn": lambda: ["--dry-run"],
             },
             {
-                "label": "2. Send the reviewed reports",
+                "label": "2. Post to Slack for approval",
+                "icon": "📮",
+                "primary": False,
+                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn or Jolie is what mails the reports. Posts as Lucy from the mini — run it there, not from a laptop, or it posts under your own account.",
+                "module": "automations.captainship_drafts.review_gate",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Send now — override",
                 "icon": "📧",
                 "primary": False,
-                "help": "Mails the EXACT files you just reviewed to the 12 captain lists (145 people). Rebuilds nothing, so what goes out cannot differ from what you approved. Only press this once the numbers look right.",
+                "help": "Skips the Slack ✅ and mails the EXACT files you just reviewed to the 12 captain lists (145 people) right now. Rebuilds nothing. The fallback for a day the checkmark never comes — only press it once the numbers look right.",
                 "module": "automations.captainship_drafts.run",
                 "args_fn": lambda: ["--send-reviewed"],
             },
@@ -11780,9 +11813,10 @@ else:  # st.session_state.view == "user"
             # 'Captainship Activations' AND 'Captainship Activation Rate'. (7/28)
             "[class*='captainship-activations__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "[class*='captainship-activation-rate__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            # Captainship Report Drafts (12) — draft-only (a human sends), so pin
-            # its pill PURPLE too (revisit item, not an auto-run). (Megan 2026-07-28)
-            "[class*='captainship-drafts__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Captainship Reports — the purple "draft-only" pin was removed
+            # 2026-08-03 when it became a two-phase card (build → Slack ✅ send):
+            # it now rides the universal phase ramp like Country Sales Board —
+            # orange after the build, green once the reports send. (Megan 8/3)
             # August Owner Showdown — TEMP competition card. Force its pill
             # BRIGHT YELLOW at rest so it reads as "temporary / competition"; the
             # :not(ok):not(fail) guard lets it still turn GREEN on a real run (and

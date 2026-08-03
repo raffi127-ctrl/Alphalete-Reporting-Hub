@@ -1,5 +1,6 @@
-"""Build output/REVISAR-informes-capitanes.html — one page listing today's 12
-reports so Eve opens ONE file instead of hunting for twelve among older dates.
+"""Build output/REVIEW-captainship-reports.html — one page listing today's 12
+reports so the reviewer opens ONE file instead of hunting for twelve among
+older dates.
 
 Called automatically at the end of a --dry-run, and standalone:
 
@@ -15,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from automations.captainship_drafts import config  # noqa: E402
 
 _OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
-INDEX_NAME = "REVISAR-informes-capitanes.html"
+INDEX_NAME = "REVIEW-captainship-reports.html"
 
 
 def build_index(today: dt.date | None = None, *, logfn=print) -> Path:
@@ -30,17 +31,17 @@ def build_index(today: dt.date | None = None, *, logfn=print) -> Path:
             rows.append(
                 f'<tr><td><a href="{f.name}" target="_blank">'
                 f'{captain.display_name}</a></td>'
-                f'<td>{n_to} personas</td>'
-                f'<td class="ok">listo</td></tr>')
+                f'<td>{n_to} people</td>'
+                f'<td class="ok">ready</td></tr>')
         else:
             rows.append(
                 f'<tr><td>{captain.display_name}</td>'
-                f'<td>{n_to} personas</td>'
-                f'<td class="no">NO se generó</td></tr>')
+                f'<td>{n_to} people</td>'
+                f'<td class="no">NOT built</td></tr>')
 
     html = f"""<!doctype html>
 <meta charset="utf-8">
-<title>Revisar informes de capitanes</title>
+<title>Review captainship reports</title>
 <style>
  body{{font-family:Arial,Helvetica,sans-serif;max-width:760px;margin:32px auto;
       padding:0 16px;color:#111}}
@@ -55,26 +56,26 @@ def build_index(today: dt.date | None = None, *, logfn=print) -> Path:
  .box{{background:#fff8e1;border:1px solid #f0d271;border-radius:6px;
        padding:12px 14px;margin:22px 0;font-size:14px}}
 </style>
-<h1>Informes de capitanes — {reported.day}/{reported.month}</h1>
-<p class="sub">Abre cada uno y revisa los números. Nada se ha enviado
-todavía.</p>
+<h1>Captainship reports — {reported.month}/{reported.day}</h1>
+<p class="sub">Open each one and check the numbers. Nothing has been sent
+yet.</p>
 <table>
-<tr><th>Capitán</th><th>Se enviará a</th><th>Estado</th></tr>
+<tr><th>Captain</th><th>Will go to</th><th>Status</th></tr>
 {"".join(rows)}
 </table>
 <div class="box">
-<b>¿Están bien?</b> Vuelve al Hub y pulsa
-<b>&laquo;2. Send the reviewed reports&raquo;</b>. Se enviarán exactamente
-estos archivos.<br><br>
-<b>¿Hay un número mal?</b> Corrígelo en el Sales Board, pulsa
-<b>&laquo;1. Build + review the 12&raquo;</b> otra vez y vuelve a mirar.
-Nadie recibe nada hasta que pulses enviar.
+<b>Look right?</b> Back on the Hub, press
+<b>&laquo;2. Post to Slack for approval&raquo;</b>. The reports go out when
+Evelyn or Jolie reacts with a ✅ in #revision-emails &mdash; nobody
+gets anything until then.<br><br>
+<b>A number is wrong?</b> Fix it on the Sales Board, press
+<b>&laquo;1. Build + review the 12&raquo;</b> again, and re-check here.
 </div>
 """
     out = _OUTPUT_DIR / INDEX_NAME
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
-    logfn(f"  ✓ índice de revisión: {out}")
+    logfn(f"  ✓ review index: {out}")
     return out
 
 
