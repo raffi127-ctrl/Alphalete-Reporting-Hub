@@ -3277,9 +3277,9 @@
     "frontier_opt": {
       "on_scheduler": true,
       "display_name": "Frontier OPT Data Pull",
-      "source_type": "email",
+      "source_type": "web+email",
       "data_sources": [],
-      "_note": "Auto-ingest via --email: pulls the 3 Frontier Events PDFs from reports@credicousa.com (frontier_email_source) into a temp dir, then fills. Manual Upload card kept as fallback. Sales PDFs land DAILY ~1:30pm CT (completed week is in Sunday's daily, so the Monday 4am run has it); Quality Scorecard lags ~2wk by design. readiness._probe_email gates on the daily PDFs. Verify not wired yet (opt_frontier has no manifest).",
+      "_note": "Hybrid source as of 2026-08-03. --web pulls the Double Entry org summary (doubleentry.com): logs in with the creds in ownerville-creds.json and reads the 6-digit OTP out of alphaletereporting@gmail.com over IMAP, so it runs unattended. Covers the 37 offices that account manages. --email still ingests the FINANCIAL SUMMARY workbooks for the ~60 owners Double Entry does NOT expose (Carlos/Sahil/Trang/RAF-ADD-1 books + Coel + German) - see output/financial-source-gap.md. Web wins where both have an office (fresher, and its PROFIT/LOSS is correctly signed; the emailed template sends magnitude only). Readiness no longer gates on senders: the web half is always available, and the fill is incremental so a late book fills on the next run without wiping anything. Manual Upload card kept as fallback.",
       "command": [
         "automations.alphalete_org_report.opt_frontier"
       ],
@@ -3479,6 +3479,7 @@
         "automations.financial_report.run"
       ],
       "base_args": [
+        "--web",
         "--email"
       ],
       "cadence": {

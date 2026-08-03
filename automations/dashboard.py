@@ -2695,8 +2695,19 @@ AUTOMATED_REPORTS = [
                 "label": "Run Financial Pull",
                 "icon": "▶",
                 "primary": True,
-                "help": "Parses every .xlsx in automations/uploaded/financial/ "
-                        "and fills the financial section.",
+                "help": "Pulls the Double Entry org summary (logs in on its "
+                        "own) AND this week's emailed workbooks, then fills "
+                        "the financial section. Double Entry wins where both "
+                        "have an office; the books still cover the owners it "
+                        "doesn't expose.",
+                "module": "automations.financial_report.run",
+                "args_fn": lambda: ["--web", "--email"],
+            },
+            {
+                "label": "Fill from uploaded files only",
+                "icon": "📄",
+                "help": "Fallback: ignore Double Entry and the inbox, and "
+                        "parse only the .xlsx files uploaded above.",
                 "module": "automations.financial_report.run",
                 "args_fn": lambda: [],
             },

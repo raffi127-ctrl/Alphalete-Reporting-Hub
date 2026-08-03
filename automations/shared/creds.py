@@ -93,3 +93,31 @@ def appstream_username() -> str:
 def appstream_password() -> str:
     return _resolve_as("appstream_password", "APPLICANTSTREAM_PASSWORD",
                        "applicantstream-password")
+
+
+# --- Double Entry (doubleentry.com) financial login ---------------------------
+# The weekly financials used to arrive as emailed .xlsx workbooks; they now come
+# off the Double Entry org summary report, which needs a login. Same rule as
+# every other credential here: it lives in the gitignored creds file or an env
+# var, NEVER in the code. Add to 'ownerville-creds.json' at the repo root:
+#   {"doubleentry_username": "...@gmail.com", "doubleentry_password": "..."}
+# or set DOUBLEENTRY_USERNAME / DOUBLEENTRY_PASSWORD.
+def _resolve_de(key: str, env: str) -> str:
+    val = str(_file().get(key) or os.environ.get(env, "")).strip()
+    if not val:
+        raise RuntimeError(
+            f"Missing Double Entry credential {key!r}. Add it to "
+            f"'{_CREDS_PATH.name}' at the repo root "
+            f"({{\"doubleentry_username\": ..., \"doubleentry_password\": ...}}) "
+            f"or set the {env} environment variable. That file is gitignored — "
+            "never commit it."
+        )
+    return val
+
+
+def doubleentry_username() -> str:
+    return _resolve_de("doubleentry_username", "DOUBLEENTRY_USERNAME")
+
+
+def doubleentry_password() -> str:
+    return _resolve_de("doubleentry_password", "DOUBLEENTRY_PASSWORD")

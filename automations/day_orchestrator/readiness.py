@@ -150,17 +150,22 @@ class ReadinessCache:
                 return Readiness(
                     False, f"waiting on Frontier Events daily PDFs ({dailies}/2 in)")
             if rpt.report_id == "financial_report":
-                # 3 senders land across Tue–Wed (hubtruth Tue PM, melissab Wed,
-                # jsanchez Mon/Tue); a Thursday run should see all 3. Ready once
-                # >=2 are in (the dominant hubtruth + at least one more). The
-                # report is incremental/partial-safe, so this only avoids a
-                # too-early empty run — a missing sender is filled next run.
+                # Always ready since the source went hybrid (2026-08-03): the
+                # Double Entry half needs no sender, so there's nothing to wait
+                # for and a "0 senders in" hold would now block a run that has
+                # 37 offices' worth of real data. The emailed books are still
+                # reported here — they carry the ~60 owners Double Entry doesn't
+                # expose — but as INFO, not a gate: the fill is incremental, so
+                # a book that lands later fills on the next run and never wipes
+                # what's already there.
                 from automations.financial_report import email_source as fes
-                n = fes.any_available(since_days=7)
-                if n >= 2:
-                    return Readiness(True, f"Financial workbooks in ({n}/3 senders)")
-                return Readiness(
-                    False, f"waiting on this week's Financial workbooks ({n}/3 senders in)")
+                try:
+                    n = fes.any_available(since_days=7)
+                except Exception:  # noqa: BLE001 — advisory only, never a gate
+                    n = -1
+                extra = (f"{n}/3 email senders also in" if n >= 0
+                         else "email probe skipped")
+                return Readiness(True, f"Double Entry always available ({extra})")
             if rpt.report_id == "sci_campaigns":
                 # Ready once the inbox holds a tracker week the tab does NOT yet
                 # have. Keyed off the EMAIL's own week (its subject), never the

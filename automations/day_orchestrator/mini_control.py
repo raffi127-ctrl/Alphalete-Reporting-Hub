@@ -25,6 +25,9 @@ Actions:
   git_stash [label]     park uncommitted TRACKED edits so a blocked update can
                         run. Recoverable (git stash pop); never discards.
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
+  set_doubleentry_creds <user> <pass>   install the doubleentry.com financial
+                        login into ownerville-creds.json + verify it by signing
+                        in. The Args cell is auto-redacted when the row finishes.
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use
@@ -106,7 +109,12 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
-                    "clear_untracked"}
+                    "clear_untracked", "set_doubleentry_creds"}
+# Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
+# the row finishes and never prints it to the log — `lucy status` dumps the whole
+# Args column, so a password left sitting there is a password on screen. Older
+# secret actions ask the queuer to redact by hand; these don't rely on memory.
+SECRET_ACTIONS = {"set_doubleentry_creds"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1970,6 +1978,71 @@ def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     return True, f"raffi127 app password installed + IMAP login verified ({path.name})"
 
 
+def _action_set_doubleentry_creds(args: str) -> tuple[bool, str]:
+    """Install the Double Entry (doubleentry.com) login on THIS machine, so the
+    Thursday financial_report can pull the ORG SUMMARY REPORT unattended now that
+    the financials come off the web instead of emailed workbooks.
+
+    Args is `<username> <password>` — quote the password if it contains spaces.
+    Merges the two keys into the repo-root ownerville-creds.json (every other
+    credential in that file is left untouched), backs the file up first, then
+    VERIFIES by actually signing in through the same code path the report uses.
+    NEVER echoes the password.
+
+    Nobody can sit at Lucy, so this is the only way the credential reaches it
+    (Eve 2026-08-02). The password transits the control Sheet's Args cell — the
+    poller BLANKS that cell itself the moment the row finishes (SECRET_ACTIONS),
+    rather than trusting a human to remember, because `lucy status` dumps the
+    whole Args column."""
+    import json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the password"
+    if len(parts) != 2:
+        return False, ("set_doubleentry_creds needs exactly `<username> "
+                       "<password>` as the Args (quote the password if it has "
+                       f"spaces) — got {len(parts)} value(s)")
+    user, pw = parts[0].strip(), parts[1]
+    if len(pw) < 6:
+        return False, "that password looks too short — check the Args"
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, f"couldn't read {path.name}: {str(e).splitlines()[0][:120]}"
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    data["doubleentry_username"] = user
+    data["doubleentry_password"] = pw
+    try:
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    # Verify with a REAL headless sign-in. This is also the answer to "can this
+    # run unattended here at all?" — if Double Entry ever puts a second factor in
+    # front of the login, it fails HERE, at install time, instead of silently on
+    # a Thursday 4am run.
+    try:
+        from automations.financial_report import web_source
+        ok, detail = web_source.check_login()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"creds written to {path.name} but the verify couldn't run "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]}) — "
+                      "run `playwright_install` if patchright is missing")
+    if not ok:
+        return False, f"creds written to {path.name} but SIGN-IN FAILED: {detail}"
+    return True, f"Double Entry creds installed for {user} + sign-in verified · {detail}"
+
+
 def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the BG-check sync LaunchAgent
     (com.alphalete.bg-check-sync) on THIS machine — 3x/day (8:00/11:30/16:00),
@@ -2261,6 +2334,7 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "set_meta_token": _action_set_meta_token,
+    "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
@@ -2305,7 +2379,10 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     ws = _open(sandbox, machine)
     ws.append_row([_now(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
-    print(f"[mini_control] queued: {action} {args} (by {by}) "
+    # Don't echo a secret back at the person queueing it — their terminal
+    # scrollback is one more place the password would sit.
+    shown = "<redacted>" if action in SECRET_ACTIONS else args
+    print(f"[mini_control] queued: {action} {shown} (by {by}) "
           f"→ {_control_tab_for(_machine_profile(machine))}")
 
 
@@ -2359,17 +2436,19 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         # The cap bounds runaway REPORT churn only. PLUMBING actions (update,
         # restart_poller, ping, …) must ALWAYS run — else a cap-hit freezes the
         # deploy/recovery channel itself (incl. the very command that clears it).
+        # Never let a secret-carrying Args reach a log line or the Result cell.
+        shown = "<redacted>" if action in SECRET_ACTIONS else args
         if (action.strip().lower() not in PLUMBING_ACTIONS
                 and cap_used >= DAILY_AUTORUN_CAP):
             print(f"[mini_control] daily cap ({DAILY_AUTORUN_CAP}) reached — "
-                  f"leaving {action} {args} queued for a human")
+                  f"leaving {action} {shown} queued for a human")
             continue
         if dry_run:
-            print(f"[mini_control] DRY-RUN would run: {action} {args}")
-            _set(ws, rownum, "queued", f"[dry-run] would run {action} {args} @ {_now()}")
+            print(f"[mini_control] DRY-RUN would run: {action} {shown}")
+            _set(ws, rownum, "queued", f"[dry-run] would run {action} {shown} @ {_now()}")
             continue
 
-        print(f"[mini_control] running: {action} {args}")
+        print(f"[mini_control] running: {action} {shown}")
         _set(ws, rownum, "running", f"started {_now()}")
         cap_used += 1
         try:
@@ -2377,6 +2456,16 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         except Exception as e:
             ok, result = False, f"handler error: {str(e).splitlines()[0][:160]}"
         _set(ws, rownum, "done" if ok else "failed", result, finished=True)
+        if action in SECRET_ACTIONS:
+            # Blank the Args cell now that the secret has been consumed — pass or
+            # fail, it must not stay in the Sheet. Best-effort: losing the redact
+            # must not turn a successful install into a failed row, but say so.
+            try:
+                ws.update_cells([gspread.Cell(rownum, 3, "<redacted>")],
+                                value_input_option="RAW")
+            except Exception as e:  # noqa: BLE001
+                print(f"[mini_control]   ⚠ could NOT redact row {rownum}'s Args "
+                      f"({type(e).__name__}) — clear it by hand")
         print(f"[mini_control]   -> {'done' if ok else 'FAILED'}: {result[:160]}")
         acted += 1
     return acted
@@ -2482,6 +2571,10 @@ def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = No
         icon = icons.get(status.lower(), "?")
         action = str(row.get("Action", "")).strip()
         args = str(row.get("Args", "")).strip()
+        # A secret-carrying row is redacted by the poller once it runs, but a
+        # still-QUEUED one holds the live password — never print it here.
+        if action in SECRET_ACTIONS:
+            args = "<redacted>"
         by = str(row.get("By", "")).strip()
         result = str(row.get("Result", "")).strip()
         when = (str(row.get("Finished At", "")).strip()

@@ -1,12 +1,26 @@
-"""Financial report — parse the uploaded FINANCIAL SUMMARY workbooks and fill
-the financial section across the focus-report spreadsheets.
+"""Financial report — fill the financial section across the focus-report
+spreadsheets.
 
-Workflow: the user uploads the emailed FINANCIAL SUMMARY .xlsx files, then
-runs this. It parses every file, merges them, and writes the financial rows
-onto each ICD tab across the focus-report Google Sheets.
+TWO SOURCES, and as of 2026-08 the run uses BOTH:
+  --web    Double Entry (doubleentry.com org summary). The primary: no waiting
+           on a sender, and its PROFIT/LOSS carries a real sign. Covers the 37
+           offices raffi127's account manages.
+  --email  the FINANCIAL SUMMARY workbooks in the reporting inbox. Still the
+           only source for the ~60 owners Double Entry doesn't expose to that
+           account (Carlos / Sahil / Trang / RAF-ADD-1 books, plus Coel and
+           German's own formats) — see output/financial-source-gap.md.
+
+Both emit the same (by_owner, weeks, problems) shape, so everything below the
+source layer is source-agnostic; with both flags the web numbers win wherever an
+office appears in both. As owners migrate to Double Entry the web share grows on
+its own, and the email half can be dropped once the account sees everyone.
+
+Bare (no source flag) still reads the manual upload dir — that's the Hub's
+Manual Upload card, kept as the fallback.
 
 Usage:
-  .venv/bin/python -m automations.financial_report.run --dry-run
+  .venv/bin/python -m automations.financial_report.run --web --email --dry-run
+  .venv/bin/python -m automations.financial_report.run --web --date 2026-08-01
   .venv/bin/python -m automations.financial_report.run --dir ~/Downloads
 """
 from __future__ import annotations
@@ -100,14 +114,54 @@ def gather_files(directory: Path) -> List[Path]:
                   if not p.name.startswith("~$"))
 
 
-def run_financial_report(file_paths, dry_run: bool = False,
+def merge_sources(primary, secondary, logfn=print):
+    """Merge two (by_owner, weeks, problems) triples — `primary` wins.
+
+    Used for the Double Entry + email hybrid. Double Entry is primary: it's
+    fresher (no waiting on a sender) and its PROFIT/LOSS carries a real sign,
+    where the emailed template reports magnitude only. The emailed books then
+    cover the ~60 owners Double Entry doesn't expose to this account.
+
+    Merging at the OFFICE level, not the owner level, so an owner who exists in
+    both keeps a per-state office from either side. Weeks are unioned — the fill
+    skips a week an office has no value for, so a wider list can't blank a cell.
+    """
+    p_owners, p_weeks, p_problems = primary
+    s_owners, s_weeks, s_problems = secondary
+    merged = {k: [dict(o) for o in v] for k, v in s_owners.items()}
+    replaced = added = 0
+    for key, offices in p_owners.items():
+        bucket = merged.setdefault(key, [])
+        for off in offices:
+            st = off.get("state", "")
+            at = next((i for i, x in enumerate(bucket)
+                       if x.get("state", "") == st), None)
+            if at is None:
+                bucket.append(off)
+                added += 1
+            else:
+                bucket[at] = off
+                replaced += 1
+    weeks = sorted(set(p_weeks) | set(s_weeks))
+    logfn(f"financial: merged sources — {added} office(s) only in the primary, "
+          f"{replaced} overridden by it, "
+          f"{sum(len(v) for v in merged.values())} total; "
+          f"weeks {[w.isoformat() for w in weeks]}")
+    return merged, weeks, list(p_problems) + list(s_problems)
+
+
+def run_financial_report(parsed, dry_run: bool = False,
                          only_sheet: Optional[str] = None, logfn=print) -> dict:
-    """Parse the financial workbooks and fill every matching ICD tab across
-    the focus-report spreadsheets. Returns a summary dict."""
-    by_owner, weeks, problems = parse_financial_files(file_paths, logfn=logfn)
+    """Fill every matching ICD tab across the focus-report spreadsheets.
+
+    `parsed` is a (by_owner, weeks, problems) triple — whatever produced it.
+    Both sources emit that same shape (parse.parse_financial_files for the
+    emailed books, web_source.fetch_offices for Double Entry), so this and
+    everything below it is source-agnostic. Returns a summary dict."""
+    by_owner, weeks, problems = parsed
     n_offices = sum(len(v) for v in by_owner.values())
-    logfn(f"financial: parsed {n_offices} office(s) for {len(by_owner)} owner(s) "
-          f"from {len(list(file_paths))} file(s); week endings {weeks}")
+    logfn(f"financial: {n_offices} office(s) for {len(by_owner)} owner(s); "
+          f"week endings {weeks}")
     if not by_owner:
         logfn("financial: no office data parsed — nothing to fill")
         if problems:
@@ -220,10 +274,27 @@ def main() -> int:
                     help="Auto-ingest: pull this week's FINANCIAL SUMMARY .xlsx "
                          "from the reporting inbox (all senders) into a temp "
                          "folder, instead of a manual upload dir.")
+    ap.add_argument("--web", action="store_true",
+                    help="Pull the financials from Double Entry "
+                         "(doubleentry.com org summary). Combine with --email "
+                         "to cover the owners Double Entry doesn't expose — "
+                         "the web numbers win where both have an office.")
+    ap.add_argument("--date", help="Week ending to pull from Double Entry "
+                                   "(YYYY-MM-DD). Default: the most recent "
+                                   "closed week, Central time.")
     args = ap.parse_args()
 
     _tmpctx = None
     _missing_books: List[str] = []
+    # A file-based source runs unless --web is the ONLY source asked for. That
+    # keeps the bare invocation (the Hub's Manual Upload card) reading the
+    # upload dir exactly as before.
+    use_files = args.email or not args.web
+    # What a retry should re-run — mirrors how this run was invoked, so the
+    # Hub's retry button and the orchestrator don't silently switch sources.
+    _retry_args = ([a for a, on in (("--web", args.web),
+                                    ("--email", args.email)) if on] or [])
+    directory = None
     if args.email:
         from automations.financial_report import email_source as _fes
         _tmpctx = tempfile.TemporaryDirectory(prefix="financial_email_")
@@ -244,7 +315,7 @@ def main() -> int:
                 print(f"  ✗ {b}")
             print("  (their ICDs stay blank until the file arrives — a re-run "
                   "then fills them; incremental, nothing is wiped.)")
-    else:
+    elif use_files:
         directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
 
     # Seed a failure manifest up-front (live only). If the run crashes mid-way
@@ -256,20 +327,37 @@ def main() -> int:
         try:
             from automations.shared import run_manifest as _rm
             _rm.write_manifest(MANIFEST_ID, failed=["financial fill"],
-                               retry_args=["--email"], kind="section",
+                               retry_args=_retry_args, kind="section",
                                note="run started but did not complete")
         except Exception:  # noqa: BLE001 — manifest is best-effort
             pass
 
     try:
-        files = gather_files(directory)
-        if not files:
+        files = gather_files(directory) if directory else []
+        if use_files and not files and not args.web:
             print(f"no .xlsx files found in {directory}")
             return 1
-        print(f"financial report — {len(files)} file(s) from "
-              f"{'email inbox' if args.email else directory}, "
+
+        # Double Entry first — it's the primary source in the hybrid.
+        web_parsed = None
+        if args.web:
+            from automations.financial_report import web_source as _ws
+            print("Pulling the org summary from Double Entry…")
+            web_parsed = _ws.fetch_offices(date=args.date)
+        email_parsed = None
+        if files:
+            email_parsed = parse_financial_files(files)
+            print(f"financial report — {len(files)} file(s) from "
+                  f"{'email inbox' if args.email else directory}")
+
+        if web_parsed and email_parsed:
+            parsed = merge_sources(web_parsed, email_parsed)
+        else:
+            parsed = web_parsed or email_parsed
+        print(f"financial report — sources: "
+              f"{'+'.join(s for s, on in (('double entry', bool(web_parsed)), ('email/upload', bool(email_parsed))) if on)}, "
               f"dry_run={args.dry_run}")
-        result = run_financial_report(files, dry_run=args.dry_run,
+        result = run_financial_report(parsed, dry_run=args.dry_run,
                                       only_sheet=args.only_sheet)
         if live:
             try:
@@ -281,7 +369,7 @@ def main() -> int:
                     # to fix (send the file to Claude for a parser).
                     bad = [name for name, _ in problems]
                     _rm.write_manifest(
-                        MANIFEST_ID, failed=bad, retry_args=["--email"],
+                        MANIFEST_ID, failed=bad, retry_args=_retry_args,
                         kind="file",
                         note=f"{len(bad)} file(s) couldn't be parsed",
                         remediation=_rm.make_remediation(
@@ -300,8 +388,17 @@ def main() -> int:
                     # Also NOTE which ICDs got no financials (data not in any
                     # email) — run stays COMPLETE (failed=[]), it just tells Megan
                     # who to chase (Megan 2026-07-05). [[feedback_financial_incremental]]
-                    names = ", ".join(sorted(p.name for p in files))
-                    _note = f"pulled {len(files)} workbook(s): {names}"
+                    # Name both sources — which books arrived AND how many
+                    # offices Double Entry supplied, so the summary email shows
+                    # at a glance which half of the hybrid did the work.
+                    bits = []
+                    if web_parsed:
+                        bits.append(f"Double Entry: "
+                                    f"{sum(len(v) for v in web_parsed[0].values())} office(s)")
+                    if files:
+                        names = ", ".join(sorted(p.name for p in files))
+                        bits.append(f"{len(files)} workbook(s): {names}")
+                    _note = "pulled " + " · ".join(bits)
                     # Whole-book gaps first — the actionable "nudge this sender"
                     # signal, ahead of the per-ICD list.
                     if _missing_books:
