@@ -118,6 +118,38 @@ def _is_ps_header(b: str, token: str) -> bool:
     return token in b and "captai" in b and "team" in b
 
 
+# The banner strip that sits ABOVE a team header on the fiber/Rafael blocks:
+# "📶 NEW INTERNET PERFORMANCE" over "Raf's Captainship Team" (and, mid-block,
+# "🛜ALL UNITS PERFORMANCE" over the second sub-block). It carries no captain
+# token, so _is_ps_header can't anchor on it and the span started one row too
+# low — the emailed §1 opened straight on the team name with the band cut off
+# (Eve, 2026-08-03). The second banner was always fine: it sits INSIDE the span.
+# B2B/NDS blocks have no banner row, so this is a no-op for them.
+_BANNER_RE = re.compile(r"(?i)\bPERFORMANCE\b")
+
+
+def _banner_start(cell, header_row: int, limit: int = 2) -> int:
+    """`header_row` walked up over the PERFORMANCE banner rows above it.
+
+    Bounded (`limit`) and text-driven: it only climbs over rows that actually
+    say PERFORMANCE in col B (col A fallback, same as the header lookup), so a
+    block without a banner keeps its own header row and no block can eat the
+    tail of the one above it. A row that is itself a captain header stops the
+    walk, so two adjacent blocks can never merge."""
+    r = header_row
+    for _ in range(limit):
+        prev = r - 1
+        if prev < 1:
+            break
+        text = cell(prev, 2) or cell(prev, 1)
+        if not text or not _BANNER_RE.search(text):
+            break
+        if any(_is_ps_header(text, t) for t in CAPTAIN_TOKEN.values()):
+            break
+        r = prev
+    return r
+
+
 def _is_units_header(b: str, c: str, token: str) -> bool:
     b = b.lower()
     return (c.strip().lower() == _TOTAL_FOR_WEEK and token in b
@@ -182,6 +214,13 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
         if key not in ps_first:
             ps_first[key] = row
             order.append(key)
+
+    # Back the start up over the block's PERFORMANCE banner. Done HERE, on the
+    # shared dict, so the boundary math below sees one start per captain: if the
+    # banner were added afterwards, the block above would still end at the
+    # un-extended row and the two spans would overlap by the banner.
+    for key in order:
+        ps_first[key] = _banner_start(cell, ps_first[key])
 
     # --- Units charts: (header_row, key, subtype-label) ---
     # ALL "Total for week" anchor rows (captain blocks AND the interleaved
