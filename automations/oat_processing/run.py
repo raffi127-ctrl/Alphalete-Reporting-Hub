@@ -84,16 +84,30 @@ def open_oat(page) -> bool:
         except Exception:  # noqa: BLE001
             pass
     # 2) click the OAT link (a/link/menu item), tolerating minor label variants.
+    #    The AppStream nav is laggy on the mini — a single 8s click often times
+    #    out, dropping the walk onto a page with no pager (every later applicant
+    #    then reads as not_found). Retry the menu-click a few times with longer
+    #    timeouts + re-reveal the menu each round before falling back.
     oat_xp = ("xpath=//a[contains(normalize-space(.),'One App at a time')] "
               "| //*[@role='menuitem'][contains(normalize-space(.),'One App at a time')] "
               "| //a[contains(normalize-space(.),'One App at a Time')]")
-    try:
-        page.locator(oat_xp).first.click(timeout=8000)
-        page.wait_for_timeout(1500)
-        if "p=604" in (page.url or ""):
-            return True
-    except Exception as e:  # noqa: BLE001
-        _log(f"[oat] menu click missed ({type(e).__name__}); trying direct nav")
+    for attempt in range(3):
+        try:
+            page.locator(oat_xp).first.click(timeout=12000)
+            page.wait_for_timeout(2000)
+            if "p=604" in (page.url or ""):
+                return True
+        except Exception as e:  # noqa: BLE001
+            _log(f"[oat] menu click miss {attempt + 1}/3 ({type(e).__name__})")
+        # re-reveal the Applicants menu before the next attempt
+        try:
+            page.locator(
+                "xpath=//a[normalize-space(.)='Applicants'] "
+                "| //*[self::button or @role='button'][normalize-space(.)='Applicants']"
+            ).first.hover(timeout=4000)
+            page.wait_for_timeout(700)
+        except Exception:  # noqa: BLE001
+            pass
 
     # Fallback: the OAT page is index.cfm?p=604 (confirmed 2026-07-27). Navigate
     # straight there, reusing the session's rqst token from the current URL.
@@ -102,10 +116,35 @@ def open_oat(page) -> bool:
     if not m:
         _log("[oat] no rqst token in URL — cannot direct-nav to p=604")
         return False
-    page.goto(f"https://applicantstream.com/index.cfm?p=604&rqst={m.group(1)}",
-              wait_until="domcontentloaded")
-    page.wait_for_timeout(1500)
+    for _ in range(2):
+        try:
+            page.goto(
+                f"https://applicantstream.com/index.cfm?p=604&rqst={m.group(1)}",
+                wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+            if "p=604" in (page.url or ""):
+                return True
+        except Exception:  # noqa: BLE001
+            page.wait_for_timeout(1500)
     return "p=604" in (page.url or "")
+
+
+def _open_oat_ready(page, tries: int = 3) -> bool:
+    """open_oat + confirm we actually landed on a walkable queue (a Next pager or
+    a readable applicant). Retries the whole open when the laggy nav drops us on a
+    pager-less page. Used by the no-phone fill walk so a slow load doesn't turn
+    every remaining applicant into a false not_found."""
+    for _ in range(tries):
+        if open_oat(page):
+            page.wait_for_timeout(800)
+            has_pager = page.locator(
+                "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]"
+            ).count() > 0
+            a = read_current_applicant(page)
+            if has_pager or (a.first_name or a.last_name):
+                return True
+        page.wait_for_timeout(1500)
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -838,6 +877,11 @@ def fill_nophone_from_tab(page) -> int:
         nm = str(r.get("name", "")).split()
         first = nm[0] if nm else ""
         last = " ".join(nm[1:]) if len(nm) > 1 else ""
+        if not _open_oat_ready(page):
+            # queue page won't load (laggy/stale session) — don't burn this row as
+            # a false not_found; leave status blank so a later pass retries it.
+            _log(f"[oat] fill-nophone {r.get('name')} -> queue not ready, skipping")
+            continue
         st = _walk_to_and_fill_send(page, first, last, phone)
         _log(f"[oat] fill-nophone {r.get('name')} -> {st}")
         try:
@@ -846,7 +890,6 @@ def fill_nophone_from_tab(page) -> int:
             pass
         if st in ("sent", "sent_override"):
             done += 1
-        open_oat(page)                            # clean page for the next one
     _log(f"[oat] fill-nophone-from-tab: sent {done}")
     return 0
 
@@ -1589,7 +1632,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 return emit_nophone_resumes(page)
 
             if fill_nophone:
-                open_oat(page)
+                _open_oat_ready(page)
                 return fill_nophone_from_tab(page)
 
             if retext_names:
