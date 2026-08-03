@@ -1327,7 +1327,8 @@ def _cdp_warm(force_fresh: bool = True) -> int:
 
 def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
              send_only: bool = False, extract_only: bool = False,
-             inspect: bool = False, debug: bool = False) -> int:
+             inspect: bool = False, debug: bool = False,
+             doc_probe: bool = False) -> int:
     """THE permission-free driver. Launch a REAL Google Chrome on a copy of the
     Default profile (Resume Helper plugin is genuinely installed there, so its
     service worker runs — unlike patchright), inject the saved AppStream session
@@ -1458,6 +1459,75 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
 
             ready0 = ready_for_extraction(page)
             _log(f"[cdp] Ready For Extraction before: {ready0}")
+
+            if doc_probe:
+                # DIAGNOSTIC (no send): find out WHAT the extension fetches during
+                # extraction and whether Cloudflare challenges it. The extractor
+                # opens a real tab whose network IS capturable, so we attach a
+                # context-wide response listener, run ONE short extract cycle, and
+                # report every distinct host + any Cloudflare-challenge status.
+                # This is what tells us whether a foreground doc-warm can clear the
+                # exit=3 wedge (managed challenge on a known host) or whether it's
+                # truly a human-only re-seed. Returns rc=0 either way.
+                seen = {}          # host -> {statuses:set, sample_url, challenged:bool}
+                CF_STATUS = {401, 403, 429, 503}
+
+                def _on_resp(resp):
+                    try:
+                        from urllib.parse import urlparse
+                        host = urlparse(resp.url).netloc or "?"
+                        rec = seen.setdefault(
+                            host, {"statuses": set(), "sample": resp.url[:120],
+                                   "challenged": False})
+                        rec["statuses"].add(resp.status)
+                        srv = (resp.headers or {}).get("server", "").lower()
+                        if resp.status in CF_STATUS or "cloudflare" in srv:
+                            rec["challenged"] = True
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                try:
+                    ctx.on("response", _on_resp)
+                except Exception:  # noqa: BLE001
+                    pass
+                _log("[docprobe] listener attached; running ONE short extract cycle "
+                     "to capture the extractor's fetches (no send)")
+                # Shorten the per-cycle extractor cap so the probe is time-boxed.
+                global EXTRACT_CAP_SECONDS
+                _saved_cap = EXTRACT_CAP_SECONDS
+                EXTRACT_CAP_SECONDS = 75
+                try:
+                    run_extract_once(page)
+                    page.wait_for_timeout(4000)
+                finally:
+                    EXTRACT_CAP_SECONDS = _saved_cap
+                    try:
+                        ctx.remove_listener("response", _on_resp)
+                    except Exception:  # noqa: BLE001
+                        pass
+                after = ready_for_extraction(page)
+                _log(f"[docprobe] Ready For Extraction: before={ready0} after={after}")
+                _log("[docprobe] ===== HOSTS SEEN DURING EXTRACTION =====")
+                for host, rec in sorted(seen.items(),
+                                        key=lambda kv: (not kv[1]["challenged"], kv[0])):
+                    flag = "  <-- CHALLENGED" if rec["challenged"] else ""
+                    _log(f"[docprobe] {host}  statuses={sorted(rec['statuses'])}"
+                         f"{flag}  e.g. {rec['sample']}")
+                challenged = [h for h, r in seen.items() if r["challenged"]]
+                _log("[docprobe] ===== VERDICT =====")
+                if after is not None and ready0 is not None and after < ready0:
+                    _log("[docprobe] queue DROPPED — extraction is progressing; "
+                         "the wedge may be intermittent, not a hard block.")
+                elif challenged:
+                    _log(f"[docprobe] BLOCKED on Cloudflare host(s): {challenged}. "
+                         "A foreground warm of that host (mint cf_clearance the "
+                         "extension inherits) is the durable-fix target.")
+                else:
+                    _log("[docprobe] no drop and no clear CF-status host captured — "
+                         "the challenge may be inside the extension's service worker "
+                         "(not page-visible). Needs a live look on Lucy 2.")
+                rc = 0
+                return 0
 
             if inspect:
                 # 1) SCREENSHOT the batch page so I can SEE the robot's location.
@@ -1890,10 +1960,16 @@ def main() -> int:
                          "auto-clear (generous poll), confirm the console, then persist the "
                          "profile so the q10min runs reuse a fresh clearance. No extract/send. "
                          "Runs on a frequent LaunchAgent so the source profile is never stale.")
+    ap.add_argument("--doc-probe", action="store_true",
+                    help="DIAGNOSTIC (no send): capture which hosts the extractor fetches "
+                         "during ONE short extract cycle and flag any Cloudflare-challenged "
+                         "ones — to find the durable-fix target for the exit=3 document wedge.")
     args = ap.parse_args()
 
     if args.warm:
         return _cdp_warm()
+    if args.doc_probe:
+        return _cdp_run(doc_probe=True)
     if args.inspect_plugin:
         return _inspect_plugin()
     if args.probe:
