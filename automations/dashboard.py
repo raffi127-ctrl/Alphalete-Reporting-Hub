@@ -3196,8 +3196,8 @@ AUTOMATED_REPORTS = [
         "self_scheduled": False,
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [5, 6],
-            "time_label": "Sat: add owners + post departures · Sun: finalize removals",
+            "weekdays": [5, 6, 0],
+            "time_label": "Sat: add owners + post departures · Sun/Mon: finalize removals",
             "estimated_minutes": 2,
         },
         "description": "Keeps Raf's “AT&T Fiber Owners” email list matched to Kelly's weekly roster — adds new owners, and removes ones who left after a 24-hour ✅/❌ check in #l10-alphalete.",

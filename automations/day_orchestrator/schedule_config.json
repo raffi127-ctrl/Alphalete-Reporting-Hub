@@ -5289,10 +5289,11 @@
       ],
       "cadence": {
         "weekdays": [
-          6
+          6,
+          0
         ]
       },
-      "_note": "Sun: 24h after the Sat post. Removes flagged ICDs no approver kept with \u2705; posts summary. No-op if there's no pending thread.",
+      "_note": "Sun + Mon: removes flagged ICDs no approver kept with \u2705, then posts summary. Sun is the normal 24h-after-Sat-post run; MON is a safety net (added 2026-08-02) for a LATE Sat post \u2014 if the Sat post landed Sat afternoon (a late/asleep-mini batch), Sun morning is <24h so the finalize defers, and the un-vouched owners would never get removed. Monday is >=24h regardless. Idempotent: no-op once Sun cleared the pending state, and a no-op when there's no pending thread.",
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
