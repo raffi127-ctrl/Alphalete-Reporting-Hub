@@ -5,6 +5,9 @@ there is one review habit and not two:
 
     review_gate.py --post           build the preview -> PDF -> Drive -> Lucy
                                     posts the link in #revision-emails
+    review_gate.py --refresh        the board was corrected after the link went
+                                    out: rebuild and overwrite the PDF in Drive,
+                                    same link, NO second post
     review_gate.py --check --send   a checkmark from an approver mails it
 
 Nothing here can mail anything on its own: it shells out to
@@ -545,6 +548,11 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="build the preview + PDF, upload it, post the link. "
                          "RUN ON THE MINI so it comes from Lucy.")
+    ap.add_argument("--refresh", action="store_true",
+                    help="rebuild the preview + PDF and update the one already "
+                         "in Drive, WITHOUT posting again. For when the board "
+                         "is corrected after the link went out. Wins over "
+                         "--post.")
     ap.add_argument("--check", action="store_true",
                     help="look for an authorised checkmark; with --send, mail "
                          "the reviewed images when it is there.")
@@ -576,6 +584,23 @@ def main(argv=None) -> int:
 
     if args.pdf_only:
         build_pdf(today, build_preview(today))
+        return 0
+    # Checked BEFORE --post on purpose. The scheduler entry's base_args are
+    # ["--post"], so `lucy rerun org_sales_board_email --refresh` arrives here
+    # as "--post --refresh" and has to mean refresh — otherwise the one case
+    # this exists for could not be triggered the one way it is triggered.
+    # Same flag, same order, same reason as captainship_drafts.review_gate.
+    if args.refresh:
+        # Rebuilding the preview also rewrites the day's manifest, so the images
+        # --check --send mails are the corrected ones too: what is reviewed and
+        # what is sent stay the same artifact.
+        link = upload_pdf(build_pdf(today, build_preview(today)))
+        # Same name = same day, so upload_pdf updated the file IN PLACE and the
+        # link already posted in Slack now shows the rebuilt PDF. Nothing is
+        # posted: a correction must not ping the approvers a second time with a
+        # second message for them to choose between.
+        print(f"✓ refreshed in place, existing link still valid: {link}",
+              flush=True)
         return 0
     if args.post:
         post_review(upload_pdf(build_pdf(today, build_preview(today))),
