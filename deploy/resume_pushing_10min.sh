@@ -95,9 +95,18 @@ echo "[$(date)] Resume Pushing finished exit=$ST" >> "$LOG_FILE"
 # information and the card is already red. A later clean pass publishes a
 # recovery success so the card goes green again instead of staying red all day.
 FAIL_STREAK=3                       # consecutive bad passes before we call it a failure
+# All three markers are DATE-SCOPED. The streak + outage markers used to be
+# undated, so a stuck outage (no clean pass ever cleared it) silently suppressed
+# EVERY later publish — success AND failure — across days. That's how the card
+# went blank for days (last row 2026-07-30) while the report kept running: no
+# success row (nothing completed), and the FAILED branch skipped because the
+# stale .outage marker looked "already published." Dating them means each
+# expected-run day re-arms: if still broken it publishes ONE FAILED row that day
+# (→ a clear ERRORED alert, not a vague "didn't run"), and a clean pass clears
+# the day's markers as before.
 _PUB_STAMP="$LOG_DIR/.resume-pushing-published-$(date +%Y-%m-%d)"
-_STREAK_FILE="$LOG_DIR/.resume-pushing-failstreak"
-_OUTAGE_FILE="$LOG_DIR/.resume-pushing-outage"   # we already published this streak
+_STREAK_FILE="$LOG_DIR/.resume-pushing-failstreak-$(date +%Y-%m-%d)"
+_OUTAGE_FILE="$LOG_DIR/.resume-pushing-outage-$(date +%Y-%m-%d)"   # already published today's outage
 
 _publish() {   # $1 = success|failed
   "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','$1')" >> "$LOG_FILE" 2>&1

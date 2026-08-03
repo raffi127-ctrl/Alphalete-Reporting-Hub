@@ -996,9 +996,15 @@ def _action_diag(args: str) -> tuple[bool, str]:
         out.append("sleep: ⚠️ NOT prevented — this machine may sleep")
     out.append("power: " + " ".join(_sh(["/usr/bin/pmset", "-g", "batt"]).split())[:70])
     ll = _sh(["/bin/launchctl", "list"])
-    have = [a for a in ("keep-awake", "session-holder", "mini-control",
-                        "day-orchestrator", "box-order-log")
-            if f"com.alphalete.{a}" in ll]
+    # List EVERY loaded com.alphalete.* agent, derived from launchctl itself —
+    # not a hardcoded subset. A fixed list silently omitted new per-machine
+    # agents (e.g. resume-pushing, att-order-log on Lucy 2), so "is its agent
+    # loaded?" was unanswerable from diag and every miss looked the same.
+    have = sorted({
+        tok.split("com.alphalete.", 1)[1]
+        for line in ll.splitlines() if "com.alphalete." in line
+        for tok in line.split() if tok.startswith("com.alphalete.")
+    })
     out.append("agents: " + (", ".join(have) if have else "NONE loaded"))
     ov = REPO_ROOT / "automations" / "shared" / ".ownerville_storage_state.json"
     if ov.exists():
@@ -1010,6 +1016,54 @@ def _action_diag(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         pass
     return True, "\n".join(out)
+
+
+def _action_chrome_sync_diag(args: str) -> tuple[bool, str]:
+    """Read-only: report every REAL Google Chrome profile on this machine, the
+    Google account(s) signed into it, and whether "history and tabs" sync is on.
+    That single toggle is what broadcasts open report tabs to a person's other
+    devices — the leak we chased on the laptop (a profile signed into a personal
+    Google account with sync on). No side effects; touches nothing, only reads
+    Chrome's Preferences JSON. Flags any profile that is a broadcast source."""
+    import glob
+    import json
+    import socket
+
+    root = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+    if not os.path.isdir(root):
+        return True, f"{socket.gethostname()}: no real Chrome profile dir — nothing can sync."
+
+    lines, sources = [], 0
+    prefs = sorted(glob.glob(os.path.join(root, "Default", "Preferences")) +
+                   glob.glob(os.path.join(root, "Profile *", "Preferences")))
+    for pref in prefs:
+        try:
+            p = json.load(open(pref))
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"  {os.path.basename(os.path.dirname(pref))}: (unreadable: {type(e).__name__})")
+            continue
+        accts = [a.get("email") for a in p.get("account_info", []) if a.get("email")]
+        if not accts:
+            continue  # no Google account → cannot sync/broadcast
+        # "history and tabs" (the tab-broadcast toggle) lives under the sync
+        # data-type selections. Key name has varied across Chrome versions, so
+        # check the known ones and fall back to the coarse setup flag.
+        sync = p.get("sync", {})
+        sel = sync.get("selected_types", {}) if isinstance(sync.get("selected_types"), dict) else {}
+        tabs_on = sel.get("tabs")
+        if tabs_on is None:
+            tabs_on = sel.get("typedUrls", sync.get("has_setup_completed"))
+        prof = os.path.basename(os.path.dirname(pref))
+        flag = ""
+        if tabs_on:
+            flag = "  ⚠️ BROADCAST SOURCE (history+tabs sync ON)"
+            sources += 1
+        lines.append(f"  {prof}: {', '.join(accts)} · tabs-sync={'on' if tabs_on else 'off'}{flag}")
+
+    head = f"{socket.gethostname()} · {sources} broadcast source(s)"
+    if not lines:
+        return True, head + "\n  (no profile is signed into a Google account — clean)"
+    return True, head + "\n" + "\n".join(lines)
 
 
 def _action_set_sleep(args: str) -> tuple[bool, str]:
@@ -2361,6 +2415,7 @@ ACTIONS = {
     "set_sheets_cookies": _action_set_sheets_cookies,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
+    "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
