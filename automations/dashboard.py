@@ -4045,25 +4045,47 @@ AUTOMATED_REPORTS = [
             "here.\n\n"
             "WHEN IT RUNS\n"
             "Tue-Sun, right after the morning Sales Board fill (fresh numbers). "
-            "Monday runs in the afternoon via the 2:30pm board catch-up job — "
-            "Sunday's numbers only fully arrive Monday afternoon. The pill goes "
-            "GREEN only once the day's email actually sends."
+            "Monday runs in the afternoon at 2:30pm via the board catch-up job — "
+            "Sunday's numbers only fully arrive Monday afternoon. It never runs "
+            "in the 4am batch, so it lives under ⏰ TIME SET REPORTS.\n\n"
+            "PILL — TWO PHASES\n"
+            "This is one card for the chained pair: phase 1 = the board fill, "
+            "phase 2 = this email. The pill sits ORANGE once the fill lands "
+            "(fill done, email pending) and turns GREEN only when the day's "
+            "email actually sends. A failed fill or a day with no ✅ never "
+            "shows green."
         ),
         # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=129523613#gid=129523613"),
         "assignees": ["Lucy 1"],
-        # LIVE + review-gated again (Eve 2026-07-29): schedule_config
-        # org_sales_board_email on_scheduler=true, runs Tue-Sun in the morning
-        # batch + Monday afternoon via board-catchup. Runs every day → daily
-        # cadence, real calstat pill (no forced color): pending until the day's
-        # send, GREEN when it actually goes out (screenshot_email._publish_sent).
-        # Participates in the due-today / completion tallies like any live report.
-        # time None → no fixed timer chip (its slot is data-gated, not clock-set).
+        # TWO-PHASE card (Megan 2026-08-03), same shape as Country Sales Board
+        # Email: phase 1 = the board FILL (org-sales-board), phase 2 = THIS email
+        # (sales-board-screenshot-email). Pill is ORANGE after the fill lands and
+        # turns GREEN once the email actually sends (screenshot_email._publish_sent
+        # → success row on the card's own id). Both reports still run separately;
+        # this only merges the Hub display + drives the phase colors.
+        "phases": ["org-sales-board", "sales-board-screenshot-email"],
+        # self_scheduled → renders under ⏰ TIME SET REPORTS (not the 4am MORNING
+        # BATCH) because it never runs at 4am: Tue-Sun it posts mid-morning after
+        # the board fill, and MONDAY it runs at 2:30pm via board-catchup (Sunday's
+        # numbers only land Monday afternoon). Weekday-keyed time_label carries
+        # each day's real timing on the tile — Mon shows 2:30 PM, Tue-Sun the AM
+        # flow. All 7 keys set so the pill never falls back to the "· CST" default.
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
-            "time": None,
+            "time": "9:30 AM CST",   # Tue-Sun sort anchor; per-day text in time_label
+            "time_label": {
+                "0": "Mon 2:30 PM CST",
+                "1": "AM flow · sends on ✅",
+                "2": "AM flow · sends on ✅",
+                "3": "AM flow · sends on ✅",
+                "4": "AM flow · sends on ✅",
+                "5": "AM flow · sends on ✅",
+                "6": "AM flow · sends on ✅",
+            },
             "estimated_minutes": 5,
         },
         "checklist": [],
