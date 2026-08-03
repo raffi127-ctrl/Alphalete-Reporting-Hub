@@ -2822,14 +2822,17 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=1296972441#gid=1296972441"),
         "assignees": ["Lucy 1"],
-        # Greens when the 7:30pm deck posts (the 2pm pull writes the tab but
-        # doesn't publish a pill). The 3 Monday reminder emails moved to their own
-        # "Promo Reminder Email" card (promo-reminder-email) 2026-08-02 (Megan), so
-        # this is no longer a 4-step pill — it's a single deliverable: the deck.
+        # Two-phase pill (Monday): the 2pm pull writes the tab and publishes
+        # (1/2, amber), the 7:30pm deck post publishes the 2nd pass and greens it
+        # (2/2). The 3 Monday reminder emails moved to their own card —
+        # "Promo Reminder Email" (promo-reminder-email), split out 2026-08-02
+        # (Megan) — so those are NOT phases of this card anymore.
+        "daily_runs": {"0": 2},   # Mon: 2pm pull + 7:30pm deck post
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [0],   # Monday — pill climbs 1/4 (11am) → 4/4 green (7:30pm)
-            "time": "7:30 PM",
+            "weekdays": [0],   # Monday
+            "time": "7:30 PM",               # final phase (sortable fallback)
+            "time_label": "2 PM · 7:30 PM",  # both phase times shown on the tile
             "estimated_minutes": 8,
         },
         "checklist": [],

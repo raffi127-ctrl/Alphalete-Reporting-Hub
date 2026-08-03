@@ -1185,6 +1185,18 @@ def main() -> int:
         if args.no_pdf:
             print("   (--no-pdf: tab written; the PDF + channel post runs in the "
                   "7:30pm finalize pass.)", flush=True)
+            # Publish the 2pm phase so the Hub card climbs to 1/2 (amber) after the
+            # clean tab fill; the 7:30pm --finalize deck post publishes the 2nd
+            # pass and greens it (2/2). Best-effort — never fail the run over a
+            # Hub write. Only reached past the failed-section gate above, so this
+            # only fires on a clean pull.
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_publish.publish_done("leaders_call",
+                                         "Leader's Call - Weekly Recognition",
+                                         status="success")
+            except Exception:
+                pass
             return 0
         # GATE: only build the Leader's Call PDF on a fully-clean pull (Maud
         # 2026-06-29). Nothing failed here, so generate it from the same results.
