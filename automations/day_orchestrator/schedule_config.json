@@ -3100,6 +3100,46 @@
       "verify": null,
       "timeout_minutes": 20
     },
+    "alphalete_org_box": {
+      "on_scheduler": true,
+      "_note": "Re-run ONLY the BOX OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_box` \u2014 added 2026-08-03 after a full rerun timed out inside NDS (step 2) and never reached BOX (3) or JE (4), so the whole-report retry could never fix them. Mirrors alphalete_org_retail exactly: on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes this step). source_type tableau so the Chrome-collision guard runs first. Not a Hub card.",
+      "display_name": "Alphalete Org 1on1s \u2014 BOX OPT only",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:box_daily"
+      ],
+      "command": [
+        "automations.alphalete_org_report.opt_box"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30
+    },
+    "alphalete_org_je": {
+      "on_scheduler": true,
+      "_note": "Re-run ONLY the JE OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_je` \u2014 added 2026-08-03 after a full rerun timed out inside NDS (step 2) and never reached BOX (3) or JE (4), so the whole-report retry could never fix them. Mirrors alphalete_org_retail exactly: on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes this step). source_type tableau so the Chrome-collision guard runs first. Not a Hub card.",
+      "display_name": "Alphalete Org 1on1s \u2014 JE OPT only",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.alphalete_org_report.opt_je"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30
+    },
     "recruiter_retention_weekly": {
       "order": 3,
       "on_scheduler": true,
