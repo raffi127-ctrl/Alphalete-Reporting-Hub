@@ -97,6 +97,25 @@ def _run(args) -> int:
         with tableau_session(verbose=True) as page:
             if do_personal:
                 sales = tableau_pull.pull_personal_sales(we, page=page)
+                # ALSO re-pull the PREVIOUS week (Megan 2026-08-03). The pull
+                # only ever covered the current Mon–Sun week, so the week's last
+                # day froze at whatever the final run of that week saw: the
+                # Aug 2 run at 11am recorded 0 for Sunday, three new-internet
+                # sales landed later that day, and Monday's rollover meant week
+                # 8/2 was never read again — Christian Esposito lost a sale from
+                # his August total permanently. Re-reading last week each day
+                # lets late sales settle for a further 7 days.
+                prev_we = we - dt.timedelta(days=7)
+                if prev_we >= COMP_START:
+                    prev_sales = tableau_pull.pull_personal_sales(
+                        prev_we, page=page,
+                        out_path=tableau_pull.PERSONAL_CACHE.with_name(
+                            "showdown_personal_prev.csv"))
+                    # current week wins on any date both weeks report
+                    for owner_norm, daymap in prev_sales.items():
+                        merged_days = dict(daymap)
+                        merged_days.update(sales.get(owner_norm, {}))
+                        sales[owner_norm] = merged_days
             if do_rep:
                 counts = tableau_pull.pull_rep_counts(we_sunday=we, page=page)
     else:
