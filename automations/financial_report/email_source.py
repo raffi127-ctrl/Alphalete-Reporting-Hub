@@ -59,6 +59,16 @@ EXPECTED_BOOKS = [
 ]
 
 
+# Senders whose weekly file REUSES one filename while its contents change week
+# to week. Their messages are kept per-message (date-prefixed) instead of
+# collapsed to the newest, because filename-dedup would keep only the last week.
+# Joseph Logan's book is the case: 'Joseph Logan _Profit_July.xlsx' every week,
+# but its transaction tab covers ONLY that week, which is where his Indeed spend
+# lives. Coel and German reuse a filename too, but their whole month is restated
+# in every send, so the newest file is genuinely complete.
+_KEEP_EVERY_MESSAGE = {"jenmkeller@gmail.com"}
+
+
 def fetch(dest_dir: str | Path, *, since_days: int = 7,
           verbose: bool = True) -> List[Path]:
     """Gather this week's financial workbooks from all senders into dest_dir."""
@@ -66,8 +76,24 @@ def fetch(dest_dir: str | Path, *, since_days: int = 7,
     for sender, globs in SOURCES:
         if verbose:
             print(f"  [{sender}]", flush=True)
-        got += email_ingest.fetch_all(sender, globs, dest_dir,
-                                      since_days=since_days, verbose=verbose)
+        keep_all = sender in _KEEP_EVERY_MESSAGE
+        # A per-message sender gets a WIDER window than the 7-day default: each
+        # of their sends carries only its own week, so a run that looked back
+        # one week would fill one week and leave any week whose run was missed
+        # blank forever. Four weeks lets a skipped run heal itself, and costs
+        # nothing — re-writing a week with the same values is a no-op.
+        batch = email_ingest.fetch_all(
+            sender, globs, dest_dir,
+            since_days=max(since_days, 28) if keep_all else since_days,
+            verbose=verbose, unique_by_message=keep_all)
+        if keep_all:
+            # fetch_all hands these back newest-first, and the parser's merge
+            # lets the LAST file win a week both cover. Reverse so the newest
+            # send has the final word: an older file reports 0 for weeks that
+            # hadn't happened yet when it was sent, and those zeros would
+            # otherwise overwrite the real numbers.
+            batch = list(reversed(batch))
+        got += batch
     return got
 
 

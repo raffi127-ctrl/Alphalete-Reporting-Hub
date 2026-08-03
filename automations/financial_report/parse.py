@@ -347,9 +347,58 @@ def _parse_logan(wb) -> Tuple[List[dict], List[dt.date]]:
             v = r[ci].value if ci < len(r) else None
             if isinstance(v, (int, float)):
                 m.setdefault(d, v)              # first labelled row wins
+    indeed = _logan_indeed(wb, sorted(date_cols.values()))
+    if indeed:
+        metrics["INDEED"] = indeed
     return ([{"office": company or owner, "owner": owner, "state": "",
               "metrics": metrics}],
             sorted(date_cols.values()))
+
+
+def _logan_indeed(wb, week_ends: List[dt.date]) -> Dict[dt.date, float]:
+    """Joseph's Indeed spend, per week, from the transaction detail tab.
+
+    There's no 'Indeed' row on the PROFIT sheet — only a combined 'ADS' line —
+    so the real number has to come from the detail tab, where each charge is one
+    row with a Name and an Amount. Transactions are bucketed by the PROFIT
+    sheet's OWN week endings rather than the tab's period header, which keeps it
+    right across a month boundary and works if a tab ever spans two weeks.
+
+    Jobs2Me sits in the same advertising block and is deliberately excluded — it
+    belongs to a different metric, same rule the Coel parser follows.
+
+    Note each weekly send carries only THAT week's detail, so a single file
+    yields one week. The email ingest keeps every message for this sender
+    (email_source._KEEP_EVERY_MESSAGE) and the per-week values merge across
+    files, which is what lets several weeks fill at once."""
+    out: Dict[dt.date, float] = {}
+    for name in wb.sheetnames:
+        if name.strip().lower() in ("profit", "breakeven"):
+            continue
+        ws = wb[name]
+        name_col = amt_col = None
+        for r in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 40)):
+            labels = {_lbl(c.value): c.column - 1 for c in r if c.value is not None}
+            if "name" in labels and "amount" in labels:
+                name_col, amt_col = labels["name"], labels["amount"]
+                break
+        if name_col is None:
+            continue
+        for r in ws.iter_rows(min_row=1, max_row=ws.max_row):
+            if name_col >= len(r) or amt_col >= len(r):
+                continue
+            if _lbl(r[name_col].value) != "indeed":
+                continue
+            when = next((_date_cell(c.value) for c in r
+                         if _date_cell(c.value) is not None), None)
+            amt = _num(r[amt_col].value)
+            if when is None or not isinstance(amt, (int, float)):
+                continue
+            wk = next((w for w in week_ends
+                       if w - dt.timedelta(days=6) <= when <= w), None)
+            if wk is not None:
+                out[wk] = round(out.get(wk, 0.0) + amt, 2)
+    return out
 
 
 def _coel_indeed_total(ws) -> Optional[float]:
@@ -486,6 +535,17 @@ def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, List[dict]], Li
             if existing is None:
                 bucket.append(o)
             else:
-                bucket[existing] = o            # later file wins
+                # MERGE per week rather than replace. Two files for the same
+                # office usually cover overlapping-but-different weeks (Joseph's
+                # book is one file per week now that every message is kept), and
+                # replacing threw the other file's weeks away. A week present in
+                # both still lets the later file win, which is the original
+                # re-uploaded-file behaviour.
+                prev = bucket[existing]
+                merged = {k: dict(v) for k, v in prev["metrics"].items()}
+                for metric, vals in o["metrics"].items():
+                    merged.setdefault(metric, {}).update(vals)
+                o = {**prev, **o, "metrics": merged}
+                bucket[existing] = o
     weeks = summary_weeks or sorted(all_weeks)[-4:]
     return by_owner, weeks, problems

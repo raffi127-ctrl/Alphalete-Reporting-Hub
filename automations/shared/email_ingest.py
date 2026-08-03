@@ -17,6 +17,7 @@ import fnmatch
 import imaplib
 import re
 from email.header import decode_header
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -120,16 +121,24 @@ def fetch_all(
     subject: Optional[str] = None,
     since_days: int = 60,
     verbose: bool = True,
+    unique_by_message: bool = False,
 ) -> List[Path]:
     """Download EVERY attachment matching any of `filename_globs` FROM `sender`
     in the window, deduped by filename (newest email wins on a resend). For
     reports whose source is MANY files — e.g. one financial workbook per owner —
     rather than one-per-type. `sender` may be a bare domain ("hubtruth.com") to
-    match every address at it. Returns the saved paths."""
+    match every address at it. Returns the saved paths.
+
+    `unique_by_message` keeps EVERY message's copy, prefixed with its date,
+    instead of collapsing them to the newest. Needed when a sender reuses one
+    filename but each week's file carries DIFFERENT content — Joseph Logan's
+    book reuses 'Joseph Logan _Profit_July.xlsx' every week while its detail tab
+    covers only that week, so filename-dedup silently threw away every week but
+    the last."""
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     globs = list(filename_globs)
-    seen: Dict[str, Path] = {}      # filename -> path; newest-first, first wins
+    seen: Dict[str, Path] = {}      # key -> path; newest-first, first wins
     M = _connect()
     try:
         for i in reversed(_search(M, sender, subject, since_days)):   # newest first
@@ -137,16 +146,25 @@ def fetch_all(
             if not raw or not raw[0]:
                 continue
             msg = email.message_from_bytes(raw[0][1])
+            stamp = ""
+            if unique_by_message:
+                try:
+                    stamp = parsedate_to_datetime(msg["Date"]).strftime("%Y-%m-%d_")
+                except Exception:  # noqa: BLE001 — fall back to plain filename
+                    stamp = ""
             for part in msg.walk():
                 fn = _filename(part)
-                if not fn or fn in seen:
+                if not fn:
+                    continue
+                key = f"{stamp}{fn}"
+                if key in seen:
                     continue
                 if any(fnmatch.fnmatch(fn.lower(), g.lower()) for g in globs):
-                    out = dest / fn
+                    out = dest / key
                     out.write_bytes(part.get_payload(decode=True))
-                    seen[fn] = out
+                    seen[key] = out
                     if verbose:
-                        print(f"  ✓ {fn}", flush=True)
+                        print(f"  ✓ {key}", flush=True)
         return list(seen.values())
     finally:
         M.logout()
