@@ -3991,41 +3991,43 @@ AUTOMATED_REPORTS = [
         "emoji": "📧",
         "color": "#DC2626",
         "category": "📊 Metrics",
-        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, the RAF ORG current-vs-prior summary, the ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser). Currently manual-only — off the auto-schedule (handed to Eve).",
+        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, the RAF ORG current-vs-prior summary, the ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser). Automated + review-gated: builds the preview, posts it to #revision-emails as Lucy, and sends only on a ✅ from Lucy or Evelyn.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Emails the Org Sales Board as clean, exact-sheet screenshots "
             "(colors/fonts/borders match the sheet). Rendered from the COPY tab "
             "via the Google Sheets PDF-export endpoint — no browser, runs from "
             "any machine.\n\n"
-            "STATUS — PAUSED 7/28\n"
-            "Off the automated schedule; handed to Eve, who now owns it. The "
-            "daily send is stopped — only the manual button below sends today. "
-            "Re-enables to the full distro once Eve turns it back on.\n\n"
+            "STATUS — LIVE, REVIEW-GATED (Eve, 7/29)\n"
+            "Runs on the scheduler again. The automated run does NOT send: it "
+            "builds the day's preview, prints the PDF, drops it in Drive, and "
+            "posts the link in #revision-emails as Lucy. The email goes out only "
+            "when Lucy or Evelyn ✅'s that post — the org-board-email-review "
+            "agent (9am-8pm) then mails the already-captured images. A partial "
+            "board never sends (data-gated).\n\n"
             "RECIPIENTS\n"
-            "Manual send goes to the proving list (Rafael + Megan). At go-live "
-            "it expands to three Gmail groups — Alphalete Org Owners, Carlos' "
-            "Captain Team, Raf's Captain Team.\n\n"
-            "WHEN IT RUNS (when live)\n"
+            "Proving list (Rafael + Megan). Full distro (three Gmail groups — "
+            "Alphalete Org Owners, Carlos' Captain Team, Raf's Captain Team) is "
+            "flipped on by adding --distro to the review checker's args, not "
+            "here.\n\n"
+            "WHEN IT RUNS\n"
             "Tue-Sun, right after the morning Sales Board fill (fresh numbers). "
-            "Monday's send lands in the afternoon via the board catch-up job — "
-            "Sunday's numbers only fully arrive Monday afternoon. A partial "
-            "board never sends."
+            "Monday runs in the afternoon via the 2:30pm board catch-up job — "
+            "Sunday's numbers only fully arrive Monday afternoon. The pill goes "
+            "GREEN only once the day's email actually sends."
         ),
         # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=129523613#gid=129523613"),
         "assignees": ["Lucy 1"],
-        # Suspended 2026-07-28 (Megan) — off the scheduler, run by hand from this
-        # card; handed to Eve. Re-enable: schedule_config on_scheduler=true +
-        # base_args '--distro' at go-live.
-        # Kept on a daily cadence ONLY so it still renders a pill in the week
-        # strip — that pill is forced PURPLE via the calstat CSS override (search
-        # 'sales-board-screenshot-email__calstat') to read as "not running".
-        # hide_schedule keeps it OUT of the due-today / overdue / completion
-        # tallies (it's parked, not overdue). time None → no timer chip.
-        "hide_schedule": True,
+        # LIVE + review-gated again (Eve 2026-07-29): schedule_config
+        # org_sales_board_email on_scheduler=true, runs Tue-Sun in the morning
+        # batch + Monday afternoon via board-catchup. Runs every day → daily
+        # cadence, real calstat pill (no forced color): pending until the day's
+        # send, GREEN when it actually goes out (screenshot_email._publish_sent).
+        # Participates in the due-today / completion tallies like any live report.
+        # time None → no fixed timer chip (its slot is data-gated, not clock-set).
         "schedule": {
             "frequency": "daily",
             "time": None,
@@ -4041,7 +4043,7 @@ AUTOMATED_REPORTS = [
                 "label": "Send Email (Rafael + Megan)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Rafael, Megan). Takes a couple of minutes. Manual send — bypasses the fill-complete guard (the copy tab is kept current by the mini; that guard protects the automated run when it's live).",
+                "help": "Manual override — renders every section of the copy tab to exact-sheet images and emails them to the proving list (Rafael, Megan) right now, bypassing BOTH the fill-complete guard and the #revision-emails review checkmark. The normal automated run is review-gated; use this only when you want to push the day's email by hand. Takes a couple of minutes.",
                 "module": "automations.org_sales_board.screenshot_email",
                 "args_fn": lambda: ["--force"],
             },
@@ -11768,10 +11770,11 @@ else:  # st.session_state.view == "user"
             # triggered by /dd (no scheduled run reports back) → permanent orange
             # OPS pill like the other always-on cards. (Megan 2026-07-28)
             "[class*='due-diligence-bot__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
-            # Org. Sales Board Email is PAUSED (off the scheduler, handed to Eve) —
-            # force its pill PURPLE so it reads at a glance as "not running / manual"
-            # instead of a stale gray/red that looks like a failed run. (Megan 2026-07-28)
-            "[class*='sales-board-screenshot-email__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Org. Sales Board Email: Eve re-enabled the automation 2026-07-29
+            # (Tue-Sun morning batch + Monday afternoon board-catchup, data- and
+            # review-gated). No forced pill — it runs daily and its real calstat
+            # tells the truth: pending until the day's send, GREEN on success
+            # (screenshot_email._publish_sent on --send-reviewed). (Megan 2026-08-03)
             # Eve's two per-captain cards (in progress) — force their pills PURPLE
             # so Megan can spot them to revisit with Eve. Two near-identical names:
             # 'Captainship Activations' AND 'Captainship Activation Rate'. (7/28)
