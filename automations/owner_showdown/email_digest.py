@@ -13,8 +13,38 @@ from __future__ import annotations
 import datetime as dt
 from typing import Dict, List, Tuple
 
-TO_EMAIL = "raffi127@gmail.com"                 # Raf (confirmed 7/29)
-CC_EMAILS = ["meganhidalgo1191@gmail.com"]      # Megan — CC to confirm delivery
+# Recipients (Megan 2026-08-03): the whole "Aug Owner Showdown" contact group —
+# 48 people, competitors + observers + Raf — VISIBLE to each other, with Megan
+# BCC'd so she sees every send without being on the reply-all path.
+# Heads-up that comes with the visible list: a "nice work!" reply-all reaches all
+# 48. Moving everyone to BCC is a one-line change if that gets old.
+BCC_EMAILS = ["meganhidalgo1191@gmail.com"]     # Megan — hidden
+TO_EMAIL = "raffi127@gmail.com"                 # fallback only (winner email)
+
+
+def recipients() -> list:
+    """The group expanded at SEND time, so Contacts is the source of truth and
+    Megan can add/drop someone without a code change.
+
+    Falls back to the committed seed list if the People API is unreachable (no
+    contacts token on this machine, quota, outage) — a flyer going out to the
+    seed is far better than no flyer, and the fallback is printed loudly."""
+    from automations.owner_showdown import distro
+    try:
+        from automations.shared import contacts_auth
+        emails, missing = contacts_auth.expand_groups([distro.GROUP_NAME])
+        if missing:
+            raise RuntimeError(f"contact group(s) not found: {missing}")
+        if not emails:
+            raise RuntimeError("group expanded to zero addresses")
+        return emails
+    except Exception as e:
+        seed = distro.seed_emails()
+        print(f"  ⚠ couldn't expand the {distro.GROUP_NAME!r} contact group "
+              f"({type(e).__name__}: {e}) — falling back to the {len(seed)} "
+              f"committed addresses in distro.py. Anyone added in Contacts "
+              f"since the last deploy will NOT get this one.", flush=True)
+        return seed
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=893154737")
 
@@ -34,12 +64,11 @@ def build_winner(sales_champ: Tuple[str, object],
         f"<p style='line-height:1.6'>💻 <b>Personal Sales</b> — {sn} "
         f"(<b>{sv}</b> new-internet sales)<br>"
         f"📈 <b>Rep Count Growth</b> — {rn} (<b>{rv_txt}</b> reps since Aug 2)</p>"
-        f"<p><a href='{SHEET_URL}'>See the final tab →</a></p>"
+        # No sheet link here either — same reason as the standings email.
         f"<img src='cid:flyer' style='width:100%;max-width:560px;border-radius:12px'></div>")
     text = (f"August Owner Showdown — Champions\n\n"
             f"Personal Sales: {sn} ({sv} new-internet sales)\n"
-            f"Rep Count Growth: {rn} ({rv_txt} reps since Aug 2)\n\n"
-            f"Final tab: {SHEET_URL}")
+            f"Rep Count Growth: {rn} ({rv_txt} reps since Aug 2)\n")
     return {"subject": subject, "html": html, "text": text}
 
 
@@ -55,12 +84,13 @@ def send_email(subject: str, html: str, text: str, png_path=None,
     from automations.scheduled_6_days_out.email_send import (
         FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password)
 
+    to_list = recipients()
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = FROM_ADDR
-    msg["To"] = TO_EMAIL
-    if CC_EMAILS:
-        msg["Cc"] = ", ".join(CC_EMAILS)
+    msg["To"] = ", ".join(to_list)
+    # NO Bcc header — a Bcc header would expose Megan to every recipient. The
+    # blind copy happens by adding her to the envelope only, below.
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
     if png_path:
@@ -74,14 +104,15 @@ def send_email(subject: str, html: str, text: str, png_path=None,
         with open(pdf_path, "rb") as f:
             msg.add_attachment(f.read(), maintype="application", subtype="pdf",
                                filename=Path(pdf_path).name)
-    recipients = [TO_EMAIL] + list(CC_EMAILS)
+    # NOT named `recipients` — that is the module-level function above.
+    envelope = list(to_list) + list(BCC_EMAILS)
     if dry_run:
         out = Path(__file__).resolve().parents[2] / "output" / "logs"
         out.mkdir(parents=True, exist_ok=True)
         eml = out / f"{tag}-{_dt.datetime.now():%Y%m%d-%H%M%S}.eml"
         eml.write_bytes(bytes(msg))
         print(f"[owner-showdown] DRY-RUN wrote {eml} (would send to "
-              f"{', '.join(recipients)})", flush=True)
+              f"{len(envelope)} recipients)", flush=True)
         return
     try:
         ctx = ssl.create_default_context(cafile=__import__("certifi").where())
@@ -89,8 +120,9 @@ def send_email(subject: str, html: str, text: str, png_path=None,
         ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, app_password())
-        s.send_message(msg, to_addrs=recipients)
-    print(f"[owner-showdown] sent '{subject}' to {', '.join(recipients)}",
+        s.send_message(msg, to_addrs=envelope)
+    print(f"[owner-showdown] sent '{subject}' to {len(to_list)} on the "
+          f"list + {len(BCC_EMAILS)} bcc",
           flush=True)
 
 
@@ -109,10 +141,11 @@ def build(sales_rows: List[Tuple[int, str, object]],
         f"$5,000 to each winner</div>"
         f"<img src='cid:flyer' style='width:100%;max-width:560px;border-radius:12px;"
         f"margin-bottom:8px'>"
-        # Flyer already shows both leaderboards — the text tables below were
-        # redundant (Megan 2026-08-01). Keep just the flyer + the live-sheet link.
-        f"<div style='margin-top:18px'><a href='{SHEET_URL}'>Open the live "
-        f"sheet →</a></div></div>")
+        # NO link to the KTS sheet (Megan 2026-08-03). This email goes to 48
+        # outside owners — the flyer is the deliverable; the working sheet is
+        # not for them. Do NOT reinstate SHEET_URL in anything that goes to
+        # the group.
+        f"</div>")
 
     def _txt(rows):
         # rep rows are 4-tuples (rank, name, delta, headcount); sales are 3.
@@ -128,6 +161,5 @@ def build(sales_rows: List[Tuple[int, str, object]],
         return "\n".join(out)
     text = (f"August Owner Showdown — standings as of {ds}\n\n"
             f"PERSONAL SALES (new-internet, MTD):\n{_txt(sales_rows)}\n\n"
-            f"REP COUNT GROWTH (vs Aug 2):\n{_txt(rep_rows)}\n\n"
-            f"Live tracker: {SHEET_URL}")
+            f"REP COUNT GROWTH (vs Aug 2):\n{_txt(rep_rows)}\n")
     return {"subject": subject, "html": html, "text": text}

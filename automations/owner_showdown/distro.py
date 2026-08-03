@@ -88,9 +88,15 @@ OBSERVERS: List[Tuple[str, str]] = [     # (email, name)
     ("starr.novamanagement@gmail.com", "Starr Rodenhurst"),
 ]
 
-# Deliberately NOT in the group: alphaletereporting@ (it is the SENDER), and Raf
-# + Megan (they stay on To/Cc, so the group is purely the audience).
-SEED: List[Tuple[str, str]] = COMPETITORS + OBSERVERS
+# Raf runs the competition and wants the flyer like everyone else (Megan
+# 2026-08-03: "make sure Raf is in the overall list").
+ORGANIZERS: List[Tuple[str, str]] = [    # (email, name)
+    ("raffi127@gmail.com", "Rafael Hidalgo"),
+]
+
+# Deliberately NOT in the group: alphaletereporting@ (it is the SENDER) and
+# Megan — she is BCC'd on every send instead (see email_digest.BCC_EMAILS).
+SEED: List[Tuple[str, str]] = COMPETITORS + OBSERVERS + ORGANIZERS
 
 
 def seed_emails() -> List[str]:
