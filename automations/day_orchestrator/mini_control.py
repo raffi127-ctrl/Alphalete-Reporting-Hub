@@ -109,7 +109,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
-                    "clear_untracked", "set_doubleentry_creds"}
+                    "clear_untracked", "set_doubleentry_creds", "messages_diag"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -815,6 +815,128 @@ def _action_ping(args: str) -> tuple[bool, str]:
     queue. No side effects; used to verify the deploy."""
     import socket
     return True, f"pong from {socket.gethostname()} @ {_now()}"
+
+
+def _osascript(script: str, timeout: int = 60) -> tuple[bool, str]:
+    """Run one AppleScript; return (ok, stdout-or-stderr). macOS-only."""
+    import platform
+    if platform.system() != "Darwin":
+        return False, "not macOS — no Messages.app"
+    try:
+        proc = subprocess.run(["osascript", "-e", script],
+                              capture_output=True, text=True, timeout=timeout)
+    except Exception as e:  # noqa: BLE001
+        return False, f"osascript launch error: {str(e)[:160]}"
+    if proc.returncode != 0:
+        return False, (proc.stderr or "osascript failed").strip()[:300]
+    return True, (proc.stdout or "").strip()
+
+
+def _action_messages_diag(args: str) -> tuple[bool, str]:
+    """READ-ONLY: is Messages signed in on THIS machine, and as WHICH account?
+
+    The whole point of texting 'from Lucy 2' is that Messages here is signed in
+    on the intended Apple ID (alphletegp@). This proves that without sending a
+    thing: it reports the running state, the active iMessage service + the
+    account/handle it's registered to, and whether an SMS service exists (green-
+    bubble sends need the Mac paired to an iPhone with Text Message Forwarding).
+    No side effects."""
+    import socket
+    out = [f"host: {socket.gethostname()} · {_now()}"]
+
+    running = subprocess.run(["pgrep", "-x", "Messages"], capture_output=True,
+                             text=True).returncode == 0
+    out.append(f"Messages running: {running}")
+
+    # Enumerate accounts + their service type / handle. Recent macOS throws
+    # -10000 iterating `services`, so read from `accounts` (which worked on the
+    # laptop probe) and fall back to the iMessage whose-filter for the handle.
+    ok, accts = _osascript(
+        'tell application "Messages"\n'
+        '  set out to ""\n'
+        '  repeat with a in accounts\n'
+        '    try\n'
+        '      set out to out & (service type of a as text) & " :: " & '
+        '(description of a) & " :: enabled=" & (enabled of a as text) & linefeed\n'
+        '    end try\n'
+        '  end repeat\n'
+        '  return out\n'
+        'end tell')
+    if ok and accts:
+        out.append("accounts:")
+        for ln in accts.splitlines():
+            out.append("  " + ln)
+    else:
+        out.append(f"accounts: (couldn't read: {accts})")
+
+    # The iMessage handle we'd actually send from (matches swag's send path).
+    ok, handle = _osascript(
+        'tell application "Messages" to get id of 1st service '
+        'whose service type = iMessage')
+    out.append(f"iMessage service id (send-from): {handle if ok else '(none: '+handle+')'}")
+
+    has_sms = ok and False  # informational only; SMS shows in the accounts list above
+    out.append("note: blue-bubble (iMessage) sends work from a Mac alone; "
+               "green-bubble/SMS needs this Mac paired to an iPhone w/ Text "
+               "Message Forwarding — look for an 'SMS' line above.")
+    return True, "\n".join(out)
+
+
+def _normalize_us_phone(raw: str) -> str:
+    """Bare 10-digit US number -> +1XXXXXXXXXX (what iMessage buddy resolution
+    wants). Leave anything already +-prefixed or non-10-digit untouched."""
+    digits = re.sub(r"\D", "", raw or "")
+    if raw.strip().startswith("+"):
+        return raw.strip()
+    if len(digits) == 10:
+        return "+1" + digits
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+    return raw.strip()
+
+
+def _action_sendtext(args: str) -> tuple[bool, str]:
+    """Send ONE iMessage from THIS machine's signed-in iMessage account.
+
+    Args:  <phone> <message…>   (first token = number, the rest = the text)
+    e.g.   sendtext 4197697114 Test from Lucy 2 — reply if you got this
+
+    Deliberately SINGLE-recipient and one message per queued row: the queue tab
+    is the audit log (By/Queued At), so every send is attributable, and there's
+    no bulk/loop path here. Reuses the proven swag AppleScript sender; reports
+    the account it sent from so you can confirm it went out as the right Apple
+    ID. A launchd poller may need one-time macOS Automation permission to control
+    Messages — if it's blocked you'll see the -1743/'not allowed' error here, and
+    a human grants it once at the machine (System Settings ▸ Privacy & Security ▸
+    Automation)."""
+    parts = (args or "").strip().split(None, 1)
+    if len(parts) < 2 or not parts[0].strip():
+        return False, "sendtext needs '<phone> <message>' (e.g. 4197697114 hi there)"
+    phone = _normalize_us_phone(parts[0])
+    text = parts[1].strip()
+
+    # Which account will this send from? Capture it for the result.
+    ok, handle = _osascript(
+        'tell application "Messages" to get id of 1st service '
+        'whose service type = iMessage')
+    from_acct = handle if ok and handle else "(unknown)"
+    if not (ok and handle):
+        return False, (f"no active iMessage account signed in here — can't send. "
+                       f"({handle})")
+
+    safe = text.replace("\\", "\\\\").replace('"', '\\"')
+    sent_ok, res = _osascript(
+        'tell application "Messages"\n'
+        '  set svcId to id of 1st service whose service type = iMessage\n'
+        '  set targetService to service id svcId\n'
+        f'  set targetBuddy to buddy "{phone}" of targetService\n'
+        f'  send "{safe}" to targetBuddy\n'
+        'end tell', timeout=45)
+    if not sent_ok:
+        return False, (f"send to {phone} FAILED from {from_acct}: {res}"
+                       " · if this is a permission/-1743 error, grant this "
+                       "process Automation control of Messages once at the machine")
+    return True, f"sent to {phone} from iMessage account {from_acct} · text={text!r}"
 
 
 # Paths that a materializing action (onboard_apply) writes into the working tree
@@ -2372,6 +2494,8 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
 
 ACTIONS = {
     "ping": _action_ping,
+    "messages_diag": _action_messages_diag,
+    "sendtext": _action_sendtext,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
