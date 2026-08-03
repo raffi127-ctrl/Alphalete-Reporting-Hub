@@ -191,6 +191,28 @@
       "verify": null,
       "timeout_minutes": 12
     },
+    "disable_owner_showdown_agent": {
+      "on_scheduler": false,
+      "_note": "Unload com.alphalete.owner-showdown-daily (9am flyer email) on this machine. Added 2026-08-03: the daily send is HELD until Megan approves the flyer. `lucy rerun disable_owner_showdown_agent`. Re-enable = flip OWNER_SHOWDOWN_DISABLED to 0 in deploy/owner_showdown_daily.sh, push, `lucy update`, then `lucy rerun install_owner_showdown_agent`.",
+      "display_name": "Disable Owner Showdown daily agent (9am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "owner-showdown-daily"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 1"
+    },
     "install_owner_showdown_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.owner-showdown-daily on Lucy 1 / the mini (9:00am CST daily; deploy/owner_showdown_daily.sh -> python -m automations.owner_showdown.run --email). Sends the Owner Showdown flyer as a PDF, every day of the competition, to Raf cc Megan. `lucy update` then `lucy rerun install_owner_showdown_agent`. TEMP — remove after 8/31 with the rest of the card.",
