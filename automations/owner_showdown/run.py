@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 import traceback
 
@@ -201,6 +202,22 @@ def _run(args) -> int:
                           tag="winner" if is_winner_day else "standings")
         except Exception:
             print("  ⚠ email step failed:", flush=True)
+            traceback.print_exc()
+
+    # --- tell the Hub this ran (standalone 9am agent only) ------------------
+    # The 4am orchestrator pass publishes its own Hub Activity row, and the
+    # dashboard launcher sets HUB_RUN — recording here in either case would
+    # double-count. The 9am LaunchAgent goes through neither, so without this
+    # the card's calstat pill never turns green even on a clean run
+    # (standing rule: a LaunchAgent report has to publish to the Hub).
+    if os.environ.get("OWNER_SHOWDOWN_AGENT") and not os.environ.get("HUB_RUN"):
+        try:
+            from automations.shared import hub_activity
+            if not hub_activity.log_completed("owner-showdown",
+                                              "August Owner Showdown"):
+                print("  (couldn't record this run on the Hub — the pill may "
+                      "stay yellow; the flyer itself went out fine)", flush=True)
+        except Exception:
             traceback.print_exc()
     return 0
 

@@ -47,6 +47,10 @@ export NO_PROXY='*'
 export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
+# Tells run.py to publish a Hub Activity row for this pass. The 4am orchestrator
+# pass publishes its own, so only the standalone agent sets this — otherwise the
+# card would double-count. Without it the calstat pill never goes green.
+export OWNER_SHOWDOWN_AGENT=1
 
 LOG_FILE="$LOG_DIR/owner-showdown-daily-$(date +%Y-%m-%d-%H%M%S).log"
 MARKER="$LOG_DIR/.owner-showdown-emailed-$(date +%Y-%m-%d)"
