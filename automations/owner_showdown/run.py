@@ -141,7 +141,9 @@ def _run(args) -> int:
         rows_plan, unmatched = sheet_fill.plan_repcount(sec, snapshots)
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("REP COUNT (growth)", sec, rows_plan, unmatched, a1)
-        rep_rows = [(i, r["name"], r["total"])
+        # 4-tuple: the flyer shows the headcount AND the change since the 8/2
+        # baseline. The email's text fallback still reads the first three.
+        rep_rows = [(i, r["name"], r["total"], r.get("heads"))
                     for i, r in enumerate(rows_plan, 1)]
 
     print(f"\n{'(dry-run — nothing written)' if args.dry_run else 'written ✓'}",

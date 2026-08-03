@@ -115,7 +115,17 @@ def build(sales_rows: List[Tuple[int, str, object]],
         f"sheet →</a></div></div>")
 
     def _txt(rows):
-        return "\n".join(f"  {r}. {n} — {v}" for r, n, v in rows)
+        # rep rows are 4-tuples (rank, name, delta, headcount); sales are 3.
+        out = []
+        for row in rows:
+            if len(row) == 4:
+                r, n, v, heads = row
+                sign = f"+{v}" if isinstance(v, int) and v >= 0 else str(v)
+                out.append(f"  {r}. {n} — {heads} heads ({sign} since Aug 2)")
+            else:
+                r, n, v = row
+                out.append(f"  {r}. {n} — {v}")
+        return "\n".join(out)
     text = (f"August Owner Showdown — standings as of {ds}\n\n"
             f"PERSONAL SALES (new-internet, MTD):\n{_txt(sales_rows)}\n\n"
             f"REP COUNT GROWTH (vs Aug 2):\n{_txt(rep_rows)}\n\n"

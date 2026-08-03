@@ -226,7 +226,12 @@ def plan_repcount(sec: Section, snapshots: Dict[dt.date, Dict[str, int]]):
         base = _match(name, snapshots.get(baseline_d, {})) if baseline_d in snapshots else None
         latest = _match(name, snapshots.get(latest_d, {})) if latest_d else None
         growth = (latest - base) if (latest is not None and base is not None) else ""
-        rows.append({"row0": row0, "name": name, "total": growth, "cells": cells})
+        # `heads` = the actual headcount at the latest Sunday poll. TOTALS is a
+        # DELTA, so on the baseline Sunday it is 0 for everyone — the flyer shows
+        # both ("26 heads · +0 since Aug 2") or the board reads as all-zeros
+        # (Megan 2026-08-03). Not written to the sheet; display only.
+        rows.append({"row0": row0, "name": name, "total": growth, "cells": cells,
+                     "heads": latest})
     # unmatched = owners missing from the latest snapshot
     if latest_d:
         for row0, name in sec.owners:

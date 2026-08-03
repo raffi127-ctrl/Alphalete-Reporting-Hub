@@ -19,14 +19,35 @@ def _medal(rank: int) -> str:
     return {1: "🥇 ", 2: "🥈 ", 3: "🥉 "}.get(rank, "")
 
 
-def _ol(rows: List[Tuple[int, str, object]], unit: str) -> str:
-    """rows: [(rank, name, value)] high→low. value '' renders as an em dash.
-    Lists EVERY owner (Raf 2026-08-01: whole field on the flyer, not just top 10)."""
+def _delta(val: object) -> str:
+    """Signed change text: 0 -> '+0', -9 -> '-9'. Non-numeric -> em dash."""
+    if isinstance(val, int):
+        return f"+{val}" if val >= 0 else str(val)
+    return "—"
+
+
+def _ol(rows, unit: str, since: str = "") -> str:
+    """rows: [(rank, name, value)] high→low, or [(rank, name, delta, headcount)]
+    for the rep-count board. value '' renders as an em dash.
+    Lists EVERY owner (Raf 2026-08-01: whole field on the flyer, not just top 10).
+
+    4-tuples render BOTH numbers (Megan 2026-08-03): the headcount as the main
+    figure and the change since the baseline underneath — "26 heads · +0 since
+    Aug 2". Showing the delta alone made the whole board read as zeros, because
+    on the baseline Sunday every owner's change is 0 by definition."""
     out = []
-    for rank, name, val in rows:
+    for row in rows:
+        if len(row) == 4:
+            rank, name, val, heads = row
+            main = (f"{heads} <span class=\"u\">{unit}</span>"
+                    if heads not in ("", None) else "—")
+            vtxt = (f"{main}<span class=\"delta\">{_delta(val)}"
+                    f"{(' ' + since) if since else ''}</span>")
+        else:
+            rank, name, val = row
+            vtxt = (f"{val} <span class=\"u\">{unit}</span>"
+                    if val not in ("", None) else "—")
         lead = " lead" if rank == 1 else ""
-        vtxt = (f"{val} <span class=\"u\">{unit}</span>" if val not in ("", None)
-                else "—")
         out.append(
             f"<li class=\"{lead.strip()}\"><span class=\"rank\">{rank}</span>"
             f"<span class=\"who\">{_medal(rank)}{name}</span>"
@@ -46,7 +67,7 @@ def fill_standings(sales_rows, rep_rows, days_left=None) -> str:
     if len(ols) != 2:
         return html  # template changed; leave sample rows rather than corrupt
     new_personal = f"<ol>\n{_ol(sales_rows, 'new int')}\n</ol>"
-    new_rep = f"<ol>\n{_ol(rep_rows, 'heads')}\n</ol>"
+    new_rep = f"<ol>\n{_ol(rep_rows, 'heads', since='since Aug 2')}\n</ol>"
     # replace right-to-left so spans stay valid
     html = html[:ols[1].start()] + new_rep + html[ols[1].end():]
     html = html[:ols[0].start()] + new_personal + html[ols[0].end():]

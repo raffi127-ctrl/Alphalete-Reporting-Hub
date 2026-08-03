@@ -21,14 +21,12 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 # ---------------------------------------------------------------------------
-# KILL SWITCH — 2026-08-03. The flyer must NOT auto-send: the Aug 3 send went
-# out with an empty-looking Rep Count side and before Megan reviewed it. This
-# guard is belt-and-braces alongside unloading the LaunchAgent (the agent may
-# already be bootstrapped on a machine that hasn't run disable_agent yet).
-# launchd runs THIS FILE from disk, so a `lucy update` alone stops the send.
-# DO NOT flip to 0 until Megan explicitly approves the flyer.
+# Kill switch. Was set 2026-08-03 while the flyer's Rep Count side was fixed
+# (it showed a bare "0 heads" for everyone) and Megan reviewed it. CLEARED
+# 2026-08-03 — Megan approved the corrected flyer ("looks good, send it").
+# Set back to 1 + `lucy update` to stop the daily send without touching launchd.
 # ---------------------------------------------------------------------------
-OWNER_SHOWDOWN_DISABLED=1
+OWNER_SHOWDOWN_DISABLED=0
 if [ "$OWNER_SHOWDOWN_DISABLED" = "1" ]; then
     echo "[$(date)] owner-showdown-daily DISABLED (kill switch) — no send"
     exit 0
