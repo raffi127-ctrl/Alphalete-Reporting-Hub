@@ -128,17 +128,32 @@ def _run(args) -> int:
     if do_rep:
         sec = sheet_fill.discover(vals, sheet_fill.SEC_REP)
         snapshots = sheet_fill.read_existing_repcount(sec, vals)
-        is_sunday = today.weekday() == 6 or (args.date and we == today)
-        cur_sunday = today if today in sec.date_cols else we
-        if counts and cur_sunday in sec.date_cols:
+        # Polls are SUNDAYS ONLY (Raf blacked out the weekday columns), so the
+        # poll date must be one of REP_SUNDAYS — not merely "a date with a
+        # column", which every August day has. The old guard let a successful
+        # WEEKDAY pull write into a blacked-out column, and plan_repcount would
+        # then take that weekday as the latest poll and show mid-week growth.
+        # It never fired only because the rep pull kept coming back empty
+        # (Megan 2026-08-03). --week still forces a specific Sunday so a missed
+        # poll can be backfilled by hand.
+        forced = dt.date.fromisoformat(args.week) if args.week else None
+        if forced is not None and forced in REP_SUNDAYS:
+            poll_day = forced
+        elif today in REP_SUNDAYS:
+            poll_day = today
+        else:
+            poll_day = None
+        if counts and poll_day and poll_day in sec.date_cols:
             # 0-fill missing competitors too (Raf: "if they have 0, enter 0").
             snap = {o: counts.get(o, 0) for o in roster.REPCOUNT_SET}
-            snapshots[cur_sunday] = snap
-            print(f"  rep-count snapshot stored for {cur_sunday} "
+            snapshots[poll_day] = snap
+            print(f"  rep-count snapshot stored for {poll_day} "
                   f"({len(snap)} competitors)", flush=True)
         elif counts:
-            print(f"  ⚠ run date/week {cur_sunday} is not a Sunday column — "
-                  f"rep count NOT written (polls are Sundays only)", flush=True)
+            print(f"  {today} is not a Sunday poll date "
+                  f"({', '.join(str(d) for d in REP_SUNDAYS)}) — rep count NOT "
+                  f"written; the board keeps the last Sunday's numbers",
+                  flush=True)
         rows_plan, unmatched = sheet_fill.plan_repcount(sec, snapshots)
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("REP COUNT (growth)", sec, rows_plan, unmatched, a1)
