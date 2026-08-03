@@ -1773,7 +1773,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "interview-audit-bot",
-        "name": "2nd Round Interview Auditor (24/7)",
+        "name": "2nd Round Interview Auditor — AO (24/7)",
         "creator": "Raf & Claude",
         "emoji": "🐺",
         # Amber = an ONGOING self-running job, matching the other continuous Ops
@@ -1819,7 +1819,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "interview-audit-bot-colten",
-        "name": "2nd Round Interview Auditor — Colten (24/7)",
+        "name": "2nd Round Interview Auditor — SSO (24/7)",
         "creator": "Colten & Claude",
         "emoji": "🎙️",
         # Amber = an ONGOING self-running job, matching the other continuous Ops
