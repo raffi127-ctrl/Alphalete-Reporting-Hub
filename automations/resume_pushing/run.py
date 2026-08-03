@@ -1352,11 +1352,34 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
     _log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 22s for startup")
     _t.sleep(22)
     rc = 1
+    # Watch the extractor's own fetches so an exit=3 wedge names the RIGHT cause.
+    # The resumes are pulled from the Indeed EMPLOYER portal
+    # (employers.indeed.com/candidates/resume) using the profile's Indeed session;
+    # when that's stale/bot-flagged Indeed 403s + throws a Cloudflare TURNSTILE, the
+    # count never drops → exit=3. The wedge is INDEED's, not AppStream's — so the
+    # remediation is refreshing the INDEED login, not the AppStream re-seed the old
+    # message implied. (Proven 8/03 via --doc-probe.)
+    _net = {"indeed_403": False, "turnstile": False}
+
+    def _net_watch(resp):
+        try:
+            u = resp.url
+            if "employers.indeed.com" in u and resp.status in (401, 403):
+                _net["indeed_403"] = True
+            elif "challenges.cloudflare.com" in u:
+                _net["turnstile"] = True
+        except Exception:  # noqa: BLE001
+            pass
+
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                ctx.on("response", _net_watch)
+            except Exception:  # noqa: BLE001
+                pass
 
             from automations.shared import creds
             logged = tp._reuse_appstream_storage_state(ctx, page, True)
@@ -1605,8 +1628,22 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
         # wrapper counts this toward the fail streak (→ Sosumi + publish FAILED),
         # and the next q10min pass re-copies a fresh profile to self-heal.
         _log("[cdp] EXTRACTOR STALLED: " + str(e)[:260])
+        if _net["indeed_403"] or _net["turnstile"]:
+            # The real, common cause — say so plainly so the fix targets INDEED.
+            _log("[cdp][CAUSE] the extractor's resume fetches from "
+                 "employers.indeed.com were CHALLENGED"
+                 + (" (HTTP 401/403)" if _net["indeed_403"] else "")
+                 + (" + Cloudflare Turnstile" if _net["turnstile"] else "")
+                 + " — this is INDEED's bot protection, NOT AppStream. FIX: refresh "
+                 "the INDEED EMPLOYER login in the bot profile on Lucy 2 "
+                 "(employers.indeed.com, clear the Turnstile once). An AppStream "
+                 "re-seed / --warm will NOT fix this.")
+        else:
+            _log("[cdp][CAUSE] no Indeed-403/Turnstile seen this pass — could be a "
+                 "genuinely empty/slow batch or an AppStream-side issue; check the "
+                 "host log via --doc-probe before re-seeding.")
         _log("[cdp] exiting rc=3 so the next pass self-heals and the fail-streak "
-             "notifier can fire (a stale clearance needs a re-seed).")
+             "notifier can fire.")
         rc = 3
     except Exception as e:
         import traceback
