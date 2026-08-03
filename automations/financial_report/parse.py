@@ -60,6 +60,22 @@ _COEL_METRICS: Dict[str, str] = {
     "total expense":  "TOTAL EXPENSES",
     "bl profit/loss": "PROFIT/LOSS",
 }
+# Joseph Logan's monthly PROFIT sheet (jenmkeller@gmail.com, 'Joseph financial').
+# Structurally like German's — weeks across columns, labels down column A — but
+# with its own vocabulary. INDEED is deliberately NOT mapped: his ad spend is
+# itemised on the 'Sheet1' detail tab, which only ever covers the ONE most recent
+# week, so there's no honest per-week number to write for the other four.
+# OPERATING PERCENTAGE % is left out too — his 'Percentage' row is gross margin
+# on sales, which is not the same measure the focus sheet's row means.
+_LOGAN_METRICS: Dict[str, str] = {
+    "present bank balances:":   "TOTAL FUNDS AVAILABLE",
+    "owner payroll-gross":      "OWNERS PAYROLL",
+    "total expense":            "TOTAL EXPENSES",
+    "arcadia consulting-(nlr)": "ARCADIA CONSULTING",
+    "aptel":                    "APTEL",
+    "distributions":            "OWNERS WITHDRAWAL",
+    "net profit":               "PROFIT/LOSS",
+}
 
 _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
 # Coel-style sheet name: a per-week tab like '5.9.26'.
@@ -100,7 +116,15 @@ def _state_from_office(header: str) -> str:
 
 
 def _detect_format(wb) -> str:
-    """'german' | 'coel' | 'summary' — by a signature cell in column A."""
+    """'german' | 'coel' | 'logan' | 'summary' — by a signature in the workbook.
+
+    Logan is matched on its SHEET NAMES rather than a cell: his PROFIT tab's
+    header rows carry the company name, which would tie the detector to one
+    person's spelling, while the PROFIT + Breakeven pairing is the shape of the
+    template itself."""
+    names = {n.strip().lower() for n in wb.sheetnames}
+    if {"profit", "breakeven"} <= names:
+        return "logan"
     for name in wb.sheetnames:
         a4 = _lbl(wb[name]["A4"].value)
         if "monthly report" in a4:
@@ -286,6 +310,48 @@ def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
             sorted(weeks_seen))
 
 
+def _parse_logan(wb) -> Tuple[List[dict], List[dt.date]]:
+    """Joseph Logan's PROFIT sheet — one office, weeks across columns.
+
+    Week endings live in the row under the 'WEEK 1..5' banner and are already
+    the Saturday endings the other sources use, so no translation is needed.
+    The month's not-yet-happened weeks are blank or 0 and simply don't get
+    written (the fill skips a missing value), so a mid-month file fills what has
+    actually closed and nothing more.
+
+    Two rows are labelled 'NET PROFIT' (the P&L line and its cash-flow echo);
+    they agree, and the first one wins."""
+    ws = wb[next(n for n in wb.sheetnames if n.strip().lower() == "profit")]
+    rows = list(ws.iter_rows(min_row=1, max_row=ws.max_row))
+    company = str(ws["A1"].value or "").strip()
+    owner = str(ws["A2"].value or "").strip()
+    if not owner:
+        return [], []
+    # The date row: the first row carrying 2+ real dates across the week columns.
+    date_cols: Dict[int, dt.date] = {}
+    for r in rows[:12]:
+        cand = {i: _date_cell(r[i].value) for i in range(1, min(len(r), 10))}
+        cand = {i: v for i, v in cand.items() if v is not None}
+        if len(cand) >= 2:
+            date_cols = cand
+            break
+    if not date_cols:
+        return [], []
+    metrics: Dict[str, Dict[dt.date, object]] = {}
+    for r in rows:
+        canon = _LOGAN_METRICS.get(_lbl(r[0].value)) if r else None
+        if not canon:
+            continue
+        m = metrics.setdefault(canon, {})
+        for ci, d in date_cols.items():
+            v = r[ci].value if ci < len(r) else None
+            if isinstance(v, (int, float)):
+                m.setdefault(d, v)              # first labelled row wins
+    return ([{"office": company or owner, "owner": owner, "state": "",
+              "metrics": metrics}],
+            sorted(date_cols.values()))
+
+
 def _coel_indeed_total(ws) -> Optional[float]:
     """Coel's cash-flow file has no 'Indeed' line — his Indeed spend lives as
     one or more checks inside the P&L DETAIL block (category '905 Advertising'),
@@ -360,7 +426,8 @@ def parse_one_file(path) -> Tuple[List[dict], List[dt.date], str]:
     wb = openpyxl.load_workbook(path, data_only=True)
     fmt = _detect_format(wb)
     offices, weeks = {"german": _parse_german,
-                      "coel": _parse_coel}.get(fmt, _parse_summary)(wb)
+                      "coel": _parse_coel,
+                      "logan": _parse_logan}.get(fmt, _parse_summary)(wb)
     return offices, weeks, fmt
 
 

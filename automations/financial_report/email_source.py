@@ -31,6 +31,7 @@ SOURCES = [
     ("hubtruth.com",              ["*summary report*.xlsx", "*financial summary*.xlsx"]),
     ("melissab_hub@yahoo.com",    ["*financials.xlsx"]),
     ("jsanchezmasters@gmail.com", ["*financial report*.xlsx"]),
+    ("jenmkeller@gmail.com",      ["*profit*.xlsx"]),
 ]
 
 
@@ -44,13 +45,17 @@ SOURCES = [
 # Romeo Hise is NOT on our reporting (Maud, 2026-07-09) — deliberately left
 # out so the alert never flags him. He emailed through w/e 6/20 then stopped;
 # his tabs are not part of what we report.
+# The hubtruth books (Carlos / Sahil / Trang / Raf) are GONE from this list as of
+# 2026-08-03: those owners moved to Double Entry and their senders stopped
+# mailing, so expecting them made the alert cry "nudge the sender" every week
+# about people who will never send again — noise that buries a real gap. Eve
+# confirmed only these three still arrive by email. Their historical ICDs are
+# now covered (or awaiting access) on the web side; see
+# output/financial-source-gap.md.
 EXPECTED_BOOKS = [
-    ("Carlos (hubtruth)",    "hubtruth.com",              "Carlos"),
-    ("Sahil (hubtruth)",     "hubtruth.com",              "Sahil"),
-    ("Trang (hubtruth)",     "hubtruth.com",              "Trang"),
-    ("Raf (hubtruth)",       "hubtruth.com",              "Raf"),
-    ("Coel Reif (melissab)", "melissab_hub@yahoo.com",    "Coel"),
-    ("German (jsanchez)",    "jsanchezmasters@gmail.com", "German"),
+    ("Coel Reif (melissab)",  "melissab_hub@yahoo.com",    "Coel"),
+    ("German (jsanchez)",     "jsanchezmasters@gmail.com", "German"),
+    ("Joseph Logan (jenmk)",  "jenmkeller@gmail.com",      "Joseph financial"),
 ]
 
 

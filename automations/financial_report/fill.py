@@ -39,9 +39,13 @@ _SKIP_TABS = {"raf hidalgo", "rafael hidalgo"}
 # back pending their own files / source; revisit later. Jacob Dover's data is
 # "coming soon"; Coel Reif + German Lopez use a different report (not listed
 # here — handled separately once Megan provides those files).
+# 'joseph logan' removed 2026-08-03 (Eve): his source arrived — jenmkeller@
+# gmail.com, subject 'Joseph financial', a monthly PROFIT workbook that
+# parse._parse_logan now reads. His sheet tab is "Joseph Logan" but the
+# workbook says "JOE LOGAN", bridged by an ICD Aliases row.
 _SKIP_FINANCIAL = {
     "melik el jaiez", "tevin sterling", "jc pascual",
-    "oren shezaf", "nicholas weldon", "joseph logan", "jr young",
+    "oren shezaf", "nicholas weldon", "jr young",
     "jason strid", "tony chavez", "stergios kasapidis", "chan park",
     "milly villagrana", "starr rodenhurst",
     # 'jacob dover' removed 2026-05-29 (Eve flagged) — his data is now
