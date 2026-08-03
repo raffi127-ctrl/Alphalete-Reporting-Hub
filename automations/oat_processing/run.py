@@ -708,11 +708,21 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     return "retext_sent", filled
 
 
+def _deaccent(s: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", s or "")
+                   if not unicodedata.combining(c))
+
+
 def _name_matches(a: Applicant, first: str, last: str) -> bool:
-    who = f"{a.first_name} {a.last_name}".strip().lower()
-    tgt = f"{first} {last}".strip().lower()
+    # accent-insensitive: AS often stores "Rodriguez" where the resume/tab has
+    # "Rodríguez"; without stripping, the walk never finds them (not_found).
+    who = _deaccent(f"{a.first_name} {a.last_name}").strip().lower()
+    first = _deaccent(first).lower()
+    last = _deaccent(last).lower()
+    tgt = f"{first} {last}".strip()
     return who == tgt or (bool(first) and bool(last)
-                          and first.lower() in who and last.lower() in who)
+                          and first in who and last in who)
 
 
 def _walk_to_and_remove(page, first, last, max_hops: int = 80) -> str:
@@ -791,7 +801,7 @@ def emit_nophone_resumes(page, max_hops: int = 80) -> int:
     return 0
 
 
-def _walk_to_and_fill_send(page, first, last, phone, max_hops: int = 80) -> str:
+def _walk_to_and_fill_send(page, first, last, phone, max_hops: int = 300) -> str:
     """Walk OAT to the named applicant, TYPE the phone into Phone/Cell, and Send to
     AI. Returns the do_send_ai outcome / 'not_found' / 'fill_failed'."""
     seen: set = set()
