@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -38,9 +39,17 @@ PHONES_PATH = Path(
 
 
 def _norm(name: str) -> str:
-    """Casefold + collapse whitespace + drop punctuation, so 'Rhea McKee',
-    'rhea mckee' and 'Rhea  Mc Kee' all land on the same key."""
-    s = re.sub(r"[^a-z0-9 ]+", "", (name or "").lower())
+    """Casefold + FOLD accents + collapse whitespace + drop punctuation, so
+    'Rhea McKee', 'rhea mckee' and 'Rhea  Mc Kee' all land on the same key.
+    Accents are folded, NOT stripped: "De'Avioñ Allen" -> 'deavion allen' and
+    'Anh Đinh' -> 'anh dinh' (before, the ñ/Đ were dropped, taking the letter
+    with them, so accented OBCL names never matched their roster leader)."""
+    s = unicodedata.normalize("NFKD", name or "")
+    # a few letters NFKD doesn't decompose to ASCII + a combining mark:
+    s = (s.replace("đ", "d").replace("Đ", "d").replace("ø", "o")
+          .replace("Ø", "o").replace("ł", "l").replace("Ł", "l"))
+    s = "".join(c for c in s if not unicodedata.combining(c))  # drop the accents
+    s = re.sub(r"[^a-z0-9 ]+", "", s.lower())
     return re.sub(r"\s+", " ", s).strip()
 
 

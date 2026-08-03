@@ -149,8 +149,10 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
               "Treating everyone as active.".format(exc))
         gone = set()
 
-    # Every leader who either owes a text or was tagged gets a row.
-    ids = set(owed_by_id) | set(th["tagged"])
+    # Every leader who owes a text, was tagged, OR replied "Sent" gets a row —
+    # so a leader who confirms is always credited, even if their name never
+    # matched an OBCL row that week (Raf: some 'Sent' replies weren't caught).
+    ids = set(owed_by_id) | set(th["tagged"]) | set(th["confirmations"])
     for sid in ids:
         leader = ros.by_id(sid)
         if leader is None:
