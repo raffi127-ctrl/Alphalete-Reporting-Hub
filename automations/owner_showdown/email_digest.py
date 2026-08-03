@@ -1,11 +1,12 @@
-"""Sunday standings email for the August Owner Showdown.
+"""Standings email for the August Owner Showdown.
 
-Cadence (Raf, 2026-07-29): one update email each Sunday (Sunday is when the
-most up-to-date headcount is pulled), to RAF ONLY. First email Sun Aug 2,
-last Sun Aug 30. The sheet itself updates daily (personal) / Sundays (rep).
+Cadence (Megan 2026-08-03): DAILY, 9:00am CST, Aug 1–31 — was Sundays-only.
+The flyer rides along as a PDF attachment (and inline as a PNG preview), listing
+EVERY competitor on BOTH sides: Personal Sales (28) and Rep Count Growth (30).
 
-This module BUILDS the email (subject + HTML + text). It does NOT send —
-sending is gated on Raf's OK and wired to the report runner at go-live.
+Data caveat kept from the original build: personal sales refresh daily, but rep
+count is still polled SUNDAYS only (Raf blacked out the weekday columns), so the
+rep-count board repeats Sunday's growth Mon–Sat.
 """
 from __future__ import annotations
 
@@ -43,8 +44,10 @@ def build_winner(sales_champ: Tuple[str, object],
 
 
 def send_email(subject: str, html: str, text: str, png_path=None,
-               dry_run: bool = False, tag: str = "owner-showdown") -> None:
-    """Send To=Raf, CC=Megan, with the flyer PNG inline (cid:flyer).
+               pdf_path=None, dry_run: bool = False,
+               tag: str = "owner-showdown") -> None:
+    """Send To=Raf, CC=Megan, with the flyer PNG inline (cid:flyer) and the same
+    flyer ATTACHED as a PDF (Megan 2026-08-03 — Raf wants the PDF daily).
     dry_run writes an .eml and does not send."""
     import smtplib, ssl, datetime as _dt
     from email.message import EmailMessage
@@ -65,6 +68,12 @@ def send_email(subject: str, html: str, text: str, png_path=None,
         with open(png_path, "rb") as f:
             html_part.add_related(f.read(), maintype="image", subtype="png",
                                   cid="flyer")
+    if pdf_path:
+        # Attached AFTER the inline image so the body still previews the flyer
+        # and the PDF rides along as a real downloadable attachment.
+        with open(pdf_path, "rb") as f:
+            msg.add_attachment(f.read(), maintype="application", subtype="pdf",
+                               filename=Path(pdf_path).name)
     recipients = [TO_EMAIL] + list(CC_EMAILS)
     if dry_run:
         out = Path(__file__).resolve().parents[2] / "output" / "logs"

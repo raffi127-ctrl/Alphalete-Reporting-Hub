@@ -76,6 +76,36 @@ def fill_champions(sales_champ: Tuple[str, object],
     return html
 
 
+def render_pdf(html: str, out_pdf: Path, width: int = 880) -> Path:
+    """Render HTML to a ONE-PAGE PDF (Megan 2026-08-03: the daily email carries
+    the flyer as a PDF). The flyer is a poster, not a document — so the page is
+    sized to the measured content height instead of letter, or the full 28/30-name
+    field would break mid-board across pages. emulate_media('screen') keeps the
+    dark gradient + gold (print media would drop the backgrounds)."""
+    from patchright.sync_api import sync_playwright
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": width, "height": 900})
+        page.emulate_media(media="screen")
+        page.set_content(html, wait_until="networkidle")
+        # Same content-fit measurement as render_png — body is display:flex and
+        # won't grow past the viewport, so measure .flyer and pin the body to it
+        # plus a bottom margin, else the footer sits flush on the cut edge.
+        bottom_margin = 56
+        content_h = page.evaluate("document.documentElement.scrollHeight")
+        total_h = content_h + bottom_margin
+        page.set_viewport_size({"width": width, "height": total_h})
+        page.add_style_tag(
+            content=f"body{{min-height:{total_h}px!important;"
+                    f"align-items:flex-start!important}}")
+        page.pdf(path=str(out_pdf), width=f"{width}px", height=f"{total_h}px",
+                 print_background=True,
+                 margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
+        browser.close()
+    return out_pdf
+
+
 def render_png(html: str, out_png: Path, width: int = 880) -> Path:
     """Render HTML string to a PNG via headless Chromium (patchright)."""
     from patchright.sync_api import sync_playwright

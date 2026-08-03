@@ -152,31 +152,43 @@ def _run(args) -> int:
     # forces the due one; --no-email suppresses. A dry-run/sandbox email writes
     # an .eml (no real send) so we can preview safely.
     is_winner_day = (today == COMP_END) or args.winner
-    is_sunday_digest = (today in REP_SUNDAYS)
-    want_email = args.email or is_winner_day or (is_sunday_digest and not args.no_email)
+    # DAILY (Megan 2026-08-03): Raf gets the standings flyer EVERY day of the
+    # competition, as a PDF, not just Sundays. The 9:00am CST LaunchAgent is what
+    # sends it; the 4am orchestrator pass runs with --no-email so the fill still
+    # happens early but nobody gets two emails a day.
+    is_daily_digest = (COMP_START <= today < COMP_END)
+    # --no-email suppresses the champions email too, else the 4am fill pass and
+    # the 9am agent would BOTH send it on 9/1. --email still forces either one.
+    want_email = args.email or ((is_winner_day or is_daily_digest)
+                                and not args.no_email)
     if want_email and personal_rows is not None and rep_rows is not None:
         from automations.owner_showdown import email_digest as ed, flyer_render as fr
         from pathlib import Path
         import tempfile
         eml_dry = args.dry_run or args.sandbox
-        png = Path(tempfile.gettempdir()) / f"showdown_{today}.png"
+        tmpdir = Path(tempfile.gettempdir())
+        png = tmpdir / f"showdown_{today}.png"
+        pdf = tmpdir / f"August Owner Showdown {today}.pdf"
         try:
             if is_winner_day:
                 sc = (personal_rows[0][1], personal_rows[0][2])
                 rc = (rep_rows[0][1], rep_rows[0][2])
-                fr.render_png(fr.fill_champions(sc, rc), png)
+                flyer_html = fr.fill_champions(sc, rc)
                 m = ed.build_winner(sc, rc)
             else:
                 # Days STILL AHEAD, not counting today (which is in progress):
                 # last comp day is Aug 31 (COMP_END = Sep 1), so Aug 1 → 30 left,
                 # Aug 30 → 1 left (Megan 2026-08-01).
                 days_left = (COMP_END - today).days - 1
-                fr.render_png(
-                    fr.fill_standings(personal_rows, rep_rows,
-                                      days_left=days_left), png)
+                flyer_html = fr.fill_standings(personal_rows, rep_rows,
+                                               days_left=days_left)
                 m = ed.build(personal_rows, rep_rows, today)
+            # Same HTML rendered twice: PNG for the inline body preview, PDF for
+            # the attachment. Both carry the FULL field on both boards.
+            fr.render_png(flyer_html, png)
+            fr.render_pdf(flyer_html, pdf)
             ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
-                          dry_run=eml_dry,
+                          pdf_path=pdf, dry_run=eml_dry,
                           tag="winner" if is_winner_day else "standings")
         except Exception:
             print("  ⚠ email step failed:", flush=True)
