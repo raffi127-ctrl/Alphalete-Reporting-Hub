@@ -29,9 +29,12 @@
   .wordmark{font-weight:800;text-transform:uppercase;line-height:.9;
     letter-spacing:-.01em;margin:12px 0 4px;
     font-size:clamp(58px,12vw,104px);
-    background:linear-gradient(180deg,var(--gold-hi) 0%,var(--gold) 42%,var(--gold-lo) 100%);
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-    text-shadow:0 2px 40px rgba(232,178,58,.18)}
+    /* SOLID gold — do NOT reintroduce background-clip:text here. The gradient
+       version renders as a gold BLOCK in Apple Preview/Quartz (Megan 2026-08-03):
+       Chromium's screen path clips it to the glyphs, its PDF path does not, and
+       the PNG therefore looks fine while the attached PDF is broken. Verify any
+       change to this rule with qlmanage (Quartz), not just a PNG. */
+    color:var(--gold)}
   .subword{font-weight:700;text-transform:uppercase;letter-spacing:.34em;
     font-size:clamp(18px,3.4vw,30px);color:var(--paper)}
   .tagline{margin-top:14px;color:var(--muted);font-size:14px;

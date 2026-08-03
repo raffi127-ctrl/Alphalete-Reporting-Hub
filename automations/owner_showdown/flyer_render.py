@@ -38,11 +38,14 @@ def _ol(rows, unit: str, since: str = "") -> str:
     out = []
     for row in rows:
         if len(row) == 4:
+            # Megan 2026-08-03: the CHANGE is the headline number and the
+            # baseline headcount is the sub-line — this board is a growth race,
+            # so "+4" is the story and "started with 26" is the context.
             rank, name, val, heads = row
-            main = (f"{heads} <span class=\"u\">{unit}</span>"
-                    if heads not in ("", None) else "—")
-            vtxt = (f"{main}<span class=\"delta\">{_delta(val)}"
-                    f"{(' ' + since) if since else ''}</span>")
+            main = (f"{_delta(val)} <span class=\"u\">{unit}</span>"
+                    if isinstance(val, int) else "—")
+            sub = (f"started with {heads}" if heads not in ("", None) else "")
+            vtxt = main + (f"<span class=\"delta\">{sub}</span>" if sub else "")
         else:
             rank, name, val = row
             vtxt = (f"{val} <span class=\"u\">{unit}</span>"

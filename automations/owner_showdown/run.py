@@ -143,8 +143,15 @@ def _run(args) -> int:
         _print_plan("REP COUNT (growth)", sec, rows_plan, unmatched, a1)
         # 4-tuple: the flyer shows the headcount AND the change since the 8/2
         # baseline. The email's text fallback still reads the first three.
+        # FLYER ORDER = most heads -> least (Raf 2026-08-03). The SHEET stays
+        # sorted by growth (the prize metric), so the two intentionally differ
+        # while every delta is tied at +0; owners with no headcount sort last.
+        _rep = sorted(rows_plan,
+                      key=lambda r: (-(r.get("heads")
+                                       if isinstance(r.get("heads"), int)
+                                       else -10 ** 6), r["name"].lower()))
         rep_rows = [(i, r["name"], r["total"], r.get("heads"))
-                    for i, r in enumerate(rows_plan, 1)]
+                    for i, r in enumerate(_rep, 1)]
 
     print(f"\n{'(dry-run — nothing written)' if args.dry_run else 'written ✓'}",
           flush=True)
