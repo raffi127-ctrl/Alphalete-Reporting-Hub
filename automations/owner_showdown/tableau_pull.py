@@ -44,6 +44,33 @@ WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday",
             "Friday", "Saturday", "Sunday"]
 
 
+def _download_or_empty(view, out, week, page, verbose, what: str) -> bool:
+    """Run the crosstab download; return False (instead of raising) when the
+    view has nothing to export.
+
+    Every MONDAY the Mon–Sun week rolls over, so the newly pinned week holds no
+    sales yet and Tableau renders an EMPTY worksheet — its Download Crosstab
+    dialog then says "No sheets to select. Try a different view." and leaves the
+    Download button disabled, which the downloader retries 7× and finally fails
+    on (Megan 2026-08-03: killed the Aug 3 run, so no flyer went out and the Hub
+    pill went red). An empty week is normal, not a breakage: the sheet already
+    holds the earlier weeks, so the caller carries on with what's there.
+
+    The failure is still printed loudly — a genuine Tableau problem must not
+    pass as "quiet day".
+    """
+    try:
+        download_view_crosstab(view, out, verbose=verbose, week=week, page=page)
+        return True
+    except Exception as e:
+        print(f"  ⚠ {what}: no crosstab came back ({type(e).__name__}). Usually "
+              f"an empty week (Tableau: 'No sheets to select') — normal on a "
+              f"Monday before the first sale. Continuing on the values already "
+              f"in the sheet; see the _debug screenshots if this repeats.",
+              flush=True)
+        return False
+
+
 def _norm(s: str) -> str:
     return " ".join((s or "").strip().lower().split())
 
@@ -74,7 +101,9 @@ def pull_personal_sales(we_sunday: dt.date, page=None, verbose: bool = True,
     view = ViewConfig(key="showdown_personal", url=PERSONAL_URL,
                       sheet_thumbnail_match="Sales By ICD",
                       week_filter_field=WEEK_FILTER)
-    download_view_crosstab(view, out, verbose=verbose, week=we_sunday, page=page)
+    if not _download_or_empty(view, out, we_sunday, page, verbose,
+                              f"personal sales (week ending {we_sunday})"):
+        return {}
     rows = _read_utf16_tsv(out)
     if not rows:
         return {}
@@ -121,7 +150,9 @@ def pull_rep_counts(we_sunday: Optional[dt.date] = None, page=None,
     view = ViewConfig(key="showdown_repcount", url=REPCOUNT_URL,
                       sheet_thumbnail_match="ICD Summary - ATT (V2)",
                       week_filter_field=WEEK_FILTER if we_sunday else None)
-    download_view_crosstab(view, out, verbose=verbose, week=we_sunday, page=page)
+    if not _download_or_empty(view, out, we_sunday, page, verbose,
+                              "rep count"):
+        return {}
     rows = _read_utf16_tsv(out)
     if not rows:
         return {}
