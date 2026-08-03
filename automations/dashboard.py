@@ -5780,7 +5780,20 @@ def _report_time_minutes(report: dict) -> int:
     when its final send lands. Missing / no parseable token → sorts last."""
     sched = report.get("schedule") or {}
     mins: list[int] = []
-    for src in ((sched.get("time") or ""), (sched.get("time_label") or "")):
+
+    def _strs(v) -> list[str]:
+        # time / time_label are usually plain strings, but a library card may
+        # store either as a dict (weekday -> time) or a list of times. Flatten
+        # to strings so re.finditer never sees a dict.
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, dict):
+            return [s for s in v.values() if isinstance(s, str)]
+        if isinstance(v, (list, tuple)):
+            return [s for s in v if isinstance(s, str)]
+        return []
+
+    for src in (*_strs(sched.get("time")), *_strs(sched.get("time_label"))):
         # A single source is either AM/PM-style ('7:15 PM') or 24-hour ('18:00').
         # Prefer AM/PM matches when present; scanning both on the same string
         # would double-count (the '7:15' inside '7:15 PM' would also read as
