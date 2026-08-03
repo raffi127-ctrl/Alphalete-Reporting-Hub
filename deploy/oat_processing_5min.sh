@@ -104,4 +104,10 @@ case " $* " in
     fi
     ;;
 esac
+
+# Session-wedge alarm (best-effort, never blocks the run). Reads recent
+# office-11580 logs and posts ONE corrections-channel alert when the AppStream
+# Cloudflare clearance is wedged — so the Process Emails queue stops silently
+# stacking. Log-read + Slack only, so it works even when the session is down.
+"$VENV_PY" -m automations.oat_processing.session_wedge_watch >> "$LOG_FILE" 2>&1 || true
 exit 0
