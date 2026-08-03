@@ -915,15 +915,16 @@ def _action_sendtext(args: str) -> tuple[bool, str]:
     phone = _normalize_us_phone(parts[0])
     text = parts[1].strip()
 
-    # Which account will this send from? Capture it for the result.
-    ok, handle = _osascript(
-        'tell application "Messages" to get id of 1st service '
-        'whose service type = iMessage')
-    from_acct = handle if ok and handle else "(unknown)"
-    if not (ok and handle):
-        return False, (f"no active iMessage account signed in here — can't send. "
-                       f"({handle})")
-
+    # Go STRAIGHT to the send with a wide (5-min) timeout — no pre-lookup. The
+    # send is itself an Apple Event to Messages, so on a machine that hasn't yet
+    # authorized THIS process (the launchd poller) macOS pops the one-time
+    # "… wants to control Messages" consent dialog and BLOCKS here until someone
+    # clicks it. A short timeout kills osascript (and dismisses the dialog) before
+    # a human can react — which is exactly why the 60s attempts failed with nobody
+    # watching. 300s keeps the dialog clickable for ~5 min so a person at the
+    # machine can Allow it once; after that it's granted for good and every future
+    # send returns instantly. (The earlier pre-lookup is dropped: it just added a
+    # second identical prompt/timeout.)
     safe = text.replace("\\", "\\\\").replace('"', '\\"')
     sent_ok, res = _osascript(
         'tell application "Messages"\n'
@@ -931,11 +932,17 @@ def _action_sendtext(args: str) -> tuple[bool, str]:
         '  set targetService to service id svcId\n'
         f'  set targetBuddy to buddy "{phone}" of targetService\n'
         f'  send "{safe}" to targetBuddy\n'
-        'end tell', timeout=45)
+        'end tell', timeout=300)
     if not sent_ok:
-        return False, (f"send to {phone} FAILED from {from_acct}: {res}"
-                       " · if this is a permission/-1743 error, grant this "
-                       "process Automation control of Messages once at the machine")
+        return False, (f"send to {phone} FAILED: {res} · if this timed out, the "
+                       "'… wants to control Messages' dialog went unanswered on the "
+                       "machine — a human must click Allow while the send is firing")
+
+    # Permission is granted now — this returns instantly. Confirm the from-account.
+    ok, handle = _osascript(
+        'tell application "Messages" to get id of 1st service '
+        'whose service type = iMessage', timeout=20)
+    from_acct = handle if ok and handle else "(sent; account read n/a)"
     return True, f"sent to {phone} from iMessage account {from_acct} · text={text!r}"
 
 
