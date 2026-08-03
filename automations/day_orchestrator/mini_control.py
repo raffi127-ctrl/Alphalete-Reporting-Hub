@@ -2056,6 +2056,18 @@ def _action_install_bg_check_watchdog(args: str) -> tuple[bool, str]:
     return True, f"installed {label} (12:45 + 17:00 daily) · smoke ok"
 
 
+def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
+    """One-off: post the corrected New-Start counts into Aisha's weekly thread as
+    Lucy (week of 8/3). Default LIVE; pass --dry-run to just print."""
+    import shlex
+    extra = shlex.split(args) if (args or "").strip() else ["--post"]
+    ok, out = _run_cmd([sys.executable, "-m",
+                        "automations.new_start_followup.post_correction", *extra],
+                       timeout_s=120, log_name="nsf-correction.log")
+    tail = [ln for ln in (out or "").splitlines() if "posted" in ln or "identity" in ln]
+    return ok, (" · ".join(tail)[:300] or (out or "")[-200:])
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -2269,6 +2281,7 @@ ACTIONS = {
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
+    "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
