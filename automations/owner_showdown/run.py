@@ -88,6 +88,8 @@ def _run(args) -> int:
     do_personal = not args.repcount_only
     do_rep = not args.personal_only
     personal_rows = rep_rows = None
+    preview_changes = []          # [(owner, was, now)] for the 8am preview
+    preview_notes = []            # human-readable pull outcome lines
 
     # --- pull from Tableau (one ownerville session) ---
     sales = {}
@@ -118,6 +120,15 @@ def _run(args) -> int:
                         sales[owner_norm] = merged_days
             if do_rep:
                 counts = tableau_pull.pull_rep_counts(we_sunday=we, page=page)
+        preview_notes.append(
+            f"personal sales: {len(sales)} owners returned for the week ending "
+            f"{we}" if sales else
+            f"personal sales: NOTHING returned for the week ending {we} — the "
+            f"flyer uses the numbers already in the sheet")
+        if do_rep:
+            preview_notes.append(
+                f"rep count: {len(counts)} owners returned"
+                if counts else "rep count: nothing returned (polls Sundays only)")
     else:
         print("  --skip-download: no Tableau pull (existing cells only)", flush=True)
 
@@ -138,6 +149,14 @@ def _run(args) -> int:
             for d in covered:
                 dm.setdefault(d, 0)
         rows_plan, unmatched = sheet_fill.plan_personal(sec, merged)
+        if args.preview:
+            # What the 9am run would change vs the numbers on the sheet now.
+            for row0, nm in sec.owners:
+                r = vals[row0]
+                was = r[sec.totals_col] if sec.totals_col < len(r) else ""
+                new = next((p["total"] for p in rows_plan if p["name"] == nm), "")
+                if str(was).strip() != str(new).strip():
+                    preview_changes.append((nm, str(was).strip(), new))
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("PERSONAL PRODUCTION", sec, rows_plan, unmatched, a1)
         personal_rows = [(i, r["name"], r["total"])
@@ -203,8 +222,8 @@ def _run(args) -> int:
     is_daily_digest = (COMP_START <= today < COMP_END)
     # --no-email suppresses the champions email too, else the 4am fill pass and
     # the 9am agent would BOTH send it on 9/1. --email still forces either one.
-    want_email = args.email or ((is_winner_day or is_daily_digest)
-                                and not args.no_email)
+    want_email = args.email or args.preview or ((is_winner_day or is_daily_digest)
+                                                and not args.no_email)
     if want_email and personal_rows is not None and rep_rows is not None:
         from automations.owner_showdown import email_digest as ed, flyer_render as fr
         from pathlib import Path
@@ -231,9 +250,18 @@ def _run(args) -> int:
             # the attachment. Both carry the FULL field on both boards.
             fr.render_png(flyer_html, png)
             fr.render_pdf(flyer_html, pdf)
-            ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
-                          pdf_path=pdf, dry_run=eml_dry,
-                          tag="winner" if is_winner_day else "standings")
+            if args.preview:
+                # 8am: Megan ONLY, never the group. Forced dry-run above, so the
+                # sheet is untouched and the 9am run does the real work.
+                m = ed.build_preview(personal_rows, rep_rows, today,
+                                     preview_changes, preview_notes)
+                ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
+                              pdf_path=pdf, dry_run=False,
+                              tag="preview", to_override=ed.PREVIEW_TO)
+            else:
+                ed.send_email(m["subject"], m["html"], m["text"], png_path=png,
+                              pdf_path=pdf, dry_run=eml_dry,
+                              tag="winner" if is_winner_day else "standings")
         except Exception:
             print("  ⚠ email step failed:", flush=True)
             traceback.print_exc()
@@ -273,7 +301,12 @@ def main(argv=None):
                    help="suppress the Sunday email even on a Sunday")
     p.add_argument("--winner", action="store_true",
                    help="force the champions (winner) email")
+    p.add_argument("--preview", action="store_true",
+                   help="8am pass: email the flyer + what changed to MEGAN ONLY "
+                        "and write nothing (the 9am run does the real send)")
     args = p.parse_args(argv)
+    if args.preview:
+        args.dry_run = True          # a preview must never touch the sheet
     try:
         return _run(args)
     except Exception:

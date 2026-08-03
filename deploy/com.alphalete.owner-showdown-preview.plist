@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.owner-showdown-preview</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         machine's repo path (python -m automations.day_orchestrator.install_agent
+         owner-showdown-preview). RUNS ON THE MINI, same machine as the 9am send. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/owner_showdown_preview.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends, 8:00am CST — one hour before the 9:00am send to
+         all 48, so Megan can stop or correct it first (Megan 2026-08-03).
+         Hour/Minute are machine LOCAL time; the mini is Central. The nightly
+         orchestrator-schedule-guard reloads this if launchd's TZ drifts.
+         TEMP: remove after 8/31 with the rest of the card. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.owner-showdown-preview.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.owner-showdown-preview.err</string>
+</dict>
+</plist>

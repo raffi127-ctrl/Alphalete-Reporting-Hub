@@ -191,6 +191,28 @@
       "verify": null,
       "timeout_minutes": 12
     },
+    "install_owner_showdown_preview_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.owner-showdown-preview on the mini (8:00am CST daily; deploy/owner_showdown_preview.sh -> run.py --preview). Emails the flyer + what changed to MEGAN ONLY, writes nothing, an hour before the 9am send to all 48 so she can stop it (Megan 2026-08-03). `lucy update` then `lucy rerun install_owner_showdown_preview_agent`. TEMP — remove after 8/31 with the rest of the card.",
+      "display_name": "Install Owner Showdown 8am preview agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "owner-showdown-preview"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 1"
+    },
     "disable_owner_showdown_agent": {
       "on_scheduler": false,
       "_note": "Unload com.alphalete.owner-showdown-daily (9am flyer email) on this machine. Added 2026-08-03: the daily send is HELD until Megan approves the flyer. `lucy rerun disable_owner_showdown_agent`. Re-enable = flip OWNER_SHOWDOWN_DISABLED to 0 in deploy/owner_showdown_daily.sh, push, `lucy update`, then `lucy rerun install_owner_showdown_agent`.",

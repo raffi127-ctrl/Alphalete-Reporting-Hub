@@ -72,9 +72,56 @@ def build_winner(sales_champ: Tuple[str, object],
     return {"subject": subject, "html": html, "text": text}
 
 
+PREVIEW_TO = ["meganhidalgo1191@gmail.com"]      # 8am preview — Megan ONLY
+
+
+def build_preview(sales_rows, rep_rows, run_date: dt.date, changes,
+                  notes) -> Dict[str, str]:
+    """The 8am email to Megan ONLY (2026-08-03): the exact flyer the 9am run
+    will send to all 48, plus what moved since the sheet's current numbers, so
+    she has an hour to stop or correct it."""
+    ds = f"{run_date:%b} {run_date.day}"
+    subject = f"PREVIEW {ds} — Owner Showdown goes to 48 at 9am"
+
+    if changes:
+        rows = "".join(
+            f"<tr><td style='padding:2px 10px 2px 0'>{n}</td>"
+            f"<td style='padding:2px 10px;color:#888'>{o or '—'}</td>"
+            f"<td style='padding:2px 0'><b>{v}</b></td></tr>" for n, o, v in changes)
+        chg = (f"<p style='margin:14px 0 4px'><b>What changed since the sheet's "
+               f"current numbers</b></p><table style='border-collapse:collapse;"
+               f"font-size:14px'><tr><td style='color:#888'>owner</td>"
+               f"<td style='color:#888;padding-left:10px'>was</td>"
+               f"<td style='color:#888;padding-left:10px'>now</td></tr>{rows}</table>")
+        chg_txt = "\n".join(f"  {n}: {o or '-'} -> {v}" for n, o, v in changes)
+    else:
+        chg = "<p style='margin:14px 0'><b>No changes</b> — same numbers as the sheet.</p>"
+        chg_txt = "  (no changes)"
+
+    note_html = "".join(f"<li>{n}</li>" for n in notes) or "<li>clean pull</li>"
+    html = (
+        f"<div style='font-family:Arial,sans-serif;max-width:600px'>"
+        f"<h2 style='margin:0 0 2px'>Preview — {ds}</h2>"
+        f"<div style='color:#666'>This is what goes to all 48 owners at 9:00am. "
+        f"Nothing has been sent to them yet.</div>"
+        f"{chg}"
+        f"<p style='margin:14px 0 4px'><b>Pull</b></p>"
+        f"<ul style='margin:0;padding-left:18px;color:#444'>{note_html}</ul>"
+        f"<p style='margin:16px 0 6px;color:#7A4E06'><b>To stop the 9am send</b>, "
+        f"tell Claude to stop the Owner Showdown, or run: "
+        f"<code>lucy rerun disable_owner_showdown_agent</code></p>"
+        f"<img src='cid:flyer' style='width:100%;max-width:600px;border-radius:12px;"
+        f"margin-top:10px'></div>")
+    text = (f"PREVIEW {ds} — goes to 48 owners at 9:00am. Not sent to them yet.\n\n"
+            f"WHAT CHANGED:\n{chg_txt}\n\nPULL:\n" +
+            "\n".join(f"  - {n}" for n in (notes or ["clean pull"])) +
+            f"\n\nTo stop the 9am send: lucy rerun disable_owner_showdown_agent\n")
+    return {"subject": subject, "html": html, "text": text}
+
+
 def send_email(subject: str, html: str, text: str, png_path=None,
                pdf_path=None, dry_run: bool = False,
-               tag: str = "owner-showdown") -> None:
+               tag: str = "owner-showdown", to_override=None) -> None:
     """Send To=Raf, CC=Megan, with the flyer PNG inline (cid:flyer) and the same
     flyer ATTACHED as a PDF (Megan 2026-08-03 — Raf wants the PDF daily).
     dry_run writes an .eml and does not send."""
@@ -84,7 +131,10 @@ def send_email(subject: str, html: str, text: str, png_path=None,
     from automations.scheduled_6_days_out.email_send import (
         FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password)
 
-    to_list = recipients()
+    # to_override = the 8am preview (Megan only). It must NEVER expand to the
+    # group, so it bypasses recipients() entirely and gets no BCC.
+    to_list = list(to_override) if to_override else recipients()
+    bcc = [] if to_override else list(BCC_EMAILS)
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = FROM_ADDR
@@ -105,7 +155,7 @@ def send_email(subject: str, html: str, text: str, png_path=None,
             msg.add_attachment(f.read(), maintype="application", subtype="pdf",
                                filename=Path(pdf_path).name)
     # NOT named `recipients` — that is the module-level function above.
-    envelope = list(to_list) + list(BCC_EMAILS)
+    envelope = list(to_list) + bcc
     if dry_run:
         out = Path(__file__).resolve().parents[2] / "output" / "logs"
         out.mkdir(parents=True, exist_ok=True)
@@ -122,7 +172,7 @@ def send_email(subject: str, html: str, text: str, png_path=None,
         s.login(FROM_ADDR, app_password())
         s.send_message(msg, to_addrs=envelope)
     print(f"[owner-showdown] sent '{subject}' to {len(to_list)} on the "
-          f"list + {len(BCC_EMAILS)} bcc",
+          f"list + {len(bcc)} bcc",
           flush=True)
 
 
