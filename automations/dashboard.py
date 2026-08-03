@@ -2889,7 +2889,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
-            "time": "7:15 PM",   # last send drives the sort; all three shown in time_label
+            "time": "7:15 PM",   # final send; card sorts on its FIRST send (11 AM, from time_label)
             "time_label": "11 AM · 4 PM · 7:15 PM (final)",
             "estimated_minutes": 2,
         },
@@ -5771,18 +5771,31 @@ _SCHED_REGISTRY_CACHE: dict = {}
 
 
 def _report_time_minutes(report: dict) -> int:
-    """Minutes-since-midnight of a report's scheduled run time (schedule.time,
-    e.g. '8:00 AM' or '12:00 PM CST'), for ordering the Time Set Reports section
-    earliest-first. Missing / unparseable → sorts last."""
-    t = ((report.get("schedule") or {}).get("time") or "")
-    t = t.replace("CST", "").replace("cst", "").strip()
-    for fmt in ("%I:%M %p", "%I %p", "%H:%M"):
-        try:
-            parsed = dt.datetime.strptime(t, fmt)
-            return parsed.hour * 60 + parsed.minute
-        except ValueError:
-            continue
-    return 10_000
+    """Minutes-since-midnight of the time a report FIRST runs, for ordering the
+    Time Set Reports section earliest-first (each card lands at the time it first
+    runs). A card may fire several times a day — schedule.time / time_label can
+    list several clock tokens, e.g. '11 AM · 4 PM · 7:15 PM (final)' or
+    'Mon 6:00 PM + 7:15 PM CST'. We scan BOTH fields and sort on the EARLIEST
+    token found, so a card whose first send is 11 AM sorts at 11 AM regardless of
+    when its final send lands. Missing / no parseable token → sorts last."""
+    sched = report.get("schedule") or {}
+    mins: list[int] = []
+    for src in ((sched.get("time") or ""), (sched.get("time_label") or "")):
+        # A single source is either AM/PM-style ('7:15 PM') or 24-hour ('18:00').
+        # Prefer AM/PM matches when present; scanning both on the same string
+        # would double-count (the '7:15' inside '7:15 PM' would also read as
+        # 24-hour 07:15 and wrongly win the min()).
+        ampm = list(re.finditer(r"(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])", src))
+        if ampm:
+            for m in ampm:
+                hour = int(m.group(1)) % 12
+                if m.group(3).lower() == "pm":
+                    hour += 12
+                mins.append(hour * 60 + int(m.group(2) or 0))
+        else:
+            for m in re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", src):
+                mins.append(int(m.group(1)) * 60 + int(m.group(2)))
+    return min(mins) if mins else 10_000
 
 
 def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
