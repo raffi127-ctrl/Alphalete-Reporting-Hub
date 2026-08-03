@@ -216,26 +216,32 @@ def set_codes(mapping) -> None:
 
 
 def _code_map() -> "Dict[str, str]":
-    if _INJECTED_CODES:
-        return dict(_INJECTED_CODES)
+    """Every office code, MERGED across sources (lowest → highest precedence):
+    local file, env, Streamlit secrets, then the sheet-managed codes (admin panel).
+    Sheet codes win PER OFFICE where present, but never wipe out offices defined only
+    in secrets/env — the old 'replace entirely' behavior meant a couple of stale
+    sheet codes hid all the secrets codes and broke everyone's login."""
+    out: "Dict[str, str]" = {}
+    if _LOCAL_CODES.exists():
+        try:
+            out.update({str(k): str(v) for k, v in json.loads(_LOCAL_CODES.read_text()).items()})
+        except Exception:
+            pass
     raw = os.environ.get("PAY_STRUCTURE_CODES")
     if raw:
         try:
-            return {str(k): str(v) for k, v in json.loads(raw).items()}
+            out.update({str(k): str(v) for k, v in json.loads(raw).items()})
         except Exception:
             pass
     try:
         import streamlit as st  # type: ignore
         if "pay_structure_codes" in st.secrets:
-            return {str(k): str(v) for k, v in dict(st.secrets["pay_structure_codes"]).items()}
+            out.update({str(k): str(v) for k, v in dict(st.secrets["pay_structure_codes"]).items()})
     except Exception:
         pass
-    if _LOCAL_CODES.exists():
-        try:
-            return {str(k): str(v) for k, v in json.loads(_LOCAL_CODES.read_text()).items()}
-        except Exception:
-            pass
-    return {}
+    if _INJECTED_CODES:                      # sheet-managed (admin) codes win per-office
+        out.update({str(k): str(v) for k, v in _INJECTED_CODES.items()})
+    return out
 
 
 def branding(office_key: str) -> dict:
