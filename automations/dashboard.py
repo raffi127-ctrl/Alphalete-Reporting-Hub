@@ -5632,6 +5632,9 @@ def _launch_chrome() -> tuple[bool, str]:
     args = [
         f"--remote-debugging-port=9222",
         f"--user-data-dir={user_dir}",
+        # Never let a bot-launched Chrome sync its tabs to a signed-in Google
+        # account's other devices (laptop leak, 2026-08-03).
+        "--disable-sync", "--no-first-run", "--no-default-browser-check",
     ]
     # Trailing positional URLs open as tabs.
     tabs = list(DEBUG_CHROME_STARTUP_TABS)

@@ -1169,9 +1169,13 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     normally, so its service worker is live and the robot performs real extraction."""
     import subprocess
     chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    # CDP_PROFILE is CLONED from the real Chrome dir (may hold a sync-enabled
+    # Google account); --disable-sync stops the clone reconnecting sync and
+    # broadcasting these bot tabs to someone's other devices (laptop leak,
+    # 2026-08-03).
     launch = [chrome, f"--user-data-dir={CDP_PROFILE}", "--profile-directory=Default",
               f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
-              "--no-default-browser-check", "--restore-last-session=false",
+              "--no-default-browser-check", "--disable-sync", "--restore-last-session=false",
               "--disable-session-crashed-bubble", "--disable-infobars", url]
     return subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

@@ -103,7 +103,11 @@ def _launch(url: str, profile_dir: str = "Default"):
         [CHROME, f"--user-data-dir={CDP_PROFILE}",
          f"--profile-directory={profile_dir}",
          f"--remote-debugging-port={CDP_PORT}",
-         "--no-first-run", "--no-default-browser-check",
+         # This profile is CLONED from the real Chrome dir, which may hold a
+         # sync-enabled Google account. --disable-sync stops the clone from ever
+         # reconnecting sync and broadcasting these bot tabs to someone's other
+         # devices (the laptop leak we chased 2026-08-03).
+         "--no-first-run", "--no-default-browser-check", "--disable-sync",
          "--restore-last-session=false", "--disable-session-crashed-bubble",
          "--disable-infobars", "--window-size=1600,1000", url],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
