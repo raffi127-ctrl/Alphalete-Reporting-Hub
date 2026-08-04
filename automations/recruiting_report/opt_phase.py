@@ -1877,6 +1877,7 @@ def fill_opt_for_tab(
     captains_by_owner: dict, program_summary: dict, fiber_by_owner: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
     fill_empty_only: bool = False, dd_roster: Optional[dict] = None,
+    derived_sales: Optional[dict] = None,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
     INT crosstabs. Returns log lines. Only writes mapped cells — never clears.
@@ -1968,6 +1969,28 @@ def fill_opt_for_tab(
             cell = av.get(_norm(csv_col), "")
             if str(cell).strip() != "":
                 _queue(om_rows, sheet_label, cell)
+    # --- derived sales (no ATT row yet) ---
+    # A just-promoted owner can be in the Metrics view with their own roster
+    # while ATT/INT still credit their reps' sales to the office they came out
+    # of, leaving these four rows blank every week. Rebuild them by summing
+    # that roster inside the host office (see derived_sales.py). Only ever
+    # reached when there's no ATT row, so the real crosstab always wins the
+    # week Tableau catches up. (Eve, 2026-08-04 — Mercy Ohiokhai.)
+    derived = (derived_sales or {}).get(tab_name) if not att_row else None
+    if derived:
+        for sheet_label, value in derived["values"].items():
+            _queue(opt_rows, sheet_label, value)
+        _total_apps = sum(derived["values"].values())
+        _queue(opt_rows, "Total Apps", _total_apps)
+        _headcount = derived.get("headcount") or 0
+        if _headcount:
+            _queue(opt_rows, "Active Headcount on Tableau", _headcount)
+            _queue(opt_rows, "AVG Apps Per Active Headcount",
+                   round(_total_apps / _headcount, 1))
+        # Ranking, % of Wireless Rep Count and 1 GIG% have no rep-level
+        # equivalent in the PRODUCT SALES crosstab, so they stay blank rather
+        # than be invented.
+
     # ATT national (same value on every tab)
     for sheet_label, csv_col in OPT_NATIONAL.items():
         cell = att_national.get(_norm(csv_col), "")
@@ -2157,6 +2180,13 @@ def fill_opt_for_tab(
     gap_views = [v for row, v in [(att_row, "ATT"), (int_row, "INT"),
                  (metrics_row, "Metrics"), (churn_row, "Churn"),
                  (cap_row, "Captain's Bonus")] if not row]
+    # Say so when the ATT hole was papered over from the host office, so the
+    # Monday email reads "covered, still waiting on Tableau" instead of a bare
+    # gap someone chases — and so it never reads as fully filled either.
+    if derived and "ATT" in gap_views:
+        gap_views[gap_views.index("ATT")] = (
+            f"ATT (sale rows DERIVED from '{derived['host']}' — "
+            f"still not an ICD in that view)")
     if wireless_rows:
         if not wm_row:
             gap_views.append("Wireless Metrics")
@@ -2415,6 +2445,21 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     fiber_by_owner = parse_fiber(FIBER_PATH)
     if fiber_by_owner:
         logfn(f"OPT: parsed {len(fiber_by_owner)} Fiber Lead")
+
+    # Sale rows for owners Tableau has half-promoted: in the Metrics view with
+    # their own roster, but still absent from ATT/INT with their reps' sales
+    # credited to the office they came out of. Needs BOTH sources to have
+    # downloaded; skipped silently otherwise (the rows just stay blank, which
+    # is exactly what happens without this).
+    derived_sales_by_tab: Dict[str, dict] = {}
+    if dl_ok.get("metrics", True) and dl_ok.get("product", True):
+        try:
+            from automations.recruiting_report import derived_sales as _ds
+            derived_sales_by_tab = _ds.build(METRICS_PATH, PRODUCT_SALES_PATH,
+                                             logfn=logfn)
+        except Exception as e:  # noqa: BLE001 — never fail the OPT phase
+            logfn(f"OPT: derived-sales step skipped ({type(e).__name__}: "
+                  f"{str(e)[:120]})")
     filled: List[str] = []
     skipped: List[str] = []
     all_gaps: List[str] = []
@@ -2434,7 +2479,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  program_summary, fiber_by_owner,
                                  aliases_map, we_sunday, dry_run,
                                  fill_empty_only=fill_empty_only,
-                                 dd_roster=dd_roster)
+                                 dd_roster=dd_roster,
+                                 derived_sales=derived_sales_by_tab)
         for ln in lines:
             logfn("OPT: " + ln)
             if ln.startswith("[SKIP]") or ln.startswith("[gap]"):

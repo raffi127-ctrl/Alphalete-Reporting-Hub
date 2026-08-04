@@ -337,13 +337,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "William Sassenberg",
-      "office_id": "23496",
-      "as_owner": "William Sassenberg",
-      "as_company": "Optima Business Management, Inc.",
-      "confidence": 1.0
-    },
-    {
       "sheet_tab": "Jacob Dover",
       "office_id": "23607",
       "as_owner": "Jacob Dover",
@@ -390,6 +383,15 @@
       "confidence": 1.0,
       "temporary_shared_office": true,
       "note": "TEMPORARY (Eve 2026-07-27): Ja Mosley has no AppStream office of his own yet, so his recruiting funnel mirrors Francisco Castillo's office 22532. Swap office_id + as_owner the moment his own office code exists. OPT/sales half is NOT shared \u2014 it fills from Tableau under his own name."
+    },
+    {
+      "sheet_tab": "Mercy Ohiokhai",
+      "office_id": "23888",
+      "as_owner": "Mercy Ohiokhai",
+      "as_company": "Mercel Management, Inc.",
+      "confidence": 1.0,
+      "auto_onboarded": true,
+      "note": "Onboarded 2026-08-04 (Eve). Promoted out of Gabe Perez office; her tab was added mid-year so its week columns start WE 7/5/26."
     }
   ],
   "needs_review": [],
