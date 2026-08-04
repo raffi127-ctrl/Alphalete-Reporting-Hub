@@ -7377,8 +7377,15 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     is_due = _is_due_today(report, today)
     sched = report.get("schedule", {})
     checklist = report.get("checklist", [])
-    actions = report["actions"]
-    primary = next((a for a in actions if a.get("primary")), actions[0])
+    # Always-on bot cards (self_scheduled + hide_schedule: the interview
+    # auditors, Due Diligence Bot, the fiber distro sync) carry NO "actions"
+    # key at all — there's nothing for a human to launch. Reading
+    # report["actions"] KeyError'd and took the whole Library screen down when
+    # one of those cards was opened (Megan, 2026-08-04). Same class of bug as
+    # the checklist step["text"] crash below: default it, don't assume.
+    actions = report.get("actions") or []
+    primary = next((a for a in actions if a.get("primary")),
+                   actions[0] if actions else None)
     secondary = [a for a in actions if a is not primary]
     ran_today = _was_run_successfully_today(report["id"], today)
     # 10s heartbeat: notices when a teammate starts/finishes a run.
@@ -7606,58 +7613,65 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
 
         # Picker for date/text input (if primary action needs one)
         picked = None
-        if primary.get("needs_date"):
-            picked = st.date_input("WE Sunday", key=f"date_{report['id']}_{primary['label']}", value=_last_completed_we_sunday())
-        elif primary.get("needs_text"):
-            picked = st.text_input(
-                primary.get("text_label", "Input"),
-                key=f"text_{report['id']}_{primary['label']}",
-                placeholder=primary.get("text_label", ""),
-            )
-
-        # 24h-rerun confirmation gate. If the report was already run successfully
-        # in the last 24h (by anyone), clicking Run shows a confirmation banner
-        # instead of executing immediately.
-        confirm_key = f"confirm_pending_{report['id']}"
-        confirm_meta_key = f"confirm_meta_{report['id']}"
-
-        if st.button(
-            f"{primary.get('icon', '▶')} {primary['label']}",
-            key=f"prim_{report['id']}",
-            type="primary",
-            use_container_width=True,
-            disabled=run_disabled,
-            help=run_help,
-        ):
-            recent, recent_user, recent_time = _ran_today(report["id"])
-            if recent:
-                st.session_state[confirm_key] = True
-                st.session_state[confirm_meta_key] = (recent_user, recent_time)
-                st.rerun()
-            else:
-                _execute_action(report, primary, picked, chrome_ok)
-
-        if st.session_state.get(confirm_key):
-            ru, rt = st.session_state.get(confirm_meta_key, ("someone", "earlier today"))
-            with st.container(border=True):
-                st.warning(
-                    f"⚠️ **{ru}** already ran this at **{rt}** today. "
-                    f"Run it again anyway?"
+        if primary is None:
+            # Nothing to run from the Hub — this card is a status window onto a
+            # bot that runs itself around the clock. Say so instead of showing a
+            # dead button.
+            st.caption("🤖 Runs on its own, around the clock — "
+                       "there's nothing to start from here.")
+        else:
+            if primary.get("needs_date"):
+                picked = st.date_input("WE Sunday", key=f"date_{report['id']}_{primary['label']}", value=_last_completed_we_sunday())
+            elif primary.get("needs_text"):
+                picked = st.text_input(
+                    primary.get("text_label", "Input"),
+                    key=f"text_{report['id']}_{primary['label']}",
+                    placeholder=primary.get("text_label", ""),
                 )
-                cc = st.columns([1, 1])
-                with cc[0]:
-                    if st.button("✅ Yes, run it again", key=f"confirm_yes_{report['id']}",
-                                 type="primary", use_container_width=True):
-                        st.session_state.pop(confirm_key, None)
-                        st.session_state.pop(confirm_meta_key, None)
-                        _execute_action(report, primary, picked, chrome_ok)
-                        st.rerun()
-                with cc[1]:
-                    if st.button("🛑 Stop", key=f"confirm_no_{report['id']}",
-                                 use_container_width=True):
-                        st.session_state.pop(confirm_key, None)
-                        st.session_state.pop(confirm_meta_key, None)
-                        st.rerun()
+
+            # 24h-rerun confirmation gate. If the report was already run successfully
+            # in the last 24h (by anyone), clicking Run shows a confirmation banner
+            # instead of executing immediately.
+            confirm_key = f"confirm_pending_{report['id']}"
+            confirm_meta_key = f"confirm_meta_{report['id']}"
+
+            if st.button(
+                f"{primary.get('icon', '▶')} {primary['label']}",
+                key=f"prim_{report['id']}",
+                type="primary",
+                use_container_width=True,
+                disabled=run_disabled,
+                help=run_help,
+            ):
+                recent, recent_user, recent_time = _ran_today(report["id"])
+                if recent:
+                    st.session_state[confirm_key] = True
+                    st.session_state[confirm_meta_key] = (recent_user, recent_time)
+                    st.rerun()
+                else:
+                    _execute_action(report, primary, picked, chrome_ok)
+
+            if st.session_state.get(confirm_key):
+                ru, rt = st.session_state.get(confirm_meta_key, ("someone", "earlier today"))
+                with st.container(border=True):
+                    st.warning(
+                        f"⚠️ **{ru}** already ran this at **{rt}** today. "
+                        f"Run it again anyway?"
+                    )
+                    cc = st.columns([1, 1])
+                    with cc[0]:
+                        if st.button("✅ Yes, run it again", key=f"confirm_yes_{report['id']}",
+                                     type="primary", use_container_width=True):
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.pop(confirm_meta_key, None)
+                            _execute_action(report, primary, picked, chrome_ok)
+                            st.rerun()
+                    with cc[1]:
+                        if st.button("🛑 Stop", key=f"confirm_no_{report['id']}",
+                                     use_container_width=True):
+                            st.session_state.pop(confirm_key, None)
+                            st.session_state.pop(confirm_meta_key, None)
+                            st.rerun()
 
         # Post-run callout (appears after a run completes; persists 24h)
         last_run = st.session_state.get(f"last_run_{report['id']}")
@@ -7998,6 +8012,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 # Only show the retry button when there's something to retry,
                 # OR for reports without a state file (legacy fallback).
                 show_again = bool(missing_items) or not state_file_exists
+                # A card with no actions at all has nothing to fire — no
+                # manifest, no again_action, no primary. Don't offer the button.
+                if again_action is None:
+                    show_again = False
                 if show_again:
                     cols = st.columns([3, 2])
                     with cols[0]:
@@ -12155,7 +12173,11 @@ else:  # st.session_state.view == "user"
                         with cols[1]:
                             if not all_filled:
                                 if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
-                                    primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
+                                    # Same defensive read as _render_report_card:
+                                    # always-on bot cards carry no "actions".
+                                    _acts = report.get("actions") or []
+                                    primary = next((a for a in _acts if a.get("primary")),
+                                                   _acts[0] if _acts else None)
                                     # Standard failure manifest wins; else a
                                     # per-card again_action (e.g. daily-focus's
                                     # --retry-inaccessible); else the full primary.
@@ -12183,6 +12205,9 @@ else:  # st.session_state.view == "user"
                                             nothing_to_retry = False
                                     if nothing_to_retry:
                                         st.success(again_empty_msg)
+                                    elif again_action is None:
+                                        st.info("This one runs on its own — "
+                                                "there's nothing to re-run from here.")
                                     elif again_action is primary:
                                         picked = None
                                         if primary.get("needs_date") or primary.get("needs_text"):
