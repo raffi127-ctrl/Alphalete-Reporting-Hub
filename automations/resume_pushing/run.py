@@ -59,6 +59,7 @@ locators in the helpers — the health check reports exactly which ones matched.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import re
 import sys
 
@@ -102,6 +103,14 @@ class ExtractionStalled(RuntimeError):
     extractor is wedged (usually a stale Cloudflare clearance on the resume-document
     reads). Raised so the run exits non-zero FAST instead of grinding the full
     safety cap, so the next pass self-heals and the fail-streak notifier fires."""
+
+
+class AppStreamLoginFailed(RuntimeError):
+    """The warm CDP Chrome never rendered the AppStream console (#searchMC) or the
+    office switch failed — i.e. no usable session. Raised by warm_appstream_cdp_page
+    so callers map it to exit=2 (a precondition failure, distinct from an extraction
+    wedge). The office-11580 leftovers flow (applicant_push) treats this as fatal to
+    BOTH stages — no session means neither batch-send nor OAT cleanup can run."""
 
 
 _LOG_BUFFER: list = []
@@ -1323,6 +1332,206 @@ def _cdp_warm(force_fresh: bool = True) -> int:
         subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
         _flush_diag("RP Warm Diag")
     return rc
+
+
+# NOTE (2026-08-04): the login/session preamble below is intentionally a faithful
+# copy of _cdp_run's inline preamble (lines that do _copy_default_profile → launch →
+# connect_over_cdp → login-poll → _switch_office). It is duplicated ON PURPOSE so the
+# new applicant_push merge does NOT restructure the live Resume Pushing path (which
+# can only be run-tested on Lucy 2). DEDUPE once the merged flow is validated there:
+# point _cdp_run at warm_appstream_cdp_page + run_batch_stage and delete its inline
+# preamble. Keep the two in sync until then.
+@contextlib.contextmanager
+def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag"):
+    """Open ONE warm, logged-in, real-Chrome-over-CDP AppStream page on office 11580
+    and yield ``(page, ctx, net)``.
+
+    This is the session preamble factored out of ``_cdp_run`` so more than one stage
+    can share a single warm Chrome. The real Chrome is required because the Resume
+    Helper extractor is a Chrome extension whose service worker won't run under
+    patchright — and because real Chrome clears AppStream's login-Cloudflare cleanly.
+
+    Steps: copy the everyday Default profile (persistent, keeps cf_clearance) →
+    launch real Chrome with the debug port → ``connect_over_cdp`` → log in (reuse the
+    saved session, else drive the rcaptain form, polling ≤WARM_LOGIN_POLL_S past a
+    managed Cloudflare challenge) → switch to office 11580. On teardown it terminates
+    the CDP Chrome, pkills any stray, and flushes the diag transcript.
+
+    ``net`` is a live ``{"indeed_403", "turnstile"}`` dict wired to the context's
+    response stream so a caller's ExtractionStalled handler can attribute a wedge to
+    Indeed's bot protection rather than AppStream.
+
+    Raises ``AppStreamLoginFailed`` when the console never renders ``#searchMC`` (the
+    profile is invalidated first, so the next run re-seeds fresh) or the office switch
+    fails — both are the old ``return 2`` conditions, now surfaced as an exception so
+    a multi-stage caller can abort BOTH stages cleanly."""
+    import os
+    import subprocess
+    import time as _t
+    from patchright.sync_api import sync_playwright
+    from automations.shared import tableau_patchright as tp
+    from automations.shared import creds
+    from automations.recruiting_report import fetch_office
+
+    dst = _copy_default_profile()
+    _log(f"[cdp] profile copy; plugin present: "
+         f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
+    proc = _launch_cdp_chrome()
+    _log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 22s for startup")
+    _t.sleep(22)
+    # Watch the extractor's own fetches so an exit=3 wedge names the RIGHT cause
+    # (Indeed's employer-portal Turnstile, not AppStream). See _cdp_run's comment.
+    net = {"indeed_403": False, "turnstile": False}
+
+    def _net_watch(resp):
+        try:
+            u = resp.url
+            if "employers.indeed.com" in u and resp.status in (401, 403):
+                net["indeed_403"] = True
+            elif "challenges.cloudflare.com" in u:
+                net["turnstile"] = True
+        except Exception:  # noqa: BLE001
+            pass
+
+    pw = sync_playwright().start()
+    try:
+        browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            ctx.on("response", _net_watch)
+        except Exception:  # noqa: BLE001
+            pass
+
+        logged = tp._reuse_appstream_storage_state(ctx, page, True)
+        if logged and page.locator("#searchMC").count() > 0:
+            _log("[cdp] logged in via saved session (storage_state).")
+        else:
+            # stale/missing token → drive the rcaptain form login (real Chrome
+            # passes Cloudflare cleanly), then hop to the office switcher.
+            _log("[cdp] saved session had no #searchMC — driving the form login")
+            try:
+                user = creds.appstream_username()
+                pwd = creds.appstream_password()
+                page.goto("https://applicantstream.com/",
+                          wait_until="domcontentloaded")
+                page.wait_for_timeout(3000)
+                if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
+                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    tp._drive_login_form(page, True, username=user, password=pwd)
+                page.wait_for_timeout(3000)
+                if page.locator("#searchMC").count() == 0:
+                    tp._reuse_appstream_storage_state(ctx, page, True)
+                _persist_appstream_session(ctx, tp)
+            except Exception as e:
+                _log("[cdp] form login error: " + str(e)[:160])
+        # Cloudflare's managed challenge clears in a real Chrome, just not in the
+        # ~3s waited above (proven by --warm). POLL for the console to render,
+        # re-driving the form once if it surfaces. A warm profile pays no penalty.
+        if page.locator("#searchMC").count() == 0:
+            _deadline = _t.time() + WARM_LOGIN_POLL_S
+            _drove = False
+            while _t.time() < _deadline:
+                if page.locator("#searchMC").count() > 0:
+                    break
+                if not _drove and (
+                        page.locator(tp._PASSWORD_SELECTOR).count() > 0
+                        or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    try:
+                        tp._drive_login_form(page, True,
+                                             username=creds.appstream_username(),
+                                             password=creds.appstream_password())
+                        _drove = True
+                    except Exception:  # noqa: BLE001
+                        pass
+                page.wait_for_timeout(5000)
+            if page.locator("#searchMC").count() > 0:
+                _log(f"[cdp] console rendered after a Cloudflare poll "
+                     f"(≤{WARM_LOGIN_POLL_S}s) — challenge auto-cleared.")
+                _persist_appstream_session(ctx, tp)
+        mc = page.locator("#searchMC").count()
+        _log(f"[cdp] logged_in check: #searchMC={mc}")
+        if mc == 0:
+            # Warm profile didn't log in. Drop the seed marker so the NEXT run
+            # re-copies a fresh profile from the everyday Default (self-heals the
+            # common case); only back-to-back failures mean a genuine human clear.
+            _invalidate_cdp_profile()
+            _log("[cdp][STOP] AppStream console never rendered #searchMC — login "
+                 "did not complete (Cloudflare re-challenge?). Marked profile for "
+                 "a fresh re-seed on the next run.")
+            raise AppStreamLoginFailed("console never rendered #searchMC")
+
+        if switch_office and not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
+            _log(f"[cdp][STOP] office switch to {OFFICE_ID} failed.")
+            raise AppStreamLoginFailed(f"office switch to {OFFICE_ID} failed")
+        page.wait_for_timeout(2000)
+        _log(f"[cdp] service_workers: {[sw.url for sw in ctx.service_workers]}")
+
+        yield page, ctx, net
+    finally:
+        try:
+            pw.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+        _flush_diag(diag_tab)
+
+
+def _persist_appstream_session(ctx, tp) -> None:
+    """Persist the current context's cookies to APPSTREAM_STORAGE_STATE for reuse,
+    but only when they carry the ``rqst_*`` SSO cookies that prove a real login (so a
+    half-logged-in state never overwrites a good saved session). Shared by both the
+    saved-session and Cloudflare-poll login paths."""
+    try:
+        _st = ctx.storage_state()
+        if any(c.get("name", "").startswith("rqst_")
+               for c in _st.get("cookies", [])):
+            import json as _json
+            tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
+            _log("[cdp] saved a fresh AppStream session for reuse")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_batch_stage(page, dry_run: bool = False, limit: int = 0,
+                    send_only: bool = False, extract_only: bool = False) -> dict:
+    """Run the BATCH stage (ApplicantStream v2 → Process in Batches → extract loop →
+    send loop) on an already-warm, logged-in, office-11580 page.
+
+    Assumes ``page`` came from ``warm_appstream_cdp_page`` (logged in + office
+    switched, on the classic console). Navigates to the v2 dashboard itself, so it is
+    the reusable core the ``applicant_push`` orchestrator calls for stage 1 and that
+    ``_cdp_run`` calls for the standalone Resume Pushing run.
+
+    Returns ``{"reached": bool, "sent": int, "remaining": int|None}``. Raises
+    ``ExtractionStalled`` if the extractor wedges (the caller attributes the cause via
+    the ``net`` dict and decides whether to continue to a later stage)."""
+    page = open_v2_dashboard(page)
+    if not goto_process_in_batches(page):
+        _log("[cdp][STOP] could not reach Process In Batches on v2.")
+        return {"reached": False, "sent": 0, "remaining": None}
+
+    ready0 = ready_for_extraction(page)
+    _log(f"[cdp] Ready For Extraction before: {ready0}")
+
+    remaining = None
+    if not send_only:
+        remaining = extract_loop(page, dry_run)
+        _log(f"[cdp] extract complete; still ready: {remaining}")
+    if extract_only:
+        _log("[cdp] --extract-only — not sending.")
+        return {"reached": True, "sent": 0, "remaining": remaining}
+    sent = send_loop(page, dry_run, limit=limit)
+    _log("[cdp] ===== BATCH SUMMARY =====")
+    _log(f"[cdp] mode: {'DRY-RUN' if dry_run else 'LIVE'}  limit={limit or 'none'}")
+    if remaining is not None:
+        _log(f"[cdp] still ready/not-extracted: {remaining}")
+    _log(f"[cdp] applicants sent to call list: {sent}")
+    return {"reached": True, "sent": sent, "remaining": remaining}
 
 
 def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,

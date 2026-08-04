@@ -222,6 +222,9 @@ _HUB_CARD = {
     # publishing all 84 would add ~2.5k rows/month to Hub Activity and slow
     # every dashboard/digest read for one report's heartbeat.
     "resume_pushing": "resume-pushing",
+    # applicant_push: the unified batch + OAT-leftovers push (office 11580) that
+    # supersedes resume_pushing + oat_processing on one warm CDP session.
+    "applicant_push": "applicant-push",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 

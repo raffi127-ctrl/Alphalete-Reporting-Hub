@@ -1580,6 +1580,124 @@ def probe_sms(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def run_walk(page, live: bool = False, limit: int = None,
+             max_actions: int = None, today=None) -> int:
+    """Walk the One-App-at-a-time queue on an ALREADY-OPEN, logged-in, office-11580
+    page and process every applicant (read → classify → send/remove/re-text/flag).
+
+    This is the live cleanup core, factored out of ``run`` so it can run on EITHER
+    session: the standalone patchright session ``run`` opens, or the shared
+    real-Chrome/CDP page the ``applicant_push`` merge hands over after the batch
+    stage. The caller is responsible for having attached the dialog-accept handlers
+    and switched to office 11580 before calling this (``run`` does both above; the
+    orchestrator does the same on the CDP page).
+
+    Returns 0 on a normal walk, 2 if the OAT page can't be opened."""
+    if today is None:
+        today = dt.date.today()
+    limit = limit if limit is not None else config.MAX_PER_RUN
+
+    if not open_oat(page):
+        _log("[oat] FATAL: could not open the One-App-at-a-time page")
+        return 2
+
+    _start_total = getattr(read_current_applicant(page, today), "_total", None)
+    _log(f"[oat] QUEUE at start: {_start_total} emails")
+
+    processed = 0
+    actions = 0                 # live mutations (sent/removed) this run
+    MUTATIONS = ("sent", "sent_override", "removed")
+    counts: dict = {}
+    seen: set = set()          # applicant keys already handled this run
+    no_progress = 0            # consecutive already-seen reads (end guard)
+    while processed < limit:
+        a = read_current_applicant(page, today)
+        key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
+        # Walk logic that survives the queue shifting under us: after a
+        # REMOVE/SEND the app leaves its slot, so the NEXT app becomes
+        # current (fresh key → handled below, no Next needed); after a
+        # non-mutation the SAME app stays current, so we page Next to move
+        # past it. Stop only when we can't reach a fresh applicant (the
+        # true end), not on the first re-seen one.
+        if not key or key == "|" or key in seen:
+            no_progress += 1
+            if no_progress > 3:
+                _log(f"[oat] no fresh applicants — end of queue after "
+                     f"{processed} processed")
+                break
+            if not advance_to_next(page):
+                _log(f"[oat] no next control — end of queue after "
+                     f"{processed} processed")
+                break
+            continue
+        no_progress = 0
+        seen.add(key)
+        d: Decision = classify(a, today)
+        sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
+               f"ovr={int(a.override_button)} blk={int(a.correspondence_blocked)} "
+               f"intF={int(a.interview_future)} intN={int(a.interview_past_noshow)} "
+               f"sent={int(a.sent_to_call_list_today)} "
+               f"lc={a.last_correspondence or '-'}")
+        _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}  [{sig}]")
+        try:
+            outcome = _DISPATCH[d.action](page, a, live)
+        except Exception as e:  # noqa: BLE001
+            _log(f"    ERROR performing {d.action.value}: "
+                 f"{type(e).__name__}: {e}")
+            outcome = "error"
+        counts[outcome or d.action.value] = counts.get(outcome or d.action.value, 0) + 1
+        # Activity log — one row per applicant, for the daily scorecard.
+        if live:
+            _ACTIVITY_ROWS.append([
+                dt.datetime.now().strftime("%H:%M"),
+                f"{a.first_name} {a.last_name}".strip(),
+                a.job_board, a.position[:60],
+                d.action.value, outcome or "", d.reason[:140],
+            ])
+
+        processed += 1
+        # Throttle live mutations (a controlled test uses --max-actions 1).
+        if live and outcome in MUTATIONS:
+            actions += 1
+            if max_actions is not None and actions >= max_actions:
+                _log(f"[oat] reached --max-actions {max_actions} — stopping")
+                break
+        if processed >= limit:
+            break
+        # Do NOT page Next here. Re-read on the next loop: a removed/sent
+        # app has left its slot (a fresh app is now current → handled), and
+        # an app that stayed re-reads as already-seen so the guard at the
+        # top pages Next past it. This walks the WHOLE queue instead of
+        # stopping after the first mutation.
+        page.wait_for_timeout(1200 if outcome in MUTATIONS else 400)
+
+    _flush_queues()
+    try:
+        _end_total = getattr(read_current_applicant(page, today), "_total", None)
+    except Exception:  # noqa: BLE001
+        _end_total = None
+    _log(f"[oat] QUEUE at end: {_end_total} emails "
+         f"(was {_start_total} — a persisted send/remove drops this)")
+    _log(f"[oat] done — {processed} applicant(s) this run: "
+         + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return 0
+
+
+def attach_dialog_accept(page) -> None:
+    """Accept every JS confirm() on this page and any popup it opens.
+
+    ApplicantStream pops a confirm() on Save/remove/send; Playwright (patchright AND
+    real-Chrome-over-CDP) auto-DISMISSES unhandled dialogs, which silently cancels the
+    action (it logs 'done' but the queue never drops — Megan 7/27). Both the
+    standalone ``run`` and the ``applicant_push`` orchestrator call this before the
+    walk so removes/sends actually persist."""
+    page.on("dialog", lambda d: d.accept())
+    page.context.on("page", lambda p: p.on("dialog", lambda d: d.accept()))
+
+
+# --------------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False, max_actions: int = None, probe_sms_flag: bool = False,
         probe_resume_flag: bool = False,
@@ -1599,13 +1717,9 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
         # extensions needed (OAT doesn't use the resume-extractor plugin).
         # yield_if_busy so we step aside if another Carlos-session run holds it.
         with appstream_direct_session(yield_if_busy=True) as page:
-            # ApplicantStream pops a JS confirm() on Save/remove/send; patchright
-            # auto-DISMISSES dialogs by default, which CANCELLED our removes/sends
-            # (they logged 'done' but the queue count never dropped — Megan 7/27).
-            # Accept every confirm so the actions actually persist. Applies to any
-            # popup opened in this context too.
-            page.on("dialog", lambda d: d.accept())
-            page.context.on("page", lambda p: p.on("dialog", lambda d: d.accept()))
+            # Accept ApplicantStream's confirm() dialogs so removes/sends persist
+            # (see attach_dialog_accept — auto-dismiss otherwise cancels them).
+            attach_dialog_accept(page)
             if not fetch_office._switch_office(page, config.OFFICE_ID,
                                                config.OFFICE_HINT):
                 _log(f"[oat] FATAL: office switch to {config.OFFICE_ID} failed")
@@ -1817,89 +1931,8 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                         _log(f"HC MSG failed: {e}")
                 return 0
 
-            if not open_oat(page):
-                _log("[oat] FATAL: could not open the One-App-at-a-time page")
-                return 2
-
-            _start_total = getattr(read_current_applicant(page, today), "_total", None)
-            _log(f"[oat] QUEUE at start: {_start_total} emails")
-
-            processed = 0
-            actions = 0                 # live mutations (sent/removed) this run
-            MUTATIONS = ("sent", "sent_override", "removed")
-            counts: dict = {}
-            seen: set = set()          # applicant keys already handled this run
-            no_progress = 0            # consecutive already-seen reads (end guard)
-            while processed < limit:
-                a = read_current_applicant(page, today)
-                key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
-                # Walk logic that survives the queue shifting under us: after a
-                # REMOVE/SEND the app leaves its slot, so the NEXT app becomes
-                # current (fresh key → handled below, no Next needed); after a
-                # non-mutation the SAME app stays current, so we page Next to move
-                # past it. Stop only when we can't reach a fresh applicant (the
-                # true end), not on the first re-seen one.
-                if not key or key == "|" or key in seen:
-                    no_progress += 1
-                    if no_progress > 3:
-                        _log(f"[oat] no fresh applicants — end of queue after "
-                             f"{processed} processed")
-                        break
-                    if not advance_to_next(page):
-                        _log(f"[oat] no next control — end of queue after "
-                             f"{processed} processed")
-                        break
-                    continue
-                no_progress = 0
-                seen.add(key)
-                d: Decision = classify(a, today)
-                sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
-                       f"ovr={int(a.override_button)} blk={int(a.correspondence_blocked)} "
-                       f"intF={int(a.interview_future)} intN={int(a.interview_past_noshow)} "
-                       f"sent={int(a.sent_to_call_list_today)} "
-                       f"lc={a.last_correspondence or '-'}")
-                _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}  [{sig}]")
-                try:
-                    outcome = _DISPATCH[d.action](page, a, live)
-                except Exception as e:  # noqa: BLE001
-                    _log(f"    ERROR performing {d.action.value}: "
-                         f"{type(e).__name__}: {e}")
-                    outcome = "error"
-                counts[outcome or d.action.value] = counts.get(outcome or d.action.value, 0) + 1
-                # Activity log — one row per applicant, for the daily scorecard.
-                if live:
-                    _ACTIVITY_ROWS.append([
-                        dt.datetime.now().strftime("%H:%M"),
-                        f"{a.first_name} {a.last_name}".strip(),
-                        a.job_board, a.position[:60],
-                        d.action.value, outcome or "", d.reason[:140],
-                    ])
-
-                processed += 1
-                # Throttle live mutations (a controlled test uses --max-actions 1).
-                if live and outcome in MUTATIONS:
-                    actions += 1
-                    if max_actions is not None and actions >= max_actions:
-                        _log(f"[oat] reached --max-actions {max_actions} — stopping")
-                        break
-                if processed >= limit:
-                    break
-                # Do NOT page Next here. Re-read on the next loop: a removed/sent
-                # app has left its slot (a fresh app is now current → handled), and
-                # an app that stayed re-reads as already-seen so the guard at the
-                # top pages Next past it. This walks the WHOLE queue instead of
-                # stopping after the first mutation.
-                page.wait_for_timeout(1200 if outcome in MUTATIONS else 400)
-
-            _flush_queues()
-            try:
-                _end_total = getattr(read_current_applicant(page, today), "_total", None)
-            except Exception:  # noqa: BLE001
-                _end_total = None
-            _log(f"[oat] QUEUE at end: {_end_total} emails "
-                 f"(was {_start_total} — a persisted send/remove drops this)")
-            _log(f"[oat] done — {processed} applicant(s) this run: "
-                 + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+            return run_walk(page, live=live, limit=limit,
+                            max_actions=max_actions, today=today)
     except AppStreamBusy:
         _log("[oat] AppStream session busy (another run holds Carlos's "
              "session) — stepping aside; try again shortly")

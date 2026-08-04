@@ -53,8 +53,11 @@ HEALTHY_SIGS = [
     re.compile(r"extract.*cycle.*→.*drop"),
 ]
 
-# Which logs to scan (bare-name substrings under output/logs).
-LOG_PATTERNS = ("oat-processing-", "oat_processing", "resume-pushing-", "resume_pushing")
+# Which logs to scan (bare-name substrings under output/logs). Includes the merged
+# applicant-push log (Resume Pushing + OAT combined) so the wedge signature is
+# caught whether the office-11580 push runs as the two old agents or the unified one.
+LOG_PATTERNS = ("oat-processing-", "oat_processing", "resume-pushing-",
+                "resume_pushing", "applicant-push-", "applicant_push")
 
 
 def _recent_logs() -> list[pathlib.Path]:

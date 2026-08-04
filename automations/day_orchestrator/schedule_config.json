@@ -2611,6 +2611,91 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "applicant_push": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "UNIFIED office-11580 (Carlos) recruiting push: runs the BATCH stage (Resume Pushing — extract resumes + send-to-AI) then the LEFTOVERS stage (OAT — send/remove/re-text/flag the one-app-at-a-time queue) on ONE warm real-Chrome/CDP AppStream session. Merges resume_pushing + oat_processing so a single warm/Indeed re-login serves both and they stop fighting over the session. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it; real schedule is the launchd job com.alphalete.applicant-push (q10min 7am-10pm CST daily, installed via install_applicant_push_agent). This entry gives `lucy rerun applicant_push --dry-run` (safe probe) and `lucy rerun applicant_push` (LIVE) a path, and backs the Hub card's Run button. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE — always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first. A batch Indeed-Turnstile wedge does NOT stop the leftovers stage.",
+      "display_name": "Applicant Push (Batch + Leftovers, office 11580)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.applicant_push.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 130
+    },
+    "install_applicant_push_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_applicant_push_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.applicant-push on Lucy 2 — the UNIFIED batch + OAT-leftovers push, every 10 min 7am-10pm CST daily on one warm CDP session. CUTOVER: after this installs, disable the two old agents (disable_resume_pushing_agent + disable_oat_processing_agent) so nothing double-runs. LIVE (send/remove/re-text are IRREVERSIBLE) — dry-run first: `bash deploy/applicant_push.sh --dry-run`. install_agent auto-registers the Hub card via hub_coverage. Re-runnable any time.",
+      "display_name": "Install: Applicant Push LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "applicant-push"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "disable_applicant_push_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "PAUSE the unified push: `lucy rerun disable_applicant_push_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.applicant-push.plist -> .disabled on Lucy 2. REVERSIBLE: re-run install_applicant_push_agent. Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable/Pause: Applicant Push LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "applicant-push"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "disable_resume_pushing_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "PAUSE the standalone Resume Pushing launchd (needed at the applicant_push CUTOVER so the batch stage doesn't double-run): `lucy rerun disable_resume_pushing_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.resume-pushing.plist -> .disabled on Lucy 2. REVERSIBLE: re-run install_resume_pushing_agent. Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable/Pause: Resume Pushing LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "resume-pushing"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "carlos_captainship_headcount": {
       "on_scheduler": true,
       "machine": "Lucy 2",

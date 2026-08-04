@@ -5118,6 +5118,81 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    # ── Applicant Push — Resume Pushing + OAT merged into one flow ────────
+    # The unified office-11580 push: batch send + OAT leftovers cleanup on ONE
+    # warm real-Chrome/CDP session. Supersedes the two cards above/below
+    # (resume-pushing + the auto-registered oat-processing) — hide those at
+    # cutover once this is validated live on Lucy 2. Uses NORMAL calstat pills
+    # (its wrapper publishes real success/failed to the Hub), so no forced pill.
+    {
+        "id": "applicant-push",
+        "name": "Applicant Push (Q 10 Min)",
+        "creator": "Carlos",
+        "emoji": "📲",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "The full recruiting push for Carlos's ApplicantStream office (11580) in one flow: extract new resumes and send the valid ones to the AI call list, THEN work the leftovers queue (send / remove duplicates / re-text quiet applicants) — Resume Pushing + OAT merged onto one browser session.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "One warm browser session for **Carlos's office (11580)** does both "
+            "halves of the daily push, back to back:\n"
+            "**•** **1. Batch send.** ApplicantStream **v2 → Process in Batches**: "
+            "the **robot** (Resume Helper) reads name / phone / email off each new "
+            "resume, then everyone valid is **sent to the AI call list**. Repeats "
+            "until nothing is left to extract or send.\n"
+            "**•** **2. Leftovers.** The **One-App-at-a-time** queue — everyone the "
+            "batch pass couldn't send — is worked one by one: fresh ones **sent**, "
+            "duplicates / past-interviews **removed**, quiet applicants (>1 week) "
+            "**re-texted** then removed, no-phone ones **flagged**.\n"
+            "**•** Only applicants with a **valid, unique phone** reach the call "
+            "list. Sends, removes and re-texts are **irreversible**.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every ~10 minutes, 7 AM–10 PM Central, every day.**\n\n"
+            "HOW IT RUNS\n"
+            "On **Lucy 2**: drives a **real Google Chrome** on a copy of Carlos's "
+            "everyday profile (the resume extractor is a Chrome plug-in that only "
+            "runs in real Chrome, which also clears Cloudflare). **Both halves "
+            "share the one session**, so a single login serves both. If the batch "
+            "half is blocked by **Indeed's** resume-page check, the **leftovers "
+            "half still runs** (it doesn't touch Indeed). If the plug-in is removed "
+            "from that Chrome profile, extraction stops — check that first if the "
+            "batch half goes quiet.\n\n"
+            "8 PM posts the combined **Daily Push Scorecard** to "
+            "#alphaletegp-recruiting."
+        ),
+        # No Google Sheet — ApplicantStream action bot only.
+        "assignees": ["Lucy 2"],
+        # Needs Carlos's AppStream session (Lucy 2 only) — a Hub "play" from any
+        # machine routes to Lucy 2 via mini-control (run_rerun_id = schedule id).
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "applicant_push",
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            # Runs EVERY day across a window. 'daily' shows all 7 days on the This
+            # Week strip; time = window start (sorts the card at 7am); time_label =
+            # what the tile shows (it runs q10min across the window, not once).
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "7am–10pm CST",
+            "estimated_minutes": 8,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Applicant Push complete — batch resumes sent to the AI call list and the leftovers queue worked.",
+            "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or Cloudflare on office 11580), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run",
+                "icon": "▶",
+                "primary": True,
+                "help": "Runs a full pass now: batch extract + send to the AI call list, then the OAT leftovers cleanup. IRREVERSIBLE (real sends / removes / re-texts).",
+                "module": "automations.applicant_push.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
     # ── ApplicantStream → Applicant Tracker (Francia; consolidated) ───────
     # ONE module (automations.applicant_tracker.run) drives all four of
     # Francia's ApplicantStream reports as two phases that share ONE login:
