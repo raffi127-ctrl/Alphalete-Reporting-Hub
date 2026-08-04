@@ -5356,6 +5356,26 @@
       "_onboarded": true,
       "machine": "Lucy 1"
     },
+    "sci_campaigns_notify": {
+      "on_scheduler": false,
+      "display_name": "SCI Campaigns — send the 'complete' DM only",
+      "_note": "Off-scheduler, hand-fired: `lucy rerun sci_campaigns_notify --week YYYY-MM-DD`. Exists because sci_campaigns.run only DMs for weeks it actually WROTE, so once a week is on the tab there is no way to make the normal rerun announce it. That gap is routine, not rare: Adriana's email is often late (WE 7.25.2026 landed Tue 8/4, days after the Thu-Sat window), someone fills from their own machine, and the notice never goes. The DM must come from Lucy 1 — slack_post falls back to the RUNNER's user token, and the first send creates the persistent 'SCI Campaigns' thread parent, so sending from anywhere else brands that thread with a human's name forever. base_args is --post because there is nothing else this entry could mean; the week is the caller's --week.",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.sci_campaigns.slack_post"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "fiber_owners_distro_post": {
       "on_scheduler": true,
       "display_name": "AT&T Fiber Owners \u2014 weekly list sync (post)",
