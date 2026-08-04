@@ -238,7 +238,11 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     # gaining columns (2026-08-03: Commission Type / Category / Product), and a
     # bonus type that moves out of Description silently mis-splits the campaign
     # P&L instead of failing loud.
-    log("source headers (" + str(len(headers)) + "): " + " | ".join(headers))
+    # Chunked: the Lucy-2 queue truncates a long Result cell, so one 42-column
+    # header list on a single line is unreadable from the mini.
+    log("source headers: " + str(len(headers)))
+    for _i in range(0, len(headers), 6):
+        log(f"  hdr[{_i:02d}]: " + " | ".join(headers[_i:_i + 6]))
     cmap = _map_columns(headers, log=log)
     try:
         _e = cmap["E"]
@@ -247,9 +251,10 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
         log(f"rows with a BLANK Description: "
             f"{sum(1 for r in data if not str(r[_e] if _e < len(r) else '').strip())}"
             f" of {len(data)}")
-        for r in _blank:
-            log("  blank-desc sample: " + " | ".join(
-                f"{h}={str(v)[:26]}" for h, v in zip(headers, r) if str(v).strip()))
+        for _n, r in enumerate(_blank[:2]):
+            _pairs = [f"{h}={str(v)[:20]}" for h, v in zip(headers, r) if str(v).strip()]
+            for _j in range(0, len(_pairs), 4):
+                log(f"  bd{_n}[{_j:02d}]: " + " | ".join(_pairs[_j:_j + 4]))
     except Exception as _e2:  # noqa: BLE001 — diagnostics must never break the load
         log(f"  (blank-description probe skipped: {_e2!r})")
     wnum = _week_num(week)
