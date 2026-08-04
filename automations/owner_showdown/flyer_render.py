@@ -44,7 +44,9 @@ def _ol(rows, unit: str, since: str = "") -> str:
             rank, name, val, heads = row
             main = (f"{_delta(val)} <span class=\"u\">{unit}</span>"
                     if isinstance(val, int) else "—")
-            sub = (f"started with {heads}" if heads not in ("", None) else "")
+            # the count itself is bolded gold inside the sub-line (Raf 8/3)
+            sub = (f"started with <b>{heads}</b>" if heads not in ("", None)
+                   else "")
             vtxt = main + (f"<span class=\"delta\">{sub}</span>" if sub else "")
         else:
             rank, name, val = row

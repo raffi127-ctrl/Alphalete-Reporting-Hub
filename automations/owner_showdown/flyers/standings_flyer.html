@@ -85,9 +85,13 @@
   .val{text-align:right}
   .val .u{font-size:10px;color:var(--dim);font-weight:700;margin-left:3px;
     letter-spacing:.08em;text-transform:uppercase}
-  /* second line on the rep board: the change since the 8/2 baseline */
-  .val .delta{display:block;font-size:10px;font-weight:700;color:var(--muted);
-    letter-spacing:.06em;text-transform:uppercase;margin-top:2px}
+  /* Second line on the rep board: the starting active heads. Raf 2026-08-03
+     wanted this readable, not fine print — it was 10px in --muted grey. Now
+     13px/800 in --paper with the number itself in gold, so it reads as a real
+     figure while the headline change stays the bigger number. */
+  .val .delta{display:block;font-size:13px;font-weight:800;color:var(--paper);
+    letter-spacing:.04em;text-transform:uppercase;margin-top:3px;opacity:.95}
+  .val .delta b{color:var(--gold);font-weight:800}
 
   /* ---- timeline + footer ---- */
   .rail{display:flex;align-items:center;justify-content:center;gap:16px;
