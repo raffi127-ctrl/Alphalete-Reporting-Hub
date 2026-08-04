@@ -110,7 +110,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
-                    "fda_check",
+                    "fda_check", "stage_img_test",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -2862,7 +2862,13 @@ def _action_fda_check(args: str) -> tuple[bool, str]:
     ~/Library/Messages/chat.db is the standard FDA probe: readable = granted."""
     import sqlite3
     db = Path.home() / "Library" / "Messages" / "chat.db"
-    out = [f"chat.db exists: {db.exists()}"]
+    # The path a human must actually add. `.venv/bin/python` is a SYMLINK, and
+    # macOS registers the resolved binary — adding the link can silently grant
+    # nothing. It also lives in a dot-directory the file picker hides by default,
+    # so hand over the real target instead.
+    out = [f"interpreter: {sys.executable}",
+           f"resolved: {os.path.realpath(sys.executable)}",
+           f"chat.db exists: {db.exists()}"]
     try:
         con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
         con.execute("SELECT COUNT(*) FROM chat").fetchone()
@@ -2875,6 +2881,53 @@ def _action_fda_check(args: str) -> tuple[bool, str]:
                    "& Security ▸ Full Disk Access ▸ + ▸ add the poller's python "
                    "(the same binary the LaunchAgent runs), then restart_poller.")
     return True, " · ".join(out)
+
+
+def _action_stage_img_test(args: str) -> tuple[bool, str]:
+    """Write a one-command image-send test for a HUMAN to run in Terminal.
+
+    Args:  <phone> [image path]
+
+    Terminal is already in Lucy 2's Full Disk Access list (switched off) and
+    already holds the Automation grant from 2026-08-03. Flipping that one toggle
+    gives a single process BOTH permissions — so running this script from
+    Terminal isolates the question we can't answer from here: is Full Disk Access
+    what's swallowing the attachment, or is AppleScript unable to send images on
+    this macOS at all (which is what swag_welcome concluded)?
+
+    Cheaper and far less error-prone than adding a symlinked binary out of a
+    hidden .venv directory through the file picker. Writes the script only;
+    sends nothing itself."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "stage_img_test needs a phone number"
+    phone = _normalize_us_phone(parts[0])
+    if len(parts) > 1:
+        img = Path(parts[1])
+    else:
+        from automations.b2b_dispositions import run as bd_run
+        img = (bd_run.OUTPUT_DIR / dt.date.today().isoformat() / "hourly_at-t.png")
+    if not img.exists():
+        return False, f"no image at {img}"
+
+    script = Path.home() / "img_test.applescript"
+    script.write_text(
+        '-- Sends one picture to %s from this machine\'s iMessage account.\n'
+        '-- Run from Terminal AFTER switching Terminal on in Full Disk Access.\n'
+        'set f to (POSIX file "%s") as alias\n'
+        'tell application "Messages"\n'
+        '  set svcId to id of 1st service whose service type = iMessage\n'
+        '  send "TERMINAL TEST — picture should follow" to buddy "%s" of service id svcId\n'
+        '  delay 2\n'
+        '  send f to buddy "%s" of service id svcId\n'
+        'end tell\n' % (phone, img, phone, phone), encoding="utf-8")
+    return True, (f"staged {script} (image {img.name}) · AT LUCY 2: switch Terminal "
+                  "ON in Full Disk Access, open Terminal, paste:  osascript "
+                  f"~/img_test.applescript  · then check {phone} for the PICTURE")
 
 
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
@@ -2954,6 +3007,7 @@ ACTIONS = {
     "sendimage_fmt": _action_sendimage_fmt,
     "sendimage_loc": _action_sendimage_loc,
     "fda_check": _action_fda_check,
+    "stage_img_test": _action_stage_img_test,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
