@@ -243,6 +243,9 @@ class ReadinessCache:
         if ptype == "org_board_filled":
             return self._probe_org_board_filled(source_id, probe)
 
+        if ptype == "org_board_posted":
+            return self._probe_org_board_posted(source_id, probe)
+
         if ptype == "dd_week":
             return self._probe_dd_week(source_id, probe)
 
@@ -373,6 +376,58 @@ class ReadinessCache:
             kw["send_anyway_after"] = probe["send_anyway_after"]
         ok, why = data_gate.gate(yday=yday, **kw)
         return Readiness(ok, why)
+
+    def _probe_org_board_posted(self, source_id: str, probe: dict) -> Readiness:
+        """Ready once the board has actually been POSTED to
+        #top-leaders-alphalete-org. The draft for review is a picture of the very
+        board the whole org just saw, so the post is what makes it worth
+        reviewing (Eve 2026-08-04: "tiene que armarse el draft y enviarse
+        automáticamente luego de postearse en #top-leaders-alphalete-org").
+
+        WHAT THIS REPLACED, and why. The draft used to answer to a clock and a
+        rule of its own: `not_before 09:30` plus `org_board_filled`, which holds
+        until YESTERDAY's column is filled for every section but the day-behind
+        ones. The public post clears neither — slack_post.fill_gate posts unless
+        yesterday is ENTIRELY empty. So the two could disagree, and on 2026-08-04
+        they did: the board went out at 08:33, and at 11:00 the draft had still
+        not reached #revision-emails — an hour lost to the clock alone, then a
+        completeness bar the board had already been published without. Nobody was
+        told, because a report that never becomes ready never runs, never fails,
+        and writes no Hub Activity row.
+
+        THE SIGNAL is slack_post's own once-a-day state file, which is written
+        only after a real post lands. No Slack call, no Sheets read, and no new
+        source of truth: the same file that stops the 25-minute passes reposting
+        is what tells the draft the board is out. Both run on the mini, so the
+        file the post writes is the file this reads.
+
+        FAILS OPEN at `fallback_hhmm` (default 11:30, deliberately before the
+        12:00 orchestrator backstop): if the post never lands, the draft still
+        goes up for review, exactly as it did when the data gate opened at 11:30.
+        A silent board must not also cost the day's email.
+        """
+        fallback = str(probe.get("fallback_hhmm", "11:30"))
+        try:
+            from automations.org_sales_board import slack_post as sp   # heavy: lazy
+            posted = sp._already_posted(self.target_date.isoformat())
+        except Exception as e:  # noqa: BLE001 — a probe must never sink the report
+            return Readiness(True, f"cannot read the board-post marker "
+                                   f"({type(e).__name__}) — not holding the draft")
+        if posted:
+            return Readiness(True, "the board is posted in "
+                                   "#top-leaders-alphalete-org — building the draft")
+        try:
+            fb_h, fb_m = (int(x) for x in fallback.split(":"))
+            now = dt.datetime.now()
+            if (now.hour, now.minute) >= (fb_h, fb_m):
+                return Readiness(True, f"past {fallback} and the board still has not "
+                                       f"posted — putting the draft up for review "
+                                       f"anyway (a human still has to approve it)")
+        except Exception:  # noqa: BLE001 — an unparseable hour just means no
+            pass                # fail-open clock; the post itself still opens it
+        return Readiness(False, f"the board has not posted to "
+                                f"#top-leaders-alphalete-org yet — waiting for it "
+                                f"(or {fallback})")
 
     def _probe_captainship_bonus(self, source_id: str, probe: dict) -> Readiness:
         """Is the just-ended week's CaptainsBonus / Captain Team activation data

@@ -104,6 +104,14 @@
         "send_anyway_after": "11:30"
       }
     },
+    "slack:org_board_posted": {
+      "label": "Org Sales Board \u2014 already posted in #top-leaders-alphalete-org",
+      "_note": "What the org board EMAIL waits for since 2026-08-04 (Eve): the draft for review is a picture of the board the whole org has just been shown, so THAT POST is the event that makes it worth reviewing \u2014 'tiene que armarse el draft y enviarse autom\u00e1ticamente luego de postearse en #top-leaders-alphalete-org'. readiness._probe_org_board_posted reads slack_post's OWN once-a-day state file (~/.config/recruiting-report/org_board_last_posted.txt), written only after a real post: no Slack call, no Sheets read, no second source of truth, and the post and the probe run on the same machine. REPLACES 'sheet:org_board_yesterday' (org_board_filled) for this report, which held the draft to a completeness bar the public post itself does not have to clear \u2014 on 2026-08-04 the board posted at 08:33 and the draft had still not reached #revision-emails at 11:00, and nothing said so, because a report that never becomes ready never runs and writes no Hub Activity row. The old source stays declared: it is still the right gate for anything that must not READ a half-filled board. Fails OPEN at 11:30 (before the 12:00 backstop) so a board that never posts cannot also cost the day's email \u2014 the human checkmark is still the thing that mails it.",
+      "probe": {
+        "type": "org_board_posted",
+        "fallback_hhmm": "11:30"
+      }
+    },
     "tableau:box_daily": {
       "label": "BOX daily tracker (org sales board \u2014 last source to land, ~7-8am)",
       "probe": {
@@ -1882,11 +1890,11 @@
     "org_sales_board_email": {
       "order": 9,
       "on_scheduler": true,
-      "_note": "BACK ON, DELAYED, DATA-GATED, AND NOW REVIEW-GATED (Eve 2026-07-29). This entry no longer sends anything: it runs review_gate --post, which builds the day's preview, prints it to PDF, drops it in Drive and posts the link in #revision-emails AS LUCY (the mini's token). The email goes out only when Lucy or Evelyn puts a checkmark on that post \u2014 picked up within 15 min by the com.alphalete.org-board-email-review LaunchAgent (deploy/org_board_email_review.sh, 9am-8pm), which mails the images ALREADY captured, from the run's manifest, so what was approved is what goes out. Same review habit as the captainship drafts, deliberately. History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed it to Eve, who turned it back on with three gates instead of one. (1) not_before 09:30 \u2014 the old 6-7am send raced the VAs' keying and the 9:00 org_board_slack pass that refreshes day-behind Retail JE. (2) data_sources 'sheet:org_board_yesterday', a readiness probe (readiness._probe_org_board_filled -> org_sales_board.data_gate) holding the report PENDING until YESTERDAY's column is filled for every daily section except the known day-behind ones (Retail JE, Frontier), opening at 11:30 regardless (before the 12:00 orchestrator backstop) so a section that never publishes cannot cost us the day's email. Gating in READINESS, not in an exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. (3) the human checkmark. RECIPIENTS UNCHANGED: the proving list (Rafael + Megan); the real distro is a separate call \u2014 add '--distro' to the CHECKER's args in deploy/org_board_email_review.sh, not here. depends_on org_sales_board so it only runs AFTER the fill is DONE. source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
+      "_note": "BACK ON, DELAYED, DATA-GATED, AND NOW REVIEW-GATED (Eve 2026-07-29). This entry no longer sends anything: it runs review_gate --post, which builds the day's preview, prints it to PDF, drops it in Drive and posts the link in #revision-emails AS LUCY (the mini's token). The email goes out only when Lucy or Evelyn puts a checkmark on that post \u2014 picked up within 15 min by the com.alphalete.org-board-email-review LaunchAgent (deploy/org_board_email_review.sh, 9am-8pm), which mails the images ALREADY captured, from the run's manifest, so what was approved is what goes out. Same review habit as the captainship drafts, deliberately. History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed it to Eve, who turned it back on with three gates instead of one. (1) + (2) WERE a clock (not_before 09:30) and a completeness rule of its own (data_sources 'sheet:org_board_yesterday' -> readiness._probe_org_board_filled -> org_sales_board.data_gate: hold until YESTERDAY's column is filled for every section but the day-behind ones, opening at 11:30 regardless). BOTH REPLACED 2026-08-04 (Eve) by ONE trigger: 'slack:org_board_posted' -> readiness._probe_org_board_posted, ready the moment the board is POSTED in #top-leaders-alphalete-org. The draft is that same board, so the post is what makes it worth reviewing, and the org seeing it is a stronger signal than any rule of ours. WHY: the post clears a LIGHTER bar than the old gate did (slack_post.fill_gate posts unless yesterday is entirely empty), so the two could disagree and on 2026-08-04 they did \u2014 board out at 08:33, draft still not in #revision-emails at 11:00, and no alert, because a report that never becomes ready never runs, never fails and writes no Hub Activity row. Still fails OPEN at 11:30, before the 12:00 backstop, so a board that never posts cannot also cost the day's email. Gating in READINESS, not in an exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. (3) the human checkmark, unchanged: nothing here mails anyone. RECIPIENTS UNCHANGED: the proving list (Rafael + Megan); the real distro is a separate call \u2014 add '--distro' to the CHECKER's args in deploy/org_board_email_review.sh, not here. depends_on org_sales_board so it only runs AFTER the fill is DONE. source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email (a revisi\u00f3n)",
       "source_type": "tableau",
       "data_sources": [
-        "sheet:org_board_yesterday"
+        "slack:org_board_posted"
       ],
       "command": [
         "automations.org_sales_board.review_gate"
@@ -1895,7 +1903,6 @@
         "--post"
       ],
       "cadence": {
-        "not_before": "09:30",
         "_note": "Monday (0) EXCLUDED (Megan 2026-07-13): last week's Sunday lands in the sources only through Monday afternoon, so a morning email undercounts. On Mondays the board+email run in the afternoon via board_catchup.sh instead. Tue-Sun email in the morning batch as usual.",
         "weekdays": [
           1,

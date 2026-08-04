@@ -23,6 +23,16 @@ rule lives in ONE spot:
     no burnt retries) while the board is short.
   - screenshot_email.main     → the same check right before a send, so a manual
     or off-orchestrator run gets the same protection.
+
+NOT WHAT THE DRAFT WAITS FOR ANY MORE (Eve 2026-08-04). The org board email used
+to be gated on this through readiness._probe_org_board_filled; it now waits for
+the board to be POSTED in #top-leaders-alphalete-org instead (probe
+org_board_posted), because this rule is stricter than the one the public post
+itself has to clear and the two disagreed — board out 08:33, draft still not up
+at 11:00. The probe and this module stay: this is still the right question for
+anything that must not READ a half-filled board, and screenshot_email's own
+pre-send check below is untouched. The APPROVED send (--send-reviewed) returns
+before that check, so a checkmark is never blocked by a short board.
 """
 from __future__ import annotations
 

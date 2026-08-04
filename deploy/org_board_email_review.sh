@@ -11,8 +11,12 @@
 # reads per tick cost nothing.
 #
 # The 4am orchestrator posts the day's preview for review (review_gate --post,
-# right after the board fill, not before 09:30 and only once yesterday is
-# actually ON the board). THIS agent is the other half: every 15 minutes it asks
+# on the pass after the board is POSTED in #top-leaders-alphalete-org — the org
+# seeing the board is what makes the draft worth reviewing; readiness
+# ._probe_org_board_posted, Eve 2026-08-04. It used to wait for 09:30 and for
+# yesterday to be 100% on the board, a bar the public post never had to clear:
+# on 2026-08-04 the board went out at 08:33 and the draft never went up at all).
+# THIS agent is the other half: every 15 minutes it asks
 # Slack whether an approver has put a checkmark on that post, and mails the
 # reviewed images the moment one has. Until then it does nothing at all.
 #
