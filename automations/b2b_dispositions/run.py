@@ -170,9 +170,10 @@ def main(argv=None) -> int:
                     help="DM the captured shots to Megan for review (no channel post)")
     ap.add_argument("--text", action="store_true",
                     help="also text each campaign's post to its iMessage group "
-                         "(Box -> 'Box B2B', AT&T -> 'ATT B2B Leaders'). Only "
-                         "sends for real alongside --send; otherwise it resolves "
-                         "the groups and reports what WOULD go out.")
+                         "(Box -> 'Box B2B', AT&T -> 'ATT B2B Leaders'). With "
+                         "--send this QUEUES the send for the mini_control poller "
+                         "(the process that holds the Messages permission); "
+                         "without it, resolves the groups and reports only.")
     ap.add_argument("--dry-run", action="store_true",
                     help="capture + report only, post nothing (default)")
     ap.add_argument("--headless", action="store_true",
@@ -344,7 +345,7 @@ def main(argv=None) -> int:
               f"Nothing posted. Review the PNGs, then re-run with --preview/--send.",
               flush=True)
         if args.text:
-            _report_text(specs, dry_run=True)
+            _report_text(specs, out_dir, slot)
         return 0
 
     results = _post_specs(specs, today, dry_run=False, repost=args.repost)
@@ -361,30 +362,60 @@ def main(argv=None) -> int:
             print("\nTEXT SKIPPED — the Slack post failed, so there's nothing to "
                   "mirror. Fix the post first.", flush=True)
             return 1
-        ok = _report_text(specs, dry_run=False) and ok
+        ok = _handoff_text(specs, out_dir, slot) and ok
     return 0 if ok else 1
 
 
-def _report_text(specs: List[Dict], *, dry_run: bool) -> bool:
-    """Route the captured postings to their iMessage groups and print the result.
+def _report_text(specs: List[Dict], out_dir: Path, slot: str) -> bool:
+    """DRY-RUN only: write each manifest, resolve the groups, print what would go.
 
-    Never raises into the caller: a texting failure must not retroactively mark a
-    good Slack post as a failed run — the two are reported separately.
+    Resolving is read-only and is the half most likely to be wrong (a renamed or
+    unjoined group), so a dry run that skipped it would prove nothing.
     """
     from automations.b2b_dispositions import text_post as tp
-    header = ("TEXT (dry-run — resolving groups, sending nothing)" if dry_run
-              else "TEXT — sending to iMessage groups")
-    print(f"\n{header}", flush=True)
-    try:
-        res = tp.send_specs(specs, dry_run=dry_run)
-    except Exception as e:  # noqa: BLE001
-        print(f"  TEXT FAILED outright: {type(e).__name__}: {str(e)[:200]}",
-              flush=True)
-        return False
-    print(tp.describe(res), flush=True)
-    if res.get("errors"):
-        print(f"  -> {len(res['errors'])} group(s) FAILED", flush=True)
-    return bool(res.get("ok"))
+    print("\nTEXT (dry-run — resolving groups, sending nothing)", flush=True)
+    ok = True
+    for spec in specs:
+        try:
+            mp = tp.write_manifest(spec, out_dir, slot)
+            print(f"  manifest    : {mp}", flush=True)
+            res = tp.send_manifest(mp, dry_run=True)
+            print(tp.describe(res), flush=True)
+            ok = ok and bool(res.get("ok"))
+        except Exception as e:  # noqa: BLE001
+            print(f"  TEXT FAILED: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            ok = False
+    return ok
+
+
+def _handoff_text(specs: List[Dict], out_dir: Path, slot: str) -> bool:
+    """LIVE: hand the send to the mini_control poller and return.
+
+    This process must NEVER send the texts itself. macOS grants "control
+    Messages" per executable identity: the poller was authorized on 2026-08-03
+    when a human clicked Allow, but THIS job is a different identity (launchd
+    runs it via /bin/bash on a wrapper) and has never been authorized. Sending
+    from here would pop a consent dialog on an unattended machine, block ~5
+    minutes, and fail — every hour. So we write the manifest and queue it; the
+    poller, which already holds the grant, does the sending.
+
+    A texting failure is reported but never retroactively fails a good Slack post.
+    """
+    from automations.b2b_dispositions import text_post as tp
+    print("\nTEXT — handing off to the mini_control poller (the identity that "
+          "already has Messages permission)", flush=True)
+    ok = True
+    for spec in specs:
+        try:
+            mp = tp.write_manifest(spec, out_dir, slot)
+            from automations.day_orchestrator import mini_control as mc
+            mc.enqueue("text_dispositions", mp.name, by="b2b_dispositions")
+            print(f"  queued text_dispositions {mp.name}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"  HANDOFF FAILED: {type(e).__name__}: {str(e)[:200]}",
+                  flush=True)
+            ok = False
+    return ok
 
 
 if __name__ == "__main__":

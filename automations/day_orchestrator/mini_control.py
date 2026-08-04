@@ -2584,6 +2584,55 @@ def _action_run_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(lines)[:450] or (out or "")[-300:])
 
 
+def _action_text_dispositions(args: str) -> tuple[bool, str]:
+    """Text one captured disposition posting to its campaign's iMessage group.
+
+    Args:  <manifest filename> [YYYY-MM-DD]   e.g.
+           text_dispositions text_manifest_hourly_3-00-pm.json
+
+    THIS ACTION EXISTS FOR ONE REASON: permission. macOS grants "control
+    Messages" per executable identity. THIS poller earned that grant on
+    2026-08-03 when a human clicked Allow at Lucy 2. The scheduled
+    b2b-dispositions job is a different identity (launchd runs it through
+    /bin/bash on a wrapper) and has never been authorized — sending from there
+    would pop a consent dialog on a machine nobody is sitting at, hang five
+    minutes, and fail, every hour. So the capture job writes a manifest and
+    queues this; the send happens here, inside the already-permitted process.
+
+    The manifest names the groups by NAME; text_post re-resolves them at send
+    time, so a membership change can't leave us texting a dead thread."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, ("text_dispositions needs a manifest filename (e.g. "
+                       "text_manifest_hourly_3-00-pm.json)")
+    name = parts[0]
+    day = parts[1] if len(parts) > 1 else dt.date.today().isoformat()
+
+    from automations.b2b_dispositions import run as bd_run
+    from automations.b2b_dispositions import text_post as tp
+    path = bd_run.OUTPUT_DIR / day / name
+    if not path.exists():
+        return False, f"no manifest {name!r} under {path.parent}"
+
+    try:
+        res = tp.send_manifest(path, dry_run=False)
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {str(e)[:220]}"
+    if res.get("skipped"):
+        return True, f"already sent ({res['skipped']}) — not re-texting"
+    sent = res.get("sent") or []
+    lines = ["%s -> %s (%s imgs)" % (s.get("campaign"), s.get("group"),
+                                     len(s.get("sent_images") or []))
+             for s in sent]
+    if res.get("errors"):
+        return False, "FAILED: " + " · ".join(res["errors"])[:300]
+    return True, ("texted %d group(s): " % len(sent)) + " · ".join(lines)
+
+
 def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
     """Install the two B2B Dispositions launchd agents on THIS machine (Lucy 2):
     the hourly (12-6pm) and the 6:30 final. Idempotent — reinstalling re-locks the
@@ -2607,6 +2656,7 @@ ACTIONS = {
     "find_group": _action_find_group,
     "sendtext": _action_sendtext,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
+    "text_dispositions": _action_text_dispositions,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,

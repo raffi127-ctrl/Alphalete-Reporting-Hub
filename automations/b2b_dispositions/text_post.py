@@ -223,6 +223,72 @@ def send_specs(specs: List[Dict], *, dry_run: bool = True) -> Dict:
             "dry_run": dry_run, "ok": not errors}
 
 
+# --- handing the send to the process that already has permission --------------
+# macOS grants "control Messages" per executable identity, and the two jobs on
+# Lucy 2 are NOT the same one:
+#   * mini_control poller  -> launchd runs .venv/bin/python directly
+#   * b2b-dispositions     -> launchd runs /bin/bash on a wrapper script
+# The poller earned the grant on 2026-08-03 when a human clicked Allow, and a
+# subprocess of the poller inherits it — proven 2026-08-04, when the --text
+# dry-run resolved both groups through Apple Events with no prompt. The scheduled
+# dispositions agent has never been authorized, and nobody sits at Lucy 2 to
+# authorize it: a prompt there would block for 5 minutes and then fail.
+#
+# So the scheduled job never touches Messages. It writes a manifest of what to
+# text and drops a `text_dispositions` row on its own machine's control queue;
+# the poller — the identity that already holds the grant — does the sending.
+MANIFEST_PREFIX = "text_manifest"
+
+
+def manifest_path(out_dir, kind: str, slot: str):
+    """One manifest per (post-type, slot) so a re-run overwrites rather than
+    piles up, and the filename alone says what it is."""
+    safe_slot = "".join(ch if ch.isalnum() else "-" for ch in (slot or "")).strip("-")
+    return Path(out_dir) / ("%s_%s_%s.json" % (MANIFEST_PREFIX, kind, safe_slot.lower()))
+
+
+def write_manifest(spec: Dict, out_dir, slot: str):
+    """Record exactly what should be texted, so the poller sends the same thing
+    this run captured — no re-deriving titles or re-globbing for images."""
+    import json
+    p = manifest_path(out_dir, spec.get("kind") or "", slot)
+    payload = {
+        "kind": spec.get("kind"),
+        "title": spec.get("title"),
+        "slot": slot,
+        "by_campaign": {c: [str(x) for x in paths]
+                        for c, paths in (spec.get("by_campaign") or {}).items()},
+    }
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    return p
+
+
+def send_manifest(path, *, dry_run: bool = True) -> Dict:
+    """Send a manifest written by the capture run. Called BY THE POLLER.
+
+    Idempotent: a `.sent` marker is dropped next to the manifest, because the
+    control queue retries and an hourly cadence means a double-send would be a
+    duplicate text to 20 leaders, not a harmless retry.
+    """
+    import json
+    p = Path(path)
+    if not p.exists():
+        raise GroupTextError("no manifest at %s" % p)
+    marker = p.with_suffix(".sent")
+    if marker.exists() and not dry_run:
+        return {"skipped": "already sent at %s" % marker.read_text().strip()[:40],
+                "ok": True, "sent": [], "errors": [], "skipped_routes": []}
+    data = json.loads(p.read_text(encoding="utf-8"))
+    spec = {"kind": data.get("kind"), "title": data.get("title"),
+            "by_campaign": data.get("by_campaign") or {}}
+    res = send_specs([spec], dry_run=dry_run)
+    if res.get("ok") and not dry_run:
+        import datetime as _dt
+        marker.write_text(_dt.datetime.now().isoformat(timespec="seconds"))
+    return res
+
+
 def describe(res: Dict) -> str:
     """Human-readable dry-run report: what would go where, with the LIVE id."""
     lines = []
