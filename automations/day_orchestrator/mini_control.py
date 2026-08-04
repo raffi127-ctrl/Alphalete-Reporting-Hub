@@ -2584,6 +2584,92 @@ def _action_run_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(lines)[:450] or (out or "")[-300:])
 
 
+def _action_sendimage_diag(args: str) -> tuple[bool, str]:
+    """Try several AppleScript attachment forms at ONE number, each labelled.
+
+    Args:  <phone> [image path]   (default image = today's hourly AT&T shot)
+
+    Sending an image through Messages is the one step that fails SILENTLY:
+    osascript returns success and the attachment never arrives, which is what
+    happened on the first live disposition text (2026-08-04) and, in hindsight,
+    is why the Texas de Brazil image sends were never actually landing either.
+    Since nothing errors, the only way to learn which form works is to fire each
+    one at a single willing recipient with a label in front of it and ask which
+    labels showed up. Deliberately 1:1 — never point this at a group.
+
+    Each variant sends a text tag first, then the image, so a missing image is
+    attributable to a specific form rather than to the whole run."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "sendimage_diag needs a phone number"
+    phone = _normalize_us_phone(parts[0])
+    if len(parts) > 1:
+        img = Path(parts[1])
+    else:
+        from automations.b2b_dispositions import run as bd_run
+        img = (bd_run.OUTPUT_DIR / dt.date.today().isoformat() / "hourly_at-t.png")
+    if not img.exists():
+        return False, f"no image at {img}"
+    p = str(img).replace("\\", "\\\\").replace('"', '\\"')
+    chat_id = "iMessage;-;%s" % phone
+
+    def _tag(n: int, how: str) -> tuple[bool, str]:
+        return _osascript(
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            f'  send "IMG TEST v{n} — {how}" to buddy "{phone}" of service id svcId\n'
+            'end tell', timeout=120)
+
+    variants = [
+        # v1: exactly what the disposition send used (POSIX file, inside tell,
+        # addressed to a chat id). This is the one that silently did nothing.
+        (1, "POSIX file -> chat id",
+         'tell application "Messages"\n'
+         f'  set theChat to a reference to chat id "{chat_id}"\n'
+         f'  send (POSIX file "{p}") to theChat\n'
+         'end tell'),
+        # v2: coerce to an alias OUTSIDE the tell block — the form most commonly
+        # reported as the one that still works on recent macOS.
+        (2, "alias outside tell -> chat id",
+         f'set f to (POSIX file "{p}") as alias\n'
+         'tell application "Messages"\n'
+         f'  set theChat to a reference to chat id "{chat_id}"\n'
+         '  send f to theChat\n'
+         'end tell'),
+        # v3: address a buddy instead of a chat. swag believes this can't work;
+        # worth one datapoint rather than another inherited assumption.
+        (3, "POSIX file -> buddy",
+         'tell application "Messages"\n'
+         '  set svcId to id of 1st service whose service type = iMessage\n'
+         f'  send (POSIX file "{p}") to buddy "{phone}" of service id svcId\n'
+         'end tell'),
+        # v4: alias + buddy.
+        (4, "alias outside tell -> buddy",
+         f'set f to (POSIX file "{p}") as alias\n'
+         'tell application "Messages"\n'
+         '  set svcId to id of 1st service whose service type = iMessage\n'
+         f'  send f to buddy "{phone}" of service id svcId\n'
+         'end tell'),
+    ]
+
+    out = []
+    for n, how, script in variants:
+        _tag(n, how)
+        time.sleep(3)
+        ok, res = _osascript(script, timeout=180)
+        out.append(f"v{n}({how.split(' -> ')[0]}): "
+                   + ("no error" if ok else f"ERROR {res[:60]}"))
+        time.sleep(12)   # let Messages finish the upload before the next one
+    return True, (f"sent 4 labelled attempts + image {img.name} to {phone} · "
+                  + " · ".join(out)
+                  + " · ASK THE RECIPIENT which v#'s IMAGE actually arrived — "
+                    "'no error' here does NOT mean it was delivered")
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -2657,6 +2743,7 @@ ACTIONS = {
     "sendtext": _action_sendtext,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
+    "sendimage_diag": _action_sendimage_diag,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
