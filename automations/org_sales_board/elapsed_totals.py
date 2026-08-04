@@ -149,13 +149,22 @@ def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
 
 
 def apply_elapsed_totals(ws, today: dt.date | None = None,
-                         dry_run: bool = False, logfn=print) -> List[dict]:
+                         dry_run: bool = False, logfn=print,
+                         include_delta: bool = True) -> List[dict]:
     """Find + set the elapsed-day grand-total formulas on `ws`: the 'Current vs
     Prior' tables (Sales Last Week / 4 Week AVG) AND the per-captainship delta
-    tables ('Last week' total). COPY/REAL tab chosen by the caller."""
+    tables ('Last week' total). COPY/REAL tab chosen by the caller.
+
+    `include_delta=False` runs ONLY the 'Current vs Prior' half. The Country
+    board wants that: its delta box is already sized every day by
+    `rollover.apply_delta_lastweek`, and letting both write the same cells
+    would mean two functions with two shapes of the same formula racing over
+    one box."""
     today = today or dt.date.today()
     grid = ws.get_all_values()
-    updates = plan_elapsed_totals(grid, today) + plan_delta_lastweek(grid, today)
+    updates = plan_elapsed_totals(grid, today)
+    if include_delta:
+        updates += plan_delta_lastweek(grid, today)
     n = elapsed_day_count(today)
     logfn(f"  elapsed-day totals ({n} day(s) completed): {len(updates)} cell(s)")
     for u in updates:

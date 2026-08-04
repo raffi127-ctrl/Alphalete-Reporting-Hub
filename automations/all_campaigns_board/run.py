@@ -128,6 +128,16 @@ def run(*, dry_run: bool = True, today: dt.date = None,
     from automations.org_sales_board.rollover import apply_delta_lastweek
     apply_delta_lastweek(tgt_ws, today=today, dry_run=dry_run, logfn=logfn)
 
+    # Top box ('Current vs Prior Weeks'): same story one box higher. The Grand
+    # Total of 'Sales (Last Week)' / 'Sales ( 4 Week AVG)' has to cover the days
+    # elapsed this week, and nothing rebuilt it — so it kept the closed week's
+    # full 7 days and 'vs Prior Week' read -85% on a Tuesday morning against a
+    # board that was simply one day old (found 2026-08-04 on the Country board,
+    # identical here). Delta half off: apply_delta_lastweek above owns that box.
+    from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
+    apply_elapsed_totals(tgt_ws, today=today, dry_run=dry_run, logfn=logfn,
+                         include_delta=False)
+
     return {"filled_section": TARGET_SECTION,
             "reps_on_board": len(anchor.icd_rows),
             "reps_pulled": len(pull),

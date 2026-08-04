@@ -185,6 +185,19 @@ def main() -> int:
     from automations.org_sales_board.rollover import apply_delta_lastweek
     apply_delta_lastweek(ws, today=today, dry_run=args.dry_run)
 
+    # Top box ('Current vs Prior Weeks'): the Grand Total of 'Sales (Last Week)'
+    # and 'Sales ( 4 Week AVG)' must cover the SAME elapsed days as 'Sales -
+    # This Week' — one more day each day, and back to Monday-only the moment the
+    # week rolls. NOTHING here rebuilt them, so J12/J13 kept whatever the
+    # rollover left: the full 7-day enumeration of the closed week, re-pointed at
+    # the new top of the WE stack. Every percentage in that box then compared one
+    # elapsed day against a finished week (Eve 2026-08-04: -84% on a Tuesday
+    # morning). org's planner is reused verbatim; its delta half is off because
+    # apply_delta_lastweek above already owns that box.
+    from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
+    apply_elapsed_totals(ws, today=today, dry_run=args.dry_run,
+                         include_delta=False)
+
     if rollover_summary and rollover_summary.get("rolled"):
         print(f"  rolled {rollover_summary['closed']} -> "
               f"{rollover_summary['new_label']}")
