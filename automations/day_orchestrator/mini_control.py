@@ -109,7 +109,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
-                    "clear_untracked", "set_doubleentry_creds", "messages_diag"}
+                    "clear_untracked", "set_doubleentry_creds", "messages_diag",
+                    "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -880,6 +881,76 @@ def _action_messages_diag(args: str) -> tuple[bool, str]:
                "green-bubble/SMS needs this Mac paired to an iPhone w/ Text "
                "Message Forwarding — look for an 'SMS' line above.")
     return True, "\n".join(out)
+
+
+def _action_find_group(args: str) -> tuple[bool, str]:
+    """READ-ONLY: which iMessage GROUP chats on THIS machine match a name?
+
+    Args:  <name fragment>   e.g.  find_group Box B2B
+
+    The whole point of resolving a group by NAME is that a group's chat GUID is
+    NOT stable — adding a member mints a brand-new GUID, so a hardcoded id keeps
+    "sending" into a defunct thread that nobody sees and nothing errors. (That is
+    exactly how the Texas de Brazil texts went silently missing.) This proves,
+    before anything is built on it, that AppleScript can see the group's display
+    name on THIS macOS and hand back a live id.
+
+    Reports EVERY match with its participant count so 0-match and 2+-match are
+    both visible — an ambiguous name has to fail loudly at send time, never pick
+    one at random. Reads names/ids/counts only: no message text, and it sends
+    nothing."""
+    q = (args or "").strip()
+    if not q:
+        return False, "find_group needs a name fragment (e.g. find_group Box B2B)"
+    safe = q.replace("\\", "\\\\").replace('"', '\\"')
+
+    # Primary: a whose-filter (fast). Fallback: walk every chat, tolerating the
+    # ones with no display name (1:1 threads), because the whose-filter throws on
+    # some macOS builds rather than skipping them.
+    ok, out = _osascript(
+        'tell application "Messages"\n'
+        '  set res to ""\n'
+        '  try\n'
+        f'    set hits to (chats whose name contains "{safe}")\n'
+        '  on error\n'
+        '    set hits to {}\n'
+        '    repeat with c in chats\n'
+        '      set nm to ""\n'
+        '      try\n'
+        '        set nm to name of c as text\n'
+        '      end try\n'
+        f'      if nm contains "{safe}" then set end of hits to c\n'
+        '    end repeat\n'
+        '  end try\n'
+        '  repeat with c in hits\n'
+        '    set nm to ""\n'
+        '    try\n'
+        '      set nm to name of c as text\n'
+        '    end try\n'
+        '    set pc to 0\n'
+        '    try\n'
+        '      set pc to count of participants of c\n'
+        '    end try\n'
+        '    set res to res & (id of c) & " || name=" & nm & " || participants=" '
+        '& pc & linefeed\n'
+        '  end repeat\n'
+        '  return res\n'
+        'end tell', timeout=120)
+
+    if not ok:
+        return False, (f"lookup FAILED for {q!r}: {out} · if this timed out, the "
+                       "'… wants to control Messages' consent dialog is waiting "
+                       "unanswered on this machine")
+    lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    if not lines:
+        return False, (f"NO chat matches {q!r} by name. Either Lucy isn't in that "
+                       "group yet, the name differs, or this macOS won't expose "
+                       "group display names to AppleScript (then only the chat.db "
+                       "path works, which needs Full Disk Access).")
+    head = f"{len(lines)} match(es) for {q!r}:"
+    if len(lines) > 1:
+        head += " AMBIGUOUS — a send must refuse to guess."
+    return True, head + "\n" + "\n".join("  " + ln for ln in lines)
 
 
 def _normalize_us_phone(raw: str) -> str:
@@ -2502,6 +2573,7 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
 ACTIONS = {
     "ping": _action_ping,
     "messages_diag": _action_messages_diag,
+    "find_group": _action_find_group,
     "sendtext": _action_sendtext,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
