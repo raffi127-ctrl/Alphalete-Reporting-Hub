@@ -2615,7 +2615,28 @@ def _action_sendimage_diag(args: str) -> tuple[bool, str]:
     if not img.exists():
         return False, f"no image at {img}"
     p = str(img).replace("\\", "\\\\").replace('"', '\\"')
-    chat_id = "iMessage;-;%s" % phone
+
+    # RESOLVE the 1:1 chat id — never construct it. The first run of this diag
+    # guessed "iMessage;-;+1XXX" and Messages answered "Can't get chat id …",
+    # which made the two chat-id variants look like failures when the test itself
+    # was malformed. Those are the variants that matter, because the group send
+    # addresses a chat id too.
+    ok_c, found = _osascript(
+        'tell application "Messages"\n'
+        '  set res to ""\n'
+        '  repeat with c in chats\n'
+        '    try\n'
+        f'      if (id of c) contains "{phone}" then set res to res & (id of c) & linefeed\n'
+        '    end try\n'
+        '  end repeat\n'
+        '  return res\n'
+        'end tell', timeout=120)
+    ids = [x.strip() for x in (found or "").splitlines() if x.strip()] if ok_c else []
+    if not ids:
+        return False, (f"no existing 1:1 chat with {phone} on this machine — send "
+                       "that number a plain text first so the thread exists, then "
+                       "re-run")
+    chat_id = ids[0].replace("\\", "\\\\").replace('"', '\\"')
 
     def _tag(n: int, how: str) -> tuple[bool, str]:
         return _osascript(
@@ -2664,8 +2685,8 @@ def _action_sendimage_diag(args: str) -> tuple[bool, str]:
         out.append(f"v{n}({how.split(' -> ')[0]}): "
                    + ("no error" if ok else f"ERROR {res[:60]}"))
         time.sleep(12)   # let Messages finish the upload before the next one
-    return True, (f"sent 4 labelled attempts + image {img.name} to {phone} · "
-                  + " · ".join(out)
+    return True, (f"sent 4 labelled attempts + image {img.name} to {phone} "
+                  f"(chat id {chat_id[:34]}…) · " + " · ".join(out)
                   + " · ASK THE RECIPIENT which v#'s IMAGE actually arrived — "
                     "'no error' here does NOT mean it was delivered")
 
