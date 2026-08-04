@@ -72,6 +72,43 @@ THREAD_DISPOSITIONS = "B2B Dispositions"
 PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
 PANEL_TIME_TRACKER = "REPS OVER 15 MIN GAP"
 
+# --- iMessage delivery (Carlos, 2026-08-04) -----------------------------------
+# Each posting has one Box image and one AT&T image, and each goes to its own
+# iMessage group — Box's to "Box B2B", AT&T's to "ATT B2B Leaders" (Megan 8/4,
+# confirmed with Carlos). Both post types go to both groups.
+#
+# Group NAMES, never chat GUIDs, and that is the whole point: a group's GUID is
+# minted fresh every time membership changes, so a stored id silently starts
+# "sending" into a defunct thread that nobody reads and nothing errors. That is
+# exactly how the Texas de Brazil texts vanished. text_post.resolve_group() looks
+# the name up on EVERY send. Carlos is still adding people to these groups, so
+# the ids WILL churn — by design, we never notice.
+#
+# Matching is substring, deliberately: the AT&T group's real display name ends in
+# a trailing space ("ATT B2B Leaders "), which an equality check would miss.
+# Verified live on Lucy 2 2026-08-04 (`lucy find_group ...`): "Box B2B" -> 1 chat,
+# 19 participants; "ATT B2B Leaders" -> 1 chat, 20 participants.
+TEXT_GROUP_ATT = "ATT B2B Leaders"
+TEXT_GROUP_BOX = "Box B2B"
+
+# The two post types, as used in the routing key below.
+POST_HOURLY = "hourly"              # activity + time gaps, every hour
+POST_DISPOSITIONS = "dispositions"  # territory stats, once a day at 6:30
+
+# (campaign, post-type) -> group name. All four pairs are live. Dropping a pair
+# from this table is how you stop texting it — nothing else needs to change.
+TEXT_ROUTES = {
+    (CAMPAIGN_ATT, POST_HOURLY): TEXT_GROUP_ATT,
+    (CAMPAIGN_ATT, POST_DISPOSITIONS): TEXT_GROUP_ATT,
+    (CAMPAIGN_BOX, POST_HOURLY): TEXT_GROUP_BOX,
+    (CAMPAIGN_BOX, POST_DISPOSITIONS): TEXT_GROUP_BOX,
+}
+
+# Seconds to wait after handing Messages an image. TdB proved a group image send
+# needs this: without the pause Messages is still uploading when the next command
+# lands and recipients get nothing, with no error raised.
+IMAGE_SEND_DELAY_S = 18
+
 # --- Schedule (mini-LOCAL / Central) -----------------------------------------
 # Today's Activity + Time Tracker: hourly 12pm..6pm, plus a final at 6:30pm.
 # Dispositions (per territory): 6:30pm only.

@@ -69,6 +69,11 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
     Each hour is its own thread ("Hourly Activity 7/30/26 - 4 PM") with a single
     reply carrying both campaign images (Megan 7/30)."""
     paths, notes = [], []
+    # campaign -> its own image(s). The Slack reply carries both campaigns
+    # together, but the iMessage routing sends each campaign to a DIFFERENT
+    # group, so attribution can't be positional: a stitch failure changes what
+    # lands in `paths` and index 0 would stop meaning "AT&T".
+    by_campaign: Dict[str, List] = {}
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
@@ -81,14 +86,17 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
                  (cfg.PANEL_TIME_TRACKER, tt["path"])],
                 title=f"{tag} — {slot}", out_path=combined)
             paths.append(combined)
+            by_campaign[campaign] = [combined]
         except Exception as e:  # noqa: BLE001
             print(f"  {tag} stitch failed ({type(e).__name__}) — Today's Activity "
                   f"only", flush=True)
             paths.append(ta["path"])
+            by_campaign[campaign] = [ta["path"]]
         notes.append(f"{tag}[TA:{ta.get('how')} TT:{tt.get('how')} "
                      f"camp_ok={ta.get('campaign_ok') and tt.get('campaign_ok')}]")
     title = sp.thread_title(cfg.THREAD_HOURLY, slot, today)
-    return [{"title": title, "paths": paths, "meta": {"note": " ".join(notes)}}]
+    return [{"title": title, "paths": paths, "kind": cfg.POST_HOURLY,
+             "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
@@ -100,6 +108,10 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
     reply carries both campaign stacks (Megan 7/30 — 2 images at 6:30, not 18
     posts). `limit` > 0 caps territories per campaign for a quick preview."""
     stacks, notes = [], []
+    # See _capture_hourly: per-campaign attribution for the iMessage routing.
+    # This one matters even more — the stack-failure branch below appends N
+    # territory images instead of 1, so positional order breaks outright.
+    by_campaign: Dict[str, List] = {}
     for campaign in cfg.CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         terrs = cap.list_territories(page, rqst, campaign)
@@ -119,9 +131,11 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
         try:
             cap.stack_images(terr_paths, stack)
             stacks.append(stack)
+            by_campaign[campaign] = [stack]
         except Exception as e:  # noqa: BLE001
             print(f"  {tag} stack failed ({type(e).__name__})", flush=True)
             stacks.extend(terr_paths)  # fall back to individual images
+            by_campaign[campaign] = list(terr_paths)
         notes.append(f"{tag}={len(terr_paths)}")
     if not stacks:
         return []
@@ -129,7 +143,8 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
     # 7/30) — that tag only belongs on the hourly. Strip it.
     clean_slot = (slot or "6:30 PM").replace(" (Final)", "")
     title = sp.thread_title(cfg.THREAD_DISPOSITIONS, clean_slot, today)
-    return [{"title": title, "paths": stacks, "meta": {"note": " ".join(notes)}}]
+    return [{"title": title, "paths": stacks, "kind": cfg.POST_DISPOSITIONS,
+             "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
 def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
@@ -153,6 +168,11 @@ def main(argv=None) -> int:
                     help="post to the live Slack channels")
     ap.add_argument("--preview", action="store_true",
                     help="DM the captured shots to Megan for review (no channel post)")
+    ap.add_argument("--text", action="store_true",
+                    help="also text each campaign's post to its iMessage group "
+                         "(Box -> 'Box B2B', AT&T -> 'ATT B2B Leaders'). Only "
+                         "sends for real alongside --send; otherwise it resolves "
+                         "the groups and reports what WOULD go out.")
     ap.add_argument("--dry-run", action="store_true",
                     help="capture + report only, post nothing (default)")
     ap.add_argument("--headless", action="store_true",
@@ -323,6 +343,8 @@ def main(argv=None) -> int:
         print(f"\nDRY-RUN complete — {len(specs)} shot(s) saved to {out_dir}. "
               f"Nothing posted. Review the PNGs, then re-run with --preview/--send.",
               flush=True)
+        if args.text:
+            _report_text(specs, dry_run=True)
         return 0
 
     results = _post_specs(specs, today, dry_run=False, repost=args.repost)
@@ -330,7 +352,39 @@ def main(argv=None) -> int:
     print(f"\nPosted. ok={ok}", flush=True)
     for r in results:
         print(f"  {r['title']}: ok={r.get('ok')}", flush=True)
+
+    # Text only AFTER Slack succeeded. Slack is the record everyone checks; a
+    # text that fired for a posting nobody can find in the channel would send
+    # leaders looking for something that isn't there.
+    if args.text:
+        if not ok:
+            print("\nTEXT SKIPPED — the Slack post failed, so there's nothing to "
+                  "mirror. Fix the post first.", flush=True)
+            return 1
+        ok = _report_text(specs, dry_run=False) and ok
     return 0 if ok else 1
+
+
+def _report_text(specs: List[Dict], *, dry_run: bool) -> bool:
+    """Route the captured postings to their iMessage groups and print the result.
+
+    Never raises into the caller: a texting failure must not retroactively mark a
+    good Slack post as a failed run — the two are reported separately.
+    """
+    from automations.b2b_dispositions import text_post as tp
+    header = ("TEXT (dry-run — resolving groups, sending nothing)" if dry_run
+              else "TEXT — sending to iMessage groups")
+    print(f"\n{header}", flush=True)
+    try:
+        res = tp.send_specs(specs, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        print(f"  TEXT FAILED outright: {type(e).__name__}: {str(e)[:200]}",
+              flush=True)
+        return False
+    print(tp.describe(res), flush=True)
+    if res.get("errors"):
+        print(f"  -> {len(res['errors'])} group(s) FAILED", flush=True)
+    return bool(res.get("ok"))
 
 
 if __name__ == "__main__":
