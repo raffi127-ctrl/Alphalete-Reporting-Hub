@@ -234,7 +234,24 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     Col A = week number. Returns (first_row, last_row). Dry-run previews only."""
     from automations.recruiting_report.fill import open_by_key
     headers, data = _read_export(xlsx, log=log)
+    # Log EVERY source header, not just the mapped ones. The DD export keeps
+    # gaining columns (2026-08-03: Commission Type / Category / Product), and a
+    # bonus type that moves out of Description silently mis-splits the campaign
+    # P&L instead of failing loud.
+    log("source headers (" + str(len(headers)) + "): " + " | ".join(headers))
     cmap = _map_columns(headers, log=log)
+    try:
+        _e = cmap["E"]
+        _blank = [r for r in data
+                  if not str(r[_e] if _e < len(r) else "").strip()][:4]
+        log(f"rows with a BLANK Description: "
+            f"{sum(1 for r in data if not str(r[_e] if _e < len(r) else '').strip())}"
+            f" of {len(data)}")
+        for r in _blank:
+            log("  blank-desc sample: " + " | ".join(
+                f"{h}={str(v)[:26]}" for h, v in zip(headers, r) if str(v).strip()))
+    except Exception as _e2:  # noqa: BLE001 — diagnostics must never break the load
+        log(f"  (blank-description probe skipped: {_e2!r})")
     wnum = _week_num(week)
 
     # The crosstab's first data row is Tableau's grand-total row (runbook §4.1)
