@@ -900,6 +900,15 @@ def _action_find_group(args: str) -> tuple[bool, str]:
     one at random. Reads names/ids/counts only: no message text, and it sends
     nothing."""
     q = (args or "").strip()
+    # --enqueue routes args through shlex.join, so a multi-word name arrives
+    # QUOTED ("'Box B2B'"). Searching that literal finds nothing and reads as a
+    # real "group not found" — split it back off before matching.
+    try:
+        parts = shlex.split(q)
+        if parts:
+            q = " ".join(parts)
+    except ValueError:
+        pass
     if not q:
         return False, "find_group needs a name fragment (e.g. find_group Box B2B)"
     safe = q.replace("\\", "\\\\").replace('"', '\\"')
@@ -943,10 +952,32 @@ def _action_find_group(args: str) -> tuple[bool, str]:
                        "unanswered on this machine")
     lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
     if not lines:
-        return False, (f"NO chat matches {q!r} by name. Either Lucy isn't in that "
-                       "group yet, the name differs, or this macOS won't expose "
-                       "group display names to AppleScript (then only the chat.db "
-                       "path works, which needs Full Disk Access).")
+        # A bare "not found" can't tell three very different problems apart:
+        # Lucy isn't in the group, the name is spelled differently, or this macOS
+        # won't hand group names to AppleScript at all. Listing the names it CAN
+        # see separates them in one round trip — a non-empty list proves the
+        # lookup mechanism works and points at the real spelling.
+        ok2, seen = _osascript(
+            'tell application "Messages"\n'
+            '  set res to ""\n'
+            '  repeat with c in chats\n'
+            '    set nm to ""\n'
+            '    try\n'
+            '      set nm to name of c as text\n'
+            '    end try\n'
+            '    if nm is not "" then set res to res & nm & " | "\n'
+            '  end repeat\n'
+            '  return res\n'
+            'end tell', timeout=120)
+        names = [n.strip() for n in (seen or "").split("|") if n.strip()] if ok2 else []
+        if names:
+            tail = ("named chats Messages CAN see here (%d): " % len(names)
+                    + ", ".join(sorted(set(names))[:14]))
+        else:
+            tail = ("this machine exposes NO group names to AppleScript at all — "
+                    "name lookup is unusable here; the chat.db path (Full Disk "
+                    "Access) would be the only option")
+        return False, (f"NO chat matches {q!r} by name. " + tail)
     head = f"{len(lines)} match(es) for {q!r}:"
     if len(lines) > 1:
         head += " AMBIGUOUS — a send must refuse to guess."
