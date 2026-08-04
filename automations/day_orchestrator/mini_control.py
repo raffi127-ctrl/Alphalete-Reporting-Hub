@@ -2779,6 +2779,75 @@ def _action_sendimage_fmt(args: str) -> tuple[bool, str]:
                   + " · ASK which FMT label came WITH a picture")
 
 
+def _action_sendimage_loc(args: str) -> tuple[bool, str]:
+    """Is Messages simply unable to READ the file where we keep it?
+
+    Args:  <phone> [image path]
+
+    Addressing form didn't matter; image format didn't matter. The remaining
+    difference between our sends and a human's is WHERE the file lives: ours sit
+    under the repo's output/ tree, and Messages is a sandboxed app. A sandboxed
+    app that can't read a path drops the attachment and reports nothing — which
+    is exactly the symptom (text delivers, picture never appears, no error).
+
+    Copies the same picture into progressively more 'normal' locations and sends
+    each labelled. Whichever arrives tells us where captures have to be staged."""
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "sendimage_loc needs a phone number"
+    phone = _normalize_us_phone(parts[0])
+    if len(parts) > 1:
+        src = Path(parts[1])
+    else:
+        from automations.b2b_dispositions import run as bd_run
+        src = (bd_run.OUTPUT_DIR / dt.date.today().isoformat() / "hourly_at-t.png")
+    if not src.exists():
+        return False, f"no image at {src}"
+
+    home = Path.home()
+    targets = [
+        ("L1 repo output (current)", src),
+        ("L2 home folder", home / "lucy_img_test.png"),
+        ("L3 Pictures", home / "Pictures" / "lucy_img_test.png"),
+        ("L4 Downloads", home / "Downloads" / "lucy_img_test.png"),
+        ("L5 tmp", Path("/tmp") / "lucy_img_test.png"),
+    ]
+    out = []
+    for label, path in targets:
+        try:
+            if path != src:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(src, path)
+                try:
+                    os.chmod(path, 0o644)
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception as e:  # noqa: BLE001
+            out.append(f"{label.split()[0]}: copy failed {str(e)[:40]}")
+            continue
+        p = str(path).replace("\\", "\\\\").replace('"', '\\"')
+        _osascript(
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            f'  send "LOC {label}" to buddy "{phone}" of service id svcId\n'
+            'end tell', timeout=120)
+        time.sleep(3)
+        ok, res = _osascript(
+            f'set f to (POSIX file "{p}") as alias\n'
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            f'  send f to buddy "{phone}" of service id svcId\n'
+            'end tell', timeout=180)
+        out.append("%s: %s" % (label.split()[0], "no error" if ok else "ERR " + res[:40]))
+        time.sleep(12)
+    return True, (" · ".join(out) + " · ASK which LOC label came WITH a picture")
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -2854,6 +2923,7 @@ ACTIONS = {
     "text_dispositions": _action_text_dispositions,
     "sendimage_diag": _action_sendimage_diag,
     "sendimage_fmt": _action_sendimage_fmt,
+    "sendimage_loc": _action_sendimage_loc,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
