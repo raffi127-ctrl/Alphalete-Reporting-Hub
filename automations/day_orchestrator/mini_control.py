@@ -110,6 +110,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
+                    "fda_check",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -2848,6 +2849,34 @@ def _action_sendimage_loc(args: str) -> tuple[bool, str]:
     return True, (" · ".join(out) + " · ASK which LOC label came WITH a picture")
 
 
+def _action_fda_check(args: str) -> tuple[bool, str]:
+    """READ-ONLY: does THIS process have Full Disk Access? Sends nothing.
+
+    Text sends work and attachments silently vanish. The two need different
+    things: scripting Messages needs Automation (granted 2026-08-03), but an
+    attachment makes Messages copy the file into ~/Library/Messages/Attachments,
+    which is TCC-protected. If the poller lacks Full Disk Access that copy fails
+    and the picture is dropped with no error — matching every result so far
+    (addressing form, image format and file location all ruled out).
+
+    ~/Library/Messages/chat.db is the standard FDA probe: readable = granted."""
+    import sqlite3
+    db = Path.home() / "Library" / "Messages" / "chat.db"
+    out = [f"chat.db exists: {db.exists()}"]
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+        con.execute("SELECT COUNT(*) FROM chat").fetchone()
+        con.close()
+        out.append("FULL DISK ACCESS: GRANTED for this process")
+        out.append("=> FDA is NOT the reason attachments are being dropped")
+    except Exception as e:  # noqa: BLE001
+        out.append(f"FULL DISK ACCESS: DENIED ({type(e).__name__}: {str(e)[:80]})")
+        out.append("=> LIKELY CAUSE. A human at Lucy 2: System Settings ▸ Privacy "
+                   "& Security ▸ Full Disk Access ▸ + ▸ add the poller's python "
+                   "(the same binary the LaunchAgent runs), then restart_poller.")
+    return True, " · ".join(out)
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -2924,6 +2953,7 @@ ACTIONS = {
     "sendimage_diag": _action_sendimage_diag,
     "sendimage_fmt": _action_sendimage_fmt,
     "sendimage_loc": _action_sendimage_loc,
+    "fda_check": _action_fda_check,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
