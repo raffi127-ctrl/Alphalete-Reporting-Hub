@@ -2691,6 +2691,94 @@ def _action_sendimage_diag(args: str) -> tuple[bool, str]:
                     "'no error' here does NOT mean it was delivered")
 
 
+def _action_sendimage_fmt(args: str) -> tuple[bool, str]:
+    """Does Messages reject the IMAGE ITSELF rather than the send?
+
+    Args:  <phone> [image path]
+
+    Every AppleScript addressing form failed identically (8 labels delivered, 0
+    images), which points away from "how we send" and toward "what we send".
+    Texas de Brazil never handed Messages a raw artifact either — it rendered
+    fresh RGB PNGs at 100 dpi and trimmed them. Our disposition shots are
+    Playwright screenshots stitched by PIL: likely RGBA, and very tall.
+
+    So this sends the SAME picture four ways — as captured, flattened to RGB,
+    as JPEG, and downscaled — and reports each file's real mode/dimensions/bytes.
+    Whichever labels arrive with a picture tells us the constraint. 1:1 only."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "sendimage_fmt needs a phone number"
+    phone = _normalize_us_phone(parts[0])
+    if len(parts) > 1:
+        src = Path(parts[1])
+    else:
+        from automations.b2b_dispositions import run as bd_run
+        src = (bd_run.OUTPUT_DIR / dt.date.today().isoformat() / "hourly_at-t.png")
+    if not src.exists():
+        return False, f"no image at {src}"
+
+    try:
+        from PIL import Image
+    except ImportError:
+        return False, "Pillow not installed on this machine"
+
+    im = Image.open(src)
+    facts = "src mode=%s size=%dx%d bytes=%d" % (
+        im.mode, im.size[0], im.size[1], src.stat().st_size)
+
+    work = src.parent
+    made = []   # (label, path)
+    made.append(("c1 as-captured", src))
+
+    rgb = im.convert("RGB")
+    p2 = work / "fmt_rgb.png"
+    rgb.save(p2)
+    made.append(("c2 flattened RGB png", p2))
+
+    p3 = work / "fmt.jpg"
+    rgb.save(p3, "JPEG", quality=85)
+    made.append(("c3 jpeg", p3))
+
+    # Very tall images are the other suspect: a stitched rep-list + gap card can
+    # run thousands of pixels down, and Messages is fussy about extreme ratios.
+    small = rgb.copy()
+    small.thumbnail((900, 1600))
+    p4 = work / "fmt_small.jpg"
+    small.save(p4, "JPEG", quality=85)
+    made.append(("c4 jpeg <=900x1600", p4))
+
+    out = []
+    for label, path in made:
+        p = str(path).replace("\\", "\\\\").replace('"', '\\"')
+        info = ""
+        try:
+            with Image.open(path) as x:
+                info = "%s %dx%d %dkb" % (x.mode, x.size[0], x.size[1],
+                                          path.stat().st_size // 1024)
+        except Exception:  # noqa: BLE001
+            pass
+        _osascript(
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            f'  send "FMT {label} — {info}" to buddy "{phone}" of service id svcId\n'
+            'end tell', timeout=120)
+        time.sleep(3)
+        ok, res = _osascript(
+            f'set f to (POSIX file "{p}") as alias\n'
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            f'  send f to buddy "{phone}" of service id svcId\n'
+            'end tell', timeout=180)
+        out.append("%s: %s" % (label.split()[0], "no error" if ok else "ERR"))
+        time.sleep(12)
+    return True, (facts + " · " + " · ".join(out)
+                  + " · ASK which FMT label came WITH a picture")
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -2765,6 +2853,7 @@ ACTIONS = {
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
     "sendimage_diag": _action_sendimage_diag,
+    "sendimage_fmt": _action_sendimage_fmt,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
