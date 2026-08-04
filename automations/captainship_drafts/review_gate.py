@@ -529,6 +529,72 @@ def send_reviewed(today: dt.date, verbose: bool = True) -> int:
     return subprocess.call(cmd)
 
 
+# --------------------------------------------------------------------------
+# 5. the deadline
+# --------------------------------------------------------------------------
+def ensure_posted(today: dt.date, channel: Optional[str] = None,
+                  verbose: bool = True) -> int:
+    """THE 11:00 DEADLINE (Eve, 2026-08-04: "necesito que estos drafts se armen
+    como tarde a las 11 am central time"). If the day's reports are already up
+    for review, do nothing at all. If they are not, build them with whatever the
+    boxes have and post them.
+
+    WHY A DEADLINE AND NOT AN EARLIER SLOT. The normal path is not slow: on a
+    good day the link is up between 07:20 and 09:03. What breaks the promise is a
+    dependency that FAILS and comes back hours later, dragging the rest of the
+    chain with it — captainship_churn died at 06:24 on 2026-07-31 and retried at
+    10:28, so the reports posted at 11:20; abp_6days failed at 11:49 on
+    2026-07-30 and the day's post landed at 12:00; on 2026-07-29 the drafts never
+    ran at all and nobody was told. Moving the chain earlier in the morning would
+    not have saved a single one of those days. A deadline does, and it costs no
+    other report its slot.
+
+    HELD TO THE SAME STANDARD AS THE 4am BUILD: `run.py --dry-run` only writes
+    previews to output/ — it mails nobody — and the twelve reports still go out
+    only on a checkmark from Evelyn or Jolie. This makes them ASKABLE by 11:00;
+    it does not make them sent.
+
+    Reuses previews already on disk. On 2026-07-30 the build succeeded and only
+    the review post failed; re-rendering twelve reports to fix a failed upload
+    would spend 20 minutes re-deciding something already decided.
+
+    IDEMPOTENT, and that is what makes it safe to call from a 15-minute agent: a
+    post for today — approved or not — means the day is asked, so this returns
+    without touching Slack. Only a day with NO post at all builds anything.
+    """
+    msg = _find_post(today, channel)
+    if msg is not None:
+        if verbose:
+            print(f"— {today:%Y-%m-%d} is already up for review "
+                  f"(ts={msg['ts']}); nothing to do", flush=True)
+        return 0
+    have = preview_htmls(today)
+    if not have:
+        if verbose:
+            print(f"— no previews for {today:%Y-%m-%d} and nothing posted: "
+                  f"building them now (deadline)", flush=True)
+        cmd = [sys.executable, "-u", "-m", "automations.captainship_drafts.run",
+               "--dry-run", "--date", today.isoformat()]
+        print(f"→ {' '.join(cmd)}", flush=True)
+        rc = subprocess.call(cmd)
+        if rc != 0:
+            print(f"✗ the deadline build failed (exit {rc}) — nothing posted. "
+                  f"The next tick tries again.", flush=True)
+            return rc
+        have = preview_htmls(today)
+        if not have:
+            print("✗ the build reported success but wrote no previews — "
+                  "nothing to post.", flush=True)
+            return 1
+    else:
+        if verbose:
+            print(f"— {len(have)} preview(s) already on disk, never posted: "
+                  f"posting them (deadline)", flush=True)
+    post_review(upload_pdf(build_pdf(today), description=eml_digest(today)),
+                today, channel)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--post", action="store_true",
@@ -554,6 +620,12 @@ def main(argv=None) -> int:
                     help="say in the thread that the day ended unapproved, so "
                          "a day nobody reacted to isn't silent. Says it once, "
                          "and nothing at all if the day was approved.")
+    ap.add_argument("--ensure-posted", action="store_true",
+                    help="THE DEADLINE. No-op if the day's reports are already "
+                         "up for review; otherwise build them with whatever the "
+                         "boxes have and post them. Mails nobody — the "
+                         "checkmark still does that. Driven by "
+                         "deploy/captainship_review.sh at 10:00 CT.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -567,6 +639,11 @@ def main(argv=None) -> int:
     if args.pdf_only:
         build_pdf(today)
         return 0
+    # Before --post: the deadline agent passes only this flag, but keeping it
+    # ahead of --post means a queued `--post --ensure-posted` can never turn
+    # into a second post for a day that is already asked.
+    if args.ensure_posted:
+        return ensure_posted(today, args.channel)
     # Checked BEFORE --post on purpose. The scheduler entry's base_args are
     # ["--post"], so `lucy rerun captainship_drafts_review --refresh` arrives
     # here as "--post --refresh" and has to mean refresh — otherwise the one

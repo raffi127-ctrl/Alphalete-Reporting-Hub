@@ -78,6 +78,40 @@ if [ "$HOUR" -ge "$END_HOUR" ]; then
     exit 0
 fi
 
+# --- THE DEADLINE ---------------------------------------------------------
+# "Necesito que estos drafts se armen como tarde a las 11 am central time"
+# (Eve, 2026-08-04). Past this hour, a day with nothing up for review gets built
+# from whatever is in the boxes and posted -- it does not keep waiting for a
+# straggler.
+#
+# WHY A DEADLINE AND NOT AN EARLIER SLOT: the normal path is not slow (the link
+# lands 07:20-09:03 on a good day). What breaks the promise is a dependency that
+# fails and returns hours later: captainship_churn died 06:24 and retried 10:28
+# on 2026-07-31 -> posted 11:20; abp_6days failed 11:49 on 2026-07-30 -> posted
+# 12:00; on 2026-07-29 the drafts never ran and nobody was told. Reordering the
+# morning would not have saved one of those days, and it would have pushed eight
+# office-metrics posts back to pay for it. This costs no other report its slot.
+#
+# 10:00 and not 10:45: the build takes 11-20 min normally, 31 on a bad day and
+# 57 min once (2026-08-04, against a loaded mini). 10:00 keeps even that inside
+# the 11:00 promise.
+#
+# NOT ON MONDAY (date +%u = 1). Monday's reports are built at 14:30 by
+# board_catchup.sh on purpose: last week's Sunday only lands in the sources
+# through Monday afternoon, so a 10:00 Monday build would post an incomplete
+# Sunday. Changing that is a data decision, not a scheduling one.
+#
+# SAFE ON EVERY TICK: --ensure-posted is a no-op when the day is already up for
+# review (approved or not), so this cannot post twice, and it mails nobody --
+# the twelve reports still go out only on a checkmark.
+DEADLINE_HHMM=1000
+NOW_HHMM=$(date +%H%M)
+if [ "$(date +%u)" != "1" ] && [ "${NOW_HHMM#0}" -ge "$DEADLINE_HHMM" ]; then
+    echo "[$(date)] deadline check (>= ${DEADLINE_HHMM})" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.captainship_drafts.review_gate \
+        --ensure-posted >> "$LOG_FILE" 2>&1
+fi
+
 echo "[$(date)] check (mode: ${MODE:-report-only})" >> "$LOG_FILE"
 
 "$VENV_PY" -u -m automations.captainship_drafts.review_gate --check $MODE >> "$LOG_FILE" 2>&1
