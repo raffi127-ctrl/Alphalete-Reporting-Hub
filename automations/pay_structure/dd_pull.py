@@ -52,12 +52,67 @@ BONUS_MARKERS = ("bonus", "captains", "lead disposition", "converged", "kwh",
                  "guarantee", "disposition", "pilot", "adjustment", "chargeback")
 
 
-def pull(out_path: "Optional[Path]" = None, page=None):
-    """Download the ORG DD Detail crosstab. Returns the path. Tableau crosstab
-    exports are UTF-16 TAB-delimited CSV (not xlsx), so the file is .csv."""
+PW_FIELD = "Processed Week"    # the DD DETAIL (ORG) filter Raf uses (Mondays)
+
+
+def _settled_processed_week(weeks_back: int = 3):
+    """A SETTLED Processed Week (a Monday `weeks_back` weeks ago). Recent weeks are
+    partial (deals post over ~2–3 weeks), so default to 3 weeks back where the full
+    payout has posted."""
+    import datetime as _dt
+    today = _dt.date.today()
+    monday = today - _dt.timedelta(days=today.weekday())
+    return monday - _dt.timedelta(weeks=weeks_back)
+
+
+def _pw_candidates(d) -> "List[str]":
+    """Tableau URL-filter value formats to try for a Processed Week date (naming
+    varies per view + a wrong value silently yields an empty viz, so try several)."""
+    import datetime as _dt
+    if isinstance(d, str):
+        for f in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+            try:
+                d = _dt.datetime.strptime(d, f).date()
+                break
+            except ValueError:
+                continue
+    if not hasattr(d, "strftime"):
+        return [str(d)]
+    return [d.strftime("%m/%d/%Y"), d.strftime("%Y-%m-%d"),
+            "{}/{}/{}".format(d.month, d.day, d.year)]   # no leading zeros
+
+
+def _rows_ok(path: "Path", minimum: int = 200) -> bool:
+    """A filter that matches nothing yields an empty/tiny crosstab — reject it."""
+    try:
+        return len(_read_rows(path)) >= minimum
+    except Exception:
+        return False
+
+
+def pull(out_path: "Optional[Path]" = None, page=None, processed_week=None):
+    """Download the ORG DD Detail crosstab for a SETTLED Processed Week (default 3
+    weeks back; pass `processed_week` to override). Returns the path. Tableau
+    crosstab exports are UTF-16 TAB-delimited CSV. Tries candidate filter formats
+    and validates the result isn't empty; falls back to the unfiltered (latest,
+    possibly partial) view only if every candidate fails."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.override_bulletin.pulls import _with_filter
     out = Path(out_path) if out_path else (OUTPUT_DIR / "ORG DD Detail.csv")
     out.parent.mkdir(parents=True, exist_ok=True)
+    pw = processed_week if processed_week is not None else _settled_processed_week()
+    for val in _pw_candidates(pw):
+        try:
+            url = _with_filter(DD_VIEW, PW_FIELD, val)
+            download_crosstab_patchright(url, DD_SHEET, out, page=page)
+            if _rows_ok(out):
+                print("pulled Processed Week filter {!r} -> {} rows".format(
+                    val, len(_read_rows(out))))
+                return out
+            print("  filter {!r} yielded too few rows — trying next".format(val))
+        except Exception as e:            # noqa: BLE001
+            print("  filter {!r} failed ({}) — trying next".format(val, str(e).splitlines()[0][:80]))
+    print("!! all Processed Week filters failed — falling back to UNFILTERED (latest week)")
     download_crosstab_patchright(DD_VIEW, DD_SHEET, out, page=page)
     return out
 
@@ -296,14 +351,15 @@ def _read_rows(path: Path):
     return rows
 
 
-def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
+def run(write: bool = False, src: "Optional[Path]" = None,
+        processed_week=None) -> dict:
     """Pull (or read `src`), parse, and (if write) persist per-office gross
     revenue. Returns the parsed {office_key: {product: gross}} for the mapped
     offices."""
     from automations.pay_structure import offices as _po
     import datetime as _dt
     pulled = _dt.date.today().strftime("%b %d, %Y").replace(" 0", " ")  # no %-d (Windows)
-    path = src or pull()
+    path = src or pull(processed_week=processed_week)
     rows = _read_rows(path)
     by_owner = gross_revenue_by_office(rows)
     activation = activation_by_office(rows)
@@ -470,11 +526,14 @@ if __name__ == "__main__":
     ap.add_argument("--src", help="parse an existing crosstab file instead of pulling")
     ap.add_argument("--inspect", metavar="OWNER", help="dump the last-saved crosstab's "
                     "real structure for one owner (no download/write); for modeling")
+    ap.add_argument("--week", metavar="YYYY-MM-DD", help="pull a specific Processed "
+                    "Week (Monday) instead of the default settled (3-weeks-back) one")
     a = ap.parse_args()
     if a.inspect:
         inspect(a.inspect, src=Path(a.src) if a.src else None)
     else:
-        res = run(write=a.write, src=Path(a.src) if a.src else None)
+        res = run(write=a.write, src=Path(a.src) if a.src else None,
+                  processed_week=a.week)
         print("parsed gross revenue for {} office(s):".format(len(res)))
         for k, v in res.items():
             if "main" in v:                 # skip the _org reference row (no 'main')
