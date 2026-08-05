@@ -48,6 +48,7 @@ except Exception:
 
 from automations.rashad_metrics.knocks_pull import DEFAULT_OFFICE, pull_office_knocks
 from automations.total_knocks import render as _render
+from automations.total_knocks.pull import COL_TOTAL_KNOCKS
 from automations.total_knocks.pull import central_today
 
 # Same two posts, same order, same emoji+title strings as Raf's
@@ -95,11 +96,19 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
         print("[rashad_knocks] ✅ Finished (no data).", flush=True)
         return 0
 
-    # 2. Render both images straight from the in-memory rows — no Sheet read,
-    #    no Sheet write. Reuses Raf's render via its optional rows= param.
-    img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows)
+    # 2. Render straight from the in-memory rows — no Sheet read/write. A
+    #    gaps-only (NDS/wireless) office has no Disposition, so its rows carry no
+    #    knock counts (COL_TOTAL_KNOCKS absent) — render ONLY Time Gaps then, since
+    #    a Total Knocks image would be all blanks.
+    gaps_only = COL_TOTAL_KNOCKS not in rows[0]
+    posts = []
+    if not gaps_only:
+        img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows)
+        posts.append((img_tk, POST_TOTAL_KNOCKS))
     img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
-    print(f"[rashad_knocks] Rendered -> {img_tk} ; {img_tg}", flush=True)
+    posts.append((img_tg, POST_TIME_GAPS))
+    print(f"[rashad_knocks] Rendered {'gaps-only' if gaps_only else 'both'} -> "
+          f"{'; '.join(str(p[0]) for p in posts)}", flush=True)
 
     if dry_run:
         print("[rashad_knocks] --dry-run — rendered only, NO Slack post.",
@@ -107,11 +116,10 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
         print("[rashad_knocks] ✅ Finished (dry-run).", flush=True)
         return 0
 
-    # 3. Post both to the Metrics thread (honors METRICS_CHANNEL_ID).
+    # 3. Post to the Metrics thread (honors METRICS_CHANNEL_ID).
     from automations.shared.slack_metrics_post import post_reply_with_image
     slack_today = central_today()   # post into TODAY's thread (Central)
-    for img, (label, emoji) in ((img_tk, POST_TOTAL_KNOCKS),
-                                (img_tg, POST_TIME_GAPS)):
+    for img, (label, emoji) in posts:
         comment = f"{label} — {target.strftime('%b')} {target.day}"
         resp = post_reply_with_image(Path(img), comment=comment,
                                      react_emoji=emoji, today=slack_today)

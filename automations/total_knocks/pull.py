@@ -236,10 +236,6 @@ def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dic
     if verbose and (result.get("status") != 200 or not rows):
         print(f"  ⚠ Time Tracker fetch: status={result.get('status')} "
               f"rows={len(rows)} {result.get('raw', '')}", flush=True)
-    if verbose and rows:  # TEMP PROBE: learn the JSON field names for gaps-only rows
-        print(f"  [TT-PROBE] keys={list(rows[0].keys())}", flush=True)
-        print(f"  [TT-PROBE] row0={ {k: rows[0].get(k) for k in rows[0]} }",
-              flush=True)
     out = {}
     for row in rows:
         rid = str(row.get("id", "")).strip()
@@ -249,6 +245,47 @@ def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dic
             COL_GAPS: _gaps_count(row.get("gaps")),
             COL_TOTAL_GAPS: int(row.get("totalGapMinutes") or 0),
         }
+    return out
+
+
+def _scrape_time_tracker_rows(page, rqst: str, mdy: str,
+                              verbose: bool = True) -> list[dict]:
+    """Time Tracker (p=510) as STANDALONE Time-Gaps rows — rep name + knock times
+    + gaps — for an office whose Disposition (p=89) is empty (a wireless/NDS owner
+    with no door-knock campaign, so p=89 has no rows to hang the gaps on). Same
+    JSON as _scrape_time_tracker, but keeps the identity columns the disposition
+    normally supplies (name/first/last knock) so render_time_gaps can draw the
+    table on its own. Fields from the live endpoint: name, firstKnockDate,
+    lastKnockDate, gaps, totalGapMinutes, id."""
+    result = page.evaluate(
+        """async ({rqst, mdy}) => {
+            const url = `https://v2.ownerville.com/components/telemapper/`
+                + `report_timeTracker.cfc?method=getTimeTrackingData&rqst=${rqst}`
+                + `&dateToSearch=${encodeURIComponent(mdy)}&returnFormat=json`;
+            try {
+                const r = await fetch(url, {credentials: 'include'});
+                const text = await r.text();
+                try { return {status: r.status, data: (JSON.parse(text).data) || []}; }
+                catch (e) { return {status: r.status, data: [], raw: text.slice(0, 160)}; }
+            } catch (e) { return {status: 0, data: [], raw: String(e).slice(0, 160)}; }
+        }""",
+        {"rqst": rqst, "mdy": mdy})
+    raw = result.get("data", []) or []
+    out = []
+    for row in raw:
+        rid = str(row.get("id", "")).strip()
+        if not rid or rid == "0":
+            continue
+        out.append({
+            COL_ID: rid,
+            COL_REP: (row.get("name") or "").strip(),
+            COL_FIRST_KNOCK: row.get("firstKnockDate") or "",
+            COL_LAST_KNOCK: row.get("lastKnockDate") or "",
+            COL_GAPS: _gaps_count(row.get("gaps")),
+            COL_TOTAL_GAPS: int(row.get("totalGapMinutes") or 0),
+        })
+    if verbose:
+        print(f"-> Time Tracker standalone gap rows: {len(out)} rep(s)", flush=True)
     return out
 
 

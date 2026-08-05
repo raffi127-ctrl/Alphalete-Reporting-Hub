@@ -97,6 +97,7 @@ def pull_office_knocks(office_name: Optional[str] = None,
         print(f"-> Office '{office_name}' resolves to canonical '{canonical}'",
               flush=True)
 
+    gap_rows: list = []   # Time-Tracker-sourced rows for a gaps-only (NDS) office
     with ownerville_session(verbose=verbose) as page:
         # Bound every op so a stuck page can't hang the run (same guard
         # run_all_owners uses).
@@ -143,6 +144,14 @@ def pull_office_knocks(office_name: Optional[str] = None,
             if verbose:
                 print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",
                       flush=True)
+            # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
+            # rows and there's nothing to hang the gaps on. Build Time-Gaps rows
+            # straight from the Time Tracker (name + knock times live in its JSON)
+            # while the session is still open. Only the Time Gaps board renders;
+            # knocks_run skips Total Knocks when there's no knock data.
+            if not rows:
+                gap_rows = knocks._scrape_time_tracker_rows(
+                    page, rqst, mdy, verbose=verbose)
         finally:
             # ALWAYS exit impersonation before the session closes so the
             # next run / other reports start from master, not a stuck
@@ -152,6 +161,14 @@ def pull_office_knocks(office_name: Optional[str] = None,
                     print("  ✓ Exited impersonation", flush=True)
             elif verbose:
                 print("  ⚠ Exit-impersonation call didn't succeed", flush=True)
+
+    # Gaps-only (NDS/wireless) office: no disposition rows — return the
+    # Time-Tracker rows so ONLY the Time Gaps board renders.
+    if not rows and gap_rows:
+        if verbose:
+            print(f"-> Disposition empty; {len(gap_rows)} Time-Tracker gap "
+                  f"row(s) (gaps-only office).", flush=True)
+        return target, gap_rows
 
     # --- Merge gaps onto disposition rows by badge ID (same as Raf's) -----
     matched = 0

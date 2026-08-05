@@ -252,9 +252,11 @@ SECTION_OVERRIDES: dict = {
     # Wireless so the internet half can't be dropped). An all-blank thread "looks
     # horrible" (Megan 2026-08-04), so this office posts NO metrics thread — its
     # reporting is its trackers (NDS + VZ+FTR SCI). Empty tuple = post nothing.
-    # Revisit once Time Gaps can be sourced from the Time Tracker (his ownerville
-    # Disposition has no wireless campaign) — then pin it to just that board.
-    "isaiah": (),
+    # Time Gaps now sources from the Time Tracker (his Disposition has no wireless
+    # campaign), so he posts just that board for now. The NDS-workbook boards
+    # (order log / cancels / 6+ / disconnects / wireless churn / rep activations /
+    # tableau — from NDS-SN RES-ATT-OOF) get added here once wired.
+    "isaiah": ("knocks_gaps",),
 }
 
 
