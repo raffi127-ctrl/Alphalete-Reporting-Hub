@@ -45,6 +45,12 @@ COL_DDWEEK = "cl.DD Week"           # DD week ending (the dropdown Raf wants)
 PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV",
                       "DIRECTV STREAM", "VOICE"}
 
+# Description substrings that mark a BONUS / adjustment line (not a sellable
+# product) — excluded from the product + weekly lists. (Raf: "whenever it sees
+# Captain bonus, just ignore it.")
+BONUS_MARKERS = ("bonus", "captains", "lead disposition", "converged", "kwh",
+                 "guarantee", "disposition", "pilot", "adjustment", "chargeback")
+
 
 def pull(out_path: "Optional[Path]" = None, page=None):
     """Download the ORG DD Detail crosstab. Returns the path. Tableau crosstab
@@ -199,6 +205,46 @@ COL_ACTIVATION = "cl.Activation Date"    # real crosstab header uses a SPACE, no
 COL_ORDER_TYPE = "cl.Order Type"         # "Auto Bill Pay" vs "No Auto Bill Pay"
 
 
+def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Dict[str, float]]]":
+    """{owner: {dd_week: {'CATEGORY | Description': Total$ mode}}} for a campaign —
+    every product description an owner got each DD WEEK (bonuses excluded). Powers
+    Raf's 'pick a DD week' dropdown → that week's sale types + payouts. AT&T Fiber
+    is the RES-ATT campaign; DD week = cl.DD Week (Saturday-ending for fiber)."""
+    acc: "Dict[str, Dict[str, Dict[str, List[float]]]]" = collections.defaultdict(
+        lambda: collections.defaultdict(lambda: collections.defaultdict(list)))
+    for r in rows:
+        if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
+            continue
+        cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
+        if not desc or any(b in desc.lower() for b in BONUS_MARKERS):
+            continue
+        owner = str(r.get(COL_OWNER, "") or "").strip()
+        week = str(r.get(COL_DDWEEK, "") or "").strip()
+        tot = _num(r.get(COL_TOTAL))
+        if (not owner or owner.lower() in ("nan", "null") or "total" in owner.lower()
+                or not week or tot is None or tot <= 0):
+            continue
+        acc[owner][week]["{} | {}".format(cat, desc)].append(tot)
+    return {owner: {wk: {d: _mode(v) for d, v in descs.items()}
+                    for wk, descs in weeks.items()}
+            for owner, weeks in acc.items()}
+
+
+def _cap_weeks(weeks: "Dict[str, dict]", keep: int = 12) -> "Dict[str, dict]":
+    """Keep only the most recent `keep` DD weeks (keys like '7/25/2026')."""
+    import datetime as _dt
+
+    def _key(w):
+        for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+            try:
+                return _dt.datetime.strptime(w, fmt)
+            except ValueError:
+                continue
+        return _dt.datetime.min
+    return {w: weeks[w] for w in sorted(weeks, key=_key, reverse=True)[:keep]}
+
+
 def activation_by_office(rows) -> "Dict[str, float]":
     """{owner: activation_rate 0-1} — fraction of product lines that have an
     Activation Date. A first-pass proxy from the same DD pull; can be swapped for
@@ -247,8 +293,10 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
     rows = _read_rows(path)
     by_owner = gross_revenue_by_office(rows)
     activation = activation_by_office(rows)
+    weekly = weekly_by_office(rows)                     # {owner: {week: {desc: $}}}
     # key by office (owner -> office_key)
     by_office: Dict[str, dict] = {}
+    weekly_office: Dict[str, dict] = {}
     for owner, gross in by_owner.items():
         office = _po.for_owner(owner)
         if office:
@@ -256,6 +304,8 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
             by_office[office.key] = {"raw": raw, "main": main_products(gross),
                                      "activation": activation.get(owner),
                                      "pulled": pulled}
+            if owner in weekly:
+                weekly_office[office.key] = weekly[owner]
     # org-wide reference payouts (every product anyone sells), for the editor's
     # per-sale-type ICD payout when an office has no own value for a product.
     # Energy (box/base) is merged in — it's keyed by campaign, not description.
@@ -268,6 +318,18 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
                               "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
         from automations.pay_structure import store as _st
         _st.save_gross_revenue(by_office)
+        # accumulate per-week sale types: merge THIS pull's week(s) into the stored
+        # history (a pull only holds ~1 DD week), keep the most recent 12 weeks.
+        try:
+            existing = _st.load_weekly_all()
+            merged: Dict[str, dict] = {}
+            for ok in set(existing) | set(weekly_office):
+                wk = dict(existing.get(ok, {}))
+                wk.update(weekly_office.get(ok, {}))     # new week wins for same week
+                merged[ok] = _cap_weeks(wk, 12)
+            _st.save_weekly(merged)
+        except Exception as e:            # noqa: BLE001 — weekly is additive, never fail the pull
+            print("weekly accumulate skipped: {}".format(str(e)[:120]))
     return by_office
 
 

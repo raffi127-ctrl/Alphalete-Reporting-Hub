@@ -11,3 +11,4 @@ google-auth>=2.20
 # rebuild 2026-07-26d: DIRECTV mapper + hide no-payout products — reboot to reload.
 # rebuild 2026-07-26e: campaign-aware B2B simulator + IF/OOF fold — reboot to reload.
 # rebuild 2026-07-26f: MERGE code sources so secrets logins work — reboot to reload.
+# rebuild 2026-08-05: per-week sale types + DD week dropdown — reboot to reload.

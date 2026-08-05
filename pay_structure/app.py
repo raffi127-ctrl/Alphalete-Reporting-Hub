@@ -189,23 +189,51 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     st.divider()
     st.markdown("### 📊 Gross profit calculator")
     try:
-        gr = store.load_gross_revenue(office.key)
+        gr = store.load_gross_revenue(office.key) or {}
     except Exception:                    # noqa: BLE001
         gr = {}
-    raw = gr.get("raw", {}) or {}
-    # AT&T Fiber products = the office's DD products, EXCLUDING energy (ELE); bonuses
-    # are already excluded by the pull. The product name IS the DD description.
-    fiber = {}
-    for key, payout in raw.items():
-        cat, _, desc = str(key).partition(" | ")
-        if cat.strip().upper() == "ELE" or not desc:
-            continue
-        try:
-            fiber[desc] = float(payout)
-        except (TypeError, ValueError):
-            continue
-    act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
+    try:
+        weeks = store.load_weekly(office.key) or {}
+    except Exception:                    # noqa: BLE001
+        weeks = {}
 
+    def _pull_fiber(mapping):
+        """{DD 'CAT | Desc': payout} -> {Description: payout}, dropping energy."""
+        out = {}
+        for key, payout in (mapping or {}).items():
+            cat, _, desc = str(key).partition(" | ")
+            if cat.strip().upper() == "ELE" or not desc:
+                continue
+            try:
+                out[desc] = float(payout)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    # Raf's DD-week dropdown: pick a DD week ending → that week's sale types (they
+    # accumulate from each pull). Fall back to the office's all-time DD products
+    # until weekly data exists.
+    import datetime as _dt
+
+    def _wk_key(w):
+        for f in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+            try:
+                return _dt.datetime.strptime(w, f)
+            except ValueError:
+                continue
+        return _dt.datetime.min
+
+    week_opts = sorted(weeks.keys(), key=_wk_key, reverse=True)
+    if week_opts:
+        wk = st.selectbox("DD week ending (AT&T Residential)", week_opts, index=0,
+                          key=f"gp_wk_{office.key}")
+        fiber = _pull_fiber(weeks.get(wk))
+        src_note = "DD week ending **{}**".format(wk)
+    else:
+        fiber = _pull_fiber(gr.get("raw"))
+        src_note = "your DD (last pulled {})".format(gr.get("pulled", "—"))
+
+    act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
                         ["$ per sale", "% of gross revenue"], horizontal=True,
@@ -216,10 +244,9 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
         st.caption("No AT&T Fiber DD products for your office yet — this fills in "
                    "after the next DD pull.")
         return
-    st.caption("Your AT&T Fiber products, straight from the DD (last pulled {}). "
-               "**Gross revenue** = what SCI/AT&T pays your office per activated "
-               "sale — edit it freely. Enter **# sales** to project the total."
-               .format(gr.get("pulled", "—")))
+    st.caption("Your AT&T Fiber sale types from {} — **gross revenue** is what "
+               "SCI/AT&T pays your office per activated sale (edit freely). Enter "
+               "**# sales** to project the total.".format(src_note))
 
     tax = gp.PAYROLL_TAX
     ss = st.session_state.setdefault("gpsim_" + office.key, {})   # scratch inputs

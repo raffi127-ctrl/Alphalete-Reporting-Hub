@@ -392,6 +392,61 @@ def load_gross_revenue(office_key: str) -> dict:
     return {}
 
 
+_WEEKLY_TAB = "Pay Structure Weekly"
+
+
+def _open_weekly_ws(sheet_id: str, create: bool):
+    ss = _open_ss(sheet_id)
+    try:
+        return _retry(lambda: ss.worksheet(_WEEKLY_TAB))
+    except Exception:
+        if not create:
+            return None
+        ws = _retry(lambda: ss.add_worksheet(title=_WEEKLY_TAB, rows=40, cols=2))
+        _retry(lambda: ws.update([["Office", "Per-week sale types (JSON) — set by dd_pull"]],
+                                 range_name="A1"))
+        return ws
+
+
+def save_weekly(by_office: "Dict[str, dict]") -> None:
+    """Write each office's per-DD-week sale types: {office_key: {dd_week: {desc: $}}}."""
+    sid = _sheet_id()
+    if not sid:
+        raise SaveError("No pay-structure sheet configured.")
+    ws = _open_weekly_ws(sid, create=True)
+    rows = [["Office", "Per-week sale types (JSON) — set by dd_pull"]]
+    for k, v in by_office.items():
+        rows.append([k, json.dumps(v)])
+    _retry(lambda: ws.clear())
+    _retry(lambda: ws.update(rows, range_name="A1", value_input_option="RAW"))
+
+
+def load_weekly_all() -> "Dict[str, dict]":
+    """{office_key: {dd_week: {desc: $}}} for every office (one Sheet read)."""
+    sid = _sheet_id()
+    if not sid:
+        return {}
+    out: "Dict[str, dict]" = {}
+    try:
+        ws = _open_weekly_ws(sid, create=False)
+        if ws is None:
+            return {}
+        for row in (_retry(lambda: ws.get_all_values()) or [])[1:]:
+            if row and row[0].strip() and len(row) > 1 and row[1].strip():
+                try:
+                    out[row[0].strip().lower()] = json.loads(row[1])
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return out
+
+
+def load_weekly(office_key: str) -> dict:
+    """One office's {dd_week: {desc: $}}, or {}."""
+    return load_weekly_all().get(office_key.strip().lower(), {})
+
+
 def list_structures() -> "List[dict]":
     """Who's filled in — [{office, business, campaigns, updated}] from the
     structures tab, for the admin 'progress' view."""
