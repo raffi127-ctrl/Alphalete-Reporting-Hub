@@ -1461,9 +1461,24 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
                  "a fresh re-seed on the next run.")
             raise AppStreamLoginFailed("console never rendered #searchMC")
 
-        if switch_office and not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
-            _log(f"[cdp][STOP] office switch to {OFFICE_ID} failed.")
-            raise AppStreamLoginFailed(f"office switch to {OFFICE_ID} failed")
+        if switch_office:
+            # _switch_office reloads the console; office 11580 sometimes gets a
+            # fresh Cloudflare re-challenge on that reload and #searchMC vanishes
+            # (it raises PWTimeout, it doesn't return False). Treat that the same
+            # as a login failure: invalidate the profile so a retry re-seeds fresh,
+            # and surface AppStreamLoginFailed so the caller can retry a clean
+            # session (the same self-heal resume_pushing/OAT already rely on).
+            try:
+                switched = fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT)
+            except Exception as e:  # noqa: BLE001
+                _invalidate_cdp_profile()
+                _log(f"[cdp][STOP] office switch raised ({str(e)[:120]}) — marked "
+                     "profile for a fresh re-seed.")
+                raise AppStreamLoginFailed(f"office switch raised: {str(e)[:120]}")
+            if not switched:
+                _invalidate_cdp_profile()
+                _log(f"[cdp][STOP] office switch to {OFFICE_ID} failed.")
+                raise AppStreamLoginFailed(f"office switch to {OFFICE_ID} failed")
         page.wait_for_timeout(2000)
         _log(f"[cdp] service_workers: {[sw.url for sw in ctx.service_workers]}")
 

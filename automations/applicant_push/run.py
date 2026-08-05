@@ -97,18 +97,28 @@ def _prep_oat_page(page):
     return page
 
 
+MAX_SESSION_ATTEMPTS = 3
+
+
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
-        batch_limit: int = 0) -> int:
+        batch_limit: int = 0, _attempt: int = 1) -> int:
     """Run the unified batch + leftovers pipeline on one warm CDP session.
 
-    Returns the worst stage rc: 2 if the session never established (both stages
-    aborted), else 0. A batch wedge (Indeed Turnstile) is logged but does NOT fail
-    the run — the leftovers stage still runs."""
+    Returns the worst stage rc: 2 if the session never established after retries
+    (both stages aborted), else 0. A batch wedge (Indeed Turnstile) is logged but
+    does NOT fail the run — the leftovers stage still runs.
+
+    Office 11580 intermittently gets a fresh Cloudflare re-challenge during login or
+    the office switch (the console loses #searchMC). That happens BEFORE any applicant
+    is touched, so it's safe to retry a clean session up to MAX_SESSION_ATTEMPTS — the
+    profile was invalidated on the way out, so each retry re-seeds fresh and self-heals
+    (the same pattern resume_pushing._cdp_run and oat_processing.run already use)."""
     mode = "LIVE" if live else "DRY-RUN"
     rp._LOG_BUFFER.clear()
     rp._log(f"[push] Applicant Push — office {OFFICE_ID} ({OFFICE_HINT}) — {mode} "
-            f"| batch_only={batch_only} oat_only={oat_only}")
+            f"| batch_only={batch_only} oat_only={oat_only} | attempt {_attempt}"
+            f"/{MAX_SESSION_ATTEMPTS}")
 
     batch = {"reached": False, "sent": 0, "remaining": None}
     oat_rc = None
@@ -155,8 +165,19 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
                     rp._log(traceback.format_exc()[-400:])
                     oat_rc = 1
     except rp.AppStreamLoginFailed as e:
-        rp._log(f"[push][STOP] no AppStream session ({e}) — both stages aborted. "
-                "The next tick re-seeds a fresh profile and self-heals.")
+        # The console never established (login or office-switch Cloudflare
+        # re-challenge). This is BEFORE any applicant is touched, so retry a fresh
+        # session — the profile was invalidated on the way out, so the retry
+        # re-seeds from Default and self-heals.
+        if _attempt < MAX_SESSION_ATTEMPTS:
+            rp._log(f"[push] session didn't establish ({e}) — retry "
+                    f"{_attempt + 1}/{MAX_SESSION_ATTEMPTS} with a fresh profile")
+            return run(live=live, limit=limit, max_actions=max_actions,
+                       batch_only=batch_only, oat_only=oat_only,
+                       batch_limit=batch_limit, _attempt=_attempt + 1)
+        rp._log(f"[push][STOP] no AppStream session after {MAX_SESSION_ATTEMPTS} "
+                f"attempts ({e}) — both stages aborted. Office 11580 likely needs a "
+                "human Cloudflare clear on Lucy 2.")
         return 2
 
     rp._log("[push] ===== COMBINED SUMMARY =====")
