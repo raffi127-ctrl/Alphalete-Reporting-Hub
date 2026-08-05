@@ -4316,13 +4316,15 @@ AUTOMATED_REPORTS = [
         "emoji": "📡",
         "color": "#B91C1C",
         "category": "📊 Metrics",
-        "description": "Fills the SCI Campaigns tab from Adriana Nowrouzi's weekly 'Residential Telecom Tracker – RANKED' email — one column per week ending, 13 campaign rows. Writes the REAL tab and DMs Rafael, Maud & Megan when the week lands.",
+        "description": "Fills the SCI Campaigns tab from Adriana Nowrouzi's weekly 'Residential Telecom Tracker – RANKED' email — one column per week ending, 13 campaign rows. Writes the REAL tab and posts a 'SCI Campaigns - WE M/D Complete' note in #l10-alphalete (tagging Raf & Maud) when the week lands.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills the SCI Campaigns tab from Adriana's weekly **'Residential "
             "Telecom Tracker – RANKED'** email — one column per week-ending, all "
             "**13 campaign rows** (pulled from the email's two PDFs). When a week "
-            "lands it DMs **Rafael, Maud & Megan**.\n\n"
+            "lands it posts **'SCI Campaigns - WE M/D Complete'** in "
+            "**#l10-alphalete** and tags **Raf & Maud** in a reply (moved off the "
+            "group DM at Raf's request, 2026-08-04).\n\n"
             "WHEN IT RUNS\n"
             "**Friday, Saturday & Sunday.** It reads the week off the email "
             "subject and fills any tracker week not yet on the tab — so a late "
@@ -4333,8 +4335,9 @@ AUTOMATED_REPORTS = [
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=1118523233#gid=1118523233"),
         "assignees": ["Lucy 1"],
-        # The Lucy bot token lives only on the mini, so the 'complete' DM has to
-        # send from there to come FROM Lucy rather than from whoever clicked Run.
+        # The 'complete' note posts to #l10-alphalete as Lucy via the xoxp user
+        # token, which on the mini IS Lucy — so the run has to happen there or the
+        # post lands under whoever clicked Run instead.
         "run_machine": "Lucy 1",
         "run_rerun_id": "sci_campaigns",
         "schedule": {
@@ -4356,7 +4359,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Weekly Fill",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills every tracker week not yet on the real tab, then DMs Rafael, Maud & Megan. Safe to re-run — already-filled weeks are skipped and no DM is sent for them.",
+                "help": "Fills every tracker week not yet on the real tab, then posts 'SCI Campaigns - WE M/D Complete' in #l10-alphalete and tags Raf & Maud in a reply. Safe to re-run — already-filled weeks are skipped and no note is posted for them.",
                 "module": "automations.sci_campaigns.run",
                 "args_fn": lambda: ["--real", "--i-mean-it", "--notify"],
             },

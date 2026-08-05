@@ -29,7 +29,7 @@ class Cell(NamedTuple):
 
 
 class Plan(NamedTuple):
-    week_ending: dt.date         # as the EMAIL labelled it (what the DM says)
+    week_ending: dt.date         # as the EMAIL labelled it (what the note says)
     header_week: dt.date         # the tab column actually written
     col: int                     # 1-based
     updates: List[Cell]

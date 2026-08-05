@@ -8,8 +8,8 @@ Each run:
      (parse) and cross-checks them against the by-day Grand Total.
   3. Writes that week's MM/DD/YY column (fill). 'Total Units' is a sheet
      formula and is never touched.
-  4. DMs 'WE <m.d.yyyy> complete' under the 'SCI Campaigns' thread to Rafael,
-     Maud and Megan (slack_post) — only with --notify, and only for weeks that
+  4. Posts 'WE <m.d.yyyy> complete' under the 'SCI Campaigns' thread in
+     #l10-alphalete (slack_post) — only with --notify, and only for weeks that
      actually wrote something.
 
 The week comes from the EMAIL SUBJECT, never the calendar: the email for a
@@ -23,7 +23,7 @@ yet", which makes it idempotent AND self-healing after a missed Friday.
   python -m automations.sci_campaigns.run --since 2026-03-28   # backfill window
   python -m automations.sci_campaigns.run --list               # what's in the inbox
   python -m automations.sci_campaigns.run --real --i-mean-it   # PROD tab
-  python -m automations.sci_campaigns.run --notify             # + the Slack DM
+  python -m automations.sci_campaigns.run --notify             # + the Slack post
 
 SANDBOX BY DEFAULT. `--real` targets the tab the VAs read and is refused unless
 paired with `--i-mean-it`, mirroring country_sales_board / org_sales_board.
@@ -157,8 +157,8 @@ def main(argv=None) -> int:
                     help="List the tracker weeks in the inbox and what the "
                          "tab already has, then exit.")
     ap.add_argument("--notify", action="store_true",
-                    help="Send the 'WE … complete' Slack DM after a "
-                         "successful fill.")
+                    help="Post the 'WE … complete' note to #l10-alphalete after "
+                         "a successful fill.")
     ap.add_argument("--keep-pdfs", metavar="DIR",
                     help="Keep the downloaded PDFs here instead of a temp dir.")
     args = ap.parse_args(argv)
@@ -299,21 +299,21 @@ def main(argv=None) -> int:
             # The Sheet is already written by here. A Slack failure must NOT be
             # silent (nobody would know the week landed) but it also must not
             # look like the fill failed — so it's its own reported failure, with
-            # the one-liner that re-sends just the DM.
+            # the one-liner that re-sends just the note.
             try:
                 out = slack_post.notify(we, dry_run=args.dry_run)
                 print(f"  slack: {out}")
                 if not args.dry_run and not out.get("ok"):
                     raise RuntimeError(f"Slack returned {out}")
             except Exception as e:
-                print(f"  ✗ the fill SUCCEEDED but the Slack DM failed for WE "
+                print(f"  ✗ the fill SUCCEEDED but the Slack post failed for WE "
                       f"{es.we_label(we)}: {type(e).__name__}: {str(e)[:120]}")
-                print(f"    re-send just the DM with:  python -m "
+                print(f"    re-send just the note with:  python -m "
                       f"automations.sci_campaigns.slack_post "
                       f"--week {we.isoformat()} --post")
-                failed.append((we, "filled OK, Slack DM failed"))
+                failed.append((we, "filled OK, Slack post failed"))
     elif filled:
-        print(f"\n  (--notify not set — no Slack DM sent for "
+        print(f"\n  (--notify not set — no Slack post sent for "
               f"{', '.join(es.we_label(w) for w in filled)})")
 
     print(f"\n=== {len(filled)} week(s) "
