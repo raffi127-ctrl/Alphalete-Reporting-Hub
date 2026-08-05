@@ -5,17 +5,25 @@ real-Chrome/CDP AppStream session (office 11580, Carlos, Lucy 2).
 Flow:
   1. Open ONE warm, logged-in real-Chrome/CDP page on office 11580
      (resume_pushing.warm_appstream_cdp_page — the extractor plugin's service
-     worker only runs in real Chrome).
-  2. BATCH stage: resume_pushing.run_batch_stage(page) — extract resumes, Send to AI.
-  3. LEFTOVERS stage: oat_processing.run_walk(page) — walk the One-App-at-a-time
-     queue and send / remove / re-text / flag what the batch pass left behind.
+     worker only runs in real Chrome). It lands on the classic console.
+  2. LEFTOVERS stage FIRST: oat_processing.run_walk(page) — walk the
+     One-App-at-a-time queue (classic p=604) and send / remove / re-text / flag.
+     Runs on the console the session handed us, with NO navigation.
+  3. BATCH stage: hop classic-home → v2, resume_pushing.run_batch_stage(page) —
+     extract resumes, Send to AI.
   4. Print a combined summary and record the batch count for the daily scorecard.
 
+WHY OAT FIRST: office 11580 re-triggers Cloudflare on a v2→classic transition, so
+doing batch (v2) first and then navigating BACK to classic for OAT wedges (proven
+8/4). Running OAT on the freshly-established classic console, then hopping to v2
+last (a one-way classic→v2), only ever uses the known-good navigation direction.
+Neither stage switches office, so no office re-switch (that reload is what
+re-challenges) is needed between them.
+
 KEY BEHAVIOR: if the BATCH stage wedges on Indeed's employer-portal Turnstile
-(the current failure mode — the resume fetches get 403'd), the LEFTOVERS stage
-STILL runs on the same warm page. OAT's in-ATS sends / removes / re-texts don't
-touch Indeed, so the leftovers keep draining even when batch extraction is
-blocked. Only a full login failure (no #searchMC) aborts both stages.
+(the current failure mode — the resume fetches get 403'd), it does NOT fail the
+run — the LEFTOVERS stage already ran (OAT's in-ATS sends / removes / re-texts
+don't touch Indeed). Only a full login failure (no #searchMC) aborts both stages.
 
 Safety: DRY-RUN by default (batch counts only, no Send/extract clicks; OAT reads
 + classifies + prints, no mutations). Pass --live to act. Send-to-AI, removes and
@@ -40,7 +48,6 @@ import sys
 
 from automations.resume_pushing import run as rp
 from automations.oat_processing import run as oat
-from automations.recruiting_report import fetch_office
 
 OFFICE_ID = rp.OFFICE_ID
 OFFICE_HINT = rp.OFFICE_HINT
@@ -74,27 +81,22 @@ def _record_batch_count(sent: int, reached: bool) -> None:
         rp._log(f"[push] could not record batch count: {e}")
 
 
-def _prep_oat_page(page):
-    """Return the shared CDP page to a logged-in classic AppStream console on office
-    11580 so the OAT walk can open p=604. The batch stage navigates to the v2
-    dashboard (and may open a v2 tab), so re-assert the console + office here, then
-    attach the dialog-accept handler OAT needs for its confirm() dialogs."""
+def _prep_batch_page(page) -> bool:
+    """Get the shared page onto the classic console home so run_batch_stage's
+    open_v2_dashboard can find the 'Explore Appstream AI' button.
+
+    Called AFTER the OAT stage, which leaves us on p=604. This is a classic→classic
+    hop (p=604 → index.cfm home), NOT the fragile v2→classic transition — office
+    11580 was set once by warm_appstream_cdp_page and neither stage switches away
+    from it, so NO office re-switch is needed here (that reload is what re-triggered
+    Cloudflare). Returns True if the console home rendered (#searchMC)."""
     try:
-        page.bring_to_front()
-    except Exception:  # noqa: BLE001
-        pass
-    if page.locator("#searchMC").count() == 0:
-        rp._log("[push] returning the shared tab to the classic console for OAT")
-        try:
-            page.goto("https://applicantstream.com/", wait_until="domcontentloaded")
-            page.wait_for_timeout(3000)
-        except Exception as e:  # noqa: BLE001
-            rp._log(f"[push] console re-nav error: {e}")
-    # Re-assert office 11580 (session-bound, but the v2 hop can change context).
-    if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
-        rp._log(f"[push] WARN: office re-switch to {OFFICE_ID} failed before OAT")
-    oat.attach_dialog_accept(page)
-    return page
+        page.goto("https://applicantstream.com/index.cfm",
+                  wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
+    except Exception as e:  # noqa: BLE001
+        rp._log(f"[push] console-home nav error before batch: {e}")
+    return page.locator("#searchMC").count() > 0
 
 
 MAX_SESSION_ATTEMPTS = 3
@@ -124,46 +126,55 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     oat_rc = None
     try:
         with rp.warm_appstream_cdp_page(diag_tab=DIAG_TAB) as (page, ctx, net):
-            # ---- Stage 1: BATCH (Resume Pushing) ----
-            if not oat_only:
-                rp._log("[push] ===== STAGE 1: BATCH (Resume Pushing) =====")
-                try:
-                    batch = rp.run_batch_stage(page, dry_run=not live,
-                                               limit=batch_limit)
-                except rp.ExtractionStalled as e:
-                    # Indeed's employer-portal Turnstile is the usual cause. Log it,
-                    # but DO NOT abort — the leftovers stage doesn't need Indeed.
-                    rp._log("[push] BATCH extractor stalled: " + str(e)[:200])
-                    if net.get("indeed_403") or net.get("turnstile"):
-                        rp._log("[push][CAUSE] batch resume fetches from "
-                                "employers.indeed.com were CHALLENGED (401/403"
-                                + (" + Turnstile" if net.get("turnstile") else "")
-                                + ") — INDEED's bot protection, not AppStream. Refresh "
-                                "the Indeed employer login on Lucy 2. Continuing to "
-                                "the LEFTOVERS stage anyway.")
-                    else:
-                        rp._log("[push][CAUSE] no Indeed-403/Turnstile this pass — "
-                                "empty/slow batch or AppStream-side. Continuing to "
-                                "the LEFTOVERS stage.")
-                except Exception as e:  # noqa: BLE001
-                    import traceback
-                    rp._log("[push] BATCH stage error (continuing to OAT): "
-                            + str(e)[:200])
-                    rp._log(traceback.format_exc()[-400:])
-                _record_batch_count(batch.get("sent", 0), batch.get("reached", False))
+            # ORDER MATTERS: run OAT (classic p=604) FIRST on the console the session
+            # handed us, THEN batch (v2). warm_appstream_cdp_page yields a classic,
+            # logged-in, office-11580 page — OAT can open p=604 with NO navigation.
+            # Going the other way (batch's v2 → back to classic for OAT) re-triggers
+            # Cloudflare on office 11580 and wedges (proven 8/4). Neither stage
+            # switches office, so batch just hops classic-home → v2 afterward.
 
-            # ---- Stage 2: LEFTOVERS (OAT Processing) ----
+            # ---- Stage 1: LEFTOVERS (OAT Processing) — on the classic console ----
             if not batch_only:
-                rp._log("[push] ===== STAGE 2: LEFTOVERS (OAT Processing) =====")
-                oat_page = _prep_oat_page(page)
+                rp._log("[push] ===== STAGE 1: LEFTOVERS (OAT Processing) =====")
+                oat.attach_dialog_accept(page)
                 try:
-                    oat_rc = oat.run_walk(oat_page, live=live, limit=limit,
+                    oat_rc = oat.run_walk(page, live=live, limit=limit,
                                           max_actions=max_actions)
                 except Exception as e:  # noqa: BLE001
                     import traceback
                     rp._log("[push] OAT stage error: " + str(e)[:200])
                     rp._log(traceback.format_exc()[-400:])
                     oat_rc = 1
+
+            # ---- Stage 2: BATCH (Resume Pushing) — hop to v2 last ----
+            if not oat_only:
+                rp._log("[push] ===== STAGE 2: BATCH (Resume Pushing) =====")
+                try:
+                    if not batch_only and not _prep_batch_page(page):
+                        rp._log("[push] console home didn't render #searchMC before "
+                                "batch — skipping batch this pass (OAT already ran)")
+                    else:
+                        batch = rp.run_batch_stage(page, dry_run=not live,
+                                                   limit=batch_limit)
+                except rp.ExtractionStalled as e:
+                    # Indeed's employer-portal Turnstile is the usual cause. Log it,
+                    # but it does NOT fail the run — the leftovers stage already ran.
+                    rp._log("[push] BATCH extractor stalled: " + str(e)[:200])
+                    if net.get("indeed_403") or net.get("turnstile"):
+                        rp._log("[push][CAUSE] batch resume fetches from "
+                                "employers.indeed.com were CHALLENGED (401/403"
+                                + (" + Turnstile" if net.get("turnstile") else "")
+                                + ") — INDEED's bot protection, not AppStream. Refresh "
+                                "the Indeed employer login on Lucy 2.")
+                    else:
+                        rp._log("[push][CAUSE] no Indeed-403/Turnstile this pass — "
+                                "empty/slow batch or AppStream-side.")
+                except Exception as e:  # noqa: BLE001
+                    import traceback
+                    rp._log("[push] BATCH stage error (non-fatal — OAT already ran): "
+                            + str(e)[:200])
+                    rp._log(traceback.format_exc()[-400:])
+                _record_batch_count(batch.get("sent", 0), batch.get("reached", False))
     except rp.AppStreamLoginFailed as e:
         # The console never established (login or office-switch Cloudflare
         # re-challenge). This is BEFORE any applicant is touched, so retry a fresh
