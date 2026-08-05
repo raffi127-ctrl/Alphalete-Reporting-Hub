@@ -126,6 +126,11 @@ class Office:
     #   {"channel_id","channel_name","slugs":[metric-slug,…],"header_label":""}
     # slugs are ReportKind.key values, which equal the runner's metric slugs.
     channel_plans: tuple = ()
+    # NDS owner: their metrics live in the NDS-SN (RES-ATT-OOF) workbook, not the
+    # ATT-D2D one the standard boards pull. When True, the runner sources the NDS
+    # equivalents (churn -> office_metrics.nds_churn, etc.). Default False = every
+    # existing D2D office is byte-identical.
+    nds: bool = False
 
     @property
     def views(self) -> dict:
@@ -258,8 +263,16 @@ SECTION_OVERRIDES: dict = {
     # (order log / cancels / 6+ / disconnects / wireless churn / rep activations /
     # tableau — from NDS-SN RES-ATT-OOF) are the remaining build. When ALL are
     # ready, flip to ("knocks_gaps", <nds slugs...>). Empty tuple = post nothing.
-    "isaiah": (),
+    # TEMP (building): "churn" enabled ONLY to dry-run the NDS churn board; still
+    # never posts (override drives --dry-run runs only). Revert to () before the
+    # full thread is assembled / any live run.
+    "isaiah": ("churn",),
 }
+
+# Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
+# (NDS owners), so the runner sources the NDS equivalents. Committed here (not in
+# each mini's onboarded_offices.json) so it deploys via git like SECTION_OVERRIDES.
+NDS_OFFICES: set = {"isaiah"}
 
 
 def _merge_onboarded() -> None:
@@ -284,7 +297,8 @@ def _merge_onboarded() -> None:
             website=r.get("website", ""), business_name=r.get("business_name", ""),
             churn_ni_tab=r.get("churn_ni_tab", ""),
             churn_wl_tab=r.get("churn_wl_tab", ""),
-            abp_tab=r.get("abp_tab", ""))
+            abp_tab=r.get("abp_tab", ""),
+            nds=(key in NDS_OFFICES))
         for rk, url in (r.get("per_office_views") or {}).items():
             fld = _VIEW_FIELD.get(rk)
             if fld and url:
