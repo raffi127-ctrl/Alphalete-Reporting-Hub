@@ -80,6 +80,16 @@ def _is_autopay(r) -> bool:
     return "auto bill pay" in ot and "no auto" not in ot
 
 
+def _is_activated(r) -> bool:
+    """Only ACTIVATED deals carry the settled full payout. A recent DD week is
+    mostly un-activated (its Total $ to ICD is a partial/pending ~$10 that grows to
+    the real base ~$198 as the deal activates over 2–3 weeks) — so aggregating only
+    activated rows keeps the base-tier value stable regardless of which week the DD
+    view is showing. (COL_ACTIVATION = cl.Activation Date.)"""
+    a = str(r.get(COL_ACTIVATION, "") or "").strip().lower()
+    return bool(a) and a not in ("nan", "null", "none", "0")
+
+
 import re as _re
 # B2B wireless splits In-Footprint / Out-Of-Footprint ("… - IF" / "… - OOF" /
 # "… - INFP"); the sale type doesn't say which, so fold both footprints into one
@@ -108,7 +118,7 @@ def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
     al: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES:
+        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
         desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
@@ -138,7 +148,7 @@ def org_gross_revenue(rows) -> "Dict[str, float]":
     al: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES:
+        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
             continue
         desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         tot = _num(r.get(COL_TOTAL))
@@ -216,9 +226,9 @@ def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Di
         if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
             continue
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        # real products only — excludes bonus/guarantee CATEGORIES ("VOLUME BONUS",
-        # "WIRELESS BONUS", "INTERNET BONUS", "WEEKLY GUARANTEE", …).
-        if cat not in PRODUCT_CATEGORIES:
+        # real products only (excludes bonus/guarantee CATEGORIES) + ACTIVATED only
+        # (settled payout — a recent week's un-activated rows are partial ~$10).
+        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
             continue
         desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         if not desc or any(b in desc.lower() for b in BONUS_MARKERS):
