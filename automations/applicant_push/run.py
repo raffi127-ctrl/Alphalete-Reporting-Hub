@@ -89,13 +89,22 @@ def _prep_batch_page(page) -> bool:
     hop (p=604 → index.cfm home), NOT the fragile v2→classic transition — office
     11580 was set once by warm_appstream_cdp_page and neither stage switches away
     from it, so NO office re-switch is needed here (that reload is what re-triggered
-    Cloudflare). Returns True if the console home rendered (#searchMC)."""
+    Cloudflare). Returns True if the console home rendered (#searchMC).
+
+    The home load can catch a managed Cloudflare challenge that clears in a real
+    Chrome given a few seconds (same as the login path), so POLL for #searchMC up to
+    ~45s rather than a single fixed wait before giving up and skipping batch."""
     try:
         page.goto("https://applicantstream.com/index.cfm",
                   wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
     except Exception as e:  # noqa: BLE001
         rp._log(f"[push] console-home nav error before batch: {e}")
+    import time as _t
+    deadline = _t.time() + 45
+    while _t.time() < deadline:
+        if page.locator("#searchMC").count() > 0:
+            return True
+        page.wait_for_timeout(3000)
     return page.locator("#searchMC").count() > 0
 
 
