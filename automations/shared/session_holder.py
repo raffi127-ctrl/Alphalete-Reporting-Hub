@@ -11,10 +11,13 @@ storage_state, a HEADLESS run reaches Tableau via ownerville SSO. So the holder
 keeps ownerville logged in — that one session covers every Tableau/ownerville
 report.
 
-AppStream is NO LONGER held here (2026-06-30): its Cloudflare wall came down, so
-each AppStream report self-heals by driving the rcaptain login at run time
-(appstream_direct_session, allow_form_login default). The holder is OV-ONLY now —
-one warm session, one window, no 3rd tab.
+AppStream: OPT-IN (restored 2026-08-05, was dropped 2026-06-30 when its Cloudflare
+eased — it's back for office 11580). If this machine has been seeded once with
+`--appstream-login` (APPSTREAM_STORAGE_STATE exists), the holder ALSO keeps the
+applicantstream console warm so the batch/resume side rides a held session instead
+of a flaky fresh login. Un-seeded machines (the mini) stay ownerville-only — no 3rd
+tab, no per-cycle AppStream nav. All AppStream work is try/except-contained so it
+can never crash the ownerville holder.
 
 HOW: a human clears Cloudflare ONCE in the holder's window, then it keeps that
 session alive 24/7 (never closes → never re-challenged) and every few minutes
@@ -45,6 +48,25 @@ import json
 import re
 import sys
 import time
+from pathlib import Path
+
+# Which machine is this? Read the gitignored `.machine-profile` marker at the repo
+# root directly (the SAME marker registry/mini_control use) — a lightweight read so
+# `shared` doesn't import `day_orchestrator`. Absent → "Lucy 1". Used ONLY to gate
+# the opt-in AppStream warming to Lucy 2 (office 11580), so other machines that
+# happen to have a stale .appstream_storage_state.json never re-activate it.
+_MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
+APPSTREAM_HOLD_MACHINE = "Lucy 2"
+
+
+def _this_machine() -> str:
+    try:
+        v = _MACHINE_MARKER.read_text().strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return "Lucy 1"
 
 from patchright.sync_api import sync_playwright
 
@@ -52,7 +74,9 @@ from automations.shared.tableau_patchright import (
     PROFILE_DIR,
     _launch_persistent,
     _ownerville_session_valid,
+    _reuse_appstream_storage_state,
     OWNERVILLE_STORAGE_STATE,
+    APPSTREAM_STORAGE_STATE,
     OWNERVILLE_V2_URL,
 )
 
@@ -90,6 +114,47 @@ def _export_ownerville(ctx) -> int:
     return len(ov)
 
 
+# --------------------------------------------------------------------------- #
+# AppStream warming — RESTORED 2026-08-05 (was dropped 2026-06-30 in 94f4f21 when
+# AppStream's Cloudflare eased). It's back for office 11580, so the batch/resume
+# side needs a continuously-warm applicantstream console again. This is OPT-IN and
+# CONTAINED: it only runs when APPSTREAM_STORAGE_STATE exists (a machine seeded via
+# `--appstream-login`, i.e. Lucy 2), so the mini stays byte-for-byte ownerville-only;
+# and every call site wraps it in try/except so an AppStream hiccup can NEVER crash
+# the ownerville holder or trip its watchdog (the instability that motivated the
+# original removal). Restored from commit e7661e9.
+# --------------------------------------------------------------------------- #
+def _export_appstream(ctx) -> int:
+    """Write the live applicantstream cookies (CFID/CFTOKEN + rqst SSO token) to
+    APPSTREAM_STORAGE_STATE. GUARD: only export if the session carries an rqst SSO
+    token — a degraded/SSO-only console can have applicantstream cookies but ZERO
+    rqst tokens, and writing that clobbers a good rcaptain login and kills the
+    direct-session reports. No token → keep the last good export untouched."""
+    cookies = ctx.storage_state().get("cookies", [])
+    ap = [c for c in cookies if "applicantstream" in (c.get("domain") or "")]
+    n_rqst = sum(1 for c in ap if (c.get("name") or "").lower().startswith("rqst"))
+    if ap and n_rqst:
+        APPSTREAM_STORAGE_STATE.write_text(json.dumps({"cookies": ap, "origins": []}))
+        return len(ap)
+    return 0
+
+
+def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
+    """Keep the AppStream (applicantstream) console session alive in the holder's
+    context so unattended reports reuse it. Reload the open console to refresh the
+    ColdFusion session; if it dropped, restore from the saved storage_state (still
+    holds live CFID/CFTOKEN + the rqst SSO token). True if #searchMC is present."""
+    try:
+        if "applicantstream" in (page.url or ""):
+            page.reload(wait_until="domcontentloaded")
+            if page.locator("#searchMC").count() > 0:
+                return True
+    except Exception:
+        pass
+    try:
+        return _reuse_appstream_storage_state(ctx, page, verbose=verbose)
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -150,12 +215,41 @@ def main() -> int:
             print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — will keep "
                   f"checking; finish logging in in the window.", flush=True)
 
-        # --- AppStream no longer lives in the holder (2026-06-30). Its Cloudflare
-        #     wall came down, so every AppStream report self-heals by driving the
-        #     rcaptain login at run time (appstream_direct_session, allow_form_login
-        #     default). The holder is OV-ONLY now — one warm ownerville session
-        #     (which also covers Tableau via SSO), no 3rd tab, no AppStream re-seed
-        #     babysitting. ---
+        # --- AppStream warming (OPT-IN, RESTORED 2026-08-05): only if this machine
+        #     has been seeded (`--appstream-login` wrote APPSTREAM_STORAGE_STATE).
+        #     Un-seeded machines (the mini) skip this entirely — no 3rd tab, no
+        #     per-cycle AppStream nav — so they stay ownerville-only as before.
+        #     Seeded machines (Lucy 2, office 11580) get a warm applicantstream
+        #     console so the batch/resume side rides a held session instead of a
+        #     flaky fresh login. All AppStream work is try/except-contained so it
+        #     can never crash the ownerville holder. ---
+        # Gate on BOTH a seed file AND this being the AppStream-hold machine
+        # (Lucy 2). Other machines can carry a stale .appstream_storage_state.json
+        # from before the 2026-06-30 removal — the machine check stops that from
+        # silently re-activating warming there.
+        as_enabled = (APPSTREAM_STORAGE_STATE.exists()
+                      and _this_machine() == APPSTREAM_HOLD_MACHINE)
+        appstream_page = None
+        if as_enabled:
+            try:
+                appstream_page = ctx.new_page()
+                if _warm_appstream(ctx, appstream_page, verbose=False):
+                    apn = _export_appstream(ctx)
+                    print(f"[{_stamp()}] AppStream ✓ — console restored ({apn} cookies).",
+                          flush=True)
+                else:
+                    print(f"[{_stamp()}]  ⚠️ AppStream session stale — re-seed once:  "
+                          f"PYTHONPATH=. .venv/bin/python -m "
+                          f"automations.shared.tableau_patchright --appstream-login",
+                          flush=True)
+            except Exception as e:  # noqa: BLE001 — AppStream must never crash the holder
+                as_enabled = False
+                print(f"[{_stamp()}] AppStream warm init skipped: "
+                      f"{type(e).__name__}: {str(e)[:120]}", flush=True)
+        else:
+            print(f"[{_stamp()}] AppStream not seeded on this machine — ownerville-only. "
+                  f"(To hold office-11580 AppStream warm here, seed once:  "
+                  f"--appstream-login)", flush=True)
 
         # --- Continuous keep-alive + export loop, ONE ownerville tab. When the
         #     session is healthy we navigate that tab to keep it warm; when it
@@ -234,6 +328,22 @@ def main() -> int:
                         awaiting_login = True
                         print(f"[{_stamp()}]  ⚠️ ownerville STALE — log back in in the "
                               f"window (kept last good export).", flush=True)
+                    # AppStream keep-alive (seeded machines only). FULLY CONTAINED:
+                    # its own try/except means a stale/challenged applicantstream
+                    # console only logs a nudge — it never raises into the holder's
+                    # main loop, so it can't trip the watchdog or drop ownerville.
+                    if as_enabled and appstream_page is not None:
+                        try:
+                            if _warm_appstream(ctx, appstream_page, verbose=False):
+                                apn = _export_appstream(ctx)
+                                print(f"[{_stamp()}] AppStream ✓ — {apn} cookies "
+                                      f"(office-11580 console warm)", flush=True)
+                            else:
+                                print(f"[{_stamp()}]  ⚠️ AppStream stale — re-seed:  "
+                                      f"--appstream-login", flush=True)
+                        except Exception as _ae:  # noqa: BLE001
+                            print(f"[{_stamp()}] AppStream warm skipped: "
+                                  f"{type(_ae).__name__}", flush=True)
                 consecutive_errors = 0   # a clean pass clears the strike count
             except KeyboardInterrupt:
                 print(f"[{_stamp()}] holder stopped.", flush=True)
