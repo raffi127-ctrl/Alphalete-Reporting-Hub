@@ -122,12 +122,38 @@ def _capture_rqst(page) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def _navigate(page, rqst: str, target_mdy: str) -> None:
+def _navigate(page, rqst: str, target_mdy: str, *, attempts: int = 3) -> None:
     """Disposition by Rep filters via URL ?startDate=&endDate= (server-side);
-    the on-page picker only sets local JS vars. Single-day = same start/end."""
+    the on-page picker only sets local JS vars. Single-day = same start/end.
+
+    Waits for the grid's HEADER row before returning. DataTables builds the
+    grid from an AJAX call that fires AFTER networkidle, so a header read can
+    land on an empty <thead> — which surfaces downstream as the misleading
+    `Disposition table is missing expected column(s)` (every column "missing"
+    because there were no headers at all). Reproduced 1-in-2 on 2026-08-05
+    probing the same office/date, so re-navigate instead of letting it raise.
+
+    A day with NO knocks still renders the headers (empty <tbody>), so the
+    header row is a safe "grid is built" signal and does NOT confuse an empty
+    day with a stalled one — the distinction that matters when an office
+    legitimately logs nothing."""
     url = (f"https://v2.ownerville.com/index.cfm?p=89&rqst={rqst}"
            f"&startDate={target_mdy}&endDate={target_mdy}")
-    page.goto(url, wait_until="networkidle", timeout=25000)
+    for attempt in range(1, attempts + 1):
+        page.goto(url, wait_until="networkidle", timeout=25000)
+        try:
+            page.wait_for_selector("#table-dispositions thead th", timeout=15000)
+            break
+        except Exception:  # noqa: BLE001 — stalled grid, not a fatal state
+            if attempt == attempts:
+                # Out of retries: fall through and let _scrape_rows raise with
+                # the live-headers diagnostic, same as before this guard.
+                print(f"[knocks] grid never built after {attempts} navigations "
+                      f"({target_mdy}) — letting the scrape report it",
+                      flush=True)
+                break
+            print(f"[knocks] disposition grid not built yet "
+                  f"(try {attempt}/{attempts}) — re-navigating", flush=True)
     try:  # show all rows on one page where possible
         page.locator("select[name='table-dispositions_length']").select_option("100")
         page.wait_for_load_state("networkidle", timeout=8000)
