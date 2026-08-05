@@ -695,6 +695,29 @@ def _open_tab(tab: str = LEADERS_CALL_TAB):
     return sh, ws
 
 
+_PULL_FAILED_PREFIX = "⚠ PULL FAILED"
+
+
+def _locate_sections(colA) -> list:
+    """(section_title, row_index_0based) for each section header found in column A,
+    in row order. A row that starts with the PULL-FAILED marker is NEVER treated as
+    a header: that marker text echoes the campaign key (e.g. '(b2b: …)'), so
+    SECTION_MATCH would otherwise re-match it as a second header for that section
+    and shift every row lookup. One place so write_report / _results_from_tab /
+    the self-heal detector all agree on where sections start."""
+    found = []
+    for i, a in enumerate(colA):
+        cell = (a or "").strip()
+        if cell.startswith(_PULL_FAILED_PREFIX):
+            continue
+        for title, rx in SECTION_MATCH.items():
+            if rx.search(cell):
+                found.append((title, i))
+                break
+    found.sort(key=lambda t: t[1])
+    return found
+
+
 def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
     """Write each section's [(rep,owner,val)] into the Leader's Call tab.
 
@@ -708,13 +731,7 @@ def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
     grid = rfill._retry(ws.get_all_values)
     colA = [(r[0] if r else "") for r in grid]
     # Ordered (section_title, title_row_1based) for sections present on the tab.
-    found = []
-    for i, a in enumerate(colA):
-        for title, rx in SECTION_MATCH.items():
-            if rx.search(a or ""):
-                found.append((title, i + 1))
-                break
-    found.sort(key=lambda t: t[1])
+    found = [(t, i + 1) for t, i in _locate_sections(colA)]
     title_rows = {t: r for t, r in found}
     ordered = [t for t, _ in found]
 
@@ -982,11 +999,82 @@ def _post_pdf_to_channels(pdf_path, week_end, dry_run: bool = False) -> list:
     return out
 
 
+def _failed_sections_from_tab(ws) -> list:
+    """Section titles on the Leader's Call tab still carrying a '⚠ PULL FAILED'
+    marker — the 2pm pull couldn't fill them (usually a transient Tableau glitch).
+    The 7:30pm finalize re-pulls just these before it builds the deck."""
+    from automations.recruiting_report import fill as rfill
+    grid = rfill._retry(ws.get_all_values)
+    colA = [(r[0] if r else "") for r in grid]
+    found = _locate_sections(colA)
+    failed = []
+    for k, (title, r) in enumerate(found):
+        nxt = found[k + 1][1] if k + 1 < len(found) else len(grid)
+        for row in grid[r + 1:nxt]:
+            if (row[0] if row else "").strip().startswith(_PULL_FAILED_PREFIX):
+                failed.append(title)
+                break
+    return failed
+
+
+def _heal_failed_sections(dry_run: bool = False) -> list:
+    """Re-pull any section the 2pm run left with a PULL-FAILED marker and write the
+    ones that now come back clean, so a mid-afternoon Tableau blip self-heals before
+    the 7:30pm deck (Megan 2026-08-04: B2B dropped off the deck when a transient
+    owner-level glitch failed the 2pm pull and nothing re-pulled it by evening).
+
+    SAFETY: only runs on the recognition Monday itself (today == target Sunday + 1).
+    B2B/Costco are relative 'This Week' views with no date columns, so _pull_parse
+    can't week-guard them — but on the recognition Monday 'This Week' still equals
+    the just-completed week (it rolls Tuesday). Off that day, skip the re-pull rather
+    than risk writing rolled-week numbers. Date-bearing/pinned views (Fiber/NDS/
+    BOX/JE) stay week-guarded by _pull_parse regardless."""
+    import datetime as dt
+    _, ws = _open_tab()
+    failed = _failed_sections_from_tab(ws)
+    if not failed:
+        return []
+    _, sun = _target_week()
+    if dt.date.today() != sun + dt.timedelta(days=1):
+        return [f"⟳ self-heal: {', '.join(failed)} still marked failed, but today "
+                f"isn't the recognition Monday for week ending {sun.isoformat()} — "
+                "skipping re-pull (would risk rolled-week data)."]
+    by_title = {c.section_title: c for c in CAMPAIGNS.values()}
+    camps = [by_title[t] for t in failed if t in by_title]
+    skipped = [t for t in failed if t not in by_title]
+    log = [f"⟳ self-heal: re-pulling {len(camps)} failed section(s): "
+           f"{', '.join(c.section_title for c in camps) or '(none pullable)'}"]
+    for t in skipped:
+        log.append(f"  · {t}: no Tableau campaign to re-pull — left as-is")
+    if not camps:
+        return log
+    if dry_run:
+        log.append("  (dry-run: not re-pulling / writing)")
+        return log
+    from automations.shared.tableau_patchright import tableau_session
+    healed = {}
+    with tableau_session(verbose=True) as page:
+        for camp in camps:
+            res = _pull_parse(camp, page)
+            if isinstance(res, PullFailure):
+                log.append(f"  ✗ {camp.section_title}: still failing "
+                           f"({res.msg[:60]}) — marker kept")
+                continue
+            healed[camp.section_title] = res
+            log.append(f"  ✓ {camp.section_title}: re-pulled {len(res)} rows")
+    if healed:
+        write_report(ws, healed, dry_run=False)
+        log.append(f"  wrote {', '.join(healed)} back into the tab")
+    return log
+
+
 def _finalize(dry_run: bool = False) -> int:
-    """The 7:30pm final pass: rebuild the deck from the tab (2pm campaign data) + the
-    now-complete promotions, then post the PDF to the leadership Slack channels. No
-    Tableau pull — the 2pm --write run already filled the tab."""
+    """The 7:30pm final pass: re-pull any section the 2pm run left failed (self-heal
+    a transient Tableau blip), then rebuild the deck from the tab + the now-complete
+    promotions and post the PDF to the leadership Slack channels."""
     from automations.leaders_call import build_pdf as pdf
+    for line in _heal_failed_sections(dry_run=dry_run):
+        print(line, flush=True)
     results = _results_from_tab()
     n = sum(len(v) for v in results.values())
     sun = _target_week()[1]
@@ -1085,13 +1173,7 @@ def _results_from_tab() -> dict:
     _, ws = _open_tab()
     grid = rfill._retry(ws.get_all_values)
     colA = [(r[0] if r else "") for r in grid]
-    found = []
-    for i, a in enumerate(colA):
-        for title, rx in SECTION_MATCH.items():
-            if rx.search(a or ""):
-                found.append((title, i))
-                break
-    found.sort(key=lambda t: t[1])
+    found = _locate_sections(colA)
     results = {}
     for k, (title, r) in enumerate(found):
         nxt = found[k + 1][1] if k + 1 < len(found) else len(grid)
