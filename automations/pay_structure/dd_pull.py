@@ -38,6 +38,7 @@ COL_DESCRIPTION = "cl.Description"
 COL_DETAIL = "cl.Description Detail"
 COL_TOTAL = "Total $ to ICD"        # gross revenue to the ICD (Raf: this IS gross revenue)
 COL_CAMPAIGN = "cl.Campaign__c"     # RES-ATT / RES-BASE POWER-Energy / B2B-BOX-Energy / …
+COL_DDWEEK = "cl.DD Week"           # DD week ending (the dropdown Raf wants)
 
 # The product categories that carry sellable gross revenue (skip Bonus / Override
 # / Chargeback / Total rows).
@@ -286,6 +287,25 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
     # (category, description) that is a real PRODUCT (bonuses/guarantees excluded),
     # with its auto-pay payout — the master list Megan wants the editor to list so
     # every product has an accurate ICD payout. Energy keyed by campaign.
+    # Week probe: `--inspect __WEEKS__` — distinct DD weeks × campaigns, and for
+    # Rafael Hidalgo's RES-ATT the descriptions per week (does it carry all the
+    # product types Raf expects: New Internet, Upgrade, Voice, Video?).
+    if owner.strip().upper() in ("__WEEKS__",):
+        wc = collections.Counter((str(r.get(COL_DDWEEK, "")).strip(),
+                                  str(r.get(COL_CAMPAIGN, "")).strip()) for r in rows)
+        for (wk, camp), n in wc.most_common(20):
+            print("INSP|W|{}|{}|n={}".format(wk or "-", camp or "-", n))
+        rr = [r for r in rows if str(r.get(COL_OWNER, "")).strip() == "Rafael Hidalgo"
+              and str(r.get(COL_CAMPAIGN, "")).strip() == "RES-ATT"]
+        byweek = collections.defaultdict(set)
+        for r in rr:
+            byweek[str(r.get(COL_DDWEEK, "")).strip()].add(
+                "{}|{}".format(str(r.get(COL_CATEGORY, "")).strip(),
+                               str(r.get(COL_DESCRIPTION, "")).strip()))
+        for wk in sorted(byweek):
+            print("INSP|RAFWK|{}|{}descs={}".format(wk, len(byweek[wk]),
+                  sorted(byweek[wk])[:14]))
+        return
     if owner.strip().upper() in ("__PRODUCTS__", "__PROD__"):
         BONUS = ("bonus", "captains", "lead disposition", "converged", "kwh",
                  "guarantee", "disposition", "pilot", "adjustment", "chargeback")
