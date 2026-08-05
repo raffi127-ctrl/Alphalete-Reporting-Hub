@@ -609,7 +609,8 @@ def find_delta_tables(grid: List[List[str]]) -> List[dict]:
     return out
 
 
-def delta_block_range(grid: List[List[str]], table: dict) -> str:
+def delta_block_range(grid: List[List[str]], table: dict,
+                      today: Optional[dt.date] = None) -> str:
     """The A1 range that SHOWS a delta table — for a screenshot, not a write.
 
     Lives here, beside find_delta_tables, because both the Country board and the
@@ -635,10 +636,22 @@ def delta_block_range(grid: List[List[str]], table: dict) -> str:
       columns — B is the rep, C/D/E the 'Total for week' triplet, then seven more
       triplets, one per day. Mid-week four of those days are all zeros and '-100%',
       and each costs ~12% of the width the real days need: 25 columns in a mail
-      column puts the text at ~4px tall. Cutting at the LAST DAY WITH SALES makes
-      every remaining column proportionally bigger. The block widens on its own as
-      the week fills and a closed week still shows all seven, so nothing has to be
-      re-tuned and no day with numbers is ever dropped.
+      column puts the text at ~4px tall. Cutting the days that have not happened
+      makes every remaining column proportionally bigger. The block widens on its
+      own as the week fills and a closed week still shows all seven, so nothing
+      has to be re-tuned.
+
+      WHERE IT CUTS: at the last ELAPSED day (week.completed_days — Monday counts
+      all 7 of the week that just closed, Tue 1, Wed 2 …), or at the last day with
+      sales if data runs past it. Elapsed-first, NOT last-day-with-sales alone:
+      that is the same day count the 'Last week' week-total formula is sized to
+      (plan_delta_lastweek_reset), so the image and the number it is compared
+      against always span the SAME days. On sales alone they came apart — on Wed
+      2026-08-05 the 'Last week' total covered Mon+Tue while the image stopped at
+      Monday, because Tuesday's per-rep 'This week' cells were still all 0 when the
+      screenshot was taken (the day's sales land later in the run). An elapsed day
+      that genuinely sold nothing is real data and belongs in the picture; a zero
+      column that reads as "nobody sold" is the point, not noise (Eve 2026-08-05).
 
     Splitting the block up instead was tried and rejected: the names live in col B,
     so a Fri–Sun image (R..Z) would be a wall of numbers with nothing naming its
@@ -670,12 +683,18 @@ def delta_block_range(grid: List[List[str]], table: dict) -> str:
         return False
 
     live = [c for c in day_cols if happened(c)]
-    if live:
-        # Every day UP TO the last live one — never punch a hole in the middle. A
+    if day_cols:
+        # How many days to show: the ELAPSED ones, and never fewer than the days
+        # that already carry sales (data past the elapsed count is still data).
+        # Both counts are day POSITIONS in day_cols, so an inserted column moves
+        # the edge with them. [[feedback_no_hardcoded_columns]]
+        from automations.org_sales_board import week as _week
+        elapsed = len(_week.completed_days(today or dt.date.today()))
+        sold = (day_cols.index(max(live)) + 1) if live else 0
+        # Every day UP TO the last shown one — never punch a hole in the middle. A
         # genuinely zero Wednesday between two selling days is real data.
-        last_col = max(live) + 2
-    elif day_cols:
-        last_col = day_cols[0] + 2                 # nothing sold yet: keep day one
+        n_days = max(1, min(elapsed, len(day_cols)), sold)
+        last_col = day_cols[n_days - 1] + 2
     else:
         last_col = 5                               # no day triplets at all: B..E
 

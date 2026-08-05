@@ -44,6 +44,7 @@ RECIPIENTS = [
 ]
 MAX_COL = 26                                      # A..Z (covers the delta box)
 HISTORY_WEEKS = 4     # frozen leaderboard weeks shown beside the live one
+DAILY_HISTORY_ROWS = 4   # 'WE m.d' rows kept under the daily block's Totals row
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "all_campaigns_board"
 
 
@@ -138,6 +139,13 @@ def capture_ranges(grid) -> list[tuple[str, str]]:
     #    rows are the week-over-week trend and are visible on this tab (unlike the
     #    ORG board's captainship stacks, which are hidden and need unhiding).
     #
+    #    CAPPED AT DAILY_HISTORY_ROWS (Eve 2026-08-05). The stack keeps every week
+    #    the board has ever closed and grows one row every Tuesday, so an uncapped
+    #    render gets taller forever — and the rows nobody reads squeeze the ones
+    #    they do. Four back is what she wants to see, matching HISTORY_WEEKS on the
+    #    leaderboard above it. Counted in WE ROWS, not rows: a blank spacer row
+    #    inside the stack must not eat one of the four.
+    #
     #    RIGHT EDGE = running total + 2, i.e. through PREVIOUS WEEK'S TOTALS. The
     #    two columns past it on the tab are 'Campaign' and 'Org Head', which Eve
     #    cut from the email 2026-07-31 — they are routing metadata for the fill,
@@ -147,10 +155,14 @@ def capture_ranges(grid) -> list[tuple[str, str]]:
     try:
         a = fs.find_daily_section(grid, DAILY_LABEL)
         end = a.totals_row
+        kept = 0
         for r in range(a.totals_row + 1, min(a.totals_row + 30, len(grid) + 1)):
             lab = (_cell(grid, r, 1) + " " + _cell(grid, r, 2)).strip().lower()
             if lab.startswith("we "):
                 end = r
+                kept += 1
+                if kept >= DAILY_HISTORY_ROWS:
+                    break
             elif lab:
                 break                      # a non-WE label means the stack ended
         out.append(("daily",
