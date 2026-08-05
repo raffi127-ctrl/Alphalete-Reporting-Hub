@@ -236,6 +236,19 @@ _VIEW_FIELD = {"ongoing_cancel": "view_ongoing_cancel", "churn_ni": "view_churn_
 # consumed by the runner yet (defaults hold); exposed for displays + later use.
 ONBOARDED_EXTRA: dict = {}
 
+# Committed per-office SECTION override — the runner posts ONLY these metric slugs
+# for the listed office (values are ReportKind keys or runner slugs; both resolve
+# through OWNER_KEY_TO_SLUG). This is the durable bridge for an office whose
+# onboarding enrolled the all-11 D2D default but that only runs a subset — e.g.
+# Isaiah/Legacy is WIRELESS-ONLY (Smart Circle retail, no new-internet/D2D), so
+# every internet board posts blank and is dropped. `knocks_gaps` is intentionally
+# omitted: his ownerville Disposition has no wireless campaign, so the Knocks/Gaps
+# board renders empty (see knocks_pull) — it goes back in once that's sourced from
+# the Time Tracker. TODO: retire this once onboarding writes the subset directly.
+SECTION_OVERRIDES: dict = {
+    "isaiah": ("churn", "tableau_shot"),
+}
+
 
 def _merge_onboarded() -> None:
     if not _ONBOARDED_FILE.exists():

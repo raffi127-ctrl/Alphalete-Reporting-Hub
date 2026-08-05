@@ -726,10 +726,28 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
-    # Thread Builder: reorder / subset the sections per this office's saved plan
-    # (thread_plans.json). No plan -> metrics_for order unchanged (exact no-op).
+    # Per-office ENROLLMENT (from onboarding): an office may enroll a SUBSET of the
+    # D2D reports — a wireless-only office (e.g. Isaiah/Legacy) skips every
+    # new-internet/D2D board and keeps only its wireless ones. The onboarding
+    # checkboxes land in ONBOARDED_EXTRA[key]["enrolled_reports"] as owner
+    # ReportKind keys; map them to runner slugs (OWNER_KEY_TO_SLUG) and use them as
+    # the DEFAULT section set. Empty/absent — every hardcoded office, and any office
+    # enrolled in everything — => all metrics, byte-identical to before this change.
+    override = _off.SECTION_OVERRIDES.get(o.key)
+    enrolled = _off.ONBOARDED_EXTRA.get(o.key, {}).get("enrolled_reports") or []
+    if override:                       # committed subset wins over enrollment
+        want = {OWNER_KEY_TO_SLUG.get(k, k) for k in override}
+        default = [m for m in metrics if m["slug"] in want]
+    elif enrolled:
+        enrolled_slugs = {OWNER_KEY_TO_SLUG.get(k, k) for k in enrolled}
+        default = [m for m in metrics if m["slug"] in enrolled_slugs]
+    else:
+        default = metrics
+    default = default or metrics  # a typo'd subset must never blank the thread
+    # Thread Builder: reorder / subset per this office's saved plan (thread_plans.json,
+    # per-machine). No plan -> `default` order unchanged (exact no-op).
     from automations.shared import thread_plans as _tp
-    metrics = _tp.resolve_sections("d2d", args.office, metrics, metrics,
+    metrics = _tp.resolve_sections("d2d", args.office, metrics, default,
                                    id_key="slug")
     target_chan = args.channel or o.channel_id
 
