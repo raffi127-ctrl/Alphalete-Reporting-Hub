@@ -236,6 +236,10 @@ def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dic
     if verbose and (result.get("status") != 200 or not rows):
         print(f"  ⚠ Time Tracker fetch: status={result.get('status')} "
               f"rows={len(rows)} {result.get('raw', '')}", flush=True)
+    if verbose and rows:  # TEMP PROBE: learn the JSON field names for gaps-only rows
+        print(f"  [TT-PROBE] keys={list(rows[0].keys())}", flush=True)
+        print(f"  [TT-PROBE] row0={ {k: rows[0].get(k) for k in rows[0]} }",
+              flush=True)
     out = {}
     for row in rows:
         rid = str(row.get("id", "")).strip()
