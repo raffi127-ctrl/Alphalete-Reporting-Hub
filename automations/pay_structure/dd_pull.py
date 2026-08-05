@@ -216,6 +216,10 @@ def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Di
         if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
             continue
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+        # real products only — excludes bonus/guarantee CATEGORIES ("VOLUME BONUS",
+        # "WIRELESS BONUS", "INTERNET BONUS", "WEEKLY GUARANTEE", …).
+        if cat not in PRODUCT_CATEGORIES:
+            continue
         desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         if not desc or any(b in desc.lower() for b in BONUS_MARKERS):
             continue
