@@ -726,24 +726,22 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
-    # Per-office ENROLLMENT (from onboarding): an office may enroll a SUBSET of the
-    # D2D reports — a wireless-only office (e.g. Isaiah/Legacy) skips every
-    # new-internet/D2D board and keeps only its wireless ones. The onboarding
-    # checkboxes land in ONBOARDED_EXTRA[key]["enrolled_reports"] as owner
-    # ReportKind keys; map them to runner slugs (OWNER_KEY_TO_SLUG) and use them as
-    # the DEFAULT section set. Empty/absent — every hardcoded office, and any office
-    # enrolled in everything — => all metrics, byte-identical to before this change.
-    override = _off.SECTION_OVERRIDES.get(o.key)
+    # Per-office section control. A committed SECTION_OVERRIDES entry pins exactly
+    # which boards this office posts and WINS over enrollment; an EMPTY entry means
+    # the office posts NO metrics thread at all (the report doesn't fit it). Else an
+    # office may enroll a SUBSET at onboarding (ONBOARDED_EXTRA enrolled_reports).
+    # Absent from both — every hardcoded office, and any office enrolled in
+    # everything — => all metrics, byte-identical to before this change. Keys are
+    # owner ReportKind keys or runner slugs; both resolve through OWNER_KEY_TO_SLUG.
     enrolled = _off.ONBOARDED_EXTRA.get(o.key, {}).get("enrolled_reports") or []
-    if override:                       # committed subset wins over enrollment
-        want = {OWNER_KEY_TO_SLUG.get(k, k) for k in override}
-        default = [m for m in metrics if m["slug"] in want]
+    if o.key in _off.SECTION_OVERRIDES:
+        want = {OWNER_KEY_TO_SLUG.get(k, k) for k in _off.SECTION_OVERRIDES[o.key]}
+        default = [m for m in metrics if m["slug"] in want]   # empty => posts nothing
     elif enrolled:
         enrolled_slugs = {OWNER_KEY_TO_SLUG.get(k, k) for k in enrolled}
-        default = [m for m in metrics if m["slug"] in enrolled_slugs]
+        default = [m for m in metrics if m["slug"] in enrolled_slugs] or metrics
     else:
         default = metrics
-    default = default or metrics  # a typo'd subset must never blank the thread
     # Thread Builder: reorder / subset per this office's saved plan (thread_plans.json,
     # per-machine). No plan -> `default` order unchanged (exact no-op).
     from automations.shared import thread_plans as _tp
@@ -756,6 +754,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     mode = "dry-run" if args.dry_run else ("live" if args.live else "plan")
 
     wired = metrics
+    # An office pinned to an empty SECTION_OVERRIDES posts NOTHING — no header, no
+    # boards. A wireless-only office whose every board is N/A or blank should not
+    # post an all-empty thread; its reporting lives elsewhere (its trackers).
+    if not wired and not args.only:
+        print(f"{o.label}: no metrics configured for this office — posting nothing.")
+        return 0
     if args.only:
         # COMMA LIST, like the main report's --only. It used to take exactly one
         # slug, which forced the manifest to fall back to a FULL --live retry

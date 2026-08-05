@@ -246,7 +246,15 @@ ONBOARDED_EXTRA: dict = {}
 # board renders empty (see knocks_pull) — it goes back in once that's sourced from
 # the Time Tracker. TODO: retire this once onboarding writes the subset directly.
 SECTION_OVERRIDES: dict = {
-    "isaiah": ("churn", "tableau_shot"),
+    # Isaiah / Legacy is WIRELESS-ONLY (Smart Circle retail, no new-internet/D2D).
+    # Every office_metrics board is either N/A (the internet/D2D ones) or empty
+    # (Wireless Churn has no data; the one Churn board bundles New-Internet +
+    # Wireless so the internet half can't be dropped). An all-blank thread "looks
+    # horrible" (Megan 2026-08-04), so this office posts NO metrics thread — its
+    # reporting is its trackers (NDS + VZ+FTR SCI). Empty tuple = post nothing.
+    # Revisit once Time Gaps can be sourced from the Time Tracker (his ownerville
+    # Disposition has no wireless campaign) — then pin it to just that board.
+    "isaiah": (),
 }
 
 
