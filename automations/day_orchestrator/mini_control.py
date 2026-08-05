@@ -175,8 +175,13 @@ def _open(sandbox: bool = False, machine: str | None = None):
 # ---------------------------------------------------------------------------
 
 def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
-             log_name: str | None = None) -> tuple[bool, str]:
+             log_name: str | None = None,
+             env: dict | None = None) -> tuple[bool, str]:
     """Run a command in the repo root; return (ok, 'exit N · <tail>').
+
+    env: extra environment for the child (MERGED over os.environ, not a
+    replacement) — for actions that target a module through an env var, like
+    probe_knocks' KNOCKS_OFFICE. None (default) inherits unchanged.
 
     log_name: write the run's FULL output to output/logs/<log_name> so
     `lucy logtail <log_name>` can read it. The 3-line tail in the result cell is
@@ -193,10 +198,11 @@ def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
             log_path = log_dir / log_name
         except Exception:  # noqa: BLE001 — logging must never fail the run
             log_path = None
+    child_env = dict(os.environ, **env) if env else None
     try:
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT), timeout=timeout_s,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True)
+                              text=True, env=child_env)
     except subprocess.TimeoutExpired as e:
         # A timeout still produced output — persist it, or the slowest failures
         # (the ones most worth debugging) are the ones with no log at all.
@@ -2481,6 +2487,61 @@ def _action_focus_owner(args: str) -> tuple[bool, str]:
     return ok, res
 
 
+def _action_probe_knocks(args: str) -> tuple[bool, str]:
+    """READ-ONLY: scrape ONE office's knocks for ONE day and print what came
+    back. Touches no Sheet, posts nothing to Slack — it runs
+    `automations.rashad_metrics.knocks_pull` standalone, whose whole job is the
+    preview (`_print_preview`).
+
+      probe_knocks "<ownerville office>" [YYYY-MM-DD]
+        office  the name to IMPERSONATE — i.e. an office's `knocks_office` in
+                office_metrics/offices.py, NOT its owner. Quote it.
+        date    default: yesterday (Central), same as the daily run.
+
+    Why this exists: when a daily metrics run posts "No data available", the log
+    only says `0 rep(s)` — which reads identically whether (a) the office really
+    logged nothing, (b) its roster moved, or (c) the scrape broke. Re-running the
+    report to find out re-POSTS to the office's channel. This asks the same
+    question with no side effects, and takes a DATE, so you can compare a
+    suspect day against a known-good one:
+
+      probe_knocks "Muhammad Waqar" 2026-07-30   → 7 rep(s), known good
+      probe_knocks "Muhammad Waqar" 2026-08-04   → 0 rep(s), the day in question
+
+    Read the full table with `lucy logtail probe-knocks-<office>`."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, ('probe_knocks needs an office name, e.g. '
+                       'probe_knocks "Muhammad Waqar" 2026-08-04')
+    office = parts[0].strip()
+    date_arg = parts[1].strip() if len(parts) > 1 else None
+    if date_arg:
+        try:
+            dt.datetime.strptime(date_arg, "%Y-%m-%d")
+        except ValueError:
+            return False, f"probe_knocks: date must be YYYY-MM-DD, got {date_arg!r}"
+    # Same guard the other browser actions use — a human Chrome left open on the
+    # mini single-instances with patchright's and breaks the scrape.
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-m", "automations.rashad_metrics.knocks_pull"]
+    if date_arg:
+        cmd.append(date_arg)
+    slug = "".join(c if c.isalnum() else "-" for c in office).strip("-").lower()
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, res = _run_cmd(cmd, timeout_s=15 * 60,
+                       log_name=f"probe-knocks-{slug}-{stamp}.log",
+                       env={"KNOCKS_OFFICE": office})
+    return ok, res
+
+
 def _action_set_dd_bot_token(args: str) -> tuple[bool, str]:
     """Install/refresh Jiraiya's Slack BOT token (xoxb-) on THIS machine at
     ~/.config/recruiting-report/dd-bot-token — the file due_diligence.watch._client()
@@ -3012,6 +3073,7 @@ ACTIONS = {
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
+    "probe_knocks": _action_probe_knocks,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
     "set_applicant_service_account": _action_set_applicant_service_account,
@@ -3290,6 +3352,9 @@ def print_help() -> None:
         "  lucy status 25            show the last 25\n"
         "  lucy rerun <report_id>    re-run a report that failed in the daily email\n"
         "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
+        '  lucy probe_knocks "<office>" [date]\n'
+        "                            READ-ONLY: what a knocks scrape returns for\n"
+        "                            one office on one day (no Sheet, no Slack)\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
