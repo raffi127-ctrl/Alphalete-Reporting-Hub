@@ -53,15 +53,23 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
+# EFFICIENCY (2026-08-06, Megan): this flow is LEFTOVERS-ONLY. The batch (Resume
+# Pushing) stage reaches the extract screen but the resume-pull is bot-blocked and
+# batch extraction isn't needed — so we skip it (--oat-only below), saving a whole
+# second warm-Chrome session per run. And the OAT no-phone resume-lookup hits the
+# same wall and burns ~12s per no-phone applicant for nothing, so turn it OFF —
+# no-phone apps flag straight to the human queue. Both are reversible: drop
+# --oat-only to re-enable batch; set OAT_AUTOMATE_PHONE_LOOKUP=1 to re-enable lookup.
+export OAT_AUTOMATE_PHONE_LOOKUP=0
+
 echo "[$(date)] Applicant Push starting (extra args: ${*:-none})" >> "$LOG_FILE"
 
-# The scheduled run is LIVE. applicant_push.run defaults to DRY-RUN unless --live is
-# passed (safe default for manual use), so the wrapper INJECTS --live for the
-# unattended agent — blanked when a manual --dry-run is given so a dry probe stays
-# dry. (Mirrors the OAT wrapper; without this the launchd agent runs dry and does
-# nothing — the 2026-08-05 bug.)
-ARGS="--live"
-[ "$DRYRUN" -eq 1 ] && ARGS=""
+# The scheduled run is LIVE + leftovers-only. applicant_push.run defaults to DRY-RUN
+# unless --live is passed (safe default for manual use), so the wrapper INJECTS
+# --live --oat-only for the unattended agent — --live is dropped when a manual
+# --dry-run is given so a dry probe stays dry, but it stays leftovers-only either way.
+ARGS="--live --oat-only"
+[ "$DRYRUN" -eq 1 ] && ARGS="--oat-only"
 "$VENV_PY" -u -m automations.applicant_push.run $ARGS "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
