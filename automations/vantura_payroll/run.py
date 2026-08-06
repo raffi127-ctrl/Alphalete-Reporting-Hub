@@ -527,6 +527,8 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     E = f"RAW!$E${s}:$E${e}"
     H = f"RAW!$H${s}:$H${e}"
     I = f"RAW!$I${s}:$I${e}"
+    J = f"RAW!$J${s}:$J${e}"   # cl.Campaign__c - the campaign split
+    K = f"RAW!$K${s}:$K${e}"   # cl.Product     - carries the bonus name
     # Campaign__c decides the bucket. Description is no longer trusted: the DD
     # blanks it for every bonus. The captain's bonus carries Campaign__c
     # B2B-ATT-SBS but is company revenue, so it is excluded by Product name.
