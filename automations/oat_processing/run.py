@@ -1136,7 +1136,13 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked):
-        phone, detail = lookup_resume_phone(page)
+        # A blocked/errored read counts as "no number today" — otherwise an
+        # exception would skip the remember-step below and we'd reopen this same
+        # resume on every future walk (Megan 2026-08-06).
+        try:
+            phone, detail = lookup_resume_phone(page)
+        except Exception as e:  # noqa: BLE001
+            phone, detail = None, f"read error: {type(e).__name__}"
         if phone and _fill_phone_field(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
                  f"{a.first_name} {a.last_name}")
