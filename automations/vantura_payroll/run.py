@@ -529,10 +529,13 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     I = f"RAW!$I${s}:$I${e}"
     J = f"RAW!$J${s}:$J${e}"   # cl.Campaign__c - the campaign split
     K = f"RAW!$K${s}:$K${e}"   # cl.Product     - carries the bonus name
+    B = f"RAW!$B${s}:$B${e}"   # rep name - blank ONLY on the captain row
     # Campaign__c decides the bucket. Description is no longer trusted: the DD
     # blanks it for every bonus. The captain's bonus carries Campaign__c
     # B2B-ATT-SBS but is company revenue, so it is excluded by Product name.
-    _cap = f'ISNUMBER(SEARCH("Captain",{K}))'
+    # The captain's bonus is the one paid line with NO rep name (its Product is
+    # blank too, so it cannot be matched by name). Everything else has a rep.
+    _cap = f'({B}="")'
     box = f'(({J}="B2B-BOX-Energy")*(1-{_cap}))'
     base = f'(({J}="RES-BASE POWER-Energy")*(1-{_cap}))'
     lead = "0"
@@ -549,7 +552,7 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         f"{blk['profit']}{blk['third_total']}":
             f"=SUMPRODUCT(({base})*{H})-SUMPRODUCT(({base})*{I})*1.12",
         **({f"{blk['profit']}{blk['captain']}":
-            f'=SUMPRODUCT(ISNUMBER(SEARCH("Captain",{E}))*{H})'}
+            f'=SUMPRODUCT(({B}="")*{H})'}
            if blk.get("captain") else {}),
         f"{blk['profit']}{blk['dd_b2b']}":
             f'=SUMIF({rep_c},"B2B",{brought_rng})'
