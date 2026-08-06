@@ -39,6 +39,25 @@ COL_DETAIL = "cl.Description Detail"
 COL_TOTAL = "Total $ to ICD"        # gross revenue to the ICD (Raf: this IS gross revenue)
 COL_CAMPAIGN = "cl.Campaign__c"     # RES-ATT / RES-BASE POWER-Energy / B2B-BOX-Energy / …
 COL_DDWEEK = "cl.DD Week"           # DD week ending (the dropdown Raf wants)
+# The DD view changed ~2026-08 to break each deal into transaction-type rows and
+# moved the product name to cl.Product (cl.Description went empty for internet). So
+# the base payout = SUM of the 'Commissions' rows per ORDER (not per-row Total$).
+COL_PRODUCT = "cl.Product"
+COL_ORDER = "cl.Order ID"
+COL_TXN = "cl.Transaction Type"
+
+
+def _is_commission(r) -> bool:
+    return str(r.get(COL_TXN, "") or "").strip().lower() == "commissions"
+
+
+def _product_name(r, cat: str) -> str:
+    """The pay-structure product name. Wireless keys off the line type
+    (cl.Description: Port Line/New Line/BYOD); everything else off cl.Product
+    (Internet 1000, Choice, …), falling back to cl.Description."""
+    prod = str(r.get(COL_PRODUCT, "") or "").strip()
+    desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+    return desc if cat == "WIRELESS" else (prod or desc)
 
 # The product categories that carry sellable gross revenue (skip Bonus / Override
 # / Chargeback / Total rows).
@@ -183,60 +202,67 @@ def _mode(vals: "List[float]") -> float:
     return collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
 
 
-def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
-    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': autopay_deals}}}.
-    base = the MODE of Total $ to ICD per (owner, category, description). PREFER
-    auto-bill-pay deals (Raf: assume auto-pay 100%), but for a product the office
-    sold ONLY no-auto-pay, fall back to those deals so every product it sold still
-    gets a payout. `n` = the auto-pay count only, so main_products' MIN_SAMPLE
-    guard still keeps the simulator's base tier stable (a 1-deal outlier can't set
-    Internet 1 GIG / New Line)."""
-    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
-    al: Dict[tuple, List[float]] = collections.defaultdict(list)
+def _order_sums(rows, key_fn):
+    """Group ACTIVATED 'Commissions' rows by key_fn(r,cat,owner) → {order: summed
+    Total$}, plus the set of auto-pay order ids per key. The base payout is the MODE
+    across orders of each order's summed commission (the DD splits a deal into
+    transaction-type rows). ELE/energy is handled elsewhere."""
+    order_sum: "Dict[tuple, Dict[str, float]]" = collections.defaultdict(
+        lambda: collections.defaultdict(float))
+    ap_orders: "Dict[tuple, set]" = collections.defaultdict(set)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
+        if (cat not in PRODUCT_CATEGORIES or cat == "ELE"
+                or not _is_commission(r) or not _is_activated(r)):
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
-        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
+        name = _norm_desc(_product_name(r, cat))
+        order = str(r.get(COL_ORDER, "") or "").strip()
         tot = _num(r.get(COL_TOTAL))
-        if (not owner or owner.lower() in ("nan", "null")
-                or "total" in owner.lower() or not desc or tot is None or tot <= 0):
+        if (not owner or owner.lower() in ("nan", "null") or "total" in owner.lower()
+                or not name or not order or tot is None):
             continue
-        al[(owner, cat, desc)].append(tot)
+        k = key_fn(owner, cat, name)
+        if k is None:
+            continue
+        order_sum[k][order] += tot
         if _is_autopay(r):
-            ap[(owner, cat, desc)].append(tot)
+            ap_orders[k].add(order)
+    return order_sum, ap_orders
+
+
+def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
+    """{owner: {'CATEGORY | product': {'base': mode$, 'n': autopay_orders}}}. base =
+    the MODE across ORDERS of each order's summed 'Commissions' Total$ (the DD splits
+    a deal into transaction-type rows). Prefer auto-pay orders; fall back to all.
+    `n` = auto-pay order count, for main_products' MIN_SAMPLE stability guard."""
+    order_sum, ap_orders = _order_sums(rows, lambda o, c, n: (o, c, n))
     out: Dict[str, Dict[str, dict]] = {}
-    for key, allv in al.items():
-        owner, cat, desc = key
-        apv = ap.get(key) or []
-        out.setdefault(owner, {})["{} | {}".format(cat, desc)] = {
-            "base": _mode(apv or allv), "n": len(apv)}
+    for (owner, cat, name), orders in order_sum.items():
+        ap = ap_orders.get((owner, cat, name), set())
+        sums = [orders[o] for o in (ap if ap else orders)]
+        sums = [s for s in sums if s > 0]
+        if not sums:
+            continue
+        out.setdefault(owner, {})["{} | {}".format(cat, name)] = {
+            "base": _mode(sums), "n": len(ap)}
     return out
 
 
 def org_gross_revenue(rows) -> "Dict[str, float]":
     """{'CATEGORY | Description': base} over ALL owners — the org-wide reference
     payout per product, so the editor shows an ICD payout for a product an office
-    hasn't personally sold (office's own value wins when present). PREFER auto-pay
-    deals; fall back to any deal so every product that appears in the DD at all
-    gets a reference (NO sample floor here — this is the org-wide backstop)."""
-    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
-    al: Dict[tuple, List[float]] = collections.defaultdict(list)
-    for r in rows:
-        cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
-            continue
-        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
-        tot = _num(r.get(COL_TOTAL))
-        if not desc or tot is None or tot <= 0:
-            continue
-        al[(cat, desc)].append(tot)
-        if _is_autopay(r):
-            ap[(cat, desc)].append(tot)
+    hasn't personally sold (office's own value wins when present). base = the MODE
+    across ORDERS of each order's summed 'Commissions' Total$; prefer auto-pay orders,
+    fall back to all (NO sample floor — org-wide backstop). ELE handled elsewhere."""
+    order_sum, ap_orders = _order_sums(rows, lambda o, c, n: (c, n))   # ignore owner
     out: Dict[str, float] = {}
-    for key, allv in al.items():
-        out["{} | {}".format(*key)] = _mode(ap.get(key) or allv)
+    for (cat, name), orders in order_sum.items():
+        ap = ap_orders.get((cat, name), set())
+        sums = [orders[o] for o in (ap if ap else orders)]
+        sums = [s for s in sums if s > 0]
+        if sums:
+            out["{} | {}".format(cat, name)] = _mode(sums)
     return out
 
 
@@ -293,33 +319,35 @@ COL_ORDER_TYPE = "cl.Order Type"         # "Auto Bill Pay" vs "No Auto Bill Pay"
 
 
 def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Dict[str, float]]]":
-    """{owner: {dd_week: {'CATEGORY | Description': Total$ mode}}} for a campaign —
-    every product description an owner got each DD WEEK (bonuses excluded). Powers
-    Raf's 'pick a DD week' dropdown → that week's sale types + payouts. AT&T Fiber
-    is the RES-ATT campaign; DD week = cl.DD Week (Saturday-ending for fiber)."""
-    acc: "Dict[str, Dict[str, Dict[str, List[float]]]]" = collections.defaultdict(
-        lambda: collections.defaultdict(lambda: collections.defaultdict(list)))
+    """{owner: {dd_week: {'CATEGORY | product': base$}}} for a campaign — each
+    product an owner got each DD WEEK (base = MODE across orders of that order's
+    summed 'Commissions' Total$; bonuses excluded). Powers Raf's 'pick a DD week'
+    dropdown. AT&T Fiber = RES-ATT; DD week = cl.DD Week (Saturday-ending)."""
+    # (owner, week, cat, name) -> order -> summed commissions
+    os_: "Dict[tuple, Dict[str, float]]" = collections.defaultdict(
+        lambda: collections.defaultdict(float))
     for r in rows:
         if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
             continue
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        # real products only (excludes bonus/guarantee CATEGORIES) + ACTIVATED only
-        # (settled payout — a recent week's un-activated rows are partial ~$10).
-        if cat not in PRODUCT_CATEGORIES or not _is_activated(r):
+        if (cat not in PRODUCT_CATEGORIES or cat == "ELE"
+                or not _is_commission(r) or not _is_activated(r)):
             continue
-        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
-        if not desc or any(b in desc.lower() for b in BONUS_MARKERS):
-            continue
+        name = _norm_desc(_product_name(r, cat))
         owner = str(r.get(COL_OWNER, "") or "").strip()
         week = str(r.get(COL_DDWEEK, "") or "").strip()
+        order = str(r.get(COL_ORDER, "") or "").strip()
         tot = _num(r.get(COL_TOTAL))
         if (not owner or owner.lower() in ("nan", "null") or "total" in owner.lower()
-                or not week or tot is None or tot <= 0):
+                or not week or not name or not order or tot is None):
             continue
-        acc[owner][week]["{} | {}".format(cat, desc)].append(tot)
-    return {owner: {wk: {d: _mode(v) for d, v in descs.items()}
-                    for wk, descs in weeks.items()}
-            for owner, weeks in acc.items()}
+        os_[(owner, week, cat, name)][order] += tot
+    out: "Dict[str, Dict[str, Dict[str, float]]]" = collections.defaultdict(dict)
+    for (owner, week, cat, name), orders in os_.items():
+        sums = [s for s in orders.values() if s > 0]
+        if sums:
+            out[owner].setdefault(week, {})["{} | {}".format(cat, name)] = _mode(sums)
+    return {o: dict(w) for o, w in out.items()}
 
 
 def _cap_weeks(weeks: "Dict[str, dict]", keep: int = 12) -> "Dict[str, dict]":
