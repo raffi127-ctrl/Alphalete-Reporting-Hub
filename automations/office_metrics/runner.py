@@ -844,6 +844,26 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # 3 per-office ICD views (churn/ongoing_cancel/abp) still pull per office (each
     # is a distinct URL → its own cache key, no false sharing). --fresh forces a
     # live re-pull. See tableau_patchright._xtab_cache_*.
+    # Cross-workspace posting: an office whose Slack channel lives in a DIFFERENT
+    # workspace than AO (e.g. trang -> FRESH SUCCESS) posts with its OWN bot token,
+    # kept in a file under ~/.config/recruiting-report/. Setting SLACK_USER_TOKEN
+    # routes BOTH the in-process ensure_metrics_thread/auth-test below AND every
+    # metric subprocess (they inherit base_env) through that token. Normal offices
+    # unset it so they fall back to the machine's default AO 'Lucy' token file.
+    if o.slack_token_file:
+        _tok_path = (Path.home() / ".config" / "recruiting-report"
+                     / o.slack_token_file)
+        if _tok_path.exists():
+            os.environ["SLACK_USER_TOKEN"] = _tok_path.read_text(
+                encoding="utf-8-sig").strip()
+        elif mode == "live":
+            print(f"\n✗ --live can't post — {o.label} posts to {o.channel_name} "
+                  f"in another Slack workspace and needs its bot token at "
+                  f"{_tok_path}, which isn't on this machine. Install it and retry.")
+            return 2
+    else:
+        os.environ.pop("SLACK_USER_TOKEN", None)
+
     base_env = dict(os.environ)
     if not args.fresh:
         base_env["METRICS_XTAB_CACHE"] = str(

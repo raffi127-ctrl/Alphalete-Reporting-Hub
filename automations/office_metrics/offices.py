@@ -131,6 +131,14 @@ class Office:
     # equivalents (churn -> office_metrics.nds_churn, etc.). Default False = every
     # existing D2D office is byte-identical.
     nds: bool = False
+    # Cross-workspace posting. Empty = post with the machine's default Lucy token
+    # (the AO workspace — every existing office). Set to a filename under
+    # ~/.config/recruiting-report/ holding a Slack BOT token (xoxb-…) when the
+    # office's channel lives in a DIFFERENT Slack workspace than AO (e.g. trang's
+    # #freshsuccess-all-leaders is in the FRESH SUCCESS workspace). The runner
+    # loads it and posts THIS office's metrics with that token instead. See
+    # [[project_trang_fresh_success]].
+    slack_token_file: str = ""
 
     @property
     def views(self) -> dict:
@@ -280,6 +288,14 @@ SECTION_OVERRIDES: dict = {
 # each mini's onboarded_offices.json) so it deploys via git like SECTION_OVERRIDES.
 NDS_OFFICES: set = {"isaiah"}
 
+# Offices whose Slack channel lives in a DIFFERENT workspace than AO, so their
+# metrics must post with a workspace-specific BOT token instead of the machine's
+# default AO 'Lucy' token. Maps office key -> token filename under
+# ~/.config/recruiting-report/. Committed here (like NDS_OFFICES) so it survives
+# an onboard_apply re-materialize (which regenerates onboarded_offices.json from
+# the sheet and wouldn't otherwise carry this field). [[project_trang_fresh_success]]
+CROSS_WS_TOKEN_FILES: dict = {"trang": "slack-token-freshsuccess"}
+
 
 def _merge_onboarded() -> None:
     if not _ONBOARDED_FILE.exists():
@@ -304,6 +320,8 @@ def _merge_onboarded() -> None:
             churn_ni_tab=r.get("churn_ni_tab", ""),
             churn_wl_tab=r.get("churn_wl_tab", ""),
             abp_tab=r.get("abp_tab", ""),
+            slack_token_file=CROSS_WS_TOKEN_FILES.get(
+                key, r.get("slack_token_file", "")),
             nds=(key in NDS_OFFICES))
         for rk, url in (r.get("per_office_views") or {}).items():
             fld = _VIEW_FIELD.get(rk)

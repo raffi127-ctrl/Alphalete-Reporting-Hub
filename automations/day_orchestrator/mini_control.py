@@ -31,6 +31,9 @@ Actions:
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use
+  set_office_slack_token <office_key> <xoxb>  install a per-office WORKSPACE bot
+                        token for an office whose channel is in a non-AO Slack
+                        workspace (e.g. trang → FRESH SUCCESS). Args auto-redacted.
   set_dd_bot_token <tok>  install Jiraiya's BOT token (xoxb-…) — the always-on
                         listener that serves /dd + the Promotion Check-In buttons
   set_dd_app_token <tok>  install Jiraiya's APP-LEVEL token (xapp-…) for Socket Mode
@@ -105,7 +108,8 @@ DAILY_AUTORUN_CAP = 100
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
-                    "set_slack_token", "set_gbp_token", "set_gmail_token",
+                    "set_slack_token", "set_office_slack_token",
+                    "set_gbp_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
@@ -116,7 +120,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
-SECRET_ACTIONS = {"set_doubleentry_creds"}
+SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1961,6 +1965,62 @@ def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
                   f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
 
 
+def _action_set_office_slack_token(args: str) -> tuple[bool, str]:
+    """set_office_slack_token <office_key> <xoxb-token>: install the WORKSPACE bot
+    token for an office whose Slack channel lives in a non-AO workspace (e.g.
+    trang -> FRESH SUCCESS). The office's token filename is registered in
+    office_metrics.offices.CROSS_WS_TOKEN_FILES, so the token can only ever land
+    at that known path — never an arbitrary file. Writes it, verifies with
+    auth_test against the SAME file the runner reads, and NEVER echoes the token.
+    In SECRET_ACTIONS, so the poller auto-blanks the Args cell when the row ends."""
+    import shutil
+    parts = (args or "").split()
+    if len(parts) < 2:
+        return False, "set_office_slack_token needs '<office_key> <xoxb-token>'"
+    key, token = parts[0].strip(), parts[1].strip()
+    if not token.startswith("xoxb-"):
+        return False, "the token must be a Slack BOT token (starts with 'xoxb-')"
+    try:
+        from automations.office_metrics import offices as _off
+        fname = _off.CROSS_WS_TOKEN_FILES.get(key)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read office registry: {type(e).__name__}: {str(e)[:100]}"
+    if not fname:
+        return False, (f"office {key!r} has no cross-workspace token file in "
+                       "offices.CROSS_WS_TOKEN_FILES — add it there first")
+    path = Path.home() / ".config" / "recruiting-report" / fname
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{fname}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(token, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify by reading the file back through a bot client — proof the runner will
+    # authenticate. Never echo the token itself.
+    try:
+        import ssl as _ssl
+        import certifi
+        from slack_sdk import WebClient
+        ctx = _ssl.create_default_context(cafile=certifi.where())
+        who = WebClient(token=path.read_text(encoding="utf-8-sig").strip(),
+                        ssl=ctx).auth_test()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but auth_test errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if not who.get("ok"):
+        return False, f"token written but auth_test not ok: {str(who)[:120]}"
+    return True, (f"{key} workspace Slack token installed + verified: authed as "
+                  f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
+
+
 def _action_screendrive(args: str) -> tuple[bool, str]:
     """Drive the on-screen ApplicantStream extractor via real clicks/screenshots
     (resume_pushing.run --snap / --click / --extract-smart). Unlike `rerun`, it
@@ -3183,6 +3243,7 @@ ACTIONS = {
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
+    "set_office_slack_token": _action_set_office_slack_token,
     "set_dd_bot_token": _action_set_dd_bot_token,
     "set_dd_app_token": _action_set_dd_app_token,
     "set_gbp_token": _action_set_gbp_token,
