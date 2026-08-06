@@ -22,20 +22,28 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Fire every 10 min around the clock (:00/:10/:20/:30/:40/:50). The
-         wrapper (applicant_push.sh) gates the ACTIVE window to 7am–10pm CST,
-         EVERY day; outside that it exits immediately. Machine LOCAL time (Lucy 2
-         is Central). TIME KNOB for hours: edit the window gate in the wrapper,
-         NOT this array. launchd keeps ONE instance per label, so a long combined
-         batch+OAT run never stacks a second copy. -->
+    <!-- Fire every 5 min around the clock (:00/:05/…/:55) so the leftovers queue is
+         worked constantly and never builds up (Megan 2026-08-06). The wrapper
+         (applicant_push.sh) gates the ACTIVE window to 7am–10pm CST, EVERY day;
+         outside that it exits immediately. Machine LOCAL time (Lucy 2 is Central).
+         TIME KNOB for hours: edit the window gate in the wrapper, NOT this array.
+         launchd keeps ONE instance per label, so if a walk runs longer than 5 min
+         the next tick is simply skipped until it finishes — runs back-to-back, never
+         stacks. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>5</integer></dict>
         <dict><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Minute</key><integer>15</integer></dict>
         <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>25</integer></dict>
         <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>35</integer></dict>
         <dict><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Minute</key><integer>45</integer></dict>
         <dict><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Minute</key><integer>55</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -83,8 +83,10 @@ echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
 case " $* " in
   *" --dry-run "*) : ;;
   *)
-    if [ "$h" -eq 20 ] && [ "$m" -eq 0 ]; then
-      echo "[$(date)] 8pm — posting the no-phone (needs-Indeed) report" >> "$LOG_FILE"
+    # Post at NOON and 4PM CST (Megan 2026-08-06) — both into the SAME daily thread
+    # (summary finds/creates it) so admins get one running to-do list during the day.
+    if { [ "$h" -eq 12 ] || [ "$h" -eq 16 ]; } && [ "$m" -eq 0 ]; then
+      echo "[$(date)] posting the manual-to-do report (needs-number + needs-text)" >> "$LOG_FILE"
       "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 || true
     fi
     ;;

@@ -327,6 +327,23 @@ def _names_of(bucket) -> list:
     return out
 
 
+def _find_today_parent(c, date_str: str):
+    """Return the ts of today's 'recruiting to-do' parent message (so the 4pm post
+    replies into the SAME thread the noon post created), or None if not posted yet.
+    Match on 'recruiting to-do' + the date text — Slack returns 📋 as :clipboard:, so
+    an emoji match would miss. Only the parent carries 'recruiting to-do'; the replies
+    hold the names, so a text match uniquely finds the parent."""
+    try:
+        hist = c.conversations_history(channel=CHANNEL_ID, limit=60)
+    except Exception:  # noqa: BLE001
+        return None
+    for m in hist.get("messages", []):
+        txt = m.get("text") or ""
+        if "recruiting to-do" in txt and date_str in txt:
+            return m.get("ts")
+    return None
+
+
 def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
     """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
     REPLACES the scorecard (Megan 2026-08-06). It lists the ONLY two buckets the bot
@@ -357,20 +374,37 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
             + _section("\U0001F4AC Need a manual text (thread too old to see)",
                        needs_text))
 
+    # Time label for the in-thread reply ("12 PM" / "4 PM"), cross-platform.
+    slot = dt.datetime.now().strftime("%I %p").lstrip("0")
+
     if dry_run:
         print("[report] DRY-RUN — would post to #alphaletegp-recruiting:", flush=True)
-        print("  HEADER: " + header, flush=True)
-        print("  REPLY:\n    " + body.replace("\n", "\n    "), flush=True)
+        print("  HEADER (parent, created once/day): " + header, flush=True)
+        print(f"  REPLY (in today's thread, {slot}):\n    "
+              + body.replace("\n", "\n    "), flush=True)
         return {"ok": True, "dry_run": True, "no_number": n_num, "needs_text": n_txt}
 
     from automations.shared import slack_metrics_post as smp
     c = smp._client()
-    parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
-    ts = parent["ts"]
-    c.chat_postMessage(channel=CHANNEL_ID, thread_ts=ts, text=body)
-    print(f"[report] posted — {n_num} need a number, {n_txt} need a manual text "
-          f"(thread {ts})", flush=True)
-    return {"ok": True, "thread_ts": ts, "no_number": n_num, "needs_text": n_txt}
+    # ONE thread per day: the noon post creates the parent; the 4pm post finds that
+    # same parent and replies into it (Megan 2026-08-06 — admins get one running
+    # to-do list, not two separate posts). Refresh the parent's counts each time so
+    # the channel-visible header stays current.
+    parent_ts = _find_today_parent(c, date_str)
+    if parent_ts is None:
+        parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
+        parent_ts = parent["ts"]
+    else:
+        try:
+            c.chat_update(channel=CHANNEL_ID, ts=parent_ts, text=header)
+        except Exception:  # noqa: BLE001 — header refresh is best-effort
+            pass
+    c.chat_postMessage(channel=CHANNEL_ID, thread_ts=parent_ts,
+                       text=f"*{slot} update*\n" + body)
+    print(f"[report] posted {slot} — {n_num} need a number, {n_txt} need a manual "
+          f"text (thread {parent_ts})", flush=True)
+    return {"ok": True, "thread_ts": parent_ts,
+            "no_number": n_num, "needs_text": n_txt}
 
 
 def main(argv=None) -> int:
