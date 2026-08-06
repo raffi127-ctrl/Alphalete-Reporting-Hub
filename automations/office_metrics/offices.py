@@ -268,9 +268,11 @@ SECTION_OVERRIDES: dict = {
     # Churn), rep_activations. Still BLOCKED on Raf's NDS views for order log /
     # wireless 6+ / wireless cancels. When ALL are wired + verified, flip to the
     # full slug list for go-live sign-off. Empty tuple = post nothing.
-    # TEMP (building): 'order_log' enabled to run the ORDER LOG diagnostic pass
-    # (the module posts NOTHING yet — prints the crosstab columns). Revert to ().
-    "isaiah": ("order_log",),
+    # HELD OFF while mid-build. Built + verified: churn, rep_activations,
+    # knocks_gaps (Time Gaps). ORDER LOG pull verified (166 rows) but its 3 renders
+    # (order_log/cancels/sched_6plus) aren't built yet. Flip to the full slug list
+    # only when every board renders + Megan signs off. Empty tuple = post nothing.
+    "isaiah": (),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
