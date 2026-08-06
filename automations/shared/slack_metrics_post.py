@@ -250,7 +250,8 @@ def find_metrics_thread_ts(client, today: dt.date) -> str:
 
 
 def ensure_metrics_thread(today: dt.date | None = None,
-                          *, dry_run: bool = False) -> dict:
+                          *, dry_run: bool = False,
+                          sections: list | None = None) -> dict:
     """Make sure today's Metrics header thread exists in #alphalete-sales.
 
     OUR CODE posts this header (Megan 2026-07-10: the old Slack Workflow
@@ -259,7 +260,13 @@ def ensure_metrics_thread(today: dt.date | None = None,
     in the exact 'Metrics for: <Month> <ordinal> <year>' format that
     find_metrics_thread_ts recognises (so the replies still match it).
     Because this is now the primary poster, the checklist below is the
-    source of truth — keep it in sync with the metrics actually posted."""
+    source of truth — keep it in sync with the metrics actually posted.
+
+    `sections`: when given (a list of "emoji Label" lines), the header lists
+    EXACTLY those instead of the default 12-metric D2D checklist — so an office
+    that posts a different set (e.g. a wireless/NDS office) gets a header that
+    matches ITS boards, not the internet template. Omitted => the default 12
+    (every existing D2D office, byte-identical)."""
     today = today or dt.date.today()
     # The dated first line (which find_metrics_thread_ts recognises) + the
     # metric checklist. This code is the poster now (no more Slack Workflow),
@@ -268,13 +275,11 @@ def ensure_metrics_thread(today: dt.date | None = None,
     # When two offices share a channel, the label (owner name) goes in the header
     # so each thread is distinct + human-distinguishable (Megan 2026-07-15).
     _label_suffix = f" — {HEADER_LABEL}" if HEADER_LABEL else ""
-    header_text = "\n".join([
-        # Bold first line (Megan 2026-07-10, to match the Alphalete Production /
-        # Tableau Trackers headers). find_metrics_thread_ts matches on a
-        # substring, so the '*...*' wrapper doesn't break thread detection.
-        f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}"
-        f"{_label_suffix}*",
-        "",
+    # Bold first line (Megan 2026-07-10). find_metrics_thread_ts matches on a
+    # substring, so the '*...*' wrapper doesn't break thread detection.
+    _first = (f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} "
+              f"{today.year}{_label_suffix}*")
+    _default = [
         ":door: Telemapper Knocks",
         ":clock1: Time Gaps",
         ":clipboard: Order Log",
@@ -288,7 +293,8 @@ def ensure_metrics_thread(today: dt.date | None = None,
         ":credit_card: New Internet ABP %",
         # Screenshot of the office's Tableau Metrics board (Raf 2026-07-16).
         ":camera_with_flash: Tableau Metrics",
-    ])
+    ]
+    header_text = "\n".join([_first, "", *(sections if sections else _default)])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
                 "to_channel": CHANNEL_ID}

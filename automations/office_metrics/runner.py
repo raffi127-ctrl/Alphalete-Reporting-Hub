@@ -928,7 +928,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                 else:
                     os.environ.pop("METRICS_HEADER_LABEL", None)
                 try:
-                    res = smp.ensure_metrics_thread()
+                    # NDS offices post a DIFFERENT board set, so the header must
+                    # list THEIR boards, not the internet template's 12. Non-NDS
+                    # => sections=None => default 12 (byte-identical).
+                    _sections = ([m["label"] for m in dest["metrics"]]
+                                 if o.nds else None)
+                    res = smp.ensure_metrics_thread(sections=_sections)
                     print(f"  [{dest['channel_name']}] header thread: "
                           f"{'existed' if res.get('existed') else 'posted'} "
                           f"({res.get('thread_ts')})")

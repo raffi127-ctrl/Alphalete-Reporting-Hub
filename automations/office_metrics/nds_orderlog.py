@@ -216,6 +216,14 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
         img, count = _render_6plus(owner, header, rows, target, out_dir)
     print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}", flush=True)
 
+    # Skip-empty: Cancels / 6+ Days post NOTHING on a zero-row day (a wireless
+    # office often has no cancels and never has installs scheduled 6+ days out).
+    # An empty board is worse than no board. Order Log always posts (his volume).
+    if board in ("cancels", "sched_6plus") and count == 0:
+        print(f"[nds_orderlog:{board}] 0 rows — skipping (no blank board).",
+              flush=True)
+        return 0
+
     if dry_run:
         print(f"[nds_orderlog:{board}] --dry-run — rendered only, NO post.",
               flush=True)
