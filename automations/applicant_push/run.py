@@ -81,124 +81,107 @@ def _record_batch_count(sent: int, reached: bool) -> None:
         rp._log(f"[push] could not record batch count: {e}")
 
 
-def _prep_batch_page(page) -> bool:
-    """Get the shared page onto the classic console home so run_batch_stage's
-    open_v2_dashboard can find the 'Explore Appstream AI' button.
-
-    Called AFTER the OAT stage, which leaves us on p=604. This is a classic→classic
-    hop (p=604 → index.cfm home), NOT the fragile v2→classic transition — office
-    11580 was set once by warm_appstream_cdp_page and neither stage switches away
-    from it, so NO office re-switch is needed here (that reload is what re-triggered
-    Cloudflare). Returns True if the console home rendered (#searchMC).
-
-    The home load can catch a managed Cloudflare challenge that clears in a real
-    Chrome given a few seconds (same as the login path), so POLL for #searchMC up to
-    ~45s rather than a single fixed wait before giving up and skipping batch."""
-    try:
-        page.goto("https://applicantstream.com/index.cfm",
-                  wait_until="domcontentloaded")
-    except Exception as e:  # noqa: BLE001
-        rp._log(f"[push] console-home nav error before batch: {e}")
-    import time as _t
-    deadline = _t.time() + 45
-    while _t.time() < deadline:
-        if page.locator("#searchMC").count() > 0:
-            return True
-        page.wait_for_timeout(3000)
-    return page.locator("#searchMC").count() > 0
-
-
 MAX_SESSION_ATTEMPTS = 3
+
+
+def _run_stage(name: str, work):
+    """Open a FRESH warm CDP session (classic console, office 11580) and run
+    ``work(page, ctx, net)`` on it. Each stage (leftovers, batch) gets its own
+    session so batch starts from a clean console and goes straight console → v2
+    (the proven path) instead of a fragile mid-run re-navigation.
+
+    Retries the session OPEN up to MAX_SESSION_ATTEMPTS on AppStreamLoginFailed — a
+    Cloudflare re-challenge during login/office-switch, which happens BEFORE any
+    applicant is touched, so a fresh-profile retry is safe and self-heals. Returns
+    ``work``'s value, or None if the session never established after all retries
+    (the other stage still runs — a batch session failure never blocks leftovers)."""
+    for attempt in range(1, MAX_SESSION_ATTEMPTS + 1):
+        try:
+            with rp.warm_appstream_cdp_page(diag_tab=DIAG_TAB) as (page, ctx, net):
+                return work(page, ctx, net)
+        except rp.AppStreamLoginFailed as e:
+            if attempt < MAX_SESSION_ATTEMPTS:
+                rp._log(f"[push] {name}: session didn't establish ({e}) — retry "
+                        f"{attempt + 1}/{MAX_SESSION_ATTEMPTS} with a fresh profile")
+                continue
+            rp._log(f"[push][STOP] {name}: no AppStream session after "
+                    f"{MAX_SESSION_ATTEMPTS} attempts ({e}) — stage skipped. Office "
+                    "11580 may need a human Cloudflare clear on Lucy 2.")
+            return None
 
 
 def run(live: bool = False, limit: int = None, max_actions: int = None,
         batch_only: bool = False, oat_only: bool = False,
-        batch_limit: int = 0, _attempt: int = 1) -> int:
-    """Run the unified batch + leftovers pipeline on one warm CDP session.
+        batch_limit: int = 0) -> int:
+    """Run the unified pipeline: LEFTOVERS (OAT) then BATCH (Resume Pushing), each in
+    its OWN fresh warm CDP session (see _run_stage for why — batch needs a clean
+    console→v2 start, not a mid-run hop).
 
-    Returns the worst stage rc: 2 if the session never established after retries
-    (both stages aborted), else 0. A batch wedge (Indeed Turnstile) is logged but
-    does NOT fail the run — the leftovers stage still runs.
-
-    Office 11580 intermittently gets a fresh Cloudflare re-challenge during login or
-    the office switch (the console loses #searchMC). That happens BEFORE any applicant
-    is touched, so it's safe to retry a clean session up to MAX_SESSION_ATTEMPTS — the
-    profile was invalidated on the way out, so each retry re-seeds fresh and self-heals
-    (the same pattern resume_pushing._cdp_run and oat_processing.run already use)."""
+    Always returns 0 (the agent's success is "it ran"); a stage that can't establish a
+    session or that wedges is logged and skipped, never fatal to the other stage. A
+    batch Indeed-Turnstile wedge still counts as reached=True (it got to the batch
+    page). Office-11580 Cloudflare re-challenges during login are retried per stage."""
     mode = "LIVE" if live else "DRY-RUN"
     rp._LOG_BUFFER.clear()
     rp._log(f"[push] Applicant Push — office {OFFICE_ID} ({OFFICE_HINT}) — {mode} "
-            f"| batch_only={batch_only} oat_only={oat_only} | attempt {_attempt}"
-            f"/{MAX_SESSION_ATTEMPTS}")
+            f"| batch_only={batch_only} oat_only={oat_only}")
 
     batch = {"reached": False, "sent": 0, "remaining": None}
     oat_rc = None
-    try:
-        with rp.warm_appstream_cdp_page(diag_tab=DIAG_TAB) as (page, ctx, net):
-            # ORDER MATTERS: run OAT (classic p=604) FIRST on the console the session
-            # handed us, THEN batch (v2). warm_appstream_cdp_page yields a classic,
-            # logged-in, office-11580 page — OAT can open p=604 with NO navigation.
-            # Going the other way (batch's v2 → back to classic for OAT) re-triggers
-            # Cloudflare on office 11580 and wedges (proven 8/4). Neither stage
-            # switches office, so batch just hops classic-home → v2 afterward.
 
-            # ---- Stage 1: LEFTOVERS (OAT Processing) — on the classic console ----
-            if not batch_only:
-                rp._log("[push] ===== STAGE 1: LEFTOVERS (OAT Processing) =====")
-                oat.attach_dialog_accept(page)
-                try:
-                    oat_rc = oat.run_walk(page, live=live, limit=limit,
-                                          max_actions=max_actions)
-                except Exception as e:  # noqa: BLE001
-                    import traceback
-                    rp._log("[push] OAT stage error: " + str(e)[:200])
-                    rp._log(traceback.format_exc()[-400:])
-                    oat_rc = 1
+    # ---- Stage 1: LEFTOVERS (OAT, classic p=604) — its OWN fresh session ----
+    if not batch_only:
+        rp._log("[push] ===== STAGE 1: LEFTOVERS (OAT Processing) =====")
 
-            # ---- Stage 2: BATCH (Resume Pushing) — hop to v2 last ----
-            if not oat_only:
-                rp._log("[push] ===== STAGE 2: BATCH (Resume Pushing) =====")
-                try:
-                    if not batch_only and not _prep_batch_page(page):
-                        rp._log("[push] console home didn't render #searchMC before "
-                                "batch — skipping batch this pass (OAT already ran)")
-                    else:
-                        batch = rp.run_batch_stage(page, dry_run=not live,
-                                                   limit=batch_limit)
-                except rp.ExtractionStalled as e:
-                    # Indeed's employer-portal Turnstile is the usual cause. Log it,
-                    # but it does NOT fail the run — the leftovers stage already ran.
-                    rp._log("[push] BATCH extractor stalled: " + str(e)[:200])
-                    if net.get("indeed_403") or net.get("turnstile"):
-                        rp._log("[push][CAUSE] batch resume fetches from "
-                                "employers.indeed.com were CHALLENGED (401/403"
-                                + (" + Turnstile" if net.get("turnstile") else "")
-                                + ") — INDEED's bot protection, not AppStream. Refresh "
-                                "the Indeed employer login on Lucy 2.")
-                    else:
-                        rp._log("[push][CAUSE] no Indeed-403/Turnstile this pass — "
-                                "empty/slow batch or AppStream-side.")
-                except Exception as e:  # noqa: BLE001
-                    import traceback
-                    rp._log("[push] BATCH stage error (non-fatal — OAT already ran): "
-                            + str(e)[:200])
-                    rp._log(traceback.format_exc()[-400:])
-                _record_batch_count(batch.get("sent", 0), batch.get("reached", False))
-    except rp.AppStreamLoginFailed as e:
-        # The console never established (login or office-switch Cloudflare
-        # re-challenge). This is BEFORE any applicant is touched, so retry a fresh
-        # session — the profile was invalidated on the way out, so the retry
-        # re-seeds from Default and self-heals.
-        if _attempt < MAX_SESSION_ATTEMPTS:
-            rp._log(f"[push] session didn't establish ({e}) — retry "
-                    f"{_attempt + 1}/{MAX_SESSION_ATTEMPTS} with a fresh profile")
-            return run(live=live, limit=limit, max_actions=max_actions,
-                       batch_only=batch_only, oat_only=oat_only,
-                       batch_limit=batch_limit, _attempt=_attempt + 1)
-        rp._log(f"[push][STOP] no AppStream session after {MAX_SESSION_ATTEMPTS} "
-                f"attempts ({e}) — both stages aborted. Office 11580 likely needs a "
-                "human Cloudflare clear on Lucy 2.")
-        return 2
+        def _oat_work(page, ctx, net):
+            oat.attach_dialog_accept(page)
+            try:
+                return oat.run_walk(page, live=live, limit=limit,
+                                    max_actions=max_actions)
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                rp._log("[push] OAT stage error: " + str(e)[:200])
+                rp._log(traceback.format_exc()[-400:])
+                return 1
+
+        oat_rc = _run_stage("leftovers", _oat_work)
+
+    # ---- Stage 2: BATCH (Resume Pushing, v2) — its OWN fresh session ----
+    # Batch runs on a SEPARATE fresh session, NOT a mid-run hop off the OAT tab.
+    # warm_appstream_cdp_page hands batch a clean classic console, and
+    # run_batch_stage goes straight console → v2 → Process in Batches — the exact
+    # path standalone Resume Pushing has always used. This avoids the fragile
+    # mid-run classic↔v2 transition that office-11580 Cloudflare kept wedging
+    # (batch reached=False all of 8/5-8/6 with the one-session design).
+    if not oat_only:
+        rp._log("[push] ===== STAGE 2: BATCH (Resume Pushing) =====")
+
+        def _batch_work(page, ctx, net):
+            try:
+                return rp.run_batch_stage(page, dry_run=not live, limit=batch_limit)
+            except rp.ExtractionStalled as e:
+                # Reached the batch page but the extractor wedged (usually Indeed's
+                # Turnstile on the resume fetches). NON-fatal — and it DID reach.
+                rp._log("[push] BATCH extractor stalled: " + str(e)[:200])
+                if net.get("indeed_403") or net.get("turnstile"):
+                    rp._log("[push][CAUSE] batch resume fetches from "
+                            "employers.indeed.com were CHALLENGED (401/403"
+                            + (" + Turnstile" if net.get("turnstile") else "")
+                            + ") — INDEED's bot protection, not AppStream.")
+                else:
+                    rp._log("[push][CAUSE] no Indeed-403/Turnstile this pass — "
+                            "empty/slow batch or AppStream-side.")
+                return {"reached": True, "sent": 0, "remaining": None}
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                rp._log("[push] BATCH stage error: " + str(e)[:200])
+                rp._log(traceback.format_exc()[-400:])
+                return {"reached": False, "sent": 0, "remaining": None}
+
+        res = _run_stage("batch", _batch_work)
+        if res:
+            batch = res
+        _record_batch_count(batch.get("sent", 0), batch.get("reached", False))
 
     rp._log("[push] ===== COMBINED SUMMARY =====")
     rp._log(f"[push] mode={mode} | batch reached={batch.get('reached')} "
