@@ -1082,12 +1082,60 @@ def _fill_phone_field(page, phone: str) -> bool:
     return ok
 
 
+_NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
+
+
+def _nophone_key(a: Applicant) -> str:
+    return ((a.email or "") or f"{a.first_name} {a.last_name}").strip().lower()
+
+
+def _nophone_checked_path() -> str:
+    return f"output/oat-nophone-checked-{dt.date.today().isoformat()}.json"
+
+
+def _load_nophone_checked() -> set:
+    """Applicants whose resume we already opened TODAY and found no number — so a
+    later walk skips re-reading the same dead-end resume (Megan 2026-08-06: don't
+    waste ~12s reopening resumes we've already confirmed have no phone). Per-day so
+    it self-re-checks each morning (a resume could update, or Cloudflare ease)."""
+    global _NOPHONE_CHECKED
+    if _NOPHONE_CHECKED is None:
+        import json as _json
+        try:
+            _NOPHONE_CHECKED = set(_json.load(open(_nophone_checked_path())))
+        except Exception:  # noqa: BLE001
+            _NOPHONE_CHECKED = set()
+    return _NOPHONE_CHECKED
+
+
+def _mark_nophone_checked(key: str) -> None:
+    s = _load_nophone_checked()
+    if key and key not in s:
+        s.add(key)
+        import json as _json
+        try:
+            os.makedirs("output", exist_ok=True)
+            open(_nophone_checked_path(), "w").write(_json.dumps(sorted(s)))
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """No phone on file → first try to pull the real number off the applicant's
     Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
     and Send to AI (turns a dead-end into a real send). Only when the resume has no
-    phone either do we flag as 'need to get number from Indeed'."""
-    if live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False):
+    phone either do we flag as 'need to get number from Indeed'.
+
+    Reads each applicant's resume AT MOST ONCE per day: once we've confirmed a resume
+    has no number, we remember it and SKIP re-reading it on later walks (just flag it
+    fast), so the walk doesn't keep reopening the same dead-end resumes."""
+    key = _nophone_key(a)
+    already_checked = key in _load_nophone_checked()
+    if already_checked:
+        _log(f"    already checked today (no resume number) — skip re-read: "
+             f"{a.first_name} {a.last_name}")
+    if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
+            and not already_checked):
         phone, detail = lookup_resume_phone(page)
         if phone and _fill_phone_field(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
@@ -1116,8 +1164,9 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             except Exception as e:  # noqa: BLE001
                 _log(f"    [phones] diag err: {type(e).__name__}")
             return do_send_ai(page, a, live)
-        _log(f"    no resume phone ({detail}) → flag: "
-             f"{a.first_name} {a.last_name}")
+        _log(f"    no resume phone ({detail}) → flag + remember (won't re-read "
+             f"today): {a.first_name} {a.last_name}")
+        _mark_nophone_checked(key)
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
         a.email, a.job_board, a.position,
