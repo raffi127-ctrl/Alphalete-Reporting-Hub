@@ -1029,6 +1029,29 @@ def _read_shared_library_rows() -> list[dict]:
     return out
 
 
+def _consolidated_office_metric_ids() -> set[str]:
+    """report_ids already shown INSIDE a consolidated metrics card, so their
+    auto-registered library rows must NOT render as their own duplicate card.
+
+    Derived from the office registries (D2D office_metrics + B2B b2b_metrics) so
+    every onboarded office folds into its card automatically — an office is data,
+    never a hand-added exclusion (that's how haytham needed a manual entry and
+    trang/jamis slipped through as stray cards). Both consolidated cards already
+    read these same registries to build their per-office buttons."""
+    ids: set[str] = set()
+    try:
+        from automations.office_metrics import offices as _d2d
+        ids |= {o.report_id for o in _d2d.OFFICES.values()}
+    except Exception:
+        pass
+    try:
+        from automations.b2b_metrics import offices as _b2b
+        ids |= {f"{o.key}_metrics" for o in _b2b.OFFICES.values()}
+    except Exception:
+        pass
+    return ids
+
+
 def _read_shared_library() -> list[dict]:
     """AUTOMATED_REPORTS-compatible dicts for the shared library. Wraps the
     cached row read and layers on the synthetic `actions` (with args_fn
@@ -1050,6 +1073,9 @@ def _read_shared_library() -> list[dict]:
         _rid = str(report.get("id") or "")
         if (_cat in ("⚙️ System", "↳ Sub-steps")
                 or _rid.startswith("disable_")
+                # onboarded offices live INSIDE the consolidated D2D/B2B metrics
+                # cards — hide their auto-registered per-office library dupes.
+                or _rid in _consolidated_office_metric_ids()
                 or _rid in {"applicant_morning", "applicant_evening",
                             "car_rides_cleanup", "new_start_followup_sat",
                             "leaders_call_mon", "override_bulletin_send_fri",

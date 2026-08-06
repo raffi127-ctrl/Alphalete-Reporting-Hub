@@ -5628,7 +5628,7 @@
     },
     "trang_metrics": {
       "order": 7.9,
-      "on_scheduler": true,
+      "on_scheduler": false,
       "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders)",
       "source_type": "tableau",
       "data_sources": [
@@ -5661,7 +5661,7 @@
         "type": "manifest",
         "report_id": "trang_metrics"
       },
-      "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners).",
+      "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners). on_scheduler:false 2026-08-06 — ALL 11 sections pull clean (dry-run verified), but her channel lives in the FRESH SUCCESS Slack workspace, NOT AO, and Lucy's token (@mhines) can't post cross-workspace. FS is on the FREE plan so Slack Connect is PRO-locked; pending decision = email fallback vs. a bot installed in FS. Flip back to true once a working delivery path exists.",
       "_onboarded": true
     }
   },
