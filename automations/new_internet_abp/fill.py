@@ -485,11 +485,14 @@ def apply_house_style(ws, *, last_row: Optional[int] = None, logfn=print) -> Non
                        "userEnteredFormat.borders"),
         }},
     ]
-    for col_0, px in HOUSE_COL_WIDTHS.items():
-        requests.append({"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": col_0, "endIndex": col_0 + 1},
-            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
+    # Fit every used column to its content so nothing truncates in the posted
+    # screenshot (Megan 2026-08-06: "all cells should fit to text so all can be
+    # seen" — the old fixed 185/90/67 widths clipped rep names and the date
+    # headers). autoResize re-fits each run, including the daily-inserted date
+    # pairs. HOUSE_COL_WIDTHS kept above as the historical reference.
+    requests.append({"autoResizeDimensions": {
+        "dimensions": {"sheetId": ws.id, "dimension": "COLUMNS",
+                       "startIndex": 0, "endIndex": ws.col_count}}})
     # Yellow on the date header (B1:C1) + the whole label row (A3:C3), per
     # Megan's Raf formatting (2026-07-10). The daily insert PASTE_FORMATs it
     # onto each new date column, so it propagates. Numeric %-cells still get

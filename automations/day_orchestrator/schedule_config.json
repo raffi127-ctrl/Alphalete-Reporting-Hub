@@ -5666,7 +5666,7 @@
     },
     "trang_metrics": {
       "order": 7.9,
-      "on_scheduler": false,
+      "on_scheduler": true,
       "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders)",
       "source_type": "tableau",
       "data_sources": [
@@ -5699,7 +5699,7 @@
         "type": "manifest",
         "report_id": "trang_metrics"
       },
-      "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners). on_scheduler:false 2026-08-06 — ALL 11 sections pull clean (dry-run verified), but her channel lives in the FRESH SUCCESS Slack workspace, NOT AO, and Lucy's token (@mhines) can't post cross-workspace. FS is on the FREE plan so Slack Connect is PRO-locked; pending decision = email fallback vs. a bot installed in FS. Flip back to true once a working delivery path exists.",
+      "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners). LIVE 2026-08-06: her channel is in the FRESH SUCCESS Slack workspace (not AO); posts via a dedicated FS bot ('alphalete_metrics') whose xoxb token is routed by office_metrics.runner (offices.CROSS_WS_TOKEN_FILES -> slack-token-freshsuccess). First live post verified: 10/11 sections landed; Rep Activations was fixed (was EPERM'ing on ~/Downloads, now renders to output/).",
       "_onboarded": true
     }
   },

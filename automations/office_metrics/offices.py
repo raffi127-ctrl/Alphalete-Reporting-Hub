@@ -314,9 +314,17 @@ def _merge_onboarded() -> None:
         # only D2D rows belong here; never clobber a hardcoded office
         if not key or key in OFFICES or r.get("machine", "Lucy 1") == "__b2b__":
             continue
+        # Display label: capitalize the leading word so an onboarding record that
+        # stored a lowercase name ("trang's Local Office") still shows title-cased
+        # ("Trang's Local Office") wherever o.label surfaces (e.g. the ABP
+        # subtitle). Only the DISPLAY string — o.owner stays exactly as stored
+        # because it's the Tableau/ownerville match key. [[feedback_always_titlecase_names]]
+        _label = r.get("label") or f"{key.title()}'s Local Office"
+        if _label:
+            _label = _label[:1].upper() + _label[1:]
         kw = dict(
             key=key, report_id=r.get("report_id") or f"{key}_metrics",
-            label=r.get("label") or f"{key.title()}'s Local Office",
+            label=_label,
             owner=r.get("owner", ""), channel_id=r.get("channel_id", ""),
             channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
             knocks_office=r.get("knocks_office", "") or r.get("owner", ""),

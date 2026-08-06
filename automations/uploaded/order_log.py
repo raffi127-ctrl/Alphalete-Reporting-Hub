@@ -112,6 +112,10 @@ START_DATE = END_DATE - relativedelta(months=1)
 # === Output location =================================================
 # Downloads folder works for any user on macOS or Windows.
 OUTPUT_DIR = Path.home() / "Downloads"
+# Repo root (automations/uploaded/order_log.py -> parents[2]). Used for the
+# always-writable output/ dir the Rep Activations PNG renders into, so a
+# TCC/lock guard on ~/Downloads can't silently drop the metric on the mini.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Per-run screenshot folder (optional debugging aid). Set to None to disable.
 SCREENSHOT_DIR = Path(__file__).resolve().parent / "screenshots"
@@ -2019,11 +2023,19 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             _cleaned = _load_and_clean(csv_path)
             is_empty = bool(_cleaned.empty)
             summary = build_week_tables(_cleaned, date.today())
+            # Write the Rep Activations PNG to the repo's output/ dir, NOT
+            # ~/Downloads. On the mini (launchd) Downloads is TCC-protected and a
+            # stale same-day PNG there EPERMs the overwrite — silently dropping
+            # the metric even WITH the owner suffix (recurred for trang
+            # 2026-08-06: "[Errno 1] Operation not permitted"). output/ is always
+            # process-writable and still survives tempdir cleanup for the upload.
+            _rep_dir = REPO_ROOT / "output" / "rep_activations"
+            _rep_dir.mkdir(parents=True, exist_ok=True)
             rep_png = render_rep_tables(
                 summary,
-                OUTPUT_DIR / f"Rep Activations {date.today():%m-%d-%Y}{_suffix}.png",
+                _rep_dir / f"Rep Activations {date.today():%m-%d-%Y}{_suffix}.png",
             )
-            print(f"✓ Saved Rep Activations image: {rep_png.name}")
+            print(f"✓ Saved Rep Activations image: {rep_png}")
         except Exception as e:
             rep_png = None
             # Record it. The Order Log still posts (below) — a summary hiccup
