@@ -66,6 +66,26 @@ if [ "$(date +%u)" = "1" ]; then
   echo "[$(date)] MONDAY: full board fill + email (afternoon — Sunday has landed)" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships --skip-compare "$@" >> "$LOG_FILE" 2>&1
   ST=$?
+  # All Campaigns fill BEFORE the email (Eve 2026-08-06). The email carries the
+  # All Units board as a SECOND SECTION, rendered LIVE off that tab at post time
+  # (screenshot_email.capture_all_units). The morning orchestrator already filled
+  # it — but off the MORNING board, i.e. before the full fill above landed
+  # Sunday. Post the email without redoing it and Monday's All Units blocks show
+  # a week missing its last day, on the one day the board is least finished.
+  # This is the Monday twin of the order-9 -> 10.5 fix in schedule_config.json;
+  # Monday never comes through the orchestrator, so the config change alone would
+  # have left exactly one day a week still broken.
+  # Deliberately NOT --enable-rollover: this branch is Monday-only and the roll is
+  # a Tuesday job — no roll should ever fire from here.
+  # Non-fatal to $ST on purpose (same reasoning as the captainship drafts below):
+  # a stale All Units section must not report the BOARD as broken.
+  # --apply is what makes it write; a `bash board_catchup.sh --dry-run` test must
+  # not, and all_campaigns_board.run has no --dry-run flag (dry IS the default).
+  if [ "$#" -eq 0 ]; then ACB_ARGS="--apply"; else ACB_ARGS=""; fi
+  echo "[$(date)] MONDAY: re-filling the All Campaigns board (${ACB_ARGS:-dry-run})" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.all_campaigns_board.run $ACB_ARGS >> "$LOG_FILE" 2>&1 || \
+    echo "[$(date)] MONDAY: All Campaigns fill failed — the email's All Units section may be stale" >> "$LOG_FILE"
+
   # Board email: stopped 2026-07-28 (Megan, handed to Eve), BACK ON 2026-07-29 (Eve)
   # alongside the Tue-Sun morning path — but it does NOT send from here. Monday's
   # email goes through the same review gate as every other day: this posts the
