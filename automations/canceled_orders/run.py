@@ -41,8 +41,8 @@ RAF_OWNERS = {
     # 2026-07-20 so his cancels pull into Raf's Captainship (his rows were
     # being filtered out for not being in the roster).
     "Salik Mallick", "Salik Malik",
-    # Sub-captains under Raf whose offices were missing from the roster, so
-    # their cancels weren't pulling (2026-08-05):
+    # Owners in Raf's captainship whose offices were missing from the roster,
+    # so their cancels weren't pulling (2026-08-05):
     "Rashad Reed",   # Elevate Specialized Acquisitions, Inc.
     "Nii Tagoe",     # Next Horizon Group, Inc.
 }
