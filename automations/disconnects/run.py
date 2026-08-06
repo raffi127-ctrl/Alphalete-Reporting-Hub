@@ -40,6 +40,10 @@ RAF_OWNERS = {
     # 2026-07-20 so his disconnects pull into Raf's Captainship (his rows
     # were being filtered out for not being in the roster).
     "Salik Mallick", "Salik Malik",
+    # Sub-captains under Raf whose offices were missing from the roster, so
+    # their disconnects weren't pulling (2026-08-05):
+    "Rashad Reed",   # Elevate Specialized Acquisitions, Inc.
+    "Nii Tagoe",     # Next Horizon Group, Inc.
 }
 STARR_OWNERS = {
     "Jason Strid", "Jc Gerard Pascual", "Milly Villagrana",
