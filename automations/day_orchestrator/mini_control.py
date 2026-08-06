@@ -1749,6 +1749,43 @@ def _action_git_stash(args: str) -> tuple[bool, str]:
                   + "\nrestore on the machine with: git stash pop")
 
 
+def _action_git_recover(args: str) -> tuple[bool, str]:
+    """LAST-RESORT remote recovery from a git CONFLICT that blocks every report.
+
+    A pull that hits a merge conflict leaves `schedule_config.json` UNMERGED (UU)
+    with `<<<<<<<` markers — no longer valid JSON, so every report that loads the
+    schedule dies. `git_stash` can't touch unmerged paths and `update` refuses to
+    run while unmerged, so nothing else here can clear it: THIS can. It force-
+    resyncs the runner to origin/main:
+
+        git merge/rebase --abort (if any) ; git fetch origin ; git reset --hard origin/main
+
+    DESTRUCTIVE to UNCOMMITTED tracked edits (e.g. an onboard_apply not yet
+    committed) — but those are reproducible (`lucy onboard_apply <kind> <key>`).
+    Untracked files (browser profiles, extractor caches) are NOT touched — no
+    `git clean`. After recovery: restart_poller if poller code changed, and re-run
+    any pending onboard_apply to restore its Sheet-materialized entries.
+    """
+    def _git(*a, timeout=180):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=timeout)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    _git("merge", "--abort")     # ignore result — may not be mid-merge
+    _git("rebase", "--abort")
+    okf, outf = _git("fetch", "origin", "main")
+    if not okf:
+        return False, f"git_recover: fetch failed: {outf[:200]}"
+    okr, outr = _git("reset", "--hard", "origin/main")
+    if not okr:
+        return False, f"git_recover: reset failed: {outr[:200]}"
+    _, head = _git("log", "-1", "--format=%h %ad %s", "--date=short")
+    return True, ("recovered — hard reset to origin/main.\n"
+                  f"HEAD now: {head}\n"
+                  "Uncommitted tracked edits were discarded (re-run onboard_apply "
+                  "to restore). restart_poller if poller code changed.")
+
+
 def _action_set_payroll_webapp(args: str) -> tuple[bool, str]:
     """Install/refresh the payroll headless-refresh Web App URL (runbook §1)
     into vantura-payroll-webapp.json at the repo root (gitignored), so the
@@ -3140,6 +3177,7 @@ ACTIONS = {
     "git_status": _action_git_status,
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
+    "git_recover": _action_git_recover,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_payroll_webapp": _action_set_payroll_webapp,
