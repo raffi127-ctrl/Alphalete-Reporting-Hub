@@ -9,8 +9,8 @@ This is the ONE edit-to-add config file. Each section is a dict:
              daily | field_status | energy | team | highrollers | zeros | ranking
   sort    -- for 'ranking' kind: the running-week metric header to sort by (APPS/INT/NL)
 
-Team Sales (kind='team') fans out to ONE image per team found live in column CI.
-Everything else is a single image. Order here == order in the Slack thread (Megan 7/5).
+Team Sales (kind='team') fans out to ONE image per team (Raf 8/6 "what Eve sent"): normal
+day opens up that day's block, Monday shows the whole week. Order == thread (Megan 7/5).
 """
 from __future__ import annotations
 

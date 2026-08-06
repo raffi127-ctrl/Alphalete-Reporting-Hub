@@ -15,7 +15,9 @@ The live sheet the team is using is never touched. Recipes per 'kind':
   daily        -- full leaderboard, day-Apps columns, through Teams 'Alphaletes TOTALS'
   field_status -- daily leaderboard, 1st-4th-week reps only, grouped by Field Status
   energy       -- daily leaderboard filtered to Campaign = Energy, ranked by Apps
-  team         -- ONE per team (col CI): running Apps + last completed day expanded
+  team         -- ONE per team: full running-week block + last-week Apps + identity thru
+                  Leadership Status. Normal day opens up that day's block (+Roll Call);
+                  Monday shows each day Mon-Sun Apps, nothing opened up
   highrollers  -- only reps who produced yesterday, sorted by the day's Apps
   zeros        -- escalating Zero Streak, one image per depth (see zeros_streak.py;
                   fanned out in capture_all, not rendered here)
@@ -373,16 +375,52 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
 
         elif kind == "team":
-            d0, d1 = _day_block(grid, last_completed_day(today))
-            show = {0, 1, 2, 3} | set(range(d0, d1 + 1))     # #, name, running APPS, day block
-            export_rng = f"A1:{col_letter(d1)}{tot_row}"
+            # Raf 8/6 (from his screenshots, "what Eve sent"): the leader's own team, everything
+            # from # across to Leadership Status. Full RUNNING WEEK TOTALS block + LAST WEEK'S
+            # apps + Trainer / Field Status / Campaign / Team / Leadership Status. On a normal day
+            # the current day is "opened up" (its 7-metric block + that day's Roll Call). On
+            # MONDAY nothing is opened up — each day Mon–Sun shows just its Apps (whole week).
+            def _hdr1(label):
+                return next((c for c in range(len(grid[0]))
+                             if _cell(grid, 0, c).strip() == label), None)
+            rw = _hdr1("RUNNING WEEK TOTALS")
+            lw = _hdr1("LAST WEEK'S TOTALS")
+            run_block = list(range(rw, lw)) if (rw is not None and lw is not None) else [3]
+            show = {0, 1, 2} | set(run_block)               # #, name, full running-week block
+            subtotal_cols = list(run_block)
+            if lw is not None:                               # LAST WEEK'S TOTALS -> APPS only
+                show.add(lw)
+                subtotal_cols.append(lw)
+            if today.weekday() == 0:                         # MONDAY: each day's Apps, nothing opened
+                day_apps = [c for c in range(len(grid[0]))
+                            if _cell(grid, 0, c).strip() in DAY_NAMES
+                            and _cell(grid, 2, c).strip().lower() == "apps"]
+                show |= set(day_apps)
+                subtotal_cols += day_apps
+                filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+            else:                                            # normal day: this day opened up + Roll Call
+                d0, d1 = _day_block(grid, last_completed_day(today))
+                show |= set(range(d0, d1 + 1))
+                subtotal_cols += list(range(d0, d1 + 1))
+                rc = d1 + 1                                  # Roll Call sits right after the day's Cx
+                if _cell(grid, 2, rc).strip().lower() == "roll call":
+                    show.add(rc)
+                filt_specs.append({"columnIndex": d0, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+            # identity columns through Leadership Status (Trainer / Field Status / Team / Leadership)
+            for lbl in ("Trainer", "Field Status", "Team", "Leadership Status"):
+                c = _hdr1(lbl)
+                if c is not None:
+                    show.add(c)
+            try:
+                show.add(_campaign_col(grid))                # Fiber / Energy / Fiber-Wireless (by label)
+            except Exception as e:                           # noqa: BLE001 — missing col shouldn't crash
+                print("[alphalete_production] warn: %s" % e)
             team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
             teams = sorted({_cell(grid, r, team_col).strip() for r in range(3, tot_row - 1)
                             if _cell(grid, r, 2).strip() and _cell(grid, r, team_col).strip()})
             hide = [""] + [t for t in teams if t != team]
             filt_specs.append({"columnIndex": team_col, "filterCriteria": {"hiddenValues": hide}})
-            filt_specs.append({"columnIndex": d0, "filterCriteria": {"hiddenValues": ["F", "T"]}})
-            subtotal_cols = [3] + list(range(d0, d1 + 1))
+            export_rng = f"A1:{col_letter(max(show))}{tot_row}"
 
         elif kind == "highrollers":
             d0, d1 = _day_block(grid, last_completed_day(today))
