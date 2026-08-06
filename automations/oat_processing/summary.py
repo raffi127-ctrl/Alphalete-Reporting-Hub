@@ -318,41 +318,59 @@ def fix_last_header() -> int:
     return 0
 
 
+def _names_of(bucket) -> list:
+    out = []
+    for it in bucket or []:
+        nm = (it.get("name") or "").strip()
+        if nm:
+            out.append(nm)
+    return out
+
+
 def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
-    """Post the 'who still needs a number' report to #alphaletegp-recruiting as Lucy —
-    REPLACES the daily scorecard (Megan 2026-08-06). These are the no-phone OAT
-    leftovers a human must look up in Indeed by hand (the bot can't pull them).
+    """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
+    REPLACES the scorecard (Megan 2026-08-06). It lists the ONLY two buckets the bot
+    legitimately can't process, so a human can finish them by hand:
+      1. NO NUMBER — a number couldn't be read off their resume (needs an Indeed
+         look-up by hand).
+      2. NEEDS A MANUAL TEXT — quiet >1wk applicants whose SMS thread is older than
+         this month, so the bot's texting widget can't see it to reply.
 
-    Format Megan approved: a HEADER parent with the count, then the NAMES as a
-    threaded reply (so the count sits clean in the channel and the list is one tap in).
+    Format: a HEADER parent with the totals, then the two labelled name lists as a
+    threaded reply (so the counts sit clean in the channel, the who is one tap in)."""
+    no_number = _names_of(t.get("nophone"))
+    needs_text = _names_of(t.get("retext"))
+    n_num, n_txt = len(no_number), len(needs_text)
 
-        📋 Fri, Aug 8 — 5 applicants need a number pulled from Indeed
-          ↳ • Julissa Alvarado
-            • Micheal Salinas ..."""
-    names = [(it.get("name") or "").strip() for it in t.get("nophone", [])]
-    names = [n for n in names if n]
-    n = len(names)
     # Cross-platform date (no %-d): "Fri, Aug 8".
     date_str = date.strftime("%a, %b ") + str(date.day)
-    noun = "applicant" if n == 1 else "applicants"
-    verb = "needs" if n == 1 else "need"
-    header = f"\U0001F4CB {date_str} — {n} {noun} {verb} a number pulled from Indeed"
-    body = "\n".join("• " + nm for nm in names) if names else \
-        "None today ✅ — everyone had a number on file."
+    header = (f"\U0001F4CB {date_str} — recruiting to-do: "
+              f"{n_num} need a number, {n_txt} need a manual text")
+
+    def _section(title, names):
+        if not names:
+            return f"{title} — 0\n  (none today ✅)"
+        return f"{title} — {len(names)}\n" + "\n".join("  • " + nm for nm in names)
+
+    body = (_section("\U0001F4DE Need a number pulled from Indeed", no_number)
+            + "\n\n"
+            + _section("\U0001F4AC Need a manual text (thread too old to see)",
+                       needs_text))
 
     if dry_run:
-        print("[nophone] DRY-RUN — would post to #alphaletegp-recruiting:", flush=True)
+        print("[report] DRY-RUN — would post to #alphaletegp-recruiting:", flush=True)
         print("  HEADER: " + header, flush=True)
         print("  REPLY:\n    " + body.replace("\n", "\n    "), flush=True)
-        return {"ok": True, "dry_run": True, "count": n}
+        return {"ok": True, "dry_run": True, "no_number": n_num, "needs_text": n_txt}
 
     from automations.shared import slack_metrics_post as smp
     c = smp._client()
     parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
     ts = parent["ts"]
     c.chat_postMessage(channel=CHANNEL_ID, thread_ts=ts, text=body)
-    print(f"[nophone] posted — {n} applicant(s) need a number (thread {ts})", flush=True)
-    return {"ok": True, "thread_ts": ts, "count": n}
+    print(f"[report] posted — {n_num} need a number, {n_txt} need a manual text "
+          f"(thread {ts})", flush=True)
+    return {"ok": True, "thread_ts": ts, "no_number": n_num, "needs_text": n_txt}
 
 
 def main(argv=None) -> int:

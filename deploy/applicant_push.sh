@@ -53,14 +53,14 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
-# EFFICIENCY (2026-08-06, Megan): this flow is LEFTOVERS-ONLY. The batch (Resume
-# Pushing) stage reaches the extract screen but the resume-pull is bot-blocked and
-# batch extraction isn't needed — so we skip it (--oat-only below), saving a whole
-# second warm-Chrome session per run. And the OAT no-phone resume-lookup hits the
-# same wall and burns ~12s per no-phone applicant for nothing, so turn it OFF —
-# no-phone apps flag straight to the human queue. Both are reversible: drop
-# --oat-only to re-enable batch; set OAT_AUTOMATE_PHONE_LOOKUP=1 to re-enable lookup.
-export OAT_AUTOMATE_PHONE_LOOKUP=0
+# EFFICIENCY (2026-08-06, Megan): this flow is LEFTOVERS-ONLY (--oat-only below). We
+# skip the batch (Resume Pushing) stage — it reads the SAME resumes the OAT walk's
+# resume-lookup does and just adds a fragile second warm-Chrome session, so it's
+# redundant here. But the OAT resume-lookup itself stays ON (default): reading a
+# number off each applicant's resume is exactly how a no-phone app gets processed,
+# so we must TRY it for everyone and only flag the ones whose number truly can't be
+# read (Megan's goal: process all apps except the un-readable + the un-textable).
+# (Drop --oat-only to re-enable batch; OAT_AUTOMATE_PHONE_LOOKUP defaults to on.)
 
 echo "[$(date)] Applicant Push starting (extra args: ${*:-none})" >> "$LOG_FILE"
 
