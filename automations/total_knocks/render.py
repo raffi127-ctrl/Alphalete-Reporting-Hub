@@ -58,9 +58,11 @@ PAD        = 16
 TITLE_H    = 52
 HEADER_H   = 40
 ROW_H      = 28
-CELL_PAD_X = 4
+CELL_PAD_X = 10   # was 4 — more breathing room so text isn't cramped to the grid
 MIN_COL_W  = 26
-MAX_COL_W  = 320
+MAX_COL_W  = 640  # was 320 — the old cap truncated wide headers ("Presentation –
+                  # Not Interested") and long rep names; widen so every cell fits
+                  # its text (Megan 2026-08-06: "all cells fit to text").
 OUT_DIR_DEFAULT = Path("output")
 
 
