@@ -55,7 +55,14 @@ export PYTHONPATH="$(pwd)"
 
 echo "[$(date)] Applicant Push starting (extra args: ${*:-none})" >> "$LOG_FILE"
 
-"$VENV_PY" -u -m automations.applicant_push.run "$@" >> "$LOG_FILE" 2>&1
+# The scheduled run is LIVE. applicant_push.run defaults to DRY-RUN unless --live is
+# passed (safe default for manual use), so the wrapper INJECTS --live for the
+# unattended agent — blanked when a manual --dry-run is given so a dry probe stays
+# dry. (Mirrors the OAT wrapper; without this the launchd agent runs dry and does
+# nothing — the 2026-08-05 bug.)
+ARGS="--live"
+[ "$DRYRUN" -eq 1 ] && ARGS=""
+"$VENV_PY" -u -m automations.applicant_push.run $ARGS "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
