@@ -60,7 +60,49 @@ def _cohort_weeks_old(week_tag: str):
     return None
 
 
-def _load_activity(sh, log=_log):
+def _a1col(j: int) -> str:
+    """0-based column index -> A1 letter. Findings are read by a human who then
+    has to FIND the cell; 'r71c17' sends them counting columns, 'Q71' doesn't."""
+    s, j = "", j + 1
+    while j:
+        j, r = divmod(j - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _alias_map(sh, log=_log):
+    """The hidden 'Name Aliases' tab, both directions: col A is the board
+    spelling, col B the paid/real one. Read ONCE per run and passed around —
+    every caller used to open the tab itself, and Sheets' 60-reads/min ceiling
+    is the thing that silently empties sections of these reports."""
+    pairs = {}
+    try:
+        for r in sh.worksheet("Name Aliases").get_all_values()[1:]:
+            if len(r) > 1 and str(r[0]).strip() and str(r[1]).strip():
+                a, b = _norm(r[0]), _norm(r[1])
+                pairs.setdefault(a, set()).add(b)
+                pairs.setdefault(b, set()).add(a)
+    except Exception as e:  # noqa: BLE001
+        log(f"(no Name Aliases tab: {type(e).__name__}) — matching on exact names")
+    return pairs
+
+
+def _with_aliases(names, alias):
+    """Every known spelling PLUS whatever Name Aliases says is the same person.
+
+    Without this the aliases tab only bridged the sales/status evidence, never
+    the name checks themselves — so the one mechanism Eve has for "the board
+    calls her X, payroll calls her Y" did nothing for the two findings that
+    actually fire on a spelling mismatch (OFF-MENU ADD and the Stations name
+    hygiene). Adding the alias row is now the fix, per the repo rule: spelling
+    mismatches go in the aliases sheet, not in per-report patches."""
+    out = set(names)
+    for n in names:
+        out |= alias.get(n, set())
+    return out
+
+
+def _load_activity(sh, log=_log, alias=None):
     """Evidence used to explain WHY someone has no board row:
       - New DU col A status ('Not Active', '3 - In Training', '5 - Leader')
         keyed by the col-I name
@@ -80,19 +122,7 @@ def _load_activity(sh, log=_log):
     is the board spelling, col B the paid/real one). Any tab going missing
     degrades to 'no evidence' — the caller then just reports the plain
     missing-row finding rather than crashing the whole audit."""
-    def _alias_map():
-        pairs = {}
-        try:
-            for r in sh.worksheet("Name Aliases").get_all_values()[1:]:
-                if len(r) > 1 and str(r[0]).strip() and str(r[1]).strip():
-                    a, b = _norm(r[0]), _norm(r[1])
-                    pairs.setdefault(a, set()).add(b)
-                    pairs.setdefault(b, set()).add(a)
-        except Exception as e:  # noqa: BLE001
-            log(f"(no Name Aliases tab: {type(e).__name__}) — matching on exact names")
-        return pairs
-
-    alias = _alias_map()
+    alias = _alias_map(sh, log) if alias is None else alias
 
     def _spread(d):
         """copy each entry onto its aliases so either spelling resolves"""
@@ -149,10 +179,21 @@ def _later(a: str, b: str) -> str:
 def audit(write: bool, log=_log) -> int:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
-    board = sh.worksheet("Sales Board").get("A1:AQ110")
-    board_form = sh.worksheet("Sales Board").get(
-        "A1:AQ110", value_render_option="FORMULA")
+    # Sheets TRIMS trailing empty cells, so a rep row that stops at col L comes
+    # back 12 wide and every `len(r) > j` guard downstream reads it as "no such
+    # column". That silently dropped Kyara (r50) and Tara Ecklof (r51) out of
+    # the rep list on 2026-08-06 — which then made the Stations tab report her
+    # as "matches nobody on the board" when she is sitting right there on it.
+    # Pad to the requested width; a real blank and a trimmed blank are the same
+    # thing everywhere in this file.
+    def _pad(rows, width=43):          # A1:AQ = 43 columns
+        return [list(r) + [""] * (width - len(r)) for r in rows]
+
+    board = _pad(sh.worksheet("Sales Board").get("A1:AQ110"))
+    board_form = _pad(sh.worksheet("Sales Board").get(
+        "A1:AQ110", value_render_option="FORMULA"))
     roll = sh.worksheet("Roll Call").get_all_values()
+    alias = _alias_map(sh, log=log)
 
     # rep block = rows >=5 with a name and a week tag, or (for tag-less manual
     # strays like the old 'Nico M' row) a campaign — but never the campaign
@@ -176,7 +217,8 @@ def audit(write: bool, log=_log) -> int:
     findings = []
 
     # 1. off-menu adds: board rep with no roll-call row (script's prefix rule)
-    roll_names = {_norm(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}
+    roll_names = _with_aliases(
+        {_norm(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}, alias)
     for i, name in reps:
         n = _norm(name)
         hit = n in roll_names or any(
@@ -215,8 +257,8 @@ def audit(write: bool, log=_log) -> int:
     #     mid-morning with no alert): every roll person whose status shows
     #     "Active" must have a board row. "New Start" status is exempt (they
     #     join the board at the week roll); Terminated/blank are irrelevant.
-    board_names = {_norm(n) for _, n in reps}
-    du_status, sales_by_rep, raw_weeks = _load_activity(sh, log=log)
+    board_names = _with_aliases({_norm(n) for _, n in reps}, alias)
+    du_status, sales_by_rep, raw_weeks = _load_activity(sh, log=log, alias=alias)
     # "still selling" = sold in either of the last two CLOSED weeks. One week is
     # too tight (a rep can miss a week and be fine); the current week is never
     # in RAW yet, so it can't be the yardstick.
@@ -309,22 +351,43 @@ def audit(write: bool, log=_log) -> int:
     #     reference BOUNDED Roll Call ranges shift when rows are inserted at
     #     the roll top (the New-Starts box read $B$22:$B$491 and showed 0).
     #     Everything should use full-column refs ('Roll Call'!$B:$B).
-    BOUNDED_ROLL = re.compile(r"'Roll Call'!\$[A-Z]{1,2}\$\d+:")
+    #     Reported as ONE grouped finding that COUNTS the cells and names them
+    #     in A1. It used to stop at the first hit ("one finding is enough; they
+    #     come in batches") and print it as r71c17 — which read as a single
+    #     stray cell. It is the whole New-Starts box: 15 cells, Q71:Q88. Eve
+    #     fairly pushed back that nobody inserts roll rows by hand (they come
+    #     from the board's own button), so spell out the OTHER half of the risk
+    #     that actually applies here — a bounded range also misses rows appended
+    #     past its END, and the roll has already grown past row 400.
+    BOUNDED_ROLL = re.compile(
+        r"'Roll Call'!\$[A-Z]{1,2}\$(\d+):\$?[A-Z]{1,2}\$(\d+)")
+    hits, bound_end = [], None
     for i, row in enumerate(board_form, start=1):
         for j, c in enumerate(row):
             c = str(c)
-            if c.startswith("=") and "INDIRECT" not in c.upper() \
-                    and BOUNDED_ROLL.search(c):
-                findings.append(
-                    f"ROLL-REF DRIFT RISK: board r{i}c{j+1} references a "
-                    "bounded Roll Call range — top-of-roll inserts shift it "
-                    "silently. Rewrite with full-column refs ($B:$B).")
-                break
-        else:
-            continue
-        break  # one finding is enough; they come in batches
+            if not c.startswith("=") or "INDIRECT" in c.upper():
+                continue
+            m = BOUNDED_ROLL.search(c)
+            if m:
+                hits.append("%s%d" % (_a1col(j), i))
+                end = int(m.group(2))
+                bound_end = end if bound_end is None else min(bound_end, end)
+    if hits:
+        roll_last = max((k for k, r in enumerate(roll, start=1)
+                         if len(r) > 3 and str(r[3]).strip()), default=0)
+        over = ""
+        if bound_end and roll_last > bound_end:
+            over = (f" The Roll Call already carries names down to r{roll_last}, "
+                    f"past the r{bound_end} these stop at — anyone added below "
+                    "that counts as 0 with no error.")
+        shown = ", ".join(hits[:8]) + (" …" if len(hits) > 8 else "")
+        findings.append(
+            f"ROLL-REF DRIFT RISK: {len(hits)} board cell(s) reference a bounded "
+            f"Roll Call range ({shown}). Rewrite with full-column refs "
+            "('Roll Call'!$B:$B): a bounded range misses rows appended past its "
+            f"end AND shifts when rows go in above its start.{over}")
 
-    findings += audit_stations(sh, last_rep, reps, roll, log=log)
+    findings += audit_stations(sh, last_rep, reps, roll, log=log, alias=alias)
 
     from automations.shared import run_manifest
 
@@ -366,7 +429,7 @@ def audit(write: bool, log=_log) -> int:
     return 0
 
 
-def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
+def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None) -> list[str]:
     """Stations-tab invariants (added 2026-07-19 after the audit that found
     all of these broken at once):
       1. no formula-error cells (#REF!/#N/A/... — e.g. the deleted week-label
@@ -391,13 +454,6 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
             if any(e in str(c) for e in ("#REF!", "#N/A", "#VALUE!", "#NAME?")):
                 out.append(f"STATIONS: error value {c!r} at r{i}c{j+1} — a "
                            "formula reference broke (deleted row/col?).")
-
-    def _a1col(j):
-        s, j = "", j + 1
-        while j:
-            j, r = divmod(j - 1, 26)
-            s = chr(65 + r) + s
-        return s
 
     # The checklist / new-start / Rep List cells used to be PINNED here by
     # address (V5,X5,Z5 / W5,Y5,AA5 / F6..F120). On 2026-07-21 Stations gained a
@@ -456,13 +512,20 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
                    f"{n_board} board / {n_roll} roll — the tab was re-laid out "
                    "and these checks are no longer looking at anything.")
 
-    known = {_n(n) for _, n in reps} | {
-        _n(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}
+    known = _with_aliases(
+        {_n(n) for _, n in reps} | {
+            _n(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()},
+        alias or {})
     def matches(name):
         n = _n(name)
         return (n in known or any(k.startswith(n + " ") or n.startswith(k + " ")
                                   for k in known))
-    LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|car rides|"
+    # 't extended' is a Territory Status VALUE, not a person: col A of a station
+    # block is 'Territory Status' over 'good'/'T Extended' cells, and the two
+    # capitalised tokens sail through _person_shaped. Reported every day since
+    # the status was first set (2026-08-06).
+    LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|t extended|"
+                        r"car rides|"
                         r"stations|legend|off|terminated|new starts|monday|"
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
                         r"roadtrip|pitch|closing|transition|running|day 0|"
