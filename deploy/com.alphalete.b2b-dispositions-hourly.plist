@@ -16,6 +16,7 @@
         <string>--which</string>
         <string>hourly</string>
         <string>--send</string>
+        <string>--text</string>
     </array>
 
     <key>WorkingDirectory</key>

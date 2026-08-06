@@ -17,6 +17,7 @@
         <string>all</string>
         <string>--final</string>
         <string>--send</string>
+        <string>--text</string>
     </array>
 
     <key>WorkingDirectory</key>
