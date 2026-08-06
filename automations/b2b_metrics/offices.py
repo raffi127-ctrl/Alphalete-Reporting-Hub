@@ -168,6 +168,14 @@ class B2BOffice:
     # Carlos's CarlosLocalOfficeEXPANDED is not, so Carlos clicks.)
     baked_sort_views: frozenset = field(default_factory=frozenset)
 
+    # view_keys whose view_override is a whole-workbook saved view (a different
+    # layout/expand state, NOT a pre-filtered owner slice) and so STILL needs the
+    # ?<field>=<owner> slice appended at capture. Normal overrides are captured
+    # as-is (their filter is baked); a slice_override keeps the owner slice so both
+    # dashboard panels stay scoped to the office. (Carlos's Sales Metrics: CarlosEXP
+    # carries the per-rep EXPANDED layout, still sliced by Owner Name.)
+    slice_overrides: frozenset = field(default_factory=frozenset)
+
     # EXTRA channels that get the SAME post as `channel_id` (Carlos 2026-07-23:
     # his thread also goes to #a-players-b2b). Slack threads are per-channel, so
     # each mirror gets its own daily thread with the same header + same items.
@@ -229,6 +237,15 @@ OFFICES: dict = {
         # exactly like Atef's AtefExp — captured as-is, no owner slice.
         # CHURNRATES sort ("0-30 disconnect count" desc) is baked into the view.
         view_overrides={
+            # Sales Metrics: Carlos's CarlosEXP view (Megan 2026-08-06) — same
+            # B2BATTSalesMetrics workbook as the team view, but the Owner Name
+            # row group is EXPANDED so the post shows the per-rep breakdown
+            # (Carlos's ask: "have Lucy hit the +/- so it shows my reps"). Kept in
+            # slice_overrides below so it STILL gets the ?Owner Name= slice — the
+            # only change from the old team view is the expanded layout.
+            "sales_metrics": (_T + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
+                              "4a1c404e-54e1-4325-a1a8-61e361f8fd12/"
+                              "CarlosEXP?:iid=1"),
             "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                                "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                                "CarlosLocalOfficeEXPANDEDCHURN"
@@ -252,6 +269,10 @@ OFFICES: dict = {
         # them). The overrides above stay intact so un-skipping restores them;
         # skip_views is the only toggle. Wireless churn + Customer churn remain.
         skip_views=frozenset({"churn_int", "churn_air"}),
+        # CarlosEXP is a whole-workbook saved view (expanded layout), NOT a
+        # pre-filtered slice — keep the ?Owner Name= slice so both panels stay
+        # scoped to Carlos's office, exactly as the old team view did.
+        slice_overrides=frozenset({"sales_metrics"}),
         # Carlos 2026-07-23: the SAME thread also posts to #a-players-b2b
         # (private, Lucy added as a member). Its own daily thread + dedup.
         mirror_channels=(("C0AJQA8P716", "#a-players-b2b"),),

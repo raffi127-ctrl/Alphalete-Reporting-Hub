@@ -226,8 +226,16 @@ def _sliced_url(o: B2BOffice, view_key: str) -> str:
     shared team view with ?<field>=<value> appended (drops :iid, a tab index),
     where the field is the view's own filter_field ("Owner Name" for Sales/OOB,
     "Owner & Office" for churn/activation) and the value is the office's matching
-    slice value."""
-    if o.is_override(view_key):
+    slice value.
+
+    EXCEPTION — slice_overrides: an override view listed there is a whole-workbook
+    saved view (a different layout/expand state, NOT a pre-filtered slice), so it
+    still needs the owner slice appended. Used for Carlos's Sales Metrics: his
+    CarlosEXP view carries the per-rep EXPANDED layout, but both panels still scope
+    to his office via ?Owner Name=<owner> exactly like the shared team view did.
+    Re-slicing a view that already bakes the same owner filter is harmless (same
+    value), so this is safe whether or not the saved view carries the filter."""
+    if o.is_override(view_key) and view_key not in o.slice_overrides:
         return o.view_url(view_key)
     from urllib.parse import quote
     field = VIEW_META.get(view_key, {}).get("filter_field", OWNER_FIELD)
