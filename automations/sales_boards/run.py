@@ -46,10 +46,11 @@ SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", PROD_SHEET_ID)
 TAB = "Sales Board"
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
-# Boards that post to the thread. Sourced from render.PROGRAMS but with JE
-# dropped — Megan 2026-07-22: JE Sales Board no longer publishes in the thread.
+# Boards that post to the thread. Sourced from render.PROGRAMS but with JE and
+# Base dropped — JE: Megan 2026-07-22; Base: Carlos 2026-08-06 (no longer runs
+# the base campaign, so ⚡ Base Sales Board should stop posting on both channels).
 # (render.PROGRAMS stays full: it also drives rep-row detection in render.py.)
-PROGRAMS = [p for p in R.PROGRAMS if p != "JE"]
+PROGRAMS = [p for p in R.PROGRAMS if p not in ("JE", "Base")]
 # The VA's per-program emoji, kept so the thread reads the way the channel is
 # used to: ":briefcase: *B2B Sales Board 7.17*".
 PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
