@@ -39,8 +39,13 @@ THEME_SLATE = {"title_bg": (51, 65, 85), "header_bg": (30, 41, 59),
 BOARDS = {
     "order_log":   ("📋 Order Log", "clipboard"),
     "cancels":     ("🚫 Canceled Orders", "no_entry_sign"),
-    "sched_6plus": ("📅 Sales Scheduled 6+ Days Out", "date"),
+    "disconnects": ("❎ Disconnected Orders", "negative_squared_cross_mark"),
 }
+# Board -> the status keyword its rows must contain (order status values seen live:
+# Canceled / Confirmed / Disconnected / Posted / Shipped). 6+ days out was dropped:
+# wireless orders ship immediately, so there's never a scheduled-out install
+# (Raf 2026-08-06: "he won't have 6+ days out").
+_STATUS_KEYWORD = {"cancels": "cancel", "disconnects": "disconnect"}
 
 
 def _norm_h(s: str) -> str:
@@ -147,46 +152,19 @@ def _render_order_log(owner, header, rows, target, out_dir):
                  out, name_col=0)
 
 
-def _render_cancels(owner, header, rows, target, out_dir):
+def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, slug):
+    """Order rows whose status contains `keyword` (cancels -> 'cancel',
+    disconnects -> 'disconnect'). One row per order: Rep / Customer / Date."""
     st_i = _find(header, "dtr status", "order status", "status")
     rep_i = _find(header, "rep")
     cust_i = _find(header, "customer name")
     date_i = _find(header, "sp.order date", "order date", "status date")
-    canceled = [r for r in rows if "cancel" in _cell(r, st_i).lower()]
+    hits = [r for r in rows if keyword in _cell(r, st_i).lower()]
     body = [[_cell(r, rep_i) or "—", _cell(r, cust_i) or "—",
-             _cell(r, date_i) or "—", _cell(r, st_i) or "—"] for r in canceled]
-    out = out_dir / f"nds_cancels_{target.isoformat()}.png"
+             _cell(r, date_i) or "—", _cell(r, st_i) or "—"] for r in hits]
+    out = out_dir / f"nds_{slug}_{target.isoformat()}.png"
     return _draw(["Rep", "Customer", "Order Date", "Status"], body,
-                 _title("🚫 Canceled Orders", target), THEME_SLATE, out, name_col=0), \
-        len(canceled)
-
-
-def _render_6plus(owner, header, rows, target, out_dir):
-    date_i = _find(header, "cl.dd date", "dd date", "dtr active date")
-    rep_i = _find(header, "rep")
-    cust_i = _find(header, "customer name")
-    cutoff = target + dt.timedelta(days=6)
-    out_rows = []
-    for r in rows:
-        d = _parse_date(_cell(r, date_i))
-        if d and d >= cutoff:
-            out_rows.append([_cell(r, rep_i) or "—", _cell(r, cust_i) or "—",
-                             d.isoformat()])
-    out_rows.sort(key=lambda x: x[2])
-    out = out_dir / f"nds_sched_6plus_{target.isoformat()}.png"
-    return _draw(["Rep", "Customer", "Install/DD Date"], out_rows,
-                 _title("📅 Sales Scheduled 6+ Days Out", target), THEME_SLATE,
-                 out, name_col=0), len(out_rows)
-
-
-def _parse_date(s: str):
-    s = (s or "").strip()
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
-        try:
-            return dt.datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
-    return None
+                 _title(label, target), THEME_SLATE, out, name_col=0), len(hits)
 
 
 def run(owner: str, board: str, *, target: dt.date | None = None,
@@ -210,16 +188,14 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
 
     if board == "order_log":
         img, count = _render_order_log(owner, header, rows, target, out_dir), len(rows)
-    elif board == "cancels":
-        img, count = _render_cancels(owner, header, rows, target, out_dir)
-    else:  # sched_6plus
-        img, count = _render_6plus(owner, header, rows, target, out_dir)
+    else:  # cancels or disconnects — status-keyword filtered order lists
+        img, count = _render_status_orders(owner, header, rows, target, out_dir,
+                                           _STATUS_KEYWORD[board], label, board)
     print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}", flush=True)
 
-    # Skip-empty: Cancels / 6+ Days post NOTHING on a zero-row day (a wireless
-    # office often has no cancels and never has installs scheduled 6+ days out).
-    # An empty board is worse than no board. Order Log always posts (his volume).
-    if board in ("cancels", "sched_6plus") and count == 0:
+    # Skip-empty: Cancels / Disconnects post NOTHING on a zero-row day. An empty
+    # board is worse than no board. Order Log always posts (his volume).
+    if board in ("cancels", "disconnects") and count == 0:
         print(f"[nds_orderlog:{board}] 0 rows — skipping (no blank board).",
               flush=True)
         return 0

@@ -158,9 +158,12 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "cancels"], env={},
              dry_flag="--dry-run", post_flag="--live"),
-        dict(slug="sched_6plus", label="📅 Sales Scheduled 6+ Days Out",
+        # ❎ Disconnected Orders — wireless (Raf's list). Same ORDER LOG pull,
+        # status='Disconnected'. Skips when empty. (6+ days dropped: wireless ships
+        # immediately, no scheduled-out installs.)
+        dict(slug="disconnects", label="❎ Disconnected Orders",
              module="automations.office_metrics.nds_orderlog",
-             owner_args=["--owner", o.owner, "--board", "sched_6plus"], env={},
+             owner_args=["--owner", o.owner, "--board", "disconnects"], env={},
              dry_flag="--dry-run", post_flag="--live"),
     ]
 
