@@ -53,19 +53,31 @@ def _norm_h(s: str) -> str:
 
 
 def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
-    out_path = out_path or Path(tempfile.gettempdir()) / "nds_orderlog.csv"
-    with tableau_session(verbose=verbose) as page:
-        r = page.context.request.get(ORDERLOG_CSV_URL, timeout=300_000)
-        body = r.body() or b""
+    """Download the NDS ORDER LOG .csv export — ONCE PER DAY, shared by all three
+    boards (order_log/cancels/disconnects each run as a separate subprocess). The
+    first to pull writes a dated cache; the others reuse it — so the export runs
+    once, not three times (which was overloading the session and failing). Retries
+    the export a few times to ride out a transient non-200/empty response."""
+    today = dt.date.today().isoformat()
+    cache = Path(tempfile.gettempdir()) / f"nds_orderlog_{today}.csv"
+    if cache.exists() and cache.stat().st_size > 500:
         if verbose:
-            print(f"[nds_orderlog] csv status={r.status} bytes={len(body):,}",
-                  flush=True)
-        if r.status != 200 or len(body) < 500:
-            raise RuntimeError(f"NDS ORDER LOG export failed: status={r.status} "
-                               f"bytes={len(body)}")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(body)
-    return out_path
+            print(f"[nds_orderlog] reusing today's cached export "
+                  f"({cache.stat().st_size:,} bytes)", flush=True)
+        return cache
+    last = ""
+    for attempt in (1, 2, 3):
+        with tableau_session(verbose=verbose) as page:
+            r = page.context.request.get(ORDERLOG_CSV_URL, timeout=300_000)
+            body = r.body() or b""
+            if verbose:
+                print(f"[nds_orderlog] csv status={r.status} bytes={len(body):,} "
+                      f"(try {attempt}/3)", flush=True)
+            if r.status == 200 and len(body) >= 500:
+                cache.write_bytes(body)
+                return cache
+            last = f"status={r.status} bytes={len(body)}"
+    raise RuntimeError(f"NDS ORDER LOG export failed after 3 tries: {last}")
 
 
 def _read_csv(path: Path) -> list[list[str]]:
