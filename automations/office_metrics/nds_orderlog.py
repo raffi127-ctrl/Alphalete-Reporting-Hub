@@ -193,20 +193,28 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
                                            _STATUS_KEYWORD[board], label, board)
     print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}", flush=True)
 
-    # Skip-empty: Cancels / Disconnects post NOTHING on a zero-row day. An empty
-    # board is worse than no board. Order Log always posts (his volume).
+    # No rows on Cancels / Disconnects: post a "No new ... orders" one-liner (like
+    # every other metric's no-data notice), NOT a blank image and NOT skipped —
+    # so the reply matches the header line. Order Log always has his volume.
+    empty_note = None
     if board in ("cancels", "disconnects") and count == 0:
-        print(f"[nds_orderlog:{board}] 0 rows — skipping (no blank board).",
-              flush=True)
-        return 0
+        noun = "canceled" if board == "cancels" else "disconnected"
+        empty_note = (f"{label} — {target.strftime('%b')} {target.day} "
+                      f"— No new {noun} orders")
 
     if dry_run:
-        print(f"[nds_orderlog:{board}] --dry-run — rendered only, NO post.",
-              flush=True)
+        print(f"[nds_orderlog:{board}] --dry-run — "
+              f"{'would post: ' + empty_note if empty_note else 'rendered only'} "
+              f"— NO post.", flush=True)
         return 0
-    from automations.shared.slack_metrics_post import post_reply_with_image
-    comment = f"{label} — {target.strftime('%b')} {target.day}"
-    resp = post_reply_with_image(Path(img), comment=comment, react_emoji=emoji)
+
+    if empty_note:
+        from automations.shared.slack_metrics_post import post_reply_text_only
+        resp = post_reply_text_only(empty_note, react_emoji=emoji)
+    else:
+        from automations.shared.slack_metrics_post import post_reply_with_image
+        comment = f"{label} — {target.strftime('%b')} {target.day}"
+        resp = post_reply_with_image(Path(img), comment=comment, react_emoji=emoji)
     print(f"[nds_orderlog:{board}] {'✅ Posted' if resp.get('ok') else '⚠ '+str(resp)}",
           flush=True)
     return 0
