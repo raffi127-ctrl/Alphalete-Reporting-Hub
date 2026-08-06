@@ -8,19 +8,19 @@ Rules live in DD_SOURCES.md. In short:
     total. The lists are NOT in the emailed bulletin (that carries only the
     headline and the 7 figures) — they live in the VA's working file.
   * the adoptions / off-book names live in the 'ICD (Special Cases)' section on
-    the DD tab (below the headline formulas) — "la tabla de Colten", which Eve
-    fills BY HAND. Since 2026-08-06 they COUNT: added to the headline (the tab's
-    `=SUM(F2:F131)` cannot reach them), listed in All ICDs, and counted into
-    their leader's row-backed total. `Adoption?` still keeps them out of a
-    leader's ORGANIC line — that flag is about labelling, not about whether the
-    money exists. Jacob Dover is NOT one of them — he is a normal Active-YES ICD
+    the DD tab (below the headline formulas) — "la tabla de Colten". They are IN
+    their leader's org figure and OUT of the ORG. TOTAL DD (Eve 2026-08-06),
+    which is Raf's adoption rule read straight. Since they count inside Colten's
+    total, they also come OFF Rafael's "outside Carlos & Colten" line — raise an
+    adoption and Rafael drops by the same amount. `Adoption?` additionally keeps
+    them out of a leader's ORGANIC line. Jacob Dover is NOT one of them — a
+    normal Active-YES ICD
   * Raf's podium figure is the bulletin's "total outside Carlos & Colten" line:
     the headline MINUS Carlos's and Colten's list totals (not his own list sum —
     those disagree by $41,962, and the published line is the subtraction)
   * headline total, AVG DD and Active Owners are ALREADY computed in the tab
-    (rows 132 / 135-153 / 155-173) — read them, never recompute. The ONE
-    addition is the special-case block above, which the tab's own formulas
-    exclude by construction; AVG DD / Active Owners still exclude it and say so
+    (rows 132 / 135-153 / 155-173) — read them, never recompute. All three
+    exclude the special-case block, and that is consistent, not a gap
   * CREDICO is the second DD source and is ADDED to an owner's week — but only
     where the tab does not already contain it (the VA folds it in by hand while
     she still owns the tab). `_fold_credico` decides that per owner and reports
