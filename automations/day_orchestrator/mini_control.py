@@ -110,7 +110,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
-                    "fda_check", "stage_img_test",
+                    "fda_check", "stage_img_test", "shortcuts_probe",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -2991,6 +2991,36 @@ def _action_stage_img_test(args: str) -> tuple[bool, str]:
                   f"~/img_test.applescript  · then check {phone} for the PICTURE")
 
 
+def _action_shortcuts_probe(args: str) -> tuple[bool, str]:
+    """READ-ONLY: what Shortcuts exist on this machine, and is the CLI usable?
+
+    The Shortcuts route is the fallback for sending pictures, since AppleScript
+    attachments never arrive here. swag_welcome drives a Shortcut named
+    'Alphalete Swag Card' the same way. Before building anything on that, find
+    out whether the `shortcuts` CLI works on Lucy 2 and whether that Shortcut
+    (or any) is present — it was built on a different Mac, and a Shortcut can
+    only be created by a human in the Shortcuts app.
+
+    Sends nothing."""
+    try:
+        proc = subprocess.run(["shortcuts", "list"], capture_output=True,
+                              text=True, timeout=30)
+    except FileNotFoundError:
+        return False, "no `shortcuts` CLI on this machine (needs macOS 12+)"
+    except Exception as e:  # noqa: BLE001
+        return False, f"shortcuts list failed: {str(e)[:120]}"
+    if proc.returncode != 0:
+        return False, ("shortcuts list exited %d: %s"
+                       % (proc.returncode, (proc.stderr or "").strip()[:160]))
+    names = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    swag = [n for n in names if "swag" in n.lower()]
+    return True, ("%d shortcut(s): %s%s · swag card present: %s"
+                  % (len(names), ", ".join(names[:12]),
+                     " …" if len(names) > 12 else "",
+                     swag[0] if swag else "NO — a human must build one in the "
+                     "Shortcuts app on Lucy 2"))
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -3069,6 +3099,7 @@ ACTIONS = {
     "sendimage_loc": _action_sendimage_loc,
     "fda_check": _action_fda_check,
     "stage_img_test": _action_stage_img_test,
+    "shortcuts_probe": _action_shortcuts_probe,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
