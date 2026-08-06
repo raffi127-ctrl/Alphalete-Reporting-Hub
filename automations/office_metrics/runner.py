@@ -147,6 +147,21 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_activations",
              owner_args=["--owner", o.owner], env={},
              dry_flag="--dry-run", post_flag="--live"),
+        # 📋 Order Log / 🚫 Cancels / 📅 6+ days — all from ONE NDS ORDER LOG view,
+        # filtered per board (WIRELESS + status/date). slug 'order_log' reused for
+        # the log itself; cancels/sched keep distinct slugs for the override.
+        dict(slug="order_log", label="📋 Order Log",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "order_log"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+        dict(slug="cancels", label="🚫 Canceled Orders",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "cancels"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+        dict(slug="sched_6plus", label="📅 Sales Scheduled 6+ Days Out",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "sched_6plus"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
     ]
 
 
