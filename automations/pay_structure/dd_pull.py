@@ -52,18 +52,23 @@ BONUS_MARKERS = ("bonus", "captains", "lead disposition", "converged", "kwh",
                  "guarantee", "disposition", "pilot", "adjustment", "chargeback")
 
 
-PW_FIELD = "Processed Week"    # the DD DETAIL (ORG) filter Raf uses (Mondays)
-FILTER_FIELDS = ("cl.DD Week", "Processed Week")   # try both; naming varies per view
-
-
-def _settled_processed_week(weeks_back: int = 3):
-    """A SETTLED DD week ending (a SATURDAY `weeks_back` weeks ago). Recent weeks are
-    partial (deals post over ~2–3 weeks), so default to 3 weeks back where the full
-    payout has posted."""
+def _settled_period(months_back: int = 1) -> str:
+    """A SETTLED Period. SCI's 'Period' = a MONTH; deals post over ~2–3 weeks, so the
+    previous COMPLETE month is fully settled (full payouts). Format 'Period 2026-7'."""
     import datetime as _dt
     today = _dt.date.today()
-    last_sat = today - _dt.timedelta(days=(today.weekday() - 5) % 7)
-    return last_sat - _dt.timedelta(weeks=weeks_back)
+    y, m = today.year, today.month - months_back
+    while m < 1:
+        m += 12
+        y -= 1
+    return "Period {}-{}".format(y, m)
+
+
+def _period_month(period) -> "Optional[int]":
+    import re as _re2
+    mm = _re2.search(r"-(\d{1,2})\s*$", str(period)) or _re2.search(
+        r"Period\s+(\d{1,2})\s*$", str(period))
+    return int(mm.group(1)) if mm else None
 
 
 def _parse_date(s):
@@ -91,23 +96,6 @@ def _dominant_dd_week(path):
     return c.most_common(1)[0] if c else (None, 0)
 
 
-def _pw_candidates(d) -> "List[str]":
-    """Tableau URL-filter value formats to try for a Processed Week date (naming
-    varies per view + a wrong value silently yields an empty viz, so try several)."""
-    import datetime as _dt
-    if isinstance(d, str):
-        for f in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-            try:
-                d = _dt.datetime.strptime(d, f).date()
-                break
-            except ValueError:
-                continue
-    if not hasattr(d, "strftime"):
-        return [str(d)]
-    return [d.strftime("%m/%d/%Y"), d.strftime("%Y-%m-%d"),
-            "{}/{}/{}".format(d.month, d.day, d.year)]   # no leading zeros
-
-
 def _rows_ok(path: "Path", minimum: int = 200) -> bool:
     """A filter that matches nothing yields an empty/tiny crosstab — reject it."""
     try:
@@ -116,37 +104,37 @@ def _rows_ok(path: "Path", minimum: int = 200) -> bool:
         return False
 
 
-def pull(out_path: "Optional[Path]" = None, page=None, processed_week=None):
-    """Download the ORG DD Detail crosstab for a SETTLED week (default a Saturday 3
-    weeks back; pass `processed_week`=YYYY-MM-DD to override). Tableau crosstab
-    exports are UTF-16 TAB-delimited CSV. Tries the DD-week / Processed-Week filter
-    fields in several date formats, and CONFIRMS the download's dominant DD week is
-    actually the target (Tableau silently ignores a mis-named filter and returns the
-    default latest week — that's the trap). Falls back to unfiltered only if nothing
-    validates."""
+def pull(out_path: "Optional[Path]" = None, page=None, period=None):
+    """Download the ORG DD Detail crosstab for a SETTLED Period (SCI 'Period' = a
+    MONTH; default = previous complete month). Deals post over ~2–3 weeks, so a
+    settled month carries the FULL payouts (a recent week is a partial ~$10). Uses
+    the 'Period' URL filter that override_bulletin already relies on for THIS view,
+    tries candidate formats, and CONFIRMS the download's dominant DD week is in the
+    target month — Tableau silently ignores a mis-valued filter and returns the
+    default latest week, which is the trap. One Period pull also yields EVERY DD
+    week in that month for Raf's dropdown."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
-    from automations.override_bulletin.pulls import _with_filter
+    from automations.override_bulletin.pulls import _with_filter, period_candidates
     out = Path(out_path) if out_path else (OUTPUT_DIR / "ORG DD Detail.csv")
     out.parent.mkdir(parents=True, exist_ok=True)
-    target = processed_week if processed_week is not None else _settled_processed_week()
-    tgt_date = _parse_date(target)
-    for field in FILTER_FIELDS:
-        for val in _pw_candidates(target):
-            try:
-                url = _with_filter(DD_VIEW, field, val)
-                download_crosstab_patchright(url, DD_SHEET, out, page=page)
-                dom, n = _dominant_dd_week(out)
-                total = len(_read_rows(out))
-                dom_date = _parse_date(dom)
-                ok = (_rows_ok(out) and dom_date and tgt_date
-                      and abs((dom_date - tgt_date).days) <= 4)   # DD Sat vs Proc Mon offset
-                print("filter {}={!r} -> dominant DD week {} ({}/{} rows) {}".format(
-                    field, val, dom, n, total, "✓ TARGET" if ok else "✗ (ignored/empty)"))
-                if ok:
-                    return out
-            except Exception as e:            # noqa: BLE001
-                print("  {}={!r} failed: {}".format(field, val, str(e).splitlines()[0][:80]))
-    print("!! no filter validated to the target week — UNFILTERED fallback (latest, partial)")
+    period = period or _settled_period()
+    tgt_month = _period_month(period)
+    for cand in period_candidates(period):
+        try:
+            url = _with_filter(DD_VIEW, "Period", cand)
+            download_crosstab_patchright(url, DD_SHEET, out, page=page)
+        except Exception as e:            # noqa: BLE001
+            print("  Period {!r} failed: {}".format(cand, str(e).splitlines()[0][:80]))
+            continue
+        dom, n = _dominant_dd_week(out)
+        total = len(_read_rows(out))
+        dp = _parse_date(dom)
+        ok = _rows_ok(out) and dp and dp.month == tgt_month
+        print("Period {!r} -> dominant DD week {} (month {}, {}/{} rows) {}".format(
+            cand, dom, (dp.month if dp else None), n, total, "✓ TARGET" if ok else "✗ (ignored/empty)"))
+        if ok:
+            return out
+    print("!! no Period filter validated to month {} — UNFILTERED fallback (latest, partial)".format(tgt_month))
     download_crosstab_patchright(DD_VIEW, DD_SHEET, out, page=page)
     return out
 
@@ -386,14 +374,14 @@ def _read_rows(path: Path):
 
 
 def run(write: bool = False, src: "Optional[Path]" = None,
-        processed_week=None) -> dict:
+        period=None) -> dict:
     """Pull (or read `src`), parse, and (if write) persist per-office gross
     revenue. Returns the parsed {office_key: {product: gross}} for the mapped
     offices."""
     from automations.pay_structure import offices as _po
     import datetime as _dt
     pulled = _dt.date.today().strftime("%b %d, %Y").replace(" 0", " ")  # no %-d (Windows)
-    path = src or pull(processed_week=processed_week)
+    path = src or pull(period=period)
     rows = _read_rows(path)
     by_owner = gross_revenue_by_office(rows)
     activation = activation_by_office(rows)
@@ -560,14 +548,14 @@ if __name__ == "__main__":
     ap.add_argument("--src", help="parse an existing crosstab file instead of pulling")
     ap.add_argument("--inspect", metavar="OWNER", help="dump the last-saved crosstab's "
                     "real structure for one owner (no download/write); for modeling")
-    ap.add_argument("--week", metavar="YYYY-MM-DD", help="pull a specific Processed "
-                    "Week (Monday) instead of the default settled (3-weeks-back) one")
+    ap.add_argument("--period", metavar="'Period 2026-7'", help="pull a specific SCI "
+                    "Period (month) instead of the default (previous complete month)")
     a = ap.parse_args()
     if a.inspect:
         inspect(a.inspect, src=Path(a.src) if a.src else None)
     else:
         res = run(write=a.write, src=Path(a.src) if a.src else None,
-                  processed_week=a.week)
+                  period=a.period)
         print("parsed gross revenue for {} office(s):".format(len(res)))
         for k, v in res.items():
             if "main" in v:                 # skip the _org reference row (no 'main')
