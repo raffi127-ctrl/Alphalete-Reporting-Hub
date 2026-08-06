@@ -55,18 +55,19 @@ def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
         # TEMP probe: peek at the per-rep "Churn & Activation Rate (Rep)" view so a
         # single dry-run reveals its .csv URL validity + columns (for the per-rep
         # churn rework). Remove after. Never affects the churn output.
-        for name in ("ChurnActivationRateRep", "ChurnActivationRate", "ChurnRatesRep"):
-            try:
-                u = ("https://us-east-1.online.tableau.com/t/sci/views/"
-                     f"NDS-SNRES-ATT-OOFWorkbook/{name}.csv?:refresh=yes")
-                rr = page.context.request.get(u, timeout=120_000)
-                body = rr.body() or b""
-                hdr = (body.decode("utf-8-sig", "ignore").splitlines() or [""])[0]
-                print(f"[REP-PROBE] {name}: status={rr.status} bytes={len(body):,} "
-                      f"header={hdr[:280]}", flush=True)
-            except Exception as e:  # noqa: BLE001
-                print(f"[REP-PROBE] {name}: {type(e).__name__} {str(e)[:80]}",
-                      flush=True)
+        try:
+            u = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                 "NDS-SNRES-ATT-OOFWorkbook/ChurnActivationRateRep.csv?:refresh=yes")
+            rr = page.context.request.get(u, timeout=120_000)
+            lines = (rr.body() or b"").decode("utf-8-sig", "ignore").splitlines()
+            print(f"[REP-PROBE] header: {lines[0][:200] if lines else ''}", flush=True)
+            # Print rows for Isaiah's reps (or first 12) to see rep vs office + measures.
+            shown = [l for l in lines[1:] if "revelle" in l.lower()
+                     or "legacy" in l.lower()][:15] or lines[1:16]
+            for l in shown:
+                print(f"[REP-PROBE] row: {l[:200]}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[REP-PROBE] {type(e).__name__} {str(e)[:100]}", flush=True)
     return out_path
 
 
