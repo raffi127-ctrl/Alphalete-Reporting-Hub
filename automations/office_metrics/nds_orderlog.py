@@ -166,17 +166,26 @@ def _render_order_log(owner, header, rows, target, out_dir):
 
 def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, slug):
     """Order rows whose status contains `keyword` (cancels -> 'cancel',
-    disconnects -> 'disconnect'). One row per order: Rep / Customer / Date."""
+    disconnects -> 'disconnect'), rendered with the SAME house layout every other
+    office's Canceled Orders board uses (canceled_orders.render) so it looks
+    identical — just fed NDS order data mapped onto its column keys."""
+    from automations.canceled_orders.render import render as _house_render
     st_i = _find(header, "dtr status", "order status", "status")
     rep_i = _find(header, "rep")
     cust_i = _find(header, "customer name")
-    date_i = _find(header, "sp.order date", "order date", "status date")
+    odate_i = _find(header, "sp.order date", "order date")
+    sdate_i = _find(header, "status date")
+    spm_i = _find(header, "sp.spm number", "spm number", "spm")
+    phone_i = _find(header, "customer phone", "phone")
     hits = [r for r in rows if keyword in _cell(r, st_i).lower()]
-    body = [[_cell(r, rep_i) or "—", _cell(r, cust_i) or "—",
-             _cell(r, date_i) or "—", _cell(r, st_i) or "—"] for r in hits]
+    house_rows = [{
+        "Rep": _cell(r, rep_i), "Customer Name": _cell(r, cust_i),
+        "SPM #": _cell(r, spm_i), "Order Date": _cell(r, odate_i),
+        "Status Date": _cell(r, sdate_i), "Customer Phone": _cell(r, phone_i),
+    } for r in hits]
     out = out_dir / f"nds_{slug}_{target.isoformat()}.png"
-    return _draw(["Rep", "Customer", "Order Date", "Status"], body,
-                 _title(label, target), THEME_SLATE, out, name_col=0), len(hits)
+    core = label.split(" ", 1)[1] if " " in label else label
+    return _house_render(house_rows, out, title=f"{owner} — {core}"), len(hits)
 
 
 def run(owner: str, board: str, *, target: dt.date | None = None,
