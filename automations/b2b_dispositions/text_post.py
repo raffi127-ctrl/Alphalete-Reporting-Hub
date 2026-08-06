@@ -41,6 +41,29 @@ class GroupTextError(RuntimeError):
     """Raised when a group can't be resolved, or Messages refuses the send."""
 
 
+# Messages is a SANDBOXED app, and it silently drops an attachment it isn't
+# allowed to read — the send returns success and the picture simply never
+# appears. Proven on Lucy 2 2026-08-06: the identical PNG sent from the repo's
+# output/ tree, the home folder, Downloads and /tmp all vanished, while the copy
+# in ~/Pictures arrived. Nothing about the addressing, the image format or Full
+# Disk Access mattered; only the directory did.
+#
+# So every attachment is copied into ~/Pictures before it is handed over. Keep
+# this staging step — sending straight from output/ looks like it works and
+# quietly delivers text with no picture.
+STAGING_DIR = Path.home() / "Pictures" / "AlphaleteDispositions"
+
+
+def _stage_for_messages(path: Path) -> Path:
+    """Copy an image somewhere Messages is permitted to read it."""
+    import shutil
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    dest = STAGING_DIR / path.name
+    if path.resolve() != dest.resolve():
+        shutil.copy(path, dest)
+    return dest
+
+
 def _osascript(script: str, timeout: int = 300) -> str:
     """One AppleScript against Messages.
 
@@ -181,7 +204,8 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
         result["sent_text"] = True
 
     for img in images:
-        ip = str(img).replace("\\", "\\\\").replace('"', '\\"')
+        staged = _stage_for_messages(img)
+        ip = str(staged).replace("\\", "\\\\").replace('"', '\\"')
         _to_chat('send (POSIX file "%s") to theChat' % ip)
         # Messages uploads asynchronously; crowding it drops images silently.
         time.sleep(cfg.IMAGE_SEND_DELAY_S)
@@ -207,18 +231,22 @@ def send_specs(specs: List[Dict], *, dry_run: bool = True) -> Dict:
         by_campaign = spec.get("by_campaign") or {}
         title = spec.get("title") or ""
         for campaign, paths in sorted(by_campaign.items()):
-            group = cfg.TEXT_ROUTES.get((campaign, kind))
-            if not group:
+            groups = cfg.TEXT_ROUTES.get((campaign, kind)) or []
+            if not groups:
                 skipped.append("%s/%s (no route)" % (campaign, kind))
                 continue
-            try:
-                res = send_to_group(group, title, paths, dry_run=dry_run)
-                res["campaign"] = campaign
-                res["kind"] = kind
-                sent.append(res)
-            except Exception as e:  # noqa: BLE001
-                errors.append("%s -> %s: %s: %s" % (
-                    campaign, group, type(e).__name__, str(e)[:200]))
+            # One campaign can land in several groups (each campaign's own
+            # leaders plus the shared one). A failure in one must not stop the
+            # rest — they're independent audiences.
+            for group in groups:
+                try:
+                    res = send_to_group(group, title, paths, dry_run=dry_run)
+                    res["campaign"] = campaign
+                    res["kind"] = kind
+                    sent.append(res)
+                except Exception as e:  # noqa: BLE001
+                    errors.append("%s -> %s: %s: %s" % (
+                        campaign, group, type(e).__name__, str(e)[:200]))
     return {"sent": sent, "errors": errors, "skipped": skipped,
             "dry_run": dry_run, "ok": not errors}
 

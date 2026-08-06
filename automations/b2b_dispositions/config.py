@@ -90,18 +90,20 @@ PANEL_TIME_TRACKER = "REPS OVER 15 MIN GAP"
 # 19 participants; "ATT B2B Leaders" -> 1 chat, 20 participants.
 TEXT_GROUP_ATT = "ATT B2B Leaders"
 TEXT_GROUP_BOX = "Box B2B"
+# Megan 8/4: both campaigns also go to this group, on top of their own.
+TEXT_GROUP_ALL = "NEW A Players"
 
 # The two post types, as used in the routing key below.
 POST_HOURLY = "hourly"              # activity + time gaps, every hour
 POST_DISPOSITIONS = "dispositions"  # territory stats, once a day at 6:30
 
-# (campaign, post-type) -> group name. All four pairs are live. Dropping a pair
-# from this table is how you stop texting it — nothing else needs to change.
+# (campaign, post-type) -> the groups that get it. All four pairs are live.
+# Emptying a list is how you stop texting that pair — nothing else changes.
 TEXT_ROUTES = {
-    (CAMPAIGN_ATT, POST_HOURLY): TEXT_GROUP_ATT,
-    (CAMPAIGN_ATT, POST_DISPOSITIONS): TEXT_GROUP_ATT,
-    (CAMPAIGN_BOX, POST_HOURLY): TEXT_GROUP_BOX,
-    (CAMPAIGN_BOX, POST_DISPOSITIONS): TEXT_GROUP_BOX,
+    (CAMPAIGN_ATT, POST_HOURLY): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    (CAMPAIGN_ATT, POST_DISPOSITIONS): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
+    (CAMPAIGN_BOX, POST_HOURLY): [TEXT_GROUP_BOX, TEXT_GROUP_ALL],
+    (CAMPAIGN_BOX, POST_DISPOSITIONS): [TEXT_GROUP_BOX, TEXT_GROUP_ALL],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
