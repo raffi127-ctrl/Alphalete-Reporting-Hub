@@ -263,10 +263,9 @@ SECTION_OVERRIDES: dict = {
     # (order log / cancels / 6+ / disconnects / wireless churn / rep activations /
     # tableau — from NDS-SN RES-ATT-OOF) are the remaining build. When ALL are
     # ready, flip to ("knocks_gaps", <nds slugs...>). Empty tuple = post nothing.
-    # TEMP (building): "churn" enabled ONLY to dry-run the NDS churn board; still
-    # never posts (override drives --dry-run runs only). Revert to () before the
-    # full thread is assembled / any live run.
-    "isaiah": ("churn",),
+    # TEMP (building): NDS boards enabled ONLY to dry-run them; still never posts
+    # (dry-run runs only). Revert to () before the full thread / any live run.
+    "isaiah": ("knocks_gaps", "churn", "rep_activations"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook

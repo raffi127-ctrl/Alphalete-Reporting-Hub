@@ -122,9 +122,39 @@ def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
 _HARVEST_ORDER_LOG_OFFICES = {"rashad"}
 
 
+def _nds_metrics(o: Office) -> list[dict]:
+    """Boards for an NDS owner — sourced from the NDS-SN (RES-ATT-OOF) workbook,
+    NOT the ATT-D2D one the standard boards pull (an NDS owner isn't in that book,
+    so those come back blank). Built incrementally; a board not yet wired is simply
+    absent from the thread. Same dict shape as metrics_for so build_destinations /
+    _run_one treat them identically. SECTION_OVERRIDES still gates which post."""
+    return [
+        # 🕐 Time Gaps — knocks_run renders gaps-only when the Disposition is empty
+        # (every NDS owner: no door-knock campaign). Skips the blank Total Knocks.
+        dict(slug="knocks_gaps", label="🕐 Time Gaps",
+             module="automations.rashad_metrics.knocks_run", owner_args=[],
+             env={"KNOCKS_OFFICE": o.knocks_office},
+             retry_on_fail=1, dry_flag="--dry-run", post_flag="--live"),
+        # 📊 Wireless Churn — office-level, from NDS CHURNRATES.
+        dict(slug="churn", label="📊 Wireless Churn",
+             module="automations.office_metrics.nds_churn",
+             owner_args=["--owner", o.owner], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+        # 🆕 Rep Activations — per-rep wireless sales, from NDS ProductSalesSummary.
+        # slug 'rep_activations' (NOT 'activations') so it doesn't collide with
+        # OWNER_KEY_TO_SLUG's activations->order_log mapping in the override filter.
+        dict(slug="rep_activations", label="🆕 Rep Activations",
+             module="automations.office_metrics.nds_activations",
+             owner_args=["--owner", o.owner], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+    ]
+
+
 def metrics_for(o: Office) -> list[dict]:
     """The eight metrics for one office, built from its config. Shape is identical
     across offices — only the env values (views/sheet/owner) come from `o`."""
+    if o.nds:                       # NDS owners get a distinct NDS-sourced set
+        return _nds_metrics(o)
     return [
         dict(slug="order_log", label="📋 Order Log / 🆕 Rep Activations",
              module="automations.uploaded.order_log",
@@ -156,34 +186,25 @@ def metrics_for(o: Office) -> list[dict]:
              module="automations.disconnects.run",
              owner_args=["--owner", o.owner], env={},
              dry_flag="--dry-run", post_flag=None),
-        # Churn. An NDS owner isn't in the ATT-D2D churn workbook, so source the
-        # OFFICE-LEVEL wireless churn from the NDS-SN CHURNRATES view instead
-        # (office_metrics.nds_churn). No New-Internet half (N/A for NDS). Every
-        # non-NDS office is byte-identical to before.
-        (dict(slug="churn", label="📊 Wireless Churn",
-              module="automations.office_metrics.nds_churn",
-              owner_args=["--owner", o.owner], env={},
-              dry_flag="--dry-run", post_flag="--live")
-         if o.nds else
-         dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
-              module="automations.churn.run", owner_args=[],
-              # Once proven, churn pulls the two shared ALL-OFFICE views and slices
-              # to this office's owner (CHURN_SLICE_OWNER) — no per-office churn
-              # views needed. Else the office's own INT<Office>/Wireless<Office>.
-              # CHURN_NI_TAB/_WL_TAB: the office's own tab labels when its sheet
-              # uses the "Lucy ..." template; empty for the "Local Office - ..."
-              # offices, where the fill falls back to its default name.
-              env=({"CHURN_NI_VIEW_URL": _off.ALL_OFFICE_CHURN_NI,
-                    "CHURN_WL_VIEW_URL": _off.ALL_OFFICE_CHURN_WL,
-                    "CHURN_SLICE_OWNER": o.owner,
-                    "CHURN_SHEET_ID": o.sheet_id,
-                    "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}
-                   if _off.CHURN_USE_ALL_OFFICE else
-                   {"CHURN_NI_VIEW_URL": o.view_churn_ni,
-                    "CHURN_WL_VIEW_URL": o.view_churn_wl,
-                    "CHURN_SHEET_ID": o.sheet_id,
-                    "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}),
-              dry_flag="--dry-run", post_flag=None)),
+        dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
+             module="automations.churn.run", owner_args=[],
+             # Once proven, churn pulls the two shared ALL-OFFICE views and slices
+             # to this office's owner (CHURN_SLICE_OWNER) — no per-office churn
+             # views needed. Else the office's own INT<Office>/Wireless<Office>.
+             # CHURN_NI_TAB/_WL_TAB: the office's own tab labels when its sheet
+             # uses the "Lucy ..." template; empty for the "Local Office - ..."
+             # offices, where the fill falls back to its default name.
+             env=({"CHURN_NI_VIEW_URL": _off.ALL_OFFICE_CHURN_NI,
+                   "CHURN_WL_VIEW_URL": _off.ALL_OFFICE_CHURN_WL,
+                   "CHURN_SLICE_OWNER": o.owner,
+                   "CHURN_SHEET_ID": o.sheet_id,
+                   "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}
+                  if _off.CHURN_USE_ALL_OFFICE else
+                  {"CHURN_NI_VIEW_URL": o.view_churn_ni,
+                   "CHURN_WL_VIEW_URL": o.view_churn_wl,
+                   "CHURN_SHEET_ID": o.sheet_id,
+                   "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}),
+             dry_flag="--dry-run", post_flag=None),
         dict(slug="knocks_gaps", label="🚪 Total Knocks + 🕐 Time Gaps",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              # knocks_pull reads KNOCKS_OFFICE first (office-agnostic), then the
