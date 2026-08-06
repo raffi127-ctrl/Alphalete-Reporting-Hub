@@ -1086,11 +1086,19 @@ _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read tod
 
 
 def _nophone_key(a: Applicant) -> str:
-    return ((a.email or "") or f"{a.first_name} {a.last_name}").strip().lower()
+    # Key on the NAME only — it's always present and stable across walks. Email was
+    # flakier (sometimes blank in the read), which would flip the key and defeat the
+    # cache (Megan 2026-08-06: it kept re-reading the same resumes).
+    return f"{a.first_name} {a.last_name}".strip().lower()
 
 
-def _nophone_checked_path() -> str:
-    return f"output/oat-nophone-checked-{dt.date.today().isoformat()}.json"
+def _nophone_checked_path():
+    # REPO-ROOT-anchored, NOT cwd-relative — so the write and every later walk's read
+    # always hit the same file no matter what directory launchd starts the walk in.
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2]
+    (root / "output").mkdir(parents=True, exist_ok=True)
+    return root / "output" / f"oat-nophone-checked-{dt.date.today().isoformat()}.json"
 
 
 def _load_nophone_checked() -> set:
@@ -1102,9 +1110,12 @@ def _load_nophone_checked() -> set:
     if _NOPHONE_CHECKED is None:
         import json as _json
         try:
-            _NOPHONE_CHECKED = set(_json.load(open(_nophone_checked_path())))
+            with open(_nophone_checked_path()) as _fh:
+                _NOPHONE_CHECKED = set(_json.load(_fh))
         except Exception:  # noqa: BLE001
             _NOPHONE_CHECKED = set()
+        _log(f"[oat] no-number cache loaded: {len(_NOPHONE_CHECKED)} app(s) already "
+             f"checked today (these skip the resume re-read)")
     return _NOPHONE_CHECKED
 
 
@@ -1114,10 +1125,10 @@ def _mark_nophone_checked(key: str) -> None:
         s.add(key)
         import json as _json
         try:
-            os.makedirs("output", exist_ok=True)
-            open(_nophone_checked_path(), "w").write(_json.dumps(sorted(s)))
-        except Exception:  # noqa: BLE001
-            pass
+            with open(_nophone_checked_path(), "w") as _fh:
+                _json.dump(sorted(s), _fh)
+        except Exception as _e:  # noqa: BLE001
+            _log(f"[oat] WARN could not persist no-number cache: {_e}")
 
 
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
