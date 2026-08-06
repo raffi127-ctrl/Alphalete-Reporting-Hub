@@ -92,21 +92,139 @@ def load(path: Path, owner: str) -> tuple[list[str], list[list[str]]]:
     return header, mine
 
 
-def run(owner: str, board: str, *, dry_run: bool = False,
+def _find(header: list[str], *candidates: str) -> int | None:
+    """Column index by name (exact first, then substring). Never a fixed index."""
+    norm = [_norm_h(h) for h in header]
+    for cand in candidates:                      # exact
+        c = _norm_h(cand)
+        if c in norm:
+            return norm.index(c)
+    for cand in candidates:                      # substring
+        c = _norm_h(cand)
+        for i, h in enumerate(norm):
+            if c in h:
+                return i
+    return None
+
+
+def _cell(row: list[str], i: int | None) -> str:
+    return (row[i].strip() if i is not None and i < len(row) and row[i] else "")
+
+
+def _wireless(rows, header):
+    pt = _find(header, "product type (broken out)", "product type")
+    if pt is None:
+        return rows
+    return [r for r in rows if "wireless" in _cell(r, pt).lower()]
+
+
+def _title(label: str, target: dt.date) -> str:
+    core = label.split(" ", 1)[1] if " " in label else label
+    return f"{core.upper()} — {target.strftime('%b')} {target.day}, {target.year}"
+
+
+def _render_order_log(owner, header, rows, target, out_dir):
+    rep_i = _find(header, "rep")
+    st_i = _find(header, "dtr status", "order status", "status")
+    reps: dict[str, dict[str, int]] = {}
+    statuses: list[str] = []
+    for r in rows:
+        rep = _cell(r, rep_i) or "—"
+        st = _cell(r, st_i) or "—"
+        if st not in statuses:
+            statuses.append(st)
+        reps.setdefault(rep, {})
+        reps[rep][st] = reps[rep].get(st, 0) + 1
+    statuses = sorted(statuses)
+    header_row = ["Rep", *statuses, "Total"]
+    body = []
+    for rep in sorted(reps, key=lambda k: -sum(reps[k].values())):
+        counts = reps[rep]
+        body.append([rep, *[str(counts.get(s, "")) for s in statuses],
+                     str(sum(counts.values()))])
+    out = out_dir / f"nds_order_log_{target.isoformat()}.png"
+    return _draw(header_row, body, _title("📋 Order Log", target), THEME_SLATE,
+                 out, name_col=0)
+
+
+def _render_cancels(owner, header, rows, target, out_dir):
+    st_i = _find(header, "dtr status", "order status", "status")
+    rep_i = _find(header, "rep")
+    cust_i = _find(header, "customer name")
+    date_i = _find(header, "sp.order date", "order date", "status date")
+    canceled = [r for r in rows if "cancel" in _cell(r, st_i).lower()]
+    body = [[_cell(r, rep_i) or "—", _cell(r, cust_i) or "—",
+             _cell(r, date_i) or "—", _cell(r, st_i) or "—"] for r in canceled]
+    out = out_dir / f"nds_cancels_{target.isoformat()}.png"
+    return _draw(["Rep", "Customer", "Order Date", "Status"], body,
+                 _title("🚫 Canceled Orders", target), THEME_SLATE, out, name_col=0), \
+        len(canceled)
+
+
+def _render_6plus(owner, header, rows, target, out_dir):
+    date_i = _find(header, "cl.dd date", "dd date", "dtr active date")
+    rep_i = _find(header, "rep")
+    cust_i = _find(header, "customer name")
+    cutoff = target + dt.timedelta(days=6)
+    out_rows = []
+    for r in rows:
+        d = _parse_date(_cell(r, date_i))
+        if d and d >= cutoff:
+            out_rows.append([_cell(r, rep_i) or "—", _cell(r, cust_i) or "—",
+                             d.isoformat()])
+    out_rows.sort(key=lambda x: x[2])
+    out = out_dir / f"nds_sched_6plus_{target.isoformat()}.png"
+    return _draw(["Rep", "Customer", "Install/DD Date"], out_rows,
+                 _title("📅 Sales Scheduled 6+ Days Out", target), THEME_SLATE,
+                 out, name_col=0), len(out_rows)
+
+
+def _parse_date(s: str):
+    s = (s or "").strip()
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def run(owner: str, board: str, *, target: dt.date | None = None,
+        dry_run: bool = False, out_dir: Path | None = None,
         verbose: bool = False) -> int:
+    target = target or dt.date.today()
+    out_dir = out_dir or (Path(__file__).resolve().parents[2] / "output"
+                          / "nds_orderlog")
+    out_dir.mkdir(parents=True, exist_ok=True)
     label, emoji = BOARDS[board]
     csv_path = pull(verbose=verbose)
     header, rows = load(csv_path, owner)
-    print(f"[nds_orderlog:{board}] {owner} — {len(rows)} order row(s)", flush=True)
-    # DIAGNOSTIC: surface the real columns so the render maps by name next pass.
-    print(f"[nds_orderlog:{board}] columns: {header}", flush=True)
-    if rows:
-        print(f"[nds_orderlog:{board}] sample row: {rows[0]}", flush=True)
+    rows = _wireless(rows, header)
+    print(f"[nds_orderlog:{board}] {owner} — {len(rows)} wireless order row(s)",
+          flush=True)
+    # Diagnostics that help confirm the cancel/date fields without another pull.
+    st_i = _find(header, "dtr status", "order status", "status")
+    if st_i is not None:
+        vals = sorted({_cell(r, st_i) for r in rows if _cell(r, st_i)})
+        print(f"[nds_orderlog:{board}] DTR/Order status values: {vals}", flush=True)
 
-    # Render is intentionally minimal until the diagnostic confirms columns; this
-    # keeps the first dry-run safe (no post) while revealing the structure.
-    print(f"[nds_orderlog:{board}] (diagnostic pass — render wired after columns "
-          f"confirmed)", flush=True)
+    if board == "order_log":
+        img, count = _render_order_log(owner, header, rows, target, out_dir), len(rows)
+    elif board == "cancels":
+        img, count = _render_cancels(owner, header, rows, target, out_dir)
+    else:  # sched_6plus
+        img, count = _render_6plus(owner, header, rows, target, out_dir)
+    print(f"[nds_orderlog:{board}] rendered {count} row(s) -> {img}", flush=True)
+
+    if dry_run:
+        print(f"[nds_orderlog:{board}] --dry-run — rendered only, NO post.",
+              flush=True)
+        return 0
+    from automations.shared.slack_metrics_post import post_reply_with_image
+    comment = f"{label} — {target.strftime('%b')} {target.day}"
+    resp = post_reply_with_image(Path(img), comment=comment, react_emoji=emoji)
+    print(f"[nds_orderlog:{board}] {'✅ Posted' if resp.get('ok') else '⚠ '+str(resp)}",
+          flush=True)
     return 0
 
 

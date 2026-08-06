@@ -770,7 +770,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             pass
 
     o = _off.get(args.office)
-    metrics = metrics_for(o)
+    _full = metrics_for(o)          # every board this office CAN post (pre-override)
     # Per-office section control. A committed SECTION_OVERRIDES entry pins exactly
     # which boards this office posts and WINS over enrollment; an EMPTY entry means
     # the office posts NO metrics thread at all (the report doesn't fit it). Else an
@@ -781,16 +781,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     enrolled = _off.ONBOARDED_EXTRA.get(o.key, {}).get("enrolled_reports") or []
     if o.key in _off.SECTION_OVERRIDES:
         want = {OWNER_KEY_TO_SLUG.get(k, k) for k in _off.SECTION_OVERRIDES[o.key]}
-        default = [m for m in metrics if m["slug"] in want]   # empty => posts nothing
+        default = [m for m in _full if m["slug"] in want]   # empty => posts nothing
     elif enrolled:
         enrolled_slugs = {OWNER_KEY_TO_SLUG.get(k, k) for k in enrolled}
-        default = [m for m in metrics if m["slug"] in enrolled_slugs] or metrics
+        default = [m for m in _full if m["slug"] in enrolled_slugs] or _full
     else:
-        default = metrics
+        default = _full
     # Thread Builder: reorder / subset per this office's saved plan (thread_plans.json,
     # per-machine). No plan -> `default` order unchanged (exact no-op).
     from automations.shared import thread_plans as _tp
-    metrics = _tp.resolve_sections("d2d", args.office, metrics, default,
+    metrics = _tp.resolve_sections("d2d", args.office, _full, default,
                                    id_key="slug")
     target_chan = args.channel or o.channel_id
 
@@ -806,20 +806,19 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         print(f"{o.label}: no metrics configured for this office — posting nothing.")
         return 0
     if args.only:
-        # COMMA LIST, like the main report's --only. It used to take exactly one
-        # slug, which forced the manifest to fall back to a FULL --live retry
-        # whenever 2+ metrics missed — and since a re-run re-POSTS every metric
-        # it runs (there's no dedup), that retry duplicated the whole thread.
-        # Harmless while a human eyeballed it; a live landmine once the
-        # orchestrator started auto-retrying retry_args (Megan 2026-07-16 — Aya
-        # missed exactly 2 metrics that morning). Now any number of missed
-        # metrics retries as `--only a,b` and re-posts ONLY those.
+        # COMMA LIST. Selects from the FULL board list (`_full`), NOT the
+        # override-filtered set — so a board can be dry-run for TESTING while the
+        # office's committed override stays () (its live 4am run posts nothing).
+        # This is what makes an empty-override office safe to build against: the
+        # scheduled --live run (no --only) skips via the guard above; only an
+        # explicit --only run touches a board. Retries also use --only (re-post
+        # ONLY the missed metrics) — safe since they name boards already in-thread.
         wanted = [s.strip() for s in args.only.split(",") if s.strip()]
-        wired = [m for m in metrics if m["slug"] in wanted]
-        unknown = [s for s in wanted if s not in {m["slug"] for m in metrics}]
+        wired = [m for m in _full if m["slug"] in wanted]
+        unknown = [s for s in wanted if s not in {m["slug"] for m in _full}]
         if unknown or not wired:
             print(f"--only {args.only!r}: unknown slug(s) {unknown or wanted} "
-                  f"(all: {[m['slug'] for m in metrics]})")
+                  f"(all: {[m['slug'] for m in _full]})")
             return 2
 
     to_named = (target_chan == o.channel_id)
