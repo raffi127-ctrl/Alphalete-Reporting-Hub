@@ -75,16 +75,17 @@ ST=$?
 
 echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
 
-# ---- Daily scorecard: after the 8pm (20:00) pass, post the combined "DAILY PUSH
-# SCORECARD" to #alphaletegp-recruiting as Lucy (Megan took this auto-post live
-# 2026-07-29). Reads output/oat-activity-<date>.csv + the batch count recorded by
-# applicant_push. Skipped on a manual --dry-run. Best-effort: never fail the run.
+# ---- Daily 8pm post (Megan 2026-08-06): instead of the scorecard, post the
+# "N applicants need a number pulled from Indeed" report to #alphaletegp-recruiting
+# as Lucy — header + the names in-thread. These are the no-phone leftovers a human
+# must look up in Indeed by hand. Reads output/oat-activity-<date>.csv. Skipped on a
+# manual --dry-run. Best-effort: never fail the run.
 case " $* " in
   *" --dry-run "*) : ;;
   *)
     if [ "$h" -eq 20 ] && [ "$m" -eq 0 ]; then
-      echo "[$(date)] 8pm — posting the daily scorecard" >> "$LOG_FILE"
-      "$VENV_PY" -u -m automations.oat_processing.summary >> "$LOG_FILE" 2>&1 || true
+      echo "[$(date)] 8pm — posting the no-phone (needs-Indeed) report" >> "$LOG_FILE"
+      "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 || true
     fi
     ;;
 esac

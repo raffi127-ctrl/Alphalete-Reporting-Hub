@@ -318,8 +318,49 @@ def fix_last_header() -> int:
     return 0
 
 
+def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
+    """Post the 'who still needs a number' report to #alphaletegp-recruiting as Lucy —
+    REPLACES the daily scorecard (Megan 2026-08-06). These are the no-phone OAT
+    leftovers a human must look up in Indeed by hand (the bot can't pull them).
+
+    Format Megan approved: a HEADER parent with the count, then the NAMES as a
+    threaded reply (so the count sits clean in the channel and the list is one tap in).
+
+        📋 Fri, Aug 8 — 5 applicants need a number pulled from Indeed
+          ↳ • Julissa Alvarado
+            • Micheal Salinas ..."""
+    names = [(it.get("name") or "").strip() for it in t.get("nophone", [])]
+    names = [n for n in names if n]
+    n = len(names)
+    # Cross-platform date (no %-d): "Fri, Aug 8".
+    date_str = date.strftime("%a, %b ") + str(date.day)
+    noun = "applicant" if n == 1 else "applicants"
+    verb = "needs" if n == 1 else "need"
+    header = f"\U0001F4CB {date_str} — {n} {noun} {verb} a number pulled from Indeed"
+    body = "\n".join("• " + nm for nm in names) if names else \
+        "None today ✅ — everyone had a number on file."
+
+    if dry_run:
+        print("[nophone] DRY-RUN — would post to #alphaletegp-recruiting:", flush=True)
+        print("  HEADER: " + header, flush=True)
+        print("  REPLY:\n    " + body.replace("\n", "\n    "), flush=True)
+        return {"ok": True, "dry_run": True, "count": n}
+
+    from automations.shared import slack_metrics_post as smp
+    c = smp._client()
+    parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
+    ts = parent["ts"]
+    c.chat_postMessage(channel=CHANNEL_ID, thread_ts=ts, text=body)
+    print(f"[nophone] posted — {n} applicant(s) need a number (thread {ts})", flush=True)
+    return {"ok": True, "thread_ts": ts, "count": n}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="OAT daily scorecard → Slack")
+    ap.add_argument("--nophone", action="store_true",
+                    help="Post the 'N applicants need a number pulled from Indeed' "
+                         "report (header + names in-thread) instead of the scorecard. "
+                         "This is the daily 8pm post now (Megan 2026-08-06).")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
     ap.add_argument("--dry-run", action="store_true", help="build the PDF, don't post")
     ap.add_argument("--emit", action="store_true",
@@ -346,6 +387,11 @@ def main(argv=None) -> int:
     print(f"[scorecard] {date} — {t['processed']} rows: sent={len(t['sent'])} "
           f"removed={len(t['removed'])} retext={len(t['retext'])} "
           f"nophone={len(t['nophone'])} blocked={len(t['blocked'])}", flush=True)
+    if args.nophone:
+        # The daily 8pm post now: who still needs a number pulled from Indeed
+        # (header + names in-thread), instead of the full scorecard.
+        res = post_nophone_report(date, t, dry_run=args.dry_run)
+        return 0 if res.get("ok") else 1
     if args.emit_tab:
         # Write the full bucketed data to a Google Sheet tab (no truncation) so a
         # remote caller can rebuild the scorecard. Format "<sheetId>:<tabName>".
