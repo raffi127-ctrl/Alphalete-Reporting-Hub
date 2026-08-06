@@ -5587,6 +5587,44 @@
       "_note": "Office metrics for haytham -> horizon-edge-sales. Onboarded via office_onboarding on 2026-07-28 20:35 UTC. Machine Lucy 1 (view owners).",
       "_onboarded": true
     },
+    "isaiah_metrics": {
+      "order": 7.9,
+      "on_scheduler": true,
+      "display_name": "Isaiah's Daily Metrics (Legacy-Office-Sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "isaiah",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "isaiah_metrics"
+      },
+      "_note": "Office metrics for isaiah -> Legacy-Office-Sales. Onboarded via office_onboarding on 2026-08-05 01:53 UTC. Machine Lucy 1 (view owners).",
+      "_onboarded": true
+    },
     "jamis_metrics": {
       "order": 7.9,
       "on_scheduler": true,
