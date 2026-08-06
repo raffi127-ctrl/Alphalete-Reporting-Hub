@@ -110,7 +110,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
-                    "fda_check", "stage_img_test", "shortcuts_probe",
+                    "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -3021,6 +3021,30 @@ def _action_shortcuts_probe(args: str) -> tuple[bool, str]:
                      "Shortcuts app on Lucy 2"))
 
 
+def _action_reveal_python(args: str) -> tuple[bool, str]:
+    """Open Finder on THIS machine with the poller's own interpreter selected.
+
+    Granting Full Disk Access means dragging that exact binary into the list,
+    and it lives in `.venv/bin/` — a dot-directory the file picker hides, which
+    is precisely where the person at Lucy 2 got stuck (Cmd+Shift+G appeared to
+    do nothing because the picker had not opened yet). `open -R` sidesteps all
+    of it: Finder opens with the file highlighted and it can be dragged straight
+    into System Settings.
+
+    Reports the path too, so it can be pasted if the reveal is missed. Opens a
+    window on the machine; sends nothing and changes nothing."""
+    target = os.path.realpath(sys.executable)
+    try:
+        subprocess.run(["open", "-R", target], capture_output=True, timeout=20)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't reveal {target}: {str(e)[:120]}"
+    return True, (f"Finder is now open on this machine with {Path(target).name} "
+                  f"selected · full path: {target} · AT LUCY 2: drag that "
+                  "highlighted file into System Settings ▸ Privacy & Security ▸ "
+                  "Full Disk Access, switch it ON, and remove the earlier "
+                  "python3.9 entry (wrong binary)")
+
+
 def _action_text_dispositions(args: str) -> tuple[bool, str]:
     """Text one captured disposition posting to its campaign's iMessage group.
 
@@ -3100,6 +3124,7 @@ ACTIONS = {
     "fda_check": _action_fda_check,
     "stage_img_test": _action_stage_img_test,
     "shortcuts_probe": _action_shortcuts_probe,
+    "reveal_python": _action_reveal_python,
     "install_b2b_dispositions": _action_install_b2b_dispositions,
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
