@@ -55,5 +55,24 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "trang",
+    "label": "#freshsuccess-all-leaders",
+    "owner": "trang canavan",
+    "channel_ids": [
+      "C07TRPJ7HFH"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
   }
 ]

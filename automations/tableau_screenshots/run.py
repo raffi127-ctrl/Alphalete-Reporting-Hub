@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
@@ -685,6 +686,24 @@ def main(argv=None) -> int:
     present_seen = False
     for org in orgs:
         label = sp.ORG_LABEL[org]
+        # Cross-workspace org (e.g. trang -> FRESH SUCCESS): its channel lives in
+        # a non-AO Slack workspace, so post with that workspace's own bot token
+        # instead of the default AO 'Lucy' token. slack_post posts via
+        # smp._client(), which reads SLACK_USER_TOKEN first — set it here for this
+        # org, restore after so the next org uses its own. Same routing
+        # office_metrics.runner uses. [[project_trang_fresh_success]]
+        _saved_tok, _routed = os.environ.get("SLACK_USER_TOKEN"), False
+        try:
+            from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+            _tok_file = CROSS_WS_TOKEN_FILES.get(org)
+        except Exception:                             # noqa: BLE001
+            _tok_file = None
+        if _tok_file:
+            _tok_path = Path.home() / ".config" / "recruiting-report" / _tok_file
+            if _tok_path.exists():
+                os.environ["SLACK_USER_TOKEN"] = _tok_path.read_text(
+                    encoding="utf-8-sig").strip()
+                _routed = True
         try:
             result = sp.post_all(captures, post_pages, today,
                                  replace=args.replace, org=org,
@@ -694,6 +713,12 @@ def main(argv=None) -> int:
         except Exception as e:                        # noqa: BLE001
             result = {"ok": False, "channels": [],
                       "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        finally:
+            if _routed:                               # restore AO token for next org
+                if _saved_tok is None:
+                    os.environ.pop("SLACK_USER_TOKEN", None)
+                else:
+                    os.environ["SLACK_USER_TOKEN"] = _saved_tok
         for c in result.get("channels", []):
             if c.get("skipped"):
                 print(f"↷ [{org}] {c['channel']} already had today's images — "
