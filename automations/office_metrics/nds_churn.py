@@ -52,6 +52,21 @@ def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
     with tableau_session(verbose=verbose) as page:
         download_crosstab_patchright(CHURNRATES_URL, WORKSHEET, out_path,
                                      verbose=verbose, page=page)
+        # TEMP probe: peek at the per-rep "Churn & Activation Rate (Rep)" view so a
+        # single dry-run reveals its .csv URL validity + columns (for the per-rep
+        # churn rework). Remove after. Never affects the churn output.
+        for name in ("ChurnActivationRateRep", "ChurnActivationRate", "ChurnRatesRep"):
+            try:
+                u = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                     f"NDS-SNRES-ATT-OOFWorkbook/{name}.csv?:refresh=yes")
+                rr = page.context.request.get(u, timeout=120_000)
+                body = rr.body() or b""
+                hdr = (body.decode("utf-8-sig", "ignore").splitlines() or [""])[0]
+                print(f"[REP-PROBE] {name}: status={rr.status} bytes={len(body):,} "
+                      f"header={hdr[:280]}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[REP-PROBE] {name}: {type(e).__name__} {str(e)[:80]}",
+                      flush=True)
     return out_path
 
 
