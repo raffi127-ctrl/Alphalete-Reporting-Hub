@@ -11964,11 +11964,12 @@ else:  # st.session_state.view == "user"
             # review-gated). No forced pill — it runs daily and its real calstat
             # tells the truth: pending until the day's send, GREEN on success
             # (screenshot_email._publish_sent on --send-reviewed). (Megan 2026-08-03)
-            # Eve's two per-captain cards (in progress) — force their pills PURPLE
-            # so Megan can spot them to revisit with Eve. Two near-identical names:
-            # 'Captainship Activations' AND 'Captainship Activation Rate'. (7/28)
-            "[class*='captainship-activations__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
-            "[class*='captainship-activation-rate__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
+            # Eve's two per-captain cards came OFF review 2026-08-05 — the purple
+            # "revisit with Eve" pin is removed. Both are single daily runs (one
+            # fill, not multi-pass), so they now ride the default calstat pill:
+            # colorless at rest, GREEN on a successful run, red on failure — same
+            # as every other plain daily report. Two near-identical names:
+            # 'Captainship Activations' AND 'Captainship Activation Rate'. (Megan 8/5)
             # Captainship Reports — the purple "draft-only" pin was removed
             # 2026-08-03 when it became a two-phase card (build → Slack ✅ send):
             # it now rides the universal phase ramp like Country Sales Board —
