@@ -53,16 +53,42 @@ BONUS_MARKERS = ("bonus", "captains", "lead disposition", "converged", "kwh",
 
 
 PW_FIELD = "Processed Week"    # the DD DETAIL (ORG) filter Raf uses (Mondays)
+FILTER_FIELDS = ("cl.DD Week", "Processed Week")   # try both; naming varies per view
 
 
 def _settled_processed_week(weeks_back: int = 3):
-    """A SETTLED Processed Week (a Monday `weeks_back` weeks ago). Recent weeks are
+    """A SETTLED DD week ending (a SATURDAY `weeks_back` weeks ago). Recent weeks are
     partial (deals post over ~2–3 weeks), so default to 3 weeks back where the full
     payout has posted."""
     import datetime as _dt
     today = _dt.date.today()
-    monday = today - _dt.timedelta(days=today.weekday())
-    return monday - _dt.timedelta(weeks=weeks_back)
+    last_sat = today - _dt.timedelta(days=(today.weekday() - 5) % 7)
+    return last_sat - _dt.timedelta(weeks=weeks_back)
+
+
+def _parse_date(s):
+    import datetime as _dt
+    if hasattr(s, "strftime"):
+        return s
+    for f in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+        try:
+            return _dt.datetime.strptime(str(s).strip(), f).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _dominant_dd_week(path):
+    """(most-common cl.DD Week value, count) in a crosstab — used to CONFIRM a
+    filter actually took (Tableau silently ignores a mis-named filter and returns
+    the default latest week)."""
+    try:
+        rows = _read_rows(path)
+    except Exception:
+        return (None, 0)
+    c = collections.Counter(str(r.get(COL_DDWEEK, "") or "").strip()
+                            for r in rows if str(r.get(COL_DDWEEK, "") or "").strip())
+    return c.most_common(1)[0] if c else (None, 0)
 
 
 def _pw_candidates(d) -> "List[str]":
@@ -91,28 +117,36 @@ def _rows_ok(path: "Path", minimum: int = 200) -> bool:
 
 
 def pull(out_path: "Optional[Path]" = None, page=None, processed_week=None):
-    """Download the ORG DD Detail crosstab for a SETTLED Processed Week (default 3
-    weeks back; pass `processed_week` to override). Returns the path. Tableau
-    crosstab exports are UTF-16 TAB-delimited CSV. Tries candidate filter formats
-    and validates the result isn't empty; falls back to the unfiltered (latest,
-    possibly partial) view only if every candidate fails."""
+    """Download the ORG DD Detail crosstab for a SETTLED week (default a Saturday 3
+    weeks back; pass `processed_week`=YYYY-MM-DD to override). Tableau crosstab
+    exports are UTF-16 TAB-delimited CSV. Tries the DD-week / Processed-Week filter
+    fields in several date formats, and CONFIRMS the download's dominant DD week is
+    actually the target (Tableau silently ignores a mis-named filter and returns the
+    default latest week — that's the trap). Falls back to unfiltered only if nothing
+    validates."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
     from automations.override_bulletin.pulls import _with_filter
     out = Path(out_path) if out_path else (OUTPUT_DIR / "ORG DD Detail.csv")
     out.parent.mkdir(parents=True, exist_ok=True)
-    pw = processed_week if processed_week is not None else _settled_processed_week()
-    for val in _pw_candidates(pw):
-        try:
-            url = _with_filter(DD_VIEW, PW_FIELD, val)
-            download_crosstab_patchright(url, DD_SHEET, out, page=page)
-            if _rows_ok(out):
-                print("pulled Processed Week filter {!r} -> {} rows".format(
-                    val, len(_read_rows(out))))
-                return out
-            print("  filter {!r} yielded too few rows — trying next".format(val))
-        except Exception as e:            # noqa: BLE001
-            print("  filter {!r} failed ({}) — trying next".format(val, str(e).splitlines()[0][:80]))
-    print("!! all Processed Week filters failed — falling back to UNFILTERED (latest week)")
+    target = processed_week if processed_week is not None else _settled_processed_week()
+    tgt_date = _parse_date(target)
+    for field in FILTER_FIELDS:
+        for val in _pw_candidates(target):
+            try:
+                url = _with_filter(DD_VIEW, field, val)
+                download_crosstab_patchright(url, DD_SHEET, out, page=page)
+                dom, n = _dominant_dd_week(out)
+                total = len(_read_rows(out))
+                dom_date = _parse_date(dom)
+                ok = (_rows_ok(out) and dom_date and tgt_date
+                      and abs((dom_date - tgt_date).days) <= 4)   # DD Sat vs Proc Mon offset
+                print("filter {}={!r} -> dominant DD week {} ({}/{} rows) {}".format(
+                    field, val, dom, n, total, "✓ TARGET" if ok else "✗ (ignored/empty)"))
+                if ok:
+                    return out
+            except Exception as e:            # noqa: BLE001
+                print("  {}={!r} failed: {}".format(field, val, str(e).splitlines()[0][:80]))
+    print("!! no filter validated to the target week — UNFILTERED fallback (latest, partial)")
     download_crosstab_patchright(DD_VIEW, DD_SHEET, out, page=page)
     return out
 
