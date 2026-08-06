@@ -251,24 +251,27 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     tax = gp.PAYROLL_TAX
     ss = st.session_state.setdefault("gpsim_" + office.key, {})   # scratch inputs
     _PAY = "You pay rep ({})".format("%" if pct else "$")
+    _TIER = "Tier bonus ($/sale)"
     data = []
     for name in sorted(fiber):
         cur = ss.get(name, {})
         gross = float(cur.get("gross", fiber[name]))
         pay = float(cur.get("pay", 50.0 if pct else float(round(gross * 0.35))))
+        tier = float(cur.get("tier", 0.0))
         sales = int(cur.get("sales", 0))
-        rep_d = gross * pay / 100.0 if pct else pay
+        rep_d = (gross * pay / 100.0 if pct else pay) + tier   # base pay + volume tier bonus
         prof = gross - rep_d - tax * rep_d
         data.append({
             "Product": name,
             "Gross revenue": gross,
             _PAY: pay,
+            _TIER: tier,
             "% payout to rep": "{}%".format(round(rep_d / gross * 100)) if gross else "—",
             "Gross profit $": "${:,.0f}".format(prof),
             "Gross profit % (office keeps)": "{}%".format(round(prof / gross * 100)) if gross else "—",
             "# sales": sales,
         })
-    cols = ["Product", "Gross revenue", _PAY, "% payout to rep", "Gross profit $",
+    cols = ["Product", "Gross revenue", _PAY, _TIER, "% payout to rep", "Gross profit $",
             "Gross profit % (office keeps)", "# sales"]
     df = pd.DataFrame(data, columns=cols)
     cfg = {
@@ -279,6 +282,10 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
         _PAY: st.column_config.NumberColumn(
             _PAY, min_value=0.0, step=(1.0 if pct else 5.0),
             format=("%.0f%%" if pct else "$%.0f")),
+        _TIER: st.column_config.NumberColumn(
+            _TIER, min_value=0.0, step=5.0, format="$%.0f", width="small",
+            help="Extra $/sale you pay the rep as a VOLUME tier bonus (your lever to "
+                 "drive sales) — comes out of gross profit"),
         "% payout to rep": st.column_config.TextColumn("% payout to rep", width="small",
                                                        disabled=True),
         "Gross profit $": st.column_config.TextColumn("Gross profit $", width="small",
@@ -293,13 +300,14 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     for _, r in edited.iterrows():            # persist edits so the auto columns recompute
         ss[str(r["Product"])] = {"gross": float(r["Gross revenue"] or 0),
                                  "pay": float(r[_PAY] or 0),
+                                 "tier": float(r[_TIER] or 0),
                                  "sales": int(r["# sales"] or 0)}
 
     # OVERALL total across products (activation applied to # sales)
     t_rev = t_prof = 0.0
     for v in ss.values():
         g = v["gross"]
-        rep_d = g * v["pay"] / 100.0 if pct else v["pay"]
+        rep_d = (g * v["pay"] / 100.0 if pct else v["pay"]) + v.get("tier", 0.0)
         activated = v["sales"] * activation
         t_rev += g * activated
         t_prof += (g - rep_d - tax * rep_d) * activated
