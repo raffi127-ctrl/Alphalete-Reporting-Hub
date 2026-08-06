@@ -48,5 +48,76 @@
     "abp_tab": "Lucy New INT ABP%",
     "machine": "Lucy 1",
     "notes": ""
+  },
+  {
+    "key": "trang",
+    "report_id": "trang_metrics",
+    "label": "trang's Local Office",
+    "owner": "trang canavan",
+    "channel_id": "C07TRPJ7HFH",
+    "channel_name": "#freshsuccess-all-leaders",
+    "sheet_id": "1DLfggOPLD6YOaEjPllU623OLrhMThUckQijAKLUvWhc",
+    "knocks_office": "Trang Le Nguyen Canavan",
+    "ov_account": "6564",
+    "owner_office": "",
+    "business_name": "FRESH SUCCESS MARKETING GROUP, INC",
+    "website": "freshsuccessmarketinggroup.inc",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "notes": "",
+    "channel_plans": [
+      {
+        "channel_id": "C07TRPJ7HFH",
+        "channel_name": "#freshsuccess-all-leaders",
+        "report_keys": [
+          "knocks",
+          "order_log",
+          "sales_6plus",
+          "cancels",
+          "ongoing_cancel",
+          "disconnects",
+          "churn_ni",
+          "churn_wl",
+          "activations",
+          "abp",
+          "tableau_shot"
+        ],
+        "header_label": ""
+      }
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

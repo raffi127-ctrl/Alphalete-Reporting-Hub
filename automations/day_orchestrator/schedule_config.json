@@ -5624,6 +5624,44 @@
       "_note": "Office metrics for jamis -> Jamis-leaders. Onboarded via office_onboarding on 2026-07-31 22:33 UTC. Machine Lucy 2 (view owners).",
       "_onboarded": true,
       "machine": "Lucy 2"
+    },
+    "trang_metrics": {
+      "order": 7.9,
+      "on_scheduler": true,
+      "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "trang",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "trang_metrics"
+      },
+      "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners).",
+      "_onboarded": true
     }
   },
   "read_only_standalone": {
