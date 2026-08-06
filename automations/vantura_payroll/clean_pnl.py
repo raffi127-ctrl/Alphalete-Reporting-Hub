@@ -241,10 +241,28 @@ def build(*, write: bool = True, log=_log) -> dict:
         "money", bold=True, tone="in")
     add("Paid Out", lambda b: ref(b, b["total_payroll"]), "money", tone="out")
     add("Payroll Tax", lambda b: ref(b, b["total_tax"]), "money", tone="out")
-    add("Total Gross Profit", lambda b: ref(b, b["total_pnl"]), "money",
+    # The captain's bonus is revenue the office keeps — no rep is paid on it — so
+    # it belongs in gross profit and in the margin denominator. The working tab's
+    # TOTAL PNL deliberately excludes it, so we add it back here (Carlos, 2026-08-06).
+    def _gross(b):
+        if not b["total_pnl"]:
+            return ""
+        base = f"{q}{b['prof']}{b['total_pnl']}"
+        return f"={base}+{q}{b['prof']}{b['captain']}" if b["captain"] else f"={base}"
+
+    def _gross_margin(b):
+        if not (b["total_pnl"] and b["total_dd"]):
+            return ""
+        num = f"{q}{b['prof']}{b['total_pnl']}"
+        den = f"{q}{b['prof']}{b['total_dd']}"
+        if b["captain"]:
+            cap = f"{q}{b['prof']}{b['captain']}"
+            num, den = f"({num}+{cap})", f"({den}+{cap})"
+        return f'=IFERROR(IF({den}=0,"",{num}/{den}),"")'
+
+    add("Total Gross Profit (incl. captainship)", _gross, "money",
         bold=True, tone="profit")
-    add("Profit Margin %", lambda b: margin(b, b["total_pnl"], b["total_dd"]),
-        "pct", bold=True, tone="profit")
+    add("Profit Margin %", _gross_margin, "pct", bold=True, tone="profit")
     add("")
 
     for camp in CAMPAIGNS:

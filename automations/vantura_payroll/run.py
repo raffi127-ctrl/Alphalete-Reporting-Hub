@@ -122,7 +122,17 @@ RAW_TARGETS = {
     "F": ("Description Detail", ("cl.description detail", "description detail", "detail")),
     "G": ("Customer Name", ("cl.customer name", "customer name", "customer")),
     "H": ("Total $ to ICD", ("total $ to icd", "total $", "dd")),
+    # 2026-08-06: the DD export blanks Description for every bonus and moved the
+    # name to Product, so a description-keyed campaign split silently mis-sorts.
+    # Campaign__c is the field Tableau's own B2B-ATT-SBS / B2B-BOX-Energy /
+    # RES-BASE POWER-Energy columns use — split on THAT, never on text.
+    "J": ("Campaign", ("cl.campaign__c", "campaign__c", "campaign")),
+    "K": ("Product", ("cl.product", "product")),
 }
+# Campaign__c value -> P&L bucket. Anything unmapped fails the reconciliation
+# check rather than silently landing in B2B.
+CAMPAIGN_C = {"B2B-ATT-SBS": "B2B", "B2B-BOX-Energy": "BOX",
+              "RES-BASE POWER-Energy": "Base"}
 RAW_FIRST_DATA_ROW = 2
 
 # The P&L tab. Each week = a 3-column block (Brought In / Got Paid / Profit)
@@ -304,13 +314,14 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
             " — skipping the load; re-running week-set/P&L/refresh/checks.")
         return first_row, last_row
 
-    out_rows = []
+    out_rows, jk_rows = [], []
     for r in data:
         def cell(col):
             i = cmap[col]
             return r[i] if i < len(r) else ""
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
+        jk_rows.append([cell("J"), cell("K")])
     end = start + len(out_rows) - 1
     log(f"RAW load: {len(out_rows)} rows, week {wnum}, would fill A{start}:H{end}")
     if out_rows:
@@ -322,7 +333,10 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     if raw.row_count < end:
         raw.add_rows(end - raw.row_count + 5)
     raw.update(f"A{start}:H{end}", out_rows, value_input_option="USER_ENTERED")
-    log(f"  WROTE RAW A{start}:H{end}")
+    # J/K only — column I is the commission ARRAYFORMULA's spill range and a
+    # literal written anywhere in it kills the whole column.
+    raw.update(f"J{start}:K{end}", jk_rows, value_input_option="USER_ENTERED")
+    log(f"  WROTE RAW A{start}:H{end} and J{start}:K{end}")
     return (start, end)
 
 
@@ -368,7 +382,7 @@ def _locate_block(pnl, week: dt.date, log=_log) -> dict:
             "and re-run.")
     blk = {"brought": _col_letter(c), "paid": _col_letter(c + 1),
            "profit": _col_letter(c + 2), "header": hdr}
-    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}210")
+    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}250")
     seq = [(i, (r[0].strip() if r and r[0] else ""))
            for i, r in enumerate(labels, start=150)]
 
@@ -389,6 +403,12 @@ def _locate_block(pnl, week: dt.date, log=_log) -> dict:
     blk["third_total"] = find("TOTAL", third_hdr)
     blk["total_pnl"] = find("TOTAL PNL", blk["third_total"])
     blk["dd_b2b"] = find("Carlos DD B2B", blk["total_pnl"])
+    # The Captain's Bonus cell was never written by this run, so it came up blank
+    # every week and had to be hand-filled (7/26, 8/2). Locate it so we can.
+    try:
+        blk["captain"] = find("Captain", blk["dd_b2b"])
+    except RuntimeError:
+        blk["captain"] = None
     log(f"P&L block {hdr}: cols {blk['brought']}/{blk['paid']}/{blk['profit']}, "
         f"TOTALs at {blk['b2b_total']}/{blk['box_total']}/{blk['third_total']}, "
         f"DD add-back at {blk['dd_b2b']}")
@@ -507,11 +527,14 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     E = f"RAW!$E${s}:$E${e}"
     H = f"RAW!$H${s}:$H${e}"
     I = f"RAW!$I${s}:$I${e}"
-    box = "+".join(f'({E}="{d}")' for d in BOX_DESCS)
-    base = ("+".join(f'({E}="{d}")' for d in BASE_DESCS)
-            + f'+(({E}="")*({H}={BASE_BLANK_AMOUNT}))')
-    lead = "+".join(f'({E}="{d}")' for d in LEAD_DESCS)
-    non_b2b = f'(1-({box}+{base}+{lead}+ISNUMBER(SEARCH("Captain",{E}))))'
+    # Campaign__c decides the bucket. Description is no longer trusted: the DD
+    # blanks it for every bonus. The captain's bonus carries Campaign__c
+    # B2B-ATT-SBS but is company revenue, so it is excluded by Product name.
+    _cap = f'ISNUMBER(SEARCH("Captain",{K}))'
+    box = f'(({J}="B2B-BOX-Energy")*(1-{_cap}))'
+    base = f'(({J}="RES-BASE POWER-Energy")*(1-{_cap}))'
+    lead = "0"
+    non_b2b = f'(({J}="B2B-ATT-SBS")*(1-{_cap}))'
     rep_c = f"$C{PNL_REP_FIRST}:$C{PNL_REP_LAST}"
     brought_rng = (f"{blk['brought']}{PNL_REP_FIRST}:"
                    f"{blk['brought']}{PNL_REP_LAST}")
@@ -523,6 +546,9 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
             f"=SUMPRODUCT(({box}+{lead})*{H})-SUMPRODUCT(({box})*{I})*1.12",
         f"{blk['profit']}{blk['third_total']}":
             f"=SUMPRODUCT(({base})*{H})-SUMPRODUCT(({base})*{I})*1.12",
+        **({f"{blk['profit']}{blk['captain']}":
+            f'=SUMPRODUCT(ISNUMBER(SEARCH("Captain",{E}))*{H})'}
+           if blk.get("captain") else {}),
         f"{blk['profit']}{blk['dd_b2b']}":
             f'=SUMIF({rep_c},"B2B",{brought_rng})'
             f'+SUMIF({E},"B2B Roadtrip Bonus",{H})+SUMIF({E},"MCOE Bonus",{H})',
