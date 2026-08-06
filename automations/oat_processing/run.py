@@ -1610,6 +1610,11 @@ def run_walk(page, live: bool = False, limit: int = None,
     counts: dict = {}
     seen: set = set()          # applicant keys already handled this run
     no_progress = 0            # consecutive already-seen reads (end guard)
+    # CURRENT snapshot of who's still flagged (needs a human) THIS walk — the
+    # noon/4pm Slack post reads this, NOT the day-cumulative activity log, so the
+    # counts match what's actually in the queue right now (Megan 2026-08-06: the
+    # cumulative log over-counted apps already handled since).
+    flagged_now = {"nophone": [], "retext": []}
     while processed < limit:
         a = read_current_applicant(page, today)
         key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
@@ -1654,6 +1659,15 @@ def run_walk(page, live: bool = False, limit: int = None,
                 a.job_board, a.position[:60],
                 d.action.value, outcome or "", d.reason[:140],
             ])
+        # CURRENT-queue snapshot: record who ended THIS walk still needing a human
+        # (couldn't get a number off the resume, or the SMS thread is too old to
+        # text). Deduped by the walk's `seen` set, so this = who's flagged right now.
+        _nm = f"{a.first_name} {a.last_name}".strip()
+        if _nm:
+            if outcome == "flag_no_phone" or d.action.value == "flag_no_phone":
+                flagged_now["nophone"].append(_nm)
+            elif outcome == "flag_retext":
+                flagged_now["retext"].append(_nm)
 
         processed += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).
@@ -1680,7 +1694,50 @@ def run_walk(page, live: bool = False, limit: int = None,
          f"(was {_start_total} — a persisted send/remove drops this)")
     _log(f"[oat] done — {processed} applicant(s) this run: "
          + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    # Only overwrite the snapshot when this walk actually reached the end of the
+    # queue (no early --max-actions/limit bail), so a partial walk can't post a
+    # too-short list. A full walk of a small queue always ends via the no-progress
+    # guard well before `limit`, so processed < limit == "walked the whole queue".
+    walked_all = processed < limit
+    _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all)
     return 0
+
+
+def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool) -> None:
+    """Overwrite output/oat-flagged-<date>.json with THIS walk's still-flagged apps
+    (no-phone + needs-manual-text) so the Slack post reflects the CURRENT queue, not
+    the day's cumulative log. Deduped, order-preserved. `complete` False (a partial
+    walk) → leave the last good snapshot untouched rather than post a short list."""
+    import json as _json
+    if not complete:
+        _log("[oat] partial walk — keeping the last flagged snapshot (not overwriting)")
+        return
+
+    def _dedup(names):
+        seen, out = set(), []
+        for n in names:
+            k = n.lower()
+            if k not in seen:
+                seen.add(k)
+                out.append(n)
+        return out
+
+    snap = {
+        "nophone": _dedup(flagged.get("nophone", [])),
+        "retext": _dedup(flagged.get("retext", [])),
+        "queue_total": queue_total,
+        "at": dt.datetime.now().strftime("%H:%M"),
+        "date": today.isoformat(),
+    }
+    try:
+        os.makedirs("output", exist_ok=True)
+        path = f"output/oat-flagged-{today.isoformat()}.json"
+        with open(path, "w") as fh:
+            _json.dump(snap, fh)
+        _log(f"[oat] flagged snapshot: {len(snap['nophone'])} need a number, "
+             f"{len(snap['retext'])} need a manual text (queue={queue_total})")
+    except Exception as e:  # noqa: BLE001
+        _log(f"[oat] could not write flagged snapshot: {e}")
 
 
 def attach_dialog_accept(page) -> None:

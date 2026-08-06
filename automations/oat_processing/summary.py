@@ -327,6 +327,19 @@ def _names_of(bucket) -> list:
     return out
 
 
+def _load_flagged_snapshot(date: dt.date) -> dict:
+    """Read the current-queue flagged snapshot the latest OAT walk wrote
+    (output/oat-flagged-<date>.json): who still needs a number / a manual text right
+    now. Empty if the walk hasn't written one yet today."""
+    import json as _json
+    path = f"output/oat-flagged-{date.isoformat()}.json"
+    try:
+        with open(path) as fh:
+            return _json.load(fh) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _find_today_parent(c, date_str: str):
     """Return the ts of today's 'recruiting to-do' parent message (so the 4pm post
     replies into the SAME thread the noon post created), or None if not posted yet.
@@ -433,17 +446,27 @@ def main(argv=None) -> int:
         return fix_last_header()
     date = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
 
+    if args.nophone:
+        # The daily noon/4pm post: who's flagged in the CURRENT queue (needs a number
+        # pulled from Indeed, or a manual text). Reads the latest walk's snapshot
+        # (output/oat-flagged-<date>.json) — NOT the day-cumulative activity log,
+        # which over-counted apps already handled since (Megan 2026-08-06).
+        snap = _load_flagged_snapshot(date)
+        t_snap = {"nophone": [{"name": n} for n in snap.get("nophone", [])],
+                  "retext": [{"name": n} for n in snap.get("retext", [])]}
+        print(f"[report] snapshot {date} @ {snap.get('at','?')} — "
+              f"queue={snap.get('queue_total','?')} · "
+              f"{len(t_snap['nophone'])} need a number, "
+              f"{len(t_snap['retext'])} need a manual text", flush=True)
+        res = post_nophone_report(date, t_snap, dry_run=args.dry_run)
+        return 0 if res.get("ok") else 1
+
     rows = load_rows(date)
     t = tally(rows)
     last_scan = rows[-1]["time"] if rows else ""
     print(f"[scorecard] {date} — {t['processed']} rows: sent={len(t['sent'])} "
           f"removed={len(t['removed'])} retext={len(t['retext'])} "
           f"nophone={len(t['nophone'])} blocked={len(t['blocked'])}", flush=True)
-    if args.nophone:
-        # The daily 8pm post now: who still needs a number pulled from Indeed
-        # (header + names in-thread), instead of the full scorecard.
-        res = post_nophone_report(date, t, dry_run=args.dry_run)
-        return 0 if res.get("ok") else 1
     if args.emit_tab:
         # Write the full bucketed data to a Google Sheet tab (no truncation) so a
         # remote caller can rebuild the scorecard. Format "<sheetId>:<tabName>".
