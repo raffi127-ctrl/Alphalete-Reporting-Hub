@@ -89,6 +89,62 @@ first adoption case, and Raf says he expects one of his own — "technically i'l
 have Andrew Sanborn here soon."** When Andrew Sanborn appears, he is likely an
 adoption under Raf, not an organic ICD.
 
+### SETTLED 2026-08-06 — where the adoption money lands, and where it does not
+
+Eve: *"es muy importante que cada semana, las siguientes personas repliquen su $
+de la tabla de Colten que es donde yo introduzco el número a mano: Milan
+Godbolt, Karrington Moody, Justin Fermin, Marcos Barbosa… todo esto afecta los
+totales de cada Org y el total de la Org en general."*
+
+**"La tabla de Colten" is the `ICD (Special Cases)` block on the DD tab** (rows
+136-139 as of 8.2.26). All four rows are Colten's org — Justin sits under Jairo,
+who sits under Colten — the ORG column says so, and Eve types each week's figure
+into column F **by hand**. Nothing on the tab adds it up: `Total - Raf` is
+`=SUM(F2:F131)` and the block starts at 136, so the money rendered on the page
+but was in no total anywhere.
+
+**The rule, in one line: an adoption is IN its leader's org figure and OUT of the
+ORG. TOTAL DD.** That is Raf's own rule read straight — the adopting upline gets
+the double override, and SCI does not count adoptions as organization headcount
+or sales. Eve chose this explicitly on 2026-08-06 after seeing all three
+candidate arithmetics side by side.
+
+What that means, and what changed in `dd_data.load()`:
+
+| Line | Where the adoption money goes |
+|---|---|
+| **ORG. TOTAL DD** | OUT. Stays the tab's `Total - Raf` (`=SUM(F2:F131)`), which cannot reach rows 136+. |
+| **Colten / Jairo TOTAL** | IN. `row_wk` / `row_keys` now include the special rows (this is the change — the old code excluded them). |
+| **Colten / Jairo ORGANIC** | OUT, via the `Adoption?` flags. Unchanged. |
+| **Rafael "outside Carlos & Colten"** | OUT — subtracted with Colten's full total, so raising the adoptions LOWERS Rafael by the same amount. |
+| **All ICDs / Tracked Separately** | The four stay in Tracked Separately, labelled "adoption, not in the total". |
+
+For 8.2.26: headline **$1,062,591.00**; Colten $491,363.00 (organic
+$428,553.00); Jairo $217,519.00 (organic $201,858.00); Carlos $336,432.50;
+Rafael $1,062,591.00 − $336,432.50 − $491,363.00 = **$234,795.50**.
+
+**The 2026-07-23 "correction" to Raf's line is REVERTED.** That session read the
+gap as arithmetic error — *"you cannot subtract money the base never contained"*
+— and raised Raf by $41,962.00 to $292,419.00 on 7.19.26. Arithmetically true,
+editorially wrong: Rafael's line means *what is left once Carlos's and Colten's
+orgs are accounted for*, and an adoption under Colten is accounted for. **The
+tell was that it made Rafael's figure immune to the adoption amounts** — Eve
+expected him to move when they changed, and he did not. The VA's $250,457.00 for
+7.19.26 was right all along.
+
+The `direct` cross-check that used to enforce the old reading is kept, not
+dropped: the two routes must now differ by **exactly** `special_week`, the
+adoption money on the subtracted lists (computed from the podium side). Any
+other difference still means a list is wrong and still blocks.
+
+Two things deliberately NOT touched, both reported on every run:
+- **AVG DD / Active Owners** are read off the tab and never recomputed. They
+  exclude the four, which is now consistent with the headline.
+- **The special block is hand-typed and nothing checks its freshness.** On
+  8.2.26 all four cells were byte-identical to 7.26.26 ($21,050 / $13,614 /
+  $19,239 / $4,706), which is what a copied column looks like. Worth a
+  `week_is_filled`-style gate later.
+
 ### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
 On the bulletin thread, Eve asked whether Jairo could be added. Raf:
 
@@ -337,11 +393,24 @@ Verified against the 7.19.26 send — six reproduce **exactly**, and Raf's is
 Gotchas the numbers pin down:
 - **Cody Cannon counts in FULL to Carlos**, not split — that is what makes
   $329,005.70 land to the penny.
-- **Raf's line: the VA's send was WRONG and we correct it.** Her sheet subtracts
+- **Raf's line — THIS BULLET IS WRONG. REVERTED 2026-08-06** (see *SETTLED
+  2026-08-06* above). The VA's $250,457.00 was right; our $292,419.00 was the
+  error. Kept verbatim below because the reasoning is seductive and the next
+  session will re-derive it unless it can see where it goes wrong: subtracting
+  only what the headline contains is arithmetically sound and editorially wrong,
+  and it makes Rafael immune to the adoption amounts. **Do not re-apply it.**
+
+  Her sheet subtracts
   Colten's FULL list total, but $41,962.00 of that (Justin $13,088, Marcos
   $1,475, adoptions $27,399) belongs to people with no DD row, who were never in
   the $1,010,586.70 headline. You cannot subtract money the base never contained.
   Her $250,457.00 understates Raf by exactly that $41,962.00.
+
+  *(2026-08-06: the headline NOW contains them, so the four are subtracted along
+  with everyone else. The principle is unchanged — subtract exactly what the
+  headline contains — and Raf's figure lands in the same place either way. See
+  REVERSED 2026-08-06 above. The 7.19.26 worked example below still describes
+  the old base and is kept as the derivation.)*
 
   The correct figure is **$292,419.00**, and two independent routes agree:
   1. headline − Carlos's row-backed total ($329,005.70) − Colten's row-backed
@@ -355,9 +424,15 @@ Gotchas the numbers pin down:
   correction 2026-07-23** — if a future send still shows $250,457, ours is right.
 - **Salik's list excludes Salik's own $9,342 DD** (he is `Salik Waqar` on the DD
   tab). Deliberate. Hammad shows the SAME 2 ICDs — correct, not a duplicate.
-- **Justin Fermin ($13,088) and Marcos Barbosa ($1,475) have no DD row at all** —
-  not a spelling problem, they are simply absent from the tab. They live in the
-  list as Manual week DD and are re-surfaced under "Tracked Separately".
+- **Justin Fermin and Marcos Barbosa (and Karrington + Milan) — SUPERSEDED.**
+  This bullet used to read "no DD row at all… re-surfaced under Tracked
+  Separately". All four now have rows in the `ICD (Special Cases)` block on the
+  DD tab and, since 2026-08-06, count inside their leader's org figure (but not
+  the headline) — see *SETTLED 2026-08-06* above. Their `Manual week DD` cells
+  on `Lucy Org Tree` (C85/C86/C121/C122) are
+  now DEAD: a real row always wins in `by_key`, so those cells still hold the
+  7.19.26 figures and nothing reads them. Do not "fix" them and expect the page
+  to move — edit the DD tab's special block instead.
 - Eveliz is Colten's wife — location **Miami, Florida** (not Michigan).
 - Leaders seen: Colten, Carlos, Raf, Khalil, Zach, Eveliz, Salik, Hammad,
   Benjamin Burden (the count varies by week; 7.19.26 showed 7). Zach Hogue is
@@ -449,6 +524,35 @@ Every failure so far has been a NAME MISMATCH, not a structural one — includin
 `Salik Malick`/`Mallick`, `Max Aden`/`Maxamad`/`Maxamed`, `MJ Malhas`/`Amjad`.
 All are now rows in the shared ICD Aliases tab. `Lucy Org Tree` (gid 1263646043)
 holds the tree tied to the DD sheet's names, with a match-status column.
+
+## THE REVIEW GATE — `review_gate.py` (built 2026-08-06). EVELYN ONLY.
+
+Nothing mails itself any more. `deploy/dd_bulletin_thu.sh` now runs
+`--post` → `--check --send` → `--remind` on every Thursday pass, so the week's
+PDF goes to Drive and its link to `#revision-emails`, and the send waits for a
+checkmark.
+
+**Only Evelyn's checkmark releases it** (Eve 2026-08-06: *"que la unica
+aprobadora para este bulletin sea Evelyn, que si reacciona Jolie no dispare
+nada"*). This is the only one of the four gates in that channel that is not
+Evelyn+Jolie — `APPROVERS` holds one id and a tick from anyone else falls
+through. Do not "align" it with the others.
+
+Three differences from the daily gates, all deliberate:
+- **Weekly key.** The post is titled `Organization Bulletin — WE 8.2.26`, so
+  `--post` is IDEMPOTENT: the agent makes seven passes and must not post seven
+  times. Corrections go out with `--refresh` (same link, no second message);
+  `--repost` replaces the message and refuses over an approval.
+- **It HOLDS rather than posts** while the tab's newest week is not the Sunday
+  that just ended. Exit 0 — Eve has until 10am Central to fill the column, and
+  posting early would put the wrong week in front of the approver.
+- **Blocking problems do not stop the post**, they ride in it. `send.py` refuses
+  the send regardless, so the checkmark cannot release a figure we know is
+  wrong — but the bulletin's absence is visible instead of silent.
+
+The reviewed PDF and the mailed email are built TWICE (`send.py --dd` rebuilds
+from the live Sheet), so the thread confirmation names the week AND the headline
+that actually went out. See [[project_captainship-reviewed-pdf-vs-sent-eml]].
 
 ## SENDING IT — `send.py --dd` (built 2026-07-24, NEVER auto-sends)
 

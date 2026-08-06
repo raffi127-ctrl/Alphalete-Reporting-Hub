@@ -8,14 +8,19 @@ Rules live in DD_SOURCES.md. In short:
     total. The lists are NOT in the emailed bulletin (that carries only the
     headline and the 7 figures) — they live in the VA's working file.
   * the adoptions / off-book names live in the 'ICD (Special Cases)' section on
-    the DD tab (below the headline formulas); they are EXCLUDED from the org
-    total but still reported under Tracked Separately. Jacob Dover is NOT one of
-    them — he is a normal Active-YES ICD IN the org total
+    the DD tab (below the headline formulas) — "la tabla de Colten", which Eve
+    fills BY HAND. Since 2026-08-06 they COUNT: added to the headline (the tab's
+    `=SUM(F2:F131)` cannot reach them), listed in All ICDs, and counted into
+    their leader's row-backed total. `Adoption?` still keeps them out of a
+    leader's ORGANIC line — that flag is about labelling, not about whether the
+    money exists. Jacob Dover is NOT one of them — he is a normal Active-YES ICD
   * Raf's podium figure is the bulletin's "total outside Carlos & Colten" line:
     the headline MINUS Carlos's and Colten's list totals (not his own list sum —
     those disagree by $41,962, and the published line is the subtraction)
   * headline total, AVG DD and Active Owners are ALREADY computed in the tab
-    (rows 132 / 135-153 / 155-173) — read them, never recompute
+    (rows 132 / 135-153 / 155-173) — read them, never recompute. The ONE
+    addition is the special-case block above, which the tab's own formulas
+    exclude by construction; AVG DD / Active Owners still exclude it and say so
   * CREDICO is the second DD source and is ADDED to an owner's week — but only
     where the tab does not already contain it (the VA folds it in by hand while
     she still owns the tab). `_fold_credico` decides that per owner and reports
@@ -235,13 +240,23 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         icds.append(row)
         by_key[row["key"]] = row
 
-    # ---- ICD (Special Cases): the adoptions / off-book names, kept in Megan's
+    # ---- ICD (Special Cases): the adoptions / off-book names, kept in the
     # labeled 'ICD (Special Cases)' section BELOW the Total rows on the DD tab.
-    # They are NOT Active-YES and sit outside SUM(F2:F131), so the scan above
-    # skips them and they never touch the headline — but the podium lists
-    # reference them, so they go into by_key (a leader's list finds them like any
-    # ICD, and the Adoption? flag still keeps them out of ORGANIC), and they
-    # render in Tracked Separately with whatever weekly history has accumulated.
+    # This is COLTEN'S TABLE — the four rows are all Colten's org (Justin sits
+    # under Jairo, who sits under Colten) — and Eve types each week's figure
+    # into it BY HAND. Nothing on the tab sums it: `Total - Raf` is
+    # `=SUM(F2:F131)` and the block lives at rows 136-139, so the money was
+    # visible on the page but absent from every total.
+    #
+    # Eve 2026-08-06: "cada semana las siguientes personas replican su $ de la
+    # tabla de Colten... todo esto afecta los totales de cada Org y el total de
+    # la Org en general." So these rows COUNT: they are added to the ORG. TOTAL
+    # DD headline, they join the ICD roster (so they appear in All ICDs and in
+    # Raf's org, whose tree contains them), and they count into their leader's
+    # row-backed total so the 'headline minus Carlos & Colten' subtraction still
+    # lands on the same figure. The `Adoption?` flag is untouched — it still
+    # keeps them out of a leader's ORGANIC line, which is Raf's rule and is
+    # about how a figure is LABELLED, not about whether the money exists.
     special, _on = [], False
     for r in vals:
         lab = " ".join((r[0] or "").split()).lower()
@@ -259,6 +274,9 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                "special": True}
         special.append(row)
         by_key.setdefault(row["key"], row)
+    # They stay OUT of `icds`: the ORG. TOTAL DD headline does not contain them
+    # (Eve 2026-08-06 — see the headline block below), so the roster that has to
+    # add up to it must not either.
 
     # `blocking` is the subset of `problems` that must stop a SEND — a figure we
     # know is wrong, as opposed to one we know is incomplete and label as such.
@@ -288,10 +306,55 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         problems.append(msg)
         hard_block.append(msg)
 
-    # ---- the headline, read straight off the pre-computed 'Total - Raf' row
-    headline = next((money(r[wk_cols[0][0]]) for r in vals
-                     if r and "total - raf" in (r[0] or "").strip().lower()
-                     and wk_cols[0][0] < len(r)), None)
+    # ---- the headline, read straight off the pre-computed 'Total - Raf' row.
+    #
+    # It does NOT include the 'ICD (Special Cases)' block. Eve 2026-08-06 chose
+    # this deliberately, and it is Raf's adoption rule read straight: an adoption
+    # is not part of the ORGANIZATION, so it is not in the organization's total.
+    # It still belongs to the leader receiving the double override, which is why
+    # the block DOES count inside Colten's and Jairo's org figures below.
+    headline_tab = next((money(r[wk_cols[0][0]]) for r in vals
+                         if r and "total - raf" in (r[0] or "").strip().lower()
+                         and wk_cols[0][0] < len(r)), None)
+    special_week = round(sum(r["weeks"][0] for r in special), 2)
+    headline = headline_tab
+    if special_week:
+        problems.append(
+            "ORG. TOTAL DD = ${:,.2f}, the tab's 'Total - Raf' (=SUM(F2:F131)) "
+            "as it stands. The {} 'ICD (Special Cases)' rows ({}) carry "
+            "${:,.2f} MORE and are adoptions, so they stay out of it — they "
+            "count inside their leader's org figure and come off Rafael's "
+            "'outside' line".format(
+                headline or 0.0, len(special),
+                ", ".join(r["name"] for r in special), special_week))
+        # A COPIED COLUMN is how this block fails. On 8.2.26 all four cells were
+        # byte-identical to 7.26.26 and the page published $58,609.00 against a
+        # true $62,810.00 — Colten short $4,201.00 and nothing anywhere said so
+        # (Eve caught it by eye). Nobody types four unchanged figures in a week,
+        # so treat a wholesale repeat as the stale column it almost certainly is.
+        #
+        # HARD_BLOCK, not `blocking`. The Thursday send runs with --notify, and
+        # --notify ALERTS on a blocking problem and mails anyway; a stale figure
+        # would have gone to the whole org with a note about it in
+        # #claudecorrections. Same class as a stale week header: publishing last
+        # week's money as this week's is not a gap, it is a wrong number.
+        prior = [r for r in special if len(r["weeks"]) > 1 and r["weeks"][1]]
+        if len(prior) > 1 and all(r["weeks"][0] == r["weeks"][1] for r in prior):
+            msg = ("every 'ICD (Special Cases)' row is IDENTICAL to {} ({}) — "
+                   "that is a copied column, not {} figures. Retype Colten's "
+                   "table on {!r} before this goes out".format(
+                       weeks[1], ", ".join("{} ${:,.2f}".format(r["name"],
+                                                                r["weeks"][0])
+                                           for r in prior), weeks[0], DD_TAB))
+            problems.append(msg)
+            hard_block.append(msg)
+        # AVG DD and Active Owners are read off the tab and never recomputed.
+        # They exclude the special rows, which is CORRECT under the rule above —
+        # noted rather than flagged, so nobody "fixes" it into disagreeing with
+        # the headline.
+        problems.append(
+            "AVG DD / Active Owners exclude those {} rows too, which matches "
+            "the headline — nothing to fix".format(len(special)))
 
     # ---- Credico, the second DD source, BEFORE the podium: a topped-up week
     # has to reach the leader lists that sum it.
@@ -329,19 +392,23 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         partial = False
         members = []                       # the list itself, for the breakdown
         row_wk, row_keys = 0.0, set()      # the part backed by a real DD row
+        special_wk = 0.0                   # ...of which the headline lacks
         for item in lists.get(name, []):
             row = by_key.get(_key(item["icd"], aliases))
             if row:
                 wk += row["weeks"][0]
                 tot += row["total"]
-                # A SPECIAL row (adoption / off-book) counts toward the leader's
-                # shown total but is NOT part of the headline base, so it must NOT
-                # go into row_wk / row_keys — those feed the 'headline minus this
-                # org' subtraction for Raf, and subtracting money the headline
-                # never contained is exactly the $41,962 error we corrected.
-                if not row.get("special"):
-                    row_wk += row["weeks"][0]
-                    row_keys.add(row["key"])
+                # SPECIAL rows count in row_wk / row_keys — this is the whole
+                # point of Eve's 2026-08-06 call. Rafael's line is "total outside
+                # Carlos & Colten", so an adoption sitting under Colten has to
+                # come off it: raise the adoptions by $4,201 and Rafael drops by
+                # $4,201. `special_wk` records how much of this leader's total is
+                # money the headline never contained, so the cross-check below
+                # can still tell a wrong LIST from this deliberate gap.
+                row_wk += row["weeks"][0]
+                row_keys.add(row["key"])
+                if row.get("special"):
+                    special_wk += row["weeks"][0]
                 members.append({"name": item["icd"], "week": row["weeks"][0],
                                 "adoption": item["adoption"]})
                 if item["adoption"]:
@@ -373,6 +440,7 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                        "minus": minus, "list_week": round(wk, 2),
                        "week": round(wk, 2), "total": round(tot, 2),
                        "row_week": round(row_wk, 2), "row_keys": row_keys,
+                       "special_week": round(special_wk, 2),
                        "items": lists.get(name, []), "total_partial": partial,
                        "members": members,
                        "organic": round(organic, 2), "adoptions": adoptions,
@@ -380,12 +448,23 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                        "expected_week": exp_wk, "missing": missing, "manual": manual})
 
     # 'Minus orgs' leaders take the headline less those orgs ("total outside of
-    # Carlos & Colten"). Subtract only each org's ROW-BACKED portion: the headline
-    # is the sum of the active DD rows, so the bulletin-only names in those lists
-    # (Justin, Marcos, the adoptions) were never in it and cannot come out of it.
-    # The VA's sheet subtracts the full list total, which understated Raf by
-    # $41,962.00 on 7.19.26 — see DD_SOURCES.md. Corrected here on purpose.
+    # Carlos & Colten"), subtracting each org's FULL row-backed total — adoptions
+    # included, even though the headline does not contain them.
+    #
+    # This is the VA's arithmetic, and Eve restored it on purpose 2026-08-06:
+    # Rafael's line means "what is left once Carlos's and Colten's orgs are
+    # accounted for", and an adoption sitting under Colten is accounted for.
+    # An earlier session (2026-07-23) read the gap as an error and "corrected"
+    # Raf UP by $41,962.00 on the grounds that you cannot subtract money the base
+    # never contained. Arithmetically true, editorially wrong — and it made
+    # Rafael's figure immune to the adoption amounts, which is what gave the
+    # whole thing away. The gap is now MEASURED (`special_week`) and checked
+    # instead of removed, so a genuinely wrong list still gets caught.
     by_name = {p["name"]: p for p in podium}
+    # Adoption flags keyed by ICD, so a DERIVED member list (Raf's) can carry the
+    # same red '*' the transcribed lists do.
+    adopt_keys = {_key(i["icd"], aliases)
+                  for items in lists.values() for i in items if i["adoption"]}
     for p in podium:
         if not p["minus"]:
             continue
@@ -402,18 +481,26 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         # which is exactly how the VA's own working file lists Raf (38 ICDs
         # totalling the headline). Derived, not transcribed, because a hand list
         # of 38 names would need re-typing every week.
-        p["members"] = [{"name": r["name"], "week": r["weeks"][0], "adoption": False}
+        p["members"] = [{"name": r["name"], "week": r["weeks"][0],
+                         "adoption": r["key"] in adopt_keys}
                         for r in icds if r["weeks"][0]]
         # Independent cross-check: the same figure reached by adding up every
-        # active ICD that is on none of the subtracted lists. If the two routes
-        # disagree, a list is wrong — say so rather than publish either one.
+        # active ICD on none of the subtracted lists. The two routes differ by
+        # EXACTLY the adoption money on those lists — that is the deliberate gap
+        # above, and it is computed from the podium side, so anything else is a
+        # list that does not match the tab. Say so rather than publish either one.
+        adopt_gap = round(sum(by_name[m]["special_week"] for m in p["minus"]
+                              if m in by_name), 2)
         direct = round(sum(r["weeks"][0] for r in icds if r["key"] not in gone), 2)
         p["direct"] = direct
         p["direct_n"] = sum(1 for r in icds if r["key"] not in gone)
-        if abs(direct - p["week"]) > 0.5:
-            msg = (f"{p['name']}: headline-minus gives ${p['week']:,.2f} but "
+        p["adopt_gap"] = adopt_gap
+        if abs(direct - (p["week"] + adopt_gap)) > 0.5:
+            msg = (f"{p['name']}: headline-minus gives ${p['week']:,.2f}, and "
                    f"adding up the {p['direct_n']} ICDs on no subtracted list "
-                   f"gives ${direct:,.2f} — a list is wrong")
+                   f"gives ${direct:,.2f}. Those should differ by exactly the "
+                   f"${adopt_gap:,.2f} of adoptions on the subtracted lists, and "
+                   f"they differ by ${direct - p['week']:,.2f} — a list is wrong")
             problems.append(msg)
             blocking.append(msg)
 
@@ -494,13 +581,14 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     # Tracked Separately is ONLY names that sit OUTSIDE the org total. Jacob
     # Dover is NOT one — he is a normal Active-YES ICD counted in the headline
     # (Megan 2026-07-24: "he's in the org"), so he already appears in the All-ICDs
-    # table like everyone else and does not belong here. What belongs: the
-    # 'ICD (Special Cases)' rows (adoptions / off-book, excluded from the total),
-    # carrying their own weekly history from the DD tab, and any Credico-only
-    # owner with no DD row.
+    # table like everyone else and does not belong here.
+    #
+    # The 'ICD (Special Cases)' four DO belong here: they are inside Colten's and
+    # Jairo's org figures but outside the ORG. TOTAL DD, which is exactly what
+    # this section is for. Their weekly history comes off the DD tab.
     tracked = []
     for r in special:
-        tracked.append({**r, "why": (f"{r['org']} · not in the total"
+        tracked.append({**r, "why": (f"{r['org']} · adoption, not in the total"
                                      if r.get("org") else "not in the total")})
     for p in podium:
         for item in p["items"]:
@@ -537,7 +625,9 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
             "totals": totals, "org_count": len(icds), "problems": problems,
             "blocking": blocking, "hard_block": hard_block, "credico": credico_info,
-            "credico_pending": bool(credico_info and credico_info.get("pending"))}
+            "credico_pending": bool(credico_info and credico_info.get("pending")),
+            "special": special, "headline_tab": headline_tab,
+            "special_week": special_week}
 
 
 if __name__ == "__main__":

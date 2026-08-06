@@ -4990,7 +4990,7 @@
     },
     "dd_special_accumulate": {
       "on_scheduler": true,
-      "_off_scheduler_note": "Weekly step for the DD bulletin: pull this week's fees-excluded figure for the four special-case names (Justin/Marcos/Karrington/Milan) from the Tableau ORG DD Detail crosstab and write it into the 'ICD (Special Cases)' section on the Org DDs Ongoing Report tab, current-week column \u2014 building their 4-week history one week at a time (the DD Detail view only serves the current week). DRY-RUN by default; base_args carries --accumulate only, so it PRINTS what it would write. Add --write to actually write. Only ever touches the special rows' current-week cell, below the headline formulas. LUCY 1 (Raf's Tableau login).",
+      "_off_scheduler_note": "Weekly step for the DD bulletin: pull this week's fees-excluded figure for the four special-case names (Justin/Marcos/Karrington/Milan) from the Tableau ORG DD Detail crosstab and write it into the 'ICD (Special Cases)' section on the Org DDs Ongoing Report tab, current-week column \u2014 building their 4-week history one week at a time (the DD Detail view only serves the current week). Only ever touches the special rows' current-week cell, below the headline formulas. LUCY 1 (Raf's Tableau login). --write ADDED 2026-08-06 (Eve): this had stayed DRY through the 8/6 cutover, so on the first auto-filled week NOTHING wrote those four cells \u2014 dd_week_roll and dd_populate handled every other row and the adoptions kept 7.26.26's money into the 8.2.26 column ($58,609.00 published against a true $62,810.00; Colten short $4,201.00). depends_on the roll and the populate because the roll blanks the column first. dd_data now HARD-BLOCKS the send when all four rows repeat the prior week, so a silent repeat cannot reach the org again \u2014 but a repeat is now a real failure to investigate, not the expected state.",
       "display_name": "DD \u2014 accumulate special-case weekly DD",
       "source_type": "tableau",
       "data_sources": [
@@ -5000,12 +5000,41 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--accumulate"
+        "--accumulate",
+        "--write"
       ],
       "cadence": {
         "weekdays": [
           3
         ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [
+        "dd_week_roll",
+        "dd_populate"
+      ],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "dd_repull_compare": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "One-shot diagnostic: re-pull EVERY owner's weekly DD from our Tableau mapping and compare it week-for-week against the Org DDs Ongoing Report tab. READ-ONLY — results land on the '_dd_repull' tab of the override workbook. Use it when the auto-filled tab disagrees with Eve's own 'Org. Bulletin.xlsx': she pulls Program Summary filtered to Downline, dd_populate pulls ORG DD Detail. Added 2026-08-06 for Akib Chowdhury on the FIRST auto-filled week, WE 8.2.26 — tab $4,260.30 vs her $4,644.90, delta $384.60, and the only ICD of 37 that disagreed, so this is a per-ICD question and not a source mismatch. Pick a week with `lucy rerun dd_repull_compare --week 8.2.26`. LUCY 1.",
+      "display_name": "DD — re-pull every owner and compare to the tab",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:dd_detail"
+      ],
+      "command": [
+        "automations.override_bulletin.dd_search"
+      ],
+      "base_args": [
+        "--all"
+      ],
+      "cadence": {
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,

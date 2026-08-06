@@ -371,8 +371,23 @@ def _org_tables(podium):
             star = '<span class="adopt">&nbsp;*</span>' if m.get("adoption") else ""
             rows.append(f'<tr><td class="rk">{i}</td><td>{m["name"]}{star}</td>'
                         f'<td class="t26">{_fmt(m["week"])}</td></tr>')
-        rows.append(f'<tr class="tot"><td></td><td>TOTAL</td>'
-                    f'<td class="t26">{_fmt(p["week"])}</td></tr>')
+        # A 'minus orgs' leader's TOTAL is a SUBTRACTION (headline − Carlos −
+        # Colten), not the sum of the rows above it — his list is the whole
+        # organization. Printing $297,605.50 under 41 rows that add to
+        # $1,121,200.00 reads as an arithmetic error to anyone checking, so both
+        # numbers are shown and each is labelled for what it is (Eve 2026-08-06,
+        # "revisar todos los totales").
+        if p.get("minus"):
+            rows.append(f'<tr class="tot"><td></td><td>TOTAL</td>'
+                        f'<td class="t26">{_fmt(sum(m["week"] or 0 for m in mem))}'
+                        f'</td></tr>')
+            rows.append(
+                f'<tr class="tot"><td></td><td>OUTSIDE '
+                f'{" &amp; ".join(m.split()[0].upper() for m in p["minus"])}</td>'
+                f'<td class="t26">{_fmt(p["week"])}</td></tr>')
+        else:
+            rows.append(f'<tr class="tot"><td></td><td>TOTAL</td>'
+                        f'<td class="t26">{_fmt(p["week"])}</td></tr>')
         if p.get("adoptions"):
             rows.append(f'<tr class="tot"><td></td><td>ORGANIC</td>'
                         f'<td class="t26">{_fmt(p["organic"])}</td></tr>')
@@ -389,7 +404,7 @@ def _org_tables(podium):
             f'{"".join(rows)}</table></div>')
         # Row count drives the column packing below — header + members + total
         # (+ organic when adoptions are present).
-        h = len(mem) + 2 + (1 if p.get("adoptions") else 0)
+        h = len(mem) + 2 + (1 if p.get("adoptions") else 0) + (1 if p.get("minus") else 0)
         cards.append((html, h))
     if not cards:
         return ""
