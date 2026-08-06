@@ -409,15 +409,33 @@ def run(write: bool = False, src: "Optional[Path]" = None,
         os.environ.setdefault("PAY_STRUCTURE_SHEET_ID",
                               "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
         from automations.pay_structure import store as _st
+        # MAX-MERGE the aggregated payouts: a product's base payout is stable, and a
+        # partial recent-week pull only UNDERSTATES it (~$10 vs the settled ~$198 that
+        # posts over 2–3 weeks). So never let a pull LOWER a known value — this
+        # converges to the settled value and stops the daily pull from corrupting it.
+        try:
+            prev = _st.load_gross_revenue_all()
+            for ok, data in by_office.items():
+                old = (prev.get(ok) or {}).get("raw", {})
+                new = data.get("raw", {})
+                data["raw"] = {k: max(float(new.get(k, 0) or 0), float(old.get(k, 0) or 0))
+                               for k in set(new) | set(old)}
+        except Exception as e:            # noqa: BLE001 — never fail the pull
+            print("gross max-merge skipped: {}".format(str(e)[:120]))
         _st.save_gross_revenue(by_office)
-        # accumulate per-week sale types: merge THIS pull's week(s) into the stored
-        # history (a pull only holds ~1 DD week), keep the most recent 12 weeks.
+        # accumulate per-week sale types (a pull only holds ~1 DD week), keeping the
+        # most recent 12 weeks; MAX per (week, product) so a week's values converge
+        # up to settled as later pulls re-see the same week fuller.
         try:
             existing = _st.load_weekly_all()
             merged: Dict[str, dict] = {}
             for ok in set(existing) | set(weekly_office):
                 wk = dict(existing.get(ok, {}))
-                wk.update(weekly_office.get(ok, {}))     # new week wins for same week
+                for week, descs in (weekly_office.get(ok) or {}).items():
+                    cur = dict(wk.get(week, {}))
+                    for d, v in descs.items():
+                        cur[d] = max(float(v or 0), float(cur.get(d, 0) or 0))
+                    wk[week] = cur
                 merged[ok] = _cap_weeks(wk, 12)
             _st.save_weekly(merged)
         except Exception as e:            # noqa: BLE001 — weekly is additive, never fail the pull

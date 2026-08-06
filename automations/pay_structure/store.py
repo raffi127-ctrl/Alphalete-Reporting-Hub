@@ -374,22 +374,30 @@ def save_gross_revenue(by_office: "Dict[str, dict]") -> None:
     _retry(lambda: ws.update(rows, range_name="A1", value_input_option="RAW"))
 
 
-def load_gross_revenue(office_key: str) -> dict:
-    """The office's parsed gross revenue {raw:{...}, main:{...}}, or {}."""
+def load_gross_revenue_all() -> "Dict[str, dict]":
+    """{office_key: {raw, main, ...}} for every office (one Sheet read)."""
     sid = _sheet_id()
     if not sid:
         return {}
+    out: "Dict[str, dict]" = {}
     try:
         ws = _open_gross_ws(sid, create=False)
         if ws is None:
             return {}
-        want = office_key.strip().lower()
         for row in (_retry(lambda: ws.get_all_values()) or [])[1:]:
-            if row and row[0].strip().lower() == want and len(row) > 1 and row[1].strip():
-                return json.loads(row[1])
+            if row and row[0].strip() and len(row) > 1 and row[1].strip():
+                try:
+                    out[row[0].strip().lower()] = json.loads(row[1])
+                except Exception:
+                    pass
     except Exception:
         pass
-    return {}
+    return out
+
+
+def load_gross_revenue(office_key: str) -> dict:
+    """The office's parsed gross revenue {raw:{...}, main:{...}}, or {}."""
+    return load_gross_revenue_all().get(office_key.strip().lower(), {})
 
 
 _WEEKLY_TAB = "Pay Structure Weekly"
