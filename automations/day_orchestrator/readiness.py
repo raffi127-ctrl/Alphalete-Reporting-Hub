@@ -338,18 +338,29 @@ class ReadinessCache:
             line = str(e).splitlines()[0][:120] if str(e) else repr(e)
             return Readiness(False, f"DD extract not pullable yet ({line})")
 
-        import csv as _csv
+        # Tableau serves this crosstab as UTF-16 tab-separated at times and
+        # UTF-8 comma at others; read_crosstab auto-detects both. A plain
+        # utf-8-sig DictReader choked on the UTF-16 BOM (0xff) and left
+        # dd_populate blocked until a lucky retry served UTF-8 (2026-08-06).
         try:
-            with open(out, newline="", encoding="utf-8-sig") as f:
-                rows = list(_csv.DictReader(f))
+            from automations.override_bulletin.pulls import read_crosstab
+            grid = read_crosstab(out)  # list of row-lists, header first
         except Exception as e:  # noqa: BLE001
             return Readiness(False, f"cannot read DD probe CSV ({e})")
-        if len(rows) < min_rows:
-            return Readiness(False, f"DD extract thin ({len(rows)} rows) — still filling")
+        header = grid[0] if grid else []
+        data_rows = grid[1:]
+        if len(data_rows) < min_rows:
+            return Readiness(False, f"DD extract thin ({len(data_rows)} rows) — still filling")
+        # locate the date column by header name (case/space-insensitive)
+        want = " ".join(str(date_col).lower().split())
+        di = next((i for i, h in enumerate(header)
+                   if " ".join(str(h).lower().split()) == want), None)
+        if di is None:
+            return Readiness(False, f"DD probe missing column {date_col!r}")
         # newest deposit date -> its week-ending Sunday
         newest = None
-        for r in rows:
-            d = _parse_date(r.get(date_col, ""))
+        for r in data_rows:
+            d = _parse_date(r[di]) if di < len(r) else None
             if d and (newest is None or d > newest):
                 newest = d
         if newest is None:
