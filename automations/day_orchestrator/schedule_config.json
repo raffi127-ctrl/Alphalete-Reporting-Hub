@@ -5016,7 +5016,7 @@
     },
     "dd_week_roll": {
       "on_scheduler": true,
-      "_off_scheduler_note": "Insert the new week-ending column on the Org DDs Ongoing Report tab when the week that just ended isn't already its leftmost week \u2014 so nobody has to hand-roll the tab (what caused the 2026-07-30 wrong-week send). Copies the Avg DD / Active Owners formula cells into the new column (PASTE_FORMULA re-points their refs) and blanks the owner data rows for dd_populate to fill. DRY-RUN by default: base_args carries --roll only, so it PRINTS the plan. Add --write to go live. Validated on the '_dd_sandbox' duplicate 2026-07-30. LUCY 1.",
+      "_off_scheduler_note": "Insert the new week-ending column on the Org DDs Ongoing Report tab when the week that just ended isn't already its leftmost week \u2014 so nobody has to hand-roll the tab (what caused the 2026-07-30 wrong-week send). Copies the Avg DD / Active Owners formula cells into the new column (PASTE_FORMULA re-points their refs) and blanks the owner data rows for dd_populate to fill. LIVE-WRITE 2026-08-05 (Megan approved; Eve knows the auto-fill goes live 8/6 and is stopping the hand-fill, so a live roll can't collide with a hand-added column). base_args carries --roll --write. NOTE: validated only on the '_dd_sandbox' duplicate 2026-07-30, never on the live tab \u2014 8/6 is its first live run; watch the first pass. LUCY 1.",
       "display_name": "DD \u2014 roll the week-ending column",
       "source_type": "sheet",
       "data_sources": [],
@@ -5024,7 +5024,8 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--roll"
+        "--roll",
+        "--write"
       ],
       "cadence": {
         "weekdays": [
@@ -5041,7 +5042,7 @@
     },
     "dd_populate": {
       "on_scheduler": true,
-      "_off_scheduler_note": "Populate the tab's current-week column for EVERY Active-YES owner from OUR Tableau mapping (ORG DD Detail), combining the week's Sat+Sun deposit dates and folding Credico \u2014 the switch off the VA hand-fill (Megan 2026-07-30). DRY-RUN by default: base_args carries --populate only, so it PRINTS the per-owner diff vs the tab and writes nothing (VA still fills the tab during the transition). Add --write to go live. Never overwrites a Credico owner's cell when Credico is unavailable. Depends on credico_fetch so the fold has data. LUCY 1.",
+      "_off_scheduler_note": "Populate the tab's current-week column for EVERY Active-YES owner from OUR Tableau mapping (ORG DD Detail), combining the week's Sat+Sun deposit dates and folding Credico \u2014 the switch off the VA hand-fill (Megan 2026-07-30). LIVE-WRITE 2026-08-05 (Megan approved): base_args carries --populate --write, so it FILLS the current-week column on the real tab. Validated to the cent on WE 7.26 (0 diffs vs the VA column for 37 owners after the aliases). Never overwrites a Credico owner's cell when Credico is unavailable. dd_week_roll opens the fresh column just before this (also --write as of 8/6, since Eve is stopping the hand-fill). Depends on dd_week_roll + credico_fetch so the column exists and the fold has data. LUCY 1.",
       "display_name": "DD \u2014 populate all owners from our mapping",
       "source_type": "tableau",
       "data_sources": [
@@ -5051,7 +5052,8 @@
         "automations.override_bulletin.dd_search"
       ],
       "base_args": [
-        "--populate"
+        "--populate",
+        "--write"
       ],
       "cadence": {
         "weekdays": [
