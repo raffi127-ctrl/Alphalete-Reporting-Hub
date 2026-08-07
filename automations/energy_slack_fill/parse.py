@@ -63,8 +63,18 @@ _SKIN = re.compile(r":skin-tone-\d:", re.I)
 # ":infinity:" who had sold one, which both invented a sale and threw away the
 # only cross-check the block carries. Seen 2026-08-02.
 TALLY_RE = re.compile(
-    r"^\s*(?:base|energy)?\s*[-:]?\s*(\d{1,3})\s*/\s*"
-    r"(\d{1,3}|:[a-z0-9_+'-]+:|[∞♾]️?)\s*$", re.I)
+    r"^\s*\**\s*(?:base|energy|total)?\s*[-:]?\s*(\d{1,3})\s*/\s*"
+    r"(\d{1,3}|:[a-z0-9_+'-]+:|[∞♾]️?)\s*\**\s*$", re.I)
+
+# The block often closes with shout-outs — "S/O Se7en Sins", "s/o Hashirassss",
+# "S/O <@U09M…> for all they do". Every one of those was reading as a rep with
+# one sale. Skipped, not stopped on: a shout-out has turned up mid-block, and
+# dropping a real rep line after it would be worse than ignoring noise.
+SHOUTOUT_RE = re.compile(r"^\s*\**\s*(?:s\s*/\s*o|shout\s*-?\s*out)\b", re.I)
+
+# "<@U09MXMU76MB>", "<!channel>", "<@U123|Name>" — Slack mention syntax. A line
+# that is nothing but mentions is a shout-out list, not a sale.
+_MENTION = re.compile(r"<[@!#][^>]*>")
 
 # A section header is emoji + one word + emoji, but ONE WORD IS NOT ENOUGH to
 # call it a header: half the rep lines are a single first name ("Edgar:zap:",
@@ -87,6 +97,13 @@ ALIASES = {
     # NOTE this is only safe while he's the one Will on the Energy roster — if a
     # second one is ever added, match_rep returns ambiguous and the day holds.
     "will": "Willvim Marte",
+    # The two that post under a nickname nearly every day. Both were holding a
+    # WHOLE day's fill (one unplaceable name discards the day), and both are on
+    # the current roster: "Zoey" on 7/22, 7/24, 7/25, 7/27, 7/28, 7/29, 7/30 and
+    # 8/1; "Charlie" on 7/31. Each time the board credited the sale to the full
+    # name below, which is what makes the reading safe rather than a guess.
+    "zoey": "Zoria Johnson",
+    "charlie": "Charley Alan Perez",
 }
 
 # Names that appear on Energy lines but are NOT the credited rep — trainees and
@@ -140,8 +157,11 @@ def _bare_word(line: str) -> str:
 
 def read_line(raw: str) -> EnergyLine | None:
     """One Energy-block line -> (name, sale count), or None if it isn't one."""
-    if not raw.strip() or TALLY_RE.match(raw):
+    if not raw.strip() or TALLY_RE.match(raw) or SHOUTOUT_RE.match(raw):
         return None
+    raw = _MENTION.sub(" ", raw)
+    if not raw.strip(" \t-:,.·•*"):
+        return None                                  # a mentions-only line
     flags: list[str] = []
     count = len(_SALE_MARK.findall(raw))
     rest = _SALE_MARK.sub(" ", raw)

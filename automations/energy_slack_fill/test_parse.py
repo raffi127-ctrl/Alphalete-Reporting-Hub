@@ -80,11 +80,28 @@ IBK :zap:
 Will :zap:
 2/:infinity:"""
 
+# The block usually closes with shout-outs, and every one of those lines was
+# reading as a rep with one sale — including the bare Slack-mention lists. The
+# tally here is also written "Total-4/6", which the plain N/M shape missed, so
+# the block never terminated and swallowed the whole shout-out section.
+SHOUTOUTS = """:zap:Energy:zap:
+
+Zoey:zap::zap:
+Pranish :zap:
+Charlie :zap:
+Total-4/6
+
+s/o Hashirassss
+*S/O Se7en Sins*
+S/O <@U09MXMU76MB> for all they do!
+<@U0ACYK2MCQ6> <@U060MNFQLJ1> <@U095L0FG276>"""
+
 CASES = [
     # text, expected [(name, count)], expected tally
     (MON, [("Thomas", 2), ("Charley", 2), ("PABLO", 1), ("Edgar", 1),
            (":ant:", 1)], 7),
     (SUN, [("IBK", 1), ("Will", 1)], 2),
+    (SHOUTOUTS, [("Zoey", 2), ("Pranish", 1), ("Charlie", 1)], 4),
     (TUE, [("Pranish/ Abdallah", 1), ("Willvim", 1), ("IBK", 1),
            ("Charley/soto", 1), ("Thomas/Tim", 1), ("Edgar", 1)], 6),
     (WED, [("Edgar", 1), ("Pranish", 1), ("IBK", 1)], 3),
