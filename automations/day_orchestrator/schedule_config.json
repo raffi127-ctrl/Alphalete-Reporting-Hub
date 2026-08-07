@@ -4329,6 +4329,33 @@
       },
       "machine": "Lucy 2"
     },
+    "att_owners_list": {
+      "order": 15.7,
+      "on_scheduler": true,
+      "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' — the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed — red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate — it tags nobody) and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
+      "display_name": "ATT Owners List (weekly roster)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.att_owners_list.run"
+      ],
+      "base_args": [
+        "--real",
+        "--i-mean-it",
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          4
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null,
+      "machine": "Lucy 1"
+    },
     "att_order_log": {
       "on_scheduler": true,
       "_off_scheduler_note": "Carlos's ATT B2B Order Log -> the 'Lucy At&t Order Log' tab on the Vantura Master Sales Board (requested 2026-07-19 via Loom + Slack; the ATT counterpart to box_order_log). CUT OVER 2026-07-20 to Lucy 2's 4am orchestrator flow (first report migrated). on_scheduler:true; runs appstream-first-then-tableau via run_order; source_type tableau. LAYER-2 FRESHNESS GATE LIVE 2026-07-20: data_sources tableau:att_orderlog wires the real _probe_att_orderlog \u2014 from 4am the pass runs it when Carlos's ORDERLOG extract actually has the day's rows and SKIPS + circles back to re-probe when it doesn't (Lucy 1's Box behaviour), instead of a fixed clock (not_before removed). Probe fail-opens past 05:30 so it can never hold the log. Live-verified 2026-07-20: correct ready(today)/not-ready(future) verdicts, non-disruptive (never _kill_ours the shared CDP session). base_args --sheet so the batch WRITES (the module dry-runs by default \u2014 the silent-no-op trap). The standalone com.alphalete.att-order-log agent was RETIRED on Lucy 2 (disable_att_order_log_agent) so it does not double-run; ROLL BACK with `lucy rerun install_att_order_log_agent --machine \"Lucy 2\"` (+ flip this on_scheduler false). Megan asked for 5:30am CST, but 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder and that job MUST finish by 6:00 (Sales Boards starts 6:00, VA posts ~5:57) \u2014 this pull is ~7min on a 120MB export plus a full Chrome-profile copy, so 5:00am is recommended instead; the LaunchAgent is NOT installed until she picks. Present so `lucy rerun att_order_log` (dry) and `lucy rerun att_order_log --sheet` (writes) work. Pulls ATTTRACKER-B2B/ORDERLOG via the DIRECT authenticated .csv \u2014 NOT cdp_pull.probe(), which ignores its url/out arguments, hardcodes the bare view and cost a run on 2026-07-19. Un-pivots the per-measure fan-out (every sale is emitted once per measure, 4x; compute.load_orderlog does NOT collapse this) and filters to Carlos. DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity); a laptop pull evicts the mini's ownerville session holder. Writes only its own two tabs (PROTECTED_TABS guard). Does NOT post to Slack.",
