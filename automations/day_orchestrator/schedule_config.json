@@ -4903,7 +4903,7 @@
     },
     "override_special_probe": {
       "on_scheduler": false,
-      "_off_scheduler_note": "READ-ONLY diagnostic (automations.override_bulletin.special_probe). Asks Tableau TODAY for the last N weeks of Raf's Special Override and diffs it against the copy tab and the VA's live tab, and force-downloads DD Detail PER PERIOD to show which past weeks a period-filtered pull actually carries. Settles whether the 6.14-7.5 shortfall was a source that SETTLED after we filled it (fix: widen the backtrack past the regular component) or a partial parse (fix: the parser) BEFORE either is built. Writes NOTHING to any tab. `lucy rerun override_special_probe [--weeks 8]`.",
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.override_bulletin.special_probe). Asks Tableau TODAY for the last N weeks of Raf's Special Override and diffs it against the copy tab and the VA's live tab, and force-downloads DD Detail PER PERIOD to show which past weeks a period-filtered pull actually carries. Settles whether the 6.14-7.5 shortfall was a source that SETTLED after we filled it (fix: widen the backtrack past the regular component) or a partial parse (fix: the parser) BEFORE either is built. Writes NOTHING to any tab. `lucy rerun override_special_probe [--weeks 8]`. TIMEOUT 45m, not 20: run._scan_summary alone downloads the ORG Override Summary for FIVE candidate retail periods (offsets +1,0,+2,-1,+3) before the probe pulls anything of its own, and that view is the flaky one — its Crosstab dialog opens empty and each attempt costs a reopen + extra hydration. The 2026-08-07 15:16 run spent the entire 20m budget still inside that scan (46-line log, every line an ORG Override Summary retry) and printed not one number. override_backtrack does the same scan and takes ~31m end to end on the default 45, so 45 is the measured shape of this work, not padding. If it ever times out at 45 too, the fix is to narrow the scan window for the probe — NOT to raise the cap again.",
       "display_name": "Override Bulletin — probe the special/DD sources",
       "source_type": "tableau",
       "data_sources": [],
@@ -4911,7 +4911,7 @@
         "automations.override_bulletin.special_probe"
       ],
       "base_args": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "cadence": {
         "weekdays": []
       },
