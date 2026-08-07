@@ -4844,6 +4844,51 @@
       },
       "machine": "Lucy 1"
     },
+    "override_bulletin_send": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin SEND. The scheduled send is the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent (deploy/override_bulletin_send_fri.sh, Fri 10:30-13:00 CST q25m, still --test). This entry exists so a CORRECTED bulletin can be re-sent by hand the same day. base_args are deliberately a DRY RUN — the caller must ask for the send explicitly, so a stray `lucy rerun override_bulletin_send` can never publish to the org: `lucy rerun override_bulletin_send --test --send` (3-person test group) or `--send --force` (FULL distro + Slack). --force is required for any same-week resend: unlike the DD bulletin, the override bulletin has NO separate test state, so a --test --send already burns the week in override_bulletin_last_sent.txt. Renders OUR copy tab, never the VA's live tab. Added 2026-08-07 (Eve).",
+      "display_name": "Override Bulletin — re-send (dry run unless --send)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.send"
+      ],
+      "base_args": [
+        "--tab",
+        "Copy of Org Overrides Ongoing Report"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "override_special_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.override_bulletin.special_probe). Asks Tableau TODAY for the last N weeks of Raf's Special Override and diffs it against the copy tab and the VA's live tab, and force-downloads DD Detail PER PERIOD to show which past weeks a period-filtered pull actually carries. Settles whether the 6.14-7.5 shortfall was a source that SETTLED after we filled it (fix: widen the backtrack past the regular component) or a partial parse (fix: the parser) BEFORE either is built. Writes NOTHING to any tab. `lucy rerun override_special_probe [--weeks 8]`.",
+      "display_name": "Override Bulletin — probe the special/DD sources",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.special_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "install_b2b_quality_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_b2b_quality_agent` can install/refresh the STANDALONE com.alphalete.b2b-quality LaunchAgent on LUCY 2 (5:30am CST daily, deploy/b2b_quality.sh, --post). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",

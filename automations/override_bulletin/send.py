@@ -67,8 +67,11 @@ from automations.override_bulletin import fill as F
 # Slack targets — Lucy is a member of both (the VA posted the bulletin to both).
 # Set OVERRIDE_BULLETIN_CHANNEL_ID to a scratch channel to test a real post
 # safely; it replaces BOTH real channels (same knob as pnl_office).
+# Eve 2026-08-07: the override bulletin posts to the SAME rooms as the
+# Organization (DD) bulletin — #alphalete-lvl1-chat was the one it was missing.
 CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
+    ("#alphalete-lvl1-chat",    "C09JG28CD27"),
     ("#rafs-office-recruiting", "C06881A7WLV"),
 ]
 # DD bulletin rooms — DD_SOURCES.md: the VA posted it to #alphalete-sales and
