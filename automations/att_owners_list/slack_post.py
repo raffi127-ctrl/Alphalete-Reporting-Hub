@@ -6,8 +6,11 @@ something is sent; this one reports work that has ALREADY happened, so it tags
 nobody and asks for nothing [[project_captainship-review-gate]]. The channel is
 right anyway: it is where the people who watch these reports already look.
 
-Posted as Lucy through the provisioned user token — the same path every metrics
-post uses. [[reference_lucy-slack-identity]]
+Posted through the provisioned slack-user-token, the same path every metrics
+post uses — so WHO it comes from is whoever that machine's token belongs to.
+On Lucy 1 (where the Friday run is scheduled) that is Lucy; run by hand from
+Eve's Windows box the token is Evelyn's and the post carries her name.
+[[reference_lucy-slack-identity]] [[project_slack-token-on-windows-is-evelyn]]
 """
 from __future__ import annotations
 
