@@ -311,11 +311,19 @@ def post_review(link: str, blocking=None, today: Optional[dt.date] = None,
         warn = (f"\n\n:warning: *{len(blocking)} problem(s) BLOCK the send* — "
                 f"a checkmark will not release it until these are fixed:\n"
                 f"{bullets}{more}")
+    # The reviewer approves the PDF, but what goes out is the PDF *plus* the
+    # email body — so a week carrying a one-off note has to show that note here.
+    # Approving a correction email without seeing the apology line in it is
+    # approving something you were not shown.
+    from automations.override_bulletin.send import dd_one_off_note
+    note = dd_one_off_note(week_label(today))
+    note_line = (f"\n\n:memo: *This week the email carries a note above the "
+                 f"bulletin:*\n>{note}" if note else "")
     text = (f"*{_title(today)}*\n"
             f"{link}\n\n"
             f"{_mentions()} — please review and react with "
             f":white_check_mark: to send it. Nothing goes out until then."
-            f"{warn}")
+            f"{note_line}{warn}")
 
     cli = _client()
     olds = _all_posts(today, channel)
@@ -507,7 +515,8 @@ def close_day(today: Optional[dt.date] = None, channel: Optional[str] = None,
 # --------------------------------------------------------------------------
 # 4. the send
 # --------------------------------------------------------------------------
-def send_reviewed(distro: bool = False, verbose: bool = True) -> int:
+def send_reviewed(distro: bool = False, force: bool = False,
+                  verbose: bool = True) -> int:
     """Shell out to send.py. A separate process on purpose: the sender stays the
     one command that has ever mailed this, and this module never grows its own
     path to a recipient list.
@@ -517,9 +526,15 @@ def send_reviewed(distro: bool = False, verbose: bool = True) -> int:
     "Bulletins"), the 3 Slack channels, and an alert to #claudecorrections on a
     data gap instead of a refusal. Without it, the 4-person soft-launch group.
     The gate changes WHO decides the bulletin goes out, never WHERE it goes —
-    dropping --notify here would have silently narrowed the distro."""
+    dropping --notify here would have silently narrowed the distro.
+
+    `force` is for a CORRECTED RE-SEND of a week that already went out: the
+    sender records the week it published and refuses a second send, which is
+    right for a retrying agent and wrong for "the figures moved, send it again".
+    It does NOT reach `hard_block` — a wrong week still never mails."""
     cmd = [sys.executable, "-u", "-m", "automations.override_bulletin.send",
-           "--dd", "--send"] + (["--notify"] if distro else ["--test"])
+           "--dd", "--send"] + (["--notify"] if distro else ["--test"]) \
+        + (["--force"] if force else [])
     if verbose:
         print(f"→ {' '.join(cmd)}", flush=True)
     return subprocess.call(cmd)
@@ -544,6 +559,10 @@ def main(argv=None) -> int:
     ap.add_argument("--distro", action="store_true",
                     help="with --check --send: mail the real distro instead of "
                          "the 4-person soft-launch group.")
+    ap.add_argument("--force", action="store_true",
+                    help="with --check --send: send even though this week "
+                         "already went out — a CORRECTED re-send. Never "
+                         "overrides a hard block.")
     ap.add_argument("--remind", action="store_true",
                     help="nudge if still unapproved after --after-hours. Once.")
     ap.add_argument("--close-day", action="store_true",
@@ -612,7 +631,7 @@ def main(argv=None) -> int:
         print(f"✓ approved by {who[1]}", flush=True)
         if not args.send:
             return 0
-        rc = send_reviewed(args.distro)
+        rc = send_reviewed(args.distro, force=args.force)
         if rc == 0:
             # Read the headline back so the confirmation names what was mailed,
             # not what was approved — see the module docstring.

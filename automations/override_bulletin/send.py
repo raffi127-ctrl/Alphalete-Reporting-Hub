@@ -58,6 +58,7 @@ import ssl
 import sys
 from email.message import EmailMessage
 from email.utils import make_msgid
+from html import escape
 from pathlib import Path
 
 from automations.override_bulletin import build as B
@@ -97,6 +98,28 @@ DD_TEST_STATE_PATH = STATE_DIR / "dd_bulletin_test_last_sent.txt"
 RCS_STATE_PATH = STATE_DIR / "rcs_ncs_last_sent.txt"
 RCS_TEST_STATE_PATH = STATE_DIR / "rcs_ncs_test_last_sent.txt"
 
+# ---------------------------------------------------------------------------
+# ONE-OFF NOTE — DELETE THE ENTRY ONCE ITS WEEK HAS GONE OUT.
+# ---------------------------------------------------------------------------
+# A line of plain text above the images in the DD bulletin email, for the weeks
+# where the send itself needs an explanation — a re-send after the figures were
+# corrected, say. KEYED BY WEEK on purpose: Eve asks for it "por única vez", and
+# a bare flag would either need remembering next Thursday or quietly ride along
+# on every future send. Keyed this way it expires by itself when the week rolls.
+#
+# 8.2.26 (Eve, 2026-08-07): the bulletin went out Thursday 8/6, then numbers were
+# adjusted, so the org gets a corrected copy of the same week.
+DD_ONE_OFF_NOTES = {
+    "8.2.26": ("Hi, team! Please consider this last version of the "
+               "Organizational Bulletin received yesterday as some numbers were "
+               "adjusted. Thanks and sorry for the inconvenience."),
+}
+
+
+def dd_one_off_note(week_label):
+    """The one-off note for this week, or "" — see DD_ONE_OFF_NOTES."""
+    return DD_ONE_OFF_NOTES.get((week_label or "").strip(), "")
+
 
 def _channels(dd=False):
     """Real channels, or a single scratch channel if the env override is set."""
@@ -131,13 +154,18 @@ def recipients(groups=None):
     return expand_groups(list(groups or B.EMAIL_GROUPS))
 
 
-def build_email(png_paths, week_label, to_addrs, subject=None, title=None):
+def build_email(png_paths, week_label, to_addrs, subject=None, title=None,
+                note=None):
     """The distro email: subject + one inline cid: image PER PAGE.
 
     `png_paths` takes a single path or a list — the override bulletin is one
     page, the DD bulletin is two, and both arrive as inline images in one
     message rather than as attachments (Megan) or as data: URIs (Gmail strips
-    those, which is the whole reason this renders to PNG at all)."""
+    those, which is the whole reason this renders to PNG at all).
+
+    `note` is a line of body text ABOVE the images — see DD_ONE_OFF_NOTES. It
+    goes in the plain-text part too: a recipient reading on a client that shows
+    text only would otherwise get a corrected bulletin with no word of why."""
     if isinstance(png_paths, (str, Path)):
         png_paths = [png_paths]
     subject = subject or B.email_subject(week_label)
@@ -156,6 +184,13 @@ def build_email(png_paths, week_label, to_addrs, subject=None, title=None):
         '<img src="cid:{}" width="1180" style="width:100%;max-width:1180px;'
         'height:auto;display:block;border:0">'.format(c)
         for c in cids)
+    # Its own row above the images, white on the black ground so it reads as part
+    # of the bulletin rather than as a stray line the client tacked on.
+    note_row = ("" if not note else
+                '<tr><td align="left" style="padding:18px 4px 14px 4px;'
+                'font-family:Arial,Helvetica,sans-serif;font-size:16px;'
+                'line-height:24px;color:#ffffff">{}</td></tr>'.format(
+                    escape(note)))
     html = ('<div style="font-family:Arial,Helvetica,sans-serif;background:#000;'
             'padding:0;margin:0">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -163,11 +198,13 @@ def build_email(png_paths, week_label, to_addrs, subject=None, title=None):
             '<tr><td align="center" style="padding:0">'
             '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
             'style="width:100%;max-width:1180px;border-collapse:collapse">'
+            '{}'
             '<tr><td style="padding:0">{}</td></tr>'
-            '</table></td></tr></table></div>'.format(imgs))
+            '</table></td></tr></table></div>'.format(note_row, imgs))
     msg.set_content(
-        "{} — week ending {}.\n"
-        "This email is best viewed in an HTML email client.".format(title, week_label))
+        "{}{} — week ending {}.\n"
+        "This email is best viewed in an HTML email client.".format(
+            "{}\n\n".format(note) if note else "", title, week_label))
     msg.add_alternative(html, subtype="html")
     part = msg.get_payload()[-1]
     for cid, p in zip(cids, png_paths):
@@ -292,6 +329,8 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
         "{} ${:,.0f}".format(p["name"].split()[0], p["week"]) for p in d["podium"])))
     print("pages       : {}".format(", ".join(str(p) for p in png_paths)))
     print("subject     : {}".format(subject))
+    if dd_one_off_note(week_label):
+        print("body note   : {}".format(dd_one_off_note(week_label)))
     print("mode        : {}".format("TEST (email only, no Slack)" if test
                                     else "preview" if preview else "full distro"))
     print("slack       : {}".format("(none — test/preview)" if not slack_on else
@@ -377,7 +416,8 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
             "test" if test else "preview"))
 
     send_email(build_email(png_paths, week_label, to_addrs, subject=subject,
-                           title="Alphalete Organization Bulletin"))
+                           title="Alphalete Organization Bulletin",
+                           note=dd_one_off_note(week_label)))
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send and not to:                 # a custom `to` is a one-off — don't
         mark_sent(week_label, state_path)  # burn the week's send-state on it
@@ -640,18 +680,26 @@ def main(argv=None):
         raise SystemExit("--no-credico only applies to --dd")
     if a.test and a.preview:
         raise SystemExit("--test and --preview are mutually exclusive")
+    # EXIT CODE = DID IT ACTUALLY GO OUT. A refusal (hard block, blocking
+    # problems, already-sent) used to exit 0 like a successful send, and
+    # review_gate reads that exit code: an approved bulletin that the sender
+    # declined to mail got a ":white_check_mark: Sent — approved by …" reply in
+    # the review thread and nobody knew it had not gone. A dry run still exits 0
+    # — it is the documented default, not a failure.
+    def _rc(res):
+        wanted = a.send or a.preview
+        return 1 if wanted and not (res or {}).get("published") else 0
+
     if a.rcs_ncs:
-        send_rcs_ncs(do_send=a.send, preview=a.preview, test=a.test,
-                     force=a.force, notify=a.notify, out_dir=a.out_dir)
-        return 0
+        return _rc(send_rcs_ncs(do_send=a.send, preview=a.preview, test=a.test,
+                                force=a.force, notify=a.notify,
+                                out_dir=a.out_dir))
     if a.dd:
-        send_dd(do_send=a.send, preview=a.preview, test=a.test, force=a.force,
-                notify=a.notify, out_dir=a.out_dir,
-                credico=False if a.no_credico else "auto")
-        return 0
-    send(tab=a.tab, do_send=a.send, preview=a.preview, test=a.test, force=a.force,
-         out_dir=a.out_dir)
-    return 0
+        return _rc(send_dd(do_send=a.send, preview=a.preview, test=a.test,
+                           force=a.force, notify=a.notify, out_dir=a.out_dir,
+                           credico=False if a.no_credico else "auto"))
+    return _rc(send(tab=a.tab, do_send=a.send, preview=a.preview, test=a.test,
+                    force=a.force, out_dir=a.out_dir))
 
 
 if __name__ == "__main__":
