@@ -95,8 +95,15 @@ def _run(args) -> int:
     sales = {}
     counts = {}
     if not args.skip_download:
-        from automations.shared.tableau_patchright import tableau_session
-        with tableau_session(verbose=True) as page:
+        from automations.shared.tableau_patchright import (
+            tableau_session, PROFILE_DIR)
+        # The 8am preview runs INSIDE the morning batch window, so on the shared
+        # profile it died on "profile is already in use by another instance of
+        # Chromium" (Megan's 8/7 alert). Its own profile can't collide — only
+        # same-profile runs block each other. The 9am send keeps the shared one.
+        prof = (PROFILE_DIR.with_name(".browser_profile_showdown_preview")
+                if args.preview else None)
+        with tableau_session(verbose=True, profile_dir=prof) as page:
             if do_personal:
                 sales = tableau_pull.pull_personal_sales(we, page=page)
                 # ALSO re-pull the PREVIOUS week (Megan 2026-08-03). The pull

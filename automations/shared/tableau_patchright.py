@@ -339,7 +339,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
 def tableau_session(headless: bool = False, verbose: bool = True,
                     allow_form_login: bool = True,
                     window_size: tuple = (1680, 1280),
-                    device_scale: float | None = None) -> Iterator[Page]:
+                    device_scale: float | None = None,
+                    profile_dir=None) -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
 
     Uses Order Log's persistent profile + the exported ownerville
@@ -351,10 +352,19 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     self-heal); pass False for a reuse-only run that fails fast.
 
     window_size (default 1680x1280, unchanged for existing callers): pass a
-    larger size for a higher-resolution Download→Image (tableau_screenshots)."""
-    PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    larger size for a higher-resolution Download→Image (tableau_screenshots).
+
+    profile_dir (default None = the shared PROFILE_DIR): give a job its OWN
+    profile so it never queues behind the morning batch. Different profiles
+    don't block each other — only same-profile runs do. Added for the Owner
+    Showdown 8am preview (Megan 2026-08-03), which sits inside the batch window
+    and was dying on "profile is already in use by another instance of
+    Chromium". Login still comes from the shared ownerville storage_state, so a
+    fresh profile authenticates the same way."""
+    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
+        ctx = _launch_persistent(p, prof, headless=headless,
                                  label="tableau_patchright", verbose=verbose,
                                  window_size=window_size, device_scale=device_scale)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
