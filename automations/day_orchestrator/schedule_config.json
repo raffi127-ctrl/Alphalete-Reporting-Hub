@@ -1457,9 +1457,9 @@
     },
     "energy_slack_fill": {
       "order": 3.9,
-      "on_scheduler": false,
+      "on_scheduler": true,
       "_note": "Fills the Energy reps' EN column on 'Alphalete SALES BOARD 2025' from #alphalete-sales, so it is done BEFORE alphalete_production (order 4) renders the board at ~4am. Nothing else feeds those cells — the Energy campaign (col CH) is hand-typed every morning off the running board the office re-posts all evening; the last message of the night is the finished day. Only ever RAISES a cell, so re-running is safe. Holds (exit 75, writes nothing) when there is no Energy block for the day, when the block's own 'N/goal' tally disagrees with the lines, or when a name matches no rep / two reps on the board's Energy roster. Validated cell-for-cell against the hand-filled Mon 8/3 - Thu 8/6 columns (16 rep-days, 4 tallies, zero diffs).",
-      "_warn": "on_scheduler false until Eve signs off on a live morning run — it writes to the PROD workbook. Preview any day with `python -m automations.energy_slack_fill.run --date YYYY-MM-DD` (no --apply). Point it at a duplicated Sheet with --sheet-id or ENERGY_FILL_SHEET_ID.",
+      "_warn": "LIVE on the PROD workbook from 2026-08-08 (Eve turned it on 8/7 without a live rehearsal — the downside is bounded: every failure mode HOLDS and writes nothing, which just leaves the cells blank exactly as they are when nobody fills them by hand). Preview any day without writing: `python -m automations.energy_slack_fill.run --date YYYY-MM-DD` (no --apply). Point it at a duplicated Sheet with --sheet-id or ENERGY_FILL_SHEET_ID.",
       "display_name": "Energy Sales → Sales Board (from Slack)",
       "source_type": "local",
       "data_sources": [],
