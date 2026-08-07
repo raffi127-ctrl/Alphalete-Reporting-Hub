@@ -86,16 +86,22 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
                  (cfg.PANEL_TIME_TRACKER, tt["path"])],
                 title=f"{tag} — {slot}", out_path=combined)
             paths.append(combined)
-            by_campaign[campaign] = [combined]
+            # Slack gets the two panels stitched into one tall image; the TEXT
+            # gets them as TWO separate pictures (Carlos 8/6 — the stitched one
+            # is unreadable on a phone). Same content, different packaging.
+            by_campaign[campaign] = [ta["path"], tt["path"]]
         except Exception as e:  # noqa: BLE001
             print(f"  {tag} stitch failed ({type(e).__name__}) — Today's Activity "
                   f"only", flush=True)
             paths.append(ta["path"])
-            by_campaign[campaign] = [ta["path"]]
+            by_campaign[campaign] = [ta["path"], tt["path"]]
         notes.append(f"{tag}[TA:{ta.get('how')} TT:{tt.get('how')} "
                      f"camp_ok={ta.get('campaign_ok') and tt.get('campaign_ok')}]")
+    # The TEXT still carries the slot in its own title — only Slack collapses
+    # into one dated thread, where the slot moves to the reply caption.
     title = sp.thread_title(cfg.THREAD_HOURLY, slot, today)
     return [{"title": title, "paths": paths, "kind": cfg.POST_HOURLY,
+             "slot": slot, "daily_thread": cfg.THREAD_HOURLY,
              "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
@@ -149,12 +155,23 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
 
 def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
                 repost: bool = False) -> List[Dict]:
-    """Each spec is its own thread: a titled parent + one image reply, in both
-    channels (Megan 7/30). repost=True adds the images to TODAY's existing
-    same-titled thread instead of creating a new one."""
-    return [sp.post_thread(s["title"], s["paths"], today, dry_run=dry_run,
-                           repost=repost)
-            for s in specs]
+    """Post each spec into both channels.
+
+    A spec carrying `daily_thread` goes into ONE dated thread for the day, as a
+    reply captioned with its time slot plus the people to tag (Carlos 8/6). The
+    6:30 territory post has no `daily_thread` — it runs once a day, so its own
+    thread is already one a day — and keeps the original behaviour, including
+    --repost."""
+    out = []
+    for s in specs:
+        if s.get("daily_thread") and not repost:
+            out.append(sp.post_daily_thread(
+                s["daily_thread"], s.get("slot", ""), s["paths"], today,
+                dry_run=dry_run))
+        else:
+            out.append(sp.post_thread(s["title"], s["paths"], today,
+                                      dry_run=dry_run, repost=repost))
+    return out
 
 
 def main(argv=None) -> int:

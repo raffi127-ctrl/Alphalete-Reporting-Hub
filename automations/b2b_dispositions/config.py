@@ -68,6 +68,43 @@ CHANNEL_LABEL = {
 THREAD_HOURLY = "Hourly Activity"
 THREAD_DISPOSITIONS = "B2B Dispositions"
 
+# --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
+# Carlos: "every hour it creates a new thread. Can you have it only create one
+# thread for the day and tag nico sebastian and myself everytime it posts in
+# that thread." So the hourly parent is now dated ONLY — the slot moved into the
+# reply caption, which is what makes every run land in the same day's thread.
+# (The 6:30 territory post already runs once a day, so it keeps its own thread.)
+THREAD_ONE_PER_DAY = True
+
+# Tagged on EVERY hourly reply. Slack user IDs, not names — a display name can
+# change and there are 7 Sebastians and 8 Nicos in this workspace, so a name
+# lookup here would eventually tag the wrong person in a leaders' channel.
+# Verified: Carlos Hidalgo = U046G04P5LG (carloshidalgo349@gmail.com).
+# PENDING Megan's confirmation of which Nico and which Sebastian — left out
+# deliberately rather than guessed; add the two ids and they start being tagged.
+SLACK_MENTION_USERS = [
+    "U046G04P5LG",   # Carlos Hidalgo
+]
+
+# --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
+# Carlos: "every hour it creates a new thread. Can you have it only create one
+# thread for the day and tag nico sebastian and myself everytime it posts in
+# that thread." So the hourly parent is dated ONLY — the slot moved into the
+# reply caption, which is what makes every run land in the same day's thread.
+# (The 6:30 territory post already runs once a day, so it keeps its own thread.)
+#
+# Tagged on EVERY hourly reply — that's the point: a thread left open all day
+# stops notifying, so without mentions nobody sees the 4pm update.
+#
+# Slack user IDs, never names: this workspace holds 8 Nicos and 7 Sebastians, so
+# a name lookup would eventually tag the wrong person in a leaders' channel.
+# All three confirmed by Megan 2026-08-06.
+SLACK_MENTION_USERS = [
+    "U046G04P5LG",   # Carlos Hidalgo        · carloshidalgo349@gmail.com
+    "U047D64M0RW",   # Nico Murrugarra       · nicolasmurrugarra0413@gmail.com
+    "U05LLCCSB2Q",   # Sebastian Avellaneda  · sebavellaneda10@gmail.com
+]
+
 # Labels drawn on each panel of the stacked hourly image.
 PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
 PANEL_TIME_TRACKER = "REPS OVER 15 MIN GAP"

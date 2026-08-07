@@ -76,6 +76,133 @@ def thread_title(prefix: str, slot: str, today: Optional[dt.date] = None) -> str
     return f"{prefix} {_short_mdy(today)} - {slot.replace(':00', '')}".strip()
 
 
+def day_title(prefix: str, today: Optional[dt.date] = None) -> str:
+    """Parent text for the ONE thread a day, e.g. 'Hourly Activity 8/6/26'.
+
+    Deliberately carries no slot: that's what lets 12pm through 6:30pm all find
+    the same parent instead of minting a thread an hour (Carlos 8/6)."""
+    today = today or dt.date.today()
+    return f"{prefix} {_short_mdy(today)}".strip()
+
+
+def reply_caption(slot: str, mentions: Optional[List[str]] = None) -> str:
+    """The per-run caption inside the day's thread: the time, then the people to
+    notify. The mentions are the point — a thread that stays open all day stops
+    generating notifications, so without them nobody sees the 4pm update."""
+    who = " ".join("<@%s>" % u for u in (mentions or []))
+    slot = (slot or "").replace(":00", "")
+    return (slot + (" " + who if who else "")).strip()
+
+
+def _reply_exists(client, channel: str, parent_ts: str, caption: str) -> bool:
+    """Has this slot already been replied into the day's thread?
+
+    Idempotency has to key on the REPLY now, not the parent. The parent lives all
+    day, so "the thread exists" no longer means "this hour already posted" — and
+    the orchestrator retries failed runs.
+    """
+    try:
+        resp = client.conversations_replies(channel=channel, ts=parent_ts,
+                                            limit=200)
+    except Exception:  # noqa: BLE001
+        return False
+    for m in resp.get("messages", []):
+        if m.get("ts") == parent_ts:
+            continue
+        if caption and caption in (m.get("text") or ""):
+            return True
+    return False
+
+
+def day_title(prefix: str, today: Optional[dt.date] = None) -> str:
+    """Parent text for the ONE thread a day, e.g. 'Hourly Activity 8/6/26'.
+
+    Deliberately carries no slot: that's what lets 12pm through 6:30pm all find
+    the same parent instead of minting a thread an hour (Carlos 8/6)."""
+    today = today or dt.date.today()
+    return f"{prefix} {_short_mdy(today)}".strip()
+
+
+def reply_caption(slot: str, mentions: Optional[List[str]] = None) -> str:
+    """The per-run caption inside the day's thread: the time, then the people to
+    notify. The mentions are the point — a thread that stays open all day stops
+    generating notifications, so without them nobody sees the 4pm update."""
+    who = " ".join("<@%s>" % u for u in (mentions or []))
+    slot = (slot or "").replace(":00", "")
+    return (slot + (" " + who if who else "")).strip()
+
+
+def _reply_exists(client, channel: str, parent_ts: str, caption: str) -> bool:
+    """Has this slot already been replied into the day's thread?
+
+    Idempotency has to key on the REPLY now, not the parent. The parent lives all
+    day, so "the thread exists" no longer means "this hour already posted" — and
+    the orchestrator does retry failed runs."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=parent_ts,
+                                            limit=200)
+    except Exception:  # noqa: BLE001
+        return False
+    for m in resp.get("messages", []):
+        if m.get("ts") == parent_ts:
+            continue
+        if caption and caption in (m.get("text") or ""):
+            return True
+    return False
+
+
+def post_daily_thread(prefix: str, slot: str, paths: List,
+                      today: Optional[dt.date] = None, *,
+                      dry_run: bool = False,
+                      channels: Optional[List[str]] = None,
+                      mentions: Optional[List[str]] = None) -> Dict:
+    """ONE thread per day: find-or-create today's dated parent, then add this
+    run's images as a reply captioned with the time slot and the people to tag
+    (Carlos 8/6 — a thread per hour was burying the channel).
+
+    Idempotent per SLOT inside the thread, not per parent."""
+    today = today or dt.date.today()
+    channels = channels or cfg.CHANNELS
+    mentions = cfg.SLACK_MENTION_USERS if mentions is None else mentions
+    title = day_title(prefix, today)
+    caption = reply_caption(slot, mentions)
+    slot_key = (slot or "").replace(":00", "")
+
+    if dry_run:
+        return {"dry_run": True, "title": title, "caption": caption,
+                "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels],
+                "files": [Path(p).name for p in paths]}
+
+    client = smp._client()
+    results = []
+    for channel in channels:
+        clabel = cfg.CHANNEL_LABEL.get(channel, channel)
+        try:
+            uploads = [{"file": str(Path(p)), "filename": Path(p).name}
+                       for p in paths if Path(p).exists()]
+            if not uploads:
+                results.append({"channel": clabel, "ok": False,
+                                "error": "no image files"})
+                continue
+            ts = _find_parent_ts(client, channel, title, today)
+            if ts is None:
+                parent = client.chat_postMessage(channel=channel,
+                                                 text=f"*{title}*")
+                ts = parent.get("ts")
+            elif _reply_exists(client, channel, ts, slot_key):
+                results.append({"channel": clabel, "skipped": True, "ok": True})
+                continue
+            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                        thread_ts=ts, initial_comment=caption)
+            results.append({"channel": clabel, "ts": ts,
+                            "ok": up.get("ok", True)})
+        except Exception as e:  # noqa: BLE001
+            results.append({"channel": clabel, "ok": False,
+                            "error": f"{type(e).__name__}: {str(e)[:140]}"})
+    return {"title": title, "caption": caption,
+            "ok": all(r.get("ok") for r in results), "channels": results}
+
+
 def retitle_today(old_title: str, new_title: str,
                   today: Optional[dt.date] = None) -> Dict:
     """chat_update today's parent whose text contains `old_title` -> `new_title`,
@@ -130,6 +257,61 @@ def _find_parent_ts(client, channel: str, title: str, today: dt.date):
         if title in (m.get("text") or ""):
             return m.get("thread_ts") or m.get("ts")
     return None
+
+
+def post_daily_thread(prefix: str, slot: str, paths: List,
+                      today: Optional[dt.date] = None, *,
+                      dry_run: bool = False,
+                      channels: Optional[List[str]] = None,
+                      mentions: Optional[List[str]] = None) -> Dict:
+    """ONE thread per day: find-or-create today's dated parent, then add this
+    run's images as a reply captioned with the time slot and the people to tag
+    (Carlos 8/6 — an hourly thread each was burying the channel).
+
+    Idempotent per SLOT within the thread, not per parent: the parent now
+    survives all day, so its existence says nothing about whether this hour
+    already went out, and the orchestrator does retry.
+    """
+    today = today or dt.date.today()
+    channels = channels or cfg.CHANNELS
+    mentions = cfg.SLACK_MENTION_USERS if mentions is None else mentions
+    title = day_title(prefix, today)
+    caption = reply_caption(slot, mentions)
+    slot_key = (slot or "").replace(":00", "")
+
+    if dry_run:
+        return {"dry_run": True, "title": title, "caption": caption,
+                "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels],
+                "files": [Path(p).name for p in paths]}
+
+    client = smp._client()
+    results = []
+    for channel in channels:
+        clabel = cfg.CHANNEL_LABEL.get(channel, channel)
+        try:
+            uploads = [{"file": str(Path(p)), "filename": Path(p).name}
+                       for p in paths if Path(p).exists()]
+            if not uploads:
+                results.append({"channel": clabel, "ok": False,
+                                "error": "no image files"})
+                continue
+            ts = _find_parent_ts(client, channel, title, today)
+            if ts is None:
+                parent = client.chat_postMessage(channel=channel,
+                                                 text=f"*{title}*")
+                ts = parent.get("ts")
+            elif _reply_exists(client, channel, ts, slot_key):
+                results.append({"channel": clabel, "skipped": True, "ok": True})
+                continue
+            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                        thread_ts=ts, initial_comment=caption)
+            results.append({"channel": clabel, "ts": ts,
+                            "ok": up.get("ok", True)})
+        except Exception as e:  # noqa: BLE001
+            results.append({"channel": clabel, "ok": False,
+                            "error": f"{type(e).__name__}: {str(e)[:140]}"})
+    return {"title": title, "caption": caption,
+            "ok": all(r.get("ok") for r in results), "channels": results}
 
 
 def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
