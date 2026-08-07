@@ -264,14 +264,20 @@ def main() -> int:
     if thin and not args.allow_empty_week:
         # Refuse rather than write. A '-' now is indistinguishable from a real
         # zero next week, and the no-overwrite rule means nothing would ever
-        # correct it. Fail loudly so the orchestrator raises it, and tell
-        # #claudecorrections-and-requests, @-mentioning Evelyn — she's the
-        # one who can get the week into the PNL.
-        alert.notify(target, wk.source_sunday(target), cells, real,
-                     dry_run=args.no_alert)
+        # correct it. Post to #claudecorrections-and-requests, @-mentioning
+        # Evelyn — she's the one who can get the week into the PNL.
+        posted = alert.notify(target, wk.source_sunday(target), cells, real,
+                              dry_run=args.no_alert)
         print("=== REFUSING TO WRITE — re-run once the PNL has that week, or "
               "pass --allow-empty-week if the week really was that quiet. ===")
-        return 1
+        # EXIT 0 once the notice is out. A non-zero exit makes the orchestrator
+        # post its own generic "didn't run clean" line into the SAME channel,
+        # so one missing PNL week produced two messages and the useful one was
+        # the second (Eve 2026-08-07). Waiting on the PNL isn't a malfunction —
+        # the report did exactly what it should. If the post did NOT land,
+        # though, nobody has been told anything, and then the failure exit is
+        # the only remaining signal: keep it.
+        return 0 if (posted or args.no_alert) else 1
 
     return apply(tsh, plan, prototype, sundays, pnl, board, term_log,
                  delete_terminated=args.delete_terminated, today=today)

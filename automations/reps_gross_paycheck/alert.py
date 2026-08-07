@@ -65,10 +65,17 @@ def compose(target: dt.date, source: dt.date, cells: int, real: int) -> str:
 
 def notify(target: dt.date, source: dt.date, cells: int, real: int,
            *, dry_run: bool = False) -> bool:
-    """Post to #claudecorrections-and-requests. True if a message went out."""
+    """Post to #claudecorrections-and-requests.
+
+    Returns whether THE TEAM HAS BEEN TOLD — not whether this particular call
+    sent something. An already-posted week counts as told, because the caller
+    uses this to decide whether it still needs to fail the run to raise the
+    alarm, and a second run that morning must not re-raise an alarm that is
+    already sitting in the channel.
+    """
     if _already_sent(source):
         print(f"  (already posted about WE {source.month}/{source.day})")
-        return False
+        return True
     text = compose(target, source, cells, real)
     if dry_run:
         print("  --- Slack post to #claudecorrections-and-requests (not sent) ---")
