@@ -41,7 +41,7 @@ from automations.override_bulletin import pulls as P
 from automations.override_bulletin import run as R
 
 OUT_DIR = Path("output/override_bulletin/special_probe")
-DEFAULT_WEEKS = 6
+DEFAULT_WEEKS = 5          # the sweep window Eve asked for; 8 was gratuitous
 TOLERANCE = 0.01
 
 
@@ -82,18 +82,42 @@ def probe(*, weeks=DEFAULT_WEEKS, tab=None, verbose=True):
         _src_weeks, week_period, _rows_by = R._scan_summary(
             page, OUT_DIR, verbose=verbose, year=year)
 
+        # ONE download per PERIOD, not per week. Raf-wow's crosstab carries every
+        # week of the period as its own column, so `raf_special_override` per week
+        # re-downloads the same file N times — the first run of this probe spent
+        # 45 minutes doing that for 8 weeks and timed out with nothing to show,
+        # blocking the mini's queue behind it. backtrack.regular_for_week solved
+        # the same problem with a per-period cache; this is that.
+        by_period = {}
         for wk in tab_weeks:
-            m, d, y = wk.split(".")
-            week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
-            pnum = week_period.get(wk, int(m))
+            by_period.setdefault(week_period.get(wk, int(wk.split(".")[0])),
+                                 []).append(wk)
+        for pnum, wks in sorted(by_period.items(), reverse=True):
+            crosstab = None
             try:
-                now = P.raf_special_override(
-                    week_header, OUT_DIR / f"raf-{wk}.csv",
-                    period=f"Period {pnum}", page=page, verbose=verbose)
-            except Exception as e:  # noqa: BLE001 — one dead week must not kill the probe
-                print(f"  {wk}: pull FAILED {type(e).__name__}: {e}")
+                # accept=rows: take the download itself, then parse each week's
+                # column out of the ONE file.
+                crosstab, used = P._download_first_nonempty(
+                    P.RAF_BONUS_VIEW, P.RAF_BONUS_SHEET,
+                    OUT_DIR / f"raf-p{pnum}.csv",
+                    P.period_candidates(f"Period {pnum}"),
+                    page=page, verbose=verbose, accept=lambda rr: rr or None)
+                print(f"  period {pnum}: downloaded once for {len(wks)} week(s)"
+                      f" (filter {used})")
+            except Exception as e:  # noqa: BLE001 — one dead period must not kill the probe
+                print(f"  period {pnum}: download FAILED {type(e).__name__}: {e}")
+            for wk in wks:
+                m, d, y = wk.split(".")
+                week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
                 now = None
-            rows.append((wk, pnum, now, on_copy.get(wk), on_live.get(wk)))
+                if crosstab:
+                    try:
+                        now = P.parse_raf_payout(crosstab, label="Raf Payout Total",
+                                                 week_header=week_header)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"  {wk}: parse FAILED {type(e).__name__}: {e}")
+                rows.append((wk, pnum, now, on_copy.get(wk), on_live.get(wk)))
+        rows.sort(key=lambda r: tab_weeks.index(r[0]))
 
         # --- DD Detail, PERIOD-FORCED (skip the unfiltered current-week path) ---
         captains = list(R.DD_CAPTAINS)

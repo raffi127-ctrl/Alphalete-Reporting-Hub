@@ -4913,6 +4913,7 @@
         "automations.override_bulletin.special_probe"
       ],
       "base_args": [],
+      "timeout_minutes": 20,
       "cadence": {
         "weekdays": []
       },
