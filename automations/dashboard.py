@@ -4522,6 +4522,92 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "mobrium-list",
+        "name": "Mobrium List",
+        "creator": "Eve & Claude",
+        "emoji": "⭐",
+        "color": "#7C3AED",
+        "category": "📊 Metrics",
+        "description": (
+            "Friday 10am: drops the reps who are gone off the 'Mobrium List' "
+            "tab and adds the week's new starts, with their email and phone "
+            "pulled from OwnerVille. Live on the real tab."
+        ),
+        "breakdown": (
+            "WHO COMES OFF\n"
+            "Anyone the **'Terminated Reps'** tab or this week's **SALES "
+            "BOARD** names as terminated — unless one of two things says "
+            "otherwise:\n"
+            "**•** Their tracker **Notes** say **FFP**. Those stay, by your "
+            "rule.\n"
+            "**•** OwnerVille still lists them as an active rep **and** the "
+            "termination is at least a week old. That's a rehire — Tadana "
+            "Manyangadze was let go in May and is training new starts now.\n"
+            "The one-week floor is what stops a same-day termination from "
+            "reading as a rehire: OwnerVille takes a day or two to retire "
+            "somebody, so for a few hours they look terminated *and* active.\n\n"
+            "WHO GOES ON\n"
+            "Everybody in the board's **'New Starts/Raf'** box who isn't on "
+            "the list yet and isn't already terminated. They're **inserted in "
+            "first-name order**, not appended — the tab is sorted and an "
+            "append would show.\n\n"
+            "WHERE THE EMAIL AND PHONE COME FROM\n"
+            "**OwnerVille → Sales Reps** (the p=20 page), which is the only "
+            "place the phone numbers exist and the only trustworthy place for "
+            "the email. The board's own email column **drifts out of step "
+            "with its names** — on WE 8.9, David Redmon's row carried Carlo "
+            "Ferrino's address — so it's only used for someone OwnerVille has "
+            "never heard of, and only when the address plausibly belongs to "
+            "them. Anyone left without details is still added, and named at "
+            "the end of the run so you can fill them in.\n\n"
+            "RUNNING IT TWICE IS FREE\n"
+            "A second pass the same day finds nothing to remove and nobody "
+            "new, and says so. Every run — preview included — writes the "
+            "tab's before-state to **output/mobrium_list/**, which is the only "
+            "undo for a deleted row."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1978603621#gid=1978603621"),
+        "assignees": ["Lucy 1"],
+        "run_rerun_id": "mobrium_list",
+        "schedule": {
+            "frequency": "weekly",
+            "day": "Friday",
+            "time": "10:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Mobrium List updated — terminated reps removed, this week's new starts added.",
+            "message_failed": "❌ Run failed. Check the log above — nothing was written unless it says otherwise.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Updates the REAL 'Mobrium List' tab: removes the terminated, adds this week's new starts. Rows get DELETED — the before-state is saved to output/mobrium_list/ first. Safe to click twice.",
+                "module": "automations.mobrium_list.run",
+                "args_fn": lambda: ["--real", "--i-mean-it"],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "help": "Prints exactly who would come off, who would go on, and where each email and phone came from. Touches nothing.",
+                "module": "automations.mobrium_list.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run on the sandbox tab",
+                "icon": "🧪",
+                "help": "Does the whole job for real on a duplicate 'Mobrium List SANDBOX' tab in the same workbook. The only way to actually watch it delete and insert without risking the live list.",
+                "module": "automations.mobrium_list.run",
+                "args_fn": lambda: ["--sandbox", "--fresh-sandbox"],
+            },
+        ],
+    },
+    {
         "id": "country-sales-board",
         "name": "Country Sales Board",
         "creator": "Eve & Claude",

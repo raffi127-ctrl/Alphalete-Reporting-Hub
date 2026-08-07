@@ -169,6 +169,33 @@
     }
   },
   "reports": {
+    "mobrium_list": {
+      "on_scheduler": true,
+      "_note": "Mobrium List (the review-request list) weekly upkeep, Fridays 10:00 CST. Removes reps who are gone and adds the week's new starts to the 'Mobrium List' tab of 'All in One Local Office - Raf' (the same workbook 'Terminated Reps' lives in). REMOVAL is decided by the 'Terminated Reps' tab plus this week's SALES BOARD, with two vetoes: a tracker note of FFP keeps them (Eve's rule), and so does a live OwnerVille roster entry when the termination is 7+ days old \u2014 that is a rehire (Tadana Manyangadze, terminated 5/29 and training new starts in August). The 7-day floor matters: OwnerVille lags a day or two behind a termination, so without it someone let go that morning reads as rehired (Karla Lopez, 2026-08-07). ADDITIONS come from the board's 'New Starts/Raf' box, and their Email AND Phone are read from OwnerVille's Sales Reps page (p=20) via its getRepList endpoint \u2014 the board's own email column drifts out of step with its names (on WE 8.9 'David Redmon' carried Carlo Ferrino's address), so it is used only for people OwnerVille has never heard of, and only when the address plausibly belongs to them. Anyone left without details is added anyway and named in the run output. New people are INSERTED in first-name order, not appended. Idempotent: a second pass the same day changes nothing. NEEDS A LIVE OWNERVILLE SESSION on the machine \u2014 it will not re-login unattended (Cloudflare), and it exits 1 rather than write rows with no phone numbers. base_args are '--real --i-mean-it' because this is the only report that DELETES rows a human maintains; the before-state is snapshotted to output/mobrium_list/ on every run, which is the only undo. depends_on terminated_reps so the day's terminations are already filed when this reads the tracker tab.",
+      "display_name": "Mobrium List weekly upkeep",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.mobrium_list.run"
+      ],
+      "base_args": [
+        "--real",
+        "--i-mean-it"
+      ],
+      "cadence": {
+        "weekdays": [
+          4
+        ],
+        "not_before": "10:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "terminated_reps"
+      ],
+      "verify": null,
+      "timeout_minutes": 12
+    },
     "owner_showdown": {
       "on_scheduler": false,
       "machine": "Lucy 1",
