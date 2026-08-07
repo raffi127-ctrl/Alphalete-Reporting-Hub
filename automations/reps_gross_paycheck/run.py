@@ -171,7 +171,7 @@ def main() -> int:
     ap.add_argument("--keep-terminated", action="store_true",
                     help="don't even list terminated tabs for deletion.")
     ap.add_argument("--no-alert", action="store_true",
-                    help="print the Slack DM to Evelyn instead of sending it.")
+                    help="print the Slack post instead of sending it.")
     ap.add_argument("--allow-empty-week", action="store_true",
                     help="write even when almost nothing in the PNL's source "
                          "week carries money (normally that means the PNL "
@@ -265,7 +265,8 @@ def main() -> int:
         # Refuse rather than write. A '-' now is indistinguishable from a real
         # zero next week, and the no-overwrite rule means nothing would ever
         # correct it. Fail loudly so the orchestrator raises it, and tell
-        # Evelyn directly — she's the one who can get the week into the PNL.
+        # #claudecorrections-and-requests, @-mentioning Evelyn — she's the
+        # one who can get the week into the PNL.
         alert.notify(target, wk.source_sunday(target), cells, real,
                      dry_run=args.no_alert)
         print("=== REFUSING TO WRITE — re-run once the PNL has that week, or "
