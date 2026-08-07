@@ -4678,11 +4678,11 @@ AUTOMATED_REPORTS = [
         "color": "#7C3AED",
         # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
         "category": "📊 Metrics",
-        "description": "Posts the daily Vantura Production thread as Lucy to #alphalete-gp-sales AND #a-players-b2b — the program Sales Boards (B2B, Base, BOX) the VA used to post by hand each morning, two images each. The A-Players copy also carries the Zero Streak callout.",
+        "description": "Posts the daily Vantura Production thread as Lucy to #alphalete-gp-sales AND #a-players-b2b — the program Sales Boards (B2B, BOX) the VA used to post by hand each morning, two images each. The A-Players copy also carries the Zero Streak callout.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Posts a dated **Vantura Production** thread each morning with the "
-            "**B2B, Base, and BOX Sales Boards** (two images each), as Lucy — "
+            "**B2B and BOX Sales Boards** (two images each), as Lucy — "
             "to **#alphalete-gp-sales** and **#a-players-b2b**. The A-Players "
             "copy also gets a **Zero Streak** callout (reps on a 0-sales "
             "streak, up to 7 days); that never posts to #alphalete-gp-sales.\n\n"
