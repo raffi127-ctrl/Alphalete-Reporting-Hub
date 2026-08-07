@@ -3181,6 +3181,68 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "energy-slack-fill",
+        "name": "Energy Sales → Sales Board (from Slack)",
+        "creator": "Eve",
+        "emoji": "⚡",
+        "color": "#F2C744",
+        "category": "📊 Metrics",
+        "description": "Fills the EN column for every Campaign = Energy rep on 'Alphalete SALES BOARD 2025' by reading the last running sales board the office posted in #alphalete-sales the night before. Replaces the hand-typing that had to happen before the morning Production post.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "The Energy reps are the one campaign on the Sales Board with no "
+            "feed — their sales exist only in the running board the office "
+            "re-posts in #alphalete-sales all evening ('Energy / Rivera ⚡ / "
+            "Edgar ⚡ / Base 2/15'). Every re-post carries the whole day, so "
+            "the last message of the night is the finished day. This reads it, "
+            "counts the ⚡ per rep, matches them to the Energy rows on the "
+            "week's tab, and writes each rep's EN cell for that day.\n\n"
+            "IT ONLY EVER RAISES A NUMBER\n"
+            "A sale that reached the board some other way stands — a rep is "
+            "written only when Slack says MORE than the cell already holds. So "
+            "re-running a day is safe and the number can never go backwards.\n\n"
+            "WHEN IT HOLDS (writes nothing, says why)\n"
+            "• no Energy block posted for that day\n"
+            "• the block's own 'N/goal' tally disagrees with the lines — the "
+            "only independent check on the read\n"
+            "• a name matches no rep, or two reps, on the Energy roster\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, just before the ~4 AM Alphalete Production post — whose "
+            "'Energy Sales Board' image is rendered off exactly these cells."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "3:50 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Energy sales filled from #alphalete-sales. Anything it couldn't place is named in the log above — check before the Production post goes out.",
+            "message_failed": "❌ Held or failed. The log says which day and why (no post / tally mismatch / a name it couldn't place). Nothing was written.",
+        },
+        "actions": [
+            {
+                "label": "Preview Yesterday",
+                "icon": "👁",
+                "primary": True,
+                "help": "Reads last night's board and shows every rep against the cell already on the Sheet. Writes nothing.",
+                "module": "automations.energy_slack_fill.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Fill Yesterday",
+                "icon": "▶",
+                "primary": False,
+                "help": "Same read, then writes the EN cells. Only ever raises a number, so it's safe to run twice.",
+                "module": "automations.energy_slack_fill.run",
+                "args_fn": lambda: ["--apply"],
+            },
+        ],
+    },
+    {
         "id": "alphalete-production",
         "name": "Alphalete Daily Production Slack Post",
         "creator": "Eve",
