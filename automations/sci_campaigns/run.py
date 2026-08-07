@@ -8,9 +8,10 @@ Each run:
      (parse) and cross-checks them against the by-day Grand Total.
   3. Writes that week's MM/DD/YY column (fill). 'Total Units' is a sheet
      formula and is never touched.
-  4. Posts 'WE <m.d.yyyy> complete' under the 'SCI Campaigns' thread in
-     #l10-alphalete (slack_post) — only with --notify, and only for weeks that
-     actually wrote something.
+  4. Posts 'WE <M/D> Complete' as a reply under that MONTH's 'SCI Campaigns'
+     thread in #l10-alphalete — one top-level post a month, tagging Rafael &
+     Maud only on the note that opens a new month (slack_post). Only with
+     --notify, and only for weeks that actually wrote something.
 
 The week comes from the EMAIL SUBJECT, never the calendar: the email for a
 Saturday week-ending lands the following Friday and has slipped to Sunday more
