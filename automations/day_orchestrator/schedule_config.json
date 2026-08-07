@@ -5324,6 +5324,30 @@
       },
       "machine": "Lucy 1"
     },
+    "dd_bulletin_gate": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "The Organization Bulletin's REVIEW GATE, by hand. The Thursday LaunchAgent (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh) already drives this same module 10:30-13:00 Central, so this entry exists ONLY so the gate can be reached from Windows on an off day: `lucy rerun dd_bulletin_gate` posts the week's link to #revision-emails AS LUCY (the post must come from the mini's user token — from Eve's box it would arrive as Evelyn, the approver, posting her own report). Base args are ['--post'], and review_gate checks --refresh BEFORE --post, so the useful variants pass through: `--refresh` (rebuild the PDF in place, SAME link, no second post) and `--check --send --distro` (Evelyn's checkmark mails it), plus `--force` for a corrected re-send of a week that already went out. Idempotent — a second --post for a week that is already posted leaves the message alone. LUCY 1, because the build needs the Credico workbooks and the synced headshots.",
+      "display_name": "DD Bulletin — post the review gate (#revision-emails)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.review_gate"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 25,
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "dd_headshots_sync": {
       "on_scheduler": true,
       "_off_scheduler_note": "Download the leader headshots from the private '_headshots' tab of the override workbook onto Lucy 1 (resources/leader-headshots/processed/). The photos are gitignored (public repo) so git never syncs them; this restores them via the Sheets API the reports already use. READ-ONLY on the sheet; writes only local image files. Runs Thursday before the DD bulletin build so the leader cards render with faces. Re-upload from the laptop with `python -m automations.override_bulletin.headshot_sync --upload` when a headshot changes.",
