@@ -149,7 +149,14 @@ TEXT_ROUTES = {
 IMAGE_SEND_DELAY_S = 18
 
 # --- Schedule (mini-LOCAL / Central) -----------------------------------------
-# Today's Activity + Time Tracker: hourly 12pm..6pm, plus a final at 6:30pm.
-# Dispositions (per territory): 6:30pm only.
+# Today's Activity + Time Tracker: hourly 12pm..6pm, plus a final at 7pm.
+# Dispositions (per territory): 7pm only.
+#
+# The final moved 6:30pm -> 7pm (Carlos 8/6, "so the text chains don't get
+# clogged up"): at 6:30 it landed half an hour after the 6pm hourly, so the
+# groups got two rounds of pictures almost back to back. An hour of spacing
+# makes the last one read as the wrap-up it is. Keep this in step with
+# StartCalendarInterval in deploy/com.alphalete.b2b-dispositions-final.plist —
+# this constant only labels the caption; the plist is what actually fires.
 HOURLY_SLOTS = [(12, 0), (13, 0), (14, 0), (15, 0), (16, 0), (17, 0), (18, 0)]
-FINAL_SLOT = (18, 30)
+FINAL_SLOT = (19, 0)

@@ -32,7 +32,7 @@
     <!-- 6:30pm, once. Hour/Minute are machine LOCAL time; Lucy 2 is Central. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
