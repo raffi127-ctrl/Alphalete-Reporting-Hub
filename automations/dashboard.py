@@ -4592,6 +4592,101 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "att-owners-list",
+        "name": "ATT Owners List (weekly roster)",
+        "creator": "Eve & Claude",
+        "emoji": "🧾",
+        "color": "#7C3AED",
+        "category": "📊 Metrics",
+        "description": "Every Friday: fills last week's column on the 'ATT owners list' tab from Tableau, marks who joined the program and who didn't sell, posts the summary in #revision-emails, and seeds any new owner into all three Country Sales Board boxes.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Downloads the crosstab from **ATT Tracker 2.1 - D2D / "
+            "D2D 1-PAGERV2 (Internet Only)** — the worksheet behind the "
+            "**'D2D PAGE 2 LAST WEEK'** page — so it always reads the week that "
+            "CLOSED, never the one in progress.\n"
+            "**•** Fills that week's column on the **ATT owners list** tab: the "
+            "person's name where they sold, a **red** blank where they didn't, "
+            "and a brand-new **yellow** row for anyone who has never been on "
+            "the list.\n"
+            "**•** Posts to **#revision-emails**: who joined, who came back "
+            "after a gap, and who had no sales.\n"
+            "**•** Adds every brand-new owner to **all three Country Sales "
+            "Board boxes** (leaderboard, daily breakdown, delta chart) so their "
+            "sales have a row to land in the next morning.\n\n"
+            "THE COLOURS MEAN SOMETHING\n"
+            "**Yellow** = not in the program yet / the week they joined. "
+            "**Red** = was in the program, no sales this week. Nobody is ever "
+            "removed — the weeks beside a red cell are how you tell a quiet "
+            "week from someone who left.\n\n"
+            "WHEN IT RUNS\n"
+            "**Fridays**, for the week ending the previous Sunday. Re-running "
+            "the same week is safe: it rewrites the same column and says so.\n\n"
+            "IT REFUSES RATHER THAN GUESS\n"
+            "The Tableau worksheet is pinned to a RELATIVE week, so the run "
+            "reads the dates back out of the export and **stops** if they "
+            "aren't the week it meant to fill. It also stops if the column "
+            "already holds different names than the pull — that means somebody "
+            "filled it by hand (`--overwrite` to replace it anyway).\n\n"
+            "THE HISTORY HAD A CROOKED PATCH\n"
+            "The 4/19 and 4/26 columns were once pasted one row low, which left "
+            "56 rows holding two different people. **Realign history** fixes it "
+            "losslessly — it re-lays the same names so every row is one person "
+            "and refuses to write unless every column's name set comes out "
+            "identical."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
+                      "?gid=601599943#gid=601599943"),
+        "assignees": ["Lucy 1"],
+        # Needs the warm ownerville/Tableau session, which lives on the runner.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "att_owners_list",
+        "schedule": {
+            "frequency": "weekly",
+            "day": "Friday",
+            "time": "8:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ ATT Owners List filled — new owners marked yellow, non-sellers red, note posted in #revision-emails.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run the week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills last week's column on the REAL tab, adds new owners to the Country Sales Board, and posts the summary in #revision-emails.",
+                "module": "automations.att_owners_list.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--post"],
+            },
+            {
+                "label": "Preview (no writes, no post)",
+                "icon": "👁",
+                "help": "Same Tableau pull, but prints the planned column and the Slack message instead of writing or sending. Safe any time.",
+                "module": "automations.att_owners_list.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--dry-run"],
+            },
+            {
+                "label": "Run on the sandbox tab",
+                "icon": "🧪",
+                "help": "Writes to the 'ATT owners list (sandbox)' tab and the sandbox Country Sales Board; still only prints the Slack message.",
+                "module": "automations.att_owners_list.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Realign history (one-off)",
+                "icon": "🩹",
+                "help": "Re-lays the whole tab so every row is ONE person, fixing the 4/19-4/26 paste damage. Backs up to output/ first and refuses if any column's name set would change.",
+                "module": "automations.att_owners_list.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--rebuild",
+                                    "--overwrite"],
+            },
+        ],
+    },
+    {
         "id": "sci-campaigns",
         "name": "SCI Campaigns",
         "creator": "Eve & Claude",
