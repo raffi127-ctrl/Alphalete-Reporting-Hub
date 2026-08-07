@@ -4340,8 +4340,6 @@
         "automations.att_owners_list.run"
       ],
       "base_args": [
-        "--real",
-        "--i-mean-it",
         "--post"
       ],
       "cadence": {
