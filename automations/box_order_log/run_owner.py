@@ -108,7 +108,7 @@ def main(argv: Optional[list] = None) -> int:
             args.owner, ", ".join(sorted(owners_mod.OWNERS))), file=sys.stderr)
         return 2
 
-    from . import clean, xlsx, payout, png
+    from . import clean, xlsx, payout, png, window
 
     # ---- 1. get the ALL-OWNERS crosstab --------------------------------
     if args.from_file:
@@ -175,6 +175,9 @@ def main(argv: Optional[list] = None) -> int:
         print("  {} rep(s): {}".format(len(reps), ", ".join(reps)))
         if dated:
             print("  sale dates {} … {}".format(min(dated), max(dated)))
+        warn = window.capped_pull_warning(max(dated) if dated else None, today)
+        if warn:
+            print("  " + warn)
 
     # ---- 4. build the owner's workbook + payout image ------------------
     out_xlsx = OUTPUT_DIR / "BOX Order Log {} {}.xlsx".format(

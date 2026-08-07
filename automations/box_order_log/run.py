@@ -207,6 +207,14 @@ def main(argv: Optional[list] = None) -> int:
     window = ("{} – {}".format(_pretty(min(dated)), _pretty(max(dated), True))
               if dated else "")
 
+    # NB: `window` above is the human date-range string, so the module has to
+    # come in under another name here.
+    from . import window as window_mod
+    _capped = window_mod.capped_pull_warning(
+        max(dated) if dated else None, today)
+    if _capped:
+        print("\n  " + _capped, flush=True)
+
     # Freshness gate for the EARLY (7:00) pass. Box's extract lands ~7-8am, so
     # the 7:00 clock is a guess — if it fires before the refresh, it posts a
     # stale log and the 8:30 fallback won't re-post (marker set). Instead: if
