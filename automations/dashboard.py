@@ -4442,7 +4442,7 @@ AUTOMATED_REPORTS = [
         "description": (
             "Reads this week's tab on the Alphalete SALES BOARD 2025, files "
             "every newly-terminated rep into 'Terminated Reps' on the Raf "
-            "tracker, and DMs Evelyn the day's list inside that week's Slack "
+            "tracker, and posts the day's list in #revision-emails inside that week's "
             "thread. Currently PREVIEW-ONLY — it writes to a sandbox tab until "
             "Eve says go."
         ),
@@ -4470,14 +4470,14 @@ AUTOMATED_REPORTS = [
             "(row 1979, a cleared name), and both would swallow an append that "
             "just looked for the first empty row.\n\n"
             "THE SLACK THREAD\n"
-            "One parent per week — **'Terminated Reps WE 8.9'** — with each "
-            "day's terminations posted as a reply inside it. A new week starts "
+            "One parent per week in **#revision-emails** — **'Terminated Reps WE 8.9'** — with each "
+            "day's terminations posted as a reply inside it. The post lists what the BOARD says was terminated that day, not what the run happened to file, so a row you entered by hand still shows up. A new week starts "
             "a new thread. A day with nobody terminated posts nothing, and a "
             "week with nobody never opens a thread.\n\n"
             "RUNNING IT TWICE IS FREE\n"
             "Rows are deduped on **name + termination date** (the same person "
             "can legitimately appear twice — rehired, then let go again), and "
-            "the DM only ever lists what that run actually filed. A second "
+            "the Slack reply skips anyone already named in this week's thread. A second "
             "pass the same day finds nothing and says nothing."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -4491,7 +4491,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Terminated Reps read — anything new is filed and Evelyn has the day's list.",
+            "message_success": "✅ Terminated Reps read — anything new is filed and the day is posted in #revision-emails.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -4499,21 +4499,21 @@ AUTOMATED_REPORTS = [
                 "label": "Preview (no writes)",
                 "icon": "👁",
                 "primary": True,
-                "help": "Reads the board and prints who WOULD be filed and the DM that would go to Evelyn. Writes nothing, sends nothing.",
+                "help": "Reads the board and prints who WOULD be filed and the message that would go to #revision-emails. Writes nothing, posts nothing.",
                 "module": "automations.terminated_reps.run",
                 "args_fn": lambda: [],
             },
             {
                 "label": "Run on the sandbox tab",
                 "icon": "🧪",
-                "help": "Writes to a duplicate 'Terminated Reps SANDBOX' tab in the same workbook (created on first use) and still only prints the DM. Safe to run any time.",
+                "help": "Writes to a duplicate 'Terminated Reps SANDBOX' tab in the same workbook (created on first use) and still only prints the Slack message. Safe to run any time.",
                 "module": "automations.terminated_reps.run",
                 "args_fn": lambda: ["--sandbox"],
             },
             {
-                "label": "Run for real + DM Evelyn",
+                "label": "Run for real + post to Slack",
                 "icon": "▶",
-                "help": "Files into the REAL 'Terminated Reps' tab and actually sends Evelyn the Slack DM.",
+                "help": "Files into the REAL 'Terminated Reps' tab and actually posts the day in #revision-emails.",
                 "module": "automations.terminated_reps.run",
                 "args_fn": lambda: ["--real", "--i-mean-it", "--post"],
             },

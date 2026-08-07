@@ -1437,6 +1437,25 @@
       "verify": null,
       "timeout_minutes": 10
     },
+    "terminated_reps": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Terminated Reps: reads the current 'Sales Board WE <m>.<d>' tab of the Alphalete SALES BOARD 2025 (both the roster's Termination Date column AND the 'New Starts/Raf' box's 'Terminated' roll-call cells), files what's new into 'Terminated Reps' on the Raf tracker, and DMs Evelyn as Lucy inside that week's 'Terminated Reps WE <m>.<d>' thread. Idempotent — dedupes on (name, termination date), so extra passes cost nothing. on_scheduler:false and base_args EMPTY on purpose: Eve hasn't signed off on live writes yet, so `lucy rerun terminated_reps` is a PREVIEW (reads the board, writes nothing, prints the DM). TO GO LIVE: set on_scheduler true, cadence weekdays [0,1,2,3,4,5,6], and base_args [\"--real\", \"--i-mean-it\", \"--post\"]. Registered 2026-08-07.",
+      "display_name": "Terminated Reps → tracker + Evelyn DM",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.terminated_reps.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 8
+    },
     "morning_diag": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
