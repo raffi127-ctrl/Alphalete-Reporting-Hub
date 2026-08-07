@@ -1095,6 +1095,31 @@ def _fill_phone_field(page, phone: str) -> bool:
 
 
 _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
+_NOPHONE_SKIPS = 0        # count of resume re-reads SKIPPED this walk (cache hits)
+
+
+def _write_walk_diag(start, end, cache_size, skips, counts) -> None:
+    """Append a one-row proof of this walk to the 'OAT Walk Diag' Sheet tab so the
+    walk's behaviour can be verified queue-independently (read the Sheet directly),
+    since the mini-control poller can get jammed. Shows the queue delta, the
+    no-number cache size + how many re-reads were SKIPPED (cache working), and the
+    full outcome counts (incl. re-text sent/removed). Best-effort."""
+    try:
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(
+            "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            ws = sh.worksheet("OAT Walk Diag")
+        except Exception:  # noqa: BLE001
+            ws = sh.add_worksheet(title="OAT Walk Diag", rows=1000, cols=6)
+            ws.append_row(["At", "Queue", "NoNumberCache", "ResumeReReadsSkipped",
+                           "Outcomes"], value_input_option="RAW")
+        cs = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        ws.append_row([dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                       f"{start} -> {end}", str(cache_size), str(skips), cs],
+                      value_input_option="RAW")
+    except Exception as e:  # noqa: BLE001
+        _log(f"[oat] walk diag write failed: {type(e).__name__}: {e}")
 
 
 def _nophone_key(a: Applicant) -> str:
@@ -1155,6 +1180,8 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
     key = _nophone_key(a)
     already_checked = key in _load_nophone_checked()
     if already_checked:
+        global _NOPHONE_SKIPS
+        _NOPHONE_SKIPS += 1
         _log(f"    already checked today (no resume number) — skip re-read: "
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
@@ -1779,6 +1806,9 @@ def run_walk(page, live: bool = False, limit: int = None,
     # guard well before `limit`, so processed < limit == "walked the whole queue".
     walked_all = processed < limit
     _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all)
+    # Queue-independent proof of the walk (readable from the Sheet directly).
+    _write_walk_diag(_start_total, _end_total, len(_load_nophone_checked()),
+                     _NOPHONE_SKIPS, counts)
     return 0
 
 
