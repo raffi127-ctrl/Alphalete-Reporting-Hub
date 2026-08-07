@@ -42,9 +42,12 @@ BASE_VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                  "ATTTRACKER2_1-D2D/Metrics")
 
 # Tableau URL-filters on the filter's DISPLAY CAPTION, not the field name.
-# "Owner Name" is the caption the other AT&T views use; confirm on the live
-# Metrics view during preview and override here (or via env) if it differs.
-DEFAULT_FILTER_FIELD = os.environ.get("METRICS_SHOT_FILTER_FIELD", "Owner Name")
+# CONFIRMED LIVE 2026-08-06 (Megan): the Metrics view's owner filter is captioned
+# "ICD Owner Name (rep)", NOT the "Owner Name" the other AT&T views use — so the
+# old default never matched and every office's shot came back unscoped/empty.
+# Still env-overridable in case the caption is ever renamed.
+DEFAULT_FILTER_FIELD = os.environ.get("METRICS_SHOT_FILTER_FIELD",
+                                      "ICD Owner Name (rep)")
 
 # Raf's local office — the main #alphalete-sales report's owner (its module is
 # separate, but its shot is captured in the same shared session as the rest).
@@ -69,7 +72,12 @@ def build_view_url(owner: str | None, *, filter_field: str,
     base = BASE_VIEW_URL.split("?", 1)[0]
     params = []
     if not no_filter:
-        params.append(f"{quote(filter_field)}={quote(owner or '')}")
+        # The Metrics view stores owner names UPPERCASE (confirmed live
+        # 2026-08-06: the "ICD Owner Name (rep)" filter lists BRIAN TRAN, TRANG
+        # CANAVAN, …). Tableau URL-filter values match the member string, so
+        # upper-case the owner or the scope silently returns nothing (trang's
+        # shot came back near-empty against lowercase "trang canavan").
+        params.append(f"{quote(filter_field)}={quote((owner or '').upper())}")
     params.append(":iid=1")
     return f"{base}?{'&'.join(params)}"
 
