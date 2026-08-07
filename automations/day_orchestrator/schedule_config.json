@@ -199,14 +199,14 @@
       "verify": null,
       "timeout_minutes": 12
     },
-    "install_owner_showdown_preview_agent": {
+    "disable_owner_showdown_preview_agent": {
       "on_scheduler": false,
-      "_note": "One-shot installer for com.alphalete.owner-showdown-preview on the mini (8:00am CST daily; deploy/owner_showdown_preview.sh -> run.py --preview). Emails the flyer + what changed to MEGAN ONLY, writes nothing, an hour before the 9am send to all 48 so she can stop it (Megan 2026-08-03). `lucy update` then `lucy rerun install_owner_showdown_preview_agent`. TEMP — remove after 8/31 with the rest of the card.",
-      "display_name": "Install Owner Showdown 8am preview agent",
+      "_note": "Unload com.alphalete.owner-showdown-preview. Megan 2026-08-07: the 8am preview is no longer wanted, so the agent + wrapper + plist are gone. `run.py --preview` still exists for an on-demand preview to Megan (writes nothing, never reaches the group) — it is simply not scheduled. `lucy rerun disable_owner_showdown_preview_agent`.",
+      "display_name": "Disable Owner Showdown 8am preview agent",
       "source_type": "local",
       "data_sources": [],
       "command": [
-        "automations.day_orchestrator.install_agent"
+        "automations.day_orchestrator.disable_agent"
       ],
       "base_args": [
         "owner-showdown-preview"
