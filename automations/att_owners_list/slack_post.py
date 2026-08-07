@@ -31,40 +31,32 @@ def we_label(sunday: dt.date) -> str:
 
 def _owner_line(pull, name: str) -> str:
     o = next((x for x in pull.owners if x.name == name), None)
-    if o is None:
-        return f"• *{name}*"
-    where = " · ".join(x for x in (o.office, o.city, o.team) if x)
-    return f"• *{o.name}* — {o.total} units{f' — {where}' if where else ''}"
+    return f"• {name}" if o is None else f"• {o.name} — {o.total} units"
 
 
 def build(plan, pull, *, board: Optional[dict] = None,
           tab: str = "ATT Owners List") -> str:
-    """The message. Deliberately short: two lists, the counts, and the link."""
-    L: List[str] = []
-    head = f"*ATT Owners List — {we_label(plan.sunday)}* filled"
-    if plan.compared_to:
-        head += f" (compared against {we_label(plan.compared_to)})"
-    L.append(head)
-    L.append(f"{plan.in_program} owners sold in the program this week "
-             f"· {sum(o.total for o in pull.owners):,} internet units")
+    """The message: THREE lists, what the board picked up, and the link.
+
+    Eve 2026-08-07 — nothing else. The first version carried the week's unit
+    count, the week it compared against, a sentence explaining what red means
+    and a running "N owners still out from earlier weeks" tally. All of that is
+    on the tab, in colour, for anyone who opens the link; in the channel it
+    buried the three names that actually changed this week."""
+    L: List[str] = [f"*ATT Owners List — {we_label(plan.sunday)}*"]
 
     if plan.new:
         L.append(f"\n:new: *Joined the program ({len(plan.new)})*")
         L += [_owner_line(pull, n) for n in sorted(plan.new)]
     if plan.back:
-        L.append(f"\n:arrows_counterclockwise: *Back after a gap "
+        L.append(f"\n:arrows_counterclockwise: *Back at selling "
                  f"({len(plan.back)})*")
         L += [_owner_line(pull, n) for n in sorted(plan.back)]
     if plan.dropped:
-        L.append(f"\n:warning: *No sales this week ({len(plan.dropped)})* — "
-                 f"marked red on the tab, not removed. Whether they are gone "
-                 f"or just had a quiet week shows up over the next few weeks.")
+        L.append(f"\n:warning: *No sales for the week ({len(plan.dropped)})*")
         L += [f"• {n}" for n in sorted(plan.dropped)]
     if not plan.new and not plan.back and not plan.dropped:
         L.append("\nNo changes this week — same owners as last week.")
-    if plan.still_out:
-        L.append(f"\n_{len(plan.still_out)} owner(s) still out from earlier "
-                 f"weeks (already red)._")
 
     if board:
         if board.get("added"):
