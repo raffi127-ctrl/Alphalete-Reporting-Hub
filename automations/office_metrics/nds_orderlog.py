@@ -64,6 +64,10 @@ BOARDS = {
 # wireless orders ship immediately, so there's never a scheduled-out install
 # (Raf 2026-08-06: "he won't have 6+ days out").
 _STATUS_KEYWORD = {"cancels": "cancel", "disconnects": "disconnect"}
+# Cancels/Disconnects show only orders whose Status Date lands in the last this-
+# many days — i.e. NEWLY canceled/disconnected — not every cancel in the 2-week
+# pull window. 3 days so a Monday run still catches Fri/Sat/Sun.
+_RECENT_STATUS_DAYS = 3
 
 
 def _norm_h(s: str) -> str:
@@ -204,28 +208,47 @@ def _render_rep_summary(owner, header, rows, target, out_dir):
     return _house_render(summary, out)
 
 
+# House Order Log column layout (raw source name -> NDS finder candidates). We
+# emit a file in EXACTLY the house column order so csv_to_xlsx/_load_and_clean
+# style it identically to every other office's Order Log .xlsx. spe.Status uses
+# the same vocabulary in the NDS book (Active/Shipped/Delivered/Cancelled/Pending
+# Shipment), so the house status coloring/sort just works.
+_HOUSE_ORDERLOG_SRC = {
+    "Rep": ("rep",),
+    "sp.Order Date (copy)": ("sp.order date", "order date"),
+    "Customer Name": ("customer name",),
+    "sp.Customer Phone": ("spe.tn", "customer phone"),   # line TN = customer #
+    "sp.SPM Number": ("sp.spm number", "spm number", "spm"),
+    "Product Type (Broken Out)": ("product type (broken out)", "product type"),
+    "Package": ("package",),
+    "spe.Phone": ("spe.wireless type",),                 # device (OPTIONAL house col)
+    "spe.Status": ("spe.status",),
+    "spe.Install Date": ("spe.install date",),
+    "Activatoin Date (order log)": ("dtr active date",),  # house typo kept on purpose
+    "Tech Install": ("tech install",),
+}
+
+
 def _render_order_log(owner, header, rows, target, out_dir):
-    rep_i = _find(header, "rep")
-    st_i = _find(header, "dtr status", "order status", "status")
-    reps: dict[str, dict[str, int]] = {}
-    statuses: list[str] = []
+    """Isaiah's Order Log as the SAME color-coded .xlsx every office gets: emit
+    his wireless orders in the house column layout (UTF-16 tab, like a Tableau
+    crosstab export) and run it through the house csv_to_xlsx writer — so the
+    styling, status colors, sort, and columns are identical. Returns the .xlsx."""
+    from automations.uploaded.order_log import COLUMNS_TO_KEEP, csv_to_xlsx
+    idx = {col: _find(header, *cands)
+           for col, cands in _HOUSE_ORDERLOG_SRC.items()}
+
+    def _san(v: str) -> str:                     # tabs/newlines would break the TSV
+        return (v or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+
+    lines = ["\t".join(COLUMNS_TO_KEEP)]
     for r in rows:
-        rep = _cell(r, rep_i) or "—"
-        st = _cell(r, st_i) or "—"
-        if st not in statuses:
-            statuses.append(st)
-        reps.setdefault(rep, {})
-        reps[rep][st] = reps[rep].get(st, 0) + 1
-    statuses = sorted(statuses)
-    header_row = ["Rep", *statuses, "Total"]
-    body = []
-    for rep in sorted(reps, key=lambda k: -sum(reps[k].values())):
-        counts = reps[rep]
-        body.append([rep, *[str(counts.get(s, "")) for s in statuses],
-                     str(sum(counts.values()))])
-    out = out_dir / f"nds_order_log_{target.isoformat()}.png"
-    return _draw(header_row, body, _title("📋 Order Log", target), THEME_SLATE,
-                 out, name_col=0)
+        lines.append("\t".join(
+            _san(_cell(r, idx[col])) if idx.get(col) is not None else ""
+            for col in COLUMNS_TO_KEEP))
+    tsv = out_dir / f"nds_order_log_src_{target.isoformat()}.csv"
+    tsv.write_text("\n".join(lines), encoding="utf-16")
+    return csv_to_xlsx(tsv, out_dir, owner=owner)
 
 
 def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, slug):
@@ -241,7 +264,33 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
     sdate_i = _find(header, "status date")
     spm_i = _find(header, "sp.spm number", "spm number", "spm")
     phone_i = _find(header, "customer phone", "phone")
-    hits = [r for r in rows if keyword in _cell(r, st_i).lower()]
+    # Only NEWLY canceled/disconnected orders — those whose Status Date (when the
+    # order reached that status) is within the last _RECENT_STATUS_DAYS. The pull
+    # window is two weeks (for Rep Activations), so without this the board would
+    # list every cancel in that window every day (Megan 2026-08-07: "showing too
+    # many"). The house Canceled Orders board shows only new-since-last-run rows;
+    # a recent Status-Date window is the same intent without a dedup store.
+    import datetime as _dt
+    cutoff = target - _dt.timedelta(days=_RECENT_STATUS_DAYS)
+
+    def _recent(r) -> bool:
+        raw = _cell(r, sdate_i)
+        if not raw:
+            return False
+        for fmt in ("%m/%d/%Y", "%-m/%-d/%Y", "%Y-%m-%d"):
+            try:
+                return _dt.datetime.strptime(raw, fmt).date() >= cutoff
+            except ValueError:
+                continue
+        try:                              # last resort: dateutil via pandas
+            import pandas as _pd
+            d = _pd.to_datetime(raw, errors="coerce")
+            return (not _pd.isna(d)) and d.date() >= cutoff
+        except Exception:  # noqa: BLE001
+            return False
+
+    hits = [r for r in rows
+            if keyword in _cell(r, st_i).lower() and _recent(r)]
     house_rows = [{
         "Rep": _cell(r, rep_i), "Customer Name": _cell(r, cust_i),
         "SPM #": _cell(r, spm_i), "Order Date": _cell(r, odate_i),
@@ -271,10 +320,12 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
         vals = sorted({_cell(r, st_i) for r in rows if _cell(r, st_i)})
         print(f"[nds_orderlog:{board}] DTR/Order status values: {vals}", flush=True)
 
+    is_file = False        # order_log posts an .xlsx file; the rest post images
     if board == "rep_summary":
         img, count = _render_rep_summary(owner, header, rows, target, out_dir), len(rows)
     elif board == "order_log":
-        img, count = _render_order_log(owner, header, rows, target, out_dir), len(rows)
+        img, count, is_file = (_render_order_log(owner, header, rows, target,
+                                                 out_dir), len(rows), True)
     else:  # cancels or disconnects — status-keyword filtered order lists
         img, count = _render_status_orders(owner, header, rows, target, out_dir,
                                            _STATUS_KEYWORD[board], label, board)
@@ -295,12 +346,15 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
               f"— NO post.", flush=True)
         return 0
 
+    comment = f"{label} — {target.strftime('%b')} {target.day}"
     if empty_note:
         from automations.shared.slack_metrics_post import post_reply_text_only
         resp = post_reply_text_only(empty_note, react_emoji=emoji)
+    elif is_file:      # Order Log — the house color-coded .xlsx, like every office
+        from automations.shared.slack_metrics_post import post_reply_with_file
+        resp = post_reply_with_file(Path(img), comment=comment, react_emoji=emoji)
     else:
         from automations.shared.slack_metrics_post import post_reply_with_image
-        comment = f"{label} — {target.strftime('%b')} {target.day}"
         resp = post_reply_with_image(Path(img), comment=comment, react_emoji=emoji)
     print(f"[nds_orderlog:{board}] {'✅ Posted' if resp.get('ok') else '⚠ '+str(resp)}",
           flush=True)

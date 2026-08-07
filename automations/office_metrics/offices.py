@@ -280,12 +280,13 @@ SECTION_OVERRIDES: dict = {
     # knocks_gaps (Time Gaps). ORDER LOG pull verified (166 rows) but its 3 renders
     # (order_log/cancels/sched_6plus) aren't built yet. Flip to the full slug list
     # only when every board renders + Megan signs off. Empty tuple = post nothing.
-    # LIVE (Megan 2026-08-06 go-live). NDS thread, 5 boards: Time Gaps, Wireless
-    # Churn, Order Log / Rep Activations (the standard combined board), Canceled +
-    # Disconnected Orders. Header lists exactly these; cancels/disconnects post
-    # "No new ... orders" on empty days. (Rep Activations was folded into the
-    # combined order_log board 2026-08-06 to match every other office.)
-    "isaiah": ("knocks_gaps", "churn", "order_log", "cancels", "disconnects"),
+    # LIVE (Megan 2026-08-06 go-live). NDS thread, 6 boards: Time Gaps, Wireless
+    # Churn, Rep Activations, Order Log, Canceled + Disconnected Orders. Header
+    # lists exactly these; cancels/disconnects post "No new ... orders" on empty
+    # days. Rep Activations + Order Log are SEPARATE boards (Megan 2026-08-07 —
+    # both shown, not combined).
+    "isaiah": ("knocks_gaps", "churn", "rep_activations", "order_log",
+               "cancels", "disconnects"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook

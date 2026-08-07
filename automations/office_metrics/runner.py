@@ -140,14 +140,20 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_churn",
              owner_args=["--owner", o.owner], env={},
              dry_flag="--dry-run", post_flag="--live"),
-        # 📋 Order Log / 🆕 Rep Activations — the SAME combined board every other
-        # office posts (two weekly Posted/Pending/Total/Canceled tables), rendered
-        # by the house rep_activations pipeline so Isaiah's is identical to Raf's.
-        # Built from the NDS ORDER LOG view (current rolling window). Replaces the
-        # old split custom Order Log table + green Rep Activations table.
-        dict(slug="order_log", label="📋 Order Log / 🆕 Rep Activations",
+        # 🆕 Rep Activations — the house two-week Posted/Pending/Total/Canceled
+        # summary (rep_activations pipeline), built from the NDS ORDER LOG current
+        # window. slug 'rep_activations' (NOT 'activations') dodges the
+        # OWNER_KEY_TO_SLUG activations->order_log override mapping.
+        dict(slug="rep_activations", label="🆕 Rep Activations",
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "rep_summary"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
+        # 📋 Order Log — the raw wireless order list (kept SEPARATE from Rep
+        # Activations per Megan 2026-08-07; every office shows both). Same current
+        # window pull.
+        dict(slug="order_log", label="📋 Order Log",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "order_log"], env={},
              dry_flag="--dry-run", post_flag="--live"),
         dict(slug="cancels", label="🚫 Canceled Orders",
              module="automations.office_metrics.nds_orderlog",
