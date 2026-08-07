@@ -23,6 +23,7 @@ import csv
 import datetime as dt
 import html as _html
 import os
+import re
 from pathlib import Path
 
 CHANNEL_ID = os.environ.get("OAT_SCORECARD_CHANNEL", "C09L1S3MQ1E")  # #alphaletegp-recruiting
@@ -318,12 +319,41 @@ def fix_last_header() -> int:
     return 0
 
 
-def _names_of(bucket) -> list:
+# To:-email domain → clean account name. Seeded from Carlos's examples; add rows as
+# new accounts show up (unknown domains fall back to a title-cased domain).
+_ACCOUNT_NAMES = {
+    "fasttrack-strategies.com": "Fast Track Strategies",
+    "fasttrack-strategiestx.com": "Fast Track Strategies",
+    "peaksalesstrategiestx.com": "Peak Sales Strategies",
+    "peaksalesstrategies.com": "Peak Sales Strategies",
+}
+
+
+def _account_name(to_email: str) -> str:
+    """Turn the 'To:' account email into a readable account name for the post.
+    Known domains → the clean name; unknown → a best-effort title-cased domain
+    (readable enough to know which account, and easy to add to the map later)."""
+    to_email = (to_email or "").strip().lower()
+    if "@" not in to_email:
+        return ""
+    dom = to_email.split("@", 1)[1].strip()
+    if dom in _ACCOUNT_NAMES:
+        return _ACCOUNT_NAMES[dom]
+    root = re.sub(r"\.(com|net|org|co|us|io|biz|info)$", "", dom)
+    return root.replace("-", " ").replace(".", " ").strip().title()
+
+
+def _entries_of(bucket) -> list:
+    """Return [(name, account_email)] for a bucket. Tolerates old bare-name snapshots."""
     out = []
     for it in bucket or []:
-        nm = (it.get("name") or "").strip()
+        if isinstance(it, dict):
+            nm = (it.get("name") or "").strip()
+            acct = (it.get("account") or "").strip()
+        else:
+            nm, acct = str(it).strip(), ""
         if nm:
-            out.append(nm)
+            out.append((nm, acct))
     return out
 
 
@@ -357,7 +387,8 @@ def _find_today_parent(c, date_str: str):
     return None
 
 
-def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
+def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
+                        edit: bool = False) -> dict:
     """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
     REPLACES the scorecard (Megan 2026-08-06). It lists the ONLY two buckets the bot
     legitimately can't process, so a human can finish them by hand:
@@ -368,8 +399,8 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
 
     Format: a HEADER parent with the totals, then the two labelled name lists as a
     threaded reply (so the counts sit clean in the channel, the who is one tap in)."""
-    no_number = _names_of(t.get("nophone"))
-    needs_text = _names_of(t.get("retext"))
+    no_number = _entries_of(t.get("nophone"))
+    needs_text = _entries_of(t.get("retext"))
     n_num, n_txt = len(no_number), len(needs_text)
 
     # Cross-platform date (no %-d): "Fri, Aug 8".
@@ -377,10 +408,15 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
     header = (f"\U0001F4CB {date_str} — recruiting to-do: "
               f"{n_num} need a number, {n_txt} need a manual text")
 
-    def _section(title, names):
-        if not names:
+    def _section(title, entries):
+        if not entries:
             return f"{title} — 0\n  (none today ✅)"
-        return f"{title} — {len(names)}\n" + "\n".join("  • " + nm for nm in names)
+        # "• Name — Account" so the human knows which account to pull the # from.
+        lines = []
+        for nm, acct in entries:
+            an = _account_name(acct)
+            lines.append(f"  • {nm}" + (f" — {an}" if an else ""))
+        return f"{title} — {len(entries)}\n" + "\n".join(lines)
 
     body = (_section("\U0001F4DE Need a number pulled from Indeed", no_number)
             + "\n\n"
@@ -405,6 +441,9 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
     # the channel-visible header stays current.
     parent_ts = _find_today_parent(c, date_str)
     if parent_ts is None:
+        if edit:
+            print("[report] --edit: no thread today to edit", flush=True)
+            return {"ok": False, "err": "no thread today"}
         parent = c.chat_postMessage(channel=CHANNEL_ID, text=header)
         parent_ts = parent["ts"]
     else:
@@ -412,6 +451,32 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False) -> dict:
             c.chat_update(channel=CHANNEL_ID, ts=parent_ts, text=header)
         except Exception:  # noqa: BLE001 — header refresh is best-effort
             pass
+
+    if edit:
+        # Rewrite the existing list-reply(ies) in today's thread in place (so a name's
+        # account can be added without piling on a new reply). Keeps each reply's own
+        # time label ("4 PM update"); replaces its body with the current one.
+        try:
+            reps = c.conversations_replies(channel=CHANNEL_ID, ts=parent_ts)
+        except Exception as e:  # noqa: BLE001
+            print(f"[report] --edit: couldn't read thread: {e}", flush=True)
+            reps = {"messages": []}
+        edited = 0
+        for m in reps.get("messages", []):
+            if m.get("ts") == parent_ts:
+                continue
+            txt = m.get("text") or ""
+            if "need a number" in txt.lower() or "update" in txt.lower():
+                label = txt.split("\n", 1)[0] if txt.startswith("*") else f"*{slot} update*"
+                try:
+                    c.chat_update(channel=CHANNEL_ID, ts=m["ts"], text=label + "\n" + body)
+                    edited += 1
+                except Exception as e:  # noqa: BLE001
+                    print(f"[report] --edit chat_update failed: {e}", flush=True)
+        print(f"[report] edited {edited} reply(ies) with accounts (thread {parent_ts})",
+              flush=True)
+        return {"ok": edited > 0, "thread_ts": parent_ts, "edited": edited}
+
     c.chat_postMessage(channel=CHANNEL_ID, thread_ts=parent_ts,
                        text=f"*{slot} update*\n" + body)
     print(f"[report] posted {slot} — {n_num} need a number, {n_txt} need a manual "
@@ -440,6 +505,9 @@ def main(argv=None) -> int:
     ap.add_argument("--fix-header", action="store_true", dest="fix_header",
                     help="Edit the last channel post's reply to strip the counts "
                          "breakdown from its text, then stop")
+    ap.add_argument("--edit", action="store_true",
+                    help="With --nophone: rewrite today's existing thread reply in "
+                         "place (e.g. to add accounts) instead of posting a new one")
     args = ap.parse_args(argv)
 
     if args.fix_header:
@@ -452,13 +520,15 @@ def main(argv=None) -> int:
         # (output/oat-flagged-<date>.json) — NOT the day-cumulative activity log,
         # which over-counted apps already handled since (Megan 2026-08-06).
         snap = _load_flagged_snapshot(date)
-        t_snap = {"nophone": [{"name": n} for n in snap.get("nophone", [])],
-                  "retext": [{"name": n} for n in snap.get("retext", [])]}
+        # Snapshot entries are {"name","account"} dicts (older ones were bare names);
+        # _entries_of in the report tolerates both.
+        t_snap = {"nophone": snap.get("nophone", []),
+                  "retext": snap.get("retext", [])}
         print(f"[report] snapshot {date} @ {snap.get('at','?')} — "
               f"queue={snap.get('queue_total','?')} · "
               f"{len(t_snap['nophone'])} need a number, "
               f"{len(t_snap['retext'])} need a manual text", flush=True)
-        res = post_nophone_report(date, t_snap, dry_run=args.dry_run)
+        res = post_nophone_report(date, t_snap, dry_run=args.dry_run, edit=args.edit)
         return 0 if res.get("ok") else 1
 
     rows = load_rows(date)

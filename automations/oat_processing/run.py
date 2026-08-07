@@ -192,10 +192,21 @@ _EXTRACT_JS = r"""() => {
   const overrideBtn = btnText.includes('overwrite') && btnText.includes('send to ai');
   // --- pager: "<page> of <N> Emails" ---
   const pm = body.match(/of\s+([0-9]+)\s+emails/i);
+  // --- account: the "To:" address of the source application email (bottom of the
+  //     page), e.g. "To: team@peaksalesstrategiestx.com" — the account this
+  //     applicant came in under. Skip the Indeed relay address; take the last real
+  //     To: (the source-email footer sits at the bottom).
+  let account = '';
+  const toAll = body.match(/To:\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/gi) || [];
+  for (let i = toAll.length - 1; i >= 0; i--) {
+    const em = toAll[i].replace(/^To:\s*/i, '').trim();
+    if (!/indeedemail\.com|indeed\.com/i.test(em)) { account = em; break; }
+  }
+  if (!account && toAll.length) account = toAll[toAll.length-1].replace(/^To:\s*/i,'').trim();
   return {
     fname: val('fname'), lname: val('lname'), phone: val('phone'),
     cellPhone: val('cellPhone'), email: val('email'), jBoard: val('jBoard'),
-    subject: val('emailApplicantSubject'),
+    subject: val('emailApplicantSubject'), account,
     dupRows, cannotOverride, lastCorrespondence: corrM ? corrM[1] : '',
     overrideBtn, total: pm ? parseInt(pm[1],10) : null,
   };
@@ -262,6 +273,7 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
         phone=d.get("phone", ""), cell_phone=d.get("cellPhone", ""),
         email=d.get("email", ""), job_board=d.get("jBoard", ""),
         position=(d.get("subject", "") or "").strip(),
+        account=(d.get("account", "") or "").strip(),
         override_button=bool(d.get("overrideBtn")),
         correspondence_blocked=bool(d.get("cannotOverride")),
         last_correspondence=last_corr,
@@ -1730,10 +1742,11 @@ def run_walk(page, live: bool = False, limit: int = None,
         # text). Deduped by the walk's `seen` set, so this = who's flagged right now.
         _nm = f"{a.first_name} {a.last_name}".strip()
         if _nm:
+            _entry = {"name": _nm, "account": a.account or ""}
             if outcome == "flag_no_phone" or d.action.value == "flag_no_phone":
-                flagged_now["nophone"].append(_nm)
+                flagged_now["nophone"].append(_entry)
             elif outcome == "flag_retext":
-                flagged_now["retext"].append(_nm)
+                flagged_now["retext"].append(_entry)
 
         processed += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).
@@ -1779,13 +1792,15 @@ def _write_flagged_snapshot(flagged: dict, queue_total, today, complete: bool) -
         _log("[oat] partial walk — keeping the last flagged snapshot (not overwriting)")
         return
 
-    def _dedup(names):
+    def _dedup(entries):
         seen, out = set(), []
-        for n in names:
-            k = n.lower()
-            if k not in seen:
+        for e in entries:
+            # entries are {"name","account"} dicts (older snapshots were bare names)
+            nm = (e.get("name") if isinstance(e, dict) else e) or ""
+            k = nm.strip().lower()
+            if nm and k not in seen:
                 seen.add(k)
-                out.append(n)
+                out.append(e if isinstance(e, dict) else {"name": nm, "account": ""})
         return out
 
     snap = {

@@ -61,6 +61,9 @@ class Applicant:
     email: str = ""
     job_board: str = ""
     position: str = ""                 # the Subject Line / applied role
+    account: str = ""                  # the "To:" account email the app came in under
+                                       # (e.g. team@peaksalesstrategiestx.com), so the
+                                       # human knows which account to pull the # from
 
     # --- state signals (see module docstring / FINDINGS.md) ---
     override_button: bool = False          # "Overwrite Old Applicants (Send to AI)"
