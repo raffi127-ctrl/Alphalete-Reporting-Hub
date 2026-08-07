@@ -28,15 +28,33 @@ from automations.shared.tableau_patchright import tableau_session
 from automations.total_knocks.render import _draw
 
 # NDS ORDER LOG — pull via the DIRECT .csv export (like att_order_log), which needs
-# no crosstab worksheet name and returns one comma-row per order. :refresh=yes so
-# it isn't a stale extract snapshot.
-ORDERLOG_CSV_URL = ("https://us-east-1.online.tableau.com/t/sci/views/"
-                    "NDS-SNRES-ATT-OOFWorkbook/ORDERLOG.csv?:refresh=yes")
+# no crosstab worksheet name and returns one comma-row per order.
+#
+# The view ships with its Start Date / End Date parameters PINNED to whatever week
+# was last saved (found 2026-08-06 stuck on 6/29-7/5, five weeks stale — while the
+# data source itself ran current through today). So we ALWAYS pass a current
+# rolling window (last week's Sunday .. this week's Saturday) on the "Order Date"
+# range, matching the two Sun-Sat weeks the house rep-activations board buckets by.
+# Without this every order-log board (log/cancels/disconnects) reads an old week.
+ORDERLOG_CSV_BASE = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                     "NDS-SNRES-ATT-OOFWorkbook/ORDERLOG.csv")
+
+
+def _orderlog_url(start: dt.date, end: dt.date) -> str:
+    """CSV export URL with the Order-Date range parameters set (ISO dates)."""
+    return (f"{ORDERLOG_CSV_BASE}?Start%20Date={start.isoformat()}"
+            f"&End%20Date={end.isoformat()}"
+            f"&Search%20Date%20Range=Order%20Date&:refresh=yes")
 
 THEME_SLATE = {"title_bg": (51, 65, 85), "header_bg": (30, 41, 59),
                "stripe": (236, 240, 245)}
 
 BOARDS = {
+    # The standard combined board every (non-NDS) office posts: two weekly tables
+    # (Rep · Posted · Pending · Total · Canceled/Disconnected), rendered by the
+    # SAME house function so Isaiah's looks identical to Raf's. Replaces the old
+    # custom slate "Order Log" table + green "Rep Activations" table.
+    "rep_summary": ("📋 Order Log / 🆕 Rep Activations", "clipboard"),
     "order_log":   ("📋 Order Log", "clipboard"),
     "cancels":     ("🚫 Canceled Orders", "no_entry_sign"),
     "disconnects": ("❎ Disconnected Orders", "negative_squared_cross_mark"),
@@ -58,6 +76,9 @@ def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
     first to pull writes a dated cache; the others reuse it — so the export runs
     once, not three times (which was overloading the session and failing). Retries
     the export a few times to ride out a transient non-200/empty response."""
+    from automations.rep_activations.aggregate import week_bounds
+    last_start, _last_end, _this_start, this_end = week_bounds(dt.date.today())
+    url = _orderlog_url(last_start, this_end)
     today = dt.date.today().isoformat()
     cache = Path(tempfile.gettempdir()) / f"nds_orderlog_{today}.csv"
     if cache.exists() and cache.stat().st_size > 500:
@@ -68,7 +89,9 @@ def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
     last = ""
     for attempt in (1, 2, 3):
         with tableau_session(verbose=verbose) as page:
-            r = page.context.request.get(ORDERLOG_CSV_URL, timeout=300_000)
+            if verbose:
+                print(f"[nds_orderlog] window {last_start}..{this_end}", flush=True)
+            r = page.context.request.get(url, timeout=300_000)
             body = r.body() or b""
             if verbose:
                 print(f"[nds_orderlog] csv status={r.status} bytes={len(body):,} "
@@ -140,6 +163,47 @@ def _title(label: str, target: dt.date) -> str:
     return f"{core.upper()} — {target.strftime('%b')} {target.day}, {target.year}"
 
 
+def _house_status(dtr: str) -> str:
+    """Map an NDS DTR Status onto the house rep_activations vocabulary.
+
+    House build_week_tables buckets: POSTED_STATUSES={"active"},
+    CANCEL_STATUSES={cancelled,canceled,disconnected}, everything-else-nonblank =
+    pending. NDS uses "Posted" for a posted sale and keeps Shipped/Confirmed as
+    live pipeline, so: Posted->active, Canceled/Disconnected pass through,
+    Shipped/Confirmed/etc -> their own lowercased value (falls into pending)."""
+    s = (dtr or "").strip().lower()
+    if s == "posted":
+        return "active"
+    if s in ("canceled", "cancelled"):
+        return "canceled"
+    if s == "disconnected":
+        return "disconnected"
+    return s or "pending"
+
+
+def _render_rep_summary(owner, header, rows, target, out_dir):
+    """The standard combined 'Order Log / Rep Activations' board, rendered by the
+    house rep_activations pipeline (build_week_tables + render) so it's identical
+    to every other office. `rows` are this owner's WIRELESS order rows. Posted is
+    bucketed by Order Date (when the rep sold it), matching the house model."""
+    import pandas as pd
+    from automations.rep_activations.aggregate import build_week_tables
+    from automations.rep_activations.render import render as _house_render
+    rep_i = _find(header, "rep")
+    st_i = _find(header, "dtr status", "order status", "status")
+    odate_i = _find(header, "sp.order date", "order date")
+    sdate_i = _find(header, "status date")
+    df = pd.DataFrame([{
+        "Rep": _cell(r, rep_i),
+        "Status": _house_status(_cell(r, st_i)),
+        "Activation Date": _cell(r, odate_i),   # Order Date = when rep sold it
+        "Install Date": _cell(r, sdate_i),      # fallback bucket for cancels
+    } for r in rows])
+    summary = build_week_tables(df, target)
+    out = out_dir / f"nds_rep_activations_{target.isoformat()}.png"
+    return _house_render(summary, out)
+
+
 def _render_order_log(owner, header, rows, target, out_dir):
     rep_i = _find(header, "rep")
     st_i = _find(header, "dtr status", "order status", "status")
@@ -207,7 +271,9 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
         vals = sorted({_cell(r, st_i) for r in rows if _cell(r, st_i)})
         print(f"[nds_orderlog:{board}] DTR/Order status values: {vals}", flush=True)
 
-    if board == "order_log":
+    if board == "rep_summary":
+        img, count = _render_rep_summary(owner, header, rows, target, out_dir), len(rows)
+    elif board == "order_log":
         img, count = _render_order_log(owner, header, rows, target, out_dir), len(rows)
     else:  # cancels or disconnects — status-keyword filtered order lists
         img, count = _render_status_orders(owner, header, rows, target, out_dir,

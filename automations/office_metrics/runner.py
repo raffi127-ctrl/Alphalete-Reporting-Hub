@@ -140,19 +140,14 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_churn",
              owner_args=["--owner", o.owner], env={},
              dry_flag="--dry-run", post_flag="--live"),
-        # 🆕 Rep Activations — per-rep wireless sales, from NDS ProductSalesSummary.
-        # slug 'rep_activations' (NOT 'activations') so it doesn't collide with
-        # OWNER_KEY_TO_SLUG's activations->order_log mapping in the override filter.
-        dict(slug="rep_activations", label="🆕 Rep Activations",
-             module="automations.office_metrics.nds_activations",
-             owner_args=["--owner", o.owner], env={},
-             dry_flag="--dry-run", post_flag="--live"),
-        # 📋 Order Log / 🚫 Cancels / 📅 6+ days — all from ONE NDS ORDER LOG view,
-        # filtered per board (WIRELESS + status/date). slug 'order_log' reused for
-        # the log itself; cancels/sched keep distinct slugs for the override.
-        dict(slug="order_log", label="📋 Order Log",
+        # 📋 Order Log / 🆕 Rep Activations — the SAME combined board every other
+        # office posts (two weekly Posted/Pending/Total/Canceled tables), rendered
+        # by the house rep_activations pipeline so Isaiah's is identical to Raf's.
+        # Built from the NDS ORDER LOG view (current rolling window). Replaces the
+        # old split custom Order Log table + green Rep Activations table.
+        dict(slug="order_log", label="📋 Order Log / 🆕 Rep Activations",
              module="automations.office_metrics.nds_orderlog",
-             owner_args=["--owner", o.owner, "--board", "order_log"], env={},
+             owner_args=["--owner", o.owner, "--board", "rep_summary"], env={},
              dry_flag="--dry-run", post_flag="--live"),
         dict(slug="cancels", label="🚫 Canceled Orders",
              module="automations.office_metrics.nds_orderlog",
