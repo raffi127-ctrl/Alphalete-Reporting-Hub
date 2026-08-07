@@ -1438,9 +1438,9 @@
       "timeout_minutes": 10
     },
     "terminated_reps": {
-      "on_scheduler": false,
-      "_off_scheduler_note": "Terminated Reps: reads the current 'Sales Board WE <m>.<d>' tab of the Alphalete SALES BOARD 2025 (both the roster's Termination Date column AND the 'New Starts/Raf' box's 'Terminated' roll-call cells), files what's new into 'Terminated Reps' on the Raf tracker, and DMs Evelyn as Lucy inside that week's 'Terminated Reps WE <m>.<d>' thread. Idempotent — dedupes on (name, termination date), so extra passes cost nothing. on_scheduler:false and base_args EMPTY on purpose: Eve hasn't signed off on live writes yet, so `lucy rerun terminated_reps` is a PREVIEW (reads the board, writes nothing, prints the DM). TO GO LIVE: set on_scheduler true, cadence weekdays [0,1,2,3,4,5,6], and base_args [\"--real\", \"--i-mean-it\", \"--post\"]. Registered 2026-08-07.",
-      "display_name": "Terminated Reps → tracker + Evelyn DM",
+      "on_scheduler": true,
+      "_note": "Terminated Reps: reads the SALES BOARD 2025 week tab (both the roster's 'Termination Date' column AND the 'New Starts/Raf' box's 'Terminated' roll-call cells — the two blocks mark a termination differently and reading one loses half), files what's new into 'Terminated Reps' on the Raf tracker, and posts the day in #revision-emails inside that week's 'Terminated Reps WE <m>.<d>' thread. LIVE on the real tab since 2026-08-07 (Eve lifted the sandbox gate); base_args empty because the defaults ARE live — `--dry-run` previews, `--sandbox` writes a duplicate tab. Reads the PREVIOUS week's tab too, bounded to the last 4 days: a new week tab is created every MONDAY and the weekend's roll-call keeps landing on the old one, so a rep marked Monday against Saturday would otherwise never be filed. Fully idempotent: the tracker dedupes on name + termination date (±1 day, because ~83 historical rows were entered the morning after) and the Slack reply skips anyone already named in the thread, so extra passes cost nothing. Posts EVERY not-yet-posted day of the week, not just the run date — at 4am nobody is marked for today yet, and a run-date-only post would miss each day permanently. Sheets-only, no browser session. Runs on the mini so the post goes out as Lucy; from anywhere else it posts under whoever's Slack token is on that box.",
+      "display_name": "Terminated Reps → tracker + #revision-emails",
       "source_type": "api",
       "data_sources": [],
       "command": [
@@ -1448,7 +1448,15 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,

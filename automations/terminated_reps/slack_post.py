@@ -112,22 +112,38 @@ def already_posted(client, thread_ts: str, channel: str = CHANNEL) -> set:
     return out
 
 
+def pending_days(rows: list[Termination], day: dt.date) -> list[dt.date]:
+    """The days of `day`'s week that have terminations and aren't in the future.
+
+    NOT just `day` itself. This runs in the morning batch, when nobody has been
+    marked for today yet — if the post only ever covered the run date, every
+    day's terminations would land on the board a few hours too late to be
+    posted and then never be looked at again. Posting every day of the week
+    that isn't in the thread yet means a missed run, a late entry or a
+    mid-morning schedule all catch up by themselves.
+    """
+    sunday = week_sunday(day)
+    monday = sunday - dt.timedelta(days=6)
+    return sorted({t.term_date for t in rows
+                   if monday <= t.term_date <= day})
+
+
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
          dry_run: bool = True, logfn=print) -> dict:
-    """Post the day's terminations into the week's thread."""
+    """Post every not-yet-posted day of `day`'s week into that week's thread."""
     title = week_title(day)
-    todays = for_day(rows, day)
-    if not todays:
-        logfn(f"  nobody terminated {day.isoformat()} — nothing to post "
-              f"({title})")
-        return {"posted": False, "reason": "none today", "title": title}
+    days = pending_days(rows, day)
+    if not days:
+        logfn(f"  nobody terminated this week yet — nothing to post ({title})")
+        return {"posted": False, "reason": "none this week", "title": title}
 
     if dry_run:
         logfn(f"  DRY-RUN — would post to {channel} in thread {title!r}:")
-        for line in render_reply(todays, day).splitlines():
-            logfn(f"     {line}")
+        for d in days:
+            for line in render_reply(for_day(rows, d), d).splitlines():
+                logfn(f"     {line}")
         return {"dry_run": True, "posted": False, "title": title,
-                "text": render_reply(todays, day), "channel": channel}
+                "days": [d.isoformat() for d in days], "channel": channel}
 
     client = smp._client()
     try:
@@ -138,6 +154,7 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
 
     thread_ts = find_thread_ts(client, title, channel)
     created = False
+    seen: set = set()
     if not thread_ts:
         parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
         thread_ts = parent.get("ts")
@@ -145,19 +162,20 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
         logfn(f"  opened this week's thread {title!r} (ts {thread_ts})")
     else:
         seen = already_posted(client, thread_ts, channel)
-        before = len(todays)
-        todays = [t for t in todays if norm_name(t.name) not in seen]
-        if not todays:
-            logfn(f"  all {before} of {day.isoformat()}'s terminations are "
-                  f"already in the thread — nothing to add")
-            return {"posted": False, "reason": "already in thread",
-                    "title": title, "thread_ts": thread_ts}
-        logfn(f"  replying in the existing thread {title!r} "
-              f"({before - len(todays)} already posted, {len(todays)} new)")
 
-    resp = client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                   text=render_reply(todays, day))
-    logfn(f"  posted {len(todays)} rep(s)")
-    return {"posted": bool(resp.get("ok")), "title": title,
-            "thread_ts": thread_ts, "ts": resp.get("ts"),
-            "thread_created": created, "channel": channel}
+    posted = []
+    for d in days:
+        todays = [t for t in for_day(rows, d) if norm_name(t.name) not in seen]
+        if not todays:
+            continue
+        client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                text=render_reply(todays, d))
+        seen.update(norm_name(t.name) for t in todays)
+        posted.append((d, len(todays)))
+        logfn(f"  posted {d.isoformat()}: {len(todays)} rep(s)")
+    if not posted:
+        logfn(f"  every termination this week is already in the thread — "
+              f"nothing to add")
+    return {"posted": bool(posted), "title": title, "thread_ts": thread_ts,
+            "thread_created": created, "channel": channel,
+            "days": [(d.isoformat(), n) for d, n in posted]}

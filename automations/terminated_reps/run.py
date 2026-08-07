@@ -1,4 +1,4 @@
-"""Terminated Reps — SALES BOARD → tracker → Lucy's weekly DM to Evelyn.
+"""Terminated Reps — SALES BOARD → tracker → the week's #revision-emails thread.
 
 Runs once a day. Three steps, in order:
 
@@ -10,21 +10,29 @@ Runs once a day. Three steps, in order:
      tracker: Rep Name, Lead Rep (always Raf), # Days Worked as the board's
      own formula computes it, Termination Date, Year. Ownerville and Slack
      Deact stay UNTICKED — those are Eve's manual checks.
-  3. POST the day's terminations in #revision-emails, as a reply inside that
-     week's 'Terminated Reps WE <m>.<d>' thread. Nobody terminated → nothing
-     posted. Step 3 reads the BOARD, not step 2's result, so a rep Eve already
-     filed by hand still shows up in the day's post.
+  3. POST in #revision-emails, as replies inside that week's 'Terminated Reps
+     WE <m>.<d>' thread — EVERY day of the week not already in the thread, not
+     just the run date, so a morning run still catches the day that gets
+     marked after it. Nobody terminated → nothing posted. Step 3 reads the
+     BOARD, not step 2's result, so a rep Eve already filed by hand still
+     shows up in the day's post.
 
 Dated in CENTRAL time, not the machine clock: this is a Texas office and the
 mini and Eve's box are in different zones, so a late-evening UTC run would
 otherwise file a Wednesday termination under Thursday.
 [[project_central-time-for-texas-reports]]
 
-WRITE TARGETS — safe by default, in the order you'll use them:
-  python -m automations.terminated_reps.run                  # preview, writes nothing
-  python -m automations.terminated_reps.run --sandbox        # writes to a DUPLICATE tab
-  python -m automations.terminated_reps.run --sandbox --post # + really DMs Evelyn
-  python -m automations.terminated_reps.run --real --i-mean-it --post   # live
+IT READS TWO WEEK TABS, not one. A new 'Sales Board WE <m>.<d>' tab appears
+every MONDAY, and the weekend's roll-call keeps being filled in on the OLD tab
+afterwards — so the previous week is read too, or a rep marked on Monday
+against Saturday is never filed by anyone. Overlap costs nothing (the tracker
+dedupes).
+
+LIVE BY DEFAULT (Eve lifted the sandbox gate 2026-08-07):
+  python -m automations.terminated_reps.run              # files + posts, for real
+  python -m automations.terminated_reps.run --dry-run    # change nothing, show both
+  python -m automations.terminated_reps.run --sandbox    # duplicate tab, no posting
+  python -m automations.terminated_reps.run --no-post    # file, don't post
 
 Exit 0 = ran (whether or not anything was terminated). Exit 1 = it could not
 read the board or could not write, i.e. a day's terminations may be missing.
@@ -56,18 +64,23 @@ def today_central() -> dt.date:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dry-run", dest="dry_run", action="store_true",
+                    help="change nothing: print the rows it would file and the "
+                         "message it would post")
     ap.add_argument("--sandbox", action="store_true",
                     help="write to a DUPLICATE of the 'Terminated Reps' tab "
-                         "(created once, then reused). The default while building.")
+                         "instead of the real one, and don't post unless --post")
     ap.add_argument("--fresh-sandbox", dest="fresh_sandbox", action="store_true",
                     help="re-copy the sandbox tab from the real one first, so "
                          "a test starts clean")
-    ap.add_argument("--real", action="store_true",
-                    help="write to the REAL tracker (needs --i-mean-it too)")
-    ap.add_argument("--i-mean-it", dest="i_mean_it", action="store_true",
-                    help="confirms --real")
     ap.add_argument("--post", action="store_true",
-                    help="actually send the Slack DM (default: print it only)")
+                    help="post to Slack even on a --sandbox run")
+    ap.add_argument("--no-post", dest="no_post", action="store_true",
+                    help="file the rows but don't post to Slack")
+    ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
+                    help="how many PREVIOUS week tabs to read as well "
+                         "(default 1 — Monday's new tab leaves the weekend's "
+                         "roll-call still being filled on the old one)")
     ap.add_argument("--date", metavar="YYYY-MM-DD",
                     help="run as if today were this date (backfill / testing)")
     ap.add_argument("--tab", default=None,
@@ -78,17 +91,13 @@ def main(argv=None) -> int:
                          "#revision-emails)")
     args = ap.parse_args(argv)
 
-    if args.real and not args.i_mean_it:
-        print("--real needs --i-mean-it as well. Nothing written.")
-        return 1
-
     today = dt.date.fromisoformat(args.date) if args.date else today_central()
     print(f"Terminated Reps — {today.isoformat()} "
           f"(week ending {board.week_sunday(today).isoformat()})")
 
     # 1 — read the board.
     try:
-        rows, tab = board.scan(today, tab=args.tab)
+        rows, tab = board.scan(today, tab=args.tab, back_weeks=args.back_weeks)
     except Exception as e:                                      # noqa: BLE001
         print(f"❌ couldn't read the SALES BOARD: {type(e).__name__}: {e}")
         return 1
@@ -108,17 +117,18 @@ def main(argv=None) -> int:
             print(f"     {t.term_date.isoformat()}  {t.name}  ({t.source})")
 
     # 2 — file them.
-    sheet_id, tab, dry = tracker.TRACKER_SHEET_ID, tracker.TAB, True
-    if args.real:
-        dry = False
-    elif args.sandbox:
+    # LIVE BY DEFAULT since 2026-08-07 — Eve lifted the sandbox gate ("usá la
+    # sheet real a partir de ahora"). --dry-run and --sandbox are still here for
+    # testing a change before it goes near the real tab.
+    sheet_id, tab = tracker.TRACKER_SHEET_ID, tracker.TAB
+    dry = args.dry_run
+    if args.sandbox and not dry:
         from automations.terminated_reps import sandbox
-        tab, dry = sandbox.ensure(refresh=args.fresh_sandbox), False
-    else:
-        print("  (preview — no writes. Add --sandbox to write to a duplicate "
-              "tab, or --real --i-mean-it to write for real.)")
+        tab = sandbox.ensure(refresh=args.fresh_sandbox)
+    if dry:
+        print("  (--dry-run — nothing is written and nothing is posted)")
     print(f"  target: {tab!r}"
-          f"{' — THE REAL TAB' if args.real else ''}")
+          f"{'' if args.sandbox or dry else ' — the REAL tab'}")
     try:
         result = tracker.append(rows, sheet_id=sheet_id, tab=tab, dry_run=dry)
     except Exception as e:                                      # noqa: BLE001
@@ -130,9 +140,10 @@ def main(argv=None) -> int:
     # hand too, and a rep she'd already entered would otherwise drop out of the
     # day's post. `--post` is independent of the tracker target for the same
     # reason — the post is derived from the board, not from the write.
+    # A sandbox run stays out of the real channel unless --post says otherwise.
+    post_dry = dry or args.no_post or (args.sandbox and not args.post)
     try:
-        slack_post.post(rows, today, channel=args.channel,
-                        dry_run=not args.post)
+        slack_post.post(rows, today, channel=args.channel, dry_run=post_dry)
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the

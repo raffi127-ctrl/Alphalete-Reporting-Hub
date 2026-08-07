@@ -4435,16 +4435,11 @@ AUTOMATED_REPORTS = [
         "emoji": "🚪",
         "color": "#B45309",
         "category": "📊 Metrics",
-        # Not wired into the 4am batch yet — Eve hasn't signed off on live
-        # writes, so no time/DUE pill for a job nobody is waiting on.
-        "self_scheduled": True,
-        "hide_schedule": True,
         "description": (
             "Reads this week's tab on the Alphalete SALES BOARD 2025, files "
             "every newly-terminated rep into 'Terminated Reps' on the Raf "
-            "tracker, and posts the day's list in #revision-emails inside that week's "
-            "thread. Currently PREVIEW-ONLY — it writes to a sandbox tab until "
-            "Eve says go."
+            "tracker, and posts the day's list in #revision-emails inside that "
+            "week's thread. Live on the real tab."
         ),
         "breakdown": (
             "WHERE THE TERMINATIONS COME FROM — two places, marked two ways\n"
@@ -4474,11 +4469,18 @@ AUTOMATED_REPORTS = [
             "day's terminations posted as a reply inside it. The post lists what the BOARD says was terminated that day, not what the run happened to file, so a row you entered by hand still shows up. A new week starts "
             "a new thread. A day with nobody terminated posts nothing, and a "
             "week with nobody never opens a thread.\n\n"
+            "IT READS TWO WEEK TABS\n"
+            "A new week tab appears every **Monday**, and the weekend's "
+            "roll-call keeps being filled in on the **old** one afterwards — "
+            "so the previous tab is read too (bounded to the last 4 days). "
+            "Without it, a rep marked on Monday against Saturday is never "
+            "filed by anyone.\n\n"
             "RUNNING IT TWICE IS FREE\n"
-            "Rows are deduped on **name + termination date** (the same person "
-            "can legitimately appear twice — rehired, then let go again), and "
-            "the Slack reply skips anyone already named in this week's thread. A second "
-            "pass the same day finds nothing and says nothing."
+            "Rows are deduped on **name + termination date**, ±1 day (the same "
+            "person can legitimately appear twice — rehired, then let go "
+            "again — but never twice inside a day), and the Slack reply skips "
+            "anyone already named in this week's thread. A second pass the "
+            "same day writes nothing and posts nothing."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
@@ -4496,26 +4498,26 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Preview (no writes)",
-                "icon": "👁",
+                "label": "Run Now",
+                "icon": "▶",
                 "primary": True,
-                "help": "Reads the board and prints who WOULD be filed and the message that would go to #revision-emails. Writes nothing, posts nothing.",
+                "help": "Files any new terminations into the REAL 'Terminated Reps' tab and posts the day in #revision-emails. Safe to click twice — it dedupes against both the tab and the thread.",
                 "module": "automations.terminated_reps.run",
                 "args_fn": lambda: [],
             },
             {
-                "label": "Run on the sandbox tab",
-                "icon": "🧪",
-                "help": "Writes to a duplicate 'Terminated Reps SANDBOX' tab in the same workbook (created on first use) and still only prints the Slack message. Safe to run any time.",
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "help": "Reads the board and prints who WOULD be filed and the message that would go to #revision-emails. Writes nothing, posts nothing.",
                 "module": "automations.terminated_reps.run",
-                "args_fn": lambda: ["--sandbox"],
+                "args_fn": lambda: ["--dry-run"],
             },
             {
-                "label": "Run for real + post to Slack",
-                "icon": "▶",
-                "help": "Files into the REAL 'Terminated Reps' tab and actually posts the day in #revision-emails.",
+                "label": "Run on the sandbox tab",
+                "icon": "🧪",
+                "help": "Writes to a duplicate 'Terminated Reps SANDBOX' tab in the same workbook (created on first use) and doesn't post to Slack. For testing a change before it goes near the real tab.",
                 "module": "automations.terminated_reps.run",
-                "args_fn": lambda: ["--real", "--i-mean-it", "--post"],
+                "args_fn": lambda: ["--sandbox"],
             },
         ],
     },

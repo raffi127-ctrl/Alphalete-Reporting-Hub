@@ -404,19 +404,65 @@ def dedupe(rows: Iterable[Termination]) -> list[Termination]:
     return sorted(best.values(), key=lambda t: (t.term_date, t.row))
 
 
-def scan(today: dt.date, *, tab: str | None = None,
-         logfn=print) -> tuple[list[Termination], str]:
-    """Read the week tab covering `today` → (terminations, tab title)."""
-    sh = open_by_key(SHEET_ID)
-    title = pick_tab(sh, today, tab)
+def _scan_one(sh, title: str, today: dt.date, logfn) -> list[Termination]:
     ws = sh.worksheet(title)
     grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
     m = WE_TAB_RE.match(_norm(title))
     sunday = _resolve_tab_date(int(m.group(1)), int(m.group(2)), today)
     monday = sunday - dt.timedelta(days=6)
-    rows = dedupe(scan_grid(grid, title, monday))
+    rows = scan_grid(grid, title, monday)
     logfn(f"  {title!r} (Mon {monday.isoformat()} → Sun {sunday.isoformat()}): "
           f"{len(rows)} terminated "
           f"({sum(1 for t in rows if t.source == 'roster')} roster, "
           f"{sum(1 for t in rows if t.source == 'new starts')} new starts)")
+    return rows
+
+
+# How far back a PREVIOUS week's tab is still allowed to contribute.
+#
+# The look-back exists for one reason: a new 'Sales Board WE <m>.<d>' tab is
+# created every MONDAY, and the weekend's roll-call keeps being filled in on the
+# OLD tab afterwards — so a rep marked Terminated on Monday, against Saturday,
+# would otherwise never be filed by anyone.
+#
+# It is NOT a backfill. Taking the previous tab wholesale drags up terminations
+# Eve entered late under a different date — the 8/3 catch-up batch put Jacob
+# Ezernack and Alexander Delgado five and six days from what the board says —
+# and the tracker's ±1 day match can't recognise those, so it would file them
+# all over again. Four days covers the weekend an early-week run needs and
+# nothing older.
+LOOKBACK_DAYS = 4
+
+
+def scan(today: dt.date, *, tab: str | None = None, back_weeks: int = 1,
+         logfn=print) -> tuple[list[Termination], str]:
+    """Read the week tab covering `today`, plus the recent tail of the previous
+    one(s). See LOOKBACK_DAYS. `tab` pins a single tab and turns the look-back
+    off (backfill/testing)."""
+    sh = open_by_key(SHEET_ID)
+    title = pick_tab(sh, today, tab)
+    rows = _scan_one(sh, title, today, logfn)
+
+    if tab is None and back_weeks > 0:
+        cutoff = today - dt.timedelta(days=LOOKBACK_DAYS)
+        tabs = week_tabs(sh, today)
+        titles = [t for _d, t in tabs]
+        if title in titles:
+            i = titles.index(title)
+            for sunday, prev in tabs[max(0, i - back_weeks):i]:
+                # Its newest possible termination is its own Sunday. If even
+                # that is older than the cutoff the tab can't contribute — skip
+                # the read rather than pay for it.
+                if sunday < cutoff:
+                    logfn(f"  {prev!r}: ends {sunday.isoformat()}, older than "
+                          f"the {LOOKBACK_DAYS}-day window — skipped")
+                    continue
+                recent = [t for t in _scan_one(sh, prev, today, logfn)
+                          if t.term_date >= cutoff]
+                logfn(f"    {len(recent)} of them dated "
+                      f"{cutoff.isoformat()} or later — the rest are last "
+                      f"week's, already filed")
+                rows += recent
+
+    rows = dedupe(rows)
     return rows, title

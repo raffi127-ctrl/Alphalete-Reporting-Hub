@@ -82,17 +82,33 @@ def _check_headers(grid: list) -> None:
             f"{row[:len(HEADERS)]}. Fix the mapping before writing.")
 
 
-def existing_keys(grid: list) -> set:
-    """Every (folded name, date) already filed."""
-    out = set()
+# How far a filed date may sit from the board's date and still count as the
+# SAME termination. Eve historically entered new-start terminations the morning
+# AFTER the board showed them, so ~83 rows sit exactly one day off what the
+# board says. Without this tolerance, the moment the scan reaches back into last
+# week's tab it would file every one of them a second time. Nobody is terminated
+# twice inside 24 hours, so a ±1 day match is never a real second termination —
+# and the genuine repeats are days apart (Myra Singleton: 7/31, then 8/3).
+SAME_TERMINATION_DAYS = 1
+
+
+def existing_index(grid: list) -> dict:
+    """{folded name: [dates already filed]}."""
+    out: dict[str, list] = {}
     for r in grid[1:]:
         name = str(r[COL_NAME - 1] or "").strip() if len(r) >= COL_NAME else ""
         if not name:
             continue
         d = to_date(r[COL_DATE - 1]) if len(r) >= COL_DATE else None
         if d:
-            out.add((norm_name(name), d))
+            out.setdefault(norm_name(name), []).append(d)
     return out
+
+
+def already_filed(index: dict, name: str, day) -> bool:
+    """Is this termination already on the tab, allowing the ±1 day drift?"""
+    return any(abs((d - day).days) <= SAME_TERMINATION_DAYS
+               for d in index.get(norm_name(name), ()))
 
 
 def first_free_row(grid: list) -> int:
@@ -118,14 +134,16 @@ def append(rows: list[Termination], *, sheet_id: str = TRACKER_SHEET_ID,
     sh, ws = _open(sheet_id, tab)
     grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
     _check_headers(grid)
-    have = existing_keys(grid)
+    have = existing_index(grid)
 
-    added, skipped, seen = [], [], set()
+    added, skipped = [], []
     for t in rows:
-        if t.key in have or t.key in seen:
+        if already_filed(have, t.name, t.term_date):
             skipped.append(t)
             continue
-        seen.add(t.key)
+        # Fold into `have` as we go so two board rows for the same person on
+        # neighbouring days can't both be written in one pass.
+        have.setdefault(norm_name(t.name), []).append(t.term_date)
         added.append(t)
 
     start = first_free_row(grid)
