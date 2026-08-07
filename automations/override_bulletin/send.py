@@ -249,6 +249,43 @@ def post_slack(png_paths, caption, filenames, channels=None):
 
 CORRECTIONS_CHANNEL = "#claudecorrections-and-requests"
 
+# How many prior weeks decide whether a blank cell is that row's NORMAL state.
+ROUTINE_LOOKBACK = 3
+
+
+def _blank_is_routine(row, lookback=ROUTINE_LOOKBACK):
+    """Is this row's empty week cell its ordinary state rather than a gap?
+
+    Not every captain/program row is weekly. Carlos' and Colten's Special
+    Override is a RETAIL-PERIOD item: it posts at period end and shows on the
+    first week of the next period, so it is legitimately blank ~3 weeks out of
+    4 (6.21 and 7.19 carried money; 6.28, 7.5, 7.12, 7.26 and 8.2 did not).
+    Flagging that as "not yet posted" fired the same two names at Eve nearly
+    every week and told her to re-send with --force for money that was never
+    coming (2026-08-07). Raf's special IS weekly, so his blank still flags.
+
+    Decided from the row's own history, not a name list — a new period-based
+    row needs no code change, and a weekly row that goes quiet still shouts."""
+    prior = (row.get("series") or [])[1:1 + lookback]
+    if len(prior) < lookback:
+        return False                    # too little history to call it routine
+    return sum(1 for v in prior if v is None) >= 2
+
+
+def _week_has_pending_marker(ws, week_label):
+    """True if this week's column carries a RED P#-YYYY marker — the sheet's own
+    way of saying 'money is expected here and has not landed'. On such a week a
+    routine blank IS a gap, so the alert must fire anyway. Best-effort: if the
+    markers can't be read, assume no marker and fall back to the history rule."""
+    try:
+        from automations.override_bulletin import markers as M
+        return any(m.get("pending") and (m.get("week") or "").strip() == week_label
+                   for m in M.read_markers(ws))
+    except Exception as e:  # noqa: BLE001 — a marker read must never affect a send
+        print("⚠ could not read markers ({}: {})".format(
+            type(e).__name__, str(e)[:100]))
+        return False
+
 
 def alert_corrections(text):
     """Post a data-gap heads-up to #claudecorrections-and-requests (Megan
@@ -542,12 +579,26 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
     # "$57,749 this week" against $147,901, with five captains at $0 and steep
     # fake declines on every card. Blank sub-rows now surface as series=None
     # (see build.read_data), so we can refuse to publish that to the org.
-    unsourced = [r["name"] for r in (captainship + program) if r.get("week") is None]
+    blank_rows = [r for r in (captainship + program) if r.get("week") is None]
+    unsourced = [r["name"] for r in blank_rows]
+    # Split the blanks: a REAL gap (a weekly figure that failed to arrive) from a
+    # ROUTINE one (a period-based row on a week it never carries money). Only the
+    # real gaps are worth pinging Slack about — see _blank_is_routine.
+    marker_pending = _week_has_pending_marker(ws, week_label) if blank_rows else False
+    gaps = [r["name"] for r in blank_rows
+            if marker_pending or not _blank_is_routine(r)]
+    routine = [n for n in unsourced if n not in gaps]
     if unsourced:
         print("\n⚠ CAPTAINSHIP/PROGRAM not sourced for {} ({}): {}".format(
             week_label, len(unsourced), ", ".join(unsourced)))
         print("  Their weekly cells are BLANK, so every total above is short by "
               "their captain/special money.")
+    if routine:
+        print("  routine (blank most weeks — period-based, not a gap): {}".format(
+            ", ".join(routine)))
+    if marker_pending:
+        print("  a RED P#-YYYY marker sits on {} — every blank counts as a gap "
+              "this week.".format(week_label))
 
     subject = B.email_subject(week_label)
     caption = caption_for(week_label)
@@ -623,7 +674,10 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
     # listing any captain/program numbers that hadn't posted yet, so someone can
     # re-send with --force once they land. Best-effort; a failed alert never
     # affects the send that already went.
-    if unsourced and do_send:
+    # `gaps`, not `unsourced`: a period-based row that is blank most weeks is not
+    # a gap, and alerting on it cried wolf at Eve nearly every week with the same
+    # two names and advice to re-send for money that was never coming.
+    if gaps and do_send:
         try:
             from automations.shared import slack_metrics_post as smp
             smp._client().chat_postMessage(
@@ -632,10 +686,13 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
                       "program number(s) not yet posted: {}. Re-send with --force "
                       "once they land to fold them in.".format(
                           week_label, "test group" if test else "full distro",
-                          len(unsourced), ", ".join(unsourced))))
+                          len(gaps), ", ".join(gaps))))
             print("posted gap heads-up to #claudecorrections-and-requests")
         except Exception as e:  # noqa: BLE001
             print("⚠ gap alert failed ({}: {})".format(type(e).__name__, str(e)[:120]))
+    elif unsourced and do_send:
+        print("no gap alert — all {} blank row(s) are routine: {}".format(
+            len(routine), ", ".join(routine)))
     if do_send:                                   # test or full — record the week
         mark_sent(week_label)
     result["published"] = True
