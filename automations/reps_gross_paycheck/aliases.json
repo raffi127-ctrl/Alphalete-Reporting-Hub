@@ -1,0 +1,13 @@
+{
+  "_note": "Name bridges for the Reps Gross Paycheck report. KEY = the name exactly as it appears on the rep's tab in the 'Rep Records' workbook (that's the thing we write into, so it is canonical). VALUES = every other spelling seen on the Alphalete SALES BOARD 2025 or in 'Raf PNL 2026'. Parentheticals and punctuation are already stripped before lookup — you only need a row here when the LETTERS differ. Add rows with automations.reps_gross_paycheck.names.save_alias(canonical, alias) or by hand.",
+  "aliases": {
+    "Breeana White": ["Breeanna White"],
+    "Deavion Allen": ["Deavion Hunter Allen"],
+    "Drew Sanborn": ["Andrew Sanborn"],
+    "Sosa (Samajai)": ["Samajai Hoy"],
+    "Nhan": ["Nhan Phan"],
+    "Berkley": ["Berkley Garman"],
+    "Colby": ["Colby Nunez"],
+    "Indesia DC": ["Indesia Eley"]
+  }
+}

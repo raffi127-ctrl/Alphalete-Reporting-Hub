@@ -5402,6 +5402,34 @@
       },
       "machine": "Lucy 1"
     },
+    "reps_gross_paycheck": {
+      "on_scheduler": true,
+      "_note": "Fills the 'Gross Paycheck' row of every rep tab in the Rep Records workbook from 'Got Paid' in Raf PNL 2026, ONE WEEK BEHIND: Thursday's WE column takes the PNL's previous WE, because a Thursday paycheck settles the week before. Also makes a tab for each 2nd Wk rep on the newest sales board and removes tabs for reps whose 'Termination Date' is filled (snapshotting each to output/reps_gross_paycheck/deleted/ first — that is the ONLY undo). Reps with no money that week get '-', never a blank. Thursday 09:00 CST: late enough that the PNL's previous week is settled and the morning batch has cleared. Catch-up for missed weeks: `--backfill`. Sheets-only, no browser session.",
+      "display_name": "Reps Gross Paycheck records",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.reps_gross_paycheck.run"
+      ],
+      "base_args": [
+        "--real",
+        "--i-mean-it",
+        "--delete-terminated"
+      ],
+      "cadence": {
+        "weekdays": [
+          3
+        ],
+        "not_before": "09:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 15
+    },
     "dd_bulletin_preview": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL preview of the DD bulletin \u2014 builds both pages and EMAILS MEGAN ONLY (Meganhidalgo1191@gmail.com), no Slack, nothing to the org. Separate from dd_bulletin_send (which carries --test --send for the scheduled soft-launch) so a preview never collides with --send. Runs on LUCY 1 so Credico folds and the headshots (synced by dd_headshots_sync) render.",

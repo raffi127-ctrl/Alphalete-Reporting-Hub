@@ -4334,6 +4334,192 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "reps-gross-paycheck",
+        "name": "Reps Gross Paycheck records",
+        "creator": "Eve & Claude",
+        "emoji": "💵",
+        "color": "#15803D",
+        "category": "📊 Metrics",
+        "description": "Fills each rep's 'Gross Paycheck' row in the Rep Records workbook from 'Got Paid' in Raf PNL 2026 — always ONE WEEK behind, because Thursday's paycheck is last week's settlement. Adds tabs for new reps, removes them for terminated ones.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Puts each rep's paycheck in the column headed with **this "
+            "week's Sunday**, taking it from the PNL's **previous** Sunday. "
+            "Run it Thursday **8/6** and the **8/9** column gets the PNL's "
+            "**8/2** 'Got Paid' — what they collect that Thursday is what "
+            "settled the week before.\n"
+            "**•** A rep with **no money** that week gets a **'-'**, never a "
+            "blank, so \"checked, nothing to pay\" can't be mistaken for "
+            "\"nobody ran it\".\n"
+            "**•** **New reps get a tab.** The signal is **Field Status = "
+            "2nd Wk** on the newest sales board. The tab is cloned from the "
+            "most recent rep tab, so it matches the ones beside it.\n"
+            "**•** **Terminated reps lose theirs**, on **two** signals: a "
+            "filled **Termination Date** on the sales board (*not* Field "
+            "Status, which never says 'Terminated'), or a row in the PNL "
+            "workbook's **Terminated Reps** log for someone who's also off the "
+            "newest board. Neither list is complete alone — the board leaves "
+            "the date blank for people who just stop showing up, and the log "
+            "keeps a stale row for anyone who came back. Their cells are left "
+            "untouched and the tab is saved to a CSV in "
+            "**output/reps_gross_paycheck/deleted/** before it goes.\n"
+            "**•** A tab that has run out of week columns grows by one "
+            "'=previous+7', so the header dates stay in step.\n\n"
+            "WHEN IT RUNS\n"
+            "**Thursday, 9:00 AM Central.**\n\n"
+            "IT NEVER OVERWRITES\n"
+            "A cell that already carries something is left alone and counted "
+            "in the summary. Re-running the same Thursday changes nothing.\n\n"
+            "CATCHING UP\n"
+            "**Backfill** fills every week from **6/28** through this one in a "
+            "single pass — use it after a stretch of missed Thursdays.\n\n"
+            "NAMES THAT DON'T MATCH\n"
+            "A rep whose PNL spelling differs from their tab quietly fills "
+            "'-'. Every one of those is listed at the end of the run with the "
+            "closest PNL name; one row in "
+            "**automations/reps_gross_paycheck/aliases.json** fixes it "
+            "permanently."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1einjzUF1C4MzosbZPxDsAKpGZCi2ud4ckaD8L2gqaXM/edit"),
+        "assignees": ["Lucy 1"],
+        "run_rerun_id": "reps_gross_paycheck",
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [3],            # Thursday
+            "time": "9:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Paychecks written. Check the log for any '-' that should have been a number — that's a name spelling drift.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "primary": True,
+                "help": "Reads all three workbooks and prints exactly what would change — every cell, every tab it would add, every tab it would delete. Writes nothing.",
+                "module": "automations.reps_gross_paycheck.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Fill This Week",
+                "icon": "▶",
+                "help": "Writes this week's column on the real workbook and adds tabs for the new (2nd Wk) reps. Terminated tabs are listed but NOT deleted.",
+                "module": "automations.reps_gross_paycheck.run",
+                "args_fn": lambda: ["--real", "--i-mean-it"],
+            },
+            {
+                "label": "Fill + Remove Terminated",
+                "icon": "🗑",
+                "help": "The same fill, and it also DELETES the tabs of reps with a Termination Date on the sales board. Each deleted tab is saved to output/reps_gross_paycheck/deleted/ as a CSV first — that snapshot is the only way back. Preview it before using this.",
+                "module": "automations.reps_gross_paycheck.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--delete-terminated"],
+            },
+            {
+                "label": "Backfill from 6/28",
+                "icon": "⏪",
+                "help": "Fills every week from 6/28 through this one, plus a tab for every rep on the newest sales board who hasn't got one. Cells that already carry something are left alone.",
+                "module": "automations.reps_gross_paycheck.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--backfill",
+                                    "--all-missing-tabs"],
+            },
+        ],
+    },
+    {
+        "id": "terminated-reps",
+        "name": "Terminated Reps",
+        "creator": "Eve & Claude",
+        "emoji": "🚪",
+        "color": "#B45309",
+        "category": "📊 Metrics",
+        # Not wired into the 4am batch yet — Eve hasn't signed off on live
+        # writes, so no time/DUE pill for a job nobody is waiting on.
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "description": (
+            "Reads this week's tab on the Alphalete SALES BOARD 2025, files "
+            "every newly-terminated rep into 'Terminated Reps' on the Raf "
+            "tracker, and DMs Evelyn the day's list inside that week's Slack "
+            "thread. Currently PREVIEW-ONLY — it writes to a sandbox tab until "
+            "Eve says go."
+        ),
+        "breakdown": (
+            "WHERE THE TERMINATIONS COME FROM — two places, marked two ways\n"
+            "**•** **The roster** (top of the tab): terminated = the rep's "
+            "**Termination Date** column is filled in. **# Days Worked** is "
+            "read from the board's own formula, never recomputed.\n"
+            "**•** **The 'New Starts/Raf' box** (bottom): terminated = the "
+            "first weekday roll-call cell reading **Terminated**. That "
+            "weekday gives both the date and the day count — a new start's "
+            "week begins Monday.\n"
+            "Miss either one and half the terminations go unfiled: the roster "
+            "never says the word 'Terminated', and new starts never get a "
+            "Termination Date.\n\n"
+            "WHAT IT WRITES\n"
+            "**Rep Name**, **Lead Rep** (always *Raf*), **# Days Worked**, "
+            "**Termination Date**, **Year**. It does **not** touch "
+            "**Ownerville** or **Slack Deact** — those checkboxes record that "
+            "a human went and deactivated the accounts, so they stay unticked "
+            "for you.\n\n"
+            "WHERE IT APPENDS\n"
+            "Straight after the **last filled name**. The tab has thousands of "
+            "pre-seeded checkbox rows below that, plus one hole mid-history "
+            "(row 1979, a cleared name), and both would swallow an append that "
+            "just looked for the first empty row.\n\n"
+            "THE SLACK THREAD\n"
+            "One parent per week — **'Terminated Reps WE 8.9'** — with each "
+            "day's terminations posted as a reply inside it. A new week starts "
+            "a new thread. A day with nobody terminated posts nothing, and a "
+            "week with nobody never opens a thread.\n\n"
+            "RUNNING IT TWICE IS FREE\n"
+            "Rows are deduped on **name + termination date** (the same person "
+            "can legitimately appear twice — rehired, then let go again), and "
+            "the DM only ever lists what that run actually filed. A second "
+            "pass the same day finds nothing and says nothing."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=835099438#gid=835099438"),
+        "assignees": ["Lucy 1"],
+        "run_rerun_id": "terminated_reps",
+        "schedule": {
+            "frequency": "daily",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Terminated Reps read — anything new is filed and Evelyn has the day's list.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "primary": True,
+                "help": "Reads the board and prints who WOULD be filed and the DM that would go to Evelyn. Writes nothing, sends nothing.",
+                "module": "automations.terminated_reps.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run on the sandbox tab",
+                "icon": "🧪",
+                "help": "Writes to a duplicate 'Terminated Reps SANDBOX' tab in the same workbook (created on first use) and still only prints the DM. Safe to run any time.",
+                "module": "automations.terminated_reps.run",
+                "args_fn": lambda: ["--sandbox"],
+            },
+            {
+                "label": "Run for real + DM Evelyn",
+                "icon": "▶",
+                "help": "Files into the REAL 'Terminated Reps' tab and actually sends Evelyn the Slack DM.",
+                "module": "automations.terminated_reps.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--post"],
+            },
+        ],
+    },
+    {
         "id": "country-sales-board",
         "name": "Country Sales Board",
         "creator": "Eve & Claude",
