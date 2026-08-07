@@ -14,16 +14,19 @@ Every Friday, for the week that closed on Sunday:
   4. SEED   any brand-new owner into all THREE Country Sales Board boxes, so
             their sales have somewhere to land the very next morning.
 
-  python -m automations.att_owners_list.run                    # sandbox, live write
-  python -m automations.att_owners_list.run --dry-run          # plan only
-  python -m automations.att_owners_list.run --post             # send the Slack note
-  python -m automations.att_owners_list.run --real --i-mean-it # the REAL tab
+  python -m automations.att_owners_list.run                    # the REAL tab
+  python -m automations.att_owners_list.run --post             # + send the Slack note
+  python -m automations.att_owners_list.run --dry-run          # plan only, no writes
+  python -m automations.att_owners_list.run --sandbox          # a duplicate tab
   python -m automations.att_owners_list.run --from-csv P       # offline, no browser
   python -m automations.att_owners_list.run --rebuild          # realign history
   python -m automations.att_owners_list.run --week 2026-08-02  # a specific week
 
-SANDBOX BY DEFAULT, like every other board fill here: `--real` targets the tab
-people read and is refused without `--i-mean-it`.
+LIVE ON THE REAL TAB since 2026-08-07 (Eve, after the sandbox validation): the
+default target is 'ATT owners list' and the real Country Sales Board. `--sandbox`
+is still there for building — it duplicates the tab on first use — but it is now
+the exception, not the default. `--real` / `--i-mean-it` are kept as no-ops so an
+older command line still runs.
 """
 from __future__ import annotations
 
@@ -61,23 +64,39 @@ def last_sunday(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=((today.weekday() + 1) % 7) or 7)
 
 
-def _find_ws(sh, title: str):
+def _find_ws(sh, title: str, *, or_duplicate_of: str = ""):
+    """The worksheet by title (case-insensitively — the real tab is spelled
+    'ATT owners list'). With `or_duplicate_of`, a missing tab is created as a
+    copy of that one instead of failing: that is how --sandbox gets a tab to
+    work on without anybody keeping a stale duplicate around forever."""
     want = title.strip().lower()
     ws = next((w for w in sh.worksheets() if w.title.strip().lower() == want),
               None)
-    if ws is None:
+    if ws is not None:
+        return ws
+    if not or_duplicate_of:
         raise ValueError(f"Tab {title!r} not found in the workbook.")
-    return ws
+    src = _find_ws(sh, or_duplicate_of)
+    print(f"  no {title!r} tab — duplicating {src.title!r} to make one")
+    sh.batch_update({"requests": [{"duplicateSheet": {
+        "sourceSheetId": src.id, "newSheetName": title,
+        "insertSheetIndex": len(sh.worksheets())}}]})
+    return _find_ws(sh, title)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true",
                     help="plan and print everything; write nothing")
+    ap.add_argument("--sandbox", action="store_true",
+                    help=f"write {SANDBOX_TAB!r} (duplicated from the real tab "
+                         f"on first use) and the sandbox Country Sales Board, "
+                         f"instead of the tabs people read")
     ap.add_argument("--real", action="store_true",
-                    help=f"target {PROD_TAB!r} instead of the sandbox tab")
+                    help="no-op, kept for older command lines — the real tab "
+                         "is the default since 2026-08-07")
     ap.add_argument("--i-mean-it", action="store_true",
-                    help="required alongside --real")
+                    help="no-op, kept for older command lines")
     ap.add_argument("--post", action="store_true",
                     help="actually send the Slack note (default: print it)")
     ap.add_argument("--no-board", action="store_true",
@@ -98,15 +117,14 @@ def main(argv=None) -> int:
                          "something different")
     args = ap.parse_args(argv)
 
-    if args.real and not args.i_mean_it:
-        print(f"refusing to write {PROD_TAB!r} without --i-mean-it. "
-              f"Build against the sandbox first.")
-        return 2
+    if args.real or args.i_mean_it:
+        print("  note: --real / --i-mean-it do nothing now — the real tab is "
+              "the default. Pass --sandbox to work on a copy.")
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.datetime.now(CENTRAL).date())
     want = (dt.date.fromisoformat(args.week) if args.week else last_sunday(today))
-    tab = PROD_TAB if args.real else SANDBOX_TAB
-    board_tab = BOARD_TAB if args.real else BOARD_SANDBOX_TAB
+    tab = SANDBOX_TAB if args.sandbox else PROD_TAB
+    board_tab = BOARD_SANDBOX_TAB if args.sandbox else BOARD_TAB
     mode = "DRY-RUN" if args.dry_run else "LIVE"
     print(f"=== ATT Owners List — {tab!r} — {mode} — today={today} "
           f"— week ending {want.isoformat()} ===")
@@ -141,7 +159,7 @@ def main(argv=None) -> int:
 
     # ---- sheet ---------------------------------------------------------
     sh = open_by_key(SHEET_ID)
-    ws = _find_ws(sh, tab)
+    ws = _find_ws(sh, tab, or_duplicate_of=PROD_TAB if args.sandbox else "")
     grid = _retry(ws.get_all_values)
     layout = S.find_layout(grid)
     print(f"  tab: header row {layout.header_row}, names "
