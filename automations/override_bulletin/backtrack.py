@@ -18,12 +18,21 @@ So every run re-pulls the recent weeks and fixes what drifted (FILL_SOURCES:
 
 WHAT IT CORRECTS — the REGULAR override component only.
 
-The DD Detail download carries just the ONE just-closed week, so a captain's
-bonus for a week three back cannot be re-pulled at all. But it is already on the
-sheet: section 2 holds the captain/special breakdown per week. So the section-1
-cell is rebuilt as `freshly-pulled regular + the section-2 total ALREADY on the
-sheet for that week`. Nothing is invented, and a week whose captain figure we
-cannot re-source keeps the number it has.
+EVERY component, as of 2026-08-07 — this used to be the regular override alone:
+
+  regular            ORG Override Summary, by retail period
+  Raf captain        Raf PNL 2026, row "Captain Override"
+  Raf special        Payout- Raf wow, by retail period
+  5 DD captains      ORG DD Detail, PERIOD-forced (--apply-dd to write)
+  Credico / special  the NetSuite ledger, via the red P#-YYYY markers
+
+The DD line was long believed impossible: the DEFAULT download carries only the
+just-closed week. But it is the WEEK filter that breaks that view, not the
+PERIOD filter — one period download carries every week in it (dd_search.py).
+
+Anyone whose components could NOT be re-sourced still rebuilds as `freshly-pulled
+regular + the section-2 total ALREADY on the sheet`. Nothing is invented, and a
+week whose captain figure we cannot re-source keeps the number it has.
 
 RULES IT KEEPS
   * A person absent from the source for a week is REPORTED, never zeroed — a
@@ -31,6 +40,9 @@ RULES IT KEEPS
     lost $1,532.25 a week before the ICD-Aliases wiring).
   * Near month-end a week can appear in TWO periods; both are pulled and summed,
     and the contributing periods are printed.
+  * A cell that holds a FORMULA is never overwritten — the tab mixes typed
+    numbers and formulas irregularly inside a single row, and a value written
+    over one destroys it silently. Reported instead.
   * Dry-run by default; a real write is refused against the live tab.
 
 RUN ON LUCY 1 (Raf's org login).
@@ -45,8 +57,12 @@ from automations.override_bulletin import fill as F
 from automations.override_bulletin import pulls as P
 from automations.override_bulletin import run as R
 
-# Weeks to re-check each run (FILL_SOURCES: "the last 4 weeks").
-DEFAULT_WEEKS = 4
+# Weeks to re-check each run. Eve 2026-08-07 raised this from 4 to 5: on 8/07 the
+# copy tab sat $19,896.56 below her hand-kept tab across 2026, and every stale
+# week (6.14, 6.21, 6.28, 7.5) was OUTSIDE a 4-week window, so nothing ever
+# re-read them. The window is the whole guarantee — a source that settles after a
+# week falls out of it stays wrong forever.
+DEFAULT_WEEKS = 5
 # Below this, a difference is rounding rather than a real correction.
 TOLERANCE = 0.01
 OUT_DIR = Path("output/override_bulletin/backtrack")
@@ -158,6 +174,113 @@ def raf_fresh_for_week(week_mdy, *, period_num=None, page=None, verbose=True):
     return cap, spec
 
 
+def dd_captains_for_period(period_num, year, *, page=None, verbose=True, cache=None):
+    """{owner_norm: {dd_week: amount}} for a PERIOD-FORCED DD Detail download.
+
+    The old belief — written into this module's docstring and FILL_SOURCES — was
+    that a past week's captain bonus "cannot be re-pulled at all" because the DD
+    download only carries the just-closed week. That is true of the DEFAULT
+    download, and `pulls.dd_captain_overrides` tries that one FIRST, so the period
+    path never gets exercised. But dd_search.py records the working rule:
+
+        "the crosstab's default download carries only the just-closed week, so
+         history needs the Period filter: July covers 7.5 / 7.12 / 7.19"
+
+    It is the WEEK filter that breaks the view, not the PERIOD filter. So we skip
+    the unfiltered candidate entirely and force the period — one download per
+    period yields every week in it, since parse_dd_captain already returns a
+    per-week dict.
+
+    Cached per (year, period): re-checking five weeks that share a period costs
+    ONE download, not five."""
+    cache = cache if cache is not None else {}
+    ck = ("dd", year, period_num)
+    if ck in cache:
+        return cache[ck]
+    per = "Period {}-{}".format(year, period_num)
+    want = {P._norm_name(o) for o in R.DD_CAPTAINS}
+    got, used = None, None
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        got, used = P._download_first_nonempty(
+            P.DD_DETAIL_VIEW, P.DD_DETAIL_SHEET,
+            OUT_DIR / "dd-p{}.csv".format(period_num),
+            P.period_candidates(per), page=page, verbose=verbose,
+            accept=lambda rr: P.parse_dd_captain(rr, want) or None)
+    except Exception as e:  # noqa: BLE001 — a dead DD period must never fail the run
+        if verbose:
+            print("  (DD {} unavailable: {})".format(per, type(e).__name__))
+    cache[ck] = (got or {}, used)
+    return cache[ck]
+
+
+def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
+                     write=False):
+    """Place any PENDING (red) P#-YYYY marker whose money has now landed.
+
+    Credico and the Carlos/Colten special arrive LATE — weeks after the column is
+    filled. `run.py` already knows how to place them, but only on a pass that
+    actually fills a week: a HOLD pass returns before the marker step, and once
+    the week is filled every later pass HOLDS. So on a normal Friday the late
+    money is never placed. Running it here means it is retried on every backtrack,
+    hold or not, which is exactly when it should be.
+
+    Reuses markers.plan_placements / apply_placements verbatim — placement is
+    marker-driven, never derived, and a period with no marker is reported rather
+    than guessed."""
+    from automations.override_bulletin import markers as M
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        led = P.ledger_rows(OUT_DIR / "ledger.csv", page=page, verbose=verbose)
+        to_place, pending, orphans = M.plan_placements(
+            ws, led, aliases=aliases, owner_col=P.LEDGER_OWNER_COL,
+            expl_col=P.LEDGER_EXPL_COL, amt_col=P.LEDGER_AMT_COL)
+    except Exception as e:  # noqa: BLE001 — never let the ledger fail the backtrack
+        print("  ⚠ ledger reconcile skipped: {}: {}".format(
+            type(e).__name__, str(e).splitlines()[0][:140]))
+        return
+    if to_place:
+        print("\nlate override(s) landed ({}):".format(len(to_place)))
+        M.apply_placements(ws, to_place, roster=roster, captains=captains,
+                           dry_run=not write)
+    for mk in pending:
+        print("  still pending: {} {} (marked at {}) — left red".format(
+            mk["kind"], mk["period"], mk["week"]))
+    for o in orphans:
+        print("  ⚠ {} {} is in the ledger but has NO marker — NOT placed".format(
+            o["kind"], o["period"]))
+
+
+def drop_formula_cells(ws, changes, *, verbose=True):
+    """(writable, skipped) — never overwrite a cell that holds a FORMULA.
+
+    The tab mixes typed numbers and formulas IRREGULARLY, even inside one row:
+    on 2026-08-07 Carlos's section-1 row was typed at 7.19 and 7.5 but `=`
+    formulas at 6.28 / 6.21 / 6.14. Writing a value over one of those destroys
+    it silently, and the wider the window the more of them a sweep reaches. So
+    every planned write is checked against a FORMULA render first, and a formula
+    cell is reported instead of written — a drifted formula is a human's call.
+
+    `changes` are (col_idx0, row1, name, old, new)."""
+    try:
+        forms = ws.get_values(value_render_option="FORMULA")
+    except Exception as e:  # noqa: BLE001 — if we cannot check, do not write blind
+        print("  ⚠ could not read formulas ({}: {}) — refusing to write".format(
+            type(e).__name__, str(e)[:100]))
+        return [], list(changes)
+    writable, skipped = [], []
+    for ch in changes:
+        c, r = ch[0], ch[1]
+        raw = forms[r - 1][c] if (r - 1 < len(forms) and c < len(forms[r - 1])) else ""
+        (skipped if str(raw).startswith("=") else writable).append(ch)
+    if skipped and verbose:
+        print("\n⚠ {} cell(s) hold a FORMULA — left alone:".format(len(skipped)))
+        for c, r, name, old, new in skipped:
+            print("    {}{:<6} {:<28} {} -> {} (not written)".format(
+                F._col_letter(c), r, name[:28], old, new))
+    return writable, skipped
+
+
 def cap_special_on_sheet(vals, captains, key, col):
     """The captain/special total ALREADY on the sheet for this person + week.
 
@@ -175,20 +298,22 @@ def cap_special_on_sheet(vals, captains, key, col):
     return (P._num_locale(row[col]) or 0.0) if col < len(row) else 0.0
 
 
-def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
+def plan_week(ws, vals, week_mdy, roster, captains, regular, *, fresh=None):
     """[(row, name, old, new)] cells whose value has drifted, plus [names] we
     couldn't source for this week.
 
-    `raf` = (raf_key, fresh_captain, fresh_special) when Rafael's PNL/Raf-wow were
-    re-pulled this run. His section-1 total is rebuilt from those fresh components
-    (each falling back to its on-sheet sub-row if the pull came back None), and his
-    Captain / Special sub-rows in section 2 are corrected too — the rest of the
-    roster still rebuilds as `fresh regular + the section-2 total on the sheet`,
-    because their captains (DD) can't be re-sourced for a past week."""
+    `fresh` = {canonical_key: {"captain": v|None, "special": v|None}} for whoever
+    had their section-2 components RE-SOURCED this run. Rafael gets both (PNL +
+    Raf-wow); the five DD captains get "captain" when the period-forced DD pull
+    carried their week. For those people the section-1 cell is rebuilt from the
+    fresh components (each falling back to its on-sheet sub-row when the pull
+    returned None) and their section-2 sub-rows are corrected too. Anyone not in
+    `fresh` still rebuilds as `fresh regular + the section-2 total on the sheet`,
+    which invents nothing and keeps the number they have."""
     col = F.week_col(ws, week_mdy, header=vals[0])
     if col is None:
         return [], [], [], None
-    raf_key = raf[0] if raf else None
+    fresh = fresh or {}
     changes, unmatched, suspicious = [], [], []
     for key, (row, active, disp) in roster.items():
         if not active:
@@ -197,10 +322,11 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
         if reg is None:
             unmatched.append(disp)
             continue                       # never zero a person out on a re-read
-        if key == raf_key:
-            rc = captains.get(raf_key, {})
-            cap = raf[1] if raf[1] is not None else _sheet_cell(vals, rc.get("captain"), col)
-            spc = raf[2] if raf[2] is not None else _sheet_cell(vals, rc.get("special"), col)
+        if key in fresh:
+            rc = captains.get(key, {})
+            fc, fs = fresh[key].get("captain"), fresh[key].get("special")
+            cap = fc if fc is not None else _sheet_cell(vals, rc.get("captain"), col)
+            spc = fs if fs is not None else _sheet_cell(vals, rc.get("special"), col)
             capspec = (cap or 0) + (spc or 0)
         else:
             capspec = cap_special_on_sheet(vals, captains, key, col)
@@ -218,22 +344,28 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, raf=None):
             continue
         if old is None or abs(new - old) > TOLERANCE:
             changes.append((row, disp, old, new))
-    # Rafael's section-2 Captain / Special sub-rows, when freshly re-pulled.
-    if raf_key and raf_key in captains:
-        for comp, val in (("captain", raf[1]), ("special", raf[2])):
-            r = captains[raf_key].get(comp)
+    # Section-2 Captain / Special sub-rows for everyone re-sourced this run.
+    for key, comps in fresh.items():
+        if key not in captains:
+            continue
+        disp = comps.get("display") or key
+        for comp in ("captain", "special"):
+            val = comps.get(comp)
+            r = captains[key].get(comp)
             if not r or val is None:
                 continue
             old = _sheet_cell(vals, r, col)
+            label = "{} ({})".format(disp, comp)
             if abs(round(val, 2)) < 1.0 and old is not None and abs(old) > 1.0:
-                suspicious.append(("Rafael Hidalgo ({})".format(comp), old, val))
+                suspicious.append((label, old, val))
                 continue
             if old is None or abs(round(val, 2) - old) > TOLERANCE:
-                changes.append((r, "Rafael Hidalgo ({})".format(comp), old, round(val, 2)))
+                changes.append((r, label, old, round(val, 2)))
     return changes, unmatched, suspicious, col
 
 
-def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=True):
+def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=True,
+              apply_dd=False, ledger=True):
     from automations.recruiting_report import fill as _fill
     from automations.shared.tableau_patchright import tableau_session
 
@@ -276,9 +408,41 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
             # sitting stale in section 2.
             raf_cap, raf_spec = raf_fresh_for_week(
                 wk, period_num=per_num, page=page, verbose=verbose)
+            fresh = {raf_key: {"captain": raf_cap, "special": raf_spec,
+                               "display": "Rafael Hidalgo"}}
+
+            # The other five captains' bonuses, from a PERIOD-FORCED DD download.
+            # REPORTED but not written unless --apply-dd: this path has never run
+            # against production, and a wrong captain figure moves the whole
+            # section-1 cell. Read the log once, then turn it on.
+            if per_num:
+                dd_by_owner, dd_used = dd_captains_for_period(
+                    per_num, wk_year, page=page, verbose=verbose, cache=cache)
+                if dd_by_owner:
+                    print("  DD {} ({}): {} captain(s)".format(
+                        wk, dd_used, len(dd_by_owner)))
+                for name in R.DD_CAPTAINS:
+                    key = F.canon(name, aliases)
+                    byweek = dd_by_owner.get(P._norm_name(name)) or \
+                        dd_by_owner.get(P._norm_name(key)) or {}
+                    amt = R._dd_week_for(byweek, wk) if byweek else None
+                    if amt is None:
+                        continue
+                    on_sheet = _sheet_cell(
+                        vals, captains.get(key, {}).get("captain"),
+                        F.week_col(ws, wk, header=vals[0]))
+                    same = on_sheet is not None and abs(amt - on_sheet) <= TOLERANCE
+                    print("    DD {:<18} sheet={} tableau={}{}".format(
+                        name[:18], on_sheet, round(amt, 2),
+                        "" if same else "   <-- DIFFERS"))
+                    if apply_dd and not same:
+                        fresh.setdefault(key, {})
+                        fresh[key].update({"captain": amt, "display": name})
+                if dd_by_owner and not apply_dd:
+                    print("    (report only — re-run with --apply-dd to write these)")
+
             changes, unmatched, suspicious, col = plan_week(
-                ws, vals, wk, roster, captains, regular,
-                raf=(raf_key, raf_cap, raf_spec))
+                ws, vals, wk, roster, captains, regular, fresh=fresh)
             print("\n{} (from {}): {} cell(s) drifted".format(
                 wk, " + ".join(used) or "?", len(changes)))
             for _row, name, old, new in changes:
@@ -292,24 +456,40 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
             if unmatched:
                 print("    no source row ({}): {}".format(
                     len(unmatched), ", ".join(unmatched)))
-            all_changes += [(F._col_letter(col), r, n, o, v)
-                            for r, n, o, v in changes]
+            all_changes += [(col, r, n, o, v) for r, n, o, v in changes]
+
+        # Late Credico / Carlos-Colten special: retried on EVERY backtrack, which
+        # is the only pass that reliably runs once a week is filled.
+        if ledger:
+            ledger_reconcile(ws, aliases=aliases, roster=roster, captains=captains,
+                             page=page, verbose=verbose, write=write)
 
     if not all_changes:
         print("\nnothing drifted — every checked week still matches its source.")
         return []
+    # A formula cell is never overwritten — checked BEFORE the dry-run report too,
+    # so a dry run says what would really happen rather than promising writes that
+    # the real run would skip.
+    writable, skipped = drop_formula_cells(ws, all_changes, verbose=verbose)
     if not write:
-        print("\n[dry-run] would correct {} cell(s). Re-run with --write "
-              "(sandbox only).".format(len(all_changes)))
-        return all_changes
+        print("\n[dry-run] would correct {} cell(s){}. Re-run with --write "
+              "(sandbox only).".format(
+                  len(writable),
+                  " and skip {} formula cell(s)".format(len(skipped)) if skipped else ""))
+        return writable
     if ws.title == F.LIVE_TAB:
         raise RuntimeError("refusing to write the live tab {!r} — sandbox only".format(
             F.LIVE_TAB))
-    ws.batch_update([{"range": "{}{}".format(c, r), "values": [[v]]}
-                     for c, r, _n, _o, v in all_changes],
+    if not writable:
+        print("\nnothing writable — every drifted cell holds a formula.")
+        return []
+    ws.batch_update([{"range": "{}{}".format(F._col_letter(c), r), "values": [[v]]}
+                     for c, r, _n, _o, v in writable],
                     value_input_option="USER_ENTERED")
-    print("\ncorrected {} cell(s) on {!r}".format(len(all_changes), ws.title))
-    return all_changes
+    print("\ncorrected {} cell(s) on {!r}{}".format(
+        len(writable), ws.title,
+        " ({} formula cell(s) left alone)".format(len(skipped)) if skipped else ""))
+    return writable
 
 
 def main(argv=None):
@@ -319,9 +499,16 @@ def main(argv=None):
     ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
     ap.add_argument("--write", action="store_true",
                     help="apply the corrections (sandbox tab only)")
+    ap.add_argument("--apply-dd", action="store_true",
+                    help="also WRITE the five DD captains' re-pulled bonuses. "
+                         "Without it they are pulled and reported only — read the "
+                         "log once before trusting a path that has never run.")
+    ap.add_argument("--no-ledger", action="store_true",
+                    help="skip the late Credico / special reconcile")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
-    backtrack(tab=a.tab, weeks=a.weeks, write=a.write, verbose=not a.quiet)
+    backtrack(tab=a.tab, weeks=a.weeks, write=a.write, verbose=not a.quiet,
+              apply_dd=a.apply_dd, ledger=not a.no_ledger)
     return 0
 
 
