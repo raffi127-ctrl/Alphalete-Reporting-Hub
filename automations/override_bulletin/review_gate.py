@@ -594,7 +594,15 @@ def main(argv=None) -> int:
         print(f"✓ refreshed in place, existing link still valid: {link}",
               flush=True)
         return 0
-    if args.post:
+    # --check is checked BEFORE --post for the same reason --refresh is: the
+    # `dd_bulletin_gate` scheduler entry carries ["--post"] as its base args, so
+    # `lucy rerun dd_bulletin_gate --check --send --distro` arrives here as
+    # "--post --check --send --distro" and has to mean CHECK. Handled the other
+    # way round it would silently re-post (idempotently, so: do nothing) and
+    # never look for the checkmark — an approved bulletin that sits unsent while
+    # the command that was supposed to send it exits 0. The Thursday agent is
+    # unaffected: dd_bulletin_thu.sh runs --post and --check as separate passes.
+    if args.post and not args.check:
         # HOLD instead of posting when Eve has not opened the week's column yet.
         # The week the bulletin carries is POSITIONAL — the leftmost week header
         # on the tab — and nothing here rolls it, so an unfilled tab leaves LAST
