@@ -118,6 +118,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
+                    "nsf_screenshot_diag",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -1262,6 +1263,23 @@ def _action_diag(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         pass
     return True, "\n".join(out)
+
+
+def _action_nsf_screenshot_diag(args: str) -> tuple[bool, str]:
+    """Read-only: can THIS machine read Aisha's roster screenshot?
+
+    Prints the Slack identity + scopes, finds the roster image, downloads it and
+    reports whether real image bytes came back. No vision call, no writes, and
+    the token is never printed. Added 2026-08-08: the read worked on the laptop
+    and 400'd on the mini, which silently sent the roll call down the OBCL-sheet
+    fallback and mis-tagged Bill Hirwa."""
+    ok, out = _run_cmd([sys.executable, "-m",
+                        "automations.new_start_followup.screenshot_roster", "--diag"],
+                       timeout_s=180, log_name="nsf-screenshot-diag.log")
+    keep = [ln for ln in (out or "").splitlines()
+            if ln.startswith(("identity", "scopes", "image", "download", "first16",
+                              "RESULT", "FAIL", "   OK", "   MISSING"))]
+    return ok, (" · ".join(keep)[:900] or (out or "")[-300:])
 
 
 def _action_chrome_sync_diag(args: str) -> tuple[bool, str]:
@@ -3323,6 +3341,7 @@ ACTIONS = {
     "set_sheets_cookies": _action_set_sheets_cookies,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
+    "nsf_screenshot_diag": _action_nsf_screenshot_diag,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
     "clear_untracked": _action_clear_untracked,

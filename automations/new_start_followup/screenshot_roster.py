@@ -166,8 +166,74 @@ def fetch_roster_rows(monday_iso: Optional[str] = None) -> List[dict]:
     return rows
 
 
+def diagnose() -> int:
+    """Why can't THIS machine read the roster screenshot? Prints identity,
+    scopes, and the raw download result. Never calls the vision API, never
+    prints the token.
+
+    Exists because the failure is machine-specific and silent: the same file
+    reads fine from the laptop and 400'd on the mini (2026-08-08), which is what
+    sent the roll call down the sheet fallback and mis-tagged Bill Hirwa.
+    """
+    print("channel: {}".format(CHANNEL_ID))
+    try:
+        client = smp._client()
+    except Exception as exc:  # noqa: BLE001
+        print("FAIL: no usable Slack token on this machine -> {}".format(exc))
+        return 1
+
+    try:
+        who = client.auth_test()
+        print("identity: user={} id={} team={}".format(
+            who.get("user"), who.get("user_id"), who.get("team")))
+        scopes = (who.headers or {}).get("x-oauth-scopes") or ""
+        print("scopes  : {}".format(scopes or "(not reported)"))
+        for need in ("files:read", "channels:history", "groups:history"):
+            if scopes:
+                print("   {} {}".format("OK  " if need in scopes else "MISSING", need))
+    except Exception as exc:  # noqa: BLE001
+        print("FAIL: auth.test -> {}".format(exc))
+        return 1
+
+    try:
+        img = _find_roster_image(client)
+    except Exception as exc:  # noqa: BLE001
+        print("FAIL: couldn't read channel history -> {}".format(exc))
+        return 1
+    if not img:
+        print("FAIL: no roster image found in the newest 'New Starts Scheduled "
+              "for Monday' post. Has Aisha posted it?")
+        return 1
+    print("image   : name={!r} size={} mimetype={} id={}".format(
+        img.get("name"), img.get("size"), img.get("mimetype"), img.get("id")))
+
+    url = img.get("url_private_download") or img["url_private"]
+    try:
+        r = requests.get(url, headers={"Authorization": "Bearer {}".format(
+            smp._load_token())}, timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        print("FAIL: download raised -> {}".format(exc))
+        return 1
+    body = r.content
+    print("download: http={} content-type={} bytes={}".format(
+        r.status_code, r.headers.get("Content-Type", "?"), len(body)))
+    print("first16 : {!r}".format(body[:16]))
+    if body.startswith(_IMAGE_MAGIC):
+        print("RESULT  : OK — real image bytes. The vision call should work here.")
+        return 0
+    print("RESULT  : BAD — this is NOT an image. Slack served a sign-in/error "
+          "page, which is what reaches the API as '400 Could not process "
+          "image'. This machine's token can't read files in this channel: "
+          "it needs files:read AND the token's user must be a member. "
+          "Fix: `lucy set_slack_token <xoxp-...>` with the same token the "
+          "laptop uses.")
+    return 1
+
+
 if __name__ == "__main__":
     import sys
+    if "--diag" in sys.argv:
+        raise SystemExit(diagnose())
     rows = fetch_roster_rows()
     by = {}
     for r in rows:
