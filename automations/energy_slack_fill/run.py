@@ -21,6 +21,11 @@ FOUR GATES, any of which holds the whole day (exit 75, nothing written):
   * a name matches TWO reps — never guess which one gets the sale.
 A held day writes nothing and says why; the next pass retries.
 
+A block that posts NO tally at all is the one unchecked case, and it fills
+anyway with a loud line in the log (Eve 2026-08-07: a human re-checks the board
+every morning before it goes out, so missing beats unverified). ~1 day in 7
+lands here. If that morning re-check ever stops, this should become a gate.
+
   python -m automations.energy_slack_fill.run                 # preview yesterday
   python -m automations.energy_slack_fill.run --date 2026-08-04
   python -m automations.energy_slack_fill.run --week          # Mon..yesterday
@@ -269,8 +274,14 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
     # The office's own tally line — the ONLY independent check on the read, and
     # the thing that catches a line whose sale emoji we couldn't count.
     if blk.tally is None:
-        _log("  ! the block has no 'N/goal' tally line — nothing to check the "
-             "count against")
+        # Fills anyway, on purpose (Eve 2026-08-07): a human re-checks the board
+        # every morning before it goes out, so an unchecked day is better in
+        # than missing. It is the ONE thing here nothing verifies, hence the
+        # shout. Revisit if that morning re-check ever stops.
+        _log(f"  !! the block never posted its 'N/goal' tally line — nothing "
+             f"confirms these {total} sale(s). FILLING ANYWAY, eyeball this day")
+        _log("     ask the office to close the Energy block with made/goal "
+             "(e.g. '3/15') so there is something to check against")
     elif blk.tally != total:
         _log(f"  !! the board's own tally says {blk.tally}/{blk.goal or '?'} but "
              f"the lines add to {total} — holding, nothing written")

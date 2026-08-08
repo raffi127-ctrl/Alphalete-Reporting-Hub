@@ -96,6 +96,17 @@ s/o Hashirassss
 S/O <@U09MXMU76MB> for all they do!
 <@U0ACYK2MCQ6> <@U060MNFQLJ1> <@U095L0FG276>"""
 
+# ONE EMOJI = ONE SALE even when the emoji isn't :zap:. "PABLO-:us::us:" is two
+# sales marked with a flag; before this, any line without a :zap: was counted as
+# exactly 1 and the second sale vanished (the tally would then hold the day).
+OTHER_MARK = """:zap:Energy:zap:
+
+PABLO-:us::us:
+Edgar :fire::fire::fire:
+:ant:-:us:
+IBK :zap:
+7/15"""
+
 CASES = [
     # text, expected [(name, count)], expected tally
     (MON, [("Thomas", 2), ("Charley", 2), ("PABLO", 1), ("Edgar", 1),
@@ -106,6 +117,7 @@ CASES = [
            ("Charley/soto", 1), ("Thomas/Tim", 1), ("Edgar", 1)], 6),
     (WED, [("Edgar", 1), ("Pranish", 1), ("IBK", 1)], 3),
     (THU, [("Rivera", 1), ("Edgar", 1)], 2),
+    (OTHER_MARK, [("PABLO", 2), ("Edgar", 3), (":ant:", 1), ("IBK", 1)], 7),
 ]
 
 WHEN = dt.datetime(2026, 8, 6, 21, 24, tzinfo=P.TZ)

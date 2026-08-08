@@ -19,23 +19,28 @@ block, then an Energy block, each ending in its own "made/goal" tally:
 
     7/18
 
-One line = one rep, and the :zap: emoji are the sales — Thomas 2, Charley 2,
-Edgar 1. The traps, all of them seen in one week of real posts (8/3-8/6):
+ONE EMOJI = ONE SALE. The :zap: on a line are counted, not looked for — Thomas
+2, Charley 2, Edgar 1. The traps, all of them seen in one week of real posts
+(8/3-8/6):
 
   * THE HEADER IS DIFFERENT EVERY DAY. ":battery::zap:Energy :zap::battery:",
     ":tornado::sparkles:Energy :sparkles::tornado:", or a bare "Energy". Strip
     the emoji and the leftover word is the only stable thing about it.
   * A LINE CAN HAVE NO :zap: AT ALL. "PABLO-:us:" is a real sale flagged with a
-    flag emoji instead. Counted as 1 and FLAGGED, because we can't know whether
-    a second :us: would have meant two — the tally line below catches that.
+    flag emoji instead — and the same rep on a two-sale night writes
+    "PABLO-:us::us:". So when the line carries no :zap:, the REPEATED emoji is
+    the sale mark and its repeat count is the sale count. Always FLAGGED, since
+    a rep who decorates one sale with two identical emoji would read as two;
+    the tally line below is what catches that.
   * A NAME CAN BE AN EMOJI. ":ant:-:zap:" is Anthony Damian Castro. So when a
     line has no letters, the emoji IS the name and goes through ALIASES.
   * TWO NAMES ON ONE LINE = ONE SALE. "Pranish/ Abdallah :zap:", "Charley/soto",
     "Thomas/Tim" — a rep and whoever they were training. One :zap:, one sale,
     credited to whichever of the two is on the board's Energy roster.
   * THE TALLY LINE MOVES. "7/18", "3/15 ", "Base 2/15" — sometimes prefixed,
-    sometimes not, sometimes after a blank line. It is also the only
-    independent check we get, so a mismatch stops the fill (see run.py).
+    sometimes not, sometimes after a blank line. It closes every block: sales
+    made over the day's goal. It is also the only independent check we get, so
+    a mismatch — or a block that never posts one — stops the fill (run.py).
 
 VALIDATED against the board's own hand-filled EN columns for Mon 8/3 through
 Thu 8/6 2026 — 4 days, every rep, every count, and every tally identical.
@@ -155,6 +160,21 @@ def _bare_word(line: str) -> str:
     return w if _HEADER_WORD.match(w) and w in SECTION_WORDS else ""
 
 
+def _repeated_emoji(text: str) -> tuple[int, str]:
+    """(how many times, which emoji) for the most-repeated emoji on a line that
+    carries no :zap: — "PABLO-:us::us:" is two sales marked with a flag.
+
+    Skin tones don't count as their own mark (":man-surfing::skin-tone-2:" twice
+    is TWO sales, not four). Ties fall to the first emoji on the line and come
+    back as 1, which is the old behaviour and always flagged for a human.
+    """
+    toks = _EMOJI.findall(_SKIN.sub(" ", text))
+    if not toks:
+        return 1, ""
+    best = max(toks, key=toks.count)
+    return toks.count(best), best
+
+
 def read_line(raw: str) -> EnergyLine | None:
     """One Energy-block line -> (name, sale count), or None if it isn't one."""
     if not raw.strip() or TALLY_RE.match(raw) or SHOUTOUT_RE.match(raw):
@@ -166,10 +186,19 @@ def read_line(raw: str) -> EnergyLine | None:
     count = len(_SALE_MARK.findall(raw))
     rest = _SALE_MARK.sub(" ", raw)
     if not count:
-        # A sale flagged with some other emoji ("PABLO-:us:"). It IS a sale, but
-        # we can't read a quantity off it, so take 1 and say so.
-        count = 1
-        flags.append("no :zap: on the line — counted as 1, verify")
+        # Sales flagged with some other emoji ("PABLO-:us:", "PABLO-:us::us:").
+        # The repeated emoji is the mark, so its repeat count is the sale count.
+        count, mark = _repeated_emoji(rest)
+        if count > 1:
+            # Take the mark out of the name — "PABLO" and not "PABLO :us::us:".
+            stripped = rest.replace(mark, " ")
+            if _EMOJI.sub(" ", stripped).strip(" \t-:,.·•*") or \
+                    _EMOJI.findall(stripped):
+                rest = stripped
+            flags.append(f"no :zap: — counted {count} from {count}x {mark}, "
+                         "verify against the tally")
+        else:
+            flags.append("no :zap: on the line — counted as 1, verify")
     if re.search(r"[A-Za-z]", _EMOJI.sub(" ", rest)):
         name = _EMOJI.sub(" ", rest)                 # ordinary name + emoji
         name = re.sub(r"\s+", " ", name.strip(" \t-:,.·•*")).strip()
@@ -177,7 +206,14 @@ def read_line(raw: str) -> EnergyLine | None:
         # The emoji IS the name (":ant:-:zap:" is Anthony). Keep the tokens
         # WHOLE — stripping the colons off would leave "ant", which is not what
         # ALIASES is keyed on and reads like a rep nobody can find.
-        name = "".join(_EMOJI.findall(_SKIN.sub(" ", rest)))
+        toks = _EMOJI.findall(_SKIN.sub(" ", rest))
+        # ":ant:-:us:" — one sale, marked with a flag, by the rep who signs with
+        # the ant. Neither emoji repeats, so nothing tells the name from the
+        # mark except the roster: if exactly one token is a rep we know, that
+        # one is the name. Otherwise keep them all and let the day hold — the
+        # fix for an unknown emoji signature is a line in ALIASES.
+        known = [t for t in toks if t.lower() in ALIASES]
+        name = "".join(known) if len(known) == 1 else "".join(toks)
     if not name:
         return None
     return EnergyLine(raw=raw.strip(), name=name, count=count, flags=flags)
