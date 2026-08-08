@@ -328,7 +328,7 @@ _ACCOUNT_NAMES = {
     "peaksalesstrategies": "Peak Sales Strategies",
     "peaksalesstrategiestx": "Peak Sales Strategies",
     "rawsalesgroupmarketing": "Raw Sales Group Marketing",
-    "ascendaacquisitions": "Ascenda Acquisitions",
+    "ascendraacquisitions": "Ascendra Acquisitions",
 }
 
 
