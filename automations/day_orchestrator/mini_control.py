@@ -123,7 +123,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
-                    "nsf_screenshot_diag",
+                    "nsf_screenshot_diag", "nsf_status",
                     "find_group"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -1345,6 +1345,19 @@ def _action_diag(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         pass
     return True, "\n".join(out)
+
+
+def _action_nsf_status(args: str) -> tuple[bool, str]:
+    """New-Start Follow-Up `--mode status` on this machine. Reads only — status
+    mode has no posting path at all — so it's the safe way to check from the
+    laptop that the mini can still build a roster (screenshot, then this week's
+    snapshot, then refuse)."""
+    ok, out = _run_cmd([sys.executable, "-m", "automations.new_start_followup.run",
+                        "--mode", "status"],
+                       timeout_s=600, log_name="nsf-status.log")
+    keep = [ln for ln in (out or "").splitlines()
+            if ln.startswith(("[roster]", "WARNING", "OBCL tab", "Leaders", "INCOMPLETE"))]
+    return ok, (" · ".join(keep)[:900] or (out or "")[-300:])
 
 
 def _action_nsf_fix_rollcall(args: str) -> tuple[bool, str]:
@@ -3444,6 +3457,7 @@ ACTIONS = {
     "diag": _action_diag,
     "nsf_screenshot_diag": _action_nsf_screenshot_diag,
     "nsf_fix_rollcall": _action_nsf_fix_rollcall,
+    "nsf_status": _action_nsf_status,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
