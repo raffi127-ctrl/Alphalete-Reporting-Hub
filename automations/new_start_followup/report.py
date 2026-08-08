@@ -12,6 +12,8 @@ exactly the miss this report exists to catch.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from automations.new_start_followup import (
@@ -116,10 +118,31 @@ class Reconciliation:
 
 
 def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
-          client=None, allow_sheet_roster: bool = False) -> Reconciliation:
+          client=None, allow_sheet_roster: bool = False,
+          roster_json=None) -> Reconciliation:
     ros = roster_mod.load()
     if monday is None:
         monday = obcl.upcoming_monday()
+
+    # A roster SNAPSHOT taken on a machine that can read the screenshot, so a
+    # machine that can't (the mini, whose token has no files:read) still works
+    # off the true list instead of the OBCL sheet. Written by
+    # `fix_rollcall.py --snapshot`. Interviewer -> count only: new-start names
+    # never go in, the repo is PUBLIC.
+    if roster_json is not None:
+        snap = json.loads(Path(roster_json).read_text(encoding="utf-8"))
+        owed = {k: int(v) for k, v in (snap.get("owed") or {}).items()}
+        if not owed:
+            raise RuntimeError("Roster snapshot {} has no 'owed' counts.".format(roster_json))
+        snap_monday = snap.get("monday")
+        if snap_monday and snap_monday != monday.isoformat():
+            raise RuntimeError(
+                "Roster snapshot is for the week of {}, but this run is for {}. "
+                "Re-take it with --snapshot.".format(snap_monday, monday.isoformat()))
+        tab = snap.get("source") or "roster snapshot"
+        print("[roster] snapshot {}: {} new starts across {} interviewers"
+              .format(roster_json, sum(owed.values()), len(owed)))
+        return _assemble(monday, friday, client, ros, owed, tab, {})
 
     # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
     # via Claude vision. The live OBCL tab carries people we're NOT moving forward
@@ -166,6 +189,12 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         monday, tab, starts = obcl.read_new_starts(monday)
         owed = obcl.counts_by_interviewer(starts)
 
+    return _assemble(monday, friday, client, ros, owed, tab, sheet_only)
+
+
+def _assemble(monday, friday, client, ros, owed, tab, sheet_only) -> Reconciliation:
+    """Join the chosen roster against the thread. Shared by every roster source
+    so they can't drift apart."""
     if friday is None:
         friday = monday - dt.timedelta(days=3)
     th = thread_mod.read_thread(friday=friday, client=client)

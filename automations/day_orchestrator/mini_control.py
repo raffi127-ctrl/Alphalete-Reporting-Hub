@@ -125,7 +125,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
-                  "set_gdocs_token"}
+                  "set_gdocs_token", "set_slack_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1263,6 +1263,25 @@ def _action_diag(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         pass
     return True, "\n".join(out)
+
+
+def _action_nsf_fix_rollcall(args: str) -> tuple[bool, str]:
+    """Edit THIS week's posted New-Start roll call so it matches Aisha's
+    screenshot. Runs here because only the author (Lucy, this machine) can
+    chat.update the message — the laptop can read the screenshot but can't edit.
+
+    DRY-RUN by default; pass `--post` to actually edit. Never posts a new
+    message: a second list in the thread is what we're avoiding."""
+    import shlex
+    extra = shlex.split(args) if (args or "").strip() else []
+    ok, out = _run_cmd([sys.executable, "-m",
+                        "automations.new_start_followup.fix_rollcall", "--apply", *extra],
+                       timeout_s=300, log_name="nsf-fix-rollcall.log")
+    keep = [ln for ln in (out or "").splitlines()
+            if ln.startswith(("[identity]", "[roster]", "[edited]", "[dry-run]",
+                              "REFUSING", "No roll call", "Posted roll call",
+                              "+", "-")) and not ln.startswith("---")]
+    return ok, (" · ".join(keep)[:900] or (out or "")[-300:])
 
 
 def _action_nsf_screenshot_diag(args: str) -> tuple[bool, str]:
@@ -3342,6 +3361,7 @@ ACTIONS = {
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "nsf_screenshot_diag": _action_nsf_screenshot_diag,
+    "nsf_fix_rollcall": _action_nsf_fix_rollcall,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
     "clear_untracked": _action_clear_untracked,
