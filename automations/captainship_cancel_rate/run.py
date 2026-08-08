@@ -161,9 +161,27 @@ def main(argv=None) -> int:
         print(f"  ✓ {csv_path}")
 
     parsed = pull.parse(csv_path)
-    print(f"  Crosstab shape: {parsed.get('shape', '?')} "
+    shape = parsed.get("shape", "?")
+    print(f"  Crosstab shape: {shape} "
           f"('Rep Name' is optional — both shapes give owner-level rows)")
     print(f"  Teams in the crosstab: {', '.join(parsed['teams_seen'])}")
+
+    # Both shapes parse, but they are NOT equally correct. Only the collapsed
+    # (owner-level) export gives an honest 30-60 rate — expanding restricts the
+    # rows to reps with current-week data while 30-60 is a 30-60-days-ago
+    # cohort, so reps who sold then and not now fall out of the owner subtotal
+    # (pull.py's docstring has the measured drift). 0-30 is unaffected. That
+    # would fill silently-wrong numbers with no crash, so say so LOUDLY.
+    shape_warning = None
+    if shape == "rep-expanded":
+        shape_warning = (
+            "The Metrics crosstab came back REP-EXPANDED. 0-30 is fine, but "
+            "the 30-60 rates are computed over a partial cohort and read a few "
+            "tenths (up to several points on low-volume ICDs) off the truth. "
+            "This report wants the COLLAPSED owner-level export — check that "
+            "pull.METRICS_URL still points at the plain view with no saved "
+            "rep-expanded custom view attached.")
+        print(f"\n  ⚠ {shape_warning}\n")
 
     # --- Phase 2: fill each captain's tab ---
     print("\nPhase 2: fill the captain tabs")
@@ -190,7 +208,7 @@ def main(argv=None) -> int:
 
     # --- Manifest (Hub 'Retry failed only' + failure-help callout) ---
     if not args.dry_run and args.only is None:
-        _write_manifest(failed, went_dark_all, args)
+        _write_manifest(failed, went_dark_all, args, shape_warning)
 
     if failed:
         print(f"\n=== run INCOMPLETE — NOT marking complete. "
@@ -205,7 +223,8 @@ def main(argv=None) -> int:
     return 0
 
 
-def _write_manifest(failed: list, went_dark_all: dict, args) -> None:
+def _write_manifest(failed: list, went_dark_all: dict, args,
+                    shape_warning: str | None = None) -> None:
     try:
         from automations.shared import run_manifest as _rm
     except Exception:
@@ -252,6 +271,26 @@ def _write_manifest(failed: list, went_dark_all: dict, args) -> None:
                     message="Heads up — the Cancel Rate report filled every "
                             "captain tab, but an ICD stopped showing up: "
                             + dark_note))
+        elif shape_warning:
+            # Tabs all filled, so this is not a failure — but the 30-60 numbers
+            # are off and a re-run can't fix it (the view's shape is the
+            # problem, not a flaky load). Flag it; don't mark clean.
+            _rm.write_manifest(
+                REPORT_ID, failed=[], retry_args=[], kind="report",
+                note="⚠ 30-60 rates may be slightly off — " + shape_warning,
+                remediation=_rm.make_remediation(
+                    reason="Every captain tab filled, but the Metrics crosstab "
+                           "came back rep-expanded: " + shape_warning,
+                    fix="Re-running will NOT fix this — the Tableau view's row "
+                        "depth is the problem. Open the Metrics view, make sure "
+                        "no rep-expanded custom view is applied (the rep '+' "
+                        "above the ICD name is collapsed), then re-run. 0-30 is "
+                        "unaffected either way.",
+                    link=pull.METRICS_URL,
+                    message="Heads up — the Cancel Rate report filled every "
+                            "captain tab, but the Tableau view came back "
+                            "rep-expanded, so today's 30-60 numbers are a bit "
+                            "off. 0-30 is fine. Can someone check the view?"))
         else:
             _rm.mark_clean(REPORT_ID, kind="report")
     except Exception:
