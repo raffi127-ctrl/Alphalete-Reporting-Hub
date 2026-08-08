@@ -36,10 +36,22 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
+# ALLEXP = Megan's all-owners, "This Week", REP-ROWS-EXPANDED custom view
+# (saved 2026-08-07). Switched here because the Metrics worksheet was rebuilt
+# and now COLLAPSES to ICD-Owner level by default — the crosstab drops the
+# 'Rep Name' column entirely unless the rep hierarchy is expanded (hit the '+'
+# above the ICD name). The old RafLocalofficeINTABP view rode that collapsed
+# state, so every ABP pull started coming back owner-only and the parse died on
+# a missing 'Rep Name'. ALLEXP bakes the expansion + the This-Week (running
+# week-to-date, so the daily card keeps its day-over-day movement) param into
+# the saved view; it's all-owners, and parse() self-filters to OWNER, so one
+# view serves every office — office_metrics points ALL_OFFICE_ABP_VIEW here too.
+# (If it ever drifts back to collapsed, re-save ALLEXP with the rep '+'
+# expanded, on This Week — same fix.)
 VIEW_URL = os.environ.get("ABP_NI_VIEW_URL") or (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/Metrics/"
-    "07afddc4-36b3-4ecc-98a8-28b9ef1648c1/RafLocalofficeINTABP?:iid=1"
+    "0d5c97aa-d39e-4541-bf88-a8e599ab5e69/ALLEXP?:iid=1"
 )
 # The only data worksheet in the view (the other is 'zzz Last Refresh
 # speedtest'). Verified via the Crosstab dialog enumeration 2026-07-10.

@@ -36,13 +36,21 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 # Shared ALL-OFFICE ABP view. The ABP module already FILTERS by owner, so every
 # office pulls this ONE view (deduped across offices by the Step-2 crosstab cache)
 # and slices to its own owner — no per-office ABP view needed.
-# MUST be genuinely all-teams: AllOfficeINTABP is (PROVEN 2026-07-15, --prove-abp
+# MUST be genuinely all-teams: AllOfficeINTABP was (PROVEN 2026-07-15, --prove-abp
 # IDENTICAL for rashad 21 reps + aya 23 reps). Do NOT use RafLocalofficeINTABP
 # (07afddc4) — despite the name/appearance it is scoped to RAF's office; the proof
 # returned ZERO of Rashad's reps when sliced. The name of a view is not proof of
 # its scope — always --prove-abp a candidate before pointing ABP at it.
+#
+# 2026-08-07: repointed to ALLEXP. The 'Metrics Call Last week data (Internet)'
+# worksheet was rebuilt and now COLLAPSES to ICD-Owner level by default, so
+# AllOfficeINTABP (and every non-expanded view) stopped emitting the 'Rep Name'
+# column — ABP crashed for EVERY office. ALLEXP is Megan's all-owners, This-Week,
+# rep-ROWS-EXPANDED saved view; it keeps Rep Name in the crosstab. Verified the
+# same day it slices cleanly for all 10 ABP offices (raf/rashad/aya/cyrus/hammad/
+# kash/salik/cody/haytham/trang), each with an office total + per-rep rows.
 ALL_OFFICE_ABP_VIEW = (_T + "ATTTRACKER2_1-D2D/Metrics/"
-                       "b0b90f8f-e597-425d-93ae-c55cf1898ae1/AllOfficeINTABP?:iid=1")
+                       "0d5c97aa-d39e-4541-bf88-a8e599ab5e69/ALLEXP?:iid=1")
 # Flip to True only after the proof is clean for every office (sliced all-office
 # == per-office view). When True, metrics_for() points ABP at the shared view.
 # PROVEN + flipped 2026-07-15: --prove-abp IDENTICAL for rashad (21 reps) + aya
