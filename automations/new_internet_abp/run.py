@@ -1,9 +1,10 @@
 """New Internet ABP% — daily run (Raf's Local Office).
 
-Pulls the ABP crosstab from the RafLocalofficeINTABP custom view
-(ATT TRACKER 2.1 - D2D → Metrics tab, pre-filtered to Raf's office),
-fills the 'Local Office - New Internet ABP%' tab, then renders a
-multi-week PNG and posts it into today's 7am Metrics thread in
+Pulls the ABP crosstab from the ALLEXP custom view (ATT TRACKER 2.1 -
+D2D → Metrics tab; all-owners, This Week, rep-rows expanded — see
+pull.VIEW_URL and [[reference_abp_allexp_view]]), self-filters to the
+office owner, fills the 'Local Office - New Internet ABP%' tab, then
+renders a multi-week PNG and posts it into today's 7am Metrics thread in
 #alphalete-sales (💳 reaction on the parent).
 
   python -m automations.new_internet_abp.run                # today, live
@@ -68,7 +69,11 @@ def main(argv=None) -> int:
         return 0
 
     # --- Pull ---
-    print("Step 1: Tableau ABP crosstab pull (RafLocalofficeINTABP)...")
+    # Name the view we're ACTUALLY pulling, derived from the URL — so this line
+    # can't go stale the way the old hardcoded 'RafLocalofficeINTABP' did once the
+    # source moved to ALLEXP (2026-08-07).
+    _view_name = pull.VIEW_URL.rstrip("/").split("/")[-1].split("?")[0] or "ABP view"
+    print(f"Step 1: Tableau ABP crosstab pull ({_view_name})...")
     if args.skip_download:
         csv_path = Path(tempfile.gettempdir()) / "new_internet_abp_local_office.csv"
         if not csv_path.exists():
