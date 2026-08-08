@@ -228,7 +228,7 @@
     },
     "disable_owner_showdown_preview_agent": {
       "on_scheduler": false,
-      "_note": "Unload com.alphalete.owner-showdown-preview. Megan 2026-08-07: the 8am preview is no longer wanted, so the agent + wrapper + plist are gone. `run.py --preview` still exists for an on-demand preview to Megan (writes nothing, never reaches the group) — it is simply not scheduled. `lucy rerun disable_owner_showdown_preview_agent`.",
+      "_note": "Unload com.alphalete.owner-showdown-preview. Megan 2026-08-07: the 8am preview is no longer wanted, so the agent + wrapper + plist are gone. `run.py --preview` still exists for an on-demand preview to Megan (writes nothing, never reaches the group) \u2014 it is simply not scheduled. `lucy rerun disable_owner_showdown_preview_agent`.",
       "display_name": "Disable Owner Showdown 8am preview agent",
       "source_type": "local",
       "data_sources": [],
@@ -272,7 +272,7 @@
     },
     "install_owner_showdown_agent": {
       "on_scheduler": false,
-      "_note": "One-shot installer for com.alphalete.owner-showdown-daily on Lucy 1 / the mini (9:00am CST daily; deploy/owner_showdown_daily.sh -> python -m automations.owner_showdown.run --email). Sends the Owner Showdown flyer as a PDF, every day of the competition, to Raf cc Megan. `lucy update` then `lucy rerun install_owner_showdown_agent`. TEMP — remove after 8/31 with the rest of the card.",
+      "_note": "One-shot installer for com.alphalete.owner-showdown-daily on Lucy 1 / the mini (9:00am CST daily; deploy/owner_showdown_daily.sh -> python -m automations.owner_showdown.run --email). Sends the Owner Showdown flyer as a PDF, every day of the competition, to Raf cc Megan. `lucy update` then `lucy rerun install_owner_showdown_agent`. TEMP \u2014 remove after 8/31 with the rest of the card.",
       "display_name": "Install Owner Showdown daily agent (9am)",
       "source_type": "local",
       "data_sources": [],
@@ -1466,8 +1466,8 @@
     },
     "terminated_reps": {
       "on_scheduler": true,
-      "_note": "Terminated Reps: reads the SALES BOARD 2025 week tab (both the roster's 'Termination Date' column AND the 'New Starts/Raf' box's 'Terminated' roll-call cells — the two blocks mark a termination differently and reading one loses half), files what's new into 'Terminated Reps' on the Raf tracker, and posts the day in #revision-emails inside that week's 'Terminated Reps WE <m>.<d>' thread. LIVE on the real tab since 2026-08-07 (Eve lifted the sandbox gate); base_args empty because the defaults ARE live — `--dry-run` previews, `--sandbox` writes a duplicate tab. Reads the PREVIOUS week's tab too, bounded to the last 4 days: a new week tab is created every MONDAY and the weekend's roll-call keeps landing on the old one, so a rep marked Monday against Saturday would otherwise never be filed. Fully idempotent: the tracker dedupes on name + termination date (±1 day, because ~83 historical rows were entered the morning after) and the Slack reply skips anyone already named in the thread, so extra passes cost nothing. Posts EVERY not-yet-posted day of the week, not just the run date — at 4am nobody is marked for today yet, and a run-date-only post would miss each day permanently. Sheets-only, no browser session. Runs on the mini so the post goes out as Lucy; from anywhere else it posts under whoever's Slack token is on that box.",
-      "display_name": "Terminated Reps → tracker + #revision-emails",
+      "_note": "Terminated Reps: reads the SALES BOARD 2025 week tab (both the roster's 'Termination Date' column AND the 'New Starts/Raf' box's 'Terminated' roll-call cells \u2014 the two blocks mark a termination differently and reading one loses half), files what's new into 'Terminated Reps' on the Raf tracker, and posts the day in #revision-emails inside that week's 'Terminated Reps WE <m>.<d>' thread. LIVE on the real tab since 2026-08-07 (Eve lifted the sandbox gate); base_args empty because the defaults ARE live \u2014 `--dry-run` previews, `--sandbox` writes a duplicate tab. Reads the PREVIOUS week's tab too, bounded to the last 4 days: a new week tab is created every MONDAY and the weekend's roll-call keeps landing on the old one, so a rep marked Monday against Saturday would otherwise never be filed. Fully idempotent: the tracker dedupes on name + termination date (\u00b11 day, because ~83 historical rows were entered the morning after) and the Slack reply skips anyone already named in the thread, so extra passes cost nothing. Posts EVERY not-yet-posted day of the week, not just the run date \u2014 at 4am nobody is marked for today yet, and a run-date-only post would miss each day permanently. Sheets-only, no browser session. Runs on the mini so the post goes out as Lucy; from anywhere else it posts under whoever's Slack token is on that box.",
+      "display_name": "Terminated Reps \u2192 tracker + #revision-emails",
       "source_type": "api",
       "data_sources": [],
       "command": [
@@ -1512,9 +1512,9 @@
     "energy_slack_fill": {
       "order": 3.9,
       "on_scheduler": true,
-      "_note": "Fills the Energy reps' EN column on 'Alphalete SALES BOARD 2025' from #alphalete-sales, so it is done BEFORE alphalete_production (order 4) renders the board at ~4am. Nothing else feeds those cells — the Energy campaign (col CH) is hand-typed every morning off the running board the office re-posts all evening; the last message of the night is the finished day. Only ever RAISES a cell, so re-running is safe. Holds (exit 75, writes nothing) when there is no Energy block for the day, when the block's own 'N/goal' tally disagrees with the lines, or when a name matches no rep / two reps on the board's Energy roster. Validated cell-for-cell against the hand-filled Mon 8/3 - Thu 8/6 columns (16 rep-days, 4 tallies, zero diffs).",
-      "_warn": "LIVE on the PROD workbook from 2026-08-08 (Eve turned it on 8/7 without a live rehearsal — the downside is bounded: every failure mode HOLDS and writes nothing, which just leaves the cells blank exactly as they are when nobody fills them by hand). Preview any day without writing: `python -m automations.energy_slack_fill.run --date YYYY-MM-DD` (no --apply). Point it at a duplicated Sheet with --sheet-id or ENERGY_FILL_SHEET_ID.",
-      "display_name": "Energy Sales → Sales Board (from Slack)",
+      "_note": "Fills the Energy reps' EN column on 'Alphalete SALES BOARD 2025' from #alphalete-sales, so it is done BEFORE alphalete_production (order 4) renders the board at ~4am. Nothing else feeds those cells \u2014 the Energy campaign (col CH) is hand-typed every morning off the running board the office re-posts all evening; the last message of the night is the finished day. Only ever RAISES a cell, so re-running is safe. Holds (exit 75, writes nothing) when there is no Energy block for the day, when the block's own 'N/goal' tally disagrees with the lines, or when a name matches no rep / two reps on the board's Energy roster. Validated cell-for-cell against the hand-filled Mon 8/3 - Thu 8/6 columns (16 rep-days, 4 tallies, zero diffs).",
+      "_warn": "LIVE on the PROD workbook from 2026-08-08 (Eve turned it on 8/7 without a live rehearsal \u2014 the downside is bounded: every failure mode HOLDS and writes nothing, which just leaves the cells blank exactly as they are when nobody fills them by hand). Preview any day without writing: `python -m automations.energy_slack_fill.run --date YYYY-MM-DD` (no --apply). Point it at a duplicated Sheet with --sheet-id or ENERGY_FILL_SHEET_ID.",
+      "display_name": "Energy Sales \u2192 Sales Board (from Slack)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -2083,8 +2083,8 @@
     "all_units_board_email": {
       "order": 10.1,
       "on_scheduler": false,
-      "_note": "RETIRED 2026-07-31 — on_scheduler false. The All Units board is no longer its own email; it is the second section of the Alphalete Org Sales Board email, under a labelled divider (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Eve: 'lo que antes eran dos mails, hay que juntarlos en uno'. The board entry is gone from board_emails.boards, so this command would now exit with 'unknown board all-units' — switched off rather than deleted so the history of what used to run here stays readable. PRIOR BEHAVIOUR: BUILDS AND POSTS FOR REVIEW — it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini — it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
-      "display_name": "All Units Org Sales Board Email (a revisión)",
+      "_note": "RETIRED 2026-07-31 \u2014 on_scheduler false. The All Units board is no longer its own email; it is the second section of the Alphalete Org Sales Board email, under a labelled divider (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Eve: 'lo que antes eran dos mails, hay que juntarlos en uno'. The board entry is gone from board_emails.boards, so this command would now exit with 'unknown board all-units' \u2014 switched off rather than deleted so the history of what used to run here stays readable. PRIOR BEHAVIOUR: BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
+      "display_name": "All Units Org Sales Board Email (a revisi\u00f3n)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -2700,7 +2700,7 @@
     "applicant_push": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_off_scheduler_note": "UNIFIED office-11580 (Carlos) recruiting push: runs the BATCH stage (Resume Pushing — extract resumes + send-to-AI) then the LEFTOVERS stage (OAT — send/remove/re-text/flag the one-app-at-a-time queue) on ONE warm real-Chrome/CDP AppStream session. Merges resume_pushing + oat_processing so a single warm/Indeed re-login serves both and they stop fighting over the session. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it; real schedule is the launchd job com.alphalete.applicant-push (q10min 7am-10pm CST daily, installed via install_applicant_push_agent). This entry gives `lucy rerun applicant_push --dry-run` (safe probe) and `lucy rerun applicant_push` (LIVE) a path, and backs the Hub card's Run button. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE — always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first. A batch Indeed-Turnstile wedge does NOT stop the leftovers stage.",
+      "_off_scheduler_note": "UNIFIED office-11580 (Carlos) recruiting push: runs the BATCH stage (Resume Pushing \u2014 extract resumes + send-to-AI) then the LEFTOVERS stage (OAT \u2014 send/remove/re-text/flag the one-app-at-a-time queue) on ONE warm real-Chrome/CDP AppStream session. Merges resume_pushing + oat_processing so a single warm/Indeed re-login serves both and they stop fighting over the session. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it; real schedule is the launchd job com.alphalete.applicant-push (q10min 7am-10pm CST daily, installed via install_applicant_push_agent). This entry gives `lucy rerun applicant_push --dry-run` (safe probe) and `lucy rerun applicant_push` (LIVE) a path, and backs the Hub card's Run button. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE \u2014 always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first. A batch Indeed-Turnstile wedge does NOT stop the leftovers stage.",
       "display_name": "Applicant Push (Batch + Leftovers, office 11580)",
       "source_type": "appstream",
       "data_sources": [],
@@ -2719,7 +2719,7 @@
     },
     "install_applicant_push_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_applicant_push_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.applicant-push on Lucy 2 — the UNIFIED batch + OAT-leftovers push, every 10 min 7am-10pm CST daily on one warm CDP session. CUTOVER: after this installs, disable the two old agents (disable_resume_pushing_agent + disable_oat_processing_agent) so nothing double-runs. LIVE (send/remove/re-text are IRREVERSIBLE) — dry-run first: `bash deploy/applicant_push.sh --dry-run`. install_agent auto-registers the Hub card via hub_coverage. Re-runnable any time.",
+      "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_applicant_push_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.applicant-push on Lucy 2 \u2014 the UNIFIED batch + OAT-leftovers push, every 10 min 7am-10pm CST daily on one warm CDP session. CUTOVER: after this installs, disable the two old agents (disable_resume_pushing_agent + disable_oat_processing_agent) so nothing double-runs. LIVE (send/remove/re-text are IRREVERSIBLE) \u2014 dry-run first: `bash deploy/applicant_push.sh --dry-run`. install_agent auto-registers the Hub card via hub_coverage. Re-runnable any time.",
       "display_name": "Install: Applicant Push LaunchAgent",
       "source_type": "local",
       "data_sources": [],
@@ -4359,7 +4359,7 @@
     "att_owners_list": {
       "order": 15.7,
       "on_scheduler": true,
-      "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' — the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed — red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate — it tags nobody) and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
+      "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' \u2014 the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed \u2014 red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate \u2014 it tags nobody) and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
       "display_name": "ATT Owners List (weekly roster)",
       "source_type": "tableau",
       "data_sources": [],
@@ -4906,8 +4906,8 @@
     },
     "override_bulletin_send": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin SEND. The scheduled send is the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent (deploy/override_bulletin_send_fri.sh, Fri 10:30-13:00 CST q25m, still --test). This entry exists so a CORRECTED bulletin can be re-sent by hand the same day. base_args are deliberately a DRY RUN — the caller must ask for the send explicitly, so a stray `lucy rerun override_bulletin_send` can never publish to the org: `lucy rerun override_bulletin_send --test --send` (3-person test group) or `--send --force` (FULL distro + Slack). --force is required for any same-week resend: unlike the DD bulletin, the override bulletin has NO separate test state, so a --test --send already burns the week in override_bulletin_last_sent.txt. Renders OUR copy tab, never the VA's live tab. Added 2026-08-07 (Eve).",
-      "display_name": "Override Bulletin — re-send (dry run unless --send)",
+      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin SEND. The scheduled send is the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent (deploy/override_bulletin_send_fri.sh, Fri 10:30-13:00 CST q25m, still --test). This entry exists so a CORRECTED bulletin can be re-sent by hand the same day. base_args are deliberately a DRY RUN \u2014 the caller must ask for the send explicitly, so a stray `lucy rerun override_bulletin_send` can never publish to the org: `lucy rerun override_bulletin_send --test --send` (3-person test group) or `--send --force` (FULL distro + Slack). --force is required for any same-week resend: unlike the DD bulletin, the override bulletin has NO separate test state, so a --test --send already burns the week in override_bulletin_last_sent.txt. Renders OUR copy tab, never the VA's live tab. Added 2026-08-07 (Eve).",
+      "display_name": "Override Bulletin \u2014 re-send (dry run unless --send)",
       "source_type": "sheet",
       "data_sources": [],
       "command": [
@@ -4930,8 +4930,8 @@
     },
     "override_special_probe": {
       "on_scheduler": false,
-      "_off_scheduler_note": "READ-ONLY diagnostic (automations.override_bulletin.special_probe). Asks Tableau TODAY for the last N weeks of Raf's Special Override and diffs it against the copy tab and the VA's live tab, and force-downloads DD Detail PER PERIOD to show which past weeks a period-filtered pull actually carries. Settles whether the 6.14-7.5 shortfall was a source that SETTLED after we filled it (fix: widen the backtrack past the regular component) or a partial parse (fix: the parser) BEFORE either is built. Writes NOTHING to any tab. `lucy rerun override_special_probe [--weeks 8]`. TIMEOUT 45m, not 20: run._scan_summary alone downloads the ORG Override Summary for FIVE candidate retail periods (offsets +1,0,+2,-1,+3) before the probe pulls anything of its own, and that view is the flaky one — its Crosstab dialog opens empty and each attempt costs a reopen + extra hydration. The 2026-08-07 15:16 run spent the entire 20m budget still inside that scan (46-line log, every line an ORG Override Summary retry) and printed not one number. override_backtrack does the same scan and takes ~31m end to end on the default 45, so 45 is the measured shape of this work, not padding. If it ever times out at 45 too, the fix is to narrow the scan window for the probe — NOT to raise the cap again.",
-      "display_name": "Override Bulletin — probe the special/DD sources",
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.override_bulletin.special_probe). Asks Tableau TODAY for the last N weeks of Raf's Special Override and diffs it against the copy tab and the VA's live tab, and force-downloads DD Detail PER PERIOD to show which past weeks a period-filtered pull actually carries. Settles whether the 6.14-7.5 shortfall was a source that SETTLED after we filled it (fix: widen the backtrack past the regular component) or a partial parse (fix: the parser) BEFORE either is built. Writes NOTHING to any tab. `lucy rerun override_special_probe [--weeks 8]`. TIMEOUT 45m, not 20: run._scan_summary alone downloads the ORG Override Summary for FIVE candidate retail periods (offsets +1,0,+2,-1,+3) before the probe pulls anything of its own, and that view is the flaky one \u2014 its Crosstab dialog opens empty and each attempt costs a reopen + extra hydration. The 2026-08-07 15:16 run spent the entire 20m budget still inside that scan (46-line log, every line an ORG Override Summary retry) and printed not one number. override_backtrack does the same scan and takes ~31m end to end on the default 45, so 45 is the measured shape of this work, not padding. If it ever times out at 45 too, the fix is to narrow the scan window for the probe \u2014 NOT to raise the cap again.",
+      "display_name": "Override Bulletin \u2014 probe the special/DD sources",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -5177,8 +5177,8 @@
     },
     "dd_repull_compare": {
       "on_scheduler": false,
-      "_off_scheduler_note": "One-shot diagnostic: re-pull EVERY owner's weekly DD from our Tableau mapping and compare it week-for-week against the Org DDs Ongoing Report tab. READ-ONLY — results land on the '_dd_repull' tab of the override workbook. Use it when the auto-filled tab disagrees with Eve's own 'Org. Bulletin.xlsx': she pulls Program Summary filtered to Downline, dd_populate pulls ORG DD Detail. Added 2026-08-06 for Akib Chowdhury on the FIRST auto-filled week, WE 8.2.26 — tab $4,260.30 vs her $4,644.90, delta $384.60, and the only ICD of 37 that disagreed, so this is a per-ICD question and not a source mismatch. Pick a week with `lucy rerun dd_repull_compare --week 8.2.26`. LUCY 1.",
-      "display_name": "DD — re-pull every owner and compare to the tab",
+      "_off_scheduler_note": "One-shot diagnostic: re-pull EVERY owner's weekly DD from our Tableau mapping and compare it week-for-week against the Org DDs Ongoing Report tab. READ-ONLY \u2014 results land on the '_dd_repull' tab of the override workbook. Use it when the auto-filled tab disagrees with Eve's own 'Org. Bulletin.xlsx': she pulls Program Summary filtered to Downline, dd_populate pulls ORG DD Detail. Added 2026-08-06 for Akib Chowdhury on the FIRST auto-filled week, WE 8.2.26 \u2014 tab $4,260.30 vs her $4,644.90, delta $384.60, and the only ICD of 37 that disagreed, so this is a per-ICD question and not a source mismatch. Pick a week with `lucy rerun dd_repull_compare --week 8.2.26`. LUCY 1.",
+      "display_name": "DD \u2014 re-pull every owner and compare to the tab",
       "source_type": "tableau",
       "data_sources": [
         "tableau:dd_detail"
@@ -5482,8 +5482,8 @@
     },
     "dd_bulletin_gate": {
       "on_scheduler": false,
-      "_off_scheduler_note": "The Organization Bulletin's REVIEW GATE, by hand. The Thursday LaunchAgent (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh) already drives this same module 10:30-13:00 Central, so this entry exists ONLY so the gate can be reached from Windows on an off day: `lucy rerun dd_bulletin_gate` posts the week's link to #revision-emails AS LUCY (the post must come from the mini's user token — from Eve's box it would arrive as Evelyn, the approver, posting her own report). Base args are ['--post'], and review_gate checks --refresh BEFORE --post, so the useful variants pass through: `--refresh` (rebuild the PDF in place, SAME link, no second post) and `--check --send --distro` (Evelyn's checkmark mails it), plus `--force` for a corrected re-send of a week that already went out. Idempotent — a second --post for a week that is already posted leaves the message alone. LUCY 1, because the build needs the Credico workbooks and the synced headshots.",
-      "display_name": "DD Bulletin — post the review gate (#revision-emails)",
+      "_off_scheduler_note": "The Organization Bulletin's REVIEW GATE, by hand. The Thursday LaunchAgent (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh) already drives this same module 10:30-13:00 Central, so this entry exists ONLY so the gate can be reached from Windows on an off day: `lucy rerun dd_bulletin_gate` posts the week's link to #revision-emails AS LUCY (the post must come from the mini's user token \u2014 from Eve's box it would arrive as Evelyn, the approver, posting her own report). Base args are ['--post'], and review_gate checks --refresh BEFORE --post, so the useful variants pass through: `--refresh` (rebuild the PDF in place, SAME link, no second post) and `--check --send --distro` (Evelyn's checkmark mails it), plus `--force` for a corrected re-send of a week that already went out. Idempotent \u2014 a second --post for a week that is already posted leaves the message alone. LUCY 1, because the build needs the Credico workbooks and the synced headshots.",
+      "display_name": "DD Bulletin \u2014 post the review gate (#revision-emails)",
       "source_type": "sheet",
       "data_sources": [],
       "command": [
@@ -5529,7 +5529,7 @@
     },
     "reps_gross_paycheck": {
       "on_scheduler": true,
-      "_note": "Fills the 'Gross Paycheck' row of every rep tab in the Rep Records workbook from 'Got Paid' in Raf PNL 2026, ONE WEEK BEHIND: Thursday's WE column takes the PNL's previous WE, because a Thursday paycheck settles the week before. Also makes a tab for each 2nd Wk rep on the newest sales board and removes tabs for reps whose 'Termination Date' is filled (snapshotting each to output/reps_gross_paycheck/deleted/ first — that is the ONLY undo). Reps with no money that week get '-', never a blank. Thursday 09:00 CST: late enough that the PNL's previous week is settled and the morning batch has cleared. Catch-up for missed weeks: `--backfill`. Sheets-only, no browser session.",
+      "_note": "Fills the 'Gross Paycheck' row of every rep tab in the Rep Records workbook from 'Got Paid' in Raf PNL 2026, ONE WEEK BEHIND: Thursday's WE column takes the PNL's previous WE, because a Thursday paycheck settles the week before. Also makes a tab for each 2nd Wk rep on the newest sales board and removes tabs for reps whose 'Termination Date' is filled (snapshotting each to output/reps_gross_paycheck/deleted/ first \u2014 that is the ONLY undo). Reps with no money that week get '-', never a blank. Thursday 09:00 CST: late enough that the PNL's previous week is settled and the morning batch has cleared. Catch-up for missed weeks: `--backfill`. Sheets-only, no browser session.",
       "display_name": "Reps Gross Paycheck records",
       "source_type": "sheet",
       "data_sources": [],
@@ -5690,8 +5690,8 @@
     },
     "sci_campaigns_notify": {
       "on_scheduler": false,
-      "display_name": "SCI Campaigns — post the 'complete' note only",
-      "_note": "Off-scheduler, hand-fired: `lucy rerun sci_campaigns_notify --week YYYY-MM-DD`. Exists because sci_campaigns.run only posts for weeks it actually WROTE, so once a week is on the tab there is no way to make the normal rerun announce it. That gap is routine, not rare: Adriana's email is often late (WE 7.25.2026 landed Tue 8/4, days after the Thu-Sat window), someone fills from their own machine, and the notice never goes. The note posts to #l10-alphalete and must come from Lucy 1 — slack_post uses the RUNNER's xoxp user token, which on the mini IS Lucy but on a laptop is that person, so sending from anywhere else brands the post with a human's name. base_args is --post because there is nothing else this entry could mean; the week is the caller's --week.",
+      "display_name": "SCI Campaigns \u2014 post the 'complete' note only",
+      "_note": "Off-scheduler, hand-fired: `lucy rerun sci_campaigns_notify --week YYYY-MM-DD`. Exists because sci_campaigns.run only posts for weeks it actually WROTE, so once a week is on the tab there is no way to make the normal rerun announce it. That gap is routine, not rare: Adriana's email is often late (WE 7.25.2026 landed Tue 8/4, days after the Thu-Sat window), someone fills from their own machine, and the notice never goes. The note posts to #l10-alphalete and must come from Lucy 1 \u2014 slack_post uses the RUNNER's xoxp user token, which on the mini IS Lucy but on a laptop is that person, so sending from anywhere else brands the post with a human's name. base_args is --post because there is nothing else this entry could mean; the week is the caller's --week.",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -5938,6 +5938,33 @@
       },
       "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners). LIVE 2026-08-06: her channel is in the FRESH SUCCESS Slack workspace (not AO); posts via a dedicated FS bot ('alphalete_metrics') whose xoxb token is routed by office_metrics.runner (offices.CROSS_WS_TOKEN_FILES -> slack-token-freshsuccess). First live post verified: 10/11 sections landed; Rep Activations was fixed (was EPERM'ing on ~/Downloads, now renders to output/).",
       "_onboarded": true
+    },
+    "funnel_board": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "display_name": "Recruiting Funnel Board",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.funnel_board.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks."
     }
   },
   "read_only_standalone": {
