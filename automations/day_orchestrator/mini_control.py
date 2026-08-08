@@ -1264,7 +1264,7 @@ def _action_slack_whoami(args: str) -> tuple[bool, str]:
         client.users_info(user=who["user_id"])
         out.append("users:read — WORKING. New reps get named automatically; "
                    "KNOWN_USERS is now just a cache.")
-        ok = True
+
     except Exception as e:  # noqa: BLE001
         err = getattr(getattr(e, "response", None), "data", {}) or {}
         if err.get("error") == "missing_scope":
@@ -1275,12 +1275,17 @@ def _action_slack_whoami(args: str) -> tuple[bool, str]:
                 "Permissions -> User Token Scopes -> add `users:read` -> "
                 "Reinstall to Workspace -> copy the new xoxp- token -> "
                 "`lucy set_slack_user_token <token> --machine \"<this machine>\"`",
+                "  NOTE: reinstalling re-issues the token, which kills it on "
+                "EVERY machine using this account — push the new one to all of "
+                "them (run slack_whoami on each to see who shares it).",
             ]
         else:
             out.append(f"users:read — probe failed: {type(e).__name__} {err}")
-        ok = False
     out.append("READ-ONLY probe — nothing was written or posted.")
-    return ok, "\n".join(out)
+    # A probe that ran is a SUCCESS even when the answer is "missing" — a red
+    # 'failed' row here would read as a broken machine and, worse, is what the
+    # corrections watcher escalates on.
+    return True, "\n".join(out)
 
 
 def _action_diag(args: str) -> tuple[bool, str]:
