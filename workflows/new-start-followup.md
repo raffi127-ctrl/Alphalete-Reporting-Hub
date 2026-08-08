@@ -173,6 +173,39 @@ report refuses to post rather than guess:
   `--allow-sheet-roster` forces the old fallback if Aisha genuinely never posts a
   screenshot. It prints a loud warning — read the counts before adding `--live`.
 
+## Roster sources, in order
+
+1. **Aisha's screenshot** — the truth list. Needs a Slack token with `files:read`.
+2. **`roster_snapshot.json`** — the same screenshot data, read on a machine that
+   *can* download it. Used only for its own week.
+3. **Refuse** (exit 2). The OBCL sheet is never reached automatically.
+
+The mini's token (`lucy_reporting`) has **no `files:read`**, so it lives on step 2
+until that scope is added. Check any machine with `lucy nsf_screenshot_diag`;
+check which source a machine landed on with `lucy nsf_status` (both read-only).
+
+Take a fresh snapshot from a machine that can read the screenshot:
+
+```bash
+python -m automations.new_start_followup.fix_rollcall --snapshot
+git add automations/new_start_followup/roster_snapshot.json && git commit && git push
+lucy update
+```
+
+## Correcting a roll call that already posted
+
+`chat.update` on Lucy's own message — **never a second post**, which would leave
+two lists in the thread for people to answer. Slack doesn't re-notify on an edit,
+so removing a phantom @-mention pings nobody. Only the **author** can edit, so
+this runs on the machine that posted it (the mini):
+
+```bash
+lucy nsf_fix_rollcall            # dry-run: prints before/after + a diff
+lucy nsf_fix_rollcall --post     # applies it
+```
+
+It refuses outright if this machine isn't the author, rather than re-posting.
+
 ## Texting the stragglers — PARKED (no active iMessage)
 
 Raf's Loom floated texting the leaders who still haven't sent, straight from a
