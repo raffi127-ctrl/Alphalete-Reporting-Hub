@@ -83,11 +83,21 @@ echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
 case " $* " in
   *" --dry-run "*) : ;;
   *)
-    # Post at NOON and 4PM CST (Megan 2026-08-06) — both into the SAME daily thread
-    # (summary finds/creates it) so admins get one running to-do list during the day.
-    if { [ "$h" -eq 12 ] || [ "$h" -eq 16 ]; } && [ "$m" -eq 0 ]; then
-      echo "[$(date)] posting the manual-to-do report (needs-number + needs-text)" >> "$LOG_FILE"
-      "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 || true
+    # Post at NOON and 4PM CST (Megan 2026-08-06), both into the SAME daily thread.
+    # Fire on the FIRST walk of the noon hour / 4pm hour (once each, via a per-slot
+    # marker), NOT the exact :00 tick — a walk running longer than 5 min makes launchd
+    # SKIP the :00 tick, which silently dropped the noon post on 2026-08-07. Using the
+    # HOUR + a marker means the first completed walk in that hour posts regardless.
+    _SLOT=""
+    [ "$h" -eq 12 ] && _SLOT="noon"
+    [ "$h" -eq 16 ] && _SLOT="4pm"
+    if [ -n "$_SLOT" ]; then
+      _POST_MARK="$LOG_DIR/.applicant-push-posted-$_SLOT-$(date +%Y-%m-%d)"
+      if [ ! -f "$_POST_MARK" ]; then
+        echo "[$(date)] posting the $_SLOT manual-to-do report (needs-number + needs-text)" >> "$LOG_FILE"
+        "$VENV_PY" -u -m automations.oat_processing.summary --nophone >> "$LOG_FILE" 2>&1 \
+          && touch "$_POST_MARK" || true
+      fi
     fi
     ;;
 esac
