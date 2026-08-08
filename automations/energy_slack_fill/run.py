@@ -13,18 +13,25 @@ THE FILL ONLY EVER RAISES A NUMBER, same rule as the Vantura board (Megan
 rep is written only when Slack says MORE than the cell already holds. Re-running
 a day is safe by construction and the number can never regress.
 
-FOUR GATES, any of which holds the whole day (exit 75, nothing written):
-  * no Energy block posted for that day at all;
-  * the block's own "N/goal" tally disagrees with what we counted — that line
-    is the office's independent check and the only guard on a mis-read line;
-  * a name on a line matches no rep on the board's Energy roster;
-  * a name matches TWO reps — never guess which one gets the sale.
-A held day writes nothing and says why; the next pass retries.
+WHAT IS SURE GETS FILLED; ONLY THE DOUBT IS LEFT BLANK (Eve 2026-08-07). The
+doubt is always the same question — WHICH REP is this line? So:
+  * a name that matches no rep, or matches TWO — that ONE LINE is skipped and
+    named in the log. Never guessed, and never a reason to drop the other reps
+    on the post, who are not in doubt.
+  * the "N/goal" tally disagreeing with our count, or never being posted at
+    all, means the READ may be off, not that anyone is unidentified: it fills
+    and shouts. A human re-checks the board every morning before it goes out.
+  * no Energy block posted for the day is the one thing that writes nothing —
+    there is nothing to read.
+Exit 75 (the boards' hold code) now means THIS DAY IS INCOMPLETE — no post, a
+skipped rep, or a tally that didn't line up — whether or not part of it was
+written. Re-running only ever raises a number, so a retry after an alias is
+added just fills in the rest. Exit 0 means the day went in whole and checked.
 
-A block that posts NO tally at all is the one unchecked case, and it fills
-anyway with a loud line in the log (Eve 2026-08-07: a human re-checks the board
-every morning before it goes out, so missing beats unverified). ~1 day in 7
-lands here. If that morning re-check ever stops, this should become a gate.
+This used to hold the ENTIRE day on any of those, on the theory that a
+half-filled board reads like real zeros. It cost more than it caught: one
+unplaceable nickname ("Zoey", "Charlie") was throwing away every other rep's
+sales for that day.
 
   python -m automations.energy_slack_fill.run                 # preview yesterday
   python -m automations.energy_slack_fill.run --date 2026-08-04
@@ -224,7 +231,11 @@ def match_rep(slack_name: str, rows: dict[int, str]) -> tuple[int | None, str]:
 
 # -------------------------------------------------------------- report ---
 def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
-    """Read one day, print it against the board, return the write plan."""
+    """Read one day, print it against the board.
+
+    -> (write plan, day is incomplete, lines left off). The plan holds every
+    rep we could place; `skipped` is the doubt, and it never blocks the plan.
+    """
     from gspread.utils import rowcol_to_a1
 
     _log("")
@@ -232,8 +243,8 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
     blk = P.last_block_for(blocks, day)
     if blk is None:
         _log(f"  NO Energy board posted in {CHANNEL[0]} for {_md(day)} — "
-             "holding, nothing written")
-        return None, True
+             "nothing to read, nothing written")
+        return None, True, []
 
     when = blk.when.astimezone(TZ)
     _log(f"  source: last board of the night, posted {when.strftime('%H:%M')} "
@@ -241,17 +252,21 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
     col = metric_col(g, day)
     if col is None:
         _log(f"  no '{METRIC}' column under {day.strftime('%A')} on this tab — "
-             "holding")
-        return None, True
+             "nowhere to write, holding")
+        return None, True, []
 
-    held, plan, seen = False, [], []
+    incomplete, plan, seen, skipped = False, [], [], []
     for line in blk.lines:
         row, note = match_rep(line.name, rows)
         if row is None:
+            # This line only. Whoever else is on the post is not in doubt and
+            # still gets filled — see the module docstring.
             _log(f"  !! {line.raw!r} — {note}")
-            _log("     add them to the board's Energy rows, or to ALIASES in "
-                 "parse.py if it's a spelling")
-            held = True
+            _log(f"     NOT FILLED ({line.count} sale(s) left off). Add them to "
+                 "the board's Energy rows, or to ALIASES in parse.py if it's a "
+                 "spelling, then re-run the day")
+            skipped.append((line.raw, line.count, note))
+            incomplete = True
             continue
         seen.append(row)
         cur = str(_cell(g, row, col)).strip()
@@ -269,23 +284,26 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
             _log(f"      ! {f}")
 
     total = blk.total
-    _log(f"  {'TOTAL':<32} {total:>2}")
+    _log(f"  {'TOTAL':<32} {total:>2}"
+         + (f"   ({sum(c for _r, c, _n in skipped)} of them NOT filled)"
+            if skipped else ""))
 
     # The office's own tally line — the ONLY independent check on the read, and
-    # the thing that catches a line whose sale emoji we couldn't count.
+    # the thing that catches a line whose sale emoji we couldn't count. Both
+    # failures below FILL ANYWAY and shout (Eve 2026-08-07): they say the count
+    # may be off, not that a rep is unidentified, and a human re-checks the
+    # board every morning before it goes out. Revisit if that check ever stops.
     if blk.tally is None:
-        # Fills anyway, on purpose (Eve 2026-08-07): a human re-checks the board
-        # every morning before it goes out, so an unchecked day is better in
-        # than missing. It is the ONE thing here nothing verifies, hence the
-        # shout. Revisit if that morning re-check ever stops.
         _log(f"  !! the block never posted its 'N/goal' tally line — nothing "
              f"confirms these {total} sale(s). FILLING ANYWAY, eyeball this day")
         _log("     ask the office to close the Energy block with made/goal "
              "(e.g. '3/15') so there is something to check against")
+        incomplete = True
     elif blk.tally != total:
         _log(f"  !! the board's own tally says {blk.tally}/{blk.goal or '?'} but "
-             f"the lines add to {total} — holding, nothing written")
-        held = True
+             f"the lines add to {total} — one of the two is wrong. FILLING "
+             "ANYWAY, eyeball this day")
+        incomplete = True
     else:
         _log(f"  tally line {blk.tally}/{blk.goal or '?'} — matches")
 
@@ -297,7 +315,7 @@ def run_day(blocks, ws, g, day: dt.date, rows: dict[int, str]):
             and int(str(_cell(g, r, col)).strip()) > 0]
     if kept:
         _log(f"  kept as-is (on the board, not on the post): {', '.join(kept)}")
-    return plan, held
+    return plan, incomplete, skipped
 
 
 def main(argv=None) -> int:
@@ -336,18 +354,21 @@ def main(argv=None) -> int:
     _log(f"Energy roster on the tab: {len(rows)} rep(s) — "
          + ", ".join(rows[r] for r in sorted(rows)))
 
-    plans, held = [], False
+    plans, incomplete, left_off = [], False, []
     for d in days:
         if not week_of(g, d):
             _log("")
             _log(f"--- Energy — {_md(d)} ---")
             _log(f"  {_md(d)} is not in {ws.title!r}'s week — holding "
                  "(run it with --date so the right tab is picked)")
-            held = True
+            incomplete = True
             continue
-        plan, day_held = run_day(blocks, ws, g, d, rows)
-        held = held or day_held
-        if plan and not day_held:
+        plan, day_incomplete, skipped = run_day(blocks, ws, g, d, rows)
+        incomplete = incomplete or day_incomplete
+        left_off += [(d, *s) for s in skipped]
+        if plan:
+            # Written even when the day is incomplete: the reps on this plan are
+            # the ones we're sure of, and the doubt is listed separately below.
             plans.append((d, plan))
 
     _log("")
@@ -358,6 +379,14 @@ def main(argv=None) -> int:
         _log(f"{_md(d)}: {len(plan)} cell(s) would change")
         for rep, a1, cur, new in plan:
             _log(f"  {a1}  {rep:<32} {cur} -> {new}")
+    if left_off:
+        _log("")
+        _log(f"LEFT BLANK — {len(left_off)} line(s) nobody could be matched to. "
+             "Everything else on those days went in:")
+        for d, raw, count, note in left_off:
+            _log(f"  {_md(d)}: {raw!r} ({count} sale(s)) — {note}")
+        _log("  fix: add the rep to the board's Energy rows, or the nickname to "
+             "ALIASES in parse.py, then re-run that day (only ever raises)")
     if writes and a.apply:
         _retry(ws.batch_update,
                [{"range": a1, "values": [[new]]}
@@ -365,9 +394,11 @@ def main(argv=None) -> int:
         _log(f"wrote {writes} cell(s) to {ws.title!r}")
     elif writes:
         _log("PREVIEW — re-run with --apply to write")
-    # 75 = EX_TEMPFAIL, the hold code the sales boards use. Nothing was written
-    # for the held day; the next pass retries.
-    return 75 if held else 0
+    # 75 = EX_TEMPFAIL, the hold code the sales boards use. Here it means the
+    # day is INCOMPLETE — no post, a line nobody could be matched to, or a tally
+    # that didn't line up — and NOT that nothing was written: what was sure went
+    # in. Re-running only raises numbers, so the next pass just fills the rest.
+    return 75 if incomplete else 0
 
 
 if __name__ == "__main__":
