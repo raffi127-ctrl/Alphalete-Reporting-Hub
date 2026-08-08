@@ -65,6 +65,14 @@ there, so a re-fire can't tag 21 people twice. `--force` overrides.
   The `xN` in "sent x4" is read as the claimed count. Aisha's hand-typed roll
   call is still recognised if she posts one, so a transition week parses either
   way; with no roll call at all, everything under the anchor counts.
+  Since 2026-08-03 the reach-out list actually comes from **Aisha's weekly
+  screenshot** in that thread (read via Claude vision), because the live tab
+  carries not-moving-forward + duplicate rows. The sheet is still cross-read for
+  one thing: an interviewer who is **on the sheet, not on the screenshot, and
+  not taggable** is added to *"Unable to tag — needs a manual reach-out"*. That's
+  how a row hand-added to the sheet after the screenshot went up (Megan's
+  Quigley Nolan, 2026-08-08) still gets chased instead of vanishing. Such a name
+  can never become an @-mention — the screenshot alone decides who gets tagged.
 - **Name mapping** — `automations/new_start_followup/leaders.json`.
 - **Who's left the company** — replayed from `channel_join` / `channel_leave`
   events in the channel history. Lucy's token has no `channels:read`, so
@@ -122,6 +130,9 @@ Posted into Slack (the team should see these):
   with no Slack account to @-mention. Goes in **both** the Saturday roll call and
   the Sunday checklist: if nobody can tag them, their new start silently goes
   untexted unless a human chases them. Clears once they're in `leaders.json`.
+  **Don't add a departed interviewer to `leaders.json` to clear it** — that turns
+  the line into an @-mention of someone who has left. Leaving them here is the
+  intended end state (Megan, 2026-08-08, re: Quigley Nolan).
 - **Count looks short vs OBCL** — replied "Sent x2" but OBCL assigned 3.
 - **Has new starts but wasn't tagged** — nobody ever asked them.
 

@@ -125,6 +125,7 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
     # with + duplicate rows, so we no longer derive the roster from it (Raf
     # 2026-08-03). Fall back to the OBCL sheet only if the screenshot is missing.
     from automations.new_start_followup import screenshot_roster
+    sheet_only = {}  # type: Dict[str, int]
     try:
         rows = screenshot_roster.fetch_roster_rows(monday.isoformat())
         owed = {}
@@ -135,6 +136,7 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         tab = "Aisha's screenshot"
         print("[roster] Aisha's screenshot: {} new starts across {} interviewers"
               .format(sum(owed.values()), len(owed)))
+        sheet_only = _sheet_only_untaggable(monday, owed, ros)
     except Exception as exc:  # noqa: BLE001
         print("WARNING: screenshot roster unavailable ({}); falling back to the "
               "OBCL sheet.".format(exc))
@@ -157,6 +159,11 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
             rec.unmatched_obcl[name] = rec.unmatched_obcl.get(name, 0) + count
             continue
         owed_by_id[leader.slack_id] = owed_by_id.get(leader.slack_id, 0) + count
+
+    # Sheet-only interviewers nobody can @-mention. Never tagged, never nudged --
+    # they only ever reach the "needs a manual reach-out" list.
+    for name, count in sheet_only.items():
+        rec.unmatched_obcl[name] = rec.unmatched_obcl.get(name, 0) + count
 
     covered = _covers(th["confirmations"], ros)
 
@@ -190,6 +197,46 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
             )
         )
     return rec
+
+
+def _sheet_only_untaggable(monday: dt.date, owed: Dict[str, int],
+                           ros) -> Dict[str, int]:
+    """OBCL-sheet interviewers who are missing from the screenshot AND can't be
+    @-mentioned -> name -> new-start count.
+
+    Aisha's screenshot is a picture of one moment. A row added to the OBCL sheet
+    afterwards isn't in it -- Megan's case (2026-08-08): she added Quigley Nolan,
+    who is no longer with us, so there's nobody to tag and someone has to reach
+    out by hand. Without this the row vanishes between the screenshot and the
+    Sunday roll-up, and that new start goes untexted with nobody told.
+
+    Deliberately narrow, so Raf's 2026-08-03 call still holds:
+      - anyone the screenshot already lists is skipped (it owns the counts)
+      - anyone who DOES resolve to a roster leader is skipped, so a sheet row the
+        screenshot dropped can never turn back into an @-mention
+    What's left is only ever a name in the manual-reach-out list.
+    """
+    try:
+        _, _, starts = obcl.read_new_starts(monday)
+    except Exception as exc:  # noqa: BLE001 — advisory: never fail the report
+        print("WARNING: couldn't cross-check the OBCL sheet ({}); interviewers "
+              "on the sheet but not the screenshot won't be flagged.".format(exc))
+        return {}
+
+    seen = set(roster_mod._norm(n) for n in owed)
+    out = {}  # type: Dict[str, int]
+    for name, count in obcl.counts_by_interviewer(starts).items():
+        key = roster_mod._norm(name)
+        if not key or key in seen:
+            continue
+        if ros.by_obcl_name(name) is not None:
+            continue
+        out[name] = count
+        seen.add(key)
+    if out:
+        print("[roster] on the OBCL sheet but not the screenshot, and not "
+              "taggable: {}".format(", ".join(sorted(out))))
+    return out
 
 
 def _covers(confirmations, ros) -> Dict[str, object]:
