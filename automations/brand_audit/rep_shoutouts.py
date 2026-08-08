@@ -35,13 +35,17 @@ from automations.brand_audit.config import (
 MODEL = "claude-opus-4-8"
 
 # Where the weekly list posts. Maud asked for a scheduled group DM to Boss + the
-# team (Megan, 2026-08-07). Recipients confirmed: Bas (Basil Hassan, the "Boss")
-# + Raf + Megan. When SHOUTOUT_DM_USERS is set the list goes to that group DM
-# (opened idempotently each week); otherwise it falls back to SHOUTOUT_CHANNEL.
-#   U067WLPK92T = Bas   (basboosmahdi@gmail.com)
+# team (Megan, 2026-08-07). When SHOUTOUT_DM_USERS is set the list goes to that
+# group DM (opened idempotently each week); otherwise it falls back to
+# SHOUTOUT_CHANNEL. Recipients: Bas + Raf + Megan, plus Alisson & Tiffani, whom
+# Raf added to watch it / own the ATMO sheet and give feedback (Slack 2026-08-08).
+#   U067WLPK92T = Bas               (basboosmahdi@gmail.com)
 #   U045Z8N0ZQC = Rafael Hidalgo
 #   U04G5HJBGFN = Megan Hidalgo
-SHOUTOUT_DM_USERS: tuple = ("U067WLPK92T", "U045Z8N0ZQC", "U04G5HJBGFN")
+#   U0BBG374GE9 = Alisson Rodriguez
+#   U0B9924FHCL = Tiffani Brown
+SHOUTOUT_DM_USERS: tuple = ("U067WLPK92T", "U045Z8N0ZQC", "U04G5HJBGFN",
+                            "U0BBG374GE9", "U0B9924FHCL")
 # Fallback channel if the group DM is ever cleared (brand-health channel Megan
 # and Raf already watch).
 SHOUTOUT_CHANNEL = ALERT_SLACK_CHANNEL_ID
