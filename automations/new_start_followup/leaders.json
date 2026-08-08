@@ -2,6 +2,16 @@
   "_note": "Leader roster for the New-Start Follow-Up report. Add a leader here when someone new starts running 2nd-round interviews. 'obcl_names' holds every spelling that shows up in OBCL column B. 'phone' is E.164 (+15551234567) and is only used for the Sunday texts.",
   "leaders": [
     {
+      "slack_id": "U0BEUK74PCY",
+      "name": "Alyssa Moreno",
+      "short": "Alyssa M",
+      "obcl_names": [
+        "Alyssa Moreno"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-08 from Megan's manual tag reply in the 8/10 thread — was in the roll-call 'unable to tag' list; id confirmed via users.info."
+    },
+    {
       "slack_id": "U08RNHP5WMD",
       "name": "Andrew Sanborn",
       "short": "Andrew S",
@@ -88,6 +98,17 @@
         "Ian Rodriguez"
       ],
       "phone": ""
+    },
+    {
+      "slack_id": "U0AQN5YHV4G",
+      "name": "Ibukunoluwa Ogunlola",
+      "short": "Ibukunoluwa O",
+      "obcl_names": [
+        "Ibukunoluwa Ogunlola",
+        "Ibukunoluwa Ogunlola RT"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-08 from Megan's manual tag reply in the 8/10 thread — was in the roll-call 'unable to tag' list; id confirmed via users.info. OBCL appends 'RT' (road trip), like Andrew Sanborn Roadtrip."
     },
     {
       "slack_id": "U0BFCF5CD9R",
@@ -192,6 +213,18 @@
       "phone": ""
     },
     {
+      "slack_id": "U0A64Q4KZM0",
+      "name": "Pablo Deleon",
+      "short": "Pablo D",
+      "obcl_names": [
+        "Pablo Deleon",
+        "Juan Pablo Deleon",
+        "Juan Pablo Deleon RT"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-08 from Megan's manual tag reply in the 8/10 thread — was in the roll-call 'unable to tag' list; id confirmed via users.info. Slack says 'Pablo Deleon'; OBCL says 'Juan Pablo Deleon RT'."
+    },
+    {
       "slack_id": "U0AME3NU5KQ",
       "name": "Pranish Shrestha",
       "short": "Pranish",
@@ -267,6 +300,16 @@
         "Tiffani Brown"
       ],
       "phone": ""
+    },
+    {
+      "slack_id": "U0BASDJSYHY",
+      "name": "William Canas",
+      "short": "William C",
+      "obcl_names": [
+        "William Canas"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-08 from Megan's manual tag reply in the 8/10 thread — was in the roll-call 'unable to tag' list; id confirmed via users.info."
     },
     {
       "slack_id": "U08LSELLCGY",
