@@ -84,6 +84,21 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
     }
     p = _path(report_id)
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    # LOUD Slack alert on a silent drop. A 4am-flow report exits 0 "with a note"
+    # so the orchestrator never fires its own failure alert — on 2026-08-07 every
+    # office quietly dropped its ABP card and nobody knew for hours. Ping
+    # #claudecorrections (@Megan) straight from here so ANY recorded failure is
+    # heard immediately, not found on an orange Hub card later. run_ts is set only
+    # by tests / deterministic callers, so they never alert; dedup + try/except so
+    # it can neither spam nor break the manifest write.
+    if failed and run_ts is None:
+        try:
+            from automations.shared import section_drop_alert as _sda
+            _sda.alert(report_id=report_id, failed=failed,
+                       remediation=remediation, note=note)
+        except Exception:  # noqa: BLE001 — the alarm must never break the writer
+            pass
     return p
 
 

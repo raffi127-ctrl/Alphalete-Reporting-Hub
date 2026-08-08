@@ -1,0 +1,94 @@
+"""Loud Slack alert when a 4am-flow report silently drops a section.
+
+WHY THIS EXISTS (2026-08-07): reports in the 4am flow (daily_metrics,
+office_metrics, the captainship reports) deliberately exit 0 on a dropped
+section — "ran with a note" — so the orchestrator won't retry and DOUBLE-POST
+the whole thread (Megan 2026-07-11). The cost of that design: exit 0 reads as
+SUCCESS, so the orchestrator's own failure alert never fires. A missing section
+only turned the Hub card orange + wrote a manifest note — SILENT. That day the
+ABP Tableau view collapsed and EVERY office quietly dropped its ABP card; nobody
+knew until a rep flagged it hours later.
+
+This fires a LOUD ping into #claudecorrections-and-requests, @-mentioning Megan,
+straight from write_manifest — so any recorded failure is heard at 4am, not
+found at noon. It is ADDITIVE: the exit-0 / no-double-post behavior is unchanged;
+this is the alarm bolted on top.
+
+Dedup: one post per (report_id, date, failed-set). A morning re-run that drops
+the SAME section again won't re-spam; a different drop still alerts. Posted as
+Lucy (the xoxp user token every Slack post here uses). Always English — the whole
+team reads this channel. [[reference_lucy_slack_tokens]] [[project_corrections_slack_channel]]
+"""
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+from pathlib import Path
+from typing import Optional, Sequence
+
+CHANNEL = "C0BK5PRG259"       # #claudecorrections-and-requests
+MEGAN = "U04G5HJBGFN"         # Megan Hidalgo — @-mentioned so it can't be missed
+_STATE_DIR = Path("output") / "section_drop_alerts"
+
+
+def _dedup_path(report_id: str, day: dt.date, failed: Sequence[str]) -> Path:
+    key = hashlib.sha1(",".join(sorted(failed)).encode("utf-8")).hexdigest()[:10]
+    return _STATE_DIR / f"{report_id}-{day.isoformat()}-{key}.txt"
+
+
+def _compose(report_id: str, failed: Sequence[str],
+             remediation: Optional[dict], note: str) -> str:
+    n = len(failed)
+    s = "s" if n != 1 else ""
+    lines = [
+        f"<@{MEGAN}> 🚨 *{report_id}* dropped {n} section{s} this run — "
+        f"it did NOT post.",
+        f"*Missing:* {', '.join(failed)}",
+    ]
+    if note:
+        lines.append(f"_{note}_")
+    fix = remediation.get("fix") if isinstance(remediation, dict) else None
+    if fix:
+        lines.append(f"*Fix:* {fix}")
+    else:
+        lines.append(f"*Fix:* re-run only the missing section{s} for "
+                     f"`{report_id}` — don't re-post the whole thread.")
+    lines.append("The thread is live but incomplete.")
+    return "\n".join(lines)
+
+
+def alert(*, report_id: str, failed: Sequence[str],
+          remediation: Optional[dict] = None, note: str = "",
+          day: Optional[dt.date] = None, dry_run: bool = False) -> bool:
+    """Post a loud dropped-section ping. One post per (report, day, failed-set).
+    Returns True if posted (or already posted today for this exact drop).
+    NEVER raises — a failed alert must not fail the report it's warning about."""
+    failed = [f for f in (failed or []) if f]
+    if not failed:
+        return False
+    day = day or dt.date.today()
+    path = _dedup_path(report_id, day, failed)
+    try:
+        if path.exists():
+            return True
+    except Exception:
+        pass
+    text = _compose(report_id, failed, remediation, note)
+    if dry_run:
+        print("  --- section-drop alert (dry-run, not sent) ---")
+        print("  " + text.replace("\n", "\n  "))
+        return False
+    try:
+        from automations.shared import slack_metrics_post as smp
+        smp._client().chat_postMessage(channel=CHANNEL, text=text)
+    except Exception as e:  # noqa: BLE001 — alerting must never break the report
+        print(f"  ⚠ section-drop alert didn't post "
+              f"({type(e).__name__}: {str(e)[:120]})")
+        return False
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text("sent", encoding="utf-8")
+    except Exception:
+        pass
+    print(f"  🚨 section-drop alert posted for {report_id}: {failed}")
+    return True
