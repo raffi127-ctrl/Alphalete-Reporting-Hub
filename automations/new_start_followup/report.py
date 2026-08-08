@@ -476,7 +476,10 @@ def render_checklist(rec: Reconciliation) -> str:
         lines.append(line)
 
     lines.append("")
-    src = rec.tab if rec.tab == "Aisha's screenshot" else "OBCL tab '{}'".format(rec.tab)
+    # Only a real OBCL tab title gets the "OBCL tab" prefix; the screenshot and
+    # its snapshot already read as a source ("Aisha's screenshot (snapshot)").
+    src = (rec.tab if rec.tab.startswith("Aisha's screenshot")
+           else "OBCL tab '{}'".format(rec.tab))
     lines.append("_auto by Lucy · source: {}_".format(src))
     return "\n".join(lines)
 
