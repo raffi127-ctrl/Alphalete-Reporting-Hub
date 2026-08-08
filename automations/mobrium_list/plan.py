@@ -12,8 +12,9 @@ tab or by this week's sales board — UNLESS one of two things vetoes it:
     live example: on the tracker, and training new starts on this week's board.
 
 Nothing else is allowed to trigger a removal. In particular, being ABSENT from
-OwnerVille never does — Andrew Sanborn and Deavion Allen are plainly working and
-are in none of its four rosters, so absence there means nothing at all.
+OwnerVille never does: a miss there is as likely to be a spelling the matcher
+couldn't bridge as a person who really isn't on the roster (see ownerville.py —
+the first matcher lost three working reps to middle names).
 
 ADD everybody in the week's 'New Starts/Raf' box who isn't on the list yet and
 isn't already terminated. Six of WE 8.9's eighteen new starts were terminated
@@ -22,18 +23,19 @@ noise, so they're skipped and reported.
 
 CONTACT DETAILS COME FROM OWNERVILLE — both the email and the phone. It is the
 only source for a phone, and it is the trustworthy source for an email: the
-board's email column drifts out of step with its names (see board.py). Three
-sources, in this order, each filling only what the one before it left blank:
+board's email column drifts out of step with its names (see board.py). The
+board's own scrape is a fallback for people OwnerVille can't resolve, and only
+when the address plausibly belongs to them. Anyone who still ends up with
+neither is added anyway, and named in the report as needing details — dropping
+them silently would mean they never get added at all, because next week's box
+holds a different week's people.
 
-  1. OwnerVille's rep list.
-  2. `known_contacts.KNOWN` — hand-supplied, for the people OwnerVille has no
-     record of at all.
-  3. The board's own scrape, and only when the address plausibly belongs to
-     them.
-
-Anyone who still ends up with neither is added anyway, and named in the report
-as needing details — dropping them silently would mean they never get added at
-all, because next week's box holds a different week's people.
+BLANK CELLS ON ROWS THAT ARE ALREADY THERE GET FILLED TOO. Only blanks: a cell
+with anything in it is never touched. Somebody added on a week when OwnerVille
+hadn't caught up (or when the matcher couldn't find them) would otherwise keep
+an empty Phone column forever, because nothing else in this module ever looks at
+an existing row again. Carlo Ferrino was exactly that — added with no phone on
+2026-08-07, filled on the next run once the matcher learned about middle names.
 """
 from __future__ import annotations
 
@@ -43,7 +45,6 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from automations.mobrium_list import board as mboard
-from automations.mobrium_list import known_contacts
 from automations.mobrium_list import sheet as msheet
 from automations.mobrium_list.ownerville import Directory, Rep, norm_name
 
@@ -105,12 +106,26 @@ class Skipped:
     why: str
 
 
+@dataclass(frozen=True)
+class Fill:
+    """A blank Email/Phone cell on an existing row that OwnerVille can answer."""
+    entry: msheet.Entry
+    email: str                  # '' = leave that cell alone
+    phone: str
+
+    @property
+    def what(self) -> str:
+        return " + ".join(w for w, v in (("email", self.email),
+                                         ("phone", self.phone)) if v)
+
+
 @dataclass
 class Plan:
     removals: List[Removal]
     kept: List[Kept]
     additions: List[Addition]
     skipped: List[Skipped]
+    fills: List[Fill]
     unsorted_tab: bool          # the tab wasn't in first-name order
 
 
@@ -200,17 +215,6 @@ def build(entries: List[msheet.Entry], new_starts: List[mboard.NewStart],
         got = ["ownerville"] if (email or phone) else []
         notes: List[str] = []
 
-        # Hand-supplied details for people OwnerVille has never heard of. After
-        # OwnerVille so it can never shadow a live record, before the board so a
-        # known-good address beats one we'd have to guess at.
-        known_email, known_phone = known_contacts.lookup(ns.name)
-        if not email and known_email:
-            email, got = known_email, got + ["known_contacts"]
-        if not phone and known_phone:
-            phone = mboard.pretty_phone(known_phone) or known_phone
-            if "known_contacts" not in got:
-                got.append("known_contacts")
-
         # The board fills only what OwnerVille couldn't, and an email off the
         # board has to look like it belongs to this person before it's used.
         if not email and ns.email:
@@ -230,8 +234,24 @@ def build(entries: List[msheet.Entry], new_starts: List[mboard.NewStart],
         additions.append(Addition(first=first, last=last, email=email,
                                   phone=phone, source=source, new_start=ns))
 
+    # Top up the blanks on rows that are already there — never a filled cell,
+    # and never a row we're about to delete.
+    going = {r.entry.row for r in removals}
+    fills: List[Fill] = []
+    for e in entries:
+        if e.row in going or (e.email and e.phone):
+            continue
+        rep = directory.find(e.full)
+        if rep is None:
+            continue
+        email = rep.email if not e.email else ""
+        phone = mboard.pretty_phone(rep.phone) if not e.phone else ""
+        if email or phone:
+            fills.append(Fill(entry=e, email=email, phone=phone))
+
     return Plan(removals=removals, kept=kept, additions=additions,
-                skipped=skipped, unsorted_tab=not msheet.is_sorted(entries))
+                skipped=skipped, fills=fills,
+                unsorted_tab=not msheet.is_sorted(entries))
 
 
 def place(entries: List[msheet.Entry], plan: Plan) -> List[Tuple[int, list]]:

@@ -28,12 +28,18 @@ so every value is tag-stripped on the way in. Email and Phone come through
 clean, and the phone already arrives formatted `(817) 600-2840` — which is the
 dominant style on the Mobrium List, so nothing has to be re-formatted.
 
-A NAME MISS HERE IS NOT EVIDENCE OF ANYTHING. Several people who are plainly
-working (Andrew Sanborn, Deavion Allen) are in none of the four rosters, and
-someone the tracker says was terminated (Mustafa Alzaidy) is in none of them
-either — the office's OwnerVille records don't line up 1:1 with the board. So
-this module is a CONTACT LOOKUP only: presence in `activeReps` is allowed to
-VETO a removal (it proves a rehire), absence is never allowed to cause one.
+A NAME MISS HERE IS NOT EVIDENCE OF ANYTHING. A miss can mean the person
+genuinely isn't in OwnerVille, or that their name is spelled differently enough
+to defeat both matching passes — and there is no way to tell those apart from
+the outside. So this module is a CONTACT LOOKUP only: presence in a live roster
+is allowed to VETO a removal (it proves a rehire), absence is never allowed to
+cause one.
+
+That rule earned itself immediately. The first version matched names exactly and
+reported Andrew Sanborn, Deavion Allen and Carlo Ferrino as having no OwnerVille
+record at all. All three were there — as 'Andrew Sanborn Roadtrip', 'Deavion
+Hunter Allen' and 'Carlo Plata Ferrino'. Had absence been wired to removal, that
+bug would have deleted working reps from the list.
 """
 from __future__ import annotations
 
@@ -178,6 +184,24 @@ class Directory:
     A name can legitimately map to more than one record (a rehire has an old
     inactive row and a new active one), so lookups keep the WORKING record when
     there is one — that is the row whose email and phone are current.
+
+    MATCHING IS TWO-PASS, because an exact match misses a lot of real people.
+    OwnerVille carries the full legal name and the board carries what people
+    are called: 47 of its 479 records have a multi-word first or last name.
+    'Carlo Ferrino' on the board is 'Carlo' / 'Plata Ferrino' here; 'Justin
+    Avila' is 'Justin' / 'Carlos Avila'; several carry a trailing ' RT' tag.
+    Every one of those came back as "no OwnerVille record", which for Carlo
+    meant a row written with no phone and no email at all.
+
+    So: exact folded match first, then a LOOSE pass — one name's words are a
+    subset of the other's AND they share a first name. That covers middle
+    names, second surnames and the RT tag in one rule, without a list of tags
+    to maintain, and it can't fuse 'Chris Martin' with 'Chris Martinez'
+    (whole words, not prefixes).
+
+    An ambiguous loose hit — two different people who both fit — resolves to
+    NOTHING rather than a guess. Writing one person's phone number next to
+    another person's name is the failure this whole module is built to avoid.
     """
 
     def __init__(self, reps: Iterable[Rep]):
@@ -186,8 +210,32 @@ class Directory:
         for r in self.reps:
             self._by_name.setdefault(norm_name(r.full), []).append(r)
 
+    def _loose(self, name: str) -> List[Rep]:
+        """Records whose words are a superset or subset of `name`'s, sharing a
+        first name. Returns [] when more than one distinct person fits."""
+        want = norm_name(name).split()
+        if len(want) < 2:
+            # A single word is far too weak to match on loosely.
+            return []
+        want_set = set(want)
+        out: List[Rep] = []
+        for key, reps in self._by_name.items():
+            have = key.split()
+            if not have or have[0] != want[0]:
+                continue
+            have_set = set(have)
+            if want_set <= have_set or have_set <= want_set:
+                out.extend(reps)
+        # Two records for ONE person (a rehire) is fine; two people is not.
+        if len({norm_name(r.full) for r in out}) > 1:
+            return []
+        return out
+
+    def _candidates(self, name: str) -> List[Rep]:
+        return self._by_name.get(norm_name(name)) or self._loose(name)
+
     def find(self, name: str) -> Optional[Rep]:
-        hits = self._by_name.get(norm_name(name))
+        hits = self._candidates(name)
         if not hits:
             return None
         working = [r for r in hits if r.working]
@@ -202,7 +250,7 @@ class Directory:
         This is the ONLY thing absence-vs-presence is trusted for, and only in
         one direction: True vetoes a removal, False proves nothing.
         """
-        return any(r.working for r in self._by_name.get(norm_name(name), ()))
+        return any(r.working for r in self._candidates(name))
 
     def __len__(self) -> int:
         return len(self.reps)

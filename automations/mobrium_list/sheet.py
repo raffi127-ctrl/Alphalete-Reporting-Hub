@@ -21,7 +21,12 @@ WRITES ARE ROW OPERATIONS, NOT A REWRITE. Everything we aren't changing is left
 byte-identical, which matters because column D holds phone numbers typed in two
 different styles that somebody chose.
 
-THE TWO HALVES RUN IN OPPOSITE DIRECTIONS, and that is not an accident:
+THREE OPERATIONS, IN A FIXED ORDER: fills, then deletions, then insertions.
+Fills and deletions both address the grid AS READ, so the fills have to happen
+while those row numbers are still true; insertions address the finished tab and
+therefore go last.
+
+THE OTHER TWO RUN IN OPPOSITE DIRECTIONS, and that is not an accident:
 
   * Deletions go BOTTOM-UP. Their rows are indices into the grid as READ, so
     deleting the lowest first would shift every remaining target up by one.
@@ -147,15 +152,26 @@ def tab_url(ws) -> str:
 
 
 def apply(ws, *, removals: List[Entry], additions: List[Tuple[int, list]],
+          fills: Optional[List[Tuple[int, str, str]]] = None,
           dry_run: bool = True, logfn=print) -> None:
-    """Delete `removals` and insert `additions` [(row, [A,B,C,D]), ...].
-
-    Removals first and bottom-up; insertions after and top-down. See the module
-    docstring for why the directions differ.
+    """Fill, delete, insert. `fills` is [(row, email, phone)] where an empty
+    string means "leave that cell alone". See the module docstring for the
+    ordering rules.
     """
     if dry_run:
         logfn("  (dry run — the tab is not touched)")
         return
+
+    for row, email, phone in (fills or ()):
+        # One cell at a time: writing C:D as a range would blank whichever of
+        # the two we don't have a value for.
+        if email:
+            ws.update_acell(f"C{row}", email)
+        if phone:
+            ws.update_acell(f"D{row}", phone)
+        logfn(f"  filled row {row}: "
+              + ", ".join(f"{c}={v}" for c, v in (("email", email),
+                                                  ("phone", phone)) if v))
 
     # Delete bottom-up, collapsing runs of adjacent rows into one call.
     rows = sorted({e.row for e in removals}, reverse=True)

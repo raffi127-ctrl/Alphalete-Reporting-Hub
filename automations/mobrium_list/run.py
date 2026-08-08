@@ -105,6 +105,13 @@ def _report(plan: mplan.Plan, logfn=print) -> None:
     if not plan.additions:
         logfn("   (nobody)")
 
+    if plan.fills:
+        logfn("")
+        logfn(f"FILLING {len(plan.fills)} blank cell(s) on rows already there:")
+        for f in plan.fills:
+            logfn(f"   ~ {f.entry.full:<28} {f.what}: "
+                  f"{f.email or ''} {f.phone or ''}".rstrip())
+
     incomplete = [a for a in plan.additions if not a.complete]
     if incomplete:
         logfn("")
@@ -212,14 +219,16 @@ def main(argv=None) -> int:
     else:
         print(f"  target: {target_tab!r}"
               f"{' — the REAL tab' if args.real else ''}")
-    if not plan.removals and not additions:
+    if not plan.removals and not additions and not plan.fills:
         print("  nothing to change.")
         print(f"  before-state: {snap}")
         print(f"  {msheet.tab_url(ws)}")
         return 0
     try:
         msheet.apply(ws, removals=[r.entry for r in plan.removals],
-                     additions=additions, dry_run=dry)
+                     additions=additions,
+                     fills=[(f.entry.row, f.email, f.phone) for f in plan.fills],
+                     dry_run=dry)
     except Exception as e:                                      # noqa: BLE001
         print(f"❌ the write failed partway: {type(e).__name__}: {e}")
         print(f"   the tab's before-state is in {snap} — check the tab before "
