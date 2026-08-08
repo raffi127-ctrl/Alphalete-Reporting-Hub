@@ -38,6 +38,9 @@ Actions:
                         listener that serves /dd + the Promotion Check-In buttons
   set_dd_app_token <tok>  install Jiraiya's APP-LEVEL token (xapp-…) for Socket Mode
   set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
+  set_gdocs_token <json>  install the Google Docs OAuth token (gdocs-token.json
+                        contents) so the Sunday rep shout-out can write the
+                        Monday ATMO print unattended
   set_gmail_token <json>  install the gmail.compose token (gmail-token.json contents)
                         so draft-creating reports (captainship_drafts) can run
                         unattended. Verifies the mailbox is alphaletereporting@.
@@ -109,7 +112,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_office_slack_token",
-                    "set_gbp_token", "set_gmail_token",
+                    "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
@@ -120,7 +123,8 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
-SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token"}
+SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
+                  "set_gdocs_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -2095,6 +2099,57 @@ def _action_set_gbp_token(args: str) -> tuple[bool, str]:
                   f"(fetched {len(sample)} review as a check)")
 
 
+def _action_set_gdocs_token(args: str) -> tuple[bool, str]:
+    """Install the Google Docs OAuth token on THIS machine so the Sunday rep
+    shout-out run can write the names onto the Monday ATMO print unattended. Args
+    is the CONTENTS of ~/.config/brand-audit/gdocs-token.json (a JSON object with
+    a refresh_token). Backs up any existing token, writes it, then verifies by
+    fetching the target doc. NEVER echoes the token. In SECRET_ACTIONS, so the
+    poller auto-blanks the Args cell the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        blob = parts[0].strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        blob = raw
+    if not blob.startswith("{"):
+        return False, "set_gdocs_token needs the gdocs-token.json CONTENTS (a JSON object) as Args"
+    try:
+        parsed = json.loads(blob)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args isn't valid JSON: {str(e).splitlines()[0][:120]}"
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    path = Path.home() / ".config" / "brand-audit" / "gdocs-token.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"gdocs-token.json.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify: fetch the target doc through the SAME service the Sunday job uses.
+    try:
+        from automations.brand_audit import atmo_doc
+        svc = atmo_doc._service()
+        doc = svc.documents().get(documentId=atmo_doc.DOC_ID).execute()
+        title = doc.get("title", "?")
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    return True, f"Docs token installed + verified: reached {title!r}"
+
+
 def _safe_shlex_first(raw: str) -> bool:
     """True if `raw` shlex-splits into at least one token (so callers can try the
     un-shlexed form without wrapping every use in its own try/except)."""
@@ -3247,6 +3302,7 @@ ACTIONS = {
     "set_dd_bot_token": _action_set_dd_bot_token,
     "set_dd_app_token": _action_set_dd_app_token,
     "set_gbp_token": _action_set_gbp_token,
+    "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
