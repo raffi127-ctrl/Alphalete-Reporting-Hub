@@ -319,27 +319,32 @@ def fix_last_header() -> int:
     return 0
 
 
-# To:-email domain → clean account name. Seeded from Carlos's examples; add rows as
-# new accounts show up (unknown domains fall back to a title-cased domain).
+# account domain ROOT (domain minus the TLD, e.g. "rawsalesgroupmarketing") → clean
+# display name. Keyed by ROOT so it matches regardless of .com/.net/tx. Runtogether
+# domains can't be auto-split into words, so map them here as Carlos confirms names.
 _ACCOUNT_NAMES = {
-    "fasttrack-strategies.com": "Fast Track Strategies",
-    "fasttrack-strategiestx.com": "Fast Track Strategies",
-    "peaksalesstrategiestx.com": "Peak Sales Strategies",
-    "peaksalesstrategies.com": "Peak Sales Strategies",
+    "fasttrack-strategies": "Fast Track Strategies",
+    "fasttrackstrategies": "Fast Track Strategies",
+    "peaksalesstrategies": "Peak Sales Strategies",
+    "peaksalesstrategiestx": "Peak Sales Strategies",
+    "rawsalesgroupmarketing": "Raw Sales Group Marketing",
+    "ascendaacquisitions": "Ascenda Acquisitions",
 }
 
 
 def _account_name(to_email: str) -> str:
     """Turn the 'To:' account email into a readable account name for the post.
-    Known domains → the clean name; unknown → a best-effort title-cased domain
+    Known domain roots → the clean name; unknown → a best-effort title-cased domain
     (readable enough to know which account, and easy to add to the map later)."""
     to_email = (to_email or "").strip().lower()
     if "@" not in to_email:
         return ""
     dom = to_email.split("@", 1)[1].strip()
+    root = re.sub(r"\.(com|net|org|co|us|io|biz|info)$", "", dom)
+    if root in _ACCOUNT_NAMES:
+        return _ACCOUNT_NAMES[root]
     if dom in _ACCOUNT_NAMES:
         return _ACCOUNT_NAMES[dom]
-    root = re.sub(r"\.(com|net|org|co|us|io|biz|info)$", "", dom)
     return root.replace("-", " ").replace(".", " ").strip().title()
 
 
