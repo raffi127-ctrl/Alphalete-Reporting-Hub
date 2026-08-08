@@ -10,7 +10,8 @@ WHAT IT FILLS
 WHERE THE NUMBERS COME FROM (full path — see pull.py for the detail)
   Tableau -> ATT TRACKER 2_1 - D2D -> view "Metrics"
           -> worksheet "Metrics Call Last week data (Internet)"
-          -> rows grouped by "Captain's Bonus Teams" (expanded via the '+')
+          -> rows grouped by "Captain's Bonus Teams", read at ICD-owner level
+             (the export's 'Rep Name' column is optional — see pull.py)
   0-30  : column "0-30 day New Internet cancel rate"           (verbatim)
   30-60 : column "30-60 day New Internet activation rate", INVERTED
           (100% - activation), because the workbook has no 30-60 cancel column.
@@ -160,6 +161,8 @@ def main(argv=None) -> int:
         print(f"  ✓ {csv_path}")
 
     parsed = pull.parse(csv_path)
+    print(f"  Crosstab shape: {parsed.get('shape', '?')} "
+          f"('Rep Name' is optional — both shapes give owner-level rows)")
     print(f"  Teams in the crosstab: {', '.join(parsed['teams_seen'])}")
 
     # --- Phase 2: fill each captain's tab ---

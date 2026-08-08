@@ -12,9 +12,38 @@ SOURCE (one crosstab, one download, all 5 captains):
              Captain's Bonus Teams -> ICD Owner Name (rep) -> Rep Name.
 
 ROWS WE READ (the tabs list ICD OWNERS, not individual reps):
-  col 0  "Captain's Bonus Teams"       -> "Wayne's Team" / "Starr's Team" / ...
-  col 1  "ICD Owner Name (rep)"        -> the owner ('Total' = the whole team)
-  col 2  "Rep Name"                    -> we keep ONLY 'Total' (the owner roll-up)
+  "Captain's Bonus Teams"       -> "Wayne's Team" / "Starr's Team" / ...
+  "ICD Owner Name (rep)"        -> the owner ('Total' = the whole team)
+  "Rep Name"                    -> we keep ONLY 'Total' (the owner roll-up)
+
+TWO ROW SHAPES — both fine, "Rep Name" is OPTIONAL (2026-08-08):
+  This worksheet exports at whatever depth the viz is left at, and the
+  Download -> Crosstab export DROPS the "Rep Name" column entirely when the
+  rep hierarchy is COLLAPSED (the '+' above the ICD name is not expanded).
+  The dashboard still SHOWS Rep Name when collapsed, so eyeballing the viz
+  proves nothing — only the crosstab does. Same trap that broke New Internet
+  ABP on 2026-08-07 (it was fixed by pinning the rep-expanded ALLEXP view).
+
+    EXPANDED  -> "Rep Name" present; one row per rep, plus a 'Total' row per
+                 owner. We keep only rep == 'Total' (the owner roll-up).
+    COLLAPSED -> "Rep Name" absent; every row is ALREADY an owner roll-up.
+
+  A missing "Rep Name" is therefore a shape difference, not missing data — we
+  handle it instead of failing. The DATA columns below stay hard-required: if
+  one of those disappears we still fail loudly rather than half-fill a tab.
+
+  WE WANT THE COLLAPSED (default-view) NUMBERS. Verified 2026-08-08 by pulling
+  both shapes the same minute: the 0-30 cancel rate and its cancels/sales
+  counts are byte-identical either way, but the 30-60 activation rate is NOT.
+  Expanding to rep level restricts the rows to reps with current-week data,
+  and the 30-60 metric is a 30-60-days-ago COHORT — reps who sold then but
+  not this week drop out, so the owner subtotal is computed over a partial
+  cohort. Wayne's Team owners drifted 0.1-1.0 pt; Mason Davis (1 rep row this
+  week) read 100.0% expanded vs the true 74.6% collapsed. The default view's
+  own owner-level roll-up is the honest number, so this report stays pointed
+  at the plain view URL below — do NOT "fix" a future missing 'Rep Name' by
+  switching to a rep-expanded custom view (that's the right fix for New
+  Internet ABP, which genuinely needs per-rep rows; it is the wrong one here).
 
 COLUMNS WE READ:
   "0-30 day New Internet cancel rate"        -> the 0-30 section, verbatim.
@@ -49,13 +78,29 @@ COL_REP = "Rep Name"
 COL_CANCEL_030 = "0-30 day New Internet cancel rate"
 COL_ACT_3060 = "30-60 day New Internet activation rate"
 
+# Extra header spellings we'll accept for the two DIMENSION columns, so a
+# cosmetic rename in Tableau doesn't hard-fail the whole run. Deliberately
+# NOT extended to the two measure columns: '0-30 day new internet churn rate'
+# sits right next to the cancel rate and is a different metric, so those two
+# match on their exact header text only.
+COL_ALIASES: dict[str, tuple[str, ...]] = {
+    COL_TEAM: ("Captains Bonus Teams", "Captain's Bonus Team",
+               "Captain's Bonus Teams (group)"),
+    COL_OWNER: ("ICD Owner Name", "ICD Owner Name (rep) (group)",
+                "ICD Owner"),
+    COL_REP: ("Rep", "Rep Name (group)"),
+}
+
 # Canonical period keys — must match fill.SECTION_LABELS.
 P_030 = "0-30"
 P_3060 = "30-60"
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip()).upper()
+    """Fold the cosmetic differences only: BOM, curly quotes, inner runs of
+    whitespace, case. NOT a fuzzy match — two different metrics never collide."""
+    s = (s or "").lstrip("﻿").replace("’", "'").replace("‘", "'")
+    return re.sub(r"\s+", " ", s.strip()).upper()
 
 
 def _read_crosstab(path: Path) -> list[list[str]]:
@@ -72,10 +117,15 @@ def _read_crosstab(path: Path) -> list[list[str]]:
 
 
 def _col_index(header: list[str], wanted: str) -> Optional[int]:
-    w = wanted.strip().lower()
-    for i, h in enumerate(header):
-        if (h or "").lstrip("﻿").strip().lower() == w:
-            return i
+    """Index of `wanted` in the header. The exact name wins; only if it isn't
+    there do we fall back to that column's known aliases (COL_ALIASES), so a
+    renamed column can never steal a slot from the column it's named after."""
+    norm = [_norm(h) for h in header]
+    for candidate in (wanted, *COL_ALIASES.get(wanted, ())):
+        c = _norm(candidate)
+        for i, h in enumerate(norm):
+            if h == c:
+                return i
     return None
 
 
@@ -123,10 +173,12 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
         {"teams": {"Wayne's Team": {"avg":  {"0-30": "7.7%", "30-60": "15.7%"},
                                     "reps": {"Wayne Rude": {"0-30": ..., ...}}}},
          "missing_cols": [...],
-         "teams_seen": [...]}
+         "teams_seen": [...],
+         "shape": "rep-expanded" | "owner-collapsed"}
 
-    Only owner-level rows (Rep Name == 'Total') are kept — the tabs list ICD
-    owners. Values are kept as '12.3%' STRINGS so USER_ENTERED writes land as
+    Only owner-level rows are kept — the tabs list ICD owners. When the export
+    carries 'Rep Name' that means keeping rep == 'Total'; when it doesn't, the
+    export is already owner-level and every row qualifies (module docstring). Values are kept as '12.3%' STRINGS so USER_ENTERED writes land as
     real percents in the Sheet (and the tabs' conditional formatting fires).
     """
     if alias_raw is None:
@@ -140,31 +192,34 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
         raise RuntimeError(f"Empty / unreadable crosstab: {path}")
 
     header = rows[0]
-    idx = {
-        "team": _col_index(header, COL_TEAM),
-        "owner": _col_index(header, COL_OWNER),
-        "rep": _col_index(header, COL_REP),
-        P_030: _col_index(header, COL_CANCEL_030),
-        "act3060": _col_index(header, COL_ACT_3060),
-    }
-    wanted = {"team": COL_TEAM, "owner": COL_OWNER, "rep": COL_REP,
-              P_030: COL_CANCEL_030, "act3060": COL_ACT_3060}
-    missing = [wanted[k] for k, v in idx.items() if v is None]
+    required = {"team": COL_TEAM, "owner": COL_OWNER,
+                P_030: COL_CANCEL_030, "act3060": COL_ACT_3060}
+    idx = {k: _col_index(header, name) for k, name in required.items()}
+
+    missing = [required[k] for k, v in idx.items() if v is None]
     if missing:
         # A renamed/removed source column must be LOUD — silently filling half
         # the tab is the failure mode we never want (the DD 1-row scrape).
         raise RuntimeError(
             "The Metrics crosstab is missing these column(s): "
             + ", ".join(repr(m) for m in missing)
-            + ". The Tableau view changed — update pull.py's column constants.")
+            + ". The Tableau view changed — update pull.py's column constants."
+            + " Headers present: " + ", ".join(repr(h) for h in header))
 
+    # 'Rep Name' is OPTIONAL — see the module docstring. Present = the export
+    # is rep-expanded and we keep only the owner roll-ups; absent = the export
+    # is already collapsed to owner level, so every row IS a roll-up.
+    rep_idx = _col_index(header, COL_REP)
+    shape = "rep-expanded" if rep_idx is not None else "owner-collapsed"
+
+    last_col = max(list(idx.values()) + ([rep_idx] if rep_idx is not None else []))
     teams: dict = {}
     for r in rows[1:]:
-        if len(r) <= max(idx.values()):
+        if len(r) <= last_col:
             continue
         team = (r[idx["team"]] or "").strip()
         owner = (r[idx["owner"]] or "").strip()
-        rep = (r[idx["rep"]] or "").strip()
+        rep = (r[rep_idx] or "").strip() if rep_idx is not None else "Total"
         if not team or rep != "Total":
             continue          # per-rep detail rows — the tabs are owner-level
         slot = {
@@ -177,7 +232,8 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
         elif owner:
             bucket["reps"][_display_name(owner, alias_raw)] = slot
 
-    return {"teams": teams, "missing_cols": [], "teams_seen": sorted(teams)}
+    return {"teams": teams, "missing_cols": [], "teams_seen": sorted(teams),
+            "shape": shape}
 
 
 def for_team(parsed: dict, team: str) -> dict:
