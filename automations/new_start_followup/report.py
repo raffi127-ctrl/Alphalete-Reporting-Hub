@@ -142,7 +142,11 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         tab = snap.get("source") or "roster snapshot"
         print("[roster] snapshot {}: {} new starts across {} interviewers"
               .format(roster_json, sum(owed.values()), len(owed)))
-        return _assemble(monday, friday, client, ros, owed, tab, {})
+        # Still cross-read the sheet: the snapshot is the screenshot's tag list,
+        # and the needs-a-manual-reach-out names (Quigley Nolan) live only on the
+        # sheet. Skipping this silently dropped him from the corrected roll call.
+        return _assemble(monday, friday, client, ros, owed, tab,
+                         _sheet_only_untaggable(monday, owed, ros))
 
     # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
     # via Claude vision. The live OBCL tab carries people we're NOT moving forward
