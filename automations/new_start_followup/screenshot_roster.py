@@ -118,14 +118,32 @@ def _find_roster_image(client, monday_iso: Optional[str] = None) -> Optional[dic
     return images[0]
 
 
+# PNG / JPEG / GIF / WEBP(RIFF) magic bytes. Slack answers an un-authorised
+# url_private with 200 + an HTML sign-in page, which raise_for_status() waves
+# through -- the bad bytes then surface much later as an opaque API
+# "400 Could not process image" (what broke the 2026-08-08 8am roll call and got
+# Bill Hirwa mis-tagged off the sheet fallback). Fail here, where the cause is
+# still legible.
+_IMAGE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF")
+
+
 def _download(file_obj: dict, token: str) -> Path:
     url = file_obj.get("url_private_download") or file_obj["url_private"]
     r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
     r.raise_for_status()
+    body = r.content
+    if not body.startswith(_IMAGE_MAGIC):
+        ctype = r.headers.get("Content-Type", "?")
+        raise RuntimeError(
+            "Slack returned {} bytes of {!r} instead of the roster image for "
+            "{!r}. Usually the token can't read files in that channel "
+            "(needs files:read) -- check ~/.config/recruiting-report/"
+            "slack-user-token on this machine.".format(
+                len(body), ctype, file_obj.get("name", "?")))
     suffix = mimetypes.guess_extension(file_obj.get("mimetype", "image/png")) or ".png"
     fd, path = tempfile.mkstemp(prefix="nsf_roster_", suffix=suffix)
     with os.fdopen(fd, "wb") as fh:
-        fh.write(r.content)
+        fh.write(body)
     return Path(path)
 
 
