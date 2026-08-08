@@ -4651,11 +4651,17 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "country_sales_board",
         # TWO-PHASE card (Megan 2026-08-02): phase 1 = the 4am fill, phase 2 =
-        # the 9:30am screenshot email (report country-sales-board-email). The
-        # pill is orange after the fill and turns green once the email sends —
-        # one card for the chained pair instead of two. Reports still run
-        # separately; this only merges the Hub display.
-        "phases": ["country-sales-board", "country-sales-board-email"],
+        # the 9:30am screenshot email. The pill is orange after the fill and turns
+        # green once the email sends — one card for the chained pair instead of
+        # two. Reports still run separately; this only merges the Hub display.
+        # Phase 2's id is the UNDERSCORE form `country_sales_board_email` — that is
+        # what the email actually publishes to Hub Activity since it became an
+        # orchestrator-materialized card (verified 2026-08-07: it stores underscore,
+        # last hyphen row was 8/2). With the old hyphen here the phase never matched
+        # and the pill sat stuck at 1/2 (orange) even after a clean send. The
+        # phase-list string must match the stored Report ID EXACTLY — there is no
+        # normalization in _week_run_statuses. (Megan 2026-08-07)
+        "phases": ["country-sales-board", "country_sales_board_email"],
         "schedule": {
             "frequency": "daily",
             "time": "4 AM flow (when data's ready)",
@@ -4876,6 +4882,15 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "dd_bulletin",
         "self_scheduled": True,
+        # Two-phase pill: ORANGE once the review link is posted for Evelyn, GREEN
+        # once she approves and it emails. Modelled as daily_runs:2 (like BG Check
+        # Sync) — BOTH phases publish success under the SAME card id, so 1 success
+        # = 1/2 (orange, "posted, waiting on the ✅") and 2 = green. A Thursday
+        # that ends unapproved stays orange, not a false green. Same-day window, so
+        # the per-day count is correct. daily_runs (not `phases`) because a chain
+        # of two DIFFERENT ids auto-registers a phantom library card for the
+        # second id. (Megan 2026-08-07)
+        "daily_runs": 2,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],   # Thursday (Mon=0 … Thu=3)
@@ -4932,21 +4947,30 @@ AUTOMATED_REPORTS = [
         # Gold \u2014 matches the black/gold bulletin artwork.
         "color": "#B45309",
         "category": "\U0001F4CA Metrics",
-        "description": "Fills our own copy of the Org Overrides Ongoing Report from the override sources, then renders the black/gold Override Bulletin (top-5 leader cards + the two override tables). Currently emailed to a 4-person preview group each Friday; goes full-org the following week.",
+        "description": "Fills our own copy of the Org Overrides Ongoing Report from the override sources, then renders the black/gold Override Bulletin (top-5 leader cards + the two override tables). GATED: Lucy posts the week's link in #revision-emails and it goes to the full org only after Eve approves it with a \u2705.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Assembles each **active ICD's** weekly override \u2014 regular + "
-            "captain/special, pulled from five sources.\n\n"
+            "captain/special, pulled from five sources \u2014 and renders the "
+            "black/gold bulletin from OUR own fill (the sandbox copy tab), not "
+            "the VA's live tab.\n\n"
             "WHEN IT RUNS\n"
-            "**Fridays ~10am CST** for the week that just ended; the send "
-            "follows right after.\n\n"
-            "SENDING (soft launch)\n"
-            "For now it **emails** the bulletin to a 4-person preview group "
-            "(Megan, Eve, Carlos, Raf) \u2014 **nothing to Slack yet**. It flips to "
-            "the full distro (Slack **#alphalete-sales + #rafs-office-"
-            "recruiting** + the Owners/Bulletins contact groups) the following "
-            "week. It holds if the week isn't published yet, and never "
-            "double-sends."
+            "**Fridays ~10am CST** for the week that just ended: the fill runs "
+            "first, then the review gate posts the link.\n\n"
+            "SENDING (Eve approves \u2014 mirrors the DD bulletin)\n"
+            "Lucy posts the week's bulletin link in **#revision-emails** and "
+            "@-mentions Eve. **Nothing goes out until Eve reacts "
+            ":white_check_mark:** \u2014 then it posts to **#alphalete-sales + "
+            "#rafs-office-recruiting** and emails both contact groups "
+            "(Owners/Bulletins). It **holds** if the week isn't filled yet and "
+            "**never double-sends**. A checkmark from anyone but Eve does "
+            "nothing.\n\n"
+            "IF THE NUMBERS ARE CORRECTED after the link went out, "
+            "`override_gate.py --refresh` rebuilds the PDF in place on the SAME "
+            "link \u2014 no second post. A gap (a captain/program figure not "
+            "sourced yet) is shown in the post as a heads-up, not a blocker: it "
+            "still sends, matching the VA, and flags the gap to "
+            "#claudecorrections."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit?gid=930186902#gid=930186902"),
@@ -4954,6 +4978,14 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "override_bulletin",
         "self_scheduled": True,
+        # Two-phase pill (mirrors the DD bulletin): ORANGE once the review link is
+        # posted for Eve, GREEN once she approves and it sends. Modelled as
+        # daily_runs:2 — BOTH the post pass and the send pass publish success under
+        # THIS card's id, so 1 success = 1/2 (orange, "posted, waiting on the ✅")
+        # and 2 = green. A week that is never approved stays orange, not a false
+        # green. daily_runs (not `phases`) so no phantom sub-card is auto-created.
+        # (Megan 2026-08-07)
+        "daily_runs": 2,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [4],   # Friday (Mon=0 \u2026 Fri=4)
@@ -4967,20 +4999,36 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Fill Sandbox Tab",
+                "label": "Fill This Week's Numbers",
                 "icon": "\u25B6",
                 "primary": True,
-                "help": "Writes the assembled numbers into the 'Copy of Org Overrides Ongoing Report' tab. The live tab is refused.",
+                "help": "Writes the assembled numbers into the 'Copy of Org Overrides Ongoing Report' tab (our fill from the real sources). The live tab is refused. Do this first.",
                 "module": "automations.override_bulletin.run",
                 "args_fn": lambda: ["--write"],
             },
             {
-                "label": "Send to Preview Group (email 4)",
+                "label": "Post for Eve's Approval",
                 "icon": "\U0001F4E4",
                 "primary": False,
-                "help": "Emails the bulletin to the 4-person soft-launch group (Megan, Eve, Carlos, Raf). No Slack, no full distro. This is the same thing the Friday agent does.",
-                "module": "automations.override_bulletin.send",
-                "args_fn": lambda: ["--test", "--send"],
+                "help": "Builds the bulletin PDF and posts the link in #revision-emails, @-mentioning Eve. Sends NOTHING to the org \u2014 it waits for her \u2705. Holds if the week isn't filled yet.",
+                "module": "automations.override_bulletin.override_gate",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Send Now (after Eve's \u2705)",
+                "icon": "\U0001F680",
+                "primary": False,
+                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro: #alphalete-sales + #rafs-office-recruiting + both contact groups. Does nothing until she has approved.",
+                "module": "automations.override_bulletin.override_gate",
+                "args_fn": lambda: ["--check", "--send", "--distro"],
+            },
+            {
+                "label": "Preview PDF (no post, no send)",
+                "icon": "\U0001F50E",
+                "primary": False,
+                "help": "Builds the bulletin page + PDF and stops. Nothing uploaded, posted, or emailed \u2014 safe to run any time to eyeball the numbers.",
+                "module": "automations.override_bulletin.override_gate",
+                "args_fn": lambda: ["--pdf-only"],
             },
         ],
     },
@@ -12462,11 +12510,11 @@ else:  # st.session_state.view == "user"
             # multi-pass. NO custom pill — they use the default phase pill:
             # colorless at rest, YELLOW while a pass is in progress, GREEN when
             # the day's passes finish (same as the other phase cards). (Megan 2026-07-28)
-            # Override Bulletin — soft-launch/TEST mode (emails 4, no Slack yet):
-            # force its pill PINK so the test state reads at a glance. (7/28)
-            "[class*='override-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
-            # DD Bulletin — also in testing → pink pill. (Megan 2026-07-28)
-            "[class*='dd-bulletin__calstat']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
+            # Override Bulletin + DD Bulletin — LIVE 2026-08-07 (Megan "no longer
+            # in testing"): testing pink pills removed. Both are now 2-phase pills
+            # (daily_runs:2, see their cards) that ride the universal phase ramp —
+            # ORANGE at 1/2 (link posted, waiting on Eve's ✅) → GREEN at 2/2
+            # (approved + sent) → red on a failed send. No custom pill CSS needed.
             # Weekly Promotion Check-In — 2 passes (Mon 6pm + 7:15pm). No custom
             # pill: the universal phase ramp gives pass 1 orange (phase1) and pass
             # 2 green (ok) on its own. (Megan 2026-07-29)

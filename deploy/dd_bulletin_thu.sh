@@ -106,6 +106,17 @@ echo "[$(date)] dd-bulletin finished exit=$ST" >> "$LOG_FILE"
 # marking those green would make "nobody approved it" look like a clean run. A
 # failure always publishes. Quiet card = it hasn't gone out yet, which is true.
 # [[feedback_launchd_reports_must_publish]]
+# PHASE 1 of the 2-phase pill (card daily_runs:2): the review link was posted for
+# Evelyn this pass. --post is idempotent, so only the pass that actually posts
+# prints "✓ posted to" — one success this day. That makes the pill 1/2 = ORANGE
+# ("posted, waiting on the checkmark") instead of blank until the emailing pass.
+# Published under the SAME card id as the send (dd_bulletin) so the two count
+# together to green at 2/2 — a distinct id would auto-register a phantom card.
+# (Megan 2026-08-07)
+if grep -q "✓ posted to" "$LOG_FILE"; then
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_bulletin','DD / Organization Bulletin','success')" >> "$LOG_FILE" 2>&1 || true
+fi
+
 if [ "$ST" -ne 0 ]; then
     _PUB=failed
 elif grep -q "^emailed " "$LOG_FILE"; then

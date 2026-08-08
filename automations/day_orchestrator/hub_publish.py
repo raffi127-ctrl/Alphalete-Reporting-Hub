@@ -91,6 +91,14 @@ _HUB_CARD = {
     # a clean one. Its wrapper publishes ONLY on a pass that actually emailed:
     # the other six passes are quiet holds waiting for Eve to fill the tab.
     "dd_bulletin": "dd-bulletin",
+    # Override Bulletin: standalone LaunchAgents on the mini (Lucy 1) — the Friday
+    # FILL (override_bulletin_fri.sh) and SEND (override_bulletin_send_fri.sh),
+    # never in the 4am batch. Missing here since it shipped, so a clean fill
+    # published NOTHING and the card sat white even on a good run — a silent miss
+    # looked identical to a clean one (same bug as vantura_churn / b2b_metrics).
+    # The fill wrapper now calls publish_done on a real write; this line routes it
+    # to the card. (2026-08-07)
+    "override_bulletin": "override-bulletin",
     "recognition_tab": "recognition-tab",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",

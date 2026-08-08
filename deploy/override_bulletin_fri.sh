@@ -62,6 +62,12 @@ echo "[$(date)] override-bulletin finished exit=$ST" >> "$LOG_FILE"
 # Hub row otherwise, so the digest can't see it and nothing alerts. Publish
 # 'failed' ONLY on a real failure → reds the card + the 10-min digest posts it to
 # #claudecorrections. Skip on --dry preview. (Megan 2026-07-29)
+# The FILL is prep, not a user-facing phase — the send wrapper's review gate owns
+# the card's pill (phase 1 = built + posted for Eve, phase 2 = sent). But a fill
+# FAILURE must still red the card: without a row here a crashed fill (two Tableau
+# views stopped exporting on Fri 2026-07-24) is invisible and looks like a clean
+# pass. So publish 'failed' ONLY on a real failure. A HOLD exits 0 and stays
+# quiet. Skip on --dry preview. (Megan 2026-07-29)
 if [ "$ST" -ne 0 ] && [ "${1:-}" != "--dry" ]; then
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('override_bulletin','Override Bulletin','failed')" >> "$LOG_FILE" 2>&1 || true
 fi
