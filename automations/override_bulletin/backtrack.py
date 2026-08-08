@@ -25,6 +25,10 @@ EVERY component, as of 2026-08-07 — this used to be the regular override alone
   Raf special        Payout- Raf wow, by retail period
   5 DD captains      ORG DD Detail, PERIOD-forced (--apply-dd to write)
   Credico / special  the NetSuite ledger, via the red P#-YYYY markers
+  Credico ALREADY placed (black marker) — re-read and CARRIED BACK into the
+    rebuilt cell (placed_credico). It lives inside the section-1 regular
+    component but is absent from the Tableau summary we re-pull, so without
+    this every backtrack silently erased it.
 
 The DD line was long believed impossible: the DEFAULT download carries only the
 just-closed week. But it is the WEEK filter that breaks that view, not the
@@ -43,6 +47,9 @@ RULES IT KEEPS
   * A cell that holds a FORMULA is never overwritten — the tab mixes typed
     numbers and formulas irregularly inside a single row, and a value written
     over one destroys it silently. Reported instead.
+  * A week carrying a PLACED credico we cannot re-resource is SKIPPED WHOLE —
+    rebuilding it without the credico is how the money vanished on 2026-08-07.
+    Stale beats erased, and a black marker is never re-placed by anything else.
   * Dry-run by default; a real write is refused against the live tab.
 
 RUN ON LUCY 1 (Raf's org login).
@@ -215,7 +222,7 @@ def dd_captains_for_period(period_num, year, *, page=None, verbose=True, cache=N
 
 
 def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
-                     write=False):
+                     write=False, led_rows=None):
     """Place any PENDING (red) P#-YYYY marker whose money has now landed.
 
     Credico and the Carlos/Colten special arrive LATE — weeks after the column is
@@ -231,7 +238,10 @@ def ledger_reconcile(ws, *, aliases, roster, captains, page=None, verbose=True,
     from automations.override_bulletin import markers as M
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        led = P.ledger_rows(OUT_DIR / "ledger.csv", page=page, verbose=verbose)
+        # placed_credico already downloaded it this run — one crosstab is ~3min,
+        # and the two passes want the SAME snapshot anyway.
+        led = led_rows if led_rows else P.ledger_rows(
+            OUT_DIR / "ledger.csv", page=page, verbose=verbose)
         to_place, pending, orphans = M.plan_placements(
             ws, led, aliases=aliases, owner_col=P.LEDGER_OWNER_COL,
             expl_col=P.LEDGER_EXPL_COL, amt_col=P.LEDGER_AMT_COL)
@@ -298,9 +308,85 @@ def cap_special_on_sheet(vals, captains, key, col):
     return (P._num_locale(row[col]) or 0.0) if col < len(row) else 0.0
 
 
-def plan_week(ws, vals, week_mdy, roster, captains, regular, *, fresh=None):
+def placed_credico(ws, *, aliases, page=None, verbose=True):
+    """({week label: {key: amount}}, {week labels we could NOT resource}).
+
+    THE CELL IS NOT `regular + section 2`. Credico is folded into the section-1
+    REGULAR component (FILL_SOURCES) — `markers.apply_placements` ADDS it straight
+    into the person's section-1 row and flips the marker black. But the Tableau
+    ORG Override Summary that `regular_for_week` re-pulls has never carried it, so
+    a rebuild of `fresh regular + section-2 total` SILENTLY DROPS every credico
+    ever placed, and the black marker means `ledger_reconcile` will never put it
+    back: a black marker is deliberately never re-placed. The money leaves and
+    nothing says so.
+
+    Measured on 2026-08-07: the 18:26 `--write` pass took $4,280.69 of P6-2026
+    credico off the 7.5.26 column (Burden -1,689.75, Carlos -1,554.57, Rafael
+    -1,036.37) and 7.19.26 had already lost $1,081.57 the same way on an earlier
+    pass — the SAME three people, splitting each month's pool in the SAME
+    proportions (39.474% / 36.316% / 24.210%), which is what gave it away.
+
+    So: re-read the ledger for every PLACED (black) credico marker and hand the
+    amounts back to plan_week, which adds them on top of the fresh regular. Same
+    source, same placement rule, just re-applied. Pending (red) markers are NOT
+    included — their money has not landed, ledger_reconcile owns them, and adding
+    them here would place money the sheet has never shown.
+
+    The second return value is the guard that matters: a week whose credico we
+    could not re-resource (ledger download failed, view moved, ledger no longer
+    carries that month) is NOT rebuilt at all. Erasing it again would be worse
+    than leaving it stale."""
+    from automations.override_bulletin import markers as M
+    by_week, unresolved = {}, set()
+    try:
+        marks = [m for m in M.read_markers(ws)
+                 if m["kind"] == M.CREDICO and not m["pending"] and m["week"]]
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ could not read the credico markers ({}: {}) — every week that "
+              "carries one will be left alone".format(
+                  type(e).__name__, str(e).splitlines()[0][:120]))
+        return {}, {"*"}, None
+    if not marks:
+        return {}, set(), None
+    try:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        led = P.ledger_rows(OUT_DIR / "ledger.csv", page=page, verbose=verbose)
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ ledger unavailable ({}: {}) — leaving the {} week(s) that carry "
+              "a placed credico alone: {}".format(
+                  type(e).__name__, str(e).splitlines()[0][:120], len(marks),
+                  ", ".join(sorted({m["week"] for m in marks}))))
+        return {}, {m["week"] for m in marks}, None
+    for mk in marks:
+        amounts = M.amounts_for(led, M.CREDICO, mk["period"],
+                                owner_col=P.LEDGER_OWNER_COL,
+                                expl_col=P.LEDGER_EXPL_COL,
+                                amt_col=P.LEDGER_AMT_COL)
+        if not amounts:
+            print("  ⚠ credico {} is marked PLACED at {} but the ledger no longer "
+                  "carries it — that week is left alone".format(
+                      mk["period"], mk["week"]))
+            unresolved.add(mk["week"])
+            continue
+        got = F.rekey(amounts, aliases)
+        tot = sum(got.values())
+        by_week.setdefault(mk["week"], {})
+        for k, v in got.items():
+            by_week[mk["week"]][k] = round(by_week[mk["week"]].get(k, 0) + v, 2)
+        if verbose:
+            print("  credico {} placed at {}: {} owner(s), ${:,.2f} carried back "
+                  "into the rebuild".format(mk["period"], mk["week"], len(got), tot))
+    return by_week, unresolved, led
+
+
+def plan_week(ws, vals, week_mdy, roster, captains, regular, *, fresh=None,
+              credico=None):
     """[(row, name, old, new)] cells whose value has drifted, plus [names] we
     couldn't source for this week.
+
+    `credico` = {canonical_key: amount} already PLACED into this week's column
+    (see placed_credico). It is part of the section-1 number and is added on top
+    of the fresh regular; without it every rebuild erases it.
 
     `fresh` = {canonical_key: {"captain": v|None, "special": v|None}} for whoever
     had their section-2 components RE-SOURCED this run. Rafael gets both (PNL +
@@ -314,6 +400,7 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, fresh=None):
     if col is None:
         return [], [], [], None
     fresh = fresh or {}
+    credico = credico or {}
     changes, unmatched, suspicious = [], [], []
     for key, (row, active, disp) in roster.items():
         if not active:
@@ -330,7 +417,7 @@ def plan_week(ws, vals, week_mdy, roster, captains, regular, *, fresh=None):
             capspec = (cap or 0) + (spc or 0)
         else:
             capspec = cap_special_on_sheet(vals, captains, key, col)
-        new = round(reg + capspec, 2)
+        new = round(reg + capspec + (credico.get(key) or 0.0), 2)
         old = P._num_locale(vals[row - 1][col]) if (
             row - 1 < len(vals) and col < len(vals[row - 1])) else None
         # SAFETY GUARD: never let a re-pull ZERO a cell that holds a real value.
@@ -392,7 +479,18 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
                 print("  (period scan unavailable: {}; using month)".format(
                     type(e).__name__))
             week_period = {}
+
+        # Credico already placed into these columns. Read ONCE (one ledger
+        # download for the whole run) BEFORE any week is planned, because a week
+        # we cannot resource must be skipped rather than rebuilt without it.
+        credico_by_week, credico_blocked, led_rows = placed_credico(
+            ws, aliases=aliases, page=page, verbose=verbose)
+
         for wk in targets:
+            if "*" in credico_blocked or wk in credico_blocked:
+                print("\n{}: carries a PLACED credico we could not re-resource — "
+                      "left alone (rebuilding it would erase the credico)".format(wk))
+                continue
             m, _d, y = wk.split(".")
             wk_year = 2000 + int(y) if int(y) < 100 else int(y)
             per_num = week_period.get(wk)
@@ -442,7 +540,8 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
                     print("    (report only — re-run with --apply-dd to write these)")
 
             changes, unmatched, suspicious, col = plan_week(
-                ws, vals, wk, roster, captains, regular, fresh=fresh)
+                ws, vals, wk, roster, captains, regular, fresh=fresh,
+                credico=credico_by_week.get(wk))
             print("\n{} (from {}): {} cell(s) drifted".format(
                 wk, " + ".join(used) or "?", len(changes)))
             for _row, name, old, new in changes:
@@ -462,7 +561,8 @@ def backtrack(*, tab=F.SANDBOX_TAB, weeks=DEFAULT_WEEKS, write=False, verbose=Tr
         # is the only pass that reliably runs once a week is filled.
         if ledger:
             ledger_reconcile(ws, aliases=aliases, roster=roster, captains=captains,
-                             page=page, verbose=verbose, write=write)
+                             page=page, verbose=verbose, write=write,
+                             led_rows=led_rows)
 
     if not all_changes:
         print("\nnothing drifted — every checked week still matches its source.")
