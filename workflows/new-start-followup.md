@@ -141,15 +141,37 @@ Console/log only, never posted — these are plumbing, not performance:
 - **In OBCL but no Slack match** — the maintainer-facing half of the same
   finding: add them to `leaders.json`.
 - **Tagged but not in leaders.json** — an unknown leader got tagged.
+- **Tagged in the roll call but has NO new starts this week** — a mis-tag. Being
+  tagged does **not** put a leader on the nudge or the checklist; only owing a
+  new start (or replying *Sent*) does. The roll call is Lucy's own post, so
+  counting its mentions would make one bad tag repeat itself all weekend — which
+  is what would have happened to Bill Hirwa on 8/8. They're dropped silently from
+  the channel and named here instead.
 
 A leader who replies `Sent (Name)` is read as covering for **Name** — that
 leader is credited instead of nudged (Raf's Sosa case).
 
 ## If it fails
 
-Exit 2 means Aisha hasn't posted Friday's anchor yet. Everything hangs off that
-post, and it refuses to post rather than guess at the wrong thread. Check the
-channel, then re-run.
+Exit 2 means one of the two things everything hangs off is missing, and the
+report refuses to post rather than guess:
+
+- **Aisha hasn't posted Friday's anchor yet.** Check the channel, then re-run.
+- **Aisha's roster screenshot couldn't be read.** The OBCL sheet is *not* used as
+  a stand-in — it carries not-moving-forward and duplicate rows, so a roll call
+  built from it @-tags leaders who have no new start. Nothing posts; the next
+  scheduled pass posts it once the read works (the roll call is idempotent on its
+  own marker, so nobody gets tagged twice).
+
+  This bit on **2026-08-08**: the vision call returned `400 Could not process
+  image`, the report silently fell back to the sheet, and the 8am roll call
+  tagged **Bill Hirwa** for OBCL row 12 (Arnold Smith) — a row the screenshot
+  doesn't carry. Anthony Coca and Pranish Shrestha were mis-tagged the same way,
+  and six leaders got inflated counts. Megan: *"you tagged Bill but he doesn't
+  have anyone in the screenshot posted."*
+
+  `--allow-sheet-roster` forces the old fallback if Aisha genuinely never posts a
+  screenshot. It prints a loud warning — read the counts before adding `--live`.
 
 ## Texting the stragglers — PARKED (no active iMessage)
 

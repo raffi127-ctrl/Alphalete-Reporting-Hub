@@ -30,9 +30,11 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import json
 import re
 import ssl
 import sys
+from pathlib import Path
 
 from automations.vantura_slack_sales import parse as P
 from automations.vantura_slack_sales.parse import TZ
@@ -115,6 +117,21 @@ KNOWN_USERS = {
     # somewhere. Mapped anyway: if she posts again the log says her NAME.
     "U0ATA7VUVE0": "Melanie Hernandez",
     "U047D64M0RW": "Nico Murrugarra",
+    # BOX new starts, added 2026-08-08. Every one of these posted real sales all
+    # week that landed in the day TOTAL but on NO rep's row — 12 BOX sales in
+    # five days, which is most of what Carlos means by "Box is off almost every
+    # day". Named the way the file's own note says to: the thread replies on
+    # their sale posts shout the rep's name, and each id's per-day counts then
+    # match exactly one board row that the VA had been fixing up by hand.
+    "U072BR0J0E5": "Sandy Samaniego",      # threads: "SANDYYYY", "Sandy !!"
+    "U0BL53A3V1Q": "Samantha Rodriguez",   # thread: "ITS HER FIRST TIMEEEE SAMMMM"
+    "U0BM813NQTZ": "Tara Lynn Ecklof",     # threads: "TARA ENERGY", "SHEEESHHH TARAAA"
+    "U0BL716KWJV": "Kandice Michelle Flores",   # thread: "KANDICEEE"
+    # The one id whose thread never says a name — the hype is "COLOMBIAA" /
+    # "W CAR RIDE". Placed by its numbers instead: 1 on 8/5 and 2 on 8/6, and
+    # Kyara's row is the only BOX row carrying exactly that pair on those two
+    # days. Worth a second pair of eyes if her row ever looks off.
+    "U0BMMCG2494": "Kyara Nayibe Mancilla Hurtado",
     # B2B (AT&T lines and fiber)
     "U0ATXM9KYPM": "Jacob Ortega",
     "U07PU3WCN7P": "Nicholas Smedra",
@@ -131,6 +148,10 @@ KNOWN_USERS = {
     "U0AUH09AHHP": "Diego Borres",
     "U0B35CK1U8Z": "Josue Lozoya",
     "U0BJFCN6FM3": "Rafael Zapiain",   # posts as "falzapiain"; on the B2B board
+    # B2B new starts, added 2026-08-08 — same story as the BOX block above.
+    "U0BL7DT90FN": "Caleb Gregory Deleon",      # threads: "LETS GOOO CALEB"
+    "U0BKXFE2SDR": "Francisco Javier Jimenez",  # threads: "FRANNNNNN", "Francisco !!!!"
+    "U0BMX3TRTNK": "Emmanuel Nieto",            # thread: "El eman el og"
     # Not reps, but they post here — named so a mis-parse points at a person.
     "U0BCG8F9B5Z": "Lucy Reporting",
     "U046G04P5LG": "Carlos Hidalgo",
@@ -184,6 +205,80 @@ def _norm(name: str) -> str:
 
 
 # --------------------------------------------------------------- slack ---
+# Resolved ids are remembered here so one successful lookup covers every later
+# run, and so a rep keeps their name on a pass where Slack is unreachable.
+# Per-machine, under the git-ignored config area (Windows-safe via Path.home()).
+NAME_CACHE = Path.home() / ".config" / "recruiting-report" / "vantura-slack-users.json"
+
+# What a human has to click if the token still can't read the directory. Printed
+# once per run, and carried into the corrections alert.
+SCOPE_FIX = (
+    "Slack app config -> OAuth & Permissions -> User Token Scopes -> add "
+    "`users:read` -> Reinstall to Workspace, then re-save the token on Lucy 2. "
+    "Until that happens every NEW rep has to be added to KNOWN_USERS by hand."
+)
+
+
+def _load_cache() -> dict:
+    try:
+        return json.loads(NAME_CACHE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — no cache yet is the normal first run
+        return {}
+
+
+def _save_cache(cache: dict) -> None:
+    try:
+        NAME_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        NAME_CACHE.write_text(json.dumps(cache, indent=1, sort_keys=True),
+                              encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — bookkeeping must never fail a run
+        _log(f"  (couldn't write the name cache: {type(e).__name__})")
+
+
+def resolve_names(client, ids, log=_log) -> tuple[dict, bool]:
+    """Ask Slack who these posters are. Returns ({id: name}, scope_ok).
+
+    KNOWN_USERS is hand-kept only because the reporting token has no
+    `users:read` (verified 2026-07-23, re-verified 2026-08-08 — still
+    missing_scope). The moment that scope is added this starts working and the
+    table degrades into a cache: a new rep is named on their first sale instead
+    of landing on no row until someone notices. Nothing else has to change.
+
+    A missing scope is NOT an error — it's the status quo. It logs the fix once
+    and hands back what it has.
+    """
+    ids = [u for u in ids if u]
+    if not ids:
+        return {}, True
+    cache = _load_cache()
+    found = {u: cache[u] for u in ids if u in cache}
+    todo = [u for u in ids if u not in cache]
+    if not todo:
+        return found, True
+    scope_ok = True
+    for uid in todo:
+        try:
+            u = client.users_info(user=uid)["user"]
+        except Exception as e:  # noqa: BLE001 — Slack errors must not kill a fill
+            err = getattr(getattr(e, "response", None), "data", {}) or {}
+            if err.get("error") == "missing_scope":
+                scope_ok = False
+                break               # every other id would fail the same way
+            log(f"  users.info({uid}) failed: {type(e).__name__} — skipped")
+            continue
+        name = (u.get("real_name")
+                or u.get("profile", {}).get("real_name")
+                or u.get("profile", {}).get("display_name") or "").strip()
+        if name:
+            found[uid] = cache[uid] = name
+            log(f"  resolved {uid} -> {name} (from Slack)")
+    if found:
+        _save_cache(cache)
+    if not scope_ok:
+        log(f"  NOTE: the token still has no `users:read`. {SCOPE_FIX}")
+    return found, scope_ok
+
+
 def fetch_posts(oldest: dt.datetime, latest: dt.datetime):
     """Every top-level message in the window, parsed, plus the user directory.
 
@@ -212,6 +307,12 @@ def fetch_posts(oldest: dt.datetime, latest: dt.datetime):
         for uid, name in MENTION_RE.findall(m.get("text", "")):
             directory.setdefault(uid, name.strip())
 
+    # Anyone still unnamed gets one shot at the Slack directory before their
+    # sales go looking for a board row.
+    unknown = {m.get("user") for m in raw if m.get("user")} - set(directory)
+    resolved, scope_ok = resolve_names(client, sorted(unknown))
+    directory.update(resolved)
+
     posts = []
     for m in raw:
         uid = m.get("user") or m.get("bot_id") or ""
@@ -222,7 +323,7 @@ def fetch_posts(oldest: dt.datetime, latest: dt.datetime):
         posts.append(P.read_post(m["ts"], when, author, uid,
                                  html.unescape(m.get("text", ""))))
     posts.sort(key=lambda p: float(p.ts))
-    return posts, directory
+    return posts, directory, scope_ok
 
 
 def office_tally(posts, day: dt.date, campaign: str):
@@ -480,13 +581,25 @@ def main(argv=None) -> int:
     lo = dt.datetime.combine(days[0] - dt.timedelta(days=1), dt.time(0), tzinfo=TZ)
     hi = dt.datetime.combine(days[-1] + dt.timedelta(days=1), dt.time(12), tzinfo=TZ)
     _log(f"reading {CHANNEL[0]} {lo.date()} .. {hi.date()}")
-    posts, directory = fetch_posts(lo, hi)
+    posts, directory, scope_ok = fetch_posts(lo, hi)
     by_camp = {c: sum(1 for p in posts if p.campaign == c) for c in campaigns}
     _log(f"{len(posts)} messages, {directory and len(directory)} known users, "
          + ", ".join(f"{k} {v}" for k, v in by_camp.items()) + " sale posts")
 
     ws, g = board_grid()
     results = [run_campaign(posts, g, d, c) for d in days for c in campaigns]
+
+    # A poster we can't name sells into the day TOTAL but onto NO rep's row, and
+    # the 5:10am board post renders that hole. It used to be a log line nobody
+    # reads (that is how Monica lost 7/28 and 7/30, and how five BOX reps lost a
+    # whole week in August). Now it goes where every other report's problems go.
+    unknown_sales = sorted({
+        (author, res["campaign"], rec["count"])
+        for res in results for author, rec in res["unmatched"]
+        if any(p.author == p.author_id for p in rec["posts"])})
+    if unknown_sales and a.fill and a.yes:
+        from automations.vantura_slack_sales import alert
+        alert.alert_unknown_posters(unknown_sales, scope_ok)
 
     skipped = [p for p in posts if p.skipped and p.sales_day in days]
     if skipped:

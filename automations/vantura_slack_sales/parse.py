@@ -55,6 +55,15 @@ GOALS_RE = re.compile(r"todays? goals|goal hit|goal passed", re.I)
 CHATTER_RE = re.compile(r"^\s*(line\s*up|who ?i?s next|wait for him)", re.I)
 BOT_AUTHORS = {"Lucy Reporting", "Slackbot", "Alphalete GP", "Jolie Calinagan"}
 
+# The office's own running tally: "A&T - 16/20", "Box - 10/12", "Base -4/15".
+# Those numbers are the WHOLE DAY's totals, so a tally post read as a sale would
+# credit one rep with the entire office. Every one seen so far also carries
+# "Todays Goals" and dies on GOALS_RE, but the AT&T header rule below makes a
+# bare tally post reachable, so it gets its own guard.
+TALLY_LINE_RE = re.compile(
+    r"(?mi)^[ \t>*_]*(?:a[ \t]*&[ \t]*t|at[ \t]*&?[ \t]*t|att|box|base)\b"
+    r"[^\n]{0,24}?-[ \t]*\d*[ \t]*/[ \t]*\d+")
+
 # --- shared marker shapes -------------------------------------------------
 # Two digits is already double the office's best day; the (?!\d) guard stops a
 # run-on address ("Cx210810 HERMOSA DR") reading as 21 sales.
@@ -62,11 +71,28 @@ _CX = re.compile(r"\bcx\s*#?\s*(\d{1,2})(?!\d)", re.I)
 # A number run into a street number or zip — counted, but flagged for a human.
 _GLUED = re.compile(r"\bcx\s*#?\s*(\d)(?=\d{3,})", re.I)
 
+# AT&T PRODUCTS — the words that can only ever mean an AT&T line item. Kept
+# apart from the softer signals below because the energy campaigns borrow those:
+# a BOX post saying "Autopay ✅" is still a BOX post, and excluding it on "auto
+# pay" threw the whole post to AT&T (found 2026-08-08, never fired in the wild).
+_ATT_PRODUCT = re.compile(
+    r"\bnl\b|\bnl(?=\d)|\bfiber\b|\binseego\b"
+    r"|\b(?:byod|boyd)\b|\b(?:byod|boyd)(?=[#\d])", re.I)
+
 # Markers belonging to the AT&T campaign, never to an energy one. "NL" is
 # matched bare too — reps write "Cx3 / NL" with no line number.
 _ATT_SIGNAL = re.compile(
-    r"\bnl\b|\bfiber\b|\binseego\b|\bwrap ?(?:up|text)\b|\bauto ?pay\b",
-    re.I)
+    _ATT_PRODUCT.pattern + r"|\bwrap ?(?:up|text)\b|\bauto ?pay\b", re.I)
+
+# The campaign's own header line — "AT&T", "ATT", "AT & T", "*AT&T*". Reps write
+# the header even when every line item under it is a product we have never seen,
+# so this is what stops an all-BYOD post from being read as chatter (Carlos
+# 2026-08-08: "can she just look for the post that starts AT&T"). Anchored to
+# the START of a line on purpose: mid-sentence "at&t" chatter must not turn a
+# post into a sale. "A&T" is deliberately NOT accepted — that is the office's
+# tally shorthand ("A&T - 16/20"), not a sale header.
+_ATT_HEADER_PAT = r"^[ \t>*_]*(?:at[ \t]*&[ \t]*t|att)\b"
+_ATT_HEADER = re.compile(_ATT_HEADER_PAT, re.I | re.M)
 
 # A customer marker, in every form reps write it: "Cx", "Cx1", "Cx 1", "CX #2".
 # `\bcx\b` alone misses the glued "Cx1", which is how half of them are written.
@@ -78,27 +104,109 @@ _CX_EVID = r"\bcx\b|\bcx(?=\s*#?\s*\d)"
 _NL_TOKEN = re.compile(r"\bnl\b|\bnl(?=\d)", re.I)
 _FIBER_TOKEN = re.compile(r"\bfiber\b", re.I)
 _INSEEGO_TOKEN = re.compile(r"\binseego\b", re.I)
+# BYOD ("bring your own device") is a NEW LINE, exactly like an NL. Jacob Ortega
+# posted four apps on 2026-08-07 as "NL 1 / BOYD 2 / BYOD 3 / BYOD 4" and only
+# the NL counted — one sale instead of four (Carlos, #alphalete-gp-sales). BOYD
+# is the transposition he actually types, so it is matched too.
+_BYOD_TOKEN = re.compile(r"\b(?:byod|boyd)\b|\b(?:byod|boyd)(?=[#\d])", re.I)
+
+# Highest line number the last-resort fallback will believe. The office's best
+# AT&T day is ~22 across the WHOLE floor; 15 on one rep's post is already an
+# outlier, and beyond that a number is far likelier to be a year or a zip.
+FALLBACK_MAX = 15
+
+# A customer-index line ("Cx1", "CX 2 (business)") — never a line item.
+_CX_LINE = re.compile(r"^[ \t>*_]*cx\b", re.I)
 
 
 def count_att(text: str) -> int:
-    """AT&T sales in a post = NL lines + Fiber drops + STANDALONE Inseego.
+    """AT&T sales = NL lines + Fiber drops + standalone Inseego / BYOD lines.
 
-    Inseego is the subtle one. "NL 1 inseego air" is ONE line — inseego is the
-    line's device type, and the NL already counts it. But "Inseego #3" on its
-    own line (William Bautista 2026-07-16) is its own line, and "Cx1 Inseego"
-    with no NL (Nick Smedra) is a real sale. So an Inseego counts only on a
-    line that has no NL of its own. Cx is a customer INDEX (Cx1/Cx2/Cx3 = 1st/
-    2nd/3rd customer), never a sale count.
+    Inseego and BYOD are the subtle ones, and they behave identically. On a line
+    that already carries an NL or a Fiber they are the DEVICE, not a second
+    sale: "NL 1 inseego air" and "NL 2 (BYOD)" are one line each and the NL has
+    already counted them. On a line of their own they ARE the line — "Inseego
+    #3" (William Bautista 7/16), "Cx1 Inseego" with no NL (Nick Smedra 7/14),
+    "BYOD 3" (Jacob Ortega 8/7). Cx is a customer INDEX (Cx1/Cx2/Cx3 = 1st/2nd/
+    3rd customer), never a sale count.
     """
     n = len(_NL_TOKEN.findall(text)) + len(_FIBER_TOKEN.findall(text))
     for line in text.splitlines():
-        if _INSEEGO_TOKEN.search(line) and not _NL_TOKEN.search(line):
+        if _NL_TOKEN.search(line) or _FIBER_TOKEN.search(line):
+            continue                      # the NL/Fiber already counted it
+        if _INSEEGO_TOKEN.search(line) or _BYOD_TOKEN.search(line):
             n += 1
     return n
-# Contract fields that mean business energy (BOX).
+
+
+def _item_number(line: str) -> int | None:
+    """The line-item number on a line like "NL 1", "BYOD #2", "Hotspot 3 (P)",
+    "#4" — or None if the line isn't a line item at all.
+
+    Deliberately narrow. Everything a rep writes ABOVE the line items — the
+    shout-out lists, the Goggins quote, the wrap-up ticks — has to fall out
+    here, because the caller trusts the biggest number it returns.
+    """
+    s = line.strip().strip("*_> \t")
+    if not s or len(s) > 40 or "<@" in s or _CX_LINE.match(s):
+        return None
+    s = re.sub(r"\([^)]*\)\s*$", "", s).strip()        # drop a "( Premium )"
+    m = re.search(r"#?\s*(\d{1,2})$", s)
+    if not m:
+        return None
+    head = s[:m.start()].strip(" #\t")
+    # A product word ("NL", "BYOD", "Fiber 1000") or nothing at all. Anything
+    # else — "36 month term", "5,304KWH", "Cx210810 HERMOSA DR" — is not a line.
+    if head and not re.fullmatch(r"[A-Za-z][A-Za-z&/.'\- ]{0,18}", head):
+        return None
+    return int(m.group(1))
+
+
+def att_fallback_count(text: str) -> int:
+    """LAST RESORT: the highest numbered line item under an AT&T header.
+
+    Carlos, 2026-08-08: "They sell different products and it's tough to get them
+    to post properly — can she just look for the post that starts AT&T and has
+    #2, #3 etc?" This is that rule, and it is the safety net UNDER count_att,
+    never a second opinion beside it: it runs only when count_att recognised
+    NOTHING. Taking the larger of the two would break the reps who post
+    correctly, because AT&T line numbers CONTINUE across a rep's posts — William
+    Bautista posts "#1", then "#2..#9" in a second post. count_att reads that as
+    1 + 8 = 9, which is right; "highest number" would read it as 1 + 9 = 10.
+    """
+    m = _ATT_HEADER.search(text)
+    if not m:
+        return 0
+    best = 0
+    for line in text[m.end():].splitlines():
+        n = _item_number(line)
+        if n is not None and 1 <= n <= FALLBACK_MAX:
+            best = max(best, n)
+    return best
+# Contract fields that mean business energy (BOX). "Box 2" with no hash counts
+# — the `#?` is optional on purpose, reps drop it constantly.
 _BOX_SIGNAL = re.compile(
     r"\bbox\s*#?\s*\d|\bbf\s*#?\s*\d|\bbill submitted\b|\bannual usage\b"
     r"|\d\s*month|\bterms?\s+\d", re.I)
+
+_BF_TOKEN = re.compile(r"\bbf\s*#?\s*\d", re.I)
+_BILL_SUBMITTED = re.compile(r"\bbill submitted\b", re.I)
+
+
+def count_box_contracts(text: str) -> int:
+    """How many separate contracts one BOX post carries.
+
+    Jayden Luna, 2026-08-03 19:29, posted TWO bills — "BF 1 / 16,956 kWh / BF 4
+    / 43,800 kWh" — under a single "Box #3", and the running counter read the
+    post as one customer. A post is worth at least as many sales as it has
+    contracts in it.
+
+    MAX, never the sum: the standard post says "Bill Submitted ✅" AND "BF 1"
+    about the SAME contract, so adding the two token counts would double every
+    normal post. kWh readings are deliberately not counted — "Annual Usage
+    111,660kWh" and the meter reading are two numbers for one bill.
+    """
+    return max(len(_BF_TOKEN.findall(text)), len(_BILL_SUBMITTED.findall(text)))
 
 
 @dataclass
@@ -124,6 +232,12 @@ class Campaign:
     # where a line item can be an NL, a Fiber, or a standalone Inseego and the
     # marker isn't a simple regex tally. None = count regex matches as before.
     counter: object = None
+    # units mode only: the last-resort counter, tried ONLY when `counter`
+    # recognised nothing at all (see att_fallback_count for why not max()).
+    fallback: object = None
+    # running mode only: how many contracts one post carries, so a post that
+    # under-numbers itself can still be lifted (see count_box_contracts).
+    blocks: object = None
 
 
 CAMPAIGNS = [
@@ -153,22 +267,29 @@ CAMPAIGNS = [
     Campaign(
         name="BOX",
         include=_BOX_SIGNAL,
-        exclude=re.compile(_ATT_SIGNAL.pattern + r"|\bd2d\b", re.I),
+        # PRODUCTS only, not _ATT_SIGNAL: "Autopay" and "Wrap up text" appear on
+        # energy posts too, and excluding on them handed the post to AT&T.
+        exclude=re.compile(_ATT_PRODUCT.pattern + r"|\bd2d\b", re.I),
         override=re.compile(r"\bbox\s*#?\s*\d", re.I),
         mode="running",
         markers=[re.compile(r"\bbox\s*#?\s*(\d{1,2})(?!\d)", re.I), _CX],
         evidence=re.compile(r"\d[\d,]*\s*kwh|\bcx\b|\bbf\s*\d", re.I),
+        blocks=count_box_contracts,
     ),
     Campaign(
         name="B2B",
-        include=_ATT_SIGNAL,
+        # The header joins the product words, so a post whose line items are all
+        # BYOD (or a product we've never seen) is still recognised as AT&T.
+        include=re.compile(_ATT_SIGNAL.pattern + "|" + _ATT_HEADER_PAT,
+                           re.I | re.M),
         exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b", re.I),
         override=None,
         mode="units",
-        # Counting lives in count_att — NL lines + Fiber + standalone Inseego,
-        # which a flat regex tally can't express (see that function).
+        # Counting lives in count_att — NL lines + Fiber + standalone Inseego
+        # or BYOD, which a flat regex tally can't express (see that function).
         markers=[],
         counter=count_att,
+        fallback=att_fallback_count,
         evidence=re.compile(_CX_EVID, re.I),
     ),
 ]
@@ -214,6 +335,8 @@ def is_sale_post(author: str, text: str) -> bool:
         return False
     if GOALS_RE.search(text) or CHATTER_RE.search(text):
         return False
+    if TALLY_LINE_RE.search(text):
+        return False
     return bool(text.strip())
 
 
@@ -242,6 +365,15 @@ def sale_markers(c: Campaign, text: str) -> tuple[list[int], list[str]]:
     # units tally (len(markers)) comes out right.
     if c.counter is not None:
         n = c.counter(text)
+        if not n and c.fallback is not None:
+            # Nothing recognised. Fall back to the numbered lines under the
+            # header — Carlos's rule. ONLY here, never as a max() against a real
+            # count (att_fallback_count explains why that would double a rep).
+            n = c.fallback(text)
+            if n:
+                flags.append(
+                    f"no NL / Fiber / BYOD recognised — counted {n} from the "
+                    "numbered lines under the AT&T header; check the wording")
         if n:
             return [1] * n, flags
         if c.evidence.search(text):
@@ -264,6 +396,16 @@ def sale_markers(c: Campaign, text: str) -> tuple[list[int], list[str]]:
     glued = [int(m) for m in _GLUED.findall(text)] if c.mode == "running" else []
     if glued:
         flags.append("sale number ran into an address — verify")
+    # A post can carry more contracts than its own counter admits (Jayden Luna
+    # 2026-08-03: two BF blocks under one "Box #3"). Injected as a marker so the
+    # running max picks it up. It can only LIFT a post that under-numbers
+    # itself, never lower one, and a single-contract post is untouched — that
+    # still goes down the "unnumbered post = 1" path below.
+    if c.blocks is not None:
+        blocks = c.blocks(text)
+        if blocks >= 2 and blocks > max(found + glued, default=0):
+            flags.append(f"{blocks} contracts in one post — counted as {blocks}")
+            found = found + [blocks]
     if found or glued:
         return sorted(found + glued), flags
     if c.evidence.search(text):

@@ -112,6 +112,88 @@ def should_alert(exit_code: str, today: str, state: Path = HOLD_STATE) -> bool:
     return True
 
 
+# Unknown-poster alerts dedupe on the SET of ids, once a day: the fill runs
+# seven times a day and the same nameless rep would otherwise ping seven times.
+# A NEW id appearing later the same day changes the set, so it still alerts.
+UNKNOWN_STATE = Path(__file__).resolve().parents[2] / "output" / ".vslack_unknown_alert"
+
+
+def build_unknown_message(unknown, scope_ok: bool) -> list[str]:
+    """The corrections post for sales that landed on no rep's row.
+
+    `unknown` is [(slack id, campaign, count)] — the poster is real, they sold,
+    and their board row reads 0 because nothing here can turn the id into a
+    name. Every hour this stays unfixed is an hour of wrong daily standings.
+    """
+    total = sum(c for _u, _camp, c in unknown)
+    lines = [
+        f":warning: *{REPORT_NAME}* — {total} sale(s) landed on *no rep's row*",
+        "",
+        "Slack gave no name for these posters, so their sales are in the day's "
+        "TOTAL but on nobody's line. The 5:10am board post will render them as "
+        "zeros:",
+        "",
+    ]
+    for uid, camp, count in unknown:
+        lines += [f"  • `{uid}` — {count} {camp} sale(s)"]
+    lines += [
+        "",
+        "*To fix:* open one of their posts in #alphalete-gp-sales — the thread "
+        "replies shout the rep's name — then add the id to `KNOWN_USERS` in "
+        "`automations/vantura_slack_sales/run.py`.",
+    ]
+    if not scope_ok:
+        lines += [
+            "",
+            f":key: This keeps happening because the Slack token can't read the "
+            f"user directory. Permanent fix: {SCOPE_FIX_HINT}",
+        ]
+    return lines + [
+        "",
+        "*PASTE TO CLAUDE*",
+        "```",
+        "Report: automations/vantura_slack_sales — unknown Slack posters",
+        "Unnamed ids with sales: "
+        + ", ".join(f"{u} ({c} {camp})" for u, camp, c in unknown),
+        "```",
+    ]
+
+
+SCOPE_FIX_HINT = (
+    "Slack app config -> OAuth & Permissions -> User Token Scopes -> add "
+    "`users:read` -> Reinstall to Workspace -> re-save the token on Lucy 2."
+)
+
+
+def alert_unknown_posters(unknown, scope_ok: bool,
+                          state: Path = UNKNOWN_STATE) -> bool:
+    """Post the unknown-poster warning, at most once a day per set of ids."""
+    key = dt.date.today().isoformat() + "|" + ",".join(
+        sorted(u for u, _c, _n in unknown))
+    try:
+        if state.read_text().strip() == key:
+            print("[alert] same unknown posters already reported today",
+                  flush=True)
+            return False
+    except Exception:  # noqa: BLE001 — no state file yet is normal
+        pass
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(key)
+    except Exception:  # noqa: BLE001 — never block the alert on bookkeeping
+        pass
+
+    from automations.day_orchestrator import notify
+    from automations.day_orchestrator.registry import load_config
+
+    ts = notify._post_corrections(
+        load_config(), None, build_unknown_message(unknown, scope_ok),
+        dry_run=False, tag="vantura_slack_sales-unknown-poster")
+    print(f"[alert] unknown-poster post {'sent' if ts else 'SKIPPED/failed'}",
+          flush=True)
+    return bool(ts)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     log_path = argv[0] if argv else "(unknown)"

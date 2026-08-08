@@ -59,7 +59,8 @@ def _run(args) -> int:
         when = "morning" if hour < 12 else ("midday" if hour < 16 else "evening")
 
     try:
-        rec = report_mod.build(monday=monday)
+        rec = report_mod.build(monday=monday,
+                               allow_sheet_roster=args.allow_sheet_roster)
     except RuntimeError as exc:
         print("INCOMPLETE — {}".format(exc), file=sys.stderr)
         return 2
@@ -139,6 +140,12 @@ def main(argv=None) -> int:
                     help="which Saturday nudge to send (wording differs); "
                          "auto picks by clock time so one launchd job covers all three")
     ap.add_argument("--monday", help="start-week Monday as YYYY-MM-DD (default: next Monday)")
+    ap.add_argument("--allow-sheet-roster", action="store_true",
+                    help="if Aisha's screenshot can't be read, build the roster "
+                         "from the OBCL sheet anyway. OFF by default: the sheet "
+                         "carries not-moving-forward and duplicate rows, so it "
+                         "tags leaders who have no new start. Check the output "
+                         "before posting with this on.")
     ap.add_argument("--live", action="store_true", help="actually post to Slack")
     ap.add_argument("--dry-run", action="store_true", default=True,
                     help="print only (default)")

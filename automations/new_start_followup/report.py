@@ -60,6 +60,7 @@ class Reconciliation:
         self.statuses = []            # type: List[LeaderStatus]
         self.unmatched_obcl = {}      # type: Dict[str, int]  OBCL name -> count, no roster entry
         self.tagged_unknown = []      # type: List[str]       Slack id tagged, not in roster
+        self.tagged_no_starts = []    # type: List[str]       Slack id tagged, but owes nothing
         self.thread = None            # type: Optional[dict]
 
     @property
@@ -115,7 +116,7 @@ class Reconciliation:
 
 
 def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
-          client=None) -> Reconciliation:
+          client=None, allow_sheet_roster: bool = False) -> Reconciliation:
     ros = roster_mod.load()
     if monday is None:
         monday = obcl.upcoming_monday()
@@ -123,7 +124,7 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
     # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
     # via Claude vision. The live OBCL tab carries people we're NOT moving forward
     # with + duplicate rows, so we no longer derive the roster from it (Raf
-    # 2026-08-03). Fall back to the OBCL sheet only if the screenshot is missing.
+    # 2026-08-03).
     from automations.new_start_followup import screenshot_roster
     sheet_only = {}  # type: Dict[str, int]
     try:
@@ -138,8 +139,30 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
               .format(sum(owed.values()), len(owed)))
         sheet_only = _sheet_only_untaggable(monday, owed, ros)
     except Exception as exc:  # noqa: BLE001
-        print("WARNING: screenshot roster unavailable ({}); falling back to the "
-              "OBCL sheet.".format(exc))
+        # The OBCL sheet is NOT a safe stand-in for the screenshot: it holds
+        # not-moving-forward + duplicate rows, so building a TAG list from it
+        # @-mentions people who have no new start. That is exactly what happened
+        # on 2026-08-08 -- the vision call 400'd ("Could not process image"), the
+        # report silently fell back, and Bill Hirwa was tagged for OBCL row 12
+        # (Arnold Smith), a row Aisha's screenshot doesn't carry. Megan: "you
+        # tagged Bill but he doesn't have anyone in the screenshot posted."
+        #
+        # Aisha posts the screenshot Friday afternoon (16:56 that week, 15h
+        # before the 8am roll call), so a missing one means the READ broke, not
+        # that she's late. Refusing is cheap: the roll call is idempotent on its
+        # own marker, so the next scheduled pass posts it once the read works.
+        if not allow_sheet_roster:
+            raise RuntimeError(
+                "Couldn't read Aisha's roster screenshot ({}). Refusing to build "
+                "the roll call from the OBCL sheet -- it carries not-moving-"
+                "forward and duplicate rows, so it tags leaders who have no new "
+                "start. Nothing was posted; the next scheduled pass will post it "
+                "once the screenshot reads. To override anyway, re-run with "
+                "--allow-sheet-roster.".format(exc))
+        print("WARNING: screenshot roster unavailable ({}); --allow-sheet-roster "
+              "given, so falling back to the OBCL sheet. Counts and tags may "
+              "include rows Aisha's screenshot excludes -- CHECK BEFORE POSTING."
+              .format(exc))
         monday, tab, starts = obcl.read_new_starts(monday)
         owed = obcl.counts_by_interviewer(starts)
 
@@ -177,14 +200,28 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
               "Treating everyone as active.".format(exc))
         gone = set()
 
-    # Every leader who owes a text, was tagged, OR replied "Sent" gets a row —
-    # so a leader who confirms is always credited, even if their name never
-    # matched an OBCL row that week (Raf: some 'Sent' replies weren't caught).
-    ids = set(owed_by_id) | set(th["tagged"]) | set(th["confirmations"])
+    # A leader gets a row if they OWE a text or they replied "Sent" — a leader
+    # who confirms is always credited, even if their name never matched a roster
+    # row that week (Raf: some 'Sent' replies weren't caught).
+    #
+    # Being TAGGED is deliberately not enough. The roll call is Lucy's own post,
+    # so feeding its mentions back in makes a bad tag self-sustaining: on
+    # 2026-08-08 the 8am roll call ran off the sheet fallback and tagged Bill
+    # Hirwa, Anthony Coca and Pranish Shrestha, none of whom had a new start —
+    # and every later pass would have re-tagged them off that same post.
+    ids = set(owed_by_id) | set(th["confirmations"])
+    for sid in th["tagged"]:
+        leader = ros.by_id(sid)
+        if leader is None:
+            if sid not in rec.tagged_unknown:
+                rec.tagged_unknown.append(sid)
+        elif sid not in ids:
+            rec.tagged_no_starts.append(leader.name)
     for sid in ids:
         leader = ros.by_id(sid)
         if leader is None:
-            rec.tagged_unknown.append(sid)
+            if sid not in rec.tagged_unknown:
+                rec.tagged_unknown.append(sid)
             continue
         rec.statuses.append(
             LeaderStatus(
@@ -442,6 +479,15 @@ def ops_flags(rec: Reconciliation) -> List[str]:
         out.append("Tagged in the thread but not in leaders.json:")
         for sid in sorted(rec.tagged_unknown):
             out.append("   •  {}".format(sid))
+    if rec.tagged_no_starts:
+        # A MIS-TAG: the roll call pinged them for a new start the roster doesn't
+        # give them. They're dropped from the nudge and the checklist rather than
+        # chased -- but it stays visible here, because a mis-tag means the roll
+        # call ran on the wrong roster (see the sheet-fallback guard in build()).
+        out.append("Tagged in the roll call but has NO new starts this week — "
+                   "mis-tagged, and dropped from the nudge/checklist:")
+        for name in sorted(rec.tagged_no_starts):
+            out.append("   •  {}".format(name))
     return out
 
 

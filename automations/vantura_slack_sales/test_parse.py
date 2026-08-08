@@ -89,7 +89,73 @@ CASES = [
     ("att number-first NL", "B2B (Business)\nWrap Text sent\nAuto Pay on\n\n"
      "AT&T\n\n1 NL ( PREMIUM )\n\n2 NL ( Premium )", "B2B", 2),
 
+    # --- BYOD is a line item, not a device note (Carlos 2026-08-08) --------
+    # THE post Carlos flagged: Jacob Ortega 8/7 12:51 posted four apps and only
+    # the NL counted. Note "BOYD" — the transposition he actually types.
+    ("att byod line items", "B2B (business)\nAuto pay :white_check_mark:\n\n"
+     "AT&T\n\nNL 1 \n\nBOYD 2 \n\nBYOD 3 \n\nBYOD 4 ", "B2B", 4),
+    # Same rep, 8/5 16:39 — three apps, counted as one.
+    ("att byod three", "B2B (business)\nAuto pay :white_check_mark:\n\nAT&T\n\n"
+     "NL 1 \n\nBYOD 2 \n\nBYOD 3 ", "B2B", 3),
+    # Emmanuel Nieto 8/5 21:03, no spaces around the hash.
+    ("att byod glued hash", "*B2B business* \n*Auto Pay on* :white_check_mark:\n"
+     "\nNL #1\n\nNL #2\n\nByod#3\n\nByod#4", "B2B", 4),
+    # An all-BYOD post with no NL/Fiber anywhere: the AT&T HEADER is the only
+    # thing that says which campaign this is. Before the header rule this was
+    # read as chatter and counted zero.
+    ("att byod only, header carries it",
+     "B2B (business)\n\nAT&T\n\nBYOD 1\n\nBYOD 2", "B2B", 2),
+    # ...and BYOD hanging off an NL line is still ONE sale, same as inseego.
+    ("att byod is a device note", "B2B (Business)\nWrap Text sent\nAuto Pay on\n"
+     "\nAT&T\n\nNL 1 (BYOD)\n\nNL 2 (BYOD)", "B2B", 2),
+
+    # --- the last-resort fallback -----------------------------------------
+    # A product nobody has taught the parser yet. The header + the numbering is
+    # all there is to go on, so the highest number wins (Carlos's rule).
+    ("att unknown product falls back to the numbers",
+     "B2B (business)\n\nAT&T\n\nHotspot 1\n\nHotspot 2\n\nHotspot 3", "B2B", 3),
+    # ...but it must NOT fire when real products were counted. William Bautista
+    # numbers ACROSS his posts (#1 in one, #2-#9 in the next), so a max() here
+    # would score this post 9 instead of 8 and double his day.
+    ("att fallback never overrides a real count",
+     "*B2B BUSINESS*\n*Auto Pay on*\n\nNL #2\n\nNL #3\n\nNL #4\n\nNL #5\n\n"
+     "NL #6\n\nNL #7\n\nNL #8\n\nFiber 300 #9", "B2B", 8),
+    # Shout-out lines carry numbers too — they must never be read as line items.
+    ("att fallback ignores mentions",
+     "B2B (business)\n\nS/O <@U123> <@U456> 100\n\nAT&T\n\nBYOD 1\n\nBYOD 2",
+     "B2B", 2),
+
+    # --- BOX: two contracts under one counter ------------------------------
+    # Jayden Luna 8/3 19:29 — two bills, one "Box #3". Before this the post was
+    # worth 3 for the day; the second BF now has to be worth at least 4... which
+    # it isn't, because #3 is already >= 2 contracts. What this case pins is the
+    # SAFE half: the count never drops and never inflates past the counter.
+    ("box two contracts under one counter",
+     "B2B :package::zap:\n\nBF 1\n16,956 kWh\n\nBF 4\n43,800 kWh\n\nBox #3",
+     "BOX", 3),
+    # The one that actually gains: two bills, no counter at all. Was 1.
+    ("box two contracts no counter",
+     "B2B :package::zap:\nBill Submitted\n\nBF 1\n36 month term\n16,956 kWh\n\n"
+     "BF 4\n36 month term\n43,800 kWh", "BOX", 2),
+    # "Bill Submitted" and "BF 1" are the SAME contract said twice — the
+    # standard post must not become 2.
+    ("box standard post is still one",
+     "B2B :package::zap:\nBill Submitted :white_check_mark:\n\nBF 1\n\n"
+     "36 month term\n5,304KWH\nCX 1", "BOX", 1),
+    # A BOX post that mentions autopay is still BOX — it used to be thrown to
+    # the AT&T campaign by the exclude list.
+    ("box mentioning autopay stays box",
+     "B2B :package::zap:\nBill Submitted\nAuto Pay on :white_check_mark:\n\n"
+     "BF 1\n36 month term\n21,204KWH\nBox #1", "BOX", 1),
+    # Unhashed counter.
+    ("box unhashed counter", "B2B :package::zap:\n\nBF 1\n21,204KWH\n\nBox 2",
+     "BOX", 2),
+
     # --- not sales at all --------------------------------------------------
+    # The office's running tally. Its numbers are the WHOLE FLOOR's day, so
+    # reading one as a sale would hand one rep the entire office.
+    ("bare office tally", "A&T - 16/20 :calling:\nBox - 10/12", None, 0),
+    ("att line up is not a sale", "AT&T LINE UP", None, 0),
     ("goals post", "Todays Goals:bangbang:\nA&T - 9/20\nBox - 7/8\nBase -4/15",
      None, 0),
     ("hype", "WHOSSS FIRST (BASE ):eyes:!!", None, 0),
