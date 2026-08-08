@@ -53,6 +53,17 @@ echo "[$(date)] review-replies starting" >> "$LOG_FILE"
 "$VENV_PY" -m automations.brand_audit.review_replies --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
 echo "[$(date)] review-replies finished exit=$?" >> "$LOG_FILE"
 
+# Weekly rep shout-out list — SUNDAYS ONLY (Maud, 2026-08-07 Loom). Tallies
+# the reps named in the last 7 days of Google reviews and posts the "Google
+# Review WE x.x" list (or a "No New Reviews" line when the week is empty).
+# `date +%u`: Mon=1 .. Sat=6 .. Sun=7 — works on macOS & Linux. Honors
+# --dry-run via "$@". Idempotent per week, so a same-day rerun won't double-post.
+if [ "$(date +%u)" -eq 7 ]; then
+  echo "[$(date)] rep-shoutouts (Sunday) starting" >> "$LOG_FILE"
+  "$VENV_PY" -m automations.brand_audit.rep_shoutouts --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
+  echo "[$(date)] rep-shoutouts finished exit=$?" >> "$LOG_FILE"
+fi
+
 # Report this standalone run to the Hub (shared Hub Activity sheet) so the
 # Brand Health card's pill reflects a REAL success/failure — same mechanism the
 # orchestrator uses for the reports it runs. Skip when a --dry-run was passed

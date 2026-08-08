@@ -5255,16 +5255,27 @@ AUTOMATED_REPORTS = [
         "emoji": "🩺",
         "color": "#6366F1",
         "category": "🩺 Brand Health",
-        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — posted to the Brand Health Slack channel.",
+        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — posted to the Brand Health Slack channel. Auto-replies to Google reviews, and every Sunday DMs the week's rep shout-out list (reps named in new Google reviews) + writes them to the Monday ATMO print.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Runs every brand collector for **Alphalete Marketing** (Google "
             "reviews, search results, Reddit mentions, website, reputation "
             "sites, public social) and posts the results in the **Brand "
-            "Health Slack Channel**.\n\n"
+            "Health Slack Channel**. It also **auto-replies to Google reviews** "
+            "(4–5★ thank-yous post straight to Google, throttled; 1–3★ queue to "
+            "the channel for approve/redo).\n\n"
+            "REP SHOUT-OUTS (Sundays)\n"
+            "Every **Sunday** it tallies the reps **named in the last 7 days "
+            "of Google reviews** — one point per review, highest first, ties "
+            "flagged for rock-paper-scissors — DMs the **“Google Review WE "
+            "x.x”** list to Bas + Raf + Megan, and writes the names as bullets "
+            "under **“Google Review S/O’s & Money!”** on the Monday ATMO print "
+            "(Fiber Local Office Checklist doc). Empty weeks post **“No New "
+            "Reviews for this week”** so the group always hears back.\n\n"
             "WHEN IT RUNS\n"
             "**Every day at noon (Central)**, via a launchd timer on the Mac "
-            "mini (LUCY). The **Run Now** button here triggers an extra pass "
+            "mini (LUCY); the rep shout-out rides that same noon run on "
+            "Sundays. The **Run Now** button here triggers an extra pass "
             "any time."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
