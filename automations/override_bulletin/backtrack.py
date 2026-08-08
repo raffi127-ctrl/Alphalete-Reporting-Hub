@@ -95,8 +95,19 @@ def regular_for_week(week_mdy, *, period=None, page=None, verbose=True, cache=No
     the week — when given it is used ALONE and is authoritative. 7.19 lives in
     period 8, so the old month-based guess pulled period 7's crosstab, which hands
     back an EMPTY/partial 7.19 column and made the backtrack propose ZEROING real
-    values (the 7.19 corruption). Only when the retail period is unknown do we fall
-    back to periods_for's month guess (and combine, in case the week splits).
+    values (the 7.19 corruption).
+
+    But it is tried FIRST, never ALONE. Eve 2026-08-07: when Tableau rolls period,
+    the week on the boundary is published SPLIT — a separate crosstab in the
+    period before AND the one after — and the week's real figure is the two
+    SUMMED. 7.19 is such a week, and reading period 8 by itself under-counted
+    Rafael by $261.86, Carlos by $392.78 and Benjamin Burden by $426.93. That is
+    what kept reverting her hand-corrected cells every run.
+
+    Summing cannot resurrect the 7.19 corruption: a period that does not carry the
+    week parses to nothing and is skipped, so combining only ever ADDS — the bug
+    was reading the wrong period INSTEAD of the right one, not as well as it. The
+    suspicious-zero guard in plan_week still backstops it.
 
     `cache` memoizes the parsed crosstab per period so re-checking four weeks in
     the same period costs ONE download, not four."""
@@ -106,8 +117,11 @@ def regular_for_week(week_mdy, *, period=None, page=None, verbose=True, cache=No
     week_header = "{}/{}/20{}".format(int(m), int(d), y[-2:])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Retail period FIRST, then the month-derived neighbours — de-duped, order
+    # kept. A boundary week is split across two of them and must be summed.
+    cands = ([period] if period else []) + periods_for(week_mdy)
     combined, used = {}, []
-    for period in ([period] if period else periods_for(week_mdy)):
+    for period in dict.fromkeys(cands):
         if period not in cache:
             try:
                 url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", period)
