@@ -196,18 +196,34 @@ def main():
     with appstream_direct_session(headless=False, verbose=False,
                                   force_form_login=True) as page:
         rqst = re.search(r"rqst=([A-Za-z0-9-]+)", page.url).group(1)
-        for name, oid, hint in OFFICES:
-            try:
-                if not switch(page, oid, hint, rqst):
-                    raise RuntimeError("office switch failed after retries")
-                days = pull(page, rqst, weeks, today)
-                if not days:
-                    raise RuntimeError("no days returned")
-                fresh[name] = {"office_id": oid, "days": days}
-                log("%-20s %d day(s)" % (name, len(days)))
-            except Exception as e:
-                failed.append(name)
-                log("%-20s FAILED: %s: %s" % (name, type(e).__name__, e))
+        def attempt(todo):
+            still = []
+            for name, oid, hint in todo:
+                try:
+                    if not switch(page, oid, hint, rqst):
+                        raise RuntimeError("office switch failed after retries")
+                    days = pull(page, rqst, weeks, today)
+                    if not days:
+                        raise RuntimeError("no days returned")
+                    fresh[name] = {"office_id": oid, "days": days}
+                    log("%-20s %d day(s)" % (name, len(days)))
+                except Exception as e:
+                    still.append((name, oid, hint))
+                    log("%-20s failed: %s: %s" % (name, type(e).__name__, e))
+            return still
+
+        # Lucy 2 is slower and busier than the mini — her first live dry run
+        # dropped 5 of 14 offices where the mini dropped none. Sweep the
+        # stragglers again rather than letting a transient render timeout cost a
+        # day's numbers for that manager.
+        left = attempt(OFFICES)
+        for round_no in (2, 3):
+            if not left:
+                break
+            log("retry pass %d for %d office(s): %s"
+                % (round_no, len(left), ", ".join(n for n, _, _ in left)))
+            left = attempt(left)
+        failed = [n for n, _, _ in left]
 
     if not fresh:
         log("nothing pulled — leaving the sheet untouched")
