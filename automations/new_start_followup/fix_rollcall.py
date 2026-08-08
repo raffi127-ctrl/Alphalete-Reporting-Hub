@@ -18,7 +18,7 @@ So the laptop takes a snapshot, git carries it over, and the mini applies it:
 
     # on the laptop
     python -m automations.new_start_followup.fix_rollcall --snapshot
-    git add output/... && git commit && git push
+    git add automations/new_start_followup/roster_snapshot.json && git push
 
     # on the mini (via `lucy nsf_fix_rollcall`), dry-run first
     python -m automations.new_start_followup.fix_rollcall --apply
@@ -42,8 +42,9 @@ from automations.shared import slack_metrics_post as smp
 
 # Tracked on purpose: git is the only channel to the mini, and output/ is
 # gitignored. Safe to commit — interviewer names (already in leaders.json) and
-# counts, never a new start's name.
-SNAPSHOT_PATH = Path(__file__).resolve().parent / "roster_snapshot.json"
+# counts, never a new start's name. Defined in report.py because the normal
+# report reads it too, as its stand-in when the screenshot can't be downloaded.
+SNAPSHOT_PATH = report_mod.SNAPSHOT_PATH
 
 
 def take_snapshot(monday: dt.date, path: Path) -> Path:

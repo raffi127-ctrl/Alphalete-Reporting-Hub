@@ -22,6 +22,11 @@ from automations.new_start_followup import (
 
 DEPARTED_NOTE = "No longer a channel member"
 
+# Last roster taken off Aisha's screenshot by a machine that can read it, used
+# when THIS machine can't (the mini's Slack token has no files:read). Written by
+# fix_rollcall.py --snapshot. Only ever used for its own week.
+SNAPSHOT_PATH = Path(__file__).resolve().parent / "roster_snapshot.json"
+
 
 class LeaderStatus:
     def __init__(self, leader, owed: int, tagged: bool, confirmation=None,
@@ -178,6 +183,18 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         # before the 8am roll call), so a missing one means the READ broke, not
         # that she's late. Refusing is cheap: the roll call is idempotent on its
         # own marker, so the next scheduled pass posts it once the read works.
+        # A snapshot for THIS week is the screenshot's own data, just taken
+        # elsewhere — so it's a real answer, not a guess like the sheet. Lets the
+        # weekend keep running on a machine that can't do the file download.
+        snap_owed = _snapshot_for(monday)
+        if snap_owed:
+            print("WARNING: screenshot roster unavailable ({}); using the roster "
+                  "snapshot for {} instead ({} new starts across {} interviewers)."
+                  .format(exc, monday.isoformat(), sum(snap_owed.values()),
+                          len(snap_owed)))
+            return _assemble(monday, friday, client, ros, snap_owed,
+                             "Aisha's screenshot (snapshot)",
+                             _sheet_only_untaggable(monday, snap_owed, ros))
         if not allow_sheet_roster:
             raise RuntimeError(
                 "Couldn't read Aisha's roster screenshot ({}). Refusing to build "
@@ -267,6 +284,26 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only) -> Reconciliat
             )
         )
     return rec
+
+
+def _snapshot_for(monday: dt.date) -> Dict[str, int]:
+    """The roster snapshot, but ONLY if it's for `monday`. {} otherwise.
+
+    Week-matched on purpose: last week's snapshot would tag last week's leaders
+    about last week's new starts, which is worse than not posting.
+    """
+    try:
+        if not SNAPSHOT_PATH.exists():
+            return {}
+        snap = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        if snap.get("monday") != monday.isoformat():
+            print("[roster] ignoring the snapshot — it's for the week of {}, "
+                  "not {}.".format(snap.get("monday"), monday.isoformat()))
+            return {}
+        return {k: int(v) for k, v in (snap.get("owed") or {}).items()}
+    except Exception as exc:  # noqa: BLE001
+        print("[roster] couldn't read the snapshot ({}).".format(exc))
+        return {}
 
 
 def _sheet_only_untaggable(monday: dt.date, owed: Dict[str, int],
