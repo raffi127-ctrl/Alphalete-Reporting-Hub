@@ -433,6 +433,8 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
                 line = f"  • {nm}"
                 if days is not None:
                     line += f" — {days} day" + ("" if days == 1 else "s")
+                    if days >= 2:   # alert on anyone sitting 2+ days ("old")
+                        line += " \U0001F6A8"
                 out.append(line)
         return "\n".join(out)
 
