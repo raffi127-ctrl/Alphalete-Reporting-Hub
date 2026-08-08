@@ -64,6 +64,8 @@ class Applicant:
     account: str = ""                  # the "To:" account email the app came in under
                                        # (e.g. team@peaksalesstrategiestx.com), so the
                                        # human knows which account to pull the # from
+    applied_date: Optional[dt.date] = None  # source-email "Sent:" date → how long
+                                            # they've been sitting (days) on the post
 
     # --- state signals (see module docstring / FINDINGS.md) ---
     override_button: bool = False          # "Overwrite Old Applicants (Send to AI)"

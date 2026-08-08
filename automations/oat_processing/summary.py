@@ -344,16 +344,18 @@ def _account_name(to_email: str) -> str:
 
 
 def _entries_of(bucket) -> list:
-    """Return [(name, account_email)] for a bucket. Tolerates old bare-name snapshots."""
+    """Return [(name, account_email, days_sitting)] for a bucket. Tolerates old
+    snapshots (bare names, or entries without a days field → None)."""
     out = []
     for it in bucket or []:
         if isinstance(it, dict):
             nm = (it.get("name") or "").strip()
             acct = (it.get("account") or "").strip()
+            days = it.get("days")
         else:
-            nm, acct = str(it).strip(), ""
+            nm, acct, days = str(it).strip(), "", None
         if nm:
-            out.append((nm, acct))
+            out.append((nm, acct, days))
     return out
 
 
@@ -411,11 +413,17 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     def _section(title, entries):
         if not entries:
             return f"{title} — 0\n  (none today ✅)"
-        # "• Name — Account" so the human knows which account to pull the # from.
+        # "• Name — Account — N days" so the human knows which account to pull the #
+        # from and how long they've been sitting (their application date).
         lines = []
-        for nm, acct in entries:
+        for nm, acct, days in entries:
             an = _account_name(acct)
-            lines.append(f"  • {nm}" + (f" — {an}" if an else ""))
+            line = f"  • {nm}"
+            if an:
+                line += f" — {an}"
+            if days is not None:
+                line += f" — {days} day" + ("" if days == 1 else "s")
+            lines.append(line)
         return f"{title} — {len(entries)}\n" + "\n".join(lines)
 
     body = (_section("\U0001F4DE Need a number pulled from Indeed", no_number)

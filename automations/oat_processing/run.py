@@ -203,10 +203,16 @@ _EXTRACT_JS = r"""() => {
     if (!/indeedemail\.com|indeed\.com/i.test(em)) { account = em; break; }
   }
   if (!account && toAll.length) account = toAll[toAll.length-1].replace(/^To:\s*/i,'').trim();
+  // --- applied/entered date: the source email footer "Sent: <date>" (bottom of the
+  //     page), e.g. "Sent: Thursday, August 6, 2026 02:30 PM" — how long they've been
+  //     sitting. Take the last "Sent:" (the footer). Grab the date-looking remainder.
+  let entered = '';
+  const sentAll = body.match(/Sent:\s*([A-Za-z0-9,:\/ ]+\d{4}[A-Za-z0-9,: ]*)/gi) || [];
+  if (sentAll.length) entered = sentAll[sentAll.length-1].replace(/^Sent:\s*/i,'').trim();
   return {
     fname: val('fname'), lname: val('lname'), phone: val('phone'),
     cellPhone: val('cellPhone'), email: val('email'), jBoard: val('jBoard'),
-    subject: val('emailApplicantSubject'), account,
+    subject: val('emailApplicantSubject'), account, entered,
     dupRows, cannotOverride, lastCorrespondence: corrM ? corrM[1] : '',
     overrideBtn, total: pm ? parseInt(pm[1],10) : null,
   };
@@ -267,6 +273,7 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
                 sent_today = True
 
     last_corr = _parse_us_date(d.get("lastCorrespondence") or "") if d.get("lastCorrespondence") else None
+    applied = _parse_us_date(d.get("entered") or "") if d.get("entered") else None
 
     a = Applicant(
         first_name=d.get("fname", ""), last_name=d.get("lname", ""),
@@ -274,6 +281,7 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
         email=d.get("email", ""), job_board=d.get("jBoard", ""),
         position=(d.get("subject", "") or "").strip(),
         account=(d.get("account", "") or "").strip(),
+        applied_date=applied,
         override_button=bool(d.get("overrideBtn")),
         correspondence_blocked=bool(d.get("cannotOverride")),
         last_correspondence=last_corr,
@@ -1769,7 +1777,8 @@ def run_walk(page, live: bool = False, limit: int = None,
         # text). Deduped by the walk's `seen` set, so this = who's flagged right now.
         _nm = f"{a.first_name} {a.last_name}".strip()
         if _nm:
-            _entry = {"name": _nm, "account": a.account or ""}
+            _days = (today - a.applied_date).days if a.applied_date else None
+            _entry = {"name": _nm, "account": a.account or "", "days": _days}
             if outcome == "flag_no_phone" or d.action.value == "flag_no_phone":
                 flagged_now["nophone"].append(_entry)
             elif outcome == "flag_retext":
