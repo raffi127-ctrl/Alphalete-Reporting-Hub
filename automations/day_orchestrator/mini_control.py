@@ -30,7 +30,11 @@ Actions:
                         in. The Args cell is auto-redacted when the row finishes.
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
-                        channel/thread posts actually use
+                        channel/thread posts actually use. Args auto-redacted.
+  slack_whoami          READ-ONLY: which Slack ACCOUNT this machine's user token
+                        belongs to (so you know which app to edit at
+                        api.slack.com/apps) + whether it has `users:read`.
+                        Prints scopes, never the token.
   set_office_slack_token <office_key> <xoxb>  install a per-office WORKSPACE bot
                         token for an office whose channel is in a non-AO Slack
                         workspace (e.g. trang → FRESH SUCCESS). Args auto-redacted.
@@ -116,6 +120,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
+                    "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "nsf_screenshot_diag",
@@ -125,7 +130,11 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
-                  "set_gdocs_token", "set_slack_token"}
+                  "set_gdocs_token", "set_slack_token",
+                  # The xoxp- USER token is the one channel posts actually use
+                  # and the more sensitive of the two — it was relying on the
+                  # queuer clearing the cell by hand (2026-08-08).
+                  "set_slack_user_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1204,6 +1213,74 @@ def _action_sheets_whoami(args: str) -> tuple[bool, str]:
             out.append(f"  {name:7} {type(e).__name__} http={code} {body}")
     out.append("READ-ONLY probe — nothing was written or posted.")
     return True, "\n".join(out)
+
+
+def _action_slack_whoami(args: str) -> tuple[bool, str]:
+    """READ-ONLY: whose Slack account is THIS machine's user token, and which
+    scopes does it actually have?
+
+    Why this exists (2026-08-08): the Vantura Sales Board fill can't name a new
+    rep because the token has no `users:read`, so their sales land on no row.
+    Fixing that means editing the right Slack app — and there was no way to
+    answer "which account IS Lucy 2's token?" from the laptop. Each teammate
+    installs their OWN app (see ongoing_cancel/SETUP.md), so guessing is wrong
+    as often as right.
+
+    Prints NO secrets: the account name and the granted scopes, never the token.
+    """
+    import ssl as _ssl
+
+    path = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
+    out = [f"slack user token: {path}"]
+    if not path.exists():
+        return False, "\n".join(out + [
+            "MISSING — push one with set_slack_user_token <xoxp-…>"])
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(
+            token=_load_token(),
+            ssl=_ssl.create_default_context(cafile=certifi.where()))
+        who = client.auth_test()
+    except Exception as e:  # noqa: BLE001
+        return False, "\n".join(out + [
+            f"auth.test FAILED: {type(e).__name__} — the token is dead or "
+            f"revoked; re-issue it and push with set_slack_user_token"])
+    # Slack returns the granted scopes in a response header, which is the only
+    # place they can be read without an admin API call.
+    scopes = (who.headers.get("x-oauth-scopes") or "").replace(" ", "")
+    granted = [s for s in scopes.split(",") if s]
+    out += [
+        f"account: {who.get('user')}  (user id {who.get('user_id')})",
+        f"workspace: {who.get('team')}  {who.get('url')}",
+        f"scopes ({len(granted)}): {', '.join(granted) or '(none reported)'}",
+        "",
+        "^ EDIT THE APP OWNED BY THAT ACCOUNT at https://api.slack.com/apps",
+    ]
+    # The scope this machine actually needs — probed, not just listed, because
+    # a scope can be added to the app and still not be on an un-reinstalled token.
+    try:
+        client.users_info(user=who["user_id"])
+        out.append("users:read — WORKING. New reps get named automatically; "
+                   "KNOWN_USERS is now just a cache.")
+        ok = True
+    except Exception as e:  # noqa: BLE001
+        err = getattr(getattr(e, "response", None), "data", {}) or {}
+        if err.get("error") == "missing_scope":
+            out += [
+                "users:read — MISSING. Every new rep's sales land on NO row "
+                "until their id is hand-added to KNOWN_USERS.",
+                "  Fix: api.slack.com/apps -> that account's app -> OAuth & "
+                "Permissions -> User Token Scopes -> add `users:read` -> "
+                "Reinstall to Workspace -> copy the new xoxp- token -> "
+                "`lucy set_slack_user_token <token> --machine \"<this machine>\"`",
+            ]
+        else:
+            out.append(f"users:read — probe failed: {type(e).__name__} {err}")
+        ok = False
+    out.append("READ-ONLY probe — nothing was written or posted.")
+    return ok, "\n".join(out)
 
 
 def _action_diag(args: str) -> tuple[bool, str]:
@@ -3364,6 +3441,7 @@ ACTIONS = {
     "nsf_fix_rollcall": _action_nsf_fix_rollcall,
     "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
+    "slack_whoami": _action_slack_whoami,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,
