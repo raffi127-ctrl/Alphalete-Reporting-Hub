@@ -5567,91 +5567,6 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "resume-pushing",
-        # Non-breaking spaces keep "Resume Pushing" and "(Q 10 Min)" together
-        # so the cadence wraps as one clean unit onto line 2 of the This Week
-        # strip pill (same trick as rc-autoread's "(Q 10 Min)").
-        "name": "Resume Pushing (Q 10 Min)",
-        "creator": "Carlos",
-        "emoji": "📄",
-        "color": "#F59E0B",
-        "category": "📲 Ops",
-        "description": "Extracts new applicant resumes in Carlos's ApplicantStream office (11580) and sends the valid ones to the AI call list — the unattended, scheduled version of Carlos's uploaded resume-pusher.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "**Carlos's office (11580)** in ApplicantStream **v2**: goes to "
-            "**Applicants → Process Emails → Process in Batches**, then works "
-            "in two passes.\n"
-            "**•** **1. Extract.** Clicks the **robot** (Resume Helper) → "
-            "**Start**, which reads the name / phone / email off each "
-            "applicant's resume. It only does ~50 at a time, so it **repeats "
-            "until \"Ready For Extraction\" hits 0** — nobody gets left "
-            "behind.\n"
-            "**•** **2. Send.** Selects everyone and clicks **Send to AI**, and "
-            "**keeps going until there's nothing left to send** (clearing "
-            "duplicates frees up more applicants each pass).\n"
-            "**•** Only applicants with a **valid, unique phone** actually reach "
-            "the AI call list — the rest are left behind (no phone / "
-            "duplicate), not sent.\n\n"
-            "WHEN IT RUNS\n"
-            "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
-            "Saturday).\n\n"
-            "HOW IT RUNS\n"
-            "On **Lucy 2**: drives a **real Google Chrome** on a fresh copy of "
-            "Carlos's everyday Chrome profile — for two reasons: the resume "
-            "extractor is "
-            "a **Chrome plug-in** (plug-ins don't run in the browser our other "
-            "automations use), and a **real Chrome gets past Cloudflare** where "
-            "that browser gets blocked. If a run is Cloudflare-blocked it "
-            "**re-copies a fresh profile on the next run and self-heals**; only "
-            "back-to-back blocks mean a human has to clear Cloudflare once. "
-            "**If the plug-in is ever removed from that Chrome profile, "
-            "extraction stops** — check that first if this report goes quiet."
-        ),
-        # No Google Sheet — ApplicantStream action bot only.
-        "assignees": ["Lucy 2"],
-        # Needs Carlos's AppStream session, which only exists on Lucy 2 — so a Hub
-        # "play" from ANY machine routes the run to Lucy 2 via the mini-control
-        # queue (run_rerun_id = the schedule_config id `rerun` resolves there).
-        "run_machine": "Lucy 2",
-        "run_rerun_id": "resume_pushing",
-        # Runs on its own 8am launchd timer on Lucy 2 — hide the DUE-TODAY +
-        # schedule pills on the report page (cadence is in the breakdown).
-        "hide_schedule": True,
-        # Self-running background job: never reports a per-day completion to the
-        # Hub, so keep it out of the "due today / not completed" tallies.
-        "self_scheduled": True,
-        "schedule": {
-            # Sun + Mon–Fri, NOT Saturday. 'weekly' + weekdays filters the This-Week
-            # calendar (frequency 'daily' would short-circuit and show all 7 days);
-            # weekday indices Mon=0 … Sat=5 … Sun=6, so Saturday (5) is excluded —
-            # matching the wrapper's own `date +%u -eq 6 → exit 0` Saturday gate.
-            "frequency": "weekly",
-            "weekdays": [0, 1, 2, 3, 4, 6],
-            # `time` = the START of the window: keeps the card sorted at 8am.
-            # `time_label` = what the This Week tile actually shows, because this
-            # one runs every 10 min across a window, not once at 8am.
-            "time": "8:00 AM",
-            "time_label": "8am–10pm CST",
-            "estimated_minutes": 5,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Resume Pushing complete — resumes extracted and valid applicants sent to the AI call list.",
-            "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or office 11580 not reachable), then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run",
-                "icon": "▶",
-                "primary": True,
-                "help": "Runs a full pass now: Auto-Extract, then send valid applicants to the AI call list. IRREVERSIBLE (only applicants with a valid, unique phone are sent).",
-                "module": "automations.resume_pushing.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
     # ── Applicant Push — Resume Pushing + OAT merged into one flow ────────
     # The unified office-11580 push: batch send + OAT leftovers cleanup on ONE
     # warm real-Chrome/CDP session. Supersedes the two cards above/below
@@ -5660,39 +5575,42 @@ AUTOMATED_REPORTS = [
     # (its wrapper publishes real success/failed to the Hub), so no forced pill.
     {
         "id": "applicant-push",
-        "name": "Applicant Push (Q 10 Min)",
+        "name": "Applicant Push (Q 5 Min)",
         "creator": "Carlos",
         "emoji": "📲",
         "color": "#F59E0B",
         "category": "📲 Ops",
-        "description": "The full recruiting push for Carlos's ApplicantStream office (11580) in one flow: extract new resumes and send the valid ones to the AI call list, THEN work the leftovers queue (send / remove duplicates / re-text quiet applicants) — Resume Pushing + OAT merged onto one browser session.",
+        "description": "Carlos's ApplicantStream office (11580) applicant push, all in one (Resume Pushing + OAT merged): every 5 minutes it works the leftover applicant queue — sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants — and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "One warm browser session for **Carlos's office (11580)** does both "
-            "halves of the daily push, back to back:\n"
-            "**•** **1. Batch send.** ApplicantStream **v2 → Process in Batches**: "
-            "the **robot** (Resume Helper) reads name / phone / email off each new "
-            "resume, then everyone valid is **sent to the AI call list**. Repeats "
-            "until nothing is left to extract or send.\n"
-            "**•** **2. Leftovers.** The **One-App-at-a-time** queue — everyone the "
-            "batch pass couldn't send — is worked one by one: fresh ones **sent**, "
-            "duplicates / past-interviews **removed**, quiet applicants (>1 week) "
-            "**re-texted** then removed, no-phone ones **flagged**.\n"
-            "**•** Only applicants with a **valid, unique phone** reach the call "
-            "list. Sends, removes and re-texts are **irreversible**.\n\n"
+            "One warm browser session for **Carlos's office (11580)** works the "
+            "**One-App-at-a-time** leftover queue on every pass:\n"
+            "**•** Fresh applicants **with a phone** → **sent to the AI call "
+            "list**.\n"
+            "**•** Duplicates / past-interviews / already-sent → **removed**.\n"
+            "**•** Quiet applicants (>1 week) whose text thread is still visible → "
+            "**re-texted** the FOR LUCY message, then removed.\n"
+            "**•** **No number on file** → it opens their resume to read one; if "
+            "it can't (Indeed blocks it), they're **flagged for a human to pull "
+            "the number from Indeed by hand** — each resume is read once, never "
+            "reopened.\n"
+            "**•** Quiet applicants whose thread is **too old to see** → flagged "
+            "for a **manual text**.\n\n"
+            "TWICE-A-DAY SLACK POST\n"
+            "At **noon and 4 PM** it posts to **#alphaletegp-recruiting** (one "
+            "thread per day) the to-do list of who still needs a hand — **who "
+            "needs a number pulled from Indeed** and **who needs a manual text** "
+            "— **grouped by account**, with **how many days** each has been "
+            "sitting (🚨 at 2+ days).\n\n"
             "WHEN IT RUNS\n"
-            "**Every ~10 minutes, 7 AM–10 PM Central, every day.**\n\n"
+            "**Every 5 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2**.\n\n"
             "HOW IT RUNS\n"
-            "On **Lucy 2**: drives a **real Google Chrome** on a copy of Carlos's "
-            "everyday profile (the resume extractor is a Chrome plug-in that only "
-            "runs in real Chrome, which also clears Cloudflare). **Both halves "
-            "share the one session**, so a single login serves both. If the batch "
-            "half is blocked by **Indeed's** resume-page check, the **leftovers "
-            "half still runs** (it doesn't touch Indeed). If the plug-in is removed "
-            "from that Chrome profile, extraction stops — check that first if the "
-            "batch half goes quiet.\n\n"
-            "8 PM posts the combined **Daily Push Scorecard** to "
-            "#alphaletegp-recruiting."
+            "Drives a **real Google Chrome** on a copy of Carlos's everyday "
+            "profile, on one warm office-11580 session (a session-holder keeps it "
+            "logged in). Sends, removes and re-texts are **irreversible**. The "
+            "batch resume-extract half is **on hold** — Indeed blocks the "
+            "automated resume pulls, so those numbers go on the twice-daily to-do "
+            "list for a human instead."
         ),
         # No Google Sheet — ApplicantStream action bot only.
         "assignees": ["Lucy 2"],
@@ -5705,11 +5623,11 @@ AUTOMATED_REPORTS = [
         "schedule": {
             # Runs EVERY day across a window. 'daily' shows all 7 days on the This
             # Week strip; time = window start (sorts the card at 7am); time_label =
-            # what the tile shows (it runs q10min across the window, not once).
+            # what the tile shows (it runs q5min across the window, not once).
             "frequency": "daily",
             "time": "7:00 AM",
             "time_label": "7am–10pm CST",
-            "estimated_minutes": 8,
+            "estimated_minutes": 5,
         },
         "checklist": [],
         "post_run": {
@@ -12465,10 +12383,6 @@ else:  # st.session_state.view == "user"
             # pill in the orange OPS color, regardless of run-status (its launchd
             # job doesn't report status back, so the default pill would read gray).
             "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
-            # Resume Pushing is the same kind of background OPS automation (Lucy 2
-            # launchd, no status reported back) — orange OPS pill regardless of
-            # run-status, so it doesn't read gray.
-            "[class*='resume-pushing__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Sara+ Issue Escalation is the same kind of background OPS automation
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
