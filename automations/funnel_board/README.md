@@ -1,0 +1,159 @@
+# Recruiting Funnel Board — how it updates
+
+Five tabs at the far right of the **Alphalete Org Applicant Tracker**
+(`1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo`):
+
+| Tab | What it is |
+|---|---|
+| **Manager Board** | All 14 managers side by side, one week at a time. Week picker in `I1`. |
+| **Manager Trend** | One manager, every week. Manager picker in `B1`. Click the `+` above a week to open Mon–Sun. |
+| **Manager Matrix** | Every manager × every week, for one metric. Metric picker in `B1`. |
+| **Daily Log** | The raw data. One row per manager per day. |
+| **Goals** | Per-manager targets. Hand-typed. |
+
+---
+
+## The one thing to understand
+
+**Daily Log is the only tab the automation writes.**
+
+Manager Board, Manager Trend and Manager Matrix are *views* — every cell is a
+`SUMIFS` reading Daily Log. They recalculate themselves the instant Daily Log
+changes. Nothing is pasted into them, so there is nothing to reapply and nothing
+to break.
+
+```
+ApplicantStream  ->  Daily Log  ->  Manager Board
+                         |------->  Manager Trend
+                         \------->  Manager Matrix
+                     Goals  ------>  the colours on all three
+```
+
+Manager Trend does **not** feed Manager Board. They are siblings, not a chain.
+
+---
+
+## What runs, and when
+
+Lucy 2 runs it every morning as part of the 4am orchestrator batch. Report id:
+`funnel_board`.
+
+Each run:
+
+1. Reads the existing Daily Log back out of the sheet.
+2. Logs into ApplicantStream and opens **Report → Retention - Details (new)**
+   for each of the 14 offices.
+3. Pulls the days it needs, merges them over the existing history.
+4. Writes Daily Log and rebuilds the three view tabs.
+
+Takes roughly 3–5 minutes.
+
+### Which days it refreshes
+
+**Never "yesterday only."** Managers backfill late — Monday's numbers routinely
+change on Tuesday or Wednesday — so every run re-pulls the **whole current
+Mon–Sun week** and overwrites it.
+
+On **Mondays** it also re-pulls the **previous week** one final time, then leaves
+it alone forever. At most two weeks are ever in play.
+
+### Two things about the source report that trip people up
+
+- **The report's week runs Sunday–Saturday for some offices and Monday–Sunday
+  for others.** It is a per-office setting. The job reads whichever dates came
+  back and pulls a second week if it needs to, rather than assuming.
+- **Email is not the only intake path.** Applicants also arrive via Manual Apps
+  Entry, Resume Scooper and File Import, each with its own "sent to call list"
+  line. Sent to Call List counts all four. Counting email alone understated some
+  managers by a third and made bookings exceed sends.
+
+---
+
+## Driving it by hand
+
+Queue these on the **Mini Control - Lucy 2** tab of the mini-control sheet
+(`1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw`) — append a row with Status
+`queued` and the poller picks it up within ~2 minutes.
+
+| Action | Args | What it does |
+|---|---|---|
+| `rerun` | `funnel_board` | Run it now, live. |
+| `rerun` | `funnel_board --dry-run` | Pull and report, write nothing. |
+| `rerun` | `funnel_board --weeks 4` | Backfill the last 4 weeks. |
+| `update` | | Pull the latest code onto Lucy 2 first. |
+| `logtail` | `<log name> <grep> <n>` | Read a run's log. |
+
+---
+
+## Goals
+
+The **Goals** tab is the control panel. You type **nine numbers** per manager and
+everything else computes:
+
+**You type:** Removal % · Sent to Call List · Retention to Call List ·
+1st Show % · 2nd Booked % · 2nd Show % · Offer % · BOB Conversion ·
+New Start Show %
+
+**Computed from those:**
+
+```
+Applies      = Sent / (1 - Removal %)
+Removed      = Applies - Sent
+1st Booked   = Sent       x Retention to Call List
+1st Showed   = 1st Booked x 1st Show %
+2nd Booked   = 1st Showed x 2nd Booked %
+2nd Showed   = 2nd Booked x 2nd Show %
+Job Offered  = 2nd Showed x Offer %
+BOB          = Job Offered x BOB Conversion
+NS Scheduled = BOB                       (measured 99% across the year)
+NS Showed    = NS Scheduled x New Start Show %
+```
+
+Amber cells are yours to edit. Grey cells are formulas — don't type over them.
+Column A (Office ID) is hidden plumbing.
+
+**Your typed goals survive a rebuild.** The job reads them back before writing and
+restores them, and also mirrors them to `state/goals_backup.json` in case a run
+dies midway.
+
+---
+
+## Colours
+
+One rule everywhere: **how far off goal are you.**
+
+| Band | Colour |
+|---|---|
+| Within 5% of goal | green |
+| 5–10% off goal | yellow |
+| More than 10% off | red |
+
+Judged on falling *short*. Beating a goal stays green. Removal % inverts — being
+under the removal goal is good.
+
+Only the eight metrics you set goals for are coloured: Removal %, Sent to CL,
+Ret to CL %, 1st Shw %, 2nd Booked %, 2nd Shw %, Offer %, BOB Conv %. Derived
+counts stay black.
+
+**Mid-week, counts are judged on run rate.** A count is compared against
+`goal x the share of a week normally done by that weekday`, measured per metric
+from completed weeks — so 30 bookings by Wednesday against a goal of 50 reads as
+on-track, not 60%. New Starts are ~79% done by Monday; applies only ~29%. Rates
+are compared to goal directly, since a rate doesn't accumulate.
+
+---
+
+## When something looks wrong
+
+- **A manager's numbers didn't move.** That office failed its pull and kept its
+  previous values. The log says which. Re-run.
+- **The current week looks low.** It's partial. Every tab carries a banner
+  saying which days it covers.
+- **A number disagrees with your Focus Report.** Retention to Call List is
+  AppStream's own cohort stat (of the people sent to the call list this week,
+  what share got booked). The Focus Report divides this week's bookings by this
+  week's sends. Different populations; they diverge when a manager's sends and
+  bookings are out of phase.
+- **Column P onwards on Daily Log is hidden.** That's the intake breakdown
+  (Email / Manual / Scooper / File, and both removal paths). Unhide to see which
+  path produced a total.
