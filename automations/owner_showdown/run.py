@@ -202,15 +202,23 @@ def _run(args) -> int:
         rows_plan, unmatched = sheet_fill.plan_repcount(sec, snapshots)
         a1, _ = sheet_fill.write_section(ws, sec, rows_plan, args.dry_run)
         _print_plan("REP COUNT (growth)", sec, rows_plan, unmatched, a1)
-        # 4-tuple: the flyer shows the headcount AND the change since the 8/2
-        # baseline. The email's text fallback still reads the first three.
-        # FLYER ORDER = most heads -> least (Raf 2026-08-03). The SHEET stays
-        # sorted by growth (the prize metric), so the two intentionally differ
-        # while every delta is tied at +0; owners with no headcount sort last.
-        _rep = sorted(rows_plan,
-                      key=lambda r: (-(r.get("heads")
-                                       if isinstance(r.get("heads"), int)
-                                       else -10 ** 6), r["name"].lower()))
+        # 4-tuple: the flyer shows the change since the 8/2 baseline AND the
+        # headcount. The email's text fallback still reads the first three.
+        # FLYER ORDER = biggest GAIN -> smallest, same as the sheet: this board
+        # is the growth prize, so +4 outranks +0 no matter whose office is
+        # bigger. It used to sort by `heads` — a leftover from the baseline
+        # Sunday when every delta was tied at +0 — which by 8/9 read as a plain
+        # headcount ranking (Megan 2026-08-09). Ties on growth break by total
+        # headcount desc, never alphabetically; owners with no data sort last.
+        _NODATA = -10 ** 6
+
+        def _flyer_key(r):
+            g = r["total"]
+            h = r.get("heads")
+            return (-(g if isinstance(g, int) else _NODATA),
+                    -(h if isinstance(h, int) else _NODATA),
+                    r["name"].lower())
+        _rep = sorted(rows_plan, key=_flyer_key)
         rep_rows = [(i, r["name"], r["total"], r.get("heads"))
                     for i, r in enumerate(_rep, 1)]
 
