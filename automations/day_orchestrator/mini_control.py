@@ -3378,6 +3378,52 @@ def _action_text_dispositions(args: str) -> tuple[bool, str]:
     return True, ("texted %d group(s): " % len(sent)) + " · ".join(lines)
 
 
+def _action_text_tracker(args: str) -> tuple[bool, str]:
+    """Text one Tableau Country Tracker board to its iMessage group(s).
+
+    Args:  <tracker id> [extra flags]   e.g.
+           text_tracker b2b_att_country            -> LIVE send (default)
+           text_tracker b2b_box --dry-run          -> capture + resolve, no text
+
+    Same permission story as text_dispositions: macOS grants "control Messages"
+    per executable identity, and only THIS poller earned the grant (2026-08-03).
+    The mini queues this the moment the board posts to Slack; the poller runs
+    tracker_texts.run as a SUBPROCESS, which inherits the grant and does both the
+    Tableau capture and the send. Idempotent per (tracker, day) via a .sent marker
+    inside tracker_texts, so the control queue's retries never double-text a group.
+
+    Default is LIVE (--send) because the trigger only ever queues a real send; a
+    dry-run for verification is opt-in by passing --dry-run in the args."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, ("text_tracker needs a tracker id (e.g. "
+                       "text_tracker b2b_att_country)")
+    tracker = parts[0]
+    extra = parts[1:]
+    # Default to a real send; an explicit --dry-run in the args overrides it.
+    if not any(f in ("--send", "--dry-run") for f in extra):
+        extra = extra + ["--send"]
+
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, out = _run_cmd([sys.executable, "-m", "automations.tracker_texts.run",
+                        "--tracker", tracker, *extra], timeout_s=15 * 60,
+                       log_name=f"tracker-texts-{tracker}-{stamp}.log")
+    lines = [ln for ln in (out or "").splitlines()
+             if ("TEXT" in ln or "skipped" in ln or "ERROR" in ln
+                 or "FAILED" in ln or ln.strip().startswith("image"))]
+    return ok, (" · ".join(lines)[:450] or (out or "")[-300:])
+
+
 def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
     """Install the two B2B Dispositions launchd agents on THIS machine (Lucy 2):
     the hourly (12-6pm) and the 6:30 final. Idempotent — reinstalling re-locks the
@@ -3402,6 +3448,7 @@ ACTIONS = {
     "sendtext": _action_sendtext,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
+    "text_tracker": _action_text_tracker,
     "sendimage_diag": _action_sendimage_diag,
     "sendimage_fmt": _action_sendimage_fmt,
     "sendimage_loc": _action_sendimage_loc,

@@ -304,6 +304,55 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
               flush=True)
 
 
+def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
+                         *, dry_run: bool) -> None:
+    """Queue the B2B AT&T / B2B Box boards for texting on Lucy 2 (Carlos 2026-08-09).
+
+    Runs on the mini right after a successful post, so the text fires "at the same
+    time" the board hits Slack. The texting itself CANNOT happen here — the
+    iMessage groups and the Messages permission grant live on Lucy 2 — so we drop
+    a `text_tracker <id>` row onto LUCY 2's control tab and let its poller (the
+    identity that holds the grant) re-capture the board and send it. Same
+    cross-machine handoff shape b2b_dispositions uses for the poller.
+
+    Only the boards that ACTUALLY posted this run are queued (a held/failed board
+    isn't in the Slack thread, so it mustn't be texted). Idempotency is the
+    poller's job: tracker_texts drops a per-(id, day) `.sent` marker, so a retry
+    that re-queues the same board never double-texts ~20 leaders.
+
+    Best-effort: a queue failure must never fail an otherwise-good Slack post, but
+    it IS a silent gap in an outward send, so it pings #claudecorrections."""
+    from automations.tracker_texts import config as tt_cfg
+    to_text = [tid for tid in tt_cfg.TARGET_IDS if tid in captured_ids]
+    if not to_text or not posted_somewhere:
+        return
+    if dry_run:
+        print(f"\n  (--text-trackers dry-run: would queue text_tracker for "
+              f"{', '.join(to_text)} on Lucy 2)", flush=True)
+        return
+    from automations.day_orchestrator import mini_control as mc
+    for tid in to_text:
+        try:
+            mc.enqueue("text_tracker", tid, by="tableau_screenshots",
+                       machine="Lucy 2")
+            print(f"  → queued text_tracker {tid} on Lucy 2 "
+                  f"(→ {', '.join(tt_cfg.route_for(tid))})", flush=True)
+        except Exception as e:                            # noqa: BLE001
+            print(f"  ⚠ could NOT queue text_tracker {tid}: "
+                  f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+            try:
+                from automations.day_orchestrator import notify
+                notify.post_alert("", [
+                    f"*Tracker text handoff failed — {tid}*",
+                    f"The board posted to Slack but the text_tracker hand-off to "
+                    f"Lucy 2 raised {type(e).__name__}: {str(e)[:160]}.",
+                    f"The leaders' groups did NOT get today's {tid} text. Re-queue "
+                    f"by hand: `lucy text_tracker {tid} --machine \"Lucy 2\"`.",
+                ], tag="tracker-text-handoff", dry_run=False)
+            except Exception:                             # noqa: BLE001
+                pass
+
+
 def _capture_one(spec: dict, page, out_dir: Path, force_crop):
     """Capture ONE tracker to a PNG. Dispatches on the spec's source: an
     email-sourced tracker (pages.py `source: "email"`) renders from its daily
@@ -408,6 +457,15 @@ def main(argv=None) -> int:
     ap.add_argument("--header-note", default=None,
                     help="One italic line under the thread title (e.g. why a "
                          "second thread exists). Used with --new-thread.")
+    ap.add_argument("--text-trackers", action="store_true",
+                    help="After a successful post, queue the B2B AT&T and B2B Box "
+                         "boards to be TEXTED to their iMessage groups on Lucy 2 "
+                         "(Carlos 2026-08-09: B2B AT&T -> 'ATT B2B Leaders' + 'New "
+                         "A Players'; B2B Box -> 'Box B2B' + 'New A Players'). OFF "
+                         "by default -- nothing is ever texted unless this is "
+                         "passed. Only boards that actually posted this run are "
+                         "queued; the poller on Lucy 2 does the send and dedupes "
+                         "per day, so a retry can't double-text.")
     ap.add_argument("--headless", action="store_true",
                     help="Run the browser headless (default: headed, matches the "
                          "other Tableau reports + renders more reliably).")
@@ -665,6 +723,9 @@ def main(argv=None) -> int:
                   f"{sp.header_title(today)}", flush=True)
         print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
               f"posted NOTHING.", flush=True)
+        if args.text_trackers:
+            _queue_tracker_texts({spec["id"] for spec, _ in captures},
+                                 posted_somewhere=True, dry_run=True)
         run_manifest.write_manifest(
             report_id, ok=bool(not failed), failed=failed, kind="tracker",
             note="dry run" + (f"; {len(held)} board(s) held for a stale extract: "
@@ -844,6 +905,13 @@ def main(argv=None) -> int:
         succeeded=[sp.ORG_LABEL[o] for o in posted_ok if o not in noop_orgs],
         retry_args=retry_args,
         note=note)
+
+    # Carlos 2026-08-09: mirror the B2B AT&T / B2B Box boards to their iMessage
+    # groups, right after they land in Slack. Off unless --text-trackers is passed.
+    if args.text_trackers:
+        captured_ids = {spec["id"] for spec, _ in captures}
+        posted_somewhere = (len(posted_ok) - n_noop) > 0
+        _queue_tracker_texts(captured_ids, posted_somewhere, dry_run=False)
 
     # EXIT CODE — hard failure ONLY when a channel genuinely failed to post (a
     # real "some org didn't get images" error): the orchestrator treats non-zero
