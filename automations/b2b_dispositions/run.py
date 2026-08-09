@@ -48,9 +48,9 @@ def slot_label(final: bool, now: Optional[dt.datetime] = None) -> str:
     6:30 final is tagged so the last shot of the day is obvious."""
     now = now or _central_now()
     if final:
-        return f"{_fmt12(cfg.FINAL_SLOT)} (Final)"
+        return f"{_fmt12(cfg.final_slot_for(now.weekday()))} (Final)"
     # snap to the closest hourly slot
-    best = min(cfg.HOURLY_SLOTS,
+    best = min(cfg.hourly_slots_for(now.weekday()),
                key=lambda hm: abs((now.hour * 60 + now.minute)
                                   - (hm[0] * 60 + hm[1])))
     return _fmt12(best)
@@ -306,6 +306,17 @@ def main(argv=None) -> int:
                     label, cur = f"(err {type(e).__name__})", ""
                 print(f"  probe id={cid} -> label={label!r} current={cur!r}",
                       flush=True)
+        return 0
+
+    # Sunday is OFF completely (Carlos 8/6) — no Slack post, no text. The plists
+    # already skip Sunday, but a runner that was asleep can wake and fire a
+    # missed job on the wrong day, which is exactly how a "quiet Sunday" would
+    # quietly stop being quiet. Refuse here too, before anything is captured.
+    _now = _central_now()
+    if _now.weekday() not in cfg.RUN_WEEKDAYS and not args.dry_run:
+        print(f"SKIPPED — {_now:%A} is off for this report (Carlos 8/6: no "
+              f"Sunday posts or texts). Nothing captured, posted or sent.",
+              flush=True)
         return 0
 
     # send -> live channels; preview -> DM Megan; neither -> dry-run (save only).

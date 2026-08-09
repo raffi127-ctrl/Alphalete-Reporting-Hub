@@ -71,24 +71,6 @@ THREAD_DISPOSITIONS = "B2B Dispositions"
 # --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
 # Carlos: "every hour it creates a new thread. Can you have it only create one
 # thread for the day and tag nico sebastian and myself everytime it posts in
-# that thread." So the hourly parent is now dated ONLY — the slot moved into the
-# reply caption, which is what makes every run land in the same day's thread.
-# (The 6:30 territory post already runs once a day, so it keeps its own thread.)
-THREAD_ONE_PER_DAY = True
-
-# Tagged on EVERY hourly reply. Slack user IDs, not names — a display name can
-# change and there are 7 Sebastians and 8 Nicos in this workspace, so a name
-# lookup here would eventually tag the wrong person in a leaders' channel.
-# Verified: Carlos Hidalgo = U046G04P5LG (carloshidalgo349@gmail.com).
-# PENDING Megan's confirmation of which Nico and which Sebastian — left out
-# deliberately rather than guessed; add the two ids and they start being tagged.
-SLACK_MENTION_USERS = [
-    "U046G04P5LG",   # Carlos Hidalgo
-]
-
-# --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
-# Carlos: "every hour it creates a new thread. Can you have it only create one
-# thread for the day and tag nico sebastian and myself everytime it posts in
 # that thread." So the hourly parent is dated ONLY — the slot moved into the
 # reply caption, which is what makes every run land in the same day's thread.
 # (The 6:30 territory post already runs once a day, so it keeps its own thread.)
@@ -99,6 +81,8 @@ SLACK_MENTION_USERS = [
 # Slack user IDs, never names: this workspace holds 8 Nicos and 7 Sebastians, so
 # a name lookup would eventually tag the wrong person in a leaders' channel.
 # All three confirmed by Megan 2026-08-06.
+THREAD_ONE_PER_DAY = True
+
 SLACK_MENTION_USERS = [
     "U046G04P5LG",   # Carlos Hidalgo        · carloshidalgo349@gmail.com
     "U047D64M0RW",   # Nico Murrugarra       · nicolasmurrugarra0413@gmail.com
@@ -160,3 +144,27 @@ IMAGE_SEND_DELAY_S = 18
 # this constant only labels the caption; the plist is what actually fires.
 HOURLY_SLOTS = [(12, 0), (13, 0), (14, 0), (15, 0), (16, 0), (17, 0), (18, 0)]
 FINAL_SLOT = (19, 0)
+
+# Weekend shape (Carlos 2026-08-06):
+#   * Sunday: OFF completely — no Slack post, no text.
+#   * Saturday: the LAST Slack post and text land at 4pm, not 7pm.
+# The launchd plists carry weekday-scoped StartCalendarInterval entries so
+# nothing fires on Sunday at all; RUN_WEEKDAYS is the belt-and-braces check
+# inside the run itself, because a sleeping mini can wake and fire a missed job
+# on the wrong day (see the launchd-drift history on these runners).
+SUNDAY = 6                      # Python weekday(): Mon=0 … Sun=6
+SATURDAY = 5
+RUN_WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday deliberately absent
+SATURDAY_HOURLY_SLOTS = [(12, 0), (13, 0), (14, 0), (15, 0)]
+SATURDAY_FINAL_SLOT = (16, 0)
+
+
+def final_slot_for(weekday: int):
+    """The day's last run. Saturday wraps up at 4pm instead of 7pm."""
+    return SATURDAY_FINAL_SLOT if weekday == SATURDAY else FINAL_SLOT
+
+
+def hourly_slots_for(weekday: int):
+    """Saturday stops feeding the thread after 3pm, so the 4pm final is the last
+    thing anyone gets."""
+    return SATURDAY_HOURLY_SLOTS if weekday == SATURDAY else HOURLY_SLOTS
