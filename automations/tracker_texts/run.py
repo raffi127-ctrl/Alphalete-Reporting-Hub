@@ -143,6 +143,10 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="actually text the groups (default: dry-run — capture + "
                          "resolve groups, send nothing)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="capture + resolve groups, send NOTHING. This is already "
+                         "the default; the flag exists so the poller (and a human) "
+                         "can state it explicitly. --send wins if both are passed.")
     ap.add_argument("--headless", action="store_true",
                     help="run the capture browser headless")
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today Central)")
