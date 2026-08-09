@@ -3795,7 +3795,9 @@
       "command": [
         "automations.tableau_screenshots.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--text-trackers"
+      ],
       "cadence": {
         "weekdays": [
           0,
@@ -3829,7 +3831,8 @@
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
-        "--late-only"
+        "--late-only",
+        "--text-trackers"
       ],
       "cadence": {
         "weekdays": [
