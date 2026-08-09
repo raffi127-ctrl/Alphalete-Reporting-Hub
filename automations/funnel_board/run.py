@@ -146,60 +146,32 @@ def pull(page, rqst, weeks, today):
 
 
 def switch(page, oid, hint, rqst):
-    """Re-seat the console (WITH the rqst token) and pick the office ourselves.
+    """Switch office by URL, not by driving the autocomplete.
 
-    fetch_office._switch_office uses a Playwright click that routinely raises a
-    30s "waiting for scheduled navigations" timeout even when it worked, so we
-    drive the autocomplete directly and verify by reading the office off the
-    page rather than trusting any return value. Whatever the dropdown offered is
-    logged on the last attempt — if an office simply isn't there, this account
-    can't see it, which no amount of retrying will fix.
+    The old path typed the office id into #searchMC and clicked the match. On
+    Lucy 2 only the FIRST keystroke registered, so typing "21328" filtered on
+    "1" and offered 11296 / 11280 / 11906 — the office asked for was never in
+    the list, which is why the same five offices failed every retry while the
+    mini happened to get away with it.
+
+    The switcher is really just a query parameter (`&newOfficeId=`), so ask for
+    the office directly and confirm by reading it back off the page.
     """
-    for attempt in range(4):
+    for attempt in range(3):
         try:
-            page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s" % rqst,
-                      timeout=60000, wait_until="domcontentloaded")
-            page.wait_for_selector("#searchMC", timeout=20000)
-            page.fill("#searchMC", "")
-            page.type("#searchMC", oid, delay=40)
-            page.wait_for_timeout(1400)
-            items = page.evaluate("""() => [...document.querySelectorAll(
-                '.ui-autocomplete li, .ui-menu li')].map(li => (li.innerText||'').trim())""")
-            if items:
-                page.evaluate("""(oid) => {
-                    const li = [...document.querySelectorAll('.ui-autocomplete li, .ui-menu li')]
-                        .find(x => (x.innerText || '').includes(oid));
-                    if (li) { const a = li.querySelector('a') || li; a.click(); }
-                }""", oid)
-                page.wait_for_timeout(2500)
-                who = page.evaluate(
-                    "() => (document.body.innerText.match(/Office ID: *(\\d+)/) || [])[1]")
-                if who == oid:
-                    return True
-            if attempt == 3:
-                log("   %s: dropdown offered %s" % (oid, items[:6] or "NOTHING"))
+            page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s&newOfficeId=%s"
+                      % (rqst, oid), timeout=60000, wait_until="domcontentloaded")
+            page.wait_for_timeout(1800)
+            who = page.evaluate(
+                "() => (document.body.innerText.match(/Office ID: *(\\d+)/) || [])[1]")
+            if who == oid:
+                return True
+            if attempt == 2:
+                log("   %s: landed on office %s" % (oid, who or "?"))
         except Exception as e:
-            if attempt == 3:
+            if attempt == 2:
                 log("   %s: %s: %s" % (oid, type(e).__name__, str(e)[:120]))
         page.wait_for_timeout(1500)
-
-    # fall back to the shared helper once before giving up
-    for attempt in range(2):
-        try:
-            page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s" % rqst,
-                      timeout=60000, wait_until="domcontentloaded")
-            page.wait_for_selector("#searchMC", timeout=20000)
-        except Exception:
-            page.wait_for_timeout(2000)
-            continue
-        try:
-            fetch_office._switch_office(page, oid, hint)
-        except Exception:
-            pass
-        page.wait_for_timeout(1500)
-        who = page.evaluate("() => (document.body.innerText.match(/Office ID: *(\\d+)/) || [])[1]")
-        if who == oid:
-            return True
     return False
 
 
