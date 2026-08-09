@@ -244,12 +244,16 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
         src_note = "your DD (last pulled {})".format(gr.get("pulled", "—"))
 
     act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
-    ctop = st.columns([2, 2])
+    ctop = st.columns([2, 2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
                         ["$ per sale", "% of gross revenue"], horizontal=True,
                         key=f"gp_method_{view}") == "% of gross revenue"
-    activation = ctop[1].slider("Office activation rate (%)", 50, 100, act_default,
+    activation = ctop[1].slider("Activation rate (%)", 50, 100, act_default,
                                 key=f"gp_act_{view}") / 100.0
+    abp = ctop[2].slider("ABP — auto bill pay (%)", 50, 100, 100,
+                         key=f"gp_abp_{view}",
+                         help="Raf: assume ~100%. Only auto-bill-pay sales earn the "
+                              "full payout, so this scales the realized total.") / 100.0
     if not fiber:
         st.caption("No AT&T Fiber DD products for your office yet — this fills in "
                    "after the next DD pull.")
@@ -318,7 +322,7 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     for v in ss.values():
         g = v["gross"]
         rep_d = (g * v["pay"] / 100.0 if pct else v["pay"]) + v.get("tier", 0.0)
-        activated = v["sales"] * activation
+        activated = v["sales"] * activation * abp        # activated AND auto-bill-pay
         t_rev += g * activated
         t_prof += (g - rep_d - tax * rep_d) * activated
     if t_rev:
@@ -326,12 +330,14 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
         m[0].metric("Total gross profit", "${:,.0f}".format(t_prof))
         m[1].metric("Gross profit % (office keeps)", "{:.0f}%".format(t_prof / t_rev * 100))
         m[2].metric("Total gross revenue", "${:,.0f}".format(t_rev))
-        st.caption("Total at your # sales × {:.0f}% activation. Per-product columns "
-                   "are per unit.".format(activation * 100))
+        st.caption("Total at your # sales × {:.0f}% activation × {:.0f}% ABP. "
+                   "Per-product columns are per unit.".format(activation * 100, abp * 100))
 
     with st.expander("📋 Logic — how these numbers are built"):
         st.markdown(
             "**Source:** the DD DETAIL (ORG) — the same report AT&T/SCI pays you from.\n\n"
+            "**Scope:** the whole AT&T **residential** program — internet, upgrades, "
+            "wireless, **DIRECTV**, voice (not energy or B2B).\n\n"
             "**Product:** the DD splits each deal into many line items. We group by "
             "the **product** (`cl.Product` for internet/DIRECTV, the line type — Port "
             "Line / New Line / BYOD — for wireless).\n\n"
@@ -349,6 +355,9 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
             "**Gross profit** = gross revenue − (what you pay the rep + tier bonus) − "
             "**12%** payroll tax on that rep pay. **Office keeps %** = gross profit ÷ "
             "gross revenue.\n\n"
+            "**Activation & ABP:** the OVERALL total only counts sales that actually "
+            "**activate** (your activation %) and are on **auto bill pay** (ABP %) — "
+            "the two sliders up top. Raf assumes ABP ~100%.\n\n"
             "So a recent DD week can show smaller amounts — deals settle over ~2–3 "
             "weeks; older weeks are fully settled.")
 

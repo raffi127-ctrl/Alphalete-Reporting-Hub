@@ -318,16 +318,25 @@ COL_ACTIVATION = "cl.Activation Date"    # real crosstab header uses a SPACE, no
 COL_ORDER_TYPE = "cl.Order Type"         # "Auto Bill Pay" vs "No Auto Bill Pay"
 
 
-def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Dict[str, float]]]":
-    """{owner: {dd_week: {'CATEGORY | product': base$}}} for a campaign — each
-    product an owner got each DD WEEK (base = MODE across orders of that order's
-    summed 'Commissions' Total$; bonuses excluded). Powers Raf's 'pick a DD week'
-    dropdown. AT&T Fiber = RES-ATT; DD week = cl.DD Week (Saturday-ending)."""
+def _is_residential_att(campaign: str) -> bool:
+    """The AT&T RESIDENTIAL program — internet, wireless, upgrades, DIRECTV, voice
+    (RES-ATT, RES-DTV, …) — but NOT energy (RES-BASE POWER-Energy) or B2B."""
+    c = (campaign or "").strip().lower()
+    return c.startswith("res-") and "energy" not in c and "power" not in c
+
+
+def weekly_by_office(rows, campaign=None) -> "Dict[str, Dict[str, Dict[str, float]]]":
+    """{owner: {dd_week: {'CATEGORY | product': base$}}} — each product an owner got
+    each DD WEEK (base = MODE across orders of that order's summed 'Commissions'
+    Total$; bonuses excluded). Powers Raf's 'pick a DD week' dropdown. Covers the
+    whole AT&T RESIDENTIAL program (internet/wireless/upgrade/DIRECTV/voice), not
+    just RES-ATT. DD week = cl.DD Week (Saturday-ending)."""
     # (owner, week, cat, name) -> order -> summed commissions
     os_: "Dict[tuple, Dict[str, float]]" = collections.defaultdict(
         lambda: collections.defaultdict(float))
     for r in rows:
-        if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
+        camp = str(r.get(COL_CAMPAIGN, "") or "").strip()
+        if not (_is_residential_att(camp) if campaign is None else camp == campaign):
             continue
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
         # NOT activation-gated (unlike the aggregated payout): Raf wants to see EVERY
