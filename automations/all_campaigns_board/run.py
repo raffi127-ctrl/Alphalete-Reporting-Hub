@@ -119,6 +119,18 @@ def run(*, dry_run: bool = True, today: dt.date = None,
               "(add a row or alias — their sales are NOT in the ranking): "
               + ", ".join(f"{n} ({w})" for n, w in sorted(missing)))
 
+    # A completed day with no column on the board is a DROPPED day, not a slow
+    # source: the fill logged its ⚠ and exited 0, so nothing downstream knew
+    # (Eve 2026-08-09 — Saturday 8/8 fell out because the Saturday header was
+    # still the literal '1' from the week of Aug 1, and the day's Org Board
+    # Email carried a 6-day All Units section). Flag it INCOMPLETE: the pill
+    # goes amber and the alert fires, and depends_on still releases the email.
+    stale_days = [d.isoformat() for d in fs.missing_day_columns(anchor, today)]
+    if stale_days:
+        logfn(f"  ⚠ {len(stale_days)} completed day(s) have NO column in "
+              f"{TARGET_SECTION!r} — DROPPED: {stale_days}. The day-number row "
+              f"is frozen: fix the cell to '=<prev cell>+1' and re-run.")
+
     fs.apply_plan(tgt_ws, plan, dry_run=dry_run, logfn=logfn)
 
     # Delta box: grow the 'Total for week → Last week' formula to the days
@@ -143,6 +155,7 @@ def run(*, dry_run: bool = True, today: dt.date = None,
             "reps_pulled": len(pull),
             "unmatched_board_rows": plan.unmatched,
             "missing_from_board": [n for n, _ in missing],
+            "dropped_days": stale_days,
             "writes": len(plan.updates),
             "roster": roster_summary,
             "rollover": rollover_summary}
@@ -161,7 +174,10 @@ def main(argv=None):
                     help="do NOT add campaign reps who have no row on the "
                          "board (the roster sync is on by default)")
     args = ap.parse_args(argv)
-    today = dt.date.fromisoformat(args.today) if args.today else None
+    # Resolve today HERE (Central, like run() does) so the alert's dedup key is
+    # the same day the fill worked on — not the runner's local date.
+    today = (dt.date.fromisoformat(args.today) if args.today
+             else dt.datetime.now(CENTRAL).date())
     summary = run(dry_run=not args.apply, today=today,
                   source_tab=args.source_tab, target_tab=args.target_tab,
                   enable_rollover=args.enable_rollover,
@@ -170,7 +186,33 @@ def main(argv=None):
     # INCOMPLETE if a rep on the board never matched the pull, or a producing
     # rep has no board row — mirrors the ORG board's fill-but-flag exit.
     incomplete = bool(summary["unmatched_board_rows"]
-                      or summary["missing_from_board"])
+                      or summary["missing_from_board"]
+                      or summary["dropped_days"])
+
+    # SAY SOMETHING. Exit 75 only tints the Hub card orange, and this report
+    # writes no manifest, so nothing ever reached the alert that write_manifest
+    # fires — the Saturday this board lost on 2026-08-09 was found by Eve
+    # reading the email, hours later. Same channel + shape as every other
+    # dropped-section ping; never raises, never fires on a dry-run.
+    if incomplete and args.apply:
+        try:
+            from automations.shared import section_drop_alert as _sda
+            days = summary["dropped_days"]
+            failed = ([f"{TARGET_SECTION} — day {d} (no column on the board)"
+                       for d in days]
+                      + [f"{n} — sells, but has no row on the board"
+                         for n in summary["missing_from_board"]]
+                      + [f"{n} — row on the board never matched the pull"
+                         for n in summary["unmatched_board_rows"]])
+            _sda.alert(report_id="all_campaigns_board", failed=failed,
+                       kind="day" if days else "section",
+                       note=("Yesterday's sales are NOT on the All Campaigns "
+                             "board, and the Org Board Email renders its All "
+                             "Units section straight off that tab."
+                             if days else ""),
+                       day=today)
+        except Exception as e:  # noqa: BLE001 — alerting never breaks the fill
+            print(f"  ⚠ drop alert didn't fire ({type(e).__name__}: {e})")
     return 75 if incomplete else 0
 
 

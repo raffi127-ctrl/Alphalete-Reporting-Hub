@@ -36,13 +36,30 @@ def _dedup_path(report_id: str, day: dt.date, failed: Sequence[str]) -> Path:
     return _STATE_DIR / f"{report_id}-{day.isoformat()}-{key}.txt"
 
 
+# What the report LOST, per kind — a fill that drops a day is not a thread that
+# dropped a section, and telling Eve "it did NOT post" about a board that filled
+# fine sends her looking in the wrong place (2026-08-09).
+_KINDS = {
+    "section": ("section", "it did NOT post.",
+                "re-run only the missing {what}{s} for `{report_id}` — "
+                "don't re-post the whole thread.",
+                "The thread is live but incomplete."),
+    "day": ("day of sales", "the board filled, but SHORT.",
+            "fix the frozen day-number cell to '=<prev cell>+1', then re-run "
+            "`{report_id}` — the fill is idempotent.",
+            "Every total on that board is undercounting until it's re-run."),
+}
+
+
 def _compose(report_id: str, failed: Sequence[str],
-             remediation: Optional[dict], note: str) -> str:
+             remediation: Optional[dict], note: str,
+             kind: str = "section") -> str:
+    what, headline_tail, default_fix, tail = _KINDS.get(kind, _KINDS["section"])
     n = len(failed)
     s = "s" if n != 1 else ""
     lines = [
-        f"<@{MEGAN}> 🚨 *{report_id}* dropped {n} section{s} this run — "
-        f"it did NOT post.",
+        f"<@{MEGAN}> 🚨 *{report_id}* dropped {n} {what}{s} this run — "
+        f"{headline_tail}",
         f"*Missing:* {', '.join(failed)}",
     ]
     if note:
@@ -51,17 +68,20 @@ def _compose(report_id: str, failed: Sequence[str],
     if fix:
         lines.append(f"*Fix:* {fix}")
     else:
-        lines.append(f"*Fix:* re-run only the missing section{s} for "
-                     f"`{report_id}` — don't re-post the whole thread.")
-    lines.append("The thread is live but incomplete.")
+        lines.append("*Fix:* " + default_fix.format(
+            what=what, s=s, report_id=report_id))
+    lines.append(tail)
     return "\n".join(lines)
 
 
 def alert(*, report_id: str, failed: Sequence[str],
           remediation: Optional[dict] = None, note: str = "",
-          day: Optional[dt.date] = None, dry_run: bool = False) -> bool:
+          day: Optional[dt.date] = None, dry_run: bool = False,
+          kind: str = "section") -> bool:
     """Post a loud dropped-section ping. One post per (report, day, failed-set).
     Returns True if posted (or already posted today for this exact drop).
+    `kind` picks the wording: 'section' (a thread that didn't post) or 'day' (a
+    board that filled short — see _KINDS).
     NEVER raises — a failed alert must not fail the report it's warning about."""
     failed = [f for f in (failed or []) if f]
     if not failed:
@@ -73,7 +93,7 @@ def alert(*, report_id: str, failed: Sequence[str],
             return True
     except Exception:
         pass
-    text = _compose(report_id, failed, remediation, note)
+    text = _compose(report_id, failed, remediation, note, kind)
     if dry_run:
         print("  --- section-drop alert (dry-run, not sent) ---")
         print("  " + text.replace("\n", "\n  "))
