@@ -438,5 +438,21 @@ def _write_paycheck_matrix(wb, lines, used) -> None:
             cell.alignment = LEFT if c == 1 else CENTER
             cell.border = _border()
         r += 1
+    # TOTAL strip — matches BOX's Payout by Week (Carlos 2026-08-09). COMPUTED
+    # VALUES, not formulas: openpyxl writes a formula with no cached result, so
+    # Slack's file preview / Quick Look / a Sheets import render the row blank.
+    col_totals = [0] * (len(headers) - 1)
+    for rep in reps:
+        vals = [posted.get((rep, w), 0) for w in weeks_desc]
+        vals.append(sum(vals))                 # Total
+        for i, v in enumerate(vals):
+            col_totals[i] += v
+    for c in range(1, len(headers) + 1):
+        v = "TOTAL" if c == 1 else col_totals[c - 2]
+        cell = psh.cell(row=r, column=c, value=v)
+        cell.font = _font(bold=True)
+        cell.alignment = LEFT if c == 1 else CENTER
+        cell.border = _border()
+        cell.fill = PatternFill("solid", fgColor="EDEDED")
     psh.freeze_panes = "B5"
     _autosize(psh, headers)
