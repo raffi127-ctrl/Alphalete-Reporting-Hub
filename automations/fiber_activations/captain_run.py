@@ -130,12 +130,15 @@ def main(argv=None) -> int:
     # leaves the report non-clean (no stale-clean re-verify to DONE); mark_clean
     # at the end overwrites it. Skipped for --only (a single-captain run isn't
     # the full set) and --dry-run (no writes).
+    # alert=False: this is a placeholder, not a real drop — it named a fake
+    # failed part and so paged Megan "captainship activations did NOT post" at
+    # the START of every healthy run. Real drops below still alert.
     _manifest_live = not args.dry_run and not args.only
     if _manifest_live:
         try:
             from automations.shared import run_manifest as _rm
             _rm.write_manifest(MANIFEST_ID, failed=["captainship activations"],
-                               retry_args=[], kind="captain",
+                               retry_args=[], kind="captain", alert=False,
                                note="run started but did not complete")
         except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
             pass

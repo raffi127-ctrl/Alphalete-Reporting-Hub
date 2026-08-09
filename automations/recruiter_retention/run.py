@@ -440,8 +440,11 @@ def main(argv=None):
     if not args.dry_run:
         try:
             from automations.shared import run_manifest as _rm
+            # alert=False: a start-of-run placeholder, not a real drop — it
+            # must not page Megan before any work has even been attempted.
             _rm.write_manifest(MANIFEST_ID, failed=["recruiter retention weekly fill"],
                                retry_args=["--backfill"], kind="recruiter",
+                               alert=False,
                                note="run started but did not complete")
         except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
             pass

@@ -55,7 +55,8 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
                    retry_args: List[str] = (), kind: str = "part",
                    note: str = "", remediation: Optional[dict] = None,
                    ok: Optional[bool] = None, succeeded: List[str] = (),
-                   run_ts: Optional[_dt.datetime] = None) -> Path:
+                   run_ts: Optional[_dt.datetime] = None,
+                   alert: bool = True) -> Path:
     """Record this run's outcome for `report_id`:
       - `failed` + `retry_args`: the parts that failed and the CLI args that
         re-run ONLY those (powers the Hub's 'Retry failed only' button).
@@ -64,6 +65,8 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
         failure — the Hub colours those differently (orange vs red).
       - `remediation`: an optional {reason, fix, link, message} block explaining
         WHY it failed + how to fix it (powers the Hub's failure-help callout).
+      - `alert=False`: write the manifest WITHOUT the loud Slack ping. The one
+        legitimate use is a START-OF-RUN SEED (see below) — never a real failure.
     `ok` defaults to True only when nothing failed AND there's no remediation.
     Pass run_ts to avoid clock calls in tests."""
     MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,7 +95,16 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
     # heard immediately, not found on an orange Hub card later. run_ts is set only
     # by tests / deterministic callers, so they never alert; dedup + try/except so
     # it can neither spam nor break the manifest write.
-    if failed and run_ts is None:
+    #
+    # alert=False is for a START-OF-RUN SEED: several reports (captainship
+    # activations, financial, int wow, recruiter retention) write an ok=false
+    # manifest BEFORE doing any work, purely so a mid-run crash can't leave a
+    # stale clean state that re-verifies to DONE. That seed names a fake failed
+    # part, so it fired this alarm on every single healthy run — a 6am "it did
+    # NOT post" ping for a report that then finished fine (2026-08-09). A crash
+    # after the seed still exits non-zero, so the orchestrator's own failure
+    # alert covers it; the loud ping stays for REAL recorded failures only.
+    if failed and run_ts is None and alert:
         try:
             from automations.shared import section_drop_alert as _sda
             _sda.alert(report_id=report_id, failed=failed,

@@ -326,8 +326,11 @@ def main() -> int:
     if live:
         try:
             from automations.shared import run_manifest as _rm
+            # alert=False: a start-of-run placeholder, not a real drop — the
+            # real parse-problem write below is the one that pages Megan.
             _rm.write_manifest(MANIFEST_ID, failed=["financial fill"],
                                retry_args=_retry_args, kind="section",
+                               alert=False,
                                note="run started but did not complete")
         except Exception:  # noqa: BLE001 — manifest is best-effort
             pass
