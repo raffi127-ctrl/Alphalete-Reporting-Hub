@@ -175,6 +175,16 @@ NAME_ALIASES = {
     "joelle v barajas": "Joelle Barajas",
     "monica": "Monica Hernandez",
     "josephe f": "Josephe Alessandro Figueredo",
+    # Slack's OWN display names for two of the new BOX reps don't reach their
+    # board row on their own: match_rep needs first+last, and Slack drops the
+    # first name entirely for one of them. Harmless today (KNOWN_USERS already
+    # carries the board spelling and wins), but these are what a live
+    # users.info lookup returns, so they matter the moment the scope lands.
+    "michelle flores": "Kandice Michelle Flores",
+    "kyara": "Kyara Nayibe Mancilla Hurtado",
+    "caleb deleon": "Caleb Gregory Deleon",
+    "tara ecklof": "Tara Lynn Ecklof",
+    "francisco jimenez": "Francisco Javier Jimenez",
 }
 
 # The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20".
@@ -279,19 +289,70 @@ def resolve_names(client, ids, log=_log) -> tuple[dict, bool]:
     return found, scope_ok
 
 
+def _client():
+    import certifi
+    from slack_sdk import WebClient
+    from automations.shared.slack_metrics_post import _load_token
+
+    return WebClient(token=_load_token(),
+                     ssl=ssl.create_default_context(cafile=certifi.where()))
+
+
+# Hype that names nobody — every thread is full of it, and a reply made only of
+# these is noise. Kept deliberately small: the point is to drop the obvious
+# filler, not to guess which replies contain a name.
+_HYPE_ONLY = re.compile(
+    r"^(?:[\W\d_]|:[a-z0-9_+-]+:|lets?\s*go+|vamos+|sheesh+|damn+|w+|yes+|"
+    r"fire|dawg|goat|queen|king|big|money|congrats?|welcome|more|first|"
+    r"time|her|his|it'?s|the|a|to|and|for|of|my|son|beast|animal|shesh+)*$",
+    re.I)
+
+
+def thread_hints(client, unknown_posts, per_id: int = 6, log=_log) -> dict:
+    """Candidate NAMES for posters Slack won't name for us: {id: [reply, …]}.
+
+    Without `users:read` an unnamed id is a dead end in code — but never in the
+    channel. Teammates reply to a rep's sale post shouting their name:
+    "SANDYYYY", "ITS HER FIRST TIMEEEE SAMMMM", "LETS GOOO CALEB", "KANDICEEE",
+    "El eman el og". That is how all eight unnamed reps were identified by hand
+    on 2026-08-08, and it needs no scope beyond the channel history we already
+    read. So the alert carries the evidence instead of just an opaque `U0B…`,
+    and naming a rep becomes a five-second read rather than a hunt.
+
+    Best-effort by design: a thread that won't load costs nothing.
+    """
+    hints: dict[str, list[str]] = {}
+    for uid, tss in unknown_posts.items():
+        got: list[str] = []
+        for ts in tss[:2]:                    # two threads is plenty
+            try:
+                msgs = client.conversations_replies(
+                    channel=CHANNEL[1], ts=ts, limit=40)["messages"]
+            except Exception as e:  # noqa: BLE001 — evidence is a bonus, never a failure
+                log(f"  (couldn't read the thread on {ts}: {type(e).__name__})")
+                continue
+            for m in msgs[1:]:                # [0] is the sale post itself
+                txt = " ".join(html.unescape(m.get("text", "")).split())
+                if not txt or "<@" in txt or _HYPE_ONLY.match(txt):
+                    continue
+                if txt not in got:
+                    got.append(txt[:70])
+            if len(got) >= per_id:
+                break
+        if got:
+            hints[uid] = got[:per_id]
+    return hints
+
+
 def fetch_posts(oldest: dt.datetime, latest: dt.datetime):
     """Every top-level message in the window, parsed, plus the user directory.
 
     Top-level only, on purpose: thread replies in this channel are hype
     ("SHEEESHHH", emoji) — checked across a full week, no sale has ever been
-    reported in a reply.
+    reported in a reply. (They ARE read, separately, when a poster has no name:
+    see thread_hints.)
     """
-    import certifi
-    from slack_sdk import WebClient
-    from automations.shared.slack_metrics_post import _load_token
-
-    client = WebClient(token=_load_token(),
-                       ssl=ssl.create_default_context(cafile=certifi.where()))
+    client = _client()
     raw, cursor = [], None
     while True:
         resp = client.conversations_history(
@@ -597,9 +658,22 @@ def main(argv=None) -> int:
         (author, res["campaign"], rec["count"])
         for res in results for author, rec in res["unmatched"]
         if any(p.author == p.author_id for p in rec["posts"])})
-    if unknown_sales and a.fill and a.yes:
-        from automations.vantura_slack_sales import alert
-        alert.alert_unknown_posters(unknown_sales, scope_ok)
+    if unknown_sales:
+        # Pull the thread hype for each unnamed id so the alert can say WHO,
+        # not just which id. Done here (not in the alert) because it needs the
+        # Slack client and the posts, and so the log carries it too.
+        unknown_posts = {}
+        for res in results:
+            for author, rec in res["unmatched"]:
+                for p in rec["posts"]:
+                    if p.author == p.author_id:
+                        unknown_posts.setdefault(author, []).append(p.ts)
+        hints = thread_hints(_client(), unknown_posts)
+        for uid, lines in hints.items():
+            _log(f"  thread on {uid}'s post says: " + " | ".join(lines))
+        if a.fill and a.yes:
+            from automations.vantura_slack_sales import alert
+            alert.alert_unknown_posters(unknown_sales, scope_ok, hints=hints)
 
     skipped = [p for p in posts if p.skipped and p.sales_day in days]
     if skipped:

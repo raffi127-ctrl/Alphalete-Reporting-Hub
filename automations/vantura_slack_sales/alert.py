@@ -118,7 +118,7 @@ def should_alert(exit_code: str, today: str, state: Path = HOLD_STATE) -> bool:
 UNKNOWN_STATE = Path(__file__).resolve().parents[2] / "output" / ".vslack_unknown_alert"
 
 
-def build_unknown_message(unknown, scope_ok: bool) -> list[str]:
+def build_unknown_message(unknown, scope_ok: bool, hints=None) -> list[str]:
     """The corrections post for sales that landed on no rep's row.
 
     `unknown` is [(slack id, campaign, count)] — the poster is real, they sold,
@@ -134,13 +134,18 @@ def build_unknown_message(unknown, scope_ok: bool) -> list[str]:
         "zeros:",
         "",
     ]
+    hints = hints or {}
     for uid, camp, count in unknown:
         lines += [f"  • `{uid}` — {count} {camp} sale(s)"]
+        # The teammates already said who this is. Quote them, so nobody has to
+        # go digging through the channel to name a rep.
+        for h in hints.get(uid, []):
+            lines.append(f"       ↳ thread says: _{h}_")
     lines += [
         "",
-        "*To fix:* open one of their posts in #alphalete-gp-sales — the thread "
-        "replies shout the rep's name — then add the id to `KNOWN_USERS` in "
-        "`automations/vantura_slack_sales/run.py`.",
+        "*To fix:* reply here with the rep's name (the thread lines above "
+        "usually say it outright) — or add the id to `KNOWN_USERS` in "
+        "`automations/vantura_slack_sales/run.py` yourself.",
     ]
     if not scope_ok:
         lines += [
@@ -165,7 +170,7 @@ SCOPE_FIX_HINT = (
 )
 
 
-def alert_unknown_posters(unknown, scope_ok: bool,
+def alert_unknown_posters(unknown, scope_ok: bool, hints=None,
                           state: Path = UNKNOWN_STATE) -> bool:
     """Post the unknown-poster warning, at most once a day per set of ids."""
     key = dt.date.today().isoformat() + "|" + ",".join(
@@ -187,7 +192,7 @@ def alert_unknown_posters(unknown, scope_ok: bool,
     from automations.day_orchestrator.registry import load_config
 
     ts = notify._post_corrections(
-        load_config(), None, build_unknown_message(unknown, scope_ok),
+        load_config(), None, build_unknown_message(unknown, scope_ok, hints),
         dry_run=False, tag="vantura_slack_sales-unknown-poster")
     print(f"[alert] unknown-poster post {'sent' if ts else 'SKIPPED/failed'}",
           flush=True)
