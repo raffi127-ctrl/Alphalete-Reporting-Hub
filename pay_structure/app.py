@@ -207,15 +207,30 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     except Exception:                    # noqa: BLE001
         weeks = {}
 
+    def _label(cat, desc):
+        """Human product label. Internet/wireless descriptions already read on
+        their own ('Internet 1000', 'Port Line'); DIRECTV/voice store only the
+        tier ('Choice'), so prefix the program name — else Raf can't tell it's
+        DIRECTV."""
+        c = cat.strip().upper()
+        d = desc.strip()
+        if c in ("DIRECTV STREAM", "DTV", "VIDEO"):
+            return d if d.upper().startswith("DIRECTV") else "DIRECTV " + d
+        if c == "VOICE":
+            return d if d.upper().startswith("VOICE") else "Voice " + d
+        if c in ("INTERNET", "WIRELESS"):
+            return d
+        return "{} {}".format(cat.strip().title(), d).strip()
+
     def _pull_fiber(mapping):
-        """{DD 'CAT | Desc': payout} -> {Description: payout}, dropping energy."""
+        """{DD 'CAT | Desc': payout} -> {friendly label: payout}, dropping energy."""
         out = {}
         for key, payout in (mapping or {}).items():
             cat, _, desc = str(key).partition(" | ")
             if cat.strip().upper() == "ELE" or not desc:
                 continue
             try:
-                out[desc] = float(payout)
+                out[_label(cat, desc)] = float(payout)
             except (TypeError, ValueError):
                 continue
         return out
