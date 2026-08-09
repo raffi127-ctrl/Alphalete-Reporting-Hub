@@ -146,10 +146,45 @@ def pull(page, rqst, weeks, today):
 
 
 def switch(page, oid, hint, rqst):
-    """The autocomplete click is flaky and a failed report leaves the page without
-    #searchMC — re-seat the console (WITH the rqst token) and verify by reading the
-    office off the page rather than trusting the return value."""
+    """Re-seat the console (WITH the rqst token) and pick the office ourselves.
+
+    fetch_office._switch_office uses a Playwright click that routinely raises a
+    30s "waiting for scheduled navigations" timeout even when it worked, so we
+    drive the autocomplete directly and verify by reading the office off the
+    page rather than trusting any return value. Whatever the dropdown offered is
+    logged on the last attempt — if an office simply isn't there, this account
+    can't see it, which no amount of retrying will fix.
+    """
     for attempt in range(4):
+        try:
+            page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s" % rqst,
+                      timeout=60000, wait_until="domcontentloaded")
+            page.wait_for_selector("#searchMC", timeout=20000)
+            page.fill("#searchMC", "")
+            page.type("#searchMC", oid, delay=40)
+            page.wait_for_timeout(1400)
+            items = page.evaluate("""() => [...document.querySelectorAll(
+                '.ui-autocomplete li, .ui-menu li')].map(li => (li.innerText||'').trim())""")
+            if items:
+                page.evaluate("""(oid) => {
+                    const li = [...document.querySelectorAll('.ui-autocomplete li, .ui-menu li')]
+                        .find(x => (x.innerText || '').includes(oid));
+                    if (li) { const a = li.querySelector('a') || li; a.click(); }
+                }""", oid)
+                page.wait_for_timeout(2500)
+                who = page.evaluate(
+                    "() => (document.body.innerText.match(/Office ID: *(\\d+)/) || [])[1]")
+                if who == oid:
+                    return True
+            if attempt == 3:
+                log("   %s: dropdown offered %s" % (oid, items[:6] or "NOTHING"))
+        except Exception as e:
+            if attempt == 3:
+                log("   %s: %s: %s" % (oid, type(e).__name__, str(e)[:120]))
+        page.wait_for_timeout(1500)
+
+    # fall back to the shared helper once before giving up
+    for attempt in range(2):
         try:
             page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s" % rqst,
                       timeout=60000, wait_until="domcontentloaded")
