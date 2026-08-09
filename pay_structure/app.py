@@ -329,6 +329,29 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
         st.caption("Total at your # sales × {:.0f}% activation. Per-product columns "
                    "are per unit.".format(activation * 100))
 
+    with st.expander("📋 Logic — how these numbers are built"):
+        st.markdown(
+            "**Source:** the DD DETAIL (ORG) — the same report AT&T/SCI pays you from.\n\n"
+            "**Product:** the DD splits each deal into many line items. We group by "
+            "the **product** (`cl.Product` for internet/DIRECTV, the line type — Port "
+            "Line / New Line / BYOD — for wireless).\n\n"
+            "**Gross revenue** = the sum of the **base commission** rows for one deal "
+            "(a deal can post over a few line items), taken as the typical (most "
+            "common) amount across your deals. It's the AT&T payout to your office "
+            "per **activated** sale, auto-bill-pay assumed.\n\n"
+            "**What's INCLUDED:** the base commission per product.\n\n"
+            "**What's EXCLUDED (on purpose):**\n"
+            "- **Volume tier bonuses** — you set those yourself in the *Tier bonus* "
+            "column, so they're not baked into gross revenue.\n"
+            "- **Converged / special bonuses** (e.g. the $40 converged bonus) — these "
+            "post as their own separate line, not tied to one product.\n"
+            "- **Weekly guarantees, adjustments, chargebacks, override lines.**\n\n"
+            "**Gross profit** = gross revenue − (what you pay the rep + tier bonus) − "
+            "**12%** payroll tax on that rep pay. **Office keeps %** = gross profit ÷ "
+            "gross revenue.\n\n"
+            "So a recent DD week can show smaller amounts — deals settle over ~2–3 "
+            "weeks; older weeks are fully settled.")
+
 
 def editor_view(office) -> None:
     grid = _working_grid(office)
