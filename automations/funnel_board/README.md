@@ -143,6 +143,30 @@ are compared to goal directly, since a rate doesn't accumulate.
 
 ---
 
+## Known issue — five offices on Lucy 2
+
+Lucy 2's ApplicantStream login is **not assigned** these five offices, so they
+fail every run and keep their previous numbers:
+
+| Manager | Office |
+|---|---|
+| Isaiah Revelle | 19717 |
+| Jacob Dover | 23607 |
+| Kash Rai | 22177 |
+| Rashad Reed | 23411 |
+| Salik Mallick | 21328 |
+
+Navigating to them returns **"This Office is not assigned to you!"**. The other
+nine work. The Mac mini pulls all 14 because it logs in as `rcaptain`, which has
+them.
+
+**Fix:** in ApplicantStream, assign those five offices to whichever user Lucy 2
+logs in as (or point Lucy 2's `ownerville-creds.json` at `rcaptain`). No code
+change will help — it's an account permission.
+
+Until then the run exits 1 and says which offices were skipped. Their numbers
+stay at the last successful pull rather than blanking.
+
 ## When something looks wrong
 
 - **A manager's numbers didn't move.** That office failed its pull and kept its
