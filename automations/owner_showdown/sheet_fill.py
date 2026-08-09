@@ -226,12 +226,16 @@ def plan_repcount(sec: Section, snapshots: Dict[dt.date, Dict[str, int]]):
         base = _match(name, snapshots.get(baseline_d, {})) if baseline_d in snapshots else None
         latest = _match(name, snapshots.get(latest_d, {})) if latest_d else None
         growth = (latest - base) if (latest is not None and base is not None) else ""
-        # `heads` = the actual headcount at the latest Sunday poll. TOTALS is a
-        # DELTA, so on the baseline Sunday it is 0 for everyone — the flyer shows
-        # both ("26 heads · +0 since Aug 2") or the board reads as all-zeros
-        # (Megan 2026-08-03). Not written to the sheet; display only.
+        # `heads` = the count at the LATEST Sunday poll, `base` = the 8/2
+        # baseline. TOTALS is a DELTA, so on the baseline Sunday it is 0 for
+        # everyone — the flyer shows the count alongside it ("26 heads · +0
+        # since Aug 2") or the board reads as all-zeros (Megan 2026-08-03).
+        # Both are display-only; neither is written to the sheet. Keep the two
+        # distinct: the flyer once printed `heads` under the words "started
+        # with", which read as the baseline and made every line wrong by the
+        # delta (Megan 2026-08-09).
         rows.append({"row0": row0, "name": name, "total": growth, "cells": cells,
-                     "heads": latest})
+                     "heads": latest, "base": base})
     # unmatched = owners missing from the latest snapshot
     if latest_d:
         for row0, name in sec.owners:

@@ -219,7 +219,9 @@ def _run(args) -> int:
                     -(h if isinstance(h, int) else _NODATA),
                     r["name"].lower())
         _rep = sorted(rows_plan, key=_flyer_key)
-        rep_rows = [(i, r["name"], r["total"], r.get("heads"))
+        # 5th slot = the 8/2 baseline, so the flyer can print "22 now, was 18"
+        # instead of labelling the current count "started with".
+        rep_rows = [(i, r["name"], r["total"], r.get("heads"), r.get("base"))
                     for i, r in enumerate(_rep, 1)]
 
     print(f"\n{'(dry-run — nothing written)' if args.dry_run else 'written ✓'}",

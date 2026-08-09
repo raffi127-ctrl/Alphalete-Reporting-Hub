@@ -27,26 +27,38 @@ def _delta(val: object) -> str:
 
 
 def _ol(rows, unit: str, since: str = "") -> str:
-    """rows: [(rank, name, value)] high→low, or [(rank, name, delta, headcount)]
+    """rows: [(rank, name, value)] high→low, or
+    [(rank, name, delta, headcount)] / [(rank, name, delta, headcount, baseline)]
     for the rep-count board. value '' renders as an em dash.
     Lists EVERY owner (Raf 2026-08-01: whole field on the flyer, not just top 10).
 
-    4-tuples render BOTH numbers (Megan 2026-08-03): the headcount as the main
-    figure and the change since the baseline underneath — "26 heads · +0 since
-    Aug 2". Showing the delta alone made the whole board read as zeros, because
-    on the baseline Sunday every owner's change is 0 by definition."""
+    The rep-count rows render BOTH numbers (Megan 2026-08-03): the change as the
+    main figure and the count underneath — "+4 heads · 22 now, was 18". Showing
+    the delta alone made the whole board read as zeros, because on the baseline
+    Sunday every owner's change is 0 by definition."""
     out = []
     for row in rows:
-        if len(row) == 4:
-            # Megan 2026-08-03: the CHANGE is the headline number and the
-            # baseline headcount is the sub-line — this board is a growth race,
-            # so "+4" is the story and "started with 26" is the context.
-            rank, name, val, heads = row
+        if len(row) >= 4:
+            # Megan 2026-08-03: the CHANGE is the headline number and the count
+            # is the sub-line — this board is a growth race, so "+4" is the
+            # story and the count is the context.
+            #
+            # The sub-line used to read "started with <heads>", but `heads` is
+            # the CURRENT count, not the baseline — so Francisco Castillo's
+            # "-13 · started with 13" said he had 13 and lost all of them, when
+            # he in fact went 26 → 13 (Megan 2026-08-09). Print both ends
+            # explicitly and there is nothing left to misread.
+            rank, name, val, heads = row[0], row[1], row[2], row[3]
+            base = row[4] if len(row) > 4 else None
             main = (f"{_delta(val)} <span class=\"u\">{unit}</span>"
                     if isinstance(val, int) else "—")
             # the count itself is bolded gold inside the sub-line (Raf 8/3)
-            sub = (f"started with <b>{heads}</b>" if heads not in ("", None)
-                   else "")
+            if heads in ("", None):
+                sub = ""
+            elif base in ("", None):
+                sub = f"<b>{heads}</b> now"
+            else:
+                sub = f"<b>{heads}</b> now, was <b>{base}</b>"
             vtxt = main + (f"<span class=\"delta\">{sub}</span>" if sub else "")
         else:
             rank, name, val = row

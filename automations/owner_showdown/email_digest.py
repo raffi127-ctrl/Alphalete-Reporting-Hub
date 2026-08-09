@@ -198,13 +198,16 @@ def build(sales_rows: List[Tuple[int, str, object]],
         f"</div>")
 
     def _txt(rows):
-        # rep rows are 4-tuples (rank, name, delta, headcount); sales are 3.
+        # rep rows are (rank, name, delta, headcount[, baseline]); sales are 3.
         out = []
         for row in rows:
-            if len(row) == 4:
-                r, n, v, heads = row
+            if len(row) >= 4:
+                r, n, v, heads = row[0], row[1], row[2], row[3]
+                base = row[4] if len(row) > 4 else None
                 sign = f"+{v}" if isinstance(v, int) and v >= 0 else str(v)
-                out.append(f"  {r}. {n} — {heads} heads ({sign} since Aug 2)")
+                was = f", was {base}" if base not in ("", None) else ""
+                out.append(f"  {r}. {n} — {heads} heads now{was} "
+                           f"({sign} since Aug 2)")
             else:
                 r, n, v = row
                 out.append(f"  {r}. {n} — {v}")
