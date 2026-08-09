@@ -186,14 +186,24 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     is of gross, the gross profit $ (after 12% payroll tax), and the gross profit %
     the office keeps. A manual # sales projects the total (× activation)."""
     from automations.pay_structure import gross_profit as gp
+    from automations.pay_structure import offices as _po
     st.divider()
     st.markdown("### 📊 Gross profit calculator")
+
+    # Owner (ICD) picker — Raf: pick which ICD's DD numbers to view (like the
+    # DDDETAILORG 'ICD Owner Name' dropdown). Defaults to the logged-in office.
+    _keys = list(_po.ORDER)
+    view = st.selectbox(
+        "ICD / owner", _keys,
+        index=_keys.index(office.key) if office.key in _keys else 0,
+        format_func=lambda k: (_po.OFFICES.get(k).owner if _po.OFFICES.get(k) else k),
+        key=f"gp_owner_{office.key}")
     try:
-        gr = store.load_gross_revenue(office.key) or {}
+        gr = store.load_gross_revenue(view) or {}
     except Exception:                    # noqa: BLE001
         gr = {}
     try:
-        weeks = store.load_weekly(office.key) or {}
+        weeks = store.load_weekly(view) or {}
     except Exception:                    # noqa: BLE001
         weeks = {}
 
@@ -226,7 +236,7 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     week_opts = sorted(weeks.keys(), key=_wk_key, reverse=True)
     if week_opts:
         wk = st.selectbox("DD week ending (AT&T Residential)", week_opts, index=0,
-                          key=f"gp_wk_{office.key}")
+                          key=f"gp_wk_{view}")
         fiber = _pull_fiber(weeks.get(wk))
         src_note = "DD week ending **{}**".format(wk)
     else:
@@ -237,9 +247,9 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
                         ["$ per sale", "% of gross revenue"], horizontal=True,
-                        key=f"gp_method_{office.key}") == "% of gross revenue"
+                        key=f"gp_method_{view}") == "% of gross revenue"
     activation = ctop[1].slider("Office activation rate (%)", 50, 100, act_default,
-                                key=f"gp_act_{office.key}") / 100.0
+                                key=f"gp_act_{view}") / 100.0
     if not fiber:
         st.caption("No AT&T Fiber DD products for your office yet — this fills in "
                    "after the next DD pull.")
@@ -249,7 +259,7 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
                "**# sales** to project the total.".format(src_note))
 
     tax = gp.PAYROLL_TAX
-    ss = st.session_state.setdefault("gpsim_" + office.key, {})   # scratch inputs
+    ss = st.session_state.setdefault("gpsim_" + view, {})   # scratch inputs
     _PAY = "You pay rep ({})".format("%" if pct else "$")
     _TIER = "Tier bonus ($/sale)"
     data = []
@@ -296,7 +306,7 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
                                                  format="%d", help="Project a volume"),
     }
     edited = st.data_editor(df, width="stretch", column_config=cfg, hide_index=True,
-                            key=f"gpsim_ed_{office.key}")
+                            key=f"gpsim_ed_{view}")
     for _, r in edited.iterrows():            # persist edits so the auto columns recompute
         ss[str(r["Product"])] = {"gross": float(r["Gross revenue"] or 0),
                                  "pay": float(r[_PAY] or 0),

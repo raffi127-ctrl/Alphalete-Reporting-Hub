@@ -330,8 +330,10 @@ def weekly_by_office(rows, campaign: str = "RES-ATT") -> "Dict[str, Dict[str, Di
         if campaign and str(r.get(COL_CAMPAIGN, "") or "").strip() != campaign:
             continue
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if (cat not in PRODUCT_CATEGORIES or cat == "ELE"
-                or not _is_commission(r) or not _is_activated(r)):
+        # NOT activation-gated (unlike the aggregated payout): Raf wants to see EVERY
+        # product he got that week — a recent week's un-activated rows just show a
+        # partial value that fills in as it settles.
+        if cat not in PRODUCT_CATEGORIES or cat == "ELE" or not _is_commission(r):
             continue
         name = _norm_desc(_product_name(r, cat))
         owner = str(r.get(COL_OWNER, "") or "").strip()
