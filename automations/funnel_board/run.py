@@ -167,7 +167,12 @@ def switch(page, oid, hint, rqst):
             if who == oid:
                 return True
             if attempt == 2:
-                log("   %s: landed on office %s" % (oid, who or "?"))
+                # say WHAT came back — an access refusal reads very differently
+                # from a slow render, and we can't shell into Lucy 2 to look
+                body = page.evaluate("() => (document.body.innerText||'')")
+                body = " ".join(body.split())[:220]
+                log("   %s: landed on %s | url=%s | body=%s"
+                    % (oid, who or "?", page.url[-60:], body))
         except Exception as e:
             if attempt == 2:
                 log("   %s: %s: %s" % (oid, type(e).__name__, str(e)[:120]))
