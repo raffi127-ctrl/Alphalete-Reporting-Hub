@@ -4904,6 +4904,32 @@
       },
       "machine": "Lucy 1"
     },
+    "override_bulletin_gate": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin REVIEW GATE (automations.override_bulletin.override_gate). The scheduled path is deploy/override_bulletin_send_fri.sh, which runs post -> check -> remind every 25m Fri 10:30-13:00 CST; this entry exists so a Friday that goes wrong can be driven by hand, exactly like dd_bulletin_gate. base_args are ['--post'] and the gate resolves --refresh/--check BEFORE --post, so the extra flags win: `lucy rerun override_bulletin_gate --refresh` (rebuild the PDF over the SAME Drive link after the Sheet is corrected — never a second post, that is how someone approves the version you already fixed), `--check --send --distro` (release the send Eve has ticked: full org + Slack), `--check --send` (soft-launch 4-person group instead), `--repost` (replace this week's message; refuses over an approval). Approver is EVE ONLY, same as the DD bulletin. Added 2026-08-07 (Eve).",
+      "display_name": "Override Bulletin — review gate (post / refresh / check)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.override_gate"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "timeout_minutes": 25,
+      "cadence": {
+        "weekdays": [
+          4
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "override_bulletin_send": {
       "on_scheduler": false,
       "_off_scheduler_note": "Manual lever for the Friday Override Bulletin SEND. The scheduled send is the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent (deploy/override_bulletin_send_fri.sh, Fri 10:30-13:00 CST q25m, still --test). This entry exists so a CORRECTED bulletin can be re-sent by hand the same day. base_args are deliberately a DRY RUN \u2014 the caller must ask for the send explicitly, so a stray `lucy rerun override_bulletin_send` can never publish to the org: `lucy rerun override_bulletin_send --test --send` (3-person test group) or `--send --force` (FULL distro + Slack). --force is required for any same-week resend: unlike the DD bulletin, the override bulletin has NO separate test state, so a --test --send already burns the week in override_bulletin_last_sent.txt. Renders OUR copy tab, never the VA's live tab. Added 2026-08-07 (Eve).",
