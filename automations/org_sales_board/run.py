@@ -247,6 +247,12 @@ def main(argv=None) -> int:
             # program pull = missing data, even if the compare passes (e.g. a
             # Monday run with no completed days to compare).
             _skipped = list(_summary.get("skipped") or [])
+            # Sections that filled but LOST a completed day: their day-number
+            # row is frozen on last week's dates, so the fill had no column for
+            # that day and dropped it (Eve 2026-08-09). Missing data like any
+            # other — and a re-run alone won't fix it, so it carries no retry
+            # button; the header cell has to be repaired first.
+            _dropped = list(_summary.get("dropped_days") or [])
             _caps_summary = _summary.get("captainships") or {}
             _failed_prog = list(_caps_summary.get("failed_programs") or [])
             _failed_caps = list(_caps_summary.get("failed_captainships") or [])
@@ -329,9 +335,12 @@ def main(argv=None) -> int:
                 try:
                     from automations.shared import run_manifest as _rm
                     if (_skipped or _failed_prog or _failed_caps
-                            or not _compare_clean or _missing_reps):
+                            or not _compare_clean or _missing_reps or _dropped):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
+                            + [f"dropped day — {d}; its day-number row is "
+                               "frozen, fix the cell to '=<prev cell>+1'"
+                               for d in _dropped]
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
                             + [f"roster: {m['name']} ({m['captain']} cap) has no "
@@ -403,7 +412,7 @@ def main(argv=None) -> int:
                 except Exception:
                     pass
             if (_skipped or _failed_prog or _failed_caps or not _compare_clean
-                    or _missing_reps):
+                    or _missing_reps or _dropped):
                 # RAN but with a note (missing pull or a VA-compare difference).
                 # Exit 0 — NOT a hard failure: the manifest written above carries
                 # the failed parts, so the orchestrator's verify marks this
@@ -419,6 +428,7 @@ def main(argv=None) -> int:
                       f"failed captainship fill(s)={_failed_caps or 'none'}; "
                       f"missing copy row(s)="
                       f"{[m['name'] for m in _missing_reps] or 'none'}; "
+                      f"dropped day(s)={_dropped or 'none'}; "
                       f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
                       "Re-run to retry the missing pull(s). ===")
                 return 0

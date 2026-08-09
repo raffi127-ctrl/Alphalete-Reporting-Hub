@@ -137,3 +137,31 @@ def gate(g=None, yday: Optional[dt.date] = None, *, now: Optional[dt.datetime] =
     if now >= _hhmm(send_anyway_after, now.date()):
         return True, f"past {send_anyway_after} — sending with what the board has. {why}"
     return False, f"{why} (holding until it fills, or {send_anyway_after})"
+
+
+def missing_sections(g=None, yday: Optional[dt.date] = None) -> List[str]:
+    """The gaps behind gate()'s message, as a list a human can act on.
+
+    gate() answers one question — send or hold — and buries WHAT is short in a
+    string. Past the send-anyway hour it returns ok=True, so the day's email
+    goes out and the gap only ever exists as a line in a log nobody reads: on
+    2026-08-09 that line said 'ATT NDS - All Units has no 8/8 column' and it
+    sat there unnoticed while the email shipped. Callers pass this to
+    section_drop_alert so a board that ships SHORT says so out loud.
+
+    A section that legitimately publishes a day behind (LAGGING_SECTIONS) is
+    not a gap. Pass the grid gate() used to avoid a second board read.
+    """
+    yday = yday or (dt.date.today() - dt.timedelta(days=1))
+    d = f"{yday.month}/{yday.day}"
+    try:
+        secs = coverage(g, yday)
+    except Exception:  # noqa: BLE001 — never break a caller over the alarm
+        return []
+    out = [f"{s['name']} (row {s['row'] + 1}) — no {d} column; its day-number "
+           "row is frozen on an older week"
+           for s in secs if s["col"] is None]
+    out += [f"{s['name']} (row {s['row'] + 1}) — {len(s['missing'])}/{s['reps']} "
+            f"rep cells blank for {d}"
+            for s in secs if s["col"] and s["missing"] and not s["lagging"]]
+    return out

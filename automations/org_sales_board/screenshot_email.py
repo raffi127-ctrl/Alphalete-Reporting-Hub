@@ -946,6 +946,26 @@ def main(argv=None) -> int:
               f"{data_gate.SEND_ANYWAY_AFTER}). (--force overrides.)", flush=True)
         return 2
 
+    # SHIPPING SHORT — say so. Past the send-anyway hour the gate returns OK
+    # with the gap spelled out in its message, so the email goes out and the
+    # only trace is a log line (2026-08-09: 'ATT NDS - All Units has no 8/8
+    # column' shipped unnoticed, and the All Units board was a day short the
+    # same morning). One ping per (day, gap-set), so a re-run doesn't spam.
+    if _gate_ok and "INCOMPLETE" in _gate_why and not a.dry_run:
+        try:
+            from automations.shared import section_drop_alert as _sda
+            _gaps = data_gate.missing_sections()
+            if _gaps:
+                _sda.alert(report_id="org_sales_board_email", failed=_gaps,
+                           kind="day",
+                           note=("The board shipped anyway (past "
+                                 f"{data_gate.SEND_ANYWAY_AFTER}) — the email "
+                                 "and the review PDF are SHORT for these "
+                                 "sections."))
+        except Exception as e:  # noqa: BLE001 — the alarm never blocks the email
+            print(f"[screenshot_email] ⚠ short-board alert didn't fire "
+                  f"({type(e).__name__}: {e})", flush=True)
+
     out_dir = out_dir_for(today)
     images = capture(out_dir)
     _write_manifest(out_dir, images)

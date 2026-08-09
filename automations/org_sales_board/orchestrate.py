@@ -202,7 +202,7 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
     raw_aliases = fs.load_aliases()
     ctx = AdapterContext(today=today, out_dir=Path("output"),
                          from_csv=from_csv, page=page, logfn=logfn)
-    summary = {"filled": [], "skipped": [], "manual": []}
+    summary = {"filled": [], "skipped": [], "manual": [], "dropped_days": []}
     _owner_names: set = set()  # every owner/ICD name pulled — for the terminated check
 
     stage_names = ["Tableau scrape (one session)", "MANUAL"]
@@ -265,11 +265,27 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                           f"source from sources.py.")
                     summary["skipped"].append(sec.label)
                     continue
+                # A completed day with no column in this box is DROPPED, not
+                # late: the day-number row is a `=<prev>+1` chain and a number
+                # typed over one cell freezes that day and every day after it
+                # on last week's dates (Eve 2026-08-09 — Frontier's Saturday
+                # header still read '1' from the week of Aug 1). The fill logs
+                # a ⚠ and carries on, so without this the run closes green.
+                _stale = fs.missing_day_columns(
+                    fs.find_daily_section(grid, sec.label), today)
+                if _stale:
+                    days = [d.isoformat() for d in _stale]
+                    logfn(f"  ⚠ section {sec.label!r}: {len(days)} completed "
+                          f"day(s) have NO column — DROPPED: {days}. Its "
+                          f"day-number row is frozen; fix the cell to "
+                          f"'=<prev cell>+1' and re-run the section.")
+                    summary["dropped_days"].append(f"{sec.label}: {days}")
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)
 
     logfn(f"=== daily summary: filled={summary['filled']} "
-          f"skipped={summary['skipped']} manual={summary['manual']} ===")
+          f"skipped={summary['skipped']} manual={summary['manual']} "
+          f"dropped_days={summary['dropped_days'] or 'none'} ===")
 
     # Captainship leaderboards reuse THIS session's page — one login for the
     # whole board instead of a second --step captainships pass.

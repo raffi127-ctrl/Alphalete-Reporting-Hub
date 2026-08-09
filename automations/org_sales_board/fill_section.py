@@ -157,6 +157,27 @@ def find_daily_section(grid: List[List[str]], label: str) -> SectionAnchor:
         icd_rows=icd_rows)
 
 
+def missing_day_columns(anchor: SectionAnchor,
+                        today: Optional[dt.date] = None) -> List[dt.date]:
+    """Completed days of the reporting week with NO column on this section.
+
+    The day-number row is a chain of `=<prev>+1` on the Org workbook's tabs, so
+    a number typed over ONE of those cells freezes that day — and every day
+    after it — on the previous week's dates. The fill then has nowhere to put
+    those days and drops them: it logs a ⚠, writes the rest and exits 0, which
+    reads as a clean run everywhere downstream (Eve 2026-08-09 — the All Units
+    board lost Saturday 8/8 because its Saturday header still said '1' from the
+    week of Aug 1, and the day's email carried a 6-day week).
+
+    Today itself is in progress and never expected, so only days BEFORE today
+    count. Callers turn a non-empty result into INCOMPLETE.
+    """
+    today = today or dt.date.today()
+    from automations.org_sales_board import week as _wk
+    return [d for d in _wk.reporting_week(today)
+            if d < today and d.day not in anchor.day_col_by_daynum]
+
+
 # ----------------------------------------------------------- name matching
 
 # Board-local owner aliases — for ICDs whose Org-board ROW name differs from
