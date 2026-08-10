@@ -52,18 +52,25 @@ def machine():
 
 
 def _rows(S, api):
-    r = S.get(api + "/values/'%s'!A1:U100000" % TAB,
+    """The whole tab — the bare sheet name returns exactly the used range.
+
+    NOT a guessed A1:U window. The header is 25 columns wide, not the 21 an
+    earlier version assumed, so a fixed window both cut four real columns out of
+    the fingerprint and put the stamp on top of live header cells.
+    """
+    r = S.get(api + "/values/'%s'" % TAB,
               params={"valueRenderOption": "UNFORMATTED_VALUE"})
     return r.json().get("values", []) if r.status_code == 200 else []
 
 
 def fingerprint(rows):
-    """A stable digest of the data block, stamp cell excluded.
+    """A stable digest of the DATA rows — row 1 excluded, full width.
 
-    Only columns A..U — the stamp sits past them, so stamping never changes the
-    fingerprint of the data it describes.
+    Skipping the header is what keeps the stamp out of the fingerprint: the
+    stamp lives in row 1, so it can never change the digest of the data it
+    describes, no matter which column it lands in.
     """
-    body = [[("" if c is None else str(c)) for c in row[:21]] for row in rows]
+    body = [[("" if c is None else str(c)) for c in row] for row in rows[1:]]
     return hashlib.sha1(
         json.dumps(body, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
 
@@ -121,24 +128,32 @@ def stamp(S, api, identity, log):
     """Record who just wrote, from where, and what the Sheet looks like now."""
     try:
         rows = _rows(S, api)
-        head = rows[0] if rows else []
-        # Two clear columns past the data, so the stamp can never be mistaken
-        # for a metric and never collides with a widening header.
-        col = len(head) + 2
+        # Two clear columns past the WIDEST row, not just past the header — a
+        # data row can run wider than row 1, and the stamp must never land on a
+        # cell anything else reads.
+        col = max((len(r) for r in rows), default=0) + 2
         payload = {
             "fp": fingerprint(rows),
             "at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
             "by": identity,
             "machine": machine(),
         }
-        S.post(api + "/values:batchUpdate", json={
+        rng = "'%s'!%s1:%s1" % (TAB, _a1col(col), _a1col(col + 1))
+        r = S.post(api + "/values:batchUpdate", json={
             "valueInputOption": "RAW",
             "data": [{
-                "range": "'%s'!%s1:%s1" % (TAB, _a1col(col), _a1col(col + 1)),
+                "range": rng,
                 "values": [[LABEL, json.dumps(payload, separators=(",", ":"))]],
             }],
         })
-        log("guard: stamped (%s on %s)" % (identity, payload["machine"]))
+        # Say it FAILED when it failed. The first cut logged "stamped"
+        # unconditionally and the write was silently rejected — a guard that
+        # lies about its own state is worse than no guard.
+        if r.status_code != 200:
+            log("guard: stamp REJECTED at %s (%s) %s"
+                % (rng, r.status_code, r.text[:200]))
+            return
+        log("guard: stamped at %s (%s on %s)" % (rng, identity, payload["machine"]))
     except Exception as e:  # noqa: BLE001
         log("guard: stamp skipped (%s: %s)" % (type(e).__name__, str(e)[:120]))
 
