@@ -35,7 +35,9 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request, AuthorizedSession
 
-from automations.shared.tableau_patchright import appstream_direct_session
+from automations.shared.tableau_patchright import (
+    appstream_direct_session, APPSTREAM_PROFILE_DIR,
+)
 from automations.recruiting_report import fetch_office
 from automations.funnel_board.fetch import report_week
 
@@ -210,8 +212,25 @@ def main():
     fresh, failed = {}, []
     # headless=True trips a Cloudflare re-challenge on the rcaptain login;
     # every successful pull has been headed. Lucy 2 runs with a display.
-    with appstream_direct_session(headless=False, verbose=False,
-                                  force_form_login=True) as page:
+    #
+    # OWN PROFILE (2026-08-10). Lucy 2 dropped the SAME five offices on every
+    # single run since it went on the scheduler — 19717, 23607, 22177, 23411,
+    # 21328 — while Lucy 1 pulled 14/14. Not a timeout: the page body came back
+    # "This Office is not assigned to you!", and Eve confirmed by hand that
+    # rcaptain DOES have all five. So the run wasn't rcaptain.
+    #
+    # force_form_login=True is not enough on its own: it only skips the
+    # storage_state reuse. The session then loads applicantstream.com and types
+    # the login form ONLY IF a password field is there. A persistent profile
+    # still holding someone else's live session renders logged-in, no form
+    # appears, and the whole pull proceeds silently as that other account.
+    # A profile of our own starts empty, so the rcaptain form login actually
+    # runs. verbose=True so the log says which path it took — the silent reuse
+    # is exactly what made this cost a day to find.
+    with appstream_direct_session(headless=False, verbose=True,
+                                  force_form_login=True,
+                                  profile_dir=(APPSTREAM_PROFILE_DIR.parent
+                                               / ".appstream_profile_funnel")) as page:
         rqst = re.search(r"rqst=([A-Za-z0-9-]+)", page.url).group(1)
         def attempt(todo):
             still = []
