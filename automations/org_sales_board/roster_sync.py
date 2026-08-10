@@ -30,6 +30,27 @@ from automations.org_sales_board import captainship as cap, fill_section as fs
 from automations.alphalete_org_report.tableau_http import _norm_owner
 
 
+# Reps a human DELETED from the copy board on purpose and who must never be
+# auto-re-added, even though the VA's board still lists them. Without this the
+# self-heal is unanswerable: Eve removed Ethan McKendree from Carlos' captainship
+# by hand, the next run read him off the VA roster, saw no copy row, and put him
+# straight back — every run, forever (2026-08-10).
+#
+# Filtered inside `missing_va_reps`, which is the ONE choke point both callers go
+# through, so an excluded rep is neither auto-inserted NOR flagged as a missing
+# roster row. Filtering only the inserter would leave the daily gate crying
+# "Ethan McKendree (Carlos cap) has no copy row — add it" forever, which trains
+# people to ignore the flag that exists to catch real undercounts.
+#
+# This is a LOCAL override of the VA's roster, not a fix to it — the durable
+# cleanup is removing the rep on the VA's own board, which no automation may
+# write to (see the hard guard in auto_insert_missing). Keep the entry until the
+# VA board is corrected; a name here that is no longer on the VA is harmless.
+EXCLUDE = (
+    "Ethan McKendree",      # Eve, 2026-08-10 — Carlos' captainship
+)
+
+
 def _cands(name: str, aliases) -> set:
     """Every alias-expanded, normalized key a roster name can match on — the same
     matcher the fill/compare use, so 'missing' here means the fill would also miss
@@ -51,6 +72,12 @@ def missing_va_reps(copy_grid: List[List[str]], va_grid: List[List[str]],
     (captain, normalized-name)."""
     out: List[Dict] = []
     seen_out: set = set()
+    # Alias-expanded keys for the deliberate removals, built with the SAME matcher
+    # as the roster names — so a VA spelling variant is excluded too, exactly as
+    # it would have been matched.
+    excluded: set = set()
+    for _name in EXCLUDE:
+        excluded |= _cands(_name, aliases)
     try:
         caps = [t for t, _hint in cap.discover_captainships(copy_grid)]
     except Exception:
@@ -71,6 +98,8 @@ def missing_va_reps(copy_grid: List[List[str]], va_grid: List[List[str]],
                 keys = _cands(nm, aliases)
                 if not keys:
                     continue
+                if keys & excluded:
+                    continue                 # removed on purpose -> never re-add
                 norm = _norm_owner(nm)
                 if norm in seen_va:
                     continue                 # same rep across boxes -> once
