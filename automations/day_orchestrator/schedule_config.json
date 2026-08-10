@@ -5204,6 +5204,33 @@
       },
       "machine": "Lucy 1"
     },
+    "dd_populate_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "DRY probe of the populate — prints every cell it WOULD change against the tab and writes NOTHING. Exists because dd_populate carries --write in its base_args, so `lucy rerun dd_populate --source X` is still a live write; there was no way to ask for a rehearsal (learned the hard way 2026-08-10, when a source swap overwrote the whole 8.2.26 column with 7.26.26 money). Default source here is PROGRAM SUMMARY / DOWNLINE, the view Eve builds Org. Bulletin.xlsx from: run this and compare the deltas against her file. Delta ~0 across the 37 owners = the week anchor is right, and only then flip the default in dd_search.accumulate/accumulate_all back to 'program-summary'. Pass `--source dd-detail` to rehearse the current live source instead. LUCY 1.",
+      "display_name": "DD — populate DRY probe (writes nothing)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:dd_detail"
+      ],
+      "command": [
+        "automations.override_bulletin.dd_search"
+      ],
+      "base_args": [
+        "--populate",
+        "--source",
+        "program-summary"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "dd_repull_compare": {
       "on_scheduler": false,
       "_off_scheduler_note": "One-shot diagnostic: re-pull EVERY owner's weekly DD from our Tableau mapping and compare it week-for-week against the Org DDs Ongoing Report tab. READ-ONLY \u2014 results land on the '_dd_repull' tab of the override workbook. Use it when the auto-filled tab disagrees with Eve's own 'Org. Bulletin.xlsx': she pulls Program Summary filtered to Downline, dd_populate pulls ORG DD Detail. Added 2026-08-06 for Akib Chowdhury on the FIRST auto-filled week, WE 8.2.26 \u2014 tab $4,260.30 vs her $4,644.90, delta $384.60, and the only ICD of 37 that disagreed, so this is a per-ICD question and not a source mismatch. Pick a week with `lucy rerun dd_repull_compare --week 8.2.26`. LUCY 1.",
