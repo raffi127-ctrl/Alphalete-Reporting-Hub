@@ -84,29 +84,36 @@ def report_week(page, rqst, start: dt.date, verbose=True):
 
     Returns {date -> {metric -> int}} keyed by real dates.
     """
-    page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=%d" % (rqst, REPORT_P),
-              wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_selector("form[name=frmRR] input[name=weekStart]", timeout=30000)
+    def _submit():
+        """Load the report page fresh and post the period. Two traps:
+          * the visible weekStart datepicker is decorative — the hidden
+            startDate2 (MM/DD/YYYY) is what selects the period;
+          * the form has an input named "submit", shadowing form.submit().
+        """
+        page.goto("https://applicantstream.com/index.cfm?rqst=%s&p=%d" % (rqst, REPORT_P),
+                  wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector("form[name=frmRR] input[name=weekStart]", timeout=30000)
+        page.evaluate("""([slash, dash]) => {
+            const f = document.forms['frmRR'];
+            f.startDate2.value = slash;
+            f.weekStart.removeAttribute('readonly');
+            f.weekStart.value = dash;
+            HTMLFormElement.prototype.submit.call(f);
+        }""", [start.strftime("%m/%d/%Y"), start.strftime("%m-%d-%Y")])
 
-    # frmRR is a plain POST to index.cfm. Two traps here:
-    #  * The visible `weekStart` datepicker is decorative — the server echoes it
-    #    back but ignores it. `startDate2` (hidden, MM/DD/YYYY) is what actually
-    #    selects the period, and it defaults to today. Posting only weekStart
-    #    silently returns the CURRENT week, which reads exactly like success.
-    #  * The form has an input named "submit", shadowing form.submit(), so the
-    #    prototype method has to be called directly.
-    # Submitting natively also sidesteps the jQuery datepicker, which patchright's
-    # isolated world can't reach anyway.
-    page.evaluate("""([slash, dash]) => {
-        const f = document.forms['frmRR'];
-        f.startDate2.value = slash;
-        f.weekStart.removeAttribute('readonly');
-        f.weekStart.value = dash;
-        HTMLFormElement.prototype.submit.call(f);
-    }""", [start.strftime("%m/%d/%Y"), start.strftime("%m-%d-%Y")])
-    # Big offices (Rafael 11280, Khalil 11901) render this grid slowly — 60s is
-    # not enough for them.
-    page.wait_for_selector("#totalsTable tr.mainRow", timeout=240000)
+    # Big offices (Rafael 11280, Khalil 11901) render this grid slowly. Retry the
+    # WHOLE submit — after a timeout the page has navigated away, so re-posting
+    # the old form throws "cannot read properties of undefined". Retrying here
+    # rather than at the office level means one slow week costs a re-submit, not
+    # the 32 weeks that already succeeded.
+    for attempt in range(3):
+        _submit()
+        try:
+            page.wait_for_selector("#totalsTable tr.mainRow", timeout=150000)
+            break
+        except Exception:
+            if attempt == 2:
+                raise
     page.wait_for_timeout(1200)
 
     data = page.evaluate(_JS_ROWS)

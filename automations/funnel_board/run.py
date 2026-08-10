@@ -103,9 +103,19 @@ def read_daily_log(S):
         v = {}
         for k, i in list(ci.items()) + list(ai.items()):
             v[k] = int(row[i]) if i is not None and i < len(row) and isinstance(row[i], (int, float)) else 0
-        # the log stores TOTALS; build.py re-derives them from the audit parts
-        v["sent"] = v.pop("sent_email", v["sent"])
-        v["removed"] = v.pop("rm_email", v["removed"])
+        # The log stores TOTALS in the main columns and the components in the
+        # audit columns; build.py re-derives the totals from the components. Only
+        # trust a component when it is actually there — blindly taking it wiped
+        # Removed to zero for every manager once, and each later run then re-read
+        # that zero and wrote it back. If a component is missing or empty while
+        # its total is not, back it out of the total instead.
+        if ai["rm_email"] is None or (v["removed"] and not v["rm_email"]):
+            v["rm_email"] = max(0, v["removed"] - v.get("rm_scoop", 0))
+        if ai["sent_email"] is None or (v["sent"] and not v["sent_email"]):
+            v["sent_email"] = max(0, v["sent"] - v.get("manual", 0)
+                                  - v.get("scoop_s", 0) - v.get("file_s", 0))
+        v["sent"] = v.pop("sent_email")
+        v["removed"] = v.pop("rm_email")
         v["applies"] = (v.get("emails_rx", 0) + v.get("scoop_rx", 0)
                         + v.get("file_rx", 0) + v.get("manual", 0))
         out.setdefault(who, {"office_id": office, "days": {}})["days"][d] = v
@@ -186,6 +196,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="pull and report, write nothing")
     ap.add_argument("--weeks", type=int, default=0, help="backfill this many weeks instead")
     ap.add_argument("--today", help="override today (YYYY-MM-DD), for testing")
+    ap.add_argument("--only", help="pipe-separated manager names, e.g. 'Rafael Hidalgo|Kash Rai'")
     a = ap.parse_args()
 
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
@@ -246,7 +257,12 @@ def main():
         # dropped 5 of 14 offices where the mini dropped none. Sweep the
         # stragglers again rather than letting a transient render timeout cost a
         # day's numbers for that manager.
-        left = attempt(OFFICES)
+        todo = OFFICES
+        if a.only:
+            names = set(a.only.split("|"))
+            todo = [o for o in OFFICES if o[0] in names]
+            log("only: %s" % ", ".join(n for n, _, _ in todo))
+        left = attempt(todo)
         for round_no in (2, 3):
             if not left:
                 break
