@@ -204,6 +204,11 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                          from_csv=from_csv, page=page, logfn=logfn)
     summary = {"filled": [], "skipped": [], "manual": [], "dropped_days": []}
     _owner_names: set = set()  # every owner/ICD name pulled — for the terminated check
+    # {section label: (pull, metric)} for the sections that really pulled this
+    # run — handed to the New Owners hook below so it can tell "started selling"
+    # from "we never looked today". A section that failed/was skipped is simply
+    # absent, and its bank rows keep waiting.
+    _pulls_by_label: Dict[str, tuple] = {}
 
     stage_names = ["Tableau scrape (one session)", "MANUAL"]
     for stage_idx, group in enumerate(src.run_order()):
@@ -282,10 +287,31 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                     summary["dropped_days"].append(f"{sec.label}: {days}")
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)
+                _pulls_by_label[sec.label] = (pull, sec.metric)
 
     logfn(f"=== daily summary: filled={summary['filled']} "
           f"skipped={summary['skipped']} manual={summary['manual']} "
           f"dropped_days={summary['dropped_days'] or 'none'} ===")
+
+    # NEW OWNERS — the waiting list walks onto the board by itself. Runs HERE,
+    # after every section is filled and while the pulls are still in memory: the
+    # pull is what proves someone started selling, and inserting a row earlier
+    # would shift the rows under the section fills (they're all planned off ONE
+    # grid read). Sections that gained a row are re-filled from the same pull
+    # inside the hook. Advisory: the board is already correct without it, so a
+    # failure here logs and moves on. [[project_new_owners]]
+    if _pulls_by_label:
+        try:
+            from automations.new_owners import hook as _nw
+            logfn("--- New Owners (bank -> board) ---")
+            summary["new_owners"] = _nw.run(
+                ws, _pulls_by_label, today=today, dry_run=dry_run,
+                aliases=raw_aliases, logfn=logfn)
+        except Exception as e:  # noqa: BLE001 — must never break the board fill
+            import traceback as _tb
+            logfn(f"  ⚠ new-owners step skipped ({type(e).__name__}: "
+                  f"{str(e)[:120]}) — the board fill itself is unaffected.")
+            logfn("  new-owners traceback:\n" + _tb.format_exc())
 
     # Captainship leaderboards reuse THIS session's page — one login for the
     # whole board instead of a second --step captainships pass.

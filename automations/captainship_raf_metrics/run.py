@@ -127,6 +127,17 @@ def _fill_tab(tab: str, all_parsed: dict, today: dt.date, args) -> dict:
     if not added:
         print("  (no new ICD rows to add)")
 
+    # A rep new to Raf's captainship: ask for a ✅ in #revision-emails. Only the
+    # checkmark puts them on the Org Sales Board; this tab already has them.
+    # Advisory — the fill's own work is done. [[project_new_owners]]
+    try:
+        from automations.new_owners import captain_watch as _cw
+        _cw.observe_added(added, captain="Raf",
+                          source="Captainship Metrics - Rafael",
+                          dry_run=args.dry_run)
+    except Exception as _e:  # noqa: BLE001 — never break the fill on a notice
+        print(f"  (new-rep gate skipped: {type(_e).__name__}: {str(_e)[:60]})")
+
     print(f"  Write {fill._date_label(today)}...")
     summary = fill.write_today(ws, boxes, today, parsed,
                                dry_run=args.dry_run, logfn=print)

@@ -91,6 +91,18 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
     if not added:
         print("  (no new ICD rows to add)")
 
+    # A rep who is new to this captainship gets ONE heads-up in
+    # #revision-emails, from whichever report sees them first — the log tab
+    # keeps the other four quiet. Advisory: the rows are already in.
+    # [[project_new_owners]]
+    try:
+        from automations.new_owners import captain_watch as _cw
+        _cw.observe_added(added, captain=cap.slug,
+                          source="Captainship Cancel Rate",
+                          dry_run=args.dry_run)
+    except Exception as _e:  # noqa: BLE001 — never break the fill on a notice
+        print(f"  (new-rep notice skipped: {type(_e).__name__}: {str(_e)[:60]})")
+
     print(f"  Write {fill._date_label(today)}...")
     summary = fill.write_today(ws, sections, today, data,
                                dry_run=args.dry_run, logfn=print)

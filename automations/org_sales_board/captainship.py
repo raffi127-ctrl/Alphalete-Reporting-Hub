@@ -38,6 +38,30 @@ def _cell(grid, r, c):  # 0-based
     return (grid[r][c] if r < len(grid) and c < len(grid[r]) else "").strip()
 
 
+_TEAM_TITLE = re.compile(r"\bcaptain(?:ship)?\s+team\b", re.I)
+
+
+def block_title(grid, r) -> str:
+    """The '<NAME> CAPTAIN(SHIP) TEAM' band of row r (0-based), or "".
+
+    Read from col B **or col A**. Every captainship on the board writes this band
+    in col B — except Khalil's, which is in col A (row ~1299, Eve 2026-08-10).
+    Scanning only col B made his block invisible to discovery, and since a box's
+    span runs to the NEXT title found, his entire box was absorbed into the
+    captain above him (Sahil's): it filled with the right numbers only because
+    the fill matches by NAME, while every attribution — rollover, roster, the new
+    -rep gate — thought those reps were Sahil's.
+
+    A bare 'CAPTAIN TEAM' (the sub-header above every leaderboard, col A) has no
+    name in front of it and returns "" — it is not a block title."""
+    for c in (1, 0):
+        v = _cell(grid, r, c)
+        m = _TEAM_TITLE.search(v)
+        if m and v[:m.start()].strip():
+            return v
+    return ""
+
+
 def find_captainship(grid: List[List[str]], captain_title: str) -> CaptainAnchor:
     title_l = captain_title.strip().lower()
     n = len(grid)
@@ -50,9 +74,7 @@ def find_captainship(grid: List[List[str]], captain_title: str) -> CaptainAnchor
     # title_l constraint keeps a bare "CAPTAIN TEAM" sub-header from matching.
     # [No hardcoded rows — find blocks by their col-B label.]
     t = next((i for i in range(n)
-              if title_l in _cell(grid, i, 1).lower()
-              and re.search(r"\bcaptain(?:ship)?\s+team\b",
-                            _cell(grid, i, 1).lower())), None)
+              if title_l in block_title(grid, i).lower()), None)
     if t is None:
         raise ValueError(f"captainship title for {captain_title!r} not found")
     # Leaderboard: first 'CAPTAIN TEAM' (col A) below the title. Single-box —
@@ -124,10 +146,8 @@ def find_captainship_boxes(grid: List[List[str]], captain_title: str):
     never cross. [No hardcoded rows — find blocks by their col-B label.]"""
     title_l = captain_title.strip().lower()
     n = len(grid)
-    pat = re.compile(r"\bcaptain(?:ship)?\s+team\b")
     start = next((i for i in range(n)
-                  if title_l in _cell(grid, i, 1).lower()
-                  and pat.search(_cell(grid, i, 1).lower())), None)
+                  if title_l in block_title(grid, i).lower()), None)
     if start is None:
         raise ValueError(f"captainship title for {captain_title!r} not found")
     my_key = _cap_key(captain_title)
@@ -135,9 +155,9 @@ def find_captainship_boxes(grid: List[List[str]], captain_title: str):
     # block twice — once per box — so same-key repeat titles stay in the span).
     end = n
     for i in range(start + 1, n):
-        b = _cell(grid, i, 1)
-        m = pat.search(b.lower())
-        if m:
+        b = block_title(grid, i)
+        if b:
+            m = _TEAM_TITLE.search(b)
             other = b[:m.start()].strip()
             if other and _cap_key(other) != my_key:
                 end = i
@@ -295,16 +315,15 @@ def discover_captainships(grid: List[List[str]]) -> List[Tuple[str, str]]:
     out: List[Tuple[str, str]] = []
     seen = set()
     for i in range(len(grid)):
-        b = _cell(grid, i, 1)
-        bl = b.lower()
         # The board labels these blocks inconsistently — "<NAME> CAPTAINSHIP
         # TEAM" (Raf's, Jairo's) AND "<NAME> CAPTAIN TEAM" (Carlos', Wayne's,
-        # …). Match BOTH so every block is found regardless of wording. A bare
-        # "CAPTAIN TEAM" sub-header (the weekly-columns row) has no name before
-        # it → empty title → skipped below. (Real tab, Megan 2026-06-17.)
-        m = re.search(r"\bcaptain(?:ship)?\s+team\b", bl)
-        if not m:
+        # …), in col B or (Khalil's) col A. block_title matches all of it. A
+        # bare "CAPTAIN TEAM" sub-header has no name before it → "" → skipped.
+        # (Real tab, Megan 2026-06-17; col-A case Eve 2026-08-10.)
+        b = block_title(grid, i)
+        if not b:
             continue
+        m = _TEAM_TITLE.search(b)
         title = b[:m.start()].strip()
         if not title:
             continue
@@ -377,28 +396,36 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     aliases = load_aliases()
     grid = ws.get_all_values()
 
-    # ROSTER SELF-HEAL — before filling, give any VA-only captainship rep a row on
-    # the copy tab so THIS run fills it (the fill only touches EXISTING rows, so a
-    # rep on the VA with no copy row otherwise sums the total short — Blue Mendoza
-    # / Starr, 2026-07-15). Skipped on dry-run, on a granular --programs retry
-    # (surgical re-pull of an already-structured board) and on offline tests.
-    # Advisory: a failure here must never crash the fill — the post-fill roster
-    # gate still flags anyone who couldn't be placed.
+    # NEW REPS — approved ones get their rows here, before the fill, so THIS run
+    # fills them (the fill only touches EXISTING rows).
+    #
+    # This used to be the VA ROSTER SELF-HEAL: it read the VA's own board and
+    # cloned any rep who had a row there but none on the copy. That board stopped
+    # being maintained weeks ago (Eve, 2026-08-10), so it is no longer evidence of
+    # anything — a rep who joined a captainship this month never appears on it,
+    # and the reps it does carry are last month's. The source is now TABLEAU: the
+    # per-captain reports detect a new rep and post a gate in #revision-emails,
+    # and `captain_gate.resolve` adds the ones Evelyn or Jolie ticked
+    # ([[project_new_owners]]). Approval is the only way a rep gets a row.
+    #
+    # Skipped on dry-run, on a granular --programs retry (surgical re-pull of an
+    # already-structured board) and on offline tests. Advisory: a failure here
+    # must never crash the fill.
     auto_added: list = []
     if not dry_run and _prog_filter is None and resolve_csv is None:
         try:
-            from automations.org_sales_board import roster_sync as _rsync
-            from automations.org_sales_board.run import PROD_TAB
-            _va = ws.spreadsheet.worksheet(PROD_TAB).get_all_values()
-            auto_added = _rsync.auto_insert_missing(ws, _va, aliases,
-                                                    dry_run=False, logfn=logfn)
+            from automations.new_owners import captain_gate as _gate
+            _res = _gate.resolve(ws, today=today, logfn=logfn)
+            auto_added = [{"name": a["name"], "captain": a["captain"],
+                           "approved_by": a["approved_by"]}
+                          for a in _res.get("added", [])]
             if auto_added:
-                logfn(f"  ✚ roster self-heal: auto-added {len(auto_added)} rep(s): "
-                      + ", ".join(f"{a['name']} ({a['captain']})"
-                                  for a in auto_added))
+                logfn(f"  ✚ approved new rep(s) added: "
+                      + ", ".join(f"{a['name']} ({a['captain']}, ✅ "
+                                  f"{a['approved_by']})" for a in auto_added))
                 grid = ws.get_all_values()      # re-read: rows shifted by inserts
         except Exception as e:  # noqa: BLE001 — must never crash the board fill
-            logfn(f"  ⚠ roster self-heal skipped "
+            logfn(f"  ⚠ captainship new-rep gate skipped "
                   f"({type(e).__name__}: {str(e)[:60]})")
 
     def _pull(label, view_url, parse, metric):

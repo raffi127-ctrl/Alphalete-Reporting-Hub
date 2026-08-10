@@ -102,6 +102,18 @@ def _run_fill_phase(label: str, slug: str, parsed: dict, today: dt.date,
     else:
         print("  (no new ICDs to add)")
 
+    # A rep who is new to this captainship gets ONE heads-up in
+    # #revision-emails, from whichever report sees them first — the log tab
+    # keeps the other four quiet. Advisory: the rows are already in.
+    # [[project_new_owners]]
+    try:
+        from automations.new_owners import captain_watch as _cw
+        _cw.observe_added(added, captain=slug,
+                          source="Captainship ABP & 6 days out",
+                          dry_run=args.dry_run)
+    except Exception as _e:  # noqa: BLE001 — never break the fill on a notice
+        print(f"  (new-rep notice skipped: {type(_e).__name__}: {str(_e)[:60]})")
+
     if not skip_insert:
         fill.ensure_headroom(ws, dry_run=args.dry_run, logfn=print)
         fill.insert_one_col_at_b(ws, boxes, dry_run=args.dry_run, logfn=print)

@@ -262,10 +262,32 @@ def main(argv=None) -> int:
             # rep was added rather than it happening silently.
             _auto_added = list(_caps_summary.get("auto_added") or [])
             _auto_note = ("" if not _auto_added else
-                          "✚ auto-added " + str(len(_auto_added)) + " new rep(s) "
-                          "(VA-only, no copy row): "
-                          + ", ".join(f"{a['name']} ({a['captain']})"
-                                      for a in _auto_added))
+                          "✚ added " + str(len(_auto_added)) + " approved new "
+                          "rep(s) to their captainship: "
+                          + ", ".join(
+                              f"{a['name']} ({a['captain']}"
+                              + (f", ✅ {a['approved_by']}"
+                                 if a.get("approved_by") else "") + ")"
+                              for a in _auto_added))
+            # NEW OWNERS — people from the 'New Owners' bank who had their first
+            # sales this week and were given a row (daily + weekly leaderboard)
+            # in this run. Informational like the self-heal above: it WORKED, so
+            # it doesn't gate — it's surfaced so an add is never silent. A bank
+            # row we couldn't act on (unknown campaign, already on the board) is
+            # listed too, because that one needs Eve.
+            _no = _summary.get("new_owners") or {}
+            _no_added = list(_no.get("added") or [])
+            _no_flagged = list(_no.get("flagged") or [])
+            _no_note = ""
+            if _no_added:
+                _no_note = ("✚ New Owners: " + str(len(_no_added))
+                            + " added to the board — "
+                            + ", ".join(f"{a['name']} ({a['campaign']})"
+                                        for a in _no_added))
+            if _no_flagged:
+                _no_note += (("\n" if _no_note else "")
+                             + "⚠ New Owners bank needs a look: "
+                             + "; ".join(_no_flagged))
             # ROSTER SYNC — reps on a VA captainship roster with NO row on the
             # copy tab. The fill only fills EXISTING copy rows, so a rep added on
             # the VA but never added to the copy silently sums the total short
@@ -273,16 +295,32 @@ def main(argv=None) -> int:
             # GATE on it so it can never be a silent miss. Runs even under
             # --skip-compare: the rosters are present at 4am even before the VAs
             # key any sales. Advisory guard — must never crash the run.
+            # ROSTER — the VA diff is RETIRED (Eve, 2026-08-10). It compared the
+            # copy against the VA's own board and gated the run on anyone the
+            # copy was missing; that board has not been updated in weeks, so the
+            # diff no longer says anything about who is really on a captainship
+            # — it would gate on last month's roster and stay silent about this
+            # month's. Membership now comes from Tableau through the captainship
+            # gate ([[project_new_owners]]): reps wait for a ✅ from Evelyn or
+            # Jolie, and `captainship.run_captainships` adds the approved ones.
+            # `_missing_reps` stays as an (always empty) gate input so the
+            # manifest/exit wiring below is untouched; what IS surfaced is how
+            # many reps are still waiting for their checkmark — informational,
+            # never a gate: a pending approval is a person's decision, not a
+            # broken run.
             _missing_reps = []
+            _pending_note = ""
             try:
-                from automations.org_sales_board import roster_sync as _rsync
-                from automations.focus_office_att.aliases import load_aliases
-                _va_grid = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
-                _missing_reps = _rsync.missing_va_reps(
-                    ws.get_all_values(), _va_grid, load_aliases())
-                if _missing_reps:
-                    print("  " + _rsync.format_missing(_missing_reps).replace(
-                        "\n", "\n  "))
+                from automations.new_owners import bank as _nb, captain_gate as _cg
+                _lws = _nb.open_log(ws.spreadsheet)
+                _pend = _cg.pending_rows(_nb.log_entries(_lws))
+                if _pend:
+                    _pending_note = (
+                        f"🕓 {len(_pend)} new captainship rep(s) waiting for a ✅ "
+                        f"in #revision-emails: "
+                        + ", ".join(f"{p['name']} ({p['scope']})"
+                                    for p in _pend))
+                    print("  " + _pending_note)
             except Exception:  # noqa: BLE001 — advisory must never fail the run
                 pass
             # Cross-reference every owner/ICD pulled onto the board against the
@@ -379,6 +417,8 @@ def main(argv=None) -> int:
                             note=f"{len(_failed_all)} part(s) missing this run."
                                  + (f" ⚠ {_term_note}" if _term_note else "")
                                  + (f"\n{_auto_note}" if _auto_note else "")
+                                 + (f"\n{_no_note}" if _no_note else "")
+                                 + (f"\n{_pending_note}" if _pending_note else "")
                                  + (f"\n{_va_note}" if _va_note else ""),
                             remediation=_rm.make_remediation(
                                 reason=("Org Sales Board run is missing data — "
@@ -398,7 +438,8 @@ def main(argv=None) -> int:
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
                                          "re-creating in Tableau.")))
-                    elif _term_note or _va_note or _auto_note:
+                    elif (_term_note or _va_note or _auto_note or _no_note
+                          or _pending_note):
                         # Clean run (nothing missing) — still record the whole-
                         # sheet VA check + any auto-added rep so the completion
                         # email shows them. failed=[] keeps it DONE, not INCOMPLETE.
@@ -406,6 +447,8 @@ def main(argv=None) -> int:
                             "org-sales-board", failed=[], kind="section", ok=True,
                             note=(("⚠ " + _term_note + "\n") if _term_note else "")
                                  + (_auto_note + "\n" if _auto_note else "")
+                                 + (_no_note + "\n" if _no_note else "")
+                                 + (_pending_note + "\n" if _pending_note else "")
                                  + _va_note)
                     else:
                         _rm.mark_clean("org-sales-board", kind="section")

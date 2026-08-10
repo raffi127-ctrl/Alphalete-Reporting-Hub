@@ -92,6 +92,18 @@ def _run(args) -> dict:
         if rep["new_reps"]:
             print(f"  ➕ New rep(s) {verb_add} (Tableau roster, no sheet row): "
                   + ", ".join(f"{n} ({v})" for n, v in rep["new_reps"]), flush=True)
+            # …and ask for a ✅ before they get rows on the Org Sales Board.
+            # Advisory — this report's own rows are already in.
+            # [[project_new_owners]]
+            try:
+                from automations.new_owners import captain_watch as _cw
+                _cw.observe_added([n for n, _v in rep["new_reps"]],
+                                  captain="Carlos",
+                                  source="Carlos Captainship Bonus",
+                                  dry_run=args.dry_run)
+            except Exception as _e:  # noqa: BLE001 — never break the fill
+                print(f"  (new-rep gate skipped: {type(_e).__name__}: "
+                      f"{str(_e)[:60]})", flush=True)
         if rep["hidden_departed"]:
             print(f"  ➖ Departed rep(s) {verb_hide} (off the Tableau roster): "
                   + ", ".join(rep["hidden_departed"]), flush=True)
