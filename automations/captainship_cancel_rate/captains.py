@@ -51,3 +51,29 @@ CAPTAINS: list[Captain] = [
 
 BY_SLUG = {c.slug: c for c in CAPTAINS}
 SLUGS = [c.slug for c in CAPTAINS]
+
+# ICDs who are WINDING DOWN — their row stays on the tab (the history is worth
+# keeping) but they no longer come back from the Metrics view, so the run's
+# "went dark" guard must not fail the report on them. Without this the report
+# exits 1 every single morning for a permanent, correct blank — the trap
+# country_sales_board documents at run.py:208 for this same set of people, and
+# the one org_sales_board's daily compare already fell into.
+#
+# This list is DELIBERATELY per-name, never a blanket rule: an ICD who WAS
+# producing and suddenly goes dark is exactly the signal the guard exists for
+# (a dropped Captain's Bonus Teams filter, or a rename past the alias). Only
+# add someone once you know they're on the way out.
+#
+# Remove a name here the day they come back and the guard covers them again.
+INACTIVE_ICDS: dict[str, str] = {
+    # Wayne's Team. Dropped out of the Metrics view 2026-08-10 (blank on BOTH
+    # Cancel Rate and Activation Rate that morning, after 5 days flat at 0.00%
+    # cancel / 100.00% activation). Already listed as an inactive rep absent
+    # from the view in country_sales_board. Eve 2026-08-10: on the way out.
+    "mason davis": "winding down — off the Metrics view since 2026-08-10 (Eve)",
+}
+
+
+def is_inactive(name: str) -> bool:
+    """Is this ICD a known wind-down, i.e. is a blank today EXPECTED?"""
+    return " ".join((name or "").split()).strip().lower() in INACTIVE_ICDS

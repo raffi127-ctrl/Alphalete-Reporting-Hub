@@ -100,9 +100,16 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
     history = ({} if args.dry_run
                else fill.recent_history(ws, sections))
     went_dark: dict = {}
+    expected_blank: dict = {}
     for period, s in summary.items():
         dark = [n for n in s["blank"]
                 if history.get(period, {}).get(fill._norm(n))]
+        # A known wind-down going blank is EXPECTED, not a dropped filter —
+        # note it, but never fail the report on it (see C.INACTIVE_ICDS).
+        winding = [n for n in dark if C.is_inactive(n)]
+        dark = [n for n in dark if not C.is_inactive(n)]
+        if winding:
+            expected_blank[period] = sorted(winding)
         if dark:
             went_dark[period] = sorted(dark)
         extra = ""
@@ -111,6 +118,9 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
         if s["blank"]:
             extra += f", {len(s['blank'])} blank"
         print(f"    {period:>5}: avg {s['avg'] or '-'}, {s['filled']} filled{extra}")
+    for period, names in expected_blank.items():
+        print(f"  · {period}: blank as expected (winding down, row kept for the "
+              f"history): {', '.join(names)}")
     for period, names in went_dark.items():
         print(f"  ⚠ {period}: STOPPED filling (had recent data, nothing today): "
               f"{', '.join(names)}")
