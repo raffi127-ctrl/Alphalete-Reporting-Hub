@@ -470,7 +470,10 @@ values.append({"range": "'Manager Board'!B%d" % PACE_ROW, "values": [[
 values.append({"range": "'Manager Board'!A%d" % CURVE0, "values":
                [[h] + PACE_CURVE[k] for h, k in PACE_KEY.items()]})
 # hidden columns T.. : each manager's own goal, looked up by name from Goals.
-MIRROR0 = 19
+# Start the hidden goal mirror AFTER the last data column, with one blank
+# column as a buffer. Hard-coding 19 collided with NS Shw % once the board
+# grew to 19 columns, and silently blanked it on every build.
+MIRROR0 = B0 + len(BCOLS) + 1
 mirror = []
 for mi, m in enumerate(MANAGERS):
     r = M0 + mi
@@ -787,7 +790,8 @@ F += [
     {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "ROWS", "startIndex": 97, "endIndex": 140},
                                    "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
     {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "COLUMNS",
-                                             "startIndex": 19, "endIndex": 36},
+                                             "startIndex": MIRROR0,
+                                             "endIndex": MIRROR0 + len(BCOLS) + 1},
                                    "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
     {"setDataValidation": {"range": gr(BOARD, 0, 1, 8, 9), "rule": {
         "condition": {"type": "ONE_OF_RANGE",
