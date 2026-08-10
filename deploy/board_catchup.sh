@@ -72,6 +72,41 @@ hub_row () {
 H.log_completed('$1', '$2', user='board-catchup')" >> "$LOG_FILE" 2>&1 \
     || echo "[$(date)] (Hub row for $1 did not land — pill only)" >> "$LOG_FILE"
 }
+
+# The other half of hub_row: say so when a MONDAY step DIDN'T post. Until now the
+# Hub rows were written on the success path only, so a Monday whose review post
+# failed looked EXACTLY like a Monday still waiting for 14:30 — no row, no pill,
+# no alert — and the only way to find out was to notice the empty channel hours
+# later (Eve, 2026-08-10). Tue-Sun this is free: those runs go through the
+# orchestrator, which fails loudly on its own. Monday has no orchestrator, so
+# the alert has to come from here.
+# Writes the 'failed' row (so the card goes red and machine_digest sees it) AND
+# posts to the corrections channel with the paste-to-Claude block, the same way
+# a standalone LaunchAgent report reports a bad run.
+#   hub_fail <card id> <display name> <what failed>
+hub_fail () {
+  [ "$#" -ge 2 ] || return 0
+  [ "$CATCHUP_DRY" = "0" ] || return 0
+  "$VENV_PY" -u -c "
+import sys
+card, name, what = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    from automations.shared import hub_activity as H
+    H.log_completed(card, name, status='failed', user='board-catchup')
+except Exception as e:
+    print('hub row failed:', e)
+try:
+    import datetime as dt
+    from automations.day_orchestrator import registry as _reg, notify
+    notify.send_standalone_alert(
+        _reg.load_config(), name=name, report_id=card, kind='FAILED',
+        status=what, when='Monday catch-up (14:30)',
+        day=dt.date.today().isoformat(), machine_label='Lucy 1')
+except Exception as e:
+    print('alert failed:', e)
+" "$1" "$2" "${3:-did not post}" >> "$LOG_FILE" 2>&1 \
+    || echo "[$(date)] (failure alert for $1 did not land — check this log)" >> "$LOG_FILE"
+}
 if [ "$#" -eq 0 ]; then CATCHUP_DRY=0; else CATCHUP_DRY=1; fi
 
 # Fill ONLY the late-posting sections on the copy tab (comma-separated; run.py
@@ -118,6 +153,10 @@ if [ "$(date +%u)" = "1" ]; then
     # Monday's card reads identically: posted → 🟣 awaiting the ✅ → green when
     # the gate records the approval.
     hub_row "sales-board-screenshot-email" "Org. Sales Board Email"
+  else
+    echo "[$(date)] MONDAY: board email review post FAILED — alerting" >> "$LOG_FILE"
+    hub_fail "sales-board-screenshot-email" "Org. Sales Board Email" \
+             "the Monday review post to #revision-emails failed — no link went up"
   fi
   # Captainship Report drafts: MONDAY'S ONLY PATH. Both orchestrator entries
   # (captainship_drafts and captainship_drafts_review) run Tue-Sun, so without
@@ -143,11 +182,17 @@ if [ "$(date +%u)" = "1" ]; then
       hub_row "captainship_drafts_review" "Captainship Reports (a revisión)"
     else
       echo "[$(date)] MONDAY: review post failed — previews are in output/, ask by hand" >> "$LOG_FILE"
+      # The previews EXIST, so this is the recoverable half: `lucy rerun
+      # captainship_drafts_review` re-posts them without rebuilding.
+      hub_fail "captainship_drafts_review" "Captainship Reports (a revisión)" \
+               "the 12 previews built but the review link never posted — re-post with captainship_drafts_review"
     fi
   else
     # Deliberately not fatal to $ST: the board fill above succeeded or failed on
     # its own, and a broken draft build must not report the BOARD as broken.
     echo "[$(date)] MONDAY: captainship drafts build failed — nothing posted for review" >> "$LOG_FILE"
+    hub_fail "captainship-drafts" "Captainship Reports" \
+             "the Monday draft build failed — no previews, so nothing could be posted for review"
   fi
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
