@@ -120,14 +120,20 @@ LEGEND2 = [
 # ------------------------------------------------------------------ data
 raw = json.load(open(DATA))
 OFF = raw["offices"]
-MEAS = ["sent", "removed", "retb", "b1", "s1", "b2", "s2", "off", "bob", "nss", "nsh"]
+MEAS = ["sent", "removed", "processed", "retb", "b1", "s1", "b2", "s2",
+        "off", "bob", "nss", "nsh"]
 
 # Board order: New Starts Showed desc, then Applies desc.
 def _fix(v):
     v = dict(v)
     v["sent"] = v["sent"] + v.get("manual", 0) + v.get("scoop_s", 0) + v.get("file_s", 0)
     v["removed"] = v["removed"] + v.get("rm_scoop", 0)
-    v["applies"] = v["sent"] + v["removed"]
+    # Applies is INTAKE — what arrived that day, across every channel. It is NOT
+    # sent+removed: those are what got vetted that day, which on a Monday is
+    # mostly the weekend's arrivals. Rafael 8/10: 32 arrived, 623 vetted.
+    v["applies"] = (v.get("emails_rx", 0) + v.get("scoop_rx", 0)
+                    + v.get("file_rx", 0) + v.get("manual", 0))
+    v["processed"] = v["sent"] + v["removed"]      # what was vetted that day
     return v
 
 
@@ -157,13 +163,16 @@ if PARTIAL:
                ds[-1].strftime("%a %-m/%-d"), len(ds)))
     print("PARTIAL:", NOTE)
 
-AUDIT = ["sent_email", "manual", "scoop_s", "file_s", "rm_email", "rm_scoop"]
-AUDIT_HEAD = ["· Email Sent", "· Manual Entry", "· Scooper Sent", "· File Sent",
+AUDIT = ["emails_rx", "scoop_rx", "file_rx", "manual",
+         "sent_email", "scoop_s", "file_s", "rm_email", "rm_scoop"]
+AUDIT_HEAD = ["· Emails Received", "· Scooper In", "· File Import In", "· Manual Entry",
+              "· Email Sent", "· Scooper Sent", "· File Sent",
               "· Removed (Email)", "· Removed (Scooper)"]
 DAILY_HEAD = (["Date", "Week Ending", "Manager", "Office"]
               # "Ret Booked" is the numerator implied by AppStream's own Retention
               # Call List %, stored so a stitched week rebuilds the cohort rate.
-              + ["Sent to Call List", "Removed", "Ret Booked", "1st Booked", "1st Showed",
+              + ["Sent to Call List", "Removed", "Processed", "Ret Booked",
+                 "1st Booked", "1st Showed",
                  "2nd Booked", "2nd Showed", "Job Offered", "BOB",
                  "NS Scheduled", "NS Showed"]
               + AUDIT_HEAD)
@@ -172,8 +181,10 @@ DAILY_HEAD = (["Date", "Week Ending", "Manager", "Office"]
 # on the report. Counting email alone understated the call-list denominator badly
 # (Rashad Reed took in more via the scooper than via email). The components are
 # kept as audit columns to the right so any total can be traced back.
-AUDIT = ["sent_email", "manual", "scoop_s", "file_s", "rm_email", "rm_scoop"]
-AUDIT_HEAD = ["· Email Sent", "· Manual Entry", "· Scooper Sent", "· File Sent",
+AUDIT = ["emails_rx", "scoop_rx", "file_rx", "manual",
+         "sent_email", "scoop_s", "file_s", "rm_email", "rm_scoop"]
+AUDIT_HEAD = ["· Emails Received", "· Scooper In", "· File Import In", "· Manual Entry",
+              "· Email Sent", "· Scooper Sent", "· File Sent",
               "· Removed (Email)", "· Removed (Scooper)"]
 daily_rows = []
 for m in MANAGERS:
@@ -184,7 +195,9 @@ for m in MANAGERS:
         v["sent_email"], v["rm_email"] = v["sent"], v["removed"]
         v["sent"] = v["sent_email"] + v.get("manual", 0) + v.get("scoop_s", 0) + v.get("file_s", 0)
         v["removed"] = v["rm_email"] + v.get("rm_scoop", 0)
-        v["applies"] = v["sent"] + v["removed"]
+        v["applies"] = (v.get("emails_rx", 0) + v.get("scoop_rx", 0)
+                        + v.get("file_rx", 0) + v.get("manual", 0))
+        v["processed"] = v["sent"] + v["removed"]
         daily_rows.append([d.strftime("%m/%d/%Y"), we.strftime("%m/%d/%Y"), m, OFF[m]["office_id"]]
                           + [v[k] for k in MEAS] + [v.get(k, 0) for k in AUDIT])
 
@@ -319,7 +332,7 @@ print("pace curve (cumulative share by Mon..Sun):")
 for _k in ["applies", "sent", "b1", "off", "bob", "nss", "nsh"]:
     print("   %-8s %s" % (_k, ["%.0f%%" % (100 * x) for x in PACE_CURVE[_k]]))
 
-COL = dict(zip(MEAS, ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"]))
+COL = dict(zip(MEAS, ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]))
 GCOL = {k: a1(i) for k, i in GOAL_AT.items()}
 
 # ------------------------------------------------------------------ sheets
@@ -385,7 +398,7 @@ values = [
 # ---- Manager Board
 BCOLS = [
     ("Applies", "derived", "applies"), ("Removed", "n", "removed"),
-    ("Removal %", "pct", ("removed", "applies")), ("Sent to CL", "n", "sent"),
+    ("Removal %", "pctd", ("removed", "processed")), ("Sent to CL", "n", "sent"),
     ("Ret to CL %", "pctd", ("retb", "sent")), ("1st Bkd", "n", "b1"),
     ("1st Shw", "n", "s1"), ("1st Shw %", "pct", ("s1", "b1")),
     ("2nd Booked %", "pct", ("b2", "s1")), ("2nd Bkd", "n", "b2"),
@@ -471,7 +484,7 @@ METRICS = [
     ("derived", "Total Applies", None),
     ("n", "Removed — duplicate / DQ", "removed"),
     ("n", "Sent to Call List", "sent"),
-    ("pct", "Removal %", ("removed", "applies")),
+    ("pctd", "Removal %", ("removed", "processed")),
     ("grp", "FIRST ROUND", 1),
     ("n", "1st Booked", "b1"),
     ("pctd", "Retention to Call List", ("retb", "sent")),
@@ -604,8 +617,8 @@ MX_TOT = MX_M0 + len(MANAGERS)
 
 def mx(mgr_ref, week_ref):
     def sumifs(col):
-        s = ("SUMIFS(INDEX('Daily Log'!$E:$O,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
-             "'Daily Log'!$E$1:$O$1,0))" % (MX_H, col))
+        s = ("SUMIFS(INDEX('Daily Log'!$E:$P,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
+             "'Daily Log'!$E$1:$P$1,0))" % (MX_H, col))
         # SUMIFS needs at least one criterion pair, so the office-total / all-weeks
         # cell gets an always-true "manager is not blank" rather than none at all.
         s += ",'Daily Log'!$C:$C,%s" % (mgr_ref or '"<>"')

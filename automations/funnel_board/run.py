@@ -62,8 +62,10 @@ OFFICES = [
     ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
     ("Salik Mallick",     "21328", "Muhammad UI Haque"),
 ]
-MEAS = ["sent", "removed", "retb", "b1", "s1", "b2", "s2", "off", "bob", "nss", "nsh"]
-AUDIT = ["sent_email", "manual", "scoop_s", "file_s", "rm_email", "rm_scoop"]
+MEAS = ["sent", "removed", "processed", "retb", "b1", "s1", "b2", "s2",
+        "off", "bob", "nss", "nsh"]
+AUDIT = ["emails_rx", "scoop_rx", "file_rx", "manual",
+         "sent_email", "scoop_s", "file_s", "rm_email", "rm_scoop"]
 
 
 def log(m):
@@ -90,10 +92,12 @@ def read_daily_log(S):
     def col(name):
         return hdr.index(name) if name in hdr else None
     ci = {k: col(h) for k, h in zip(
-        MEAS, ["Sent to Call List", "Removed", "Ret Booked", "1st Booked", "1st Showed",
-               "2nd Booked", "2nd Showed", "Job Offered", "BOB", "NS Scheduled", "NS Showed"])}
+        MEAS, ["Sent to Call List", "Removed", "Processed", "Ret Booked",
+               "1st Booked", "1st Showed", "2nd Booked", "2nd Showed",
+               "Job Offered", "BOB", "NS Scheduled", "NS Showed"])}
     ai = {k: col(h) for k, h in zip(
-        AUDIT, ["· Email Sent", "· Manual Entry", "· Scooper Sent", "· File Sent",
+        AUDIT, ["· Emails Received", "· Scooper In", "· File Import In", "· Manual Entry",
+                "· Email Sent", "· Scooper Sent", "· File Sent",
                 "· Removed (Email)", "· Removed (Scooper)"])}
     for row in rows[1:]:
         if len(row) < 5 or not isinstance(row[0], (int, float)):
@@ -106,7 +110,8 @@ def read_daily_log(S):
         # the log stores TOTALS; build.py re-derives them from the audit parts
         v["sent"] = v.pop("sent_email", v["sent"])
         v["removed"] = v.pop("rm_email", v["removed"])
-        v["applies"] = v["sent"] + v["removed"]
+        v["applies"] = (v.get("emails_rx", 0) + v.get("scoop_rx", 0)
+                        + v.get("file_rx", 0) + v.get("manual", 0))
         out.setdefault(who, {"office_id": office, "days": {}})["days"][d] = v
     return out
 

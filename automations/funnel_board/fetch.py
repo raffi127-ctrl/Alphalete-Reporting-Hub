@@ -24,6 +24,12 @@ WANT = {
     # the resume scooper and file import, and each has its own sent-to-call-list
     # line. Counting email alone understates the call-list denominator, which is
     # what makes bookings/sends exceed 100% for anyone using those paths.
+    # INTAKE — what actually arrived. Applies is built from these, not from the
+    # processing rows: on 8/10 Rafael received 31 emails but vetted 623, because
+    # Monday worked through Sunday's 227. Received answers "how many applied".
+    "emails_rx": "Emails Received",
+    "scoop_rx":  "Resume Scooper",
+    "file_rx":   "File Import",
     "manual":  "Manual Apps Entry",
     "scoop_s": "Sent To Call List Resume Scooper",
     "file_s":  "Sent To Call List File Import",
@@ -134,7 +140,9 @@ def report_week(page, rqst, start: dt.date, verbose=True):
         for i, d in enumerate(dates):
             out[d][key] = _num(vals[i]) or 0
     for d in dates:
-        out[d]["applies"] = out[d]["sent"] + out[d]["removed"]
+        # every intake path, on the date the applicant actually arrived
+        out[d]["applies"] = (out[d]["emails_rx"] + out[d]["scoop_rx"]
+                             + out[d]["file_rx"] + out[d]["manual"])
 
     # AppStream's own "Retention Call List" is a COHORT stat (of the apps saved to
     # the call list in this period, what share got a first interview booked) and
