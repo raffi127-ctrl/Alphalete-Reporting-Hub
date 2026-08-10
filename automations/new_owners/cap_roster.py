@@ -16,24 +16,20 @@ WHAT IS WIRED, AND WHAT IS NOT (measured, not assumed):
   nds   ✅ the URL filter narrows the export. `ProductSalesSummaryRep` +
         `?NDS Captain Teams=Colten's Team` returns exactly Colten's 12 owners,
         the same roster his board block carries.
-  b2b   ❌ NOT wired yet, and here is exactly how far it got, so nobody repeats
-        the search:
-          · the captain-scoped sheets live on a SEPARATE workbook tab,
+  b2b   ✅ but by the OTHER route — a saved custom view per captain, because
+        the filter could not be made to reach the export:
+          · the captain-scoped sheets live on a separate workbook tab,
             `B2B 1-PAGER_Captain View`
-            (`…/views/ATTTRACKER-B2B/B2B1-PAGER_CaptainView`), whose Crosstab
-            dialog offers 'Sales By ICD (ATT) (V2)_Captain View',
-            "ICD Summary - ATT (V2) (LW)_Captain's View", etc.
-          · the filter STILL doesn't reach the export: with "B2B Captain's
-            Teams" driven to Carlos's Team — by URL param AND by clicking the
-            options (the checked set really does end up `["Carlos's Team"]`) —
-            that sheet exports all 74 program owners, and the dropdown on screen
-            snaps back to "(All)".
-          · the account also opens this workbook on a default custom view
-            (`ALLTEAMsALLREPS`), which is the likeliest thing re-imposing "all".
-        THE CHEAP FIX is the pattern the fiber pulls already use: save a custom
-        view per captain on that tab (filter applied, visible to others) and
-        point PROGRAM_PULLS at those URLs — no filter driving at all.
-        Meanwhile Carlos is covered by the Carlos Captainship Bonus report.
+            (`…/views/ATTTRACKER-B2B/B2B1-PAGER_CaptainView`).
+          · even there, "B2B Captain's Teams" driven to Carlos's Team — by URL
+            param AND by clicking the options (the checked set really does end
+            up `["Carlos's Team"]`) — still exported all 74 program owners, and
+            the dropdown snapped back to "(All)". The workbook opens on a
+            default custom view (`ALLTEAMsALLREPS`), the likeliest culprit.
+          · so Eve saved `Roser-Carlos` / `Roster-Eveliz` / `Roster-Luis` on
+            that tab with the team already picked. The URL IS the roster:
+            nothing to drive, nothing to re-impose. Verified 2026-08-10 —
+            Carlos 10, Eveliz 6, Luis 5 owners, all already on the board.
         (Also seen on the way: the b2b `ALL TEAMS` custom view now errors with
         "An error occurred while loading the custom view" —
         [[project_broken-custom-view-failure-mode]] — worth re-creating, it is
@@ -172,7 +168,23 @@ PROGRAM_PULLS: Dict[str, dict] = {
         "sheet": "Sales By ICD (Weekly View)",
         "field": "NDS Captain Teams",
     },
-    # "b2b": see the module docstring — the filter doesn't reach these sheets.
+    # b2b takes the OTHER route: one SAVED CUSTOM VIEW per captain on the
+    # 'B2B 1-PAGER_Captain View' tab, each with the team filter already applied
+    # (Eve, 2026-08-10). No filter to drive, nothing to re-impose it — the URL
+    # IS the roster. Same pattern the fiber program pulls already use.
+    # URLs verbatim from Eve, typo and all ('Roser-Carlos'): they are opaque
+    # handles, and "fixing" the spelling would 404.
+    "b2b": {
+        "sheet": "Sales By ICD (ATT) (V2)_Captain View",
+        "views": {
+            "Carlos": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
+                            "7d74d841-5467-4ef1-87de-54cbb476e007/Roser-Carlos"),
+            "Eveliz": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
+                            "168540a3-c27d-42d0-af6a-975d4b363c9c/Roster-Eveliz"),
+            "Luis": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
+                          "0df08a61-b352-4c37-9ec1-d890f69f1289/Roster-Luis"),
+        },
+    },
     # "fiber": covered by the per-captain reports; add here if that ever changes.
 }
 
@@ -197,19 +209,29 @@ TEAMS: Dict[str, tuple] = {
 DEFAULT_PROGRAMS = tuple(PROGRAM_PULLS)
 
 
+def _pullable(captain: str) -> bool:
+    """Can this captain's roster actually be pulled? A per-captain-view program
+    also needs THAT captain's view saved — a missing one must never fall back to
+    an unfiltered export, which would read as "the whole program is new" and ask
+    for 70 checkmarks."""
+    prog, _team = TEAMS[captain]
+    pull = PROGRAM_PULLS.get(prog)
+    if not pull:
+        return False
+    return captain in pull["views"] if "views" in pull else True
+
+
 def captains_for(programs=None) -> List[str]:
-    """Captains we can actually roster. A program with no PROGRAM_PULLS entry
-    is skipped rather than pulled unfiltered — an unfiltered export would read
-    as "the whole program is new" and ask for 70 checkmarks."""
+    """Captains we can actually roster."""
     progs = {p for p in (programs or DEFAULT_PROGRAMS) if p in PROGRAM_PULLS}
-    return [c for c, (p, _v) in TEAMS.items() if p in progs]
+    return [c for c, (p, _v) in TEAMS.items() if p in progs and _pullable(c)]
 
 
 def unsupported(programs=None) -> Dict[str, str]:
     """{captain: program} for the ones asked for but not wired."""
     progs = set(programs or DEFAULT_PROGRAMS)
     return {c: p for c, (p, _v) in TEAMS.items()
-            if p in progs and p not in PROGRAM_PULLS}
+            if p in progs and not _pullable(c)}
 
 
 def _display(raw: str) -> str:
@@ -261,12 +283,20 @@ def roster_for(captain: str, page, *, today: Optional[dt.date] = None,
         raise ValueError(f"{prog} has no verified captain-filter pull "
                          f"(see the module docstring)")
     t = cap.TYPES[prog]
-    spec = cap._spec(f"ROSTER_{captain}", pull["view"], t["parse"], t["metric"])
-    url = f"{pull['view']}?{quote(pull['field'])}={quote(team)}"
+    if "views" in pull:                      # a saved custom view per captain
+        url = pull["views"].get(captain)
+        if not url:
+            raise ValueError(f"no saved roster view for {captain} — save one on "
+                             f"the captain-view tab and add it to PROGRAM_PULLS")
+        how = "saved view"
+    else:                                    # one view + a URL filter
+        url = f"{pull['view']}?{quote(pull['field'])}={quote(team)}"
+        how = f"{pull['field']}={team!r}"
+    spec = cap._spec(f"ROSTER_{captain}", url, t["parse"], t["metric"])
     out = out_dir / f"new_owners_roster_{prog}_{captain.lower()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     from automations.shared.tableau_patchright import download_crosstab_patchright
-    logfn(f"  pulling {captain}'s roster ({prog}, {pull['field']}={team!r})…")
+    logfn(f"  pulling {captain}'s roster ({prog}, {how})…")
     download_crosstab_patchright(url, pull["sheet"], out, page=page,
                                  verbose=False)
     owners = _raw_owners(spec, out)

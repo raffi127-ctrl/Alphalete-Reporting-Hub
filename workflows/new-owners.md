@@ -70,23 +70,19 @@ stays pending).
 | Wayne · Starr · Chan · Tony · Sahil | Cancel Rate · Activation Rate · ABP & 6 days (their own daily pulls) |
 | Raf | Captainship Metrics - Rafael |
 | Khalil · Colten · Jairo | `--scan` — `?NDS Captain Teams=<X>'s Team` on `ProductSalesSummaryRep` |
-| Carlos | Carlos Captainship Bonus |
-| Eveliz · Luis | **not yet** — see below |
+| Carlos · Eveliz · Luis | `--scan` — one saved custom view per captain on the `B2B 1-PAGER_Captain View` tab (Carlos also via his Bonus report) |
 
-**B2B — where it stands.** The captain-scoped sheets are on a separate workbook
-tab, `B2B 1-PAGER_Captain View`
-(`…/views/ATTTRACKER-B2B/B2B1-PAGER_CaptainView`), which offers
-`Sales By ICD (ATT) (V2)_Captain View` and friends. But the filter still doesn't
-reach the export: driven to Carlos's Team by URL param *and* by clicking the
-options (the checked set really does become `["Carlos's Team"]`), that sheet
-still exports all 74 program owners and the on-screen dropdown snaps back to
-"(All)". The workbook also opens on a default custom view (`ALLTEAMsALLREPS`),
-which is the likeliest thing re-imposing "all".
-
-**The cheap fix** is the pattern the fiber pulls already use: on that Captain
-View tab, pick a captain and **save a custom view per captain** (visible to
-others), then point `cap_roster.PROGRAM_PULLS["b2b"]` at those URLs — no filter
-driving at all.
+**B2B goes through saved views, not a filter.** On `D2D1-PAGERV3` the captain
+dropdown never reached the export — driven to Carlos's Team by URL param *and*
+by clicking the options (the checked set really did become `["Carlos's Team"]`),
+the ICD sheets still exported all 74 program owners and the dropdown snapped
+back to "(All)"; the workbook opens on a default custom view
+(`ALLTEAMsALLREPS`), the likeliest culprit. So the roster comes from a **saved
+custom view per captain** on the `B2B 1-PAGER_Captain View` tab —
+`Roser-Carlos` / `Roster-Eveliz` / `Roster-Luis`, listed in
+`cap_roster.PROGRAM_PULLS["b2b"]["views"]`. A new B2B captain = save one more
+view and add its URL there. (The URLs are opaque handles: keep them verbatim,
+typo included.)
 
 ### Re-creating a broken custom view (e.g. b2b `ALL TEAMS`)
 
