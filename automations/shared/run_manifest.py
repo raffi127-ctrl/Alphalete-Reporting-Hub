@@ -174,6 +174,31 @@ def retry_spec(report_id: str) -> Optional[dict]:
             "kind": m.get("kind", "part"), "run_ts": m.get("run_ts")}
 
 
+def retry_whole_spec(report_id: str) -> Optional[dict]:
+    """Sibling of retry_spec for a WHOLE-PHASE drop that carries no scoped
+    retry_args because the report takes no CLI args and can only be recovered by
+    re-running the ENTIRE report — e.g. daily_rep_breakdown's Phase 2 (ownerville
+    scrape) or Phase 3 (Tableau) collapsing on a session drop / timeout. A full
+    re-run is CHEAP here: the report resumes from its own checkpoint, so finished
+    units aren't redone (base_args=[] → args_override=[] reproduces the normal run).
+
+    Returns a spec (retry_args=[], whole=True) ONLY for a not-ok manifest whose
+    kind=='phase' with named failed part(s). Deliberately returns None for
+    kind=='owner' — those are named-owner stragglers that daily.py already retried
+    internally and that want the surgical `lucy focus_owner "A" "B"`, NOT a whole
+    ~90m re-run. This is the auto-retry path retry_spec can't offer: retry_spec
+    needs non-empty retry_args, so a phase collapse (retry_args=[]) fell through
+    and the report never got the orchestrator's 2× auto-retry (Megan 2026-08-10)."""
+    m = read_manifest(report_id)
+    if not m or m.get("ok"):
+        return None
+    failed = m.get("failed") or []
+    if not failed or m.get("kind") != "phase":
+        return None
+    return {"failed": failed, "retry_args": [], "kind": "phase",
+            "run_ts": m.get("run_ts"), "whole": True}
+
+
 def failure_remediation(report_id: str) -> Optional[dict]:
     """Hub helper: the report-provided {reason, fix, link, message} remediation
     block for the last (failed) run, or None when the run was ok or wrote no

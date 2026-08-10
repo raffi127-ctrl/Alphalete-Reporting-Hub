@@ -1047,8 +1047,10 @@ def _send_checkpoint(cfg, ds, channel, dry_run):
 
 
 def _retryable_incomplete(rs, r) -> bool:
-    """True when this INCOMPLETE report can have JUST its failed parts re-run:
-    manifest-verified, the manifest offers retry_args, and we're under the cap."""
+    """True when this INCOMPLETE report can be re-run under the cap: either JUST
+    its failed parts (manifest offers retry_args) OR — for a WHOLE-PHASE drop that
+    carries no scoped args (e.g. daily_rep_breakdown Phase 2/3) — the entire
+    report, which resumes cheaply from its checkpoint. manifest-verified."""
     if rs.status != state.INCOMPLETE:
         return False
     if not r or (getattr(r, "verify", None) or {}).get("type") != "manifest":
@@ -1057,7 +1059,8 @@ def _retryable_incomplete(rs, r) -> bool:
         return False
     try:
         from automations.shared import run_manifest as _rm
-        return bool(_rm.retry_spec(rs.report_id))
+        return bool(_rm.retry_spec(rs.report_id)
+                    or _rm.retry_whole_spec(rs.report_id))
     except Exception:  # noqa: BLE001 — never let this gate crash the loop
         return False
 
@@ -1113,13 +1116,15 @@ def _retry_incomplete_parts(ds, todays, target, *, dry_run, simulate):
         r = by_id.get(rs.report_id)
         if not _retryable_incomplete(rs, r):
             continue
-        spec = _rm.retry_spec(rs.report_id)
+        spec = _rm.retry_spec(rs.report_id) or _rm.retry_whole_spec(rs.report_id)
         if not spec:
             continue
         failed_before = list(spec.get("failed") or [])
         rs.auto_retries += 1
+        scope = ("whole report (checkpoint resume)" if spec.get("whole")
+                 else f"failed part(s) {failed_before} → args {spec['retry_args']}")
         _log(f"  {rs.report_id}: auto-retry {rs.auto_retries}/{MAX_AUTO_RETRIES} "
-             f"of failed part(s) {failed_before} → args {spec['retry_args']}")
+             f"of {scope}")
         try:
             ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate,
                                      args_override=spec["retry_args"])
