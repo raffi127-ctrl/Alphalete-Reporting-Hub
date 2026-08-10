@@ -211,31 +211,28 @@ def _newest_week(weeks):
     return max(weeks, key=keyf) if weeks else None
 
 
-def accumulate(write=False, page=None, verbose=True):
-    """Write this week's fees-excluded figure for the special-case names into the
-    'ICD (Special Cases)' section on the DD tab, current-week column — the weekly
-    step that builds their 4-week history one week at a time (the DD Detail view
-    only ever serves the current week). DRY-RUN unless write=True; only ever
-    touches the special rows' current-week cell, so it is safe to re-run.
+def accumulate(write=False, page=None, verbose=True, source="program-summary"):
+    """Write this week's figure for the special-case names (the four adoptions)
+    into the 'ICD (Special Cases)' section on the DD tab, current-week column —
+    the weekly step that builds their history one week at a time. DRY-RUN unless
+    write=True; only ever touches the special rows' current-week cell, so it is
+    safe to re-run.
+
+    SAME SOURCE AS `accumulate_all` SINCE 2026-08-10: PROGRAM SUMMARY / DOWNLINE
+    VIEW. Eve confirmed the downline grid carries the adoptions too, so reading
+    it here as well is what keeps the four rows and the 37 owner rows on one
+    definition of a week's DD — which is the whole point, since Colten's total
+    and Rafael's "outside" line are computed from both at once. `--source
+    dd-detail` still gives the old ORG DD Detail figures for comparison.
+
+    THIS STEP HAD BEEN RUNNING DRY. Its scheduler entry carried `--accumulate`
+    with no `--write` (fixed 2026-08-06), so nothing filled these four cells and
+    they kept whatever dd_week_roll copied forward — how WE 8.2.26 published
+    7.26.26's adoption money.
     """
     from automations.override_bulletin import dd_data as D
     from automations.recruiting_report import fill as _fill
     aliases = F.load_alias_map()
-
-    per, _ = _pull(page=page, verbose=verbose)
-    figs, flags = {}, []
-    for name in TARGETS:
-        # Combine the week's deposit-date labels into the week-ending Sunday — the
-        # current DD week arrives as Sat+Sun labels and the tab column is their sum
-        # (Megan 2026-07-30). Picking the newest single label alone undercounts a
-        # special name paid on the Saturday.
-        weeks = _regroup_weeks(per.get(name) or {})
-        nw = _newest_week(weeks)
-        if nw:
-            figs[name] = (nw, round(weeks[nw]["clean"], 2))
-            flags += _fee_flags(name, nw, weeks[nw])
-    for f in flags:
-        print(f)
 
     ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
     vals = ws.get_all_values()
@@ -243,6 +240,41 @@ def accumulate(write=False, page=None, verbose=True):
     wcol = next((i for i, h in enumerate(hdr)
                  if re.match(r"^\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$", h or "")), None)
     tabweek = hdr[wcol].strip() if wcol is not None else ""
+
+    figs, flags = {}, []
+    if source == "program-summary":
+        # Pinned to the tab's own week, so a name that has no line that week is
+        # simply absent and gets skipped below rather than taking another week's
+        # money. No fee flags: this view folds its ' LEDGER' rows in by design.
+        if not tabweek:
+            print("✗ no week column found on the tab")
+            return {}
+        ourk = _pull_program_summary(tabweek, page=page, verbose=verbose)
+        for name in TARGETS:
+            amt = ourk.get(P._norm_name(F.canon(name, aliases)))
+            if amt is not None:
+                figs[name] = (tabweek, round(amt, 2))
+            else:
+                print(f"  ⚠ {name}: no row in the downline grid for {tabweek} "
+                      f"— left alone")
+    elif source == "dd-detail":
+        per, _ = _pull(page=page, verbose=verbose)
+        for name in TARGETS:
+            # Combine the week's deposit-date labels into the week-ending Sunday —
+            # the current DD week arrives as Sat+Sun labels and the tab column is
+            # their sum (Megan 2026-07-30). Picking the newest single label alone
+            # undercounts a special name paid on the Saturday.
+            weeks = _regroup_weeks(per.get(name) or {})
+            nw = _newest_week(weeks)
+            if nw:
+                figs[name] = (nw, round(weeks[nw]["clean"], 2))
+                flags += _fee_flags(name, nw, weeks[nw])
+    else:
+        raise SystemExit(f"unknown --source {source!r} "
+                         f"(program-summary | dd-detail)")
+    for f in flags:
+        print(f)
+    print(f"source: {source}")
     # locate the 'ICD (Special Cases)' rows by name
     special_rows, on = {}, False
     for i, r in enumerate(vals, 1):
@@ -721,7 +753,7 @@ def main(argv=None):
                          "--write) — the switch off the VA hand-fill")
     ap.add_argument("--source", choices=("program-summary", "dd-detail"),
                     default="program-summary",
-                    help="with --populate: which Tableau view to read. "
+                    help="with --populate or --accumulate: which Tableau view to read. "
                          "'program-summary' (default) is PROGRAM SUMMARY / "
                          "DOWNLINE VIEW, the one Eve builds the bulletin from; "
                          "'dd-detail' is the original ORG DD Detail crosstab, "
@@ -746,7 +778,7 @@ def main(argv=None):
         elif a.all:
             compare_all(week=a.week)
         elif a.accumulate:
-            accumulate(write=a.write)
+            accumulate(write=a.write, source=a.source)
         else:
             search()
     except Exception as e:  # noqa: BLE001
