@@ -152,6 +152,55 @@ def pull(page, rqst, weeks, today):
     return got
 
 
+def _switch_via_searchbox(page, oid, hint, rqst):
+    """Fallback: drive the #searchMC autocomplete, the way a person does.
+
+    p=104&newOfficeId= refuses some offices with "This Office is not assigned
+    to you!" even though rcaptain reaches them by hand — Eve checked 19717 and
+    23607 herself on 2026-08-10, after a run that had verifiably logged in as
+    rcaptain (own profile, form login in the log). So the switcher resolves
+    more than the query parameter does, and a refusal is worth one more try
+    rather than a lost day of numbers for that manager.
+
+    fill() + one trailing keystroke instead of type(): a per-key type() dropped
+    everything after the first character on Lucy 2, which is what pushed this
+    module onto the URL path to begin with. Filling all but the last character
+    and typing only that one still fires the autocomplete.
+    """
+    page.goto("https://applicantstream.com/index.cfm?p=104&rqst=%s" % rqst,
+              timeout=60000, wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    box = page.locator("#searchMC")
+    if box.count() == 0:
+        return False
+    for term in (oid, hint):
+        if not term or len(term) < 2:
+            continue
+        box.fill(term[:-1])
+        box.type(term[-1], delay=60)
+        page.wait_for_timeout(1500)
+        for item in page.locator(".ui-autocomplete li, .ui-menu li").all():
+            try:
+                text = item.inner_text()
+            except Exception:
+                continue
+            # Match strictly on the office id — never settle for the first
+            # item, or this manager's tab gets another office's numbers.
+            if oid not in text:
+                continue
+            with page.expect_navigation(timeout=30000,
+                                        wait_until="domcontentloaded"):
+                item.click()
+            page.wait_for_timeout(1200)
+            who = page.evaluate(
+                "() => (document.body.innerText.match(/Office ID: *(\\d+)/) || [])[1]")
+            if who == oid:
+                log("   %s: reached via the search box (URL refused it)" % oid)
+                return True
+            return False
+    return False
+
+
 def switch(page, oid, hint, rqst):
     """Switch office by URL, not by driving the autocomplete.
 
@@ -184,7 +233,12 @@ def switch(page, oid, hint, rqst):
             if attempt == 2:
                 log("   %s: %s: %s" % (oid, type(e).__name__, str(e)[:120]))
         page.wait_for_timeout(1500)
-    return False
+    try:
+        return _switch_via_searchbox(page, oid, hint, rqst)
+    except Exception as e:  # noqa: BLE001
+        log("   %s: search-box fallback also failed: %s: %s"
+            % (oid, type(e).__name__, str(e)[:120]))
+        return False
 
 
 def main():
