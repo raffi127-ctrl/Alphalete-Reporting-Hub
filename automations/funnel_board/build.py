@@ -1129,6 +1129,78 @@ F.append({"updateDimensionProperties": {
     "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
 
 
+# ---- ad budget box, Manager Board only
+#
+# Reads each manager's own tracker tab (the IMPORTRANGE mirrors of their Indeed
+# sheets), NOT 'Manager View'. Manager View is =INDIRECT on its own B1 picker,
+# so it only ever shows one manager — whoever last touched the dropdown. The
+# per-manager tabs are the real source and carry the same columns:
+#   B = Report Date (a real date serial)   S = Daily Budget (a real number)
+#
+# Deliberately pure formulas, no scraping. The manager tabs are IMPORTRANGE, so
+# Google refreshes them on its own and this box follows automatically — nobody
+# has to tell the automation that a tracker was updated. INDIRECT is volatile,
+# which is what we want here, and it also lets IFERROR swallow a manager who
+# has no tab yet (a literal 'No Such Tab'!B2:B would be a parse error instead).
+#
+# Whichever rows carry the newest Report Date are the current picture, so the
+# box takes MAX(date) per manager and sums Daily Budget on that date only. No
+# status filter — every ad on the latest report date counts.
+BUD_ROWS = 2 + len(MANAGERS)          # header + one row per manager + total
+
+
+def budget(sid, row0):
+    first, last = row0 + 2, row0 + 1 + len(MANAGERS)
+    day = ("=IFERROR(LET(d,INDIRECT(\"'\"&$A%d&\"'!$B$2:$B\"),"
+           "b,INDIRECT(\"'\"&$A%d&\"'!$S$2:$S\"),"
+           "IF(MAX(d)=0,0,SUMIF(d,MAX(d),b))),0)")
+    rows = [[m, day % (r, r), "=$B%d*7" % r, "=$B%d*DAY(EOMONTH(TODAY(),0))" % r]
+            for r, m in enumerate(MANAGERS, start=first)]
+    LEGEND_VALUES.append({"range": "'%s'!A%d" % (TITLE_OF[sid], row0), "values":
+                          [["AD BUDGET — latest report date on each manager's tracker tab"],
+                           ["MANAGER", "DAILY", "WEEKLY", "MONTHLY"]]
+                          + rows
+                          + [["ORG TOTAL", "=SUM(B%d:B%d)" % (first, last),
+                              "=SUM(C%d:C%d)" % (first, last),
+                              "=SUM(D%d:D%d)" % (first, last)]]})
+    tot = last + 1
+    F.extend([
+        # Wipe any fill left behind by whatever previously occupied these rows —
+        # the colour key used to live here and its band fills would otherwise
+        # show through the new box.
+        fmt(sid, row0 - 1, tot + 12, 0, 5, {"userEnteredFormat": {
+            "backgroundColor": rgb("#FFFFFF")}}, "userEnteredFormat(backgroundColor)"),
+        fmt(sid, row0 - 1, row0, 0, 4, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, row0, row0 + 1, 0, 4, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
+        fmt(sid, first - 1, last, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 11), "horizontalAlignment": "LEFT",
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
+        # Money reads as money, and right-aligned so the columns line up.
+        fmt(sid, first - 1, last, 1, 4, {"userEnteredFormat": {
+            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
+            "textFormat": txt(INK, False, 11, FONT), "horizontalAlignment": "RIGHT",
+            "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(numberFormat,textFormat,horizontalAlignment,borders)"),
+        fmt(sid, tot - 1, tot, 0, 1, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK, True, 11),
+            "horizontalAlignment": "LEFT", "borders": {"top": bdm(), "right": bdm()}}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"),
+        fmt(sid, tot - 1, tot, 1, 4, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2),
+            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
+            "textFormat": txt(INK, True, 11, FONT), "horizontalAlignment": "RIGHT",
+            "borders": {"top": bdm()}}},
+            "userEnteredFormat(backgroundColor,numberFormat,textFormat,"
+            "horizontalAlignment,borders)"),
+    ])
+
+
 # ---- colour key, repeated on each manager tab below its data
 def legend(sid, row0):
     n = len(LEGEND)
@@ -1174,7 +1246,10 @@ def legend(sid, row0):
 
 
 TITLE_OF = {BOARD: "Manager Board", TREND: "Manager Trend", MATRIX: "Manager Matrix"}
-legend(BOARD, TOTR + 3)
+budget(BOARD, TOTR + 3)
+# The colour key moves below the budget box on the Board; the other two tabs
+# have no budget box, so theirs stay where they were.
+legend(BOARD, TOTR + 3 + BUD_ROWS + 3)
 legend(MATRIX, MX_TOT + 3)
 legend(TREND, TF + len(METRICS) + 2)
 
