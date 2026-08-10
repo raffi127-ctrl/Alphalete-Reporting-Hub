@@ -55,9 +55,10 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/board-catchup-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Board catch-up starting (extra args: ${*:-none})" > "$LOG_FILE"
 
-# Tell the Hub a step of MONDAY's run finished. Monday's board email and
-# captainship drafts never touch the orchestrator (they run from here, in the
-# afternoon, once Sunday has landed), and the orchestrator is what normally
+# Tell the Hub a step of MONDAY's run finished. Monday's board email never
+# touches the orchestrator (it runs from here, in the afternoon, once Sunday has
+# landed — the captainship drafts used to as well, until 2026-08-10), and the
+# orchestrator is what normally
 # writes these rows — so without this Monday leaves no trace on the Hub and the
 # cards' phase pills can never leave orange, on the one day of the week they are
 # least allowed to look unfinished. Card ids, not orchestrator report_ids.
@@ -131,8 +132,8 @@ if [ "$(date +%u)" = "1" ]; then
   # have left exactly one day a week still broken.
   # Deliberately NOT --enable-rollover: this branch is Monday-only and the roll is
   # a Tuesday job — no roll should ever fire from here.
-  # Non-fatal to $ST on purpose (same reasoning as the captainship drafts below):
-  # a stale All Units section must not report the BOARD as broken.
+  # Non-fatal to $ST on purpose: a stale All Units section must not report the
+  # BOARD as broken.
   # --apply is what makes it write; a `bash board_catchup.sh --dry-run` test must
   # not, and all_campaigns_board.run has no --dry-run flag (dry IS the default).
   if [ "$#" -eq 0 ]; then ACB_ARGS="--apply"; else ACB_ARGS=""; fi
@@ -158,42 +159,24 @@ if [ "$(date +%u)" = "1" ]; then
     hub_fail "sales-board-screenshot-email" "Org. Sales Board Email" \
              "the Monday review post to #revision-emails failed — no link went up"
   fi
-  # Captainship Report drafts: MONDAY'S ONLY PATH. Both orchestrator entries
-  # (captainship_drafts and captainship_drafts_review) run Tue-Sun, so without
-  # this branch Monday is the one day the captains get nothing. It belongs here
-  # rather than in the cadence for the same reason the board email does: last
-  # week's Sunday only lands in the sources through Monday afternoon, so the fill
-  # above IS Monday's real board and this is the first moment the sections these
-  # reports read are complete.
+  # NO CAPTAINSHIP DRAFTS HERE ANY MORE (Eve 2026-08-10). They used to be built
+  # and posted from this branch, because Monday was excluded from both
+  # orchestrator entries on the theory that they had to wait for last week's
+  # Sunday the way the board email above does. They don't. The late-posting
+  # sources are Retail JE (~13:53) and SARA/Retail (~14:00), and NOT ONE of them
+  # feeds these reports: §1 reads the Copy tab's Product Summary + Captainship
+  # Units, §2 the fiber activations PNGs, §3/§4 the churn tabs — all filled by
+  # the morning batch (09:23-11:07 on 2026-08-10). So captainship_drafts and
+  # captainship_drafts_review now run SEVEN days in schedule_config.json, like
+  # any other report.
   #
-  # This is NOT the 2026-07-28 removal coming back. What was pulled then was a
-  # build that created 12 Gmail DRAFTS unasked. --dry-run only writes previews to
-  # output/, and --post only ASKS: the 12 emails are released by a checkmark from
-  # Evelyn or Jolie in #revision-emails, which the review checker picks up. So no
-  # path here can mail a captain.
-  echo "[$(date)] MONDAY: building Captainship drafts (previews only)" >> "$LOG_FILE"
-  if "$VENV_PY" -u -m automations.captainship_drafts.run --dry-run >> "$LOG_FILE" 2>&1; then
-    hub_row "captainship-drafts" "Captainship Reports"
-    echo "[$(date)] MONDAY: posting the review link" >> "$LOG_FILE"
-    if "$VENV_PY" -u -m automations.captainship_drafts.review_gate --post >> "$LOG_FILE" 2>&1; then
-      # Underscored on purpose: that is the id this step's rows carry on Tue-Sun
-      # (an orchestrator-materialised library card), and the card's phase list
-      # matches the stored id EXACTLY — there is no normalisation.
-      hub_row "captainship_drafts_review" "Captainship Reports (a revisión)"
-    else
-      echo "[$(date)] MONDAY: review post failed — previews are in output/, ask by hand" >> "$LOG_FILE"
-      # The previews EXIST, so this is the recoverable half: `lucy rerun
-      # captainship_drafts_review` re-posts them without rebuilding.
-      hub_fail "captainship_drafts_review" "Captainship Reports (a revisión)" \
-               "the 12 previews built but the review link never posted — re-post with captainship_drafts_review"
-    fi
-  else
-    # Deliberately not fatal to $ST: the board fill above succeeded or failed on
-    # its own, and a broken draft build must not report the BOARD as broken.
-    echo "[$(date)] MONDAY: captainship drafts build failed — nothing posted for review" >> "$LOG_FILE"
-    hub_fail "captainship-drafts" "Captainship Reports" \
-             "the Monday draft build failed — no previews, so nothing could be posted for review"
-  fi
+  # NOT left here as a fallback on purpose. A 14:30 rebuild would spend ~17
+  # minutes of the SERIAL queue redoing previews that already exist, and its
+  # --post would REPLACE a morning link the approvers may already be reading.
+  # The morning path fails loudly instead: the orchestrator holds the entry on
+  # its depends_on, and a real failure posts to #claudecorrections-and-requests
+  # with the re-run command — which is the visibility the Monday detour never
+  # had (it wrote no orchestrator row at all).
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1

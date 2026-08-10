@@ -2239,8 +2239,9 @@
         "--dry-run"
       ],
       "cadence": {
-        "_note": "Monday (0) EXCLUDED, same reason as the Org Sales Board email: last week's Sunday only lands in the sources through Monday afternoon, so a Monday-morning build would report an undercounted day. Tue-Sun in the morning batch.",
+        "_note": "SEVEN DAYS since 2026-08-10 (Eve). Monday used to be excluded here and handled by deploy/board_catchup.sh at 14:30, on the theory that these reports had to wait for last week's Sunday like the Org Sales Board email does. They don't: the late-posting sources are Retail JE (~13:53) and SARA/Retail (~14:00), and NONE of them feed these drafts - section 1 reads the Copy tab's Product Summary + Captainship Units, section 2 the fiber activations PNGs, sections 3/4 the churn tabs, and every one of those is filled by the morning batch (09:23-11:07 on 2026-08-10). Eve confirmed the same day. What the Monday detour actually cost was visibility: the catch-up writes no orchestrator row, so Monday's drafts had no pill, no dependency gate and no failure alert, and the only way to know they hadn't posted was to notice the channel was empty at 3pm. On the morning path they are an ordinary report seven days a week. The Monday block in board_catchup.sh was removed in the same change - leaving it would rebuild 12 previews for 17 minutes of the serial queue and REPLACE a morning link Eve may already be reviewing. The Org Sales Board email is the one that genuinely still waits for the afternoon; it stays Tue-Sun with the catch-up owning its Monday.",
         "weekdays": [
+          0,
           1,
           2,
           3,
@@ -2278,7 +2279,9 @@
         "--post"
       ],
       "cadence": {
+        "_note": "SEVEN DAYS since 2026-08-10 (Eve) - follows captainship_drafts, which no longer detours through the Monday catch-up. See that entry's cadence note for why these drafts never needed the afternoon.",
         "weekdays": [
+          0,
           1,
           2,
           3,
