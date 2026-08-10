@@ -33,6 +33,45 @@ Manager Trend does **not** feed Manager Board. They are siblings, not a chain.
 
 ---
 
+## The ad budget box (Manager Board, rows 21–37)
+
+The one part of the Board that has nothing to do with ApplicantStream. It shows
+each manager's **daily, weekly and monthly ad budget**, and it is fed by a
+completely separate path:
+
+```
+each manager's Indeed sheet
+   -> IMPORTRANGE -> their own tab in this workbook ('Carlos Hidalgo', ...)
+                        -> the budget box on Manager Board
+```
+
+**Nobody has to tell the automation when a tracker is updated.** The box is pure
+spreadsheet formula, not scraped data. Those manager tabs are `IMPORTRANGE`
+mirrors, Google refreshes them by itself, and the box recalculates when they
+change. There is no job to run and no schedule to miss — the 4am run only
+re-draws the box, it does not compute the numbers.
+
+How a row is worked out, for manager *M*:
+
+1. `MAX` of `'M'!B:B` — the most recent **Report Date** on their tab.
+2. `SUMIF` of `'M'!S:S` — **Daily Budget** for the rows carrying that date.
+3. Weekly = daily × 7. Monthly = daily × days in the current month.
+
+No status filter: LIVE, RESERVE and PAUSED ads all count if they sit on the
+latest report date.
+
+Two things to know before you trust the total:
+
+- It reads the **manager tabs directly, never `Manager View`.** Manager View is
+  `=INDIRECT` on its own `B1` picker, so it only ever shows whichever manager
+  the dropdown was last left on. A box built from it would silently change
+  meaning as people browsed.
+- **ORG TOTAL is the Board's 14 managers only.** Justin Wood has a tracker tab
+  and real budget on it but does not appear on the Board, so he is not in the
+  total.
+
+---
+
 ## What runs, and when
 
 Lucy 2 runs it every morning as part of the 4am orchestrator batch. Report id:
