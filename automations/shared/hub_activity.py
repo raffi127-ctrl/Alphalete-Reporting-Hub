@@ -37,11 +37,18 @@ HEADERS = ["RunID", "Started At", "Report ID", "Report Name",
 def log_completed(report_id: str, report_name: str, *,
                   status: str = "success",
                   started_at: Optional[dt.datetime] = None,
-                  user: str = "schedule") -> bool:
+                  user: str = "schedule",
+                  register_card: bool = True) -> bool:
     """Record one finished scheduled run. Returns True if the row landed.
 
     `report_id` MUST be the Hub CARD id (e.g. "box-order-log"), not the
     orchestrator's rerun id — the calendar counts by card id.
+
+    `register_card=False` writes the row WITHOUT self-registering a library
+    card. Used by ids that are deliberately not cards but PHASES of one — the
+    "…-approved" rows from the review gates (shared/review_approval.py) exist
+    only to colour an existing card's pill, and auto-creating a card for each
+    would put a permanently-white duplicate on the Hub next to the real one.
     """
     try:
         from automations.recruiting_report.fill import open_by_key, _retry
@@ -57,12 +64,13 @@ def log_completed(report_id: str, report_name: str, *,
         # Report Library card so a standalone LaunchAgent report (which reports
         # here, not through the orchestrator) is never invisible. Best-effort —
         # a card-creation hiccup must not stop the run row from landing.
-        try:
-            from automations.day_orchestrator import hub_coverage
-            if report_id not in hub_coverage.existing_card_ids():
-                hub_coverage.ensure_library_card(report_id, report_name)
-        except Exception:
-            pass
+        if register_card:
+            try:
+                from automations.day_orchestrator import hub_coverage
+                if report_id not in hub_coverage.existing_card_ids():
+                    hub_coverage.ensure_library_card(report_id, report_name)
+            except Exception:
+                pass
 
         now = dt.datetime.now()
         started = (started_at or now).isoformat(timespec="seconds")

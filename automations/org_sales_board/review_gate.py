@@ -38,6 +38,9 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
+# Publishes the "approved" phase row the Hub card colours green.
+from automations.shared import review_approval as RA
+
 # The private channel where the day's email is reviewed — THE SAME ONE THE
 # CAPTAINSHIP DRAFTS USE (Eve, 2026-07-29). One channel, one review habit: the
 # approvers are the same two people and they check one place, not two. The two
@@ -67,6 +70,13 @@ APPROVERS = {
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
+
+# The Hub card this gate releases. Used only to publish the "approved" phase row
+# (shared/review_approval.py) that turns the card's tile green — the card lists
+# "<this>-approved" as its last phase. Hyphenated: it is the CARD id, not the
+# orchestrator's report_id.
+HUB_CARD_ID = "sales-board-screenshot-email"
+HUB_CARD_NAME = "Org. Sales Board Email"
 
 
 def _mentions() -> str:
@@ -614,11 +624,22 @@ def main(argv=None) -> int:
     if args.check:
         if already_sent(today, args.channel):
             print("— already sent today, nothing to do", flush=True)
+            # Repair a missing approval row (the Hub pill) without costing a
+            # Slack call on the other ~40 passes of the day: the lookup only
+            # runs when today has nothing recorded yet.
+            RA.ensure_recorded(HUB_CARD_ID, HUB_CARD_NAME,
+                               lambda: find_approval(today, args.channel,
+                                                     verbose=False),
+                               day=today)
             return 0
         who = find_approval(today, args.channel)
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)
+        # Tell the Hub the human said yes — this is what turns the card's phase
+        # pill from purple (awaiting ✅) to green. Before the send, so an
+        # approved day shows as approved even if the send then fails.
+        RA.ensure_recorded(HUB_CARD_ID, HUB_CARD_NAME, who, day=today)
         if not args.send:
             return 0
         rc = send_reviewed(today, args.distro)

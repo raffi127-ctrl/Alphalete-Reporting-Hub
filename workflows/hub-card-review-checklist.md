@@ -47,6 +47,14 @@ names are called out so you know exactly what to look at.
       `daily_runs` (int) or a weekday-keyed dict, and the pill climbs
       grey → amber "(N/M done)" → green only on the **last** pass. Confirm the count
       is right (e.g. new-start-followup Sat=4 / Sun=1, leaders-call Mon=4).
+- [ ] **Review-gated report goes green on the APPROVAL, not on the post.** If a
+      human's ✅ in #revision-emails is what releases it, the card carries
+      `approval_phase: "<report id>-approved"` as the LAST entry of `phases`, and
+      the gate calls `shared/review_approval.ensure_recorded(...)` when it finds
+      the checkmark. The tile then reads: ramp while the machines work → 🟣 purple
+      `review` "(awaiting ✅)" once everything is posted → green only on the tick.
+      Without it a card greens the moment the review PDF is POSTED, and a day
+      nobody approved looks exactly like a day that went out (Megan 2026-08-10).
 - [ ] **Accent color (`color`) is intentional** — this is just the emoji-tile hue,
       not a status. Should fit the card's category, not clash.
 

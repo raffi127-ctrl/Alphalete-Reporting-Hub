@@ -38,6 +38,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from automations.captainship_drafts import config
+# Publishes the "approved" phase row the Hub card colours green.
+from automations.shared import review_approval as RA
 
 # The private channel with Evelyn, Jolie and Lucy. Set once (Slack blocks the
 # reporting token from creating channels — it has no groups:write), then never
@@ -61,6 +63,13 @@ APPROVERS = {
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
+
+# The Hub card this gate releases. Used only to publish the "approved" phase row
+# (shared/review_approval.py) that turns the card's tile green — the card lists
+# "captainship-drafts-approved" as its last phase. Hyphenated: it is the CARD
+# id, not the orchestrator's report_id (captainship_drafts_review).
+HUB_CARD_ID = "captainship-drafts"
+HUB_CARD_NAME = "Captainship Reports"
 
 
 def _mentions() -> str:
@@ -671,6 +680,10 @@ def main(argv=None) -> int:
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)
+        # Tell the Hub the human said yes — this is what turns the card's phase
+        # pill from purple (awaiting ✅) to green. Idempotent, so the 15-minute
+        # checker writes one row a day, not one per pass.
+        RA.ensure_recorded(HUB_CARD_ID, HUB_CARD_NAME, who, day=today)
         if not args.send:
             return 0
         msg = _find_post(today, args.channel)

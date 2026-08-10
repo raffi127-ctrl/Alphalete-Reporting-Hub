@@ -38,6 +38,8 @@ from automations.org_sales_board.review_gate import (
     REVIEW_CHANNEL, APPROVERS, APPROVE_EMOJI,
     _mentions, _client, _channel, _said, upload_pdf,
 )
+# Publishes the "approved" phase row the Hub card colours green.
+from automations.shared import review_approval as RA
 
 SENT_MARK = "Sent — approved by"
 REMIND_MARK = "reminder: this board email"
@@ -386,11 +388,22 @@ def main(argv=None) -> int:
     if args.check:
         if already_sent(board, run_day, args.channel):
             print("— already sent today, nothing to do", flush=True)
+            # Repair a missing approval row (the Hub pill) without costing a
+            # Slack call on the other ~40 passes of the day: the lookup only
+            # runs when today has nothing recorded yet.
+            RA.ensure_recorded(board.report_id, board.hub_name,
+                               lambda: find_approval(board, run_day,
+                                                     args.channel, verbose=False),
+                               day=run_day)
             return 0
         who = find_approval(board, run_day, args.channel)
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)
+        # Tell the Hub the human said yes — this is what turns the card's phase
+        # pill from purple (awaiting ✅) to green. Before the send, so an
+        # approved day shows as approved even if the send then fails.
+        RA.ensure_recorded(board.report_id, board.hub_name, who, day=run_day)
         if not args.send:
             return 0
         rc = send_reviewed(board, run_day)

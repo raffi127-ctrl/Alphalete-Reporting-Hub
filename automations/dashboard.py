@@ -3401,7 +3401,7 @@ AUTOMATED_REPORTS = [
         # ("Captainship Report Drafts (12)" + the auto-registered "Captainship
         # Reports (a revisión)" library card, now hidden via the skip-set in
         # _read_shared_library).
-        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn or Jolie mails the exact files reviewed. Pill is orange after the build, green once sent.",
+        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn or Jolie mails the exact files reviewed. Pill ramps as it goes: orange after the build, 🟣 **purple while it waits for the ✅**, green the moment it's approved.",
         "breakdown": (
             "PHASE 1 — BUILD (4am flow)\n"
             "**•** Builds all 12 previews to output/ — Product Summary + "
@@ -3423,8 +3423,10 @@ AUTOMATED_REPORTS = [
             "**•** A **✅ from Evelyn or Jolie** sends the exact files reviewed "
             "(mini's watcher, within 15 min) — what goes out can't differ from "
             "what was approved.\n"
-            "**•** Pill turns **green** when sent, **orange** until then. "
-            "**Send now — override** is the fallback if no ✅ comes.\n\n"
+            "**•** Pill: **orange** after the build, 🟣 **purple** once it's "
+            "posted and waiting on the ✅, **green** only when an approver "
+            "ticks it. A day nobody approves never goes green.\n"
+            "**•** **Send now — override** is the fallback if no ✅ comes.\n\n"
             "WHEN IT RUNS\n"
             "Tue–Sun, after the Sales Board fill, both churn runs, and the "
             "per-captain metric fills — never off a half-built board. Either "
@@ -3442,7 +3444,17 @@ AUTOMATED_REPORTS = [
         # from a laptop under the wrong user (same reason Country Sales Board
         # pins run_machine).
         "run_machine": "Lucy 1",
-        "phases": ["captainship-drafts", "captainship_drafts_review"],
+        # THIRD PHASE = THE APPROVAL (Megan 2026-08-10: "a phase hub card that
+        # goes green on approval so we have visual on it"). The first two rows
+        # are both written by machines the moment they exit 0 — the build, then
+        # the review POST — so the card used to turn green at ~4am with nobody
+        # having read a thing. "captainship-drafts-approved" is written only
+        # when review_gate --check finds Evelyn's or Jolie's ✅
+        # (shared/review_approval.py), so the tile now sits PURPLE
+        # "awaiting ✅" from the post until the approval, and only then greens.
+        "phases": ["captainship-drafts", "captainship_drafts_review",
+                   "captainship-drafts-approved"],
+        "approval_phase": "captainship-drafts-approved",
         "schedule": {"frequency": "daily", "weekdays": [1, 2, 3, 4, 5, 6],
                      "time": "4 AM flow (when data's ready)", "estimated_minutes": 12},
         "checklist": [],
@@ -4145,12 +4157,12 @@ AUTOMATED_REPORTS = [
             "Monday runs in the afternoon at 2:30pm via the board catch-up job — "
             "Sunday's numbers only fully arrive Monday afternoon. It never runs "
             "in the 4am batch, so it lives under ⏰ TIME SET REPORTS.\n\n"
-            "PILL — TWO PHASES\n"
-            "This is one card for the chained pair: phase 1 = the board fill, "
-            "phase 2 = this email. The pill sits ORANGE once the fill lands "
-            "(fill done, email pending) and turns GREEN only when the day's "
-            "email actually sends. A failed fill or a day with no ✅ never "
-            "shows green."
+            "PILL — THREE PHASES\n"
+            "One card for the whole chain: phase 1 = the board fill, phase 2 = "
+            "this email posted for review, phase 3 = the ✅. The pill sits "
+            "ORANGE once the fill lands, goes 🟣 PURPLE while the PDF waits in "
+            "#revision-emails, and turns GREEN only on an approver's "
+            "checkmark. A failed fill or a day with no ✅ never shows green."
         ),
         # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -4163,7 +4175,15 @@ AUTOMATED_REPORTS = [
         # turns GREEN once the email actually sends (screenshot_email._publish_sent
         # → success row on the card's own id). Both reports still run separately;
         # this only merges the Hub display + drives the phase colors.
-        "phases": ["org-sales-board", "sales-board-screenshot-email"],
+        # THIRD PHASE = THE APPROVAL (Megan 2026-08-10). The email row lands
+        # when the gate POSTS the day's PDF for review, hours before anyone
+        # reads it, so green used to mean "posted", not "sent".
+        # "…-approved" is written only when review_gate --check finds an
+        # authorised ✅ (shared/review_approval.py): PURPLE while it waits on
+        # Evelyn/Jolie, green on the checkmark that actually mails it.
+        "phases": ["org-sales-board", "sales-board-screenshot-email",
+                   "sales-board-screenshot-email-approved"],
+        "approval_phase": "sales-board-screenshot-email-approved",
         # self_scheduled → renders under ⏰ TIME SET REPORTS (not the 4am MORNING
         # BATCH) because it never runs at 4am: Tue-Sun it posts mid-morning after
         # the board fill, and MONDAY it runs at 2:30pm via board-catchup (Sunday's
@@ -4614,7 +4634,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌎",
         "color": "#0D9488",
         "category": "📊 Metrics",
-        "description": "Two phases on one card: (1) the 4am fill writes the Country Sales Board tab from Tableau and rolls the week over every Tuesday — the REAL tab the country reads; (2) at 9:30 AM an exact-sheet screenshot is emailed to Rafael & Maud, after Evelyn or Jolie ✅s it in #revision-emails. The pill is orange after the fill, green once the email sends.",
+        "description": "Two phases on one card: (1) the 4am fill writes the Country Sales Board tab from Tableau and rolls the week over every Tuesday — the REAL tab the country reads; (2) at 9:30 AM an exact-sheet screenshot is emailed to Rafael & Maud, after Evelyn or Jolie ✅s it in #revision-emails. The pill is orange after the fill, 🟣 purple while it waits for the ✅, and green only on the approval.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls the D2D **'This Week'** crosstab and writes only the "
@@ -4640,8 +4660,9 @@ AUTOMATED_REPORTS = [
             "day's image in **#revision-emails** (not before 9:30) and sends "
             "nothing until **Evelyn or Jolie** ✅s it — the mini's watcher picks "
             "up the approval within 15 min and mails exactly what was approved. "
-            "The card's pill turns **green** once that email goes out; until then "
-            "it sits **orange** (fill done, email pending)."
+            "The card's pill turns **green** on that ✅; while the image is "
+            "posted and waiting it sits 🟣 **purple** (*awaiting ✅*), and it is "
+            "**orange** before that (fill done, nothing posted yet)."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
@@ -4651,8 +4672,7 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "country_sales_board",
         # TWO-PHASE card (Megan 2026-08-02): phase 1 = the 4am fill, phase 2 =
-        # the 9:30am screenshot email. The pill is orange after the fill and turns
-        # green once the email sends — one card for the chained pair instead of
+        # the 9:30am screenshot email. One card for the chained pair instead of
         # two. Reports still run separately; this only merges the Hub display.
         # Phase 2's id is the UNDERSCORE form `country_sales_board_email` — that is
         # what the email actually publishes to Hub Activity since it became an
@@ -4661,7 +4681,17 @@ AUTOMATED_REPORTS = [
         # and the pill sat stuck at 1/2 (orange) even after a clean send. The
         # phase-list string must match the stored Report ID EXACTLY — there is no
         # normalization in _week_run_statuses. (Megan 2026-08-07)
-        "phases": ["country-sales-board", "country_sales_board_email"],
+        # THIRD PHASE = THE APPROVAL (Megan 2026-08-10) — same shape as the Org
+        # board card. Phase 2 lands when the day's image is POSTED for review,
+        # so green used to mean "posted". "…-approved" is written only when
+        # review_gate --check finds Evelyn's or Jolie's ✅
+        # (shared/review_approval.py): PURPLE while it waits, green on the ✅.
+        # This one IS hyphenated and that is not an oversight — the gate writes
+        # it straight to Hub Activity (no resolve_card in the path), so the
+        # stored id is exactly `<board.report_id>-approved`.
+        "phases": ["country-sales-board", "country_sales_board_email",
+                   "country-sales-board-email-approved"],
+        "approval_phase": "country-sales-board-email-approved",
         "schedule": {
             "frequency": "daily",
             "time": "4 AM flow (when data's ready)",
@@ -7469,13 +7499,22 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             return "phase2"        # orange
         return "phase3"            # teal
 
-    def _phase_status(_phases: list, _day: dt.date) -> tuple:
+    def _phase_status(_phases: list, _day: dt.date,
+                      _approval: str = "") -> tuple:
         """Pill for a card whose progress is a CHAIN of different reports
         (Country Sales Board = the 4am fill, then the 9:30am email). Returns
         (status, done_count). Green when every phase succeeded that day; ramps
         yellow→orange→teal as phases land; RED if any phase failed. A phase that
         simply hasn't run YET is pending, not a failure — so the card sits on the
-        ramp between phases rather than reading red or green early."""
+        ramp between phases rather than reading red or green early.
+
+        `_approval` names the phase that is a HUMAN's ✅ in #revision-emails
+        (written by shared/review_approval.py when a gate finds the checkmark).
+        While every phase before it has landed and it hasn't, the tile goes
+        PURPLE — "your turn", not "still working" — and it can only go green on
+        the approval itself. Megan 2026-08-10: the review-gated cards used to
+        green the moment the review PDF was POSTED, so a day nobody approved
+        looked exactly like a day that went out."""
         if _day > today:
             return "up", 0
         _sts = [_cal_statuses.get((_p, _day)) for _p in _phases]
@@ -7488,6 +7527,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                       for _s in _sts)
         if _failed:
             return "fail", _done
+        # Waiting on a person. Today only: a PAST day that never got its ✅ is
+        # not "awaiting" anything, it's a day that didn't go out — that stays on
+        # the normal partial/miss colours so it can't read as fine.
+        if _approval in _phases and _day == today:
+            _ai = _phases.index(_approval)
+            if _sts[_ai] != "success" and all(_s == "success"
+                                              for _s in _sts[:_ai]):
+                return "review", _done
         if _done > 0:
             if _day != today:
                 return "partial", _done      # past day, chain never finished
@@ -7636,7 +7683,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _phases = _r.get("phases")
                     if _phases:
                         _dr_today = len(_phases)
-                        _stat, _phase_done = _phase_status(_phases, _day)
+                        _stat, _phase_done = _phase_status(
+                            _phases, _day, _r.get("approval_phase") or "")
                     else:
                         _dr_today = _expected_runs(_r, _day)
                         _stat = _cal_status(_r["id"], _day, _dr_today)
@@ -7646,7 +7694,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
                              "miss": "– ", "running": "🔄 ", "scanned": "🔍 ",
                              "progress": "🟡 ", "phase1": "🟡 ",
-                             "phase2": "🟠 ", "phase3": "🔵 "}.get(_stat, "")
+                             "phase2": "🟠 ", "phase3": "🔵 ",
+                             "review": "🟣 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Multi-run card mid-day: show how many passes have landed
                     # (e.g. "(1/3 done)") so the amber pill says WHY it isn't
@@ -7654,6 +7703,10 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # after the name doesn't read like a date (e.g. June 7).
                     if _stat in ("progress", "phase1", "phase2", "phase3"):
                         _label += f" ({_phase_done}/{_dr_today} done)"
+                    # Waiting on a person, not on a machine — say so instead of
+                    # a pass count nobody can act on (Megan 2026-08-10).
+                    elif _stat == "review":
+                        _label += " (awaiting ✅)"
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
@@ -7685,6 +7738,9 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         "phase1": "Phase 1 done (orange) — more passes still due today",
                         "phase2": "Phase 2 done (amber) — more passes still due today",
                         "phase3": "Phase 3 done (yellow) — final pass still due today",
+                        "review": ("Built and posted for review — waiting on a "
+                                   "✅ in #revision-emails. Nothing has been "
+                                   "sent yet; it turns green on the approval."),
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
                         "scanned": "Ran its scan — nothing new to do today (healthy)",
@@ -7927,10 +7983,27 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # schedule-time pills — those read wrong for something that runs on its
         # own timer and doesn't report a per-day status.
         _hide_sched = report.get("hide_schedule")
-        if ran_today and not _hide_sched:
+        # Review-gated card: where the day's APPROVAL stands, right on the card
+        # (Megan 2026-08-10 — "so we have visual on it"). approval_phase names a
+        # real Hub Activity row that only exists once a gate saw an authorised ✅
+        # in #revision-emails (shared/review_approval.py), so this can't be
+        # faked by the report merely having run.
+        _appr = report.get("approval_phase")
+        _appr_done = bool(_appr) and _was_run_successfully_today(_appr, today)
+        _appr_ready = bool(_appr) and not _appr_done and all(
+            _was_run_successfully_today(_p, today)
+            for _p in (report.get("phases") or []) if _p != _appr)
+        # "DONE TODAY" on a report that is built but NOT yet approved is the
+        # exact confusion this card set out to kill — hold it until the ✅.
+        if ran_today and not _hide_sched and not (_appr and not _appr_done):
             pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
         elif is_due and not _hide_sched:
             pills += "<span class='pill pill-due'>DUE TODAY</span>"
+        if _appr_done:
+            pills += "<span class='pill pill-approved'>✅ APPROVED — SENT</span>"
+        elif _appr_ready:
+            pills += ("<span class='pill pill-review'>🟣 AWAITING ✅ "
+                      "APPROVAL</span>")
         # Last-run outcome (#4) — surfaces a silent partial/failed run at a
         # glance, without opening the card.
         _card_oc = _run_outcome(report["id"])
@@ -11113,6 +11186,12 @@ st.markdown("""
     }
     .pill-due { background: #FFE9E9; color: #C92020; border: 2px solid #C92020; }
     .pill-ok  { background: #E6F7EC; color: #1F7A3D; border: 2px solid #1F7A3D; }
+    /* Review gate (Megan 2026-08-10). Purple = posted, waiting on a human's ✅;
+       green = approved. .pill-approved is its OWN green and not .pill-ok, which
+       the brand override further down repaints gold — the whole point of this
+       pill is that approval reads GREEN. */
+    .pill-review   { background: #EDE9FE; color: #5B21B6; border: 2px solid #A78BFA; }
+    .pill-approved { background: #E6F7EC; color: #1F7A3D; border: 2px solid #1F7A3D; }
     .pill-info{ background: #E8F0FE; color: #1A4FB0; }
     .pill-warn{ background: #FFF3D6; color: #8B6914; border: 2px solid #C9A227; }
 
