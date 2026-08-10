@@ -5226,7 +5226,7 @@
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 12,
+      "timeout_minutes": 45,
       "verify": {
         "type": "not_configured"
       },

@@ -212,7 +212,7 @@ def _newest_week(weeks):
     return max(weeks, key=keyf) if weeks else None
 
 
-def accumulate(write=False, page=None, verbose=True, source="dd-detail"):
+def accumulate(write=False, page=None, verbose=True, source="program-summary"):
     """Write this week's figure for the special-case names (the four adoptions)
     into the 'ICD (Special Cases)' section on the DD tab, current-week column —
     the weekly step that builds their history one week at a time. DRY-RUN unless
@@ -388,7 +388,7 @@ def _pull_program_summary(week_label, page=None, verbose=True):
     return out
 
 
-def accumulate_all(write=False, page=None, verbose=True, source="dd-detail"):
+def accumulate_all(write=False, page=None, verbose=True, source="program-summary"):
     """Populate the DD tab's CURRENT-WEEK column for EVERY Active-YES owner from
     OUR Tableau pull — the switch off the VA hand-fill (Megan 2026-07-30).
     DRY-RUN unless write=True.
@@ -776,7 +776,7 @@ def main(argv=None):
                          "Active-YES owner from our mapping (dry-run without "
                          "--write) — the switch off the VA hand-fill")
     ap.add_argument("--source", choices=("program-summary", "dd-detail"),
-                    default="dd-detail",
+                    default="program-summary",
                     help="with --populate or --accumulate: which Tableau view to read. "
                          "'program-summary' (default) is PROGRAM SUMMARY / "
                          "DOWNLINE VIEW, the one Eve builds the bulletin from; "
