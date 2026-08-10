@@ -32,6 +32,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from automations.funnel_board import guard
+from automations.funnel_board.auth import identity as _auth_identity
 from automations.funnel_board.auth import session as _auth_session
 from automations.shared.tableau_patchright import (
     appstream_direct_session, APPSTREAM_PROFILE_DIR,
@@ -214,6 +216,13 @@ def main():
     log("existing log: %d manager(s), %d day-rows"
         % (len(history), sum(len(v["days"]) for v in history.values())))
 
+    # Did anything edit the Daily Log since this report last wrote it? Read-only,
+    # and never fatal — a hand backfill is legitimate and the week gets re-pulled
+    # and overwritten regardless. It just shouldn't happen silently.
+    drift = guard.check(S, API, log)
+    if drift:
+        guard.ping(drift, log, dry_run=a.dry_run)
+
     fresh, failed = {}, []
     # headless=True trips a Cloudflare re-challenge on the rcaptain login;
     # every successful pull has been headed. Lucy 2 runs with a display.
@@ -306,6 +315,10 @@ def main():
                           str(HERE / "build.py")], env=env)
     os.unlink(tmp)
     log("build exited %d" % rc)
+    if rc == 0:
+        # Stamp AFTER the write — build.py wipes the tab and rewrites it, so a
+        # stamp put down any earlier wouldn't survive the run that set it.
+        guard.stamp(S, API, _auth_identity(), log)
     return rc or (1 if failed else 0)
 
 

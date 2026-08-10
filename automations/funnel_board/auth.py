@@ -49,6 +49,13 @@ def _oauth_creds():
     return creds
 
 
+def identity():
+    """Which credential this machine will write with — for logs and the stamp."""
+    return ("applicant_tracker service account"
+            if _service_account_creds() is not None
+            else "personal OAuth token (%s)" % TOKEN.name)
+
+
 def session(verbose=False):
     """An AuthorizedSession for the Funnel Board workbook."""
     creds = _service_account_creds()
