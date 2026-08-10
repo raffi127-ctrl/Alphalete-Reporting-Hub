@@ -152,7 +152,8 @@ print("managers=%d dates=%d weeks=%s" % (len(MANAGERS), len(ALL_DATES), WEEK_END
 _by_week = {}
 for iso in ALL_DATES:
     d = dt.date.fromisoformat(iso)
-    _by_week.setdefault(d + dt.timedelta(days=6 - d.weekday()), set()).add(d)
+    if d <= dt.date.today():
+        _by_week.setdefault(d + dt.timedelta(days=6 - d.weekday()), set()).add(d)
 PARTIAL = {w: sorted(ds) for w, ds in _by_week.items() if len(ds) < 7}
 NOTE = ""
 if PARTIAL:
@@ -419,7 +420,7 @@ board = [["Manager Funnel Board", "", "", "", "", "", "", "Week ending", WEEK_EN
           # 1 = Mon .. 7 = Sun, from the latest day logged for the selected week.
           # A finished week reaches Sunday, so its pace factors are all 1.0 and it
           # compares against the full goal with no special case.
-          "=IFERROR(WEEKDAY(MAXIFS('Daily Log'!$A:$A,'Daily Log'!$B:$B,$I$1),2),7)"],
+          "=IF($I$1>=TODAY(),WEEKDAY(TODAY(),2),7)"],
          ["Live from ApplicantStream · Retention Details (new)" + NOTE],
          ["MANAGER"] + [c[0] for c in BCOLS]]
 

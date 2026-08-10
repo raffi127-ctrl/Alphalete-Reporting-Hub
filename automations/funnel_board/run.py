@@ -153,7 +153,11 @@ def pull(page, rqst, weeks, today):
                 break
             grab(missing[0])
         for d in want:
-            if d in days and d <= today:
+            # Keep FUTURE days inside the target week. They are not padding:
+            # "Total New Starts Scheduled" is filtered on the start date, so a
+            # start booked today for Saturday lands on Saturday. Dropping them
+            # hid Atef's whole week (all 5 of his starts are dated 8/15).
+            if d in days:
                 got[d.isoformat()] = days[d]
     return got
 
