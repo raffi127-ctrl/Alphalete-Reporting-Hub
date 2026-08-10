@@ -98,16 +98,48 @@ def fetch(dest_dir: str | Path, *, since_days: int = 7,
 
 
 def missing_books(*, since_days: int = 7) -> List[str]:
-    """Which EXPECTED_BOOKS have NO email in the window (by subject) — the
-    whole-book gaps to chase a sender about. Fail-open: on any IMAP error
-    returns [] so a probe hiccup never blocks the run."""
+    """Which EXPECTED_BOOKS did not land this week — the whole-book gaps to
+    chase a sender about. Fail-open: on any IMAP error returns [] so a probe
+    hiccup never blocks the run.
+
+    TWO WAYS A BOOK GOES MISSING, and this used to see only the first:
+      * no email at all         -> "no email"
+      * the email arrived but carried NO ATTACHMENT MATCHING that sender's
+        globs -> "email, no matching file"
+
+    The second is what happened to German through WE 7.25 and 8.1 (Eve
+    2026-08-10): jsanchez kept sending the weekly message with the figures
+    written in the BODY while the workbook was being rebuilt, so the subject
+    matched perfectly, this probe reported nothing missing, and his tabs sat two
+    weeks stale with no alert anywhere. It is also what will happen the moment
+    the "revamped" spreadsheet lands under a filename that isn't
+    `*financial report*.xlsx` — exactly how hubtruth broke in July.
+
+    Checking the SUBJECT is still what identifies the book (attachment names
+    drift, subjects hold — see SOURCES above); the attachment check is an extra
+    condition on top, never a replacement.
+    """
+    globs_for = {sender: globs for sender, globs in SOURCES}
     missing: List[str] = []
     try:
         M = email_ingest._connect()
         try:
             for label, sender, subj in EXPECTED_BOOKS:
                 if not email_ingest._search(M, sender, subj, since_days):
-                    missing.append(label)
+                    missing.append(f"{label} — no email")
+                    continue
+                globs = globs_for.get(sender)
+                if not globs:
+                    continue          # no glob declared: subject alone is the test
+                try:
+                    hits = email_ingest.list_matches(
+                        sender, globs, subject=subj, since_days=since_days)
+                except Exception:     # noqa: BLE001 — never fail the whole probe
+                    continue
+                if not hits:
+                    missing.append(
+                        f"{label} — email arrived but NO attachment matching "
+                        f"{', '.join(globs)}")
         finally:
             M.logout()
     except Exception as e:  # noqa: BLE001 — advisory only

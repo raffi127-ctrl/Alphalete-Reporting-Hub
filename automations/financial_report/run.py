@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -63,17 +64,39 @@ def _is_non_icd_tab(title: str) -> bool:
 
 def _name_bridge() -> dict:
     """{normalized tab name: [alternate names]} — bridges a tab's nickname to
-    the legal name the financial files use. Drawn from the recruiting
-    mapping's AppStream owner AND the shared ICD alias list (the canonical
-    place for name-spelling fixes)."""
+    the legal name the financial files use. Drawn from the recruiting mappings'
+    AppStream owner AND the shared ICD alias list (the canonical place for
+    name-spelling fixes).
+
+    ALL THREE office mappings, not just the ATT one (Eve 2026-08-10).
+    `rfill.load_mapping()` reads office-mapping.json alone — 53 tabs — so the
+    Carlos and Alphalete-Org sheets contributed nothing here even though their
+    mappings carry the same `as_owner` field. That is why
+    `Atef Choudhry - B2B` had NEVER been filled: the tab title is missing the
+    'u' of Choudhury, its mapping already says `as_owner: "Atef Choudhury"`,
+    and nothing loaded it. The subset-surname fallback can't rescue it either —
+    'choudhry' and 'choudhury' are different surnames to it. Reading the other
+    two mappings fixes that without renaming a tab other reports key off
+    (opt_b2b pairs on the exact title, as does office-mapping-alphalete-org)."""
     bridge: dict = {}
-    try:
-        for c in rfill.load_mapping()["confirmed"]:
-            ao = c.get("as_owner")
-            if ao:
-                bridge.setdefault(norm_name(c["sheet_tab"]), []).append(ao)
-    except Exception:
-        pass
+    _MAPS = ("office-mapping.json", "office-mapping-carlos.json",
+             "office-mapping-alphalete-org.json")
+    for fname in _MAPS:
+        try:
+            data = json.loads(
+                (rfill.MAPPING_PATH.parent / fname).read_text(encoding="utf-8"))
+            for c in data.get("confirmed", []):
+                ao, tab = c.get("as_owner"), c.get("sheet_tab")
+                if ao and tab:
+                    # Key on the FULL tab title and on the title minus its
+                    # ' - <campaign>' suffix: _match_owner looks the bridge up
+                    # both ways, and the org sheet's tabs all carry a suffix.
+                    for k in {norm_name(tab), norm_name(ffill._tab_to_name(tab))}:
+                        alts = bridge.setdefault(k, [])
+                        if ao not in alts:
+                            alts.append(ao)
+        except Exception:
+            continue
     try:
         from automations.focus_office_att import aliases as _aliases
         for canonical, alts in _aliases.load_aliases().items():
