@@ -1401,6 +1401,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
 if __name__ == "__main__":
     import argparse
+    import sys as _sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -1408,3 +1409,18 @@ if __name__ == "__main__":
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Errors: {len(result['errors'])}")
+    # A source that fails to download costs CELLS, not tabs. The tab still
+    # lands in `filled` because its OTHER metrics came through, so the three
+    # counters above stay reassuring while an owner's office metrics are
+    # blank — that is exactly how opt_retail_sara_plus_office.csv timed out
+    # three runs straight on 2026-08-10 and the orchestrator recorded DONE
+    # each time, with Boaktear Chowdhury and Ronald Dawson left unwritten.
+    # Exit non-zero so the step goes red and someone looks. Same reasoning as
+    # country_sales_board's post-write verification (run.py:208): a run that
+    # completed having written nothing must never be recorded as a success.
+    if result["errors"]:
+        print("\n=== run INCOMPLETE — source(s) failed to download ===")
+        for _e in result["errors"]:
+            print(f"  ✗ {_e}")
+        print("Every metric fed by those source(s) is BLANK for this week.")
+        _sys.exit(1)

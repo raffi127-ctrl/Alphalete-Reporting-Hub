@@ -1202,7 +1202,29 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
         page.wait_for_timeout(1400)
     if verbose:
         print("Download -> Data -> View Data window…", flush=True)
-    data_item.click()
+    # This used to be a bare data_item.click() riding Playwright's blind 30s
+    # default. Both ways it can fail look IDENTICAL in the log — "Locator.
+    # click: Timeout 30000ms exceeded" and nothing more — and they have
+    # DIFFERENT fixes, so the caller could never tell which one it hit (SARA
+    # Plus office burned three runs on exactly that, 2026-08-10). Same 30s
+    # budget, split so the error names the cause.
+    try:
+        data_item.wait_for(state="visible", timeout=20_000)
+    except Exception:
+        raise RuntimeError(
+            "Download → Data never appeared: the download flyout didn't "
+            "render. The Download button itself was clickable, so this is a "
+            "Tableau UI change or a viz that never finished loading — NOT a "
+            "missing worksheet activation."
+        ) from None
+    if data_item.get_attribute("aria-disabled") == "true":
+        raise RuntimeError(
+            "Download → Data is DISABLED: this dashboard needs a worksheet "
+            "made active first. Pass activate_xy=(x, y) for this view — the "
+            "fraction within the viz of a COLUMN HEADER (clicking a data mark "
+            "would scope the export to one row)."
+        )
+    data_item.click(timeout=10_000)
     page.wait_for_timeout(7000)
     win = next((pg for pg in ctx.pages if pg not in before), None)
     if win is None:
