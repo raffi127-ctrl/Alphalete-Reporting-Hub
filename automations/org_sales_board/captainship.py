@@ -344,8 +344,15 @@ def discover_captainships(grid: List[List[str]]) -> List[Tuple[str, str]]:
 PROGRAMS = {
     "fiber": _V + ("ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
                    "c287b023-03c1-489b-9d44-978200018569/AllproductsALLTEAMS"),
-    "b2b":   _V + ("ATTTRACKER-B2B/D2D1-PAGERV3/"
-                   "49e48afc-de23-4d5d-98ad-e8b1b246d640/ALLTEAMS"),
+    # The PLAIN view, not a custom view (Eve 2026-08-10). It used to point at
+    # the 'ALL TEAMS' custom view, which now greets every load with "An error
+    # occurred while loading the custom view … Re-create it if this error
+    # persists" — and re-creating it is pointless: all-teams/all-reps IS this
+    # view's default state, so the custom view was only ever saving the default.
+    # Verified identical on 2026-08-10 — both URLs export the same 72 owners,
+    # the same seven day columns and the same 6,180 total.
+    # [[project_broken-custom-view-failure-mode]]
+    "b2b":   _V + "ATTTRACKER-B2B/D2D1-PAGERV3",
     "nds":   _V + ("NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
                    "c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS"),
 }
