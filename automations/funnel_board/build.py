@@ -120,8 +120,8 @@ LEGEND2 = [
 # ------------------------------------------------------------------ data
 raw = json.load(open(DATA))
 OFF = raw["offices"]
-MEAS = ["sent", "removed", "processed", "retb", "b1", "s1", "b2", "s2",
-        "off", "bob", "nss", "nsh"]
+MEAS = ["applies", "sent", "removed", "processed", "retb", "b1", "s1", "b2",
+        "s2", "off", "bob", "nss", "nsh"]
 
 # Board order: New Starts Showed desc, then Applies desc.
 def _fix(v):
@@ -171,7 +171,7 @@ AUDIT_HEAD = ["· Emails Received", "· Scooper In", "· File Import In", "· Ma
 DAILY_HEAD = (["Date", "Week Ending", "Manager", "Office"]
               # "Ret Booked" is the numerator implied by AppStream's own Retention
               # Call List %, stored so a stitched week rebuilds the cohort rate.
-              + ["Sent to Call List", "Removed", "Processed", "Ret Booked",
+              + ["Applies", "Sent to Call List", "Removed", "Processed", "Ret Booked",
                  "1st Booked", "1st Showed",
                  "2nd Booked", "2nd Showed", "Job Offered", "BOB",
                  "NS Scheduled", "NS Showed"]
@@ -332,7 +332,8 @@ print("pace curve (cumulative share by Mon..Sun):")
 for _k in ["applies", "sent", "b1", "off", "bob", "nss", "nsh"]:
     print("   %-8s %s" % (_k, ["%.0f%%" % (100 * x) for x in PACE_CURVE[_k]]))
 
-COL = dict(zip(MEAS, ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"]))
+COL = dict(zip(MEAS, ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N",
+                      "O", "P", "Q"]))
 GCOL = {k: a1(i) for k, i in GOAL_AT.items()}
 
 # ------------------------------------------------------------------ sheets
@@ -397,7 +398,7 @@ values = [
 
 # ---- Manager Board
 BCOLS = [
-    ("Applies", "derived", "applies"), ("Removed", "n", "removed"),
+    ("Applies", "n", "applies"), ("Removed", "n", "removed"),
     ("Removal %", "pctd", ("removed", "processed")), ("Sent to CL", "n", "sent"),
     ("Ret to CL %", "pctd", ("retb", "sent")), ("1st Bkd", "n", "b1"),
     ("1st Shw", "n", "s1"), ("1st Shw %", "pct", ("s1", "b1")),
@@ -481,7 +482,7 @@ values.append({"range": "'Manager Board'!%s%d" % (a1(MIRROR0), M0), "values": mi
 # ---- Manager Trend
 METRICS = [
     ("grp", "SOURCING", 0),
-    ("derived", "Total Applies", None),
+    ("n", "Total Applies", "applies"),
     ("n", "Removed — duplicate / DQ", "removed"),
     ("n", "Sent to Call List", "sent"),
     ("pctd", "Removal %", ("removed", "processed")),
@@ -589,7 +590,7 @@ values.append({"range": "'Manager Trend'!A1", "values": trend})
 # Each metric names a numerator column, a denominator column, and how to combine
 # them, so a single formula serves counts, sums and ratios alike.
 MX_DEFS = [
-    ("Total Applies",             "Sent to Call List", "Removed",           "sum"),
+    ("Total Applies",             "Applies",           "Applies",           "one"),
     ("Removed",                   "Removed",           "Removed",           "one"),
     ("Removal %",                 "Removed",           "Sent to Call List", "pctsum"),
     ("Sent to Call List",         "Sent to Call List", "Sent to Call List", "one"),
@@ -617,8 +618,8 @@ MX_TOT = MX_M0 + len(MANAGERS)
 
 def mx(mgr_ref, week_ref):
     def sumifs(col):
-        s = ("SUMIFS(INDEX('Daily Log'!$E:$P,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
-             "'Daily Log'!$E$1:$P$1,0))" % (MX_H, col))
+        s = ("SUMIFS(INDEX('Daily Log'!$E:$Q,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
+             "'Daily Log'!$E$1:$Q$1,0))" % (MX_H, col))
         # SUMIFS needs at least one criterion pair, so the office-total / all-weeks
         # cell gets an always-true "manager is not blank" rather than none at all.
         s += ",'Daily Log'!$C:$C,%s" % (mgr_ref or '"<>"')

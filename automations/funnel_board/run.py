@@ -64,8 +64,8 @@ OFFICES = [
     ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
     ("Salik Mallick",     "21328", "Muhammad UI Haque"),
 ]
-MEAS = ["sent", "removed", "processed", "retb", "b1", "s1", "b2", "s2",
-        "off", "bob", "nss", "nsh"]
+MEAS = ["applies", "sent", "removed", "processed", "retb", "b1", "s1", "b2",
+        "s2", "off", "bob", "nss", "nsh"]
 AUDIT = ["emails_rx", "scoop_rx", "file_rx", "manual",
          "sent_email", "scoop_s", "file_s", "rm_email", "rm_scoop"]
 
@@ -90,7 +90,7 @@ def read_daily_log(S):
     def col(name):
         return hdr.index(name) if name in hdr else None
     ci = {k: col(h) for k, h in zip(
-        MEAS, ["Sent to Call List", "Removed", "Processed", "Ret Booked",
+        MEAS, ["Applies", "Sent to Call List", "Removed", "Processed", "Ret Booked",
                "1st Booked", "1st Showed", "2nd Booked", "2nd Showed",
                "Job Offered", "BOB", "NS Scheduled", "NS Showed"])}
     ai = {k: col(h) for k, h in zip(
