@@ -32,9 +32,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request, AuthorizedSession
-
+from automations.funnel_board.auth import session as _auth_session
 from automations.shared.tableau_patchright import (
     appstream_direct_session, APPSTREAM_PROFILE_DIR,
 )
@@ -44,8 +42,8 @@ from automations.funnel_board.fetch import report_week
 HERE = Path(__file__).resolve().parent
 SSID = os.environ.get("FUNNEL_SSID", "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
-TOKEN = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# Sheets credentials live in auth.py — shared with build.py, service account
+# first. See the note there on why the personal token is only a fallback.
 
 # name -> (office id, the owner string AppStream's switcher matches on)
 OFFICES = [
@@ -75,11 +73,7 @@ def log(m):
 
 
 def _session():
-    creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
-    if not creds.valid and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        TOKEN.write_text(creds.to_json(), encoding="utf-8")
-    return AuthorizedSession(creds)
+    return _auth_session(verbose=True)
 
 
 def read_daily_log(S):

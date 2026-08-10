@@ -7,22 +7,22 @@ import datetime as dt
 import os
 import json
 import statistics
+import sys
 from pathlib import Path
 
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request, AuthorizedSession
+# run.py launches this as a plain script, so only its own directory lands on
+# sys.path — put the repo root there too, or the `automations.` import below
+# can't resolve.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from automations.funnel_board.auth import session as _auth_session  # noqa: E402
 
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 DATA = os.environ.get("FUNNEL_DATA") or str(
     Path(__file__).resolve().parent / "state" / "funnel_data.json")
 
-TOKEN = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
-creds = Credentials.from_authorized_user_file(str(TOKEN), ["https://www.googleapis.com/auth/spreadsheets"])
-if not creds.valid and creds.expired and creds.refresh_token:
-    creds.refresh(Request())
-    TOKEN.write_text(creds.to_json(), encoding="utf-8")
-S = AuthorizedSession(creds)
+S = _auth_session(verbose=True)
 
 
 def call(path, payload, method="post"):
