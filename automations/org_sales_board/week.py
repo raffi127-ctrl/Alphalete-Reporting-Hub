@@ -8,8 +8,10 @@ days complete; the rollover (freeze + advance the columns) runs Tuesday.
 
 This must be applied in TWO coordinated places, or data gets mislabeled
 (verified 2026-06-08):
-  1. PIN — the Tableau views are pinned to a week-ending via the
-     'Sale Date Week Ending (mon-sun)' filter. Pin to reporting_sunday() so
+  1. PIN — the Tableau views are pinned to a week-ending via their week
+     filter (usually captioned 'Sale Date Week Ending (mon-sun)', but the
+     caption is per-view and Tableau ignores a wrong one in SILENCE — see
+     ScrapeSpec.week_pin_field). Pin to reporting_sunday() so
      on Monday the views RETURN last week's complete data (confirmed: pinning
      WE 6/7 on Monday returned all 54 owners; the default/this-week pin
      returned only Monday's 2). Without the pin the views give this week's

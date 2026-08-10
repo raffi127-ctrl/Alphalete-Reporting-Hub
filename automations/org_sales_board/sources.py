@@ -104,7 +104,11 @@ DAILY_SOURCES: List[Source] = [
         shared_key="box",
         notes="Pull config lives in section_pull.BOX_SPEC (CROSSTAB, worksheet "
               "'Daily Tracker Sales': Owner Name | Mon (06-22)…Sun | Grand "
-              "Total). Workbook renamed 2026-06-29 from B2BBOXEnergy/"
+              "Total). Its week filter is captioned 'Sale Date Weekending' — "
+              "NOT the '(mon-sun)' caption the other views use — so the pin "
+              "must be sent under that name or Tableau ignores it silently "
+              "and Mondays pull the new week (Eve 2026-08-10). Workbook "
+              "renamed 2026-06-29 from B2BBOXEnergy/"
               "B2BBOXEnergyDailyTracker (old path 404s). Owner names are clean "
               "here (no |company| suffix); 'Roshan Ahmad' aliased to the board "
               "row 'Roshan Amin Ahmad' via BOARD_NAME_ALIASES."),

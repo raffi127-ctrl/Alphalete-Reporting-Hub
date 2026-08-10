@@ -593,8 +593,14 @@ class ReadinessCache:
         spec = _sp.BOX_SPEC
         out = Path(tempfile.gettempdir()) / f"probe_{source_id.replace(':', '_')}.csv"
         try:
-            download_crosstab_patchright(spec.view_url, spec.crosstab_sheet, out,
-                                         verbose=False)
+            # The SAME url the fill pulls — week-pinned + :refresh=yes. Without
+            # the pin this navigated the bare view, which on a Monday is the
+            # brand-new week, so max(date) could never reach the completed
+            # Sunday and the gate always fell open at the fallback hour
+            # (Eve 2026-08-10).
+            download_crosstab_patchright(
+                _sp.pinned_view_url(spec, self.target_date),
+                spec.crosstab_sheet, out, verbose=False)
         except Exception as e:  # noqa: BLE001
             line = str(e).splitlines()[0][:120] if str(e) else repr(e)
             return Readiness(False, f"Box extract not pullable yet ({line})")

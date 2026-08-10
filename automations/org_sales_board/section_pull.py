@@ -91,11 +91,22 @@ class ScrapeSpec:
     product_col: str = "Product Type (Broken Out)"  # the per-row product label
     skip_owners: tuple = ()      # crosstab grand-total rows to drop (e.g.
     #   "Sales Total"). Matched case-insensitively against the owner cell.
-    week_pin: bool = False       # append the current "Sale Date Week Ending
-    #   (mon-sun)" filter to view_url so the view shows THIS week, not whatever
-    #   week the saved view defaults to. Fiber's AllproductsRafsteam view was
-    #   stuck on last week (WE 5/31), writing last week's numbers into this
-    #   week's columns (Megan 2026-06-02).
+    week_pin: bool = False       # append the current week-ending filter to
+    #   view_url so the view shows THIS week, not whatever week the saved view
+    #   defaults to. Fiber's AllproductsRafsteam view was stuck on last week
+    #   (WE 5/31), writing last week's numbers into this week's columns
+    #   (Megan 2026-06-02).
+    week_pin_field: str = "Sale Date Week Ending (mon-sun)"
+    #   The FILTER FIELD NAME the pin is sent as. Tableau matches URL filter
+    #   params on the field's exact caption and IGNORES anything else in
+    #   SILENCE — a wrong name doesn't error, it just leaves the view on its
+    #   saved week. Most of these workbooks caption it "Sale Date Week Ending
+    #   (mon-sun)"; the BOX tracker captions it "Sale Date Weekending", so its
+    #   pin had been a no-op since the workbook was rebuilt and every Monday
+    #   run pulled the NEW week instead of the closing one (Eve 2026-08-10 —
+    #   BOX's Sunday column came up blank on the board every single week).
+    #   Confirm a new spec's caption in the view's own filter card before
+    #   trusting week_pin.
 
 
 def _norm_section_owner(raw: str, strip_office: bool) -> str:
@@ -291,6 +302,42 @@ def parse_crosstab_byday(
     return out
 
 
+def pinned_view_url(spec: ScrapeSpec, today: Optional[dt.date] = None,
+                    logfn=None) -> str:
+    """`spec.view_url` + the week pin + `:refresh=yes` — the URL the fill pulls.
+
+    Factored out so anything ELSE reading the same view reads the same week.
+    readiness._probe_box_daily used to navigate the bare `spec.view_url`, which
+    on a Monday is the brand-new week: its max date could never reach the
+    completed Sunday, so the Box gate never confirmed and simply fell open at
+    08:00 every Monday.
+    """
+    view_url = spec.view_url
+    if spec.week_pin:
+        # Pin to the REPORTING week's ending Sunday (rolls Tuesday — on Monday
+        # this is LAST week's Sunday, so the view returns the just-finished
+        # week's COMPLETE data, not the new week's partial. Verified 2026-06-08:
+        # pinning WE 6/7 on Monday returned all 54 owners vs 2 for the this-week
+        # pin). ISO date — Tableau silently ignores MM/DD/YYYY.
+        from urllib.parse import quote
+        from automations.org_sales_board import week as _wk
+        we_sunday = _wk.reporting_sunday(today or dt.date.today())
+        sep = "&" if "?" in view_url else "?"
+        view_url = (f"{view_url}{sep}"
+                    f"{quote(spec.week_pin_field)}"
+                    f"={quote(we_sunday.isoformat())}")
+        if logfn:
+            logfn(f"  [{spec.section_label}] week-pinned to WE "
+                  f"{we_sunday.isoformat()} via {spec.week_pin_field!r}")
+    # Force a fresh server-side query so the crosstab download reflects LIVE data,
+    # not Tableau's cached render. The VAs read the live view and have Sunday by ~8am;
+    # our cached download lagged ~2h (empty Sunday until ~10am on Mondays). :refresh=yes
+    # re-runs the query against the current extract on load, matching what they see.
+    # (Megan 2026-07-13: beat the VA — complete board emailed by 8am CST.)
+    sep_r = "&" if "?" in view_url else "?"
+    return f"{view_url}{sep_r}:refresh=yes"
+
+
 def pull_section_byday(
     spec: ScrapeSpec,
     out_dir: Path,
@@ -303,29 +350,7 @@ def pull_section_byday(
     out_dir.mkdir(parents=True, exist_ok=True)
     name = spec.out_name or f"org_sales_board_{spec.metric.lower()}_byday.csv"
     out_path = out_dir / name
-    view_url = spec.view_url
-    if spec.week_pin:
-        # Pin to the REPORTING week's ending Sunday (rolls Tuesday — on Monday
-        # this is LAST week's Sunday, so the view returns the just-finished
-        # week's COMPLETE data, not the new week's partial. Verified 2026-06-08:
-        # pinning WE 6/7 on Monday returned all 54 owners vs 2 for the this-week
-        # pin). ISO date — Tableau silently ignores MM/DD/YYYY.
-        from urllib.parse import quote
-        from automations.org_sales_board import week as _wk
-        td = today or dt.date.today()
-        we_sunday = _wk.reporting_sunday(td)
-        sep = "&" if "?" in view_url else "?"
-        view_url = (f"{view_url}{sep}"
-                    f"{quote('Sale Date Week Ending (mon-sun)')}"
-                    f"={quote(we_sunday.isoformat())}")
-        logfn(f"  [{spec.section_label}] week-pinned to WE {we_sunday.isoformat()}")
-    # Force a fresh server-side query so the crosstab download reflects LIVE data,
-    # not Tableau's cached render. The VAs read the live view and have Sunday by ~8am;
-    # our cached download lagged ~2h (empty Sunday until ~10am on Mondays). :refresh=yes
-    # re-runs the query against the current extract on load, matching what they see.
-    # (Megan 2026-07-13: beat the VA — complete board emailed by 8am CST.)
-    sep_r = "&" if "?" in view_url else "?"
-    view_url = f"{view_url}{sep_r}:refresh=yes"
+    view_url = pinned_view_url(spec, today, logfn=logfn)
     if spec.method == CROSSTAB:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         logfn(f"  downloading {spec.section_label} crosstab "
@@ -439,8 +464,15 @@ BOX_SPEC = ScrapeSpec(
     method=CROSSTAB,
     crosstab_sheet="Daily Tracker Sales",
     skip_owners=("Grand Total", "Total"),
-    week_pin=True,    # pin to the reporting week (Monday = last week). No-op if
-    #   this workbook ignores the filter; harmless either way.
+    week_pin=True,    # pin to the reporting week (Monday = last week).
+    week_pin_field="Sale Date Weekending",   # ← this view's OWN caption. It is
+    #   not the "(mon-sun)" one every other spec uses, and Tableau ignores a
+    #   wrong caption silently, so the pin did nothing: on Mondays the view sat
+    #   on the NEW week ("Mon (08-10)", one owner, zero sales) and the fill had
+    #   nothing for the closing SUNDAY, which is the only day the daily runs
+    #   never cover a second time. That's why BOX's Sunday cells were blank
+    #   while the rest of the board was complete (Eve 2026-08-10). Verified
+    #   live: pinning WE 2026-08-09 returns Mon 08-03 … Sun 08-09.
     out_name="org_sales_board_box_byday.csv",
 )
 

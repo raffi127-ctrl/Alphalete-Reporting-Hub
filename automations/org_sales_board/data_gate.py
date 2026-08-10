@@ -67,15 +67,43 @@ def _is_lagging(name: str) -> bool:
     return any(n.startswith(s) for s in LAGGING_SECTIONS)
 
 
+def _cell_lower(g, r: int, c: int) -> str:
+    from automations.org_sales_board import slack_post as sp
+    return sp._cell(g, r, c).strip().lower()
+
+
+def _covers(g, header_row: int, day: dt.date, today: dt.date) -> bool:
+    """Is `day` inside this section's OWN 7-day span?
+
+    Sections don't all start on Monday: Frontier runs SUN–SAT, so on a Monday
+    its week ends Saturday and Sunday is not on it yet — both roll together on
+    Tuesday. Reading every section against the board's Mon–Sun week called that
+    a missing column every Monday (Eve 2026-08-10). True when the section has
+    no readable weekday header, so an unknown shape still gets checked.
+    """
+    from automations.org_sales_board import fill_section as fs
+    hdr = _cell_lower(g, header_row, 3)
+    if hdr not in fs.WEEKDAY_ORDER:
+        return True
+    anchor = fs.SectionAnchor(
+        header_row=header_row, daynum_row=header_row + 1,
+        totals_row=header_row + 2, day_col_by_daynum={}, running_total_col=10,
+        icd_rows={}, first_weekday=fs.WEEKDAY_ORDER.index(hdr))
+    return day in fs.section_week(anchor, today)
+
+
 def coverage(g=None, yday: Optional[dt.date] = None) -> List[dict]:
     """Per-section fill of YESTERDAY's day column. One dict per daily section:
-    {row, name, lagging, col, reps, filled, missing[names]}. `col` is None when
-    the section has no column for that date (week not rolled / headers moved)."""
+    {row, name, lagging, col, expected, reps, filled, missing[names]}. `col` is
+    None when the section has no column for that date (week not rolled /
+    headers moved); `expected` is False when that date isn't on the section's
+    own week at all (a Sun–Sat section on a Monday), which is not a gap."""
     from automations.org_sales_board import slack_post as sp   # heavy chain: lazy
     if g is None:
         g = _grid()
+    today = dt.date.today()
     if yday is None:
-        yday = dt.date.today() - dt.timedelta(days=1)
+        yday = today - dt.timedelta(days=1)
     out = []
     for h in sp._header_rows(g):
         name = sp._cell(g, h, 1).strip() or sp._cell(g, h, 2).strip()
@@ -86,6 +114,7 @@ def coverage(g=None, yday: Optional[dt.date] = None) -> List[dict]:
                    if col else [])
         out.append({"row": h, "name": name, "lagging": _is_lagging(name),
                     "col": col, "reps": len(reps),
+                    "expected": _covers(g, h, yday, today),
                     "filled": len(reps) - len(missing) if col else 0,
                     "missing": missing})
     return out
@@ -113,9 +142,11 @@ def gate(g=None, yday: Optional[dt.date] = None, *, now: Optional[dt.datetime] =
         return True, "no daily sections found — not holding (nothing to measure)"
 
     d = f"{yday.month}/{yday.day}"
-    reps = sum(s["reps"] for s in secs)
-    filled = sum(s["filled"] for s in secs)
-    no_col = [s for s in secs if s["col"] is None]
+    reps = sum(s["reps"] for s in secs if s["expected"])
+    filled = sum(s["filled"] for s in secs if s["expected"])
+    # `expected` False = the date isn't on that section's own week (a Sun–Sat
+    # section on a Monday). Not a gap, and not something a re-run can change.
+    no_col = [s for s in secs if s["col"] is None and s["expected"]]
     short = [s for s in secs if s["col"] and s["missing"] and not s["lagging"]]
     lagging_blank = [s["name"] for s in secs if s["lagging"] and s["missing"]]
 
@@ -160,7 +191,7 @@ def missing_sections(g=None, yday: Optional[dt.date] = None) -> List[str]:
         return []
     out = [f"{s['name']} (row {s['row'] + 1}) — no {d} column; its day-number "
            "row is frozen on an older week"
-           for s in secs if s["col"] is None]
+           for s in secs if s["col"] is None and s["expected"]]
     out += [f"{s['name']} (row {s['row'] + 1}) — {len(s['missing'])}/{s['reps']} "
             f"rep cells blank for {d}"
             for s in secs if s["col"] and s["missing"] and not s["lagging"]]

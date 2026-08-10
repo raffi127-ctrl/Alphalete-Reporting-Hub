@@ -38,8 +38,9 @@ from automations.focus_office_att.aliases import (
 )
 from automations.alphalete_org_report.tableau_http import _norm_owner
 
-WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday",
-            "friday", "saturday", "sunday"}
+WEEKDAY_ORDER = ["monday", "tuesday", "wednesday", "thursday",
+                 "friday", "saturday", "sunday"]
+WEEKDAYS = set(WEEKDAY_ORDER)
 RUNNING_TOTAL_HDR = "running week totals"
 TOTALS_ROW_LABEL = "totals"
 
@@ -85,6 +86,12 @@ class SectionAnchor:
     day_col_by_daynum: Dict[int, int]  # day-of-month → 1-indexed col
     running_total_col: int             # 1-indexed (J)
     icd_rows: Dict[str, int]           # sheet ICD name → 1-indexed row
+    first_weekday: int = 0             # weekday index (Mon=0…Sun=6) of the
+    #   section's LEFTMOST day column. Almost every section runs Mon–Sun (0),
+    #   but Frontier runs SUN–SAT (6): its week is a day to the left of the
+    #   board's reporting week, so "yesterday" on a Monday is genuinely not on
+    #   it yet. Anything asking "should this day have a column?" has to read
+    #   this or it flags a healthy Sun–Sat section every Monday.
 
     @property
     def first_day_col(self) -> int:
@@ -151,10 +158,34 @@ def find_daily_section(grid: List[List[str]], label: str) -> SectionAnchor:
         raise ValueError(
             f"Section '{label}' has no 'Totals' row after row {daynum_row}.")
 
+    first_weekday = WEEKDAY_ORDER.index(
+        _cell(grid, header_row - 1, min(day_cols) - 1).strip().lower())
+
     return SectionAnchor(
         header_row=header_row, daynum_row=daynum_row, totals_row=totals_row,
         day_col_by_daynum=day_col_by_daynum, running_total_col=run_col,
-        icd_rows=icd_rows)
+        icd_rows=icd_rows, first_weekday=first_weekday)
+
+
+def section_week(anchor: SectionAnchor,
+                 today: Optional[dt.date] = None) -> List[dt.date]:
+    """The 7 dates this section's own columns should be carrying.
+
+    The board's reporting week is Mon–Sun and rolls on Tuesday, but a section
+    can start on a different weekday — Frontier runs SUN–SAT — and then its
+    week sits offset from the reporting week rather than lagging behind it. On
+    Mon 8/10 the Mon–Sun sections carry 8/3–8/9 while Frontier correctly
+    carries 8/2–8/8; both roll together on Tuesday.
+
+    So: take the reporting week's Monday and shift by the section's own start
+    weekday, choosing the NEAR side (Sun-start = the Sunday before, not six
+    days after) so the span still straddles the same rollover.
+    """
+    from automations.org_sales_board import week as _wk
+    monday = _wk.reporting_monday(today or dt.date.today())
+    offset = anchor.first_weekday - (7 if anchor.first_weekday > 3 else 0)
+    start = monday + dt.timedelta(days=offset)
+    return [start + dt.timedelta(days=i) for i in range(7)]
 
 
 def missing_day_columns(anchor: SectionAnchor,
@@ -171,10 +202,16 @@ def missing_day_columns(anchor: SectionAnchor,
 
     Today itself is in progress and never expected, so only days BEFORE today
     count. Callers turn a non-empty result into INCOMPLETE.
+
+    Measured against the SECTION's own week, not the board's (see
+    section_week). Frontier runs Sun–Sat, so on a Monday its week legitimately
+    ends on Saturday and it has no column for Sunday — reading it against the
+    Mon–Sun reporting week reported a dropped day every single Monday
+    (Eve 2026-08-10). A frozen day-number cell still shows up: the chain then
+    disagrees with the section's OWN span too.
     """
     today = today or dt.date.today()
-    from automations.org_sales_board import week as _wk
-    return [d for d in _wk.reporting_week(today)
+    return [d for d in section_week(anchor, today)
             if d < today and d.day not in anchor.day_col_by_daynum]
 
 
