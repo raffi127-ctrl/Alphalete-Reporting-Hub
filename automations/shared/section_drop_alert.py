@@ -9,10 +9,11 @@ only turned the Hub card orange + wrote a manifest note — SILENT. That day the
 ABP Tableau view collapsed and EVERY office quietly dropped its ABP card; nobody
 knew until a rep flagged it hours later.
 
-This fires a LOUD ping into #claudecorrections-and-requests, @-mentioning Megan,
-straight from write_manifest — so any recorded failure is heard at 4am, not
-found at noon. It is ADDITIVE: the exit-0 / no-double-post behavior is unchanged;
-this is the alarm bolted on top.
+This fires a LOUD 🚨 alert into #claudecorrections-and-requests straight from
+write_manifest — so any recorded failure is heard at 4am, not found at noon. It
+is ADDITIVE: the exit-0 / no-double-post behavior is unchanged; this is the alarm
+bolted on top. (No @-mention: Megan asked to stop being pinged on every drop,
+2026-08-10 — the 🚨 + channel is enough to catch the eye without a notification.)
 
 Dedup: one post per (report_id, date, failed-set). A morning re-run that drops
 the SAME section again won't re-spam; a different drop still alerts. Posted as
@@ -27,7 +28,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 CHANNEL = "C0BK5PRG259"       # #claudecorrections-and-requests
-MEGAN = "U04G5HJBGFN"         # Megan Hidalgo — @-mentioned so it can't be missed
+MEGAN = "U04G5HJBGFN"         # Megan Hidalgo — no longer @-mentioned (2026-08-10)
 _STATE_DIR = Path("output") / "section_drop_alerts"
 
 
@@ -58,7 +59,7 @@ def _compose(report_id: str, failed: Sequence[str],
     n = len(failed)
     s = "s" if n != 1 else ""
     lines = [
-        f"<@{MEGAN}> 🚨 *{report_id}* dropped {n} {what}{s} this run — "
+        f"🚨 *{report_id}* dropped {n} {what}{s} this run — "
         f"{headline_tail}",
         f"*Missing:* {', '.join(failed)}",
     ]
