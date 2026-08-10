@@ -22,6 +22,7 @@ the amount is read from that row's money cells with their dated descriptions.
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 import sys
 from pathlib import Path
@@ -337,23 +338,29 @@ def _pull_program_summary(week_label, page=None, verbose=True):
     week_end = D.week_date(week_label)
     if week_end is None:
         raise RuntimeError(f"can't read a week-ending date out of {week_label!r}")
-    # ⚠ THE WEEK ANCHOR IS NOT SETTLED — THIS IS OFF BY ONE WEEK AS WRITTEN.
-    # Measured 2026-08-10 on the live tab: asking for '8.2.26' returned every
-    # owner's 7.26.26 figure and overwrote the whole column with last week's
-    # money (headline $1,062,591.00 -> $1,007,630.50; restored by hand).
+    # THE WEEK ANCHOR, and why it is +7 and not the Sunday itself.
     #
-    # Why: `_program_summary_url` pins 'Processed Week' to `we_sunday - 6 days`,
-    # and its only proven caller is opt_je, whose `week_end` is the JE week
-    # (which does not end on the DD tab's SUNDAY). Feeding it the DD Sunday
-    # therefore lands one Monday early. The fix is probably `+ 1 day` (the
-    # Monday AFTER the week closes, i.e. when DD is processed) — but that is a
-    # HYPOTHESIS, and guessing is what caused the overwrite.
+    # `opt_phase._program_summary_url(x)` pins the view's 'Processed Week' to
+    # `x - 6 days`. Its only other caller is opt_je, whose week does NOT end on
+    # the DD tab's Sunday, so that -6 is right there and wrong here.
     #
-    # SETTLE IT READ-ONLY, on Lucy 1, before trusting this:
-    #     lucy rerun dd_populate --source program-summary      # NO --write
-    # The dry run prints every cell it WOULD change against the tab. When the
-    # deltas are ~0 for the 37 owners, the anchor is right; then flip the
-    # default below back to "program-summary".
+    # MEASURED TWICE on 2026-08-10, same result both times: asking for '8.2.26'
+    # returned every owner's 7.26.26 figure (Hayden $1,750 not $1,400, David
+    # Martinez $152 not $0, Jahvid $7,300 not $7,210). The first time it ran
+    # with --write and overwrote the whole column with last week's money
+    # (headline $1,062,591.00 -> $1,007,630.50, restored by hand); the second
+    # was the dry probe, which is what this entry now exists for.
+    #
+    # So: DD is processed the Monday AFTER the week closes. The week ending
+    # Sunday S is served by 'Processed Week' = S + 1, and since the helper
+    # subtracts 6 we hand it S + 7. Written as the two steps rather than one
+    # magic number so the next reader can check each half.
+    #
+    # RE-PROBE AFTER ANY CHANGE HERE — never with --write:
+    #     lucy rerun dd_populate_probe
+    # Deltas ~0 across the 37 owners = the anchor is right.
+    processed_monday = week_end + dt.timedelta(days=1)
+    week_end = processed_monday + dt.timedelta(days=6)   # the helper undoes this
 
     own = page is None
     ctx = None
