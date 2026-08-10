@@ -211,7 +211,7 @@ def _newest_week(weeks):
     return max(weeks, key=keyf) if weeks else None
 
 
-def accumulate(write=False, page=None, verbose=True, source="program-summary"):
+def accumulate(write=False, page=None, verbose=True, source="dd-detail"):
     """Write this week's figure for the special-case names (the four adoptions)
     into the 'ICD (Special Cases)' section on the DD tab, current-week column —
     the weekly step that builds their history one week at a time. DRY-RUN unless
@@ -337,6 +337,23 @@ def _pull_program_summary(week_label, page=None, verbose=True):
     week_end = D.week_date(week_label)
     if week_end is None:
         raise RuntimeError(f"can't read a week-ending date out of {week_label!r}")
+    # ⚠ THE WEEK ANCHOR IS NOT SETTLED — THIS IS OFF BY ONE WEEK AS WRITTEN.
+    # Measured 2026-08-10 on the live tab: asking for '8.2.26' returned every
+    # owner's 7.26.26 figure and overwrote the whole column with last week's
+    # money (headline $1,062,591.00 -> $1,007,630.50; restored by hand).
+    #
+    # Why: `_program_summary_url` pins 'Processed Week' to `we_sunday - 6 days`,
+    # and its only proven caller is opt_je, whose `week_end` is the JE week
+    # (which does not end on the DD tab's SUNDAY). Feeding it the DD Sunday
+    # therefore lands one Monday early. The fix is probably `+ 1 day` (the
+    # Monday AFTER the week closes, i.e. when DD is processed) — but that is a
+    # HYPOTHESIS, and guessing is what caused the overwrite.
+    #
+    # SETTLE IT READ-ONLY, on Lucy 1, before trusting this:
+    #     lucy rerun dd_populate --source program-summary      # NO --write
+    # The dry run prints every cell it WOULD change against the tab. When the
+    # deltas are ~0 for the 37 owners, the anchor is right; then flip the
+    # default below back to "program-summary".
 
     own = page is None
     ctx = None
@@ -364,7 +381,7 @@ def _pull_program_summary(week_label, page=None, verbose=True):
     return out
 
 
-def accumulate_all(write=False, page=None, verbose=True, source="program-summary"):
+def accumulate_all(write=False, page=None, verbose=True, source="dd-detail"):
     """Populate the DD tab's CURRENT-WEEK column for EVERY Active-YES owner from
     OUR Tableau pull — the switch off the VA hand-fill (Megan 2026-07-30).
     DRY-RUN unless write=True.
@@ -752,7 +769,7 @@ def main(argv=None):
                          "Active-YES owner from our mapping (dry-run without "
                          "--write) — the switch off the VA hand-fill")
     ap.add_argument("--source", choices=("program-summary", "dd-detail"),
-                    default="program-summary",
+                    default="dd-detail",
                     help="with --populate or --accumulate: which Tableau view to read. "
                          "'program-summary' (default) is PROGRAM SUMMARY / "
                          "DOWNLINE VIEW, the one Eve builds the bulletin from; "
