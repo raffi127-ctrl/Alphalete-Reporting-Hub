@@ -3340,6 +3340,25 @@
       "verify": null,
       "timeout_minutes": 30
     },
+    "alphalete_org_b2b": {
+      "on_scheduler": true,
+      "_note": "Re-run ONLY the B2B OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_b2b` — added 2026-08-10 after a full rerun (rerun-2026-08-10-095316-alphalete_org_focus) printed the '=== B2B OPT ===' banner and then went SILENT for ~42min until the 45m queue cap killed it, so Retail (step 6) never ran and the whole-report retry was the only way back in. Completes the per-step set alongside alphalete_org_retail / _box / _je. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes this step). source_type tableau so the Chrome-collision guard runs first. data_sources [] like _je so a manual retry is never held by a readiness gate. timeout_minutes 25 (not 30): this step's failure mode is a SILENT hang on the patchright Tableau session, and the mini queue is serial — cap it below the 45m default so a repeat can't block everything behind it. Not a Hub card.",
+      "display_name": "Alphalete Org 1on1s — B2B OPT only",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.alphalete_org_report.opt_b2b"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 25
+    },
     "recruiter_retention_weekly": {
       "order": 3,
       "on_scheduler": true,
