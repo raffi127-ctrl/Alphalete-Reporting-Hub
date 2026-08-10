@@ -1154,7 +1154,8 @@ def _http_download(session, url: str, filename: str, logfn,
         return None
 
 
-def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
+def run_retail_costco(dry_run: bool = False, week: Optional[str] = None,
+                      logfn=print) -> dict:
     """Pull every Retail Tableau source + fill Boaktear's Retail tab:
       - Costco section (per-store wireless lines)
       - Akib's office metrics (churn 0-30/60/90, Next Up %, Extra/Premium %, ABP %)
@@ -1163,8 +1164,29 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     Per [[feedback_no_cross_report_data_reuse]] every source CSV is
     downloaded fresh by this run — never reads an artifact produced
     by another Hub card.
+
+    week: a PAST week-ending Sunday as 'YYYY-MM-DD' — BACKFILL MODE. Only the
+    sources whose Tableau URL carries a date filter are refilled:
+
+        pinned  -> Costco by-club (_by_club_view_url), SARA Plus office
+                   (_sara_view_data_url), ABP (_abp_view_url)
+        NOT     -> churn (CHURNRATES/RETAILPULL.csv), activation
+                   (ACTIVATIONRATES.csv), money lost (ECBONUSAWARENESS),
+                   Direct Deposit (ORG_DD_URL)
+
+    The four unpinned views are fixed custom-view URLs with no date params:
+    they always serve whatever the saved view currently shows. Pulling them
+    during a backfill and writing the result into a PAST week's column would
+    file today's numbers under an old date — silently wrong, and impossible to
+    spot afterwards. So backfill mode does not download them at all and passes
+    empty dicts, which the fill functions already log as [miss-data] and skip.
+    Their cells in the target week are left EXACTLY as they are.
+    Added 2026-08-10, after the SARA scrape turned out to have been returning
+    0 offices since at least 7/20 (fixed the same day) and those weeks needed
+    refilling.
     """
     errors: List[str] = []
+    backfill = week is not None
 
     # ONE unattended patchright session powers BOTH the HTTP-direct CSV pulls
     # (Costco by-club, churn, activation — fast ~1s each) AND the View Data /
@@ -1172,8 +1194,27 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     # Tableau cookies to a plain requests.Session, so the .csv endpoints work
     # off the same login — no CDP / Report Chrome dependency anywhere in this
     # run (Megan 2026-05-24: full patchright cutover so Retail runs unattended).
-    week_col_label = _current_target_week_col_label()
+    if backfill:
+        try:
+            _wk = dt.datetime.strptime(week, "%Y-%m-%d").date()
+        except ValueError:
+            raise SystemExit(
+                f"--week must be a week-ending SUNDAY as YYYY-MM-DD (got {week!r})")
+        if _wk.weekday() != 6:
+            raise SystemExit(
+                f"--week must be a SUNDAY (the week-ending date); "
+                f"{week} is a {_wk.strftime('%A')}")
+        week_col_label = f"{_wk.month}/{_wk.day}/{_wk.year % 100}"
+    else:
+        week_col_label = _current_target_week_col_label()
     logfn(f"OPT Retail: target week column = {week_col_label!r}")
+    if backfill:
+        logfn("OPT Retail: *** BACKFILL MODE *** — refilling ONLY the "
+              "week-pinned sources: Costco by-club, SARA Plus office, ABP.")
+        logfn("OPT Retail: NOT touched (their Tableau views carry no date "
+              "filter, so pulling them would file TODAY's numbers under "
+              f"{week_col_label}): churn 0-30/60/90, Activation /Approval %, "
+              "Money Lost from TMP, Direct Deposit.")
 
     by_club_path: Optional[Path] = None
     churn_path: Optional[Path] = None
@@ -1203,6 +1244,16 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     def _fallback_existing(filename: str) -> Optional[Path]:
         target = OUTPUT_DIR / filename
+        # On a backfill there is no such thing as an acceptable on-disk
+        # fallback: the freshness window below accepts a file up to 3 days
+        # old, which is by definition THIS week's download, and writing it
+        # into a PAST week's column is precisely the silent stale fill this
+        # helper exists to prevent. Refuse for every caller (_try_with_retry
+        # lands here too, not just the session-failure branch).
+        if backfill:
+            logfn(f"OPT Retail: backfill — refusing the on-disk {filename} "
+                  f"fallback (it holds current-week data, not {week_col_label})")
+            return None
         if not (target.exists() and target.stat().st_size > 500):
             return None
         age_s = dt.datetime.now().timestamp() - target.stat().st_mtime
@@ -1265,11 +1316,14 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             # run (churn/activation + the slow UI scrapes) if its source came
             # through. (A partial run mid-rollout is more confusing than none.)
             if by_club_path is not None:
-                churn_path = _http_download(session, RETAIL_CHURN_URL,
-                                            RETAIL_CHURN_FILENAME, logfn, errors)
-                activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
-                                                 RETAIL_ACTIVATION_FILENAME,
-                                                 logfn, errors)
+                # Both of these views are date-less custom-view .csv endpoints —
+                # skipped entirely in backfill mode (see the docstring).
+                if not backfill:
+                    churn_path = _http_download(session, RETAIL_CHURN_URL,
+                                                RETAIL_CHURN_FILENAME, logfn, errors)
+                    activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
+                                                     RETAIL_ACTIVATION_FILENAME,
+                                                     logfn, errors)
 
                 # ---- Step 2: UI scrapes (same Chrome launch). Three paths:
                 #   - SARA: View Data scrape with dynamic Min/Max Date URL
@@ -1296,31 +1350,40 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                         RETAIL_ABP_SHEET, abp_target,
                         verbose=False, page=page))
 
-                money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
-                money_lost_path = _try_with_retry(
-                    "patchright Crosstab", RETAIL_MONEY_LOST_FILENAME, 3,
-                    lambda: download_crosstab_patchright(
-                        RETAIL_MONEY_LOST_URL, RETAIL_MONEY_LOST_SHEET,
-                        money_target, verbose=False, page=page))
+                # Money Lost + Direct Deposit are also date-less views — same
+                # reasoning as churn/activation above, skipped on a backfill.
+                if not backfill:
+                    money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
+                    money_lost_path = _try_with_retry(
+                        "patchright Crosstab", RETAIL_MONEY_LOST_FILENAME, 3,
+                        lambda: download_crosstab_patchright(
+                            RETAIL_MONEY_LOST_URL, RETAIL_MONEY_LOST_SHEET,
+                            money_target, verbose=False, page=page))
 
-                # Direct Deposit — org-wide DD view (same source every campaign
-                # uses; Megan 2026-05-25). Crosstab path like NDS.
-                dd_target = OUTPUT_DIR / RETAIL_DD_FILENAME
-                dd_path = _try_with_retry(
-                    "patchright Crosstab", RETAIL_DD_FILENAME, 3,
-                    lambda: download_crosstab_patchright(
-                        ORG_DD_URL, ORG_DD_SHEET, dd_target,
-                        verbose=False, page=page))
+                    # Direct Deposit — org-wide DD view (same source every
+                    # campaign uses; Megan 2026-05-25). Crosstab path like NDS.
+                    dd_target = OUTPUT_DIR / RETAIL_DD_FILENAME
+                    dd_path = _try_with_retry(
+                        "patchright Crosstab", RETAIL_DD_FILENAME, 3,
+                        lambda: download_crosstab_patchright(
+                            ORG_DD_URL, ORG_DD_SHEET, dd_target,
+                            verbose=False, page=page))
     except Exception as e:
         logfn(f"OPT Retail: patchright session failed: "
               f"{type(e).__name__}: {str(e)[:160]}")
         errors.append(f"patchright session: {type(e).__name__}: {str(e)[:120]}")
-        sara_office_path = sara_office_path or _fallback_existing(
-            RETAIL_SARA_PLUS_OFFICE_FILENAME)
-        abp_path = abp_path or _fallback_existing(RETAIL_ABP_FILENAME)
-        money_lost_path = money_lost_path or _fallback_existing(
-            RETAIL_MONEY_LOST_FILENAME)
-        dd_path = dd_path or _fallback_existing(RETAIL_DD_FILENAME)
+        # NEVER fall back to an on-disk CSV during a backfill. _fallback_existing
+        # deliberately accepts a file up to 3 days old — which on a backfill is
+        # THIS week's download, and writing it into a past week's column is the
+        # exact silent-stale-fill that guard exists to prevent. Leave them None
+        # and let the metrics stay unfilled.
+        if not backfill:
+            sara_office_path = sara_office_path or _fallback_existing(
+                RETAIL_SARA_PLUS_OFFICE_FILENAME)
+            abp_path = abp_path or _fallback_existing(RETAIL_ABP_FILENAME)
+            money_lost_path = money_lost_path or _fallback_existing(
+                RETAIL_MONEY_LOST_FILENAME)
+            dd_path = dd_path or _fallback_existing(RETAIL_DD_FILENAME)
 
     # Costco by-club is the blocking output — abort if its source failed
     # (or the whole patchright session failed to open).
@@ -1404,8 +1467,16 @@ if __name__ == "__main__":
     import sys as _sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--week", metavar="YYYY-MM-DD",
+                    help="Backfill a PAST week, given its week-ending SUNDAY. "
+                         "Refills only the date-filtered sources (Costco "
+                         "by-club, SARA Plus office, ABP). Churn, Activation "
+                         "/Approval %, Money Lost and Direct Deposit are left "
+                         "untouched — their Tableau views carry no date "
+                         "filter, so backfilling them would write today's "
+                         "numbers into that past week's column.")
     args = ap.parse_args()
-    result = run_retail_costco(dry_run=args.dry_run)
+    result = run_retail_costco(dry_run=args.dry_run, week=args.week)
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Errors: {len(result['errors'])}")
