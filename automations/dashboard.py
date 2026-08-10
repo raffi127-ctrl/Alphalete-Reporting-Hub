@@ -7522,6 +7522,17 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
         _n = len(_phases)
         if _done >= _n:
             return "ok", _done
+        # THE ✅ IS THE FINISH LINE. Once the approval row is there the card is
+        # green even if an earlier phase never wrote its row — nobody can
+        # approve a review post that was never posted, so the checkmark is
+        # proof the phases before it happened. This is not theoretical: MONDAY's
+        # board email and captainship drafts don't come through the orchestrator
+        # at all (deploy/board_catchup.sh runs them in the afternoon, once
+        # Sunday has landed), so a Monday can be posted, approved and mailed
+        # with rows missing. Without this the card would sit orange all Monday
+        # on the one day it is least allowed to look unfinished.
+        if _approval in _phases and _cal_statuses.get((_approval, _day)) == "success":
+            return "ok", _done
         _RUNNING = ("running", "started", "in progress", "in-progress")
         _failed = any(_s not in (None, "success") and _s not in _RUNNING
                       for _s in _sts)

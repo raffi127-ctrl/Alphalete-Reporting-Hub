@@ -55,6 +55,25 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/board-catchup-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Board catch-up starting (extra args: ${*:-none})" > "$LOG_FILE"
 
+# Tell the Hub a step of MONDAY's run finished. Monday's board email and
+# captainship drafts never touch the orchestrator (they run from here, in the
+# afternoon, once Sunday has landed), and the orchestrator is what normally
+# writes these rows — so without this Monday leaves no trace on the Hub and the
+# cards' phase pills can never leave orange, on the one day of the week they are
+# least allowed to look unfinished. Card ids, not orchestrator report_ids.
+# Best-effort and never fatal: the Hub is display, the send is the job.
+#   hub_row <card id> <display name>
+hub_row () {
+  [ "$#" -ge 2 ] || return 0
+  # Only on a real run: `bash board_catchup.sh --dry-run` passes args through and
+  # must not claim on the Hub that anything ran.
+  [ "$CATCHUP_DRY" = "0" ] || return 0
+  "$VENV_PY" -u -c "from automations.shared import hub_activity as H; \
+H.log_completed('$1', '$2', user='board-catchup')" >> "$LOG_FILE" 2>&1 \
+    || echo "[$(date)] (Hub row for $1 did not land — pill only)" >> "$LOG_FILE"
+}
+if [ "$#" -eq 0 ]; then CATCHUP_DRY=0; else CATCHUP_DRY=1; fi
+
 # Fill ONLY the late-posting sections on the copy tab (comma-separated; run.py
 # splits on ','). No --with-captainships. Any extra arg (e.g. --dry-run) wins.
 if [ "$(date +%u)" = "1" ]; then
@@ -94,7 +113,12 @@ if [ "$(date +%u)" = "1" ]; then
   # is the day the board is least finished, so it is the last day that should
   # mail itself unattended. Recipients stay the proving list (Rafael + Megan).
   echo "[$(date)] MONDAY: posting the board email for review (fill exit $ST)" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.org_sales_board.review_gate --post >> "$LOG_FILE" 2>&1
+  if "$VENV_PY" -u -m automations.org_sales_board.review_gate --post >> "$LOG_FILE" 2>&1; then
+    # Same row the orchestrator writes Tue-Sun when its --post entry finishes, so
+    # Monday's card reads identically: posted → 🟣 awaiting the ✅ → green when
+    # the gate records the approval.
+    hub_row "sales-board-screenshot-email" "Org. Sales Board Email"
+  fi
   # Captainship Report drafts: MONDAY'S ONLY PATH. Both orchestrator entries
   # (captainship_drafts and captainship_drafts_review) run Tue-Sun, so without
   # this branch Monday is the one day the captains get nothing. It belongs here
@@ -110,8 +134,16 @@ if [ "$(date +%u)" = "1" ]; then
   # path here can mail a captain.
   echo "[$(date)] MONDAY: building Captainship drafts (previews only)" >> "$LOG_FILE"
   if "$VENV_PY" -u -m automations.captainship_drafts.run --dry-run >> "$LOG_FILE" 2>&1; then
+    hub_row "captainship-drafts" "Captainship Reports"
     echo "[$(date)] MONDAY: posting the review link" >> "$LOG_FILE"
-    "$VENV_PY" -u -m automations.captainship_drafts.review_gate --post >> "$LOG_FILE" 2>&1 ||       echo "[$(date)] MONDAY: review post failed — previews are in output/, ask by hand" >> "$LOG_FILE"
+    if "$VENV_PY" -u -m automations.captainship_drafts.review_gate --post >> "$LOG_FILE" 2>&1; then
+      # Underscored on purpose: that is the id this step's rows carry on Tue-Sun
+      # (an orchestrator-materialised library card), and the card's phase list
+      # matches the stored id EXACTLY — there is no normalisation.
+      hub_row "captainship_drafts_review" "Captainship Reports (a revisión)"
+    else
+      echo "[$(date)] MONDAY: review post failed — previews are in output/, ask by hand" >> "$LOG_FILE"
+    fi
   else
     # Deliberately not fatal to $ST: the board fill above succeeded or failed on
     # its own, and a broken draft build must not report the BOARD as broken.
