@@ -359,8 +359,13 @@ RECIPIENTS: dict = {
         "multani.business@gmail.com",
     ],
     "carlos": [
+        # Ethan McKendree removed 2026-08-10 — Eve took him out of the "Carlos'
+        # Captain Team" group by hand and seed_groups.py, which REBUILDS that
+        # group from this list, put him straight back. Same story as Jeremiah
+        # Minor below. Note this group is SHARED (distro.GROUPS): being on it
+        # also mailed him the Org Sales Board email and the Override Bulletin.
         "atefchoudhury349@gmail.com", "CarlosHidalgo349@gmail.com",
-        "ethanmckendree01@gmail.com", "wgary.att@gmail.com",
+        "wgary.att@gmail.com",
         "georgehipolito2@gmail.com", "jamisgaray18@gmail.com",
         "smgroupjoe@yahoo.com", "joeyrmz2002@gmail.com",
         "justinryanwood.93@gmail.com", "kevdriggs25@gmail.com",
