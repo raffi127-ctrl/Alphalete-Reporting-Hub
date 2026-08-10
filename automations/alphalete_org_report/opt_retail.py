@@ -126,6 +126,22 @@ _RETAIL_SARA_BASE_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DropshipV_2/SARAPLUSSALESSUMMARY"
 )
+# SARAPLUSSALESSUMMARY is a MULTI-WORKSHEET dashboard (see the note above), so
+# Tableau leaves 'Download -> Data' disabled until a worksheet is active. This
+# call used to pass no activate_xy at all, which sends _scrape_one_view_data
+# down its else-branch: that branch never checks aria-disabled and just calls
+# data_item.click() with Playwright's DEFAULT 30s timeout, so a disabled menu
+# item surfaces as a bare "Locator.click: Timeout 30000ms exceeded" with no clue
+# what went wrong. It only ever worked when the dashboard happened to open with
+# a sheet already active. On 2026-08-10 it stopped: three consecutive runs lost
+# the office CSV, leaving Boaktear Chowdhury and Ronald Dawson with no Internet
+# / Total New Lines / Next Up % / Extra-Premium % for the week.
+# (0.5, 0.5) is the value org_sales_board/sara_pull.py already uses against this
+# same workbook — and its comment records the SAME two owners dropping out when
+# the worksheet failed to activate. The activate_xy branch is also strictly more
+# robust: it probes 9 vertical offsets and keeps whichever one leaves the 'Data'
+# menu item enabled, instead of clicking blind.
+RETAIL_SARA_ACTIVATE_XY = (0.5, 0.5)
 
 
 def _sara_view_data_url(week_end_label: str) -> str:
@@ -1269,6 +1285,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                     lambda: scrape_view_data_patchright(
                         _sara_view_data_url(week_col_label), sara_target,
                         verbose=False, page=page,
+                        activate_xy=RETAIL_SARA_ACTIVATE_XY,
                         scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
 
                 abp_target = OUTPUT_DIR / RETAIL_ABP_FILENAME
