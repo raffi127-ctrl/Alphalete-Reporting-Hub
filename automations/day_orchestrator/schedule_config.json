@@ -2577,7 +2577,9 @@
       "timeout_minutes": 10
     },
     "resume_pushing": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "standalone_watch": false,
+      "_retired_note": "MERGED into applicant_push 2026-08-10. Resume Pushing no longer runs as its own report — its batch stage + OAT leftovers now run together q5min under applicant_push on Lucy 2. on_scheduler:false + standalone_watch:false so machine_digest's missed-run watcher STOPS expecting it (it ran historically, so without standalone_watch:false the 3-week baseline keeps posting 'didn't run today on Lucy 2'). Entry kept only so old `lucy rerun resume_pushing` handles still resolve.",
       "machine": "Lucy 2",
       "_note": "Carlos's ApplicantStream office-11580 resume extract + send-to-AI, as a remote-runnable handle. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it \u2014 its real schedule is the 8am launchd job (com.alphalete.resume-pushing, installed via install_resume_pushing_agent). This entry exists so `lucy rerun resume_pushing --dry-run` (safe probe) and `lucy rerun resume_pushing` (LIVE) work on Lucy 2, and so the Hub card's Dry Run / Run Live buttons have a path. SEND-TO-AI IS IRREVERSIBLE \u2014 always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first.",
       "display_name": "Resume Pushing (Carlos, office 11580)",
@@ -2598,6 +2600,7 @@
     },
     "oat_processing": {
       "on_scheduler": false,
+      "standalone_watch": false,
       "machine": "Lucy 2",
       "_off_scheduler_note": "Carlos's 'One App at a time' (OAT) leftovers handler on the CLASSIC ApplicantStream surface (office 11580) \u2014 the manual queue resume_pushing can't auto-send (dupes / no-phone / past-interview). Built 2026-07-26 from Carlos's Loom. on_scheduler:false so the 4am orchestrator NEVER runs it; this entry exists ONLY so `lucy rerun oat_processing --debug` (page health check) and the default dry-run (read + classify, NO clicks) resolve on Lucy 2. --live sends real texts + removes records and is NOT wired to any launchd agent \u2014 do not run --live until Megan/Carlos sign off. source_type 'applicantstream' (NOT appstream/tableau) so rerun SKIPS chrome_guard and never disturbs box_order_log's CDP Chrome. Reuses the classic applicant_tracker session/profile.",
       "display_name": "OAT Processing (Carlos, office 11580)",
@@ -2618,6 +2621,7 @@
     },
     "oat_summary": {
       "on_scheduler": false,
+      "standalone_watch": false,
       "machine": "Lucy 2",
       "_off_scheduler_note": "OAT end-of-day scorecard: reads output/oat-activity-<date>.csv, renders the scorecard PDF, posts to #alphaletegp-recruiting (C09L1S3MQ1E) under a 'DAILY PUSH SCORECARD' thread as Lucy. `lucy rerun oat_summary` posts; `lucy rerun oat_summary --dry-run` builds the PDF only. The 8pm deploy triggers this after the final push. Built 2026-07-27.",
       "display_name": "OAT Daily Scorecard (Slack)",
