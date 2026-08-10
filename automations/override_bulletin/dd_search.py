@@ -277,10 +277,72 @@ def accumulate(write=False, page=None, verbose=True):
     return figs
 
 
-def accumulate_all(write=False, page=None, verbose=True):
+def _pull_program_summary(week_label, page=None, verbose=True):
+    """{alias-canonical key: dollars} for one week, from PROGRAM SUMMARY /
+    DOWNLINE VIEW — the view Eve reads by hand.
+
+    THE SOURCE OF RECORD SINCE 2026-08-10 (Eve: "usar mi forma"). She builds
+    `Org. Bulletin.xlsx` from this view, exported as a crosstab with the filter
+    on Downline, so reading the same view is what makes the tab agree with the
+    bulletin she publishes. The two Tableau views are NOT interchangeable:
+    ORG DD Detail had Akib Chowdhury $384.60 lower for WE 8.2.26, and it was the
+    only ICD of 37 that disagreed. Two known differences, both in her favour:
+
+      * PROGRAM SUMMARY **folds a trailing ' LEDGER' row into that ICD's total**
+        (`opt_phase.parse_program_summary`), where `_pull` below DROPS every
+        ledger line. Her figure is the one the org has always been shown.
+      * it PINS the week via 'Processed Week', so it back-fills any week instead
+        of serving only the current one.
+
+    Reuses `opt_je.download_je_direct_deposit`, which already sweeps the click
+    points for the downline worksheet and refuses a 1-row scrape — the silent
+    wrong answer that comes from landing on the owner-summary table above it.
+    Not re-implemented here: one scraper, one set of fixes.
+    """
+    from automations.override_bulletin import dd_data as D
+    from automations.alphalete_org_report.opt_je import download_je_direct_deposit
+
+    week_end = D.week_date(week_label)
+    if week_end is None:
+        raise RuntimeError(f"can't read a week-ending date out of {week_label!r}")
+
+    own = page is None
+    ctx = None
+    if own:
+        from automations.shared.tableau_patchright import tableau_session
+        ctx = tableau_session(headless=True, verbose=verbose)
+        page = ctx.__enter__()
+    try:
+        raw = download_je_direct_deposit(week_end, page,
+                                         logfn=(print if verbose else lambda *_: None))
+    finally:
+        if own and ctx is not None:
+            ctx.__exit__(None, None, None)
+
+    # Re-key through the ICD aliases: the scraper normalises with opt_phase's
+    # own `_norm`, which is NOT the alias-canonical key the DD tab is matched on.
+    aliases = F.load_alias_map()
+    out = {}
+    for owner, amt in (raw or {}).items():
+        k = P._norm_name(F.canon(owner, aliases))
+        out[k] = round(out.get(k, 0.0) + (amt or 0.0), 2)
+    if verbose:
+        print(f"-> PROGRAM SUMMARY / DOWNLINE {week_label}: "
+              f"{len(out)} ICD owner(s)")
+    return out
+
+
+def accumulate_all(write=False, page=None, verbose=True, source="program-summary"):
     """Populate the DD tab's CURRENT-WEEK column for EVERY Active-YES owner from
-    OUR Tableau mapping — the switch off the VA hand-fill (Megan 2026-07-30).
-    Combined week (Sat+Sun deposit dates) + fees excluded. DRY-RUN unless write=True.
+    OUR Tableau pull — the switch off the VA hand-fill (Megan 2026-07-30).
+    DRY-RUN unless write=True.
+
+    `source` picks the view (Eve 2026-08-10):
+      * "program-summary" (DEFAULT) — PROGRAM SUMMARY / DOWNLINE VIEW, the one
+        Eve reads by hand. See `_pull_program_summary` for why it wins.
+      * "dd-detail" — the original ORG DD Detail crosstab. Kept so the two can
+        still be compared (and `--all` / `compare_all` is unchanged), never as
+        the default again.
 
     SKIPS the Credico owners (Abel Draper / Jahvid Thompson): their tab cell is the
     Tableau part PLUS a Credico deposit folded by the separate credico step, so
@@ -290,9 +352,6 @@ def accumulate_all(write=False, page=None, verbose=True):
     from automations.override_bulletin import dd_data as D
     from automations.recruiting_report import fill as _fill
     aliases = F.load_alias_map()
-
-    per, _ = _pull(page=page, verbose=verbose, targets=None)
-    per = {o: _regroup_weeks(wk) for o, wk in per.items()}
 
     ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
     vals = ws.get_all_values()
@@ -304,14 +363,27 @@ def accumulate_all(write=False, page=None, verbose=True):
         return {}
     tabweek = hdr[wcol].strip()
 
-    # our combined-week figure per alias-canonical key
-    ourk = {}
-    for o, wk in per.items():
-        d = wk.get(tabweek)
-        if not d:
-            continue
-        k = P._norm_name(F.canon(o, aliases))
-        ourk[k] = round(ourk.get(k, 0) + d["clean"], 2)
+    # The tab is read FIRST so the pull can be pinned to the week the column
+    # actually carries. PROGRAM SUMMARY takes a week ('Processed Week'), so
+    # asking it for the wrong one silently writes another week's DD into this
+    # column — the 5/24-5/31 duplication, and the reason _program_summary_url
+    # refuses to run unpinned.
+    if source == "program-summary":
+        ourk = _pull_program_summary(tabweek, page=page, verbose=verbose)
+    elif source == "dd-detail":
+        per, _ = _pull(page=page, verbose=verbose, targets=None)
+        per = {o: _regroup_weeks(wk) for o, wk in per.items()}
+        ourk = {}
+        for o, wk in per.items():
+            d = wk.get(tabweek)
+            if not d:
+                continue
+            k = P._norm_name(F.canon(o, aliases))
+            ourk[k] = round(ourk.get(k, 0) + d["clean"], 2)
+    else:
+        raise SystemExit(f"unknown --source {source!r} "
+                         f"(program-summary | dd-detail)")
+    print(f"source: {source}")
 
     # Fold Credico (the SECOND DD source) so those owners' figure = Tableau part
     # + Credico deposit, exactly as the tab holds it. Same source dd_data uses;
@@ -647,6 +719,13 @@ def main(argv=None):
                     help="populate the tab's current-week column for EVERY "
                          "Active-YES owner from our mapping (dry-run without "
                          "--write) — the switch off the VA hand-fill")
+    ap.add_argument("--source", choices=("program-summary", "dd-detail"),
+                    default="program-summary",
+                    help="with --populate: which Tableau view to read. "
+                         "'program-summary' (default) is PROGRAM SUMMARY / "
+                         "DOWNLINE VIEW, the one Eve builds the bulletin from; "
+                         "'dd-detail' is the original ORG DD Detail crosstab, "
+                         "kept only for comparison.")
     ap.add_argument("--roll", action="store_true",
                     help="insert the new week-ending column on the DD tab if the "
                          "week just ended isn't its leftmost week (dry-run without "
@@ -663,7 +742,7 @@ def main(argv=None):
             ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(tab)
             roll_week(ws, dry_run=not a.write)
         elif a.populate:
-            accumulate_all(write=a.write)
+            accumulate_all(write=a.write, source=a.source)
         elif a.all:
             compare_all(week=a.week)
         elif a.accumulate:
