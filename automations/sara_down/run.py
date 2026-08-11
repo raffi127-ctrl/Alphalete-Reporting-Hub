@@ -14,11 +14,23 @@ Safe by default: --dry-run builds and previews the email (writes a .eml) but
 sends nothing, and a real run with no recipients configured refuses to send
 with a clear message instead of half-escalating.
 
+Attachments (fixed 2026-08-11, Dylan's "the files are unable to be read"):
+EVERY image on a post is downloaded, VERIFIED to be real image bytes by its
+magic number, given a unique filename with the correct extension, and attached
+with the content-type the bytes actually are. A Slack token missing `files:read`
+returns HTTP 200 with an HTML sign-in page, not a 401 — that page used to be
+attached as "IMG_5203.jpg" and no recipient could open it. Now a post whose
+images won't download is SKIPPED (and alerted) so it retries, rather than
+escalating something Sara+ support can't read.
+
     # preview against a test channel, no email sent:
     python -m automations.sara_down.run --dry-run --channel C0TEST123
 
     # look up a leader's Slack id (to fill APPROVED_POSTERS):
     python -m automations.sara_down.run --whois dylanjtwaddle@gmail.com
+
+    # READ-ONLY: can this machine actually download the posted screenshots?
+    python -m automations.sara_down.run --diag
 
     # live (only once config is filled + Megan says go):
     python -m automations.sara_down.run
@@ -125,13 +137,210 @@ def _image_files(msg: dict) -> list[dict]:
             if str(f.get("mimetype", "")).startswith("image/")]
 
 
-def _download(url: str) -> bytes:
-    # url_private needs files:read — prefer the bot token (has it; bot must be in
-    # the channel), fall back to the user token.
-    tok = _bot_token() or _user_token()
-    r = requests.get(url, headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+# ---- image bytes: download, VERIFY, normalise --------------------------------
+# Magic bytes for every image format Slack hands us. This table is the whole
+# point of the 2026-08-11 fix: a Slack token WITHOUT `files:read` doesn't get a
+# 401 from files.slack.com — it gets HTTP 200 with a ~61KB HTML sign-in page.
+# raise_for_status() is happy, so that page used to sail straight into the email
+# as "IMG_5203.jpg" and every recipient saw an attachment their mail client
+# couldn't open. Never trust the filename or the Content-Type — sniff the bytes.
+def _sniff_image(data: bytes) -> str | None:
+    """Return the real image subtype ('png'/'jpeg'/'heic'/…) or None if these
+    bytes are not an image at all (an HTML error page, an empty body, …)."""
+    if not data or len(data) < 12:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data.startswith(b"BM"):
+        return "bmp"
+    if data[:2] in (b"II", b"MM") and data[2:4] in (b"*\x00", b"\x00*"):
+        return "tiff"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[4:8] == b"ftyp":
+        brand = data[8:12].lower()
+        if brand in (b"heic", b"heix", b"hevc", b"heim", b"heis", b"hevm",
+                     b"hevs", b"mif1", b"msf1"):
+            return "heic"
+        if brand in (b"avif", b"avis"):
+            return "avif"
+    return None
+
+
+def _tokens() -> list[tuple[str, str]]:
+    """Every Slack token this machine has, as (label, token), most-likely-first.
+
+    The USER token goes first now (2026-08-11). The old code preferred the BOT
+    token on the comment "has it; bot must be in the channel" — but the Lucy app
+    was created with chat:write + files:write + im:write and NO `files:read`, so
+    on the mini (which has a bot token; Megan's laptop doesn't) every download
+    silently returned an HTML page. We still try the bot token as a fallback,
+    and we verify the bytes either way, so neither token being wrong can put a
+    broken attachment in front of Sara+ support again."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for label, getter in (("user token", _user_token), ("bot token", _bot_token)):
+        try:
+            tok = getter()
+        except Exception:
+            tok = None
+        if tok and tok not in seen:
+            seen.add(tok)
+            out.append((label, tok))
+    return out
+
+
+def _download(url: str, token: str) -> bytes:
+    r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
+                     timeout=60)
     r.raise_for_status()
     return r.content
+
+
+def _download_image(f: dict) -> tuple[bytes, str]:
+    """Download ONE Slack file and return (real image bytes, subtype).
+
+    Tries every token this machine has and accepts only bytes that actually
+    sniff as an image. Raises SaraDownError — naming the exact Slack fix — if
+    none of them do, so the caller can skip the post and retry next tick rather
+    than emailing the vendor a screenshot they can't open."""
+    url = f.get("url_private") or f.get("url_private_download") or ""
+    name = f.get("name") or f.get("id") or "image"
+    if not url:
+        raise SaraDownError(f"Slack gave no url_private for {name!r}.")
+
+    toks = _tokens()
+    if not toks:
+        raise SaraDownError(
+            "No Slack token on this machine — can't download the screenshots.")
+
+    problems: list[str] = []
+    for label, tok in toks:
+        try:
+            data = _download(url, tok)
+        except Exception as e:
+            problems.append(f"{label}: {type(e).__name__} {str(e)[:80]}")
+            continue
+        subtype = _sniff_image(data)
+        if subtype:
+            expected = int(f.get("size") or 0)
+            if expected and len(data) != expected:
+                print(f"  note: {name} downloaded {len(data)} bytes, Slack said "
+                      f"{expected} — attaching what we got")
+            return data, subtype
+        head = data[:40].decode("utf-8", "replace").strip().replace("\n", " ")
+        problems.append(f"{label}: {len(data)} bytes, not an image ({head!r})")
+
+    raise SaraDownError(
+        f"Slack returned a sign-in page instead of the image {name!r}.\n"
+        f"    tried -> " + "\n    tried -> ".join(problems) + "\n"
+        "    FIX: the Slack app whose token this machine uses is missing the "
+        "`files:read` scope. api.slack.com/apps -> the Lucy app -> OAuth & "
+        "Permissions -> add `files:read` -> Reinstall to Workspace -> push the "
+        "new token with  lucy set_slack_user_token <xoxp-…>  (or "
+        "set_slack_token for the bot token). The app must also be a member of "
+        "the private #saraplus-issues channel.")
+
+
+# Photos straight off an iPhone are 5-7 MB each; three of them blow past Gmail's
+# 25 MB message cap and the whole escalation bounces. Budget on the ENCODED size
+# — base64 is 4/3 of the raw bytes, so 20 MB of photos is a 27 MB email — and
+# shrink only when we're actually near the cap, so a single screenshot still
+# goes out pixel-for-pixel as posted.
+_GMAIL_LIMIT = 25 * 1024 * 1024
+_MAX_ENCODED_BYTES = 22 * 1024 * 1024    # headroom for the body + MIME overhead
+_B64_RATIO = 4 / 3
+# Each step is (longest edge, JPEG quality). A Sara+ error dialog is readable
+# well below the first step; we stop as soon as the batch fits.
+_SHRINK_STEPS = ((2400, 85), (1800, 80), (1280, 75))
+
+
+def _to_jpeg(data: bytes, *, max_dim: int | None = None,
+             quality: int = 85) -> bytes | None:
+    """Re-encode to JPEG (optionally downscaled). None if Pillow can't do it."""
+    try:
+        import io
+        from PIL import Image
+        try:                              # iPhone .heic needs the plugin
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except Exception:
+            pass
+        im = Image.open(io.BytesIO(data))
+        im.load()
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        if max_dim and max(im.size) > max_dim:
+            im.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+    except Exception as e:                # noqa: BLE001 — never block a send
+        print(f"  (re-encode skipped: {type(e).__name__}: {str(e)[:80]})")
+        return None
+
+
+def _prepare(images: list[tuple[str, bytes, str]]) -> list[tuple[str, bytes, str]]:
+    """Make every image openable by the recipient and the set small enough to send.
+
+    1. HEIC -> JPEG. iPhone .heic attachments are a real dead end in Outlook and
+       most webmail, which is the other half of "unable to be read".
+    2. If the batch would bust Gmail's cap, downscale the big ones to JPEG.
+    3. Unique filenames with the RIGHT extension — two attachments called
+       image.png (or a PNG named .jpg) is how clients end up showing one.
+    """
+    out: list[tuple[str, bytes, str]] = []
+    for name, data, subtype in images:
+        if subtype in ("heic", "avif"):
+            jpg = _to_jpeg(data)
+            if jpg:
+                print(f"  converted {name} ({subtype}) -> jpeg so it opens "
+                      "outside Apple Mail")
+                name, data, subtype = name.rsplit(".", 1)[0] + ".jpg", jpg, "jpeg"
+        out.append((name, data, subtype))
+
+    def encoded(items) -> float:
+        return sum(len(d) for _, d, _ in items) * _B64_RATIO
+
+    if encoded(out) > _MAX_ENCODED_BYTES:
+        print(f"  {encoded(out)/1e6:.1f} MB encoded — over Gmail's "
+              f"{_GMAIL_LIMIT // (1024 * 1024)} MB cap, downscaling the photos")
+        for max_dim, quality in _SHRINK_STEPS:
+            shrunk: list[tuple[str, bytes, str]] = []
+            for name, data, subtype in out:
+                small = _to_jpeg(data, max_dim=max_dim, quality=quality)
+                if small and len(small) < len(data):
+                    name = name.rsplit(".", 1)[0] + ".jpg"
+                    data, subtype = small, "jpeg"
+                shrunk.append((name, data, subtype))
+            out = shrunk
+            print(f"  -> {encoded(out)/1e6:.1f} MB at {max_dim}px/q{quality}")
+            if encoded(out) <= _MAX_ENCODED_BYTES:
+                break
+        else:
+            # Still too big after the smallest step — send anyway rather than
+            # swallow the escalation, but say so loudly in the log.
+            print("  ⚠ still over the cap after downscaling — Gmail may reject "
+                  "this one; the post stays unmarked so it retries.")
+
+    final: list[tuple[str, bytes, str]] = []
+    used: set[str] = set()
+    for i, (name, data, subtype) in enumerate(out):
+        ext = "jpg" if subtype == "jpeg" else subtype
+        stem = name.rsplit(".", 1)[0] if "." in name else name
+        stem = stem.strip() or f"sara-plus-issue-{i + 1}"
+        candidate = f"{stem}.{ext}"
+        n = 2
+        while candidate.lower() in used:
+            candidate = f"{stem}-{n}.{ext}"
+            n += 1
+        used.add(candidate.lower())
+        final.append((candidate, data, subtype))
+    return final
 
 
 def _fmt_when(ts: str) -> str:
@@ -197,13 +406,15 @@ def _polish(text: str) -> str:
 
 
 # ---- the email --------------------------------------------------------------
-def build_email(images: list[tuple[str, bytes]], *, note: str, date: str,
+def build_email(images: list[tuple[str, bytes, str]], *, note: str, date: str,
                 to_addrs: list[str] | None = None,
                 cc_addrs: list[str] | None = None) -> EmailMessage:
     """Escalation email: plain, unmistakable, screenshot(s) attached, leaders CC'd.
 
-    images: list of (filename, bytes) — EVERY image is attached, so a post with
-    several photos comes through as one email with all of them.
+    images: list of (filename, bytes, subtype) — EVERY image is attached, so a
+    post with several photos comes through as one email with all of them. The
+    subtype comes from SNIFFING the bytes (see _download_image), never from the
+    filename, and this function refuses to attach anything that isn't an image.
     to_addrs/cc_addrs default to config; pass explicit lists to override (the
     --test-to path sends to one address with no CC).
 
@@ -237,11 +448,18 @@ def build_email(images: list[tuple[str, bytes]], *, note: str, date: str,
         msg["Cc"] = ", ".join(cc_addrs)
     msg.set_content(body)
 
-    for filename, data in images:
-        subtype = (filename.rsplit(".", 1)[-1].lower() if "." in filename else "png")
-        if subtype == "jpg":
-            subtype = "jpeg"
-        msg.add_attachment(data, maintype="image", subtype=subtype,
+    if not images:
+        raise SaraDownError("No images to attach — refusing to send an empty "
+                            "escalation.")
+    for filename, data, subtype in images:
+        # Last line of defence: a non-image can never reach the vendor, no
+        # matter what changes upstream of here.
+        real = _sniff_image(data)
+        if not real:
+            raise SaraDownError(
+                f"{filename} is not image data ({len(data)} bytes) — refusing "
+                "to attach it. See _download_image for the files:read fix.")
+        msg.add_attachment(data, maintype="image", subtype=real,
                            filename=filename)
     return msg
 
@@ -259,6 +477,42 @@ def _send(msg: EmailMessage) -> None:
         raise SaraDownError(
             "Gmail rejected the login. Check the app password + 2-Step "
             f"Verification for {FROM_ADDR}. ({e})") from e
+
+
+# ---- loud alert when the screenshots can't be fetched ------------------------
+_CORRECTIONS_CHANNEL = "C0BK5PRG259"      # #claudecorrections-and-requests
+_ALERT_STAMP = Path.home() / ".config" / "sara-down" / "download_alert.txt"
+
+
+def _alert_download_failure(detail: str, *, dry_run: bool = False) -> None:
+    """Post ONCE a day into #claudecorrections-and-requests when Slack won't hand
+    over the screenshots. This is the alarm that was missing: from 7/21 to 8/10
+    every escalation went to Sara+ support with an HTML sign-in page renamed
+    .jpg, and the only signal was Dylan noticing weeks later.
+
+    Never raises — an alert must not stop the retry. [[project_corrections_slack_channel]]"""
+    today = datetime.now().date().isoformat()
+    try:
+        if _ALERT_STAMP.read_text().strip() == today:
+            return
+    except Exception:
+        pass
+    text = (
+        "🚨 *Sara+ issue escalation* couldn't download the screenshots — the "
+        "email was NOT sent (it will retry every 5 min).\n"
+        f"```{detail}```\n"
+        "Nothing went to Sara+ support with a broken attachment.")
+    if dry_run:
+        print("  --- corrections alert (dry-run, not sent) ---")
+        print("  " + text.replace("\n", "\n  "))
+        return
+    try:
+        _client().chat_postMessage(channel=_CORRECTIONS_CHANNEL, text=text)
+        _ALERT_STAMP.parent.mkdir(parents=True, exist_ok=True)
+        _ALERT_STAMP.write_text(today)
+        print("  🚨 posted a download-failure alert to #claudecorrections-and-requests")
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ alert didn't post ({type(e).__name__}: {str(e)[:100]})")
 
 
 # ---- the polled processor ---------------------------------------------------
@@ -320,13 +574,24 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
         # grammar before it goes out (falls back to the raw text if the pass fails).
         note = _polish(m.get("text", ""))
         # Download EVERY image on the post so a multi-photo upload comes through
-        # as one email with all of them attached.
-        images: list[tuple[str, bytes]] = []
-        for i, f in enumerate(imgs):
-            fn = f.get("name") or (
-                f"sara-plus-issue-{i + 1}.png" if len(imgs) > 1
-                else "sara-plus-issue.png")
-            images.append((fn, _download(f["url_private"])))
+        # as one email with all of them attached. Each one is verified to be
+        # real image bytes; if ANY of them can't be fetched we skip the whole
+        # post — no state written, so the next 5-min tick retries it once the
+        # token is fixed, instead of burning the one escalation on a broken
+        # attachment (2026-08-11).
+        images: list[tuple[str, bytes, str]] = []
+        try:
+            for i, f in enumerate(imgs):
+                fn = f.get("name") or f"sara-plus-issue-{i + 1}"
+                data, subtype = _download_image(f)
+                images.append((fn, data, subtype))
+            images = _prepare(images)
+        except SaraDownError as e:
+            print(f"  ⚠ SKIPPED ts={ts} — {e}")
+            _alert_download_failure(str(e), dry_run=dry_run)
+            actions.append({"ts": ts, "action": "download_failed",
+                            "error": str(e)})
+            continue
 
         # Effective recipients: a test run emails only test_to (no CC, never the
         # vendor); a real run uses the configured To + CC.
@@ -337,7 +602,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
 
         act = {"ts": ts, "action": "escalate", "when": when,
                "to": eff_to, "cc": eff_cc, "test": bool(test_to),
-               "files": [fn for fn, _ in images]}
+               "files": [fn for fn, _, _ in images]}
 
         msg = build_email(images, note=note, date=date,
                           to_addrs=eff_to, cc_addrs=eff_cc)
@@ -399,6 +664,56 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
     return actions
 
 
+def diag(channel: str | None = None, limit: int | None = None) -> int:
+    """READ-ONLY: can THIS machine actually download the posted screenshots?
+
+    Sends nothing, writes nothing, touches no state. For every recent post it
+    tries each token and reports whether real image bytes came back — the check
+    that would have caught the missing `files:read` scope in July instead of
+    three weeks of unreadable attachments. Run it on the mini after any token
+    change:  lucy rerun sara_down --diag  (or python -m … --diag)."""
+    channel = channel or config.CHANNEL_ID
+    toks = _tokens()
+    print(f"channel: {channel}")
+    print(f"tokens on this machine: {', '.join(l for l, _ in toks) or 'NONE'}")
+    for label, tok in toks:
+        try:
+            import ssl as _ssl
+
+            import certifi
+            from slack_sdk import WebClient
+            w = WebClient(token=tok,
+                          ssl=_ssl.create_default_context(cafile=certifi.where())
+                          ).auth_test()
+            scopes = [s for s in (w.headers.get("x-oauth-scopes") or ""
+                                  ).replace(" ", "").split(",") if s]
+            ok = "files:read" in scopes
+            print(f"  {label}: {w.get('user') or w.get('bot_id')} — "
+                  f"files:read {'YES' if ok else 'MISSING  <-- this is the bug'}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  {label}: auth.test failed ({type(e).__name__})")
+
+    msgs = _client().conversations_history(
+        channel=channel, limit=limit or config.SCAN_LIMIT).get("messages", [])
+    bad = 0
+    for m in sorted(msgs, key=lambda x: x.get("ts", "")):
+        imgs = _image_files(m)
+        if not imgs:
+            continue
+        print(f"\n  post {_fmt_when(m['ts'])}  ({len(imgs)} image"
+              f"{'s' if len(imgs) != 1 else ''})")
+        for f in imgs:
+            try:
+                data, subtype = _download_image(f)
+                print(f"    ✅ {f.get('name')}  {len(data):,} bytes  ({subtype})")
+            except SaraDownError as e:
+                bad += 1
+                print(f"    ❌ {f.get('name')}  {str(e).splitlines()[0]}")
+    print("\n" + ("All screenshots download as real images." if not bad else
+                  f"{bad} file(s) UNREADABLE — see the FIX above."))
+    return 1 if bad else 0
+
+
 def whois(query: str) -> None:
     """Print the Slack user id for an email/name, to fill APPROVED_POSTERS."""
     from automations.shared import slack_metrics_post as smp
@@ -416,6 +731,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="how many recent messages to scan")
     ap.add_argument("--whois", metavar="EMAIL_OR_NAME", default=None,
                     help="print a Slack user id and exit (to fill APPROVED_POSTERS)")
+    ap.add_argument("--diag", action="store_true",
+                    help="READ-ONLY: check this machine can actually download "
+                         "the posted screenshots (sends nothing)")
     ap.add_argument("--test-to", metavar="EMAIL", default=None,
                     help="LIVE test: email only this address (no CC, not the "
                          "vendor) and post a TEST reply in the thread")
@@ -424,6 +742,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.whois:
         whois(args.whois)
         return 0
+
+    if args.diag:
+        return diag(channel=args.channel, limit=args.limit)
 
     if not acquire_lock():
         print("Another sara_down run is active — skipping this tick.")
@@ -442,8 +763,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"BASELINE (first run on this machine): marked {len(baselined)} "
               "existing screenshot(s) as seen — sent nothing. New posts from here "
               "on will escalate.")
+    failed = [a for a in actions if a["action"] == "download_failed"]
     for a in actions:
-        if a["action"] in ("ignored_unapproved", "baselined"):
+        if a["action"] in ("ignored_unapproved", "baselined", "download_failed"):
             if a["action"] == "ignored_unapproved":
                 print(f"  ignored (not an approved poster): {a['poster']}  ts={a['ts']}")
         elif a.get("dry_run"):
@@ -453,7 +775,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  TEST SENT: @ {a['when']} -> To={a['to']} "
                   "(test only, no CC, not the vendor)")
         else:
-            print(f"  ESCALATED: @ {a['when']} -> To={a['to']}")
+            print(f"  ESCALATED: @ {a['when']} -> To={a['to']} "
+                  f"({len(a['files'])} image(s): {', '.join(a['files'])})")
+    if failed:
+        # Non-zero so the Hub / orchestrator sees a real failure — these posts
+        # have NOT been escalated and will retry on the next tick.
+        print(f"\n{len(failed)} post(s) NOT escalated — the screenshots could "
+              "not be downloaded. Run --diag for the exact Slack fix.")
+        return 1
     return 0
 
 
