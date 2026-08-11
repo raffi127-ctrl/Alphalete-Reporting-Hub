@@ -107,8 +107,13 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
     if failed and run_ts is None and alert:
         try:
             from automations.shared import section_drop_alert as _sda
+            # Forward `kind` so a caller can pick the wording (see _KINDS).
+            # The manifest vocabulary ('part', 'step', …) and the alert's
+            # ('section', 'day', 'source') overlap only where a caller means
+            # them to: _KINDS falls back to 'section' for anything it doesn't
+            # recognise, so every existing caller reads exactly as before.
             _sda.alert(report_id=report_id, failed=failed,
-                       remediation=remediation, note=note)
+                       remediation=remediation, note=note, kind=kind)
         except Exception:  # noqa: BLE001 — the alarm must never break the writer
             pass
     return p

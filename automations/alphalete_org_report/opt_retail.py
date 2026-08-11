@@ -1385,10 +1385,28 @@ def run_retail_costco(dry_run: bool = False, week: Optional[str] = None,
                 RETAIL_MONEY_LOST_FILENAME)
             dd_path = dd_path or _fallback_existing(RETAIL_DD_FILENAME)
 
+    # Which Tableau sources did NOT come through this run. Reported by name so
+    # the caller can raise a loud alarm: a missing source does not fail the run
+    # (the other sources still fill their metrics), so without this it reads as
+    # a clean run with a couple of blank rows. That is exactly how SARA stayed
+    # broken from ~7/20 to 8/10 (2026-08-10). Backfill mode deliberately does
+    # not download the four date-less sources, so they are not "missing" there.
+    def _missing_sources() -> List[str]:
+        expected = [("Costco by-club", by_club_path),
+                    ("SARA Plus office", sara_office_path),
+                    ("ABP %", abp_path)]
+        if not backfill:
+            expected += [("churn rates", churn_path),
+                         ("Activation rates", activation_path),
+                         ("Money Lost from TMP", money_lost_path),
+                         ("Direct Deposit", dd_path)]
+        return [name for name, path in expected if path is None]
+
     # Costco by-club is the blocking output — abort if its source failed
     # (or the whole patchright session failed to open).
     if by_club_path is None:
-        return {"filled": [], "skipped": [], "errors": errors}
+        return {"filled": [], "skipped": [], "errors": errors,
+                "missing_sources": _missing_sources()}
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
@@ -1459,7 +1477,8 @@ def run_retail_costco(dry_run: bool = False, week: Optional[str] = None,
         elif title in RETAIL_TAB_ICDS or "boaktear" in title.lower():
             skipped.append(title)
 
-    return {"filled": filled, "skipped": skipped, "errors": errors}
+    return {"filled": filled, "skipped": skipped, "errors": errors,
+            "missing_sources": _missing_sources()}
 
 
 if __name__ == "__main__":
@@ -1480,6 +1499,32 @@ if __name__ == "__main__":
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Errors: {len(result['errors'])}")
+
+    # A source that didn't download leaves its metrics BLANK while everything
+    # else fills — the run still exits 0 and looks fine. Record it so the loud
+    # #claudecorrections ping fires from write_manifest (the same alarm added
+    # 2026-08-07 for the ABP collapse). Without this, the only trace was an
+    # 'Errors: 1' line in a log nobody reads, which is how the SARA Plus scrape
+    # stayed dead from ~2026-07-20 to 2026-08-10 across every Retail tab.
+    # Exit stays 0 on purpose: the fill DID work for the other sources, and a
+    # non-zero here would mark the whole step failed and hide that partial win.
+    missing = result.get("missing_sources") or []
+    if missing and not args.dry_run:
+        print(f"⚠ SOURCE(S) MISSING — metrics fed by these are blank for this "
+              f"week: {', '.join(missing)}")
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(
+                "alphalete_org_retail", failed=missing, retry_args=[],
+                kind="source",
+                note=(f"{len(missing)} Tableau source(s) did not download"
+                      + (f" for week {args.week}" if args.week else "")
+                      + ". The Retail tabs filled from the sources that DID "
+                        "come through; the metrics behind the missing ones are "
+                        "blank, not wrong."))
+        except Exception as e:  # noqa: BLE001 — alerting never breaks the run
+            print(f"  ⚠ couldn't record the missing-source manifest "
+                  f"({type(e).__name__}: {str(e)[:120]})")
     # A source that fails to download costs CELLS, not tabs. The tab still
     # lands in `filled` because its OTHER metrics came through, so the three
     # counters above stay reassuring while an owner's office metrics are

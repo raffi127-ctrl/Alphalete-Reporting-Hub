@@ -49,6 +49,16 @@ _KINDS = {
             "fix the frozen day-number cell to '=<prev cell>+1', then re-run "
             "`{report_id}` — the fill is idempotent.",
             "Every total on that board is undercounting until it's re-run."),
+    # A Tableau SOURCE that didn't download. The tab still fills from the other
+    # sources, so nothing looks broken — the metrics fed by the missing pull are
+    # simply blank. Added 2026-08-10: opt_retail's SARA Plus scrape had been
+    # returning 0 offices since at least 7/20 and the only trace was an
+    # `Errors: 1` buried in a log, so three weeks of Internet / New Lines /
+    # Next Up % / Extra-Premium % went missing across every Retail tab unnoticed.
+    "source": ("Tableau source", "those metrics are BLANK for this week.",
+               "re-run `{report_id}` — the fill is idempotent. If it fails "
+               "again, the Tableau view itself is the problem, not the run.",
+               "The tabs filled, but every metric fed by that source is empty."),
 }
 
 
