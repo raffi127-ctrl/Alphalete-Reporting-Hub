@@ -1,6 +1,6 @@
 #!/bin/bash
 # Org Sales Board — daily Slack post to #top-leaders-alphalete-org, AS LUCY.
-# Runs on the mini (Lucy's token). launchd fires 11 passes 07:10-11:20 CST q25m;
+# Runs on the mini (Lucy's token). launchd fires 11 passes 07:15-11:25 CST q25m;
 # the module's fill-gate holds (exit 75) until YESTERDAY's column is 100% filled,
 # then posts once. A once-per-day state file makes the later passes no-ops.
 #

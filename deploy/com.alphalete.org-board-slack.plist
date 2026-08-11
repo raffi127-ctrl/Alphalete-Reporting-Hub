@@ -30,25 +30,31 @@
          these entries (Hour/Minute are machine LOCAL time; the mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
-        <!-- FIRST SLOT 08:30 -> 07:10 (Eve 2026-08-11). 07:10 and not earlier
-             because the board's last-landing source is the BOX daily tracker,
-             whose Tableau extract refreshes ~7-8am: measured over 8/04-8/11 the
+        <!-- THREE EARLY SLOTS PREPENDED, first one 07:15 (Eve 2026-08-11); the
+             original 08:30..11:25 grid below is untouched.
+
+             WHY 07:15 AND NOT EARLIER. The board's last-landing source is the
+             BOX daily tracker, whose Tableau extract refreshes ~7-8am; the
              board's readiness gate (tableau:box_daily) opened 06:50-07:06 every
-             day, so 07:10 is the first minute a COMPLETE board exists. Earlier
-             would only publish a board with a stale/empty BOX section.
-             The 25-min cadence and the ~11:25 tail are unchanged — later slots
-             are cheap no-ops once the day's post has landed. -->
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>10</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>25</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>50</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>40</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>20</integer></dict>
+             day over 8/04-8/11, and the fill itself takes 9-14 min, so the fill
+             ENDED 07:04-07:11. A slot at 07:10 would sometimes fire while the
+             fill was still running: slack_post.fill_gate would hold it and the
+             board would slip to the NEXT slot, arriving later than before.
+             07:15 clears the fill's observed tail with margin.
+
+             Earlier than the fill is not a "slightly early" board — it is one
+             with a stale or empty BOX section. -->
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>25</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
