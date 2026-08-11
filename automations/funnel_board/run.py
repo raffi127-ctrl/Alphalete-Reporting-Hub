@@ -50,6 +50,7 @@ API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 # name -> (office id, the owner string AppStream's switcher matches on)
 OFFICES = [
     ("Atef Choudhury",    "23467", "Atef Choudhury"),
+    ("Aya Al-Khafaji",    "22992", "Aya Al-Khafaji"),
     ("Carlos Hidalgo",    "11580", "CARLOS HIDALGO"),
     ("Cody Cannon",       "21151", "Cody Cannon"),
     ("Cyrus Wade",        "22815", "Cyrus Wade"),
@@ -62,6 +63,7 @@ OFFICES = [
     ("Rafael Hidalgo",    "11280", "Rafael Hidalgo"),
     ("Rashad Reed",       "23411", "Rashad Reed"),
     ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
+    ("Ryan McSpadden",    "22820", "Ryan McSpadden"),
     ("Salik Mallick",     "21328", "Muhammad UI Haque"),
 ]
 MEAS = ["applies", "sent", "removed", "processed", "retb", "b1", "s1", "b2",
