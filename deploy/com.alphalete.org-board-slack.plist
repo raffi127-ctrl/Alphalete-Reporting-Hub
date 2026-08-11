@@ -30,14 +30,25 @@
          these entries (Hour/Minute are machine LOCAL time; the mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>20</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>10</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>25</integer></dict>
+        <!-- FIRST SLOT 08:30 -> 07:10 (Eve 2026-08-11). 07:10 and not earlier
+             because the board's last-landing source is the BOX daily tracker,
+             whose Tableau extract refreshes ~7-8am: measured over 8/04-8/11 the
+             board's readiness gate (tableau:box_daily) opened 06:50-07:06 every
+             day, so 07:10 is the first minute a COMPLETE board exists. Earlier
+             would only publish a board with a stale/empty BOX section.
+             The 25-min cadence and the ~11:25 tail are unchanged — later slots
+             are cheap no-ops once the day's post has landed. -->
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>25</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>20</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -24,7 +24,7 @@
     </dict>
 
     <!-- Every 15 minutes, all day, every day. The WINDOW lives in the wrapper
-         (org_board_email_review.sh: 9am-8pm), not here — same shape as
+         (org_board_email_review.sh: 7am-8pm), not here — same shape as
          resume_pushing_10min.sh. A checkmark should turn into a sent email
          within a quarter hour, not at a fixed clock time nobody can predict:
          the approver reacts when they read it. Off-window ticks exit 0 in
