@@ -170,9 +170,9 @@ One rule everywhere: **how far off goal are you.**
 Judged on falling *short*. Beating a goal stays green. Removal % inverts — being
 under the removal goal is good.
 
-Only the eight metrics you set goals for are coloured: Removal %, Sent to CL,
-Ret to CL %, 1st Shw %, 2nd Booked %, 2nd Shw %, Offer %, BOB Conv %. Derived
-counts stay black.
+Only the nine metrics you set goals for are coloured: Removal %, Sent to CL,
+Ret to CL %, 1st Shw %, 2nd Booked %, 2nd Shw %, Offer %, BOB Conv %, NS Shw %.
+Derived counts stay black.
 
 **Mid-week, counts are judged on run rate.** A count is compared against
 `goal x the share of a week normally done by that weekday`, measured per metric

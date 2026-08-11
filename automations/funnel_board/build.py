@@ -91,6 +91,7 @@ def a1(i):
 # so a Wednesday number is judged on run rate, not on the full week's target.
 BAND_OK, BAND_WARN = 0.95, 0.90
 GRADE = {  # board header -> (goal key, kind).  ONLY the metrics typed on Goals.
+           # all NINE typed goals grade here — NS Shw % was missed originally.
     "Removal %":    ("rmvpct", "rate_low"),   # lower than goal is good
     "Sent to CL":   ("sent", "count"),
     "Ret to CL %":  ("ret2cl", "rate"),
@@ -99,13 +100,15 @@ GRADE = {  # board header -> (goal key, kind).  ONLY the metrics typed on Goals.
     "2nd Shw %":    ("sh2pct", "rate"),
     "Offer %":      ("offpct", "rate"),
     "BOB Conv %":   ("bobconv", "rate"),
+    "NS Shw %":     ("nspct", "rate"),
 }   # every derived count stays black — colouring an output as well as the input
     # behind it just says the same thing twice
 MIRROR_KEY = {h: k for h, (k, _) in GRADE.items()}
 TREND_PCT_GOAL = {"Removal %": "rmvpct", "Retention to Call List": "ret2cl",
                   "1st Show %": "sh1pct", "2nd Booked % of 1st showed": "bk2pct",
                   "2nd Show %": "sh2pct", "Offer % of 2nd showed": "offpct",
-                  "BOB Conversion": "bobconv"}
+                  "BOB Conversion": "bobconv",
+                  "New Start Show %": "nspct"}
 LEGEND = [   # the band label carries its own colour, so no COLOUR column needed
     ("Within 5% of goal",        "on target"),
     ("5% - 10% off goal",        "slipping"),
@@ -652,7 +655,8 @@ MX_GRADE = {"Sent to Call List": ("sent", "count"),
             "Removal %": ("rmvpct", "rate_low"),
             "Retention to Call List": ("ret2cl", "rate"), "1st Show %": ("sh1pct", "rate"),
             "2nd Booked % of 1st showed": ("bk2pct", "rate"), "2nd Show %": ("sh2pct", "rate"),
-            "Offer % of 2nd showed": ("offpct", "rate"), "BOB Conversion": ("bobconv", "rate")}
+            "Offer % of 2nd showed": ("offpct", "rate"), "BOB Conversion": ("bobconv", "rate"),
+            "New Start Show %": ("nspct", "rate")}
 values.append({"range": "'Manager Matrix'!A100", "values": [
     list(d) + [GOAL_AT[MX_GRADE[d[0]][0]] if d[0] in MX_GRADE else 0,
                1 if MX_GRADE.get(d[0], ("", ""))[1] == "rate_low" else 0,

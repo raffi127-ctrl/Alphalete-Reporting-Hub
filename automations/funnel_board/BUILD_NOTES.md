@@ -165,5 +165,3 @@ the input behind it says the same thing twice.
   `alphaletereporting@gmail.com` — share the tracker with that address as an
   **Editor**.
 - **Offer % has no fixed threshold** — it grades against the typed goal only.
-- **New Start Show % is a typed goal but is not colour-coded** (it was left off
-  the list of eight).
