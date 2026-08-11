@@ -5,7 +5,7 @@ Five tabs at the far right of the **Alphalete Org Applicant Tracker**
 
 | Tab | What it is |
 |---|---|
-| **Manager Board** | All 14 managers side by side, one week at a time. Week picker in `I1`. |
+| **Manager Board** | All 17 managers side by side, one week at a time. Week picker in `I1`. |
 | **Manager Trend** | One manager, every week. Manager picker in `B1`. Click the `+` above a week to open Mon–Sun. |
 | **Manager Matrix** | Every manager × every week, for one metric. Metric picker in `B1`. |
 | **Daily Log** | The raw data. One row per manager per day. |
@@ -74,18 +74,36 @@ Two things to know before you trust the total:
 
 ## What runs, and when
 
-Lucy 2 runs it every morning as part of the 4am orchestrator batch. Report id:
-`funnel_board`.
+**Lucy 1** runs it. Two schedules, same command:
+
+| When | What runs it | Why |
+|---|---|---|
+| 4am daily | the orchestrator batch (`funnel_board`) | the day's run + the Monday close-out of the prior week |
+| :05 past the hour, 6am-9pm | launchd `com.alphalete.funnel-board-hourly` | keeps the Board and Trend from showing hours-old numbers |
+
+Running it 16 extra times a day is safe because **every pass re-pulls and
+overwrites the whole current week** rather than appending — see the restatement
+rule below. A pass that fails or is skipped is simply corrected by the next one.
+
+**Two runs must never write at once.** Overlapping runs clobbered a manager's
+whole column once (2026-08-10). Two guards now: the wrapper skips if any
+funnel_board run is alive, and `run.py` takes `state/run.lock` (broken
+automatically if older than 90 minutes, so a crash can't wedge the report).
+
+Nothing runs 10pm-5am: a pass costs ~8-10 minutes of real browser across 17
+offices, and nobody is booking interviews overnight, so it would rewrite the week
+with identical numbers. To make it literally 24x7, add the missing `Hour` dicts
+to `deploy/com.alphalete.funnel-board-hourly.plist` and re-run the installer.
 
 Each run:
 
 1. Reads the existing Daily Log back out of the sheet.
 2. Logs into ApplicantStream and opens **Report → Retention - Details (new)**
-   for each of the 14 offices.
+   for each of the 17 offices.
 3. Pulls the days it needs, merges them over the existing history.
 4. Writes Daily Log and rebuilds the three view tabs.
 
-Takes roughly 3–5 minutes.
+Takes roughly 8–10 minutes for all 17 offices.
 
 ### Which days it refreshes
 
@@ -110,7 +128,7 @@ it alone forever. At most two weeks are ever in play.
 
 ## Driving it by hand
 
-Queue these on the **Mini Control - Lucy 2** tab of the mini-control sheet
+Queue these on the **Mini Control** tab (Lucy 1) of the mini-control sheet
 (`1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw`) — append a row with Status
 `queued` and the poller picks it up within ~2 minutes.
 
@@ -119,7 +137,8 @@ Queue these on the **Mini Control - Lucy 2** tab of the mini-control sheet
 | `rerun` | `funnel_board` | Run it now, live. |
 | `rerun` | `funnel_board --dry-run` | Pull and report, write nothing. |
 | `rerun` | `funnel_board --weeks 4` | Backfill the last 4 weeks. |
-| `update` | | Pull the latest code onto Lucy 2 first. |
+| `update` | | Pull the latest code onto Lucy 1 first. |
+| `rerun` | `install_funnel_board_hourly_agent` | (Re)install the hourly launchd agent. |
 | `logtail` | `<log name> <grep> <n>` | Read a run's log. |
 
 ---

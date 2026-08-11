@@ -5720,6 +5720,22 @@
       "timeout_minutes": 15,
       "machine": "Lucy 1"
     },
+    "install_funnel_board_hourly_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.funnel-board-hourly on Lucy 1 \u2014 the HOURLY intraday refresh of the Funnel Board (deploy/funnel_board_hourly.sh -> python -m automations.funnel_board.run), :05 past the hour, 6am-9pm local, every day. The 4am orchestrator pass still owns the daily run and the Monday close-out of the prior week; this only keeps Manager Board / Manager Trend from showing hours-old numbers (Carlos, 2026-08-11). Safe to repeat: every pass re-pulls and overwrites the whole current week (restatement rule), and overlapping writes are blocked by the wrapper's pgrep plus run.py's state/run.lock. Run via `lucy rerun install_funnel_board_hourly_agent` after `lucy update`; install_agent only reloads the plist (race-free bootout+bootstrap). Widen/narrow the window by editing the Hour dicts in the plist.",
+      "display_name": "Install Funnel Board hourly agent (6am-9pm, :05)",
+      "source_type": "none",
+      "data_sources": [],
+      "command": ["automations.day_orchestrator.install_agent"],
+      "base_args": ["funnel-board-hourly"],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
+      "machine": "Lucy 1"
+    },
     "install_dd_gross_revenue_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.dd-gross-revenue on Lucy 1 (auto-pull 1st & 15th at 12:00 noon CST; deploy/dd_gross_revenue.sh -> python -m automations.pay_structure.dd_pull --write). Run via `lucy rerun install_dd_gross_revenue_agent` after `lucy update`. install_agent only reloads the plist (race-free bootout+bootstrap).",

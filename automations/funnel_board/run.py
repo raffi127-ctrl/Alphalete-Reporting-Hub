@@ -23,10 +23,12 @@ USAGE
     python -m automations.funnel_board.run --weeks 4      # backfill N weeks
 """
 import argparse
+import atexit
 import datetime as dt
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -200,6 +202,66 @@ def switch(page, oid, hint, rqst):
     return False
 
 
+# ---------------------------------------------------------------- run lock
+# Two runs must never write the Daily Log at once. This is not hypothetical:
+# a run launched 14s before an earlier one finished writing clobbered Jacob
+# Dover's whole column (2026-08-10). At the old once-a-day cadence that took a
+# human mistake; at hourly it would happen on its own the first time a run ran
+# long, so the lock is a precondition of the hourly agent, not a nicety.
+#
+# mkdir is atomic on every platform (the repo has to run on Windows too), so no
+# fcntl. A lock older than STALE_MIN is assumed to be a crashed run and broken —
+# otherwise one hard kill would wedge the report until someone noticed.
+LOCK = HERE / "state" / "run.lock"
+STALE_MIN = 90
+
+
+def acquire_lock():
+    """True if we own the lock. False means another run holds it — skip, don't queue."""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        LOCK.mkdir()
+    except FileExistsError:
+        try:
+            age = (dt.datetime.now().timestamp() - LOCK.stat().st_mtime) / 60.0
+        except OSError:
+            age = 0.0
+        if age < STALE_MIN:
+            who = ""
+            try:
+                who = " (" + (LOCK / "owner").read_text().strip() + ")"
+            except OSError:
+                pass
+            log("another run holds the lock%s, %.0f min old — skipping this pass" % (who, age))
+            return False
+        log("breaking a stale lock (%.0f min old, limit %d)" % (age, STALE_MIN))
+        release_lock()
+        try:
+            LOCK.mkdir()
+        except OSError:
+            log("could not take the lock after breaking it — skipping")
+            return False
+    try:
+        (LOCK / "owner").write_text("pid %d on %s at %s"
+                                    % (os.getpid(), socket.gethostname(),
+                                       dt.datetime.now().isoformat(timespec="seconds")))
+    except OSError:
+        pass
+    return True
+
+
+def release_lock():
+    try:
+        for f in LOCK.iterdir():
+            f.unlink()
+    except OSError:
+        pass
+    try:
+        LOCK.rmdir()
+    except OSError:
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="pull and report, write nothing")
@@ -207,6 +269,15 @@ def main():
     ap.add_argument("--today", help="override today (YYYY-MM-DD), for testing")
     ap.add_argument("--only", help="pipe-separated manager names, e.g. 'Rafael Hidalgo|Kash Rai'")
     a = ap.parse_args()
+
+    # --dry-run writes nothing, so it never needs the lock and must never block
+    # a real run (or be blocked by one).
+    holding = False
+    if not a.dry_run:
+        if not acquire_lock():
+            return 0
+        holding = True
+        atexit.register(release_lock)
 
     today = dt.date.fromisoformat(a.today) if a.today else dt.date.today()
     if a.weeks:
