@@ -755,6 +755,33 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ prior-week self-check skipped ({str(e)[:60]})")
 
+    # The SAME two columns on the REP rows. The check above covers only the week
+    # stack ('Totals' + the history rows); the rep rows under it were the VA's
+    # hand-roll and froze at WE 07.12 when that stopped — 26/26 blocks four
+    # weeks adrift before Eve caught it (2026-08-11). rollover step 3f now
+    # freezes them every Tuesday; this is the tripwire.
+    logfn("  --- PER-REP PRIOR-WEEK COLUMNS, SELF-CHECK (report-only) ---")
+    try:
+        _pr = rollover.check_per_rep_kl(cS)
+        if _pr:
+            logfn(f"  ⚠ {len(_pr)} block column(s) where the rep rows do NOT "
+                  f"sum to their own 'Totals' row:")
+            for _nm, _w, _sum, _tot in _pr[:20]:
+                logfn(f"      [{_nm}] col {_w}: reps sum {_sum:g}, "
+                      f"Totals row says {_tot:g}")
+            if len(_pr) > 20:
+                logfn(f"      …and {len(_pr) - 20} more")
+            logfn("      ONE column on ONE block is usually a roster change "
+                  "(a departed rep's week stays in the Totals row). The whole "
+                  "board drifting together means a roll was missed — fix: "
+                  "python -m automations.org_sales_board.perrep_kl_repair "
+                  "--apply")
+        else:
+            logfn("  ✅ every block's rep rows sum to its Totals row in both "
+                  "prior-week columns.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ per-rep prior-week self-check skipped ({str(e)[:60]})")
+
     # Captainship leaderboard TOTALS rows — is each one's frozen history still
     # under the right week header? REPORT-ONLY. The totals line was excluded
     # from the rollover's shift (CaptainAnchor.leaderboard stops AT it), so it

@@ -466,6 +466,17 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     logfn(f"  3e/5 prior-week columns re-derived on "
           f"{summary['prior_week_blocks']} block(s)")
 
+    # 3f. The same two columns on the REP rows. 3e covers only the week stack
+    # (the 'Totals' row + the history rows); the rep rows were left to the VA's
+    # hand-roll and froze at WE 07.12 when that stopped, so the Totals row and
+    # the reps under it drifted a week further apart every Tuesday until Eve
+    # caught it 2026-08-11. MUST run BEFORE the daily clear — col J is a live
+    # =SUM over the cells step 4 blanks.
+    perrep = apply_per_rep_kl_freeze(ws, grid, dry_run=dry_run, logfn=logfn)
+    summary["per_rep_kl_cells"] = len(perrep)
+    logfn(f"  3f/5 per-rep prior-week columns frozen (J→K→L); "
+          f"{len(perrep)} cell(s)")
+
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
         ws.batch_clear(ranges)
@@ -969,6 +980,123 @@ def apply_prior_week_totals(ws, grid=None, extra=None, dry_run: bool = False,
     logfn(f"  prior-week columns: {len(blocks)} block(s), {len(updates)} cell(s) "
           f"derived, {changed} differ from the sheet"
           f"{' [dry-run]' if dry_run else ''}")
+    if updates and not dry_run:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return updates
+
+
+# --------------------------------------------------------------------------
+# Per-REP prior-week columns (the rep rows, not the week stack)
+# --------------------------------------------------------------------------
+# Every daily block carries J/K/L on its REP rows too, and the same rule the VA
+# applied by hand governs them: on the roll each rep's RUNNING WEEK TOTAL (col
+# J, a live =SUM over the day cells) freezes into LAST WEEK'S (K), and the old K
+# slides into PREVIOUS WEEK'S (L).
+#
+# Nothing here ever did that. apply_prior_week_totals (3e) re-derives the week
+# STACK — the 'Totals' row plus the 'Last Week'…/'WE m.d' rows — and
+# plan_org_history_rollover shifts the history ROWS; both skip the rep rows.
+# The copy tab inherited correct rep columns from the VA until the 2026-07-14
+# roll and then simply froze: four rollovers later every one of the 26 blocks
+# still showed WE 07.12 in K and WE 07.05 in L, while the Totals row above them
+# kept advancing. So the board's own invariant — Σ(per-rep K) == Totals-row K —
+# was broken on 26/26 blocks, and the gap grew by a week every Tuesday (Eve
+# 2026-08-11: 'Retail NL Last week deberían sumar 90 y los individuales suman
+# 111'). One-off state repair: output/org_board_perrep_kl_backfill.py.
+#
+# MUST run BEFORE the daily clear — col J is a live =SUM over the very cells
+# step 4 blanks, so its value has to be frozen first.
+
+def find_daily_kl_blocks(grid: List[List[str]]) -> List[dict]:
+    """Every daily block's REP rows plus its J/K/L columns, located by header
+    label and col-A/B row label ([[feedback_no_hardcoded_columns]]). Rep rows
+    are the col-B-labelled rows between the header and the block's 'Totals'.
+    Returns [{name, header_row, j, k, l, rows:[(row, rep)], totals_row}]."""
+    out: List[dict] = []
+    for r in range(len(grid)):
+        cols = {_cell(grid, r, c).strip().upper(): c + 1
+                for c in range(len(grid[r]))}
+        j, k, l = (cols.get(_J_HDR), cols.get(_K_HDR), cols.get(_L_HDR))
+        if not (j and k and l):
+            continue
+        rows: List[Tuple[int, str]] = []
+        tot = None
+        for rr in range(r + 1, min(r + 80, len(grid))):
+            a, b = _cell(grid, rr, 0).strip(), _cell(grid, rr, 1).strip()
+            if a.lower() in ("totals", "total"):
+                tot = rr + 1
+                break
+            if b:
+                rows.append((rr + 1, b))
+        if rows and tot:
+            out.append({"name": _cell(grid, r, 0).strip() or _cell(grid, r, 1).strip(),
+                        "header_row": r + 1, "j": j, "k": k, "l": l,
+                        "rows": rows, "totals_row": tot})
+    return out
+
+
+def plan_per_rep_kl_freeze(ws, blocks: List[dict]) -> List[dict]:
+    """Per rep: J (value) → K, old K → L. Values are read UNFORMATTED in ONE
+    call — the displayed text carries thousands separators on the bigger rows,
+    and writing that back would turn a number into text
+    ([[project_sheets-spill-cells-read-as-typed-text]] neighbours)."""
+    if not blocks:
+        return []
+    last_row = max(r for b in blocks for r, _n in b["rows"])
+    last_col = max(max(b["j"], b["k"], b["l"]) for b in blocks)
+    vals = ws.get(f"A1:{a1col(last_col)}{last_row}",
+                  value_render_option="UNFORMATTED_VALUE") or []
+
+    def raw(row, col):                       # 1-based -> cell value
+        r = vals[row - 1] if row - 1 < len(vals) else []
+        return r[col - 1] if col - 1 < len(r) else ""
+
+    updates: List[dict] = []
+    for b in blocks:
+        for row, _rep in b["rows"]:
+            jv, kv = raw(row, b["j"]), raw(row, b["k"])
+            updates.append({"range": f"{a1col(b['l'])}{row}",
+                            "values": [[kv if kv != "" else 0]]})
+            updates.append({"range": f"{a1col(b['k'])}{row}",
+                            "values": [[jv if jv != "" else 0]]})
+    return updates
+
+
+def check_per_rep_kl(grid: List[List[str]]) -> List[tuple]:
+    """Tripwire for the defect above: on every daily block the per-rep K / L
+    column must sum to the block's own 'Totals' row. Pure SELF-check — no Sheet
+    reads, no VA tab. Returns [(block, which, sum_of_reps, totals_row_value)].
+
+    Known legitimate exception: a rep dropped from a block's roster after a week
+    he sold in leaves THAT week's column short for good — the Totals row keeps
+    his sales, the roster no longer can (Ethan McKendree / 'B2B - All Units',
+    88 units in WE 08.02). So a ONE-column gap on a single block is a roster
+    change to confirm, not necessarily a rollover failure; the whole board
+    drifting together is the failure."""
+    bad: List[tuple] = []
+    for b in find_daily_kl_blocks(grid):
+        for col, which in ((b["k"], "K"), (b["l"], "L")):
+            tot = _num(_cell(grid, b["totals_row"] - 1, col - 1))
+            if tot is None:
+                continue
+            s = sum(_num(_cell(grid, r - 1, col - 1)) or 0 for r, _n in b["rows"])
+            if s != tot:
+                bad.append((b["name"], which, s, tot))
+    return bad
+
+
+def apply_per_rep_kl_freeze(ws, grid=None, dry_run: bool = False,
+                            logfn=print) -> List[dict]:
+    """Freeze every daily block's per-REP running total into its prior-week
+    columns. NOT idempotent on its own (it shifts, it does not derive), so it
+    relies on run_rollover's once-a-week leaderboard-label guard — the same
+    guard the history shifts in 3b/3c depend on."""
+    grid = ws.get_all_values() if grid is None else grid
+    blocks = find_daily_kl_blocks(grid)
+    updates = plan_per_rep_kl_freeze(ws, blocks)
+    reps = sum(len(b["rows"]) for b in blocks)
+    logfn(f"  per-rep prior-week columns: {len(blocks)} block(s), {reps} rep "
+          f"row(s), {len(updates)} cell(s){' [dry-run]' if dry_run else ''}")
     if updates and not dry_run:
         ws.batch_update(updates, value_input_option="USER_ENTERED")
     return updates
