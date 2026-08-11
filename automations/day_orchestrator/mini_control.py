@@ -1561,7 +1561,11 @@ def _action_logtail(args: str) -> tuple[bool, str]:
 # are undeclared deps that can go missing on a venv rebuild; reportlab is the
 # Leader's Call PDF library (missing it silently blocks the recognition DM — the
 # run still exits 0 because PDF/Slack errors don't fail the pull).
-PIP_ALLOWLIST = {"reportlab", "playwright", "gspread"}
+# pillow_heif lets the Sara+ escalation turn an iPhone .heic screenshot into a
+# jpeg — without it that attachment reaches Sara+ support as a .heic almost no
+# mail client can open (2026-08-11). Best-effort in the report, so a missing
+# wheel degrades rather than fails.
+PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif"}
 
 
 def _action_pip_install(args: str) -> tuple[bool, str]:
