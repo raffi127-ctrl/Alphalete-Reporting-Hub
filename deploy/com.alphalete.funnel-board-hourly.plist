@@ -29,16 +29,24 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Hourly at :05, 6am-9pm LOCAL (the minis are Central), every day.
-         WHY NOT 24x7: a pass costs ~8-10 min of real browser against
-         ApplicantStream x17 offices, and between 10pm and 5am there is nothing
-         to collect - nobody is booking interviews, so a pull would rewrite the
-         week with identical numbers. The 4am orchestrator pass already covers
-         the overnight boundary and the Monday close-out.
-         TIME KNOB: add/remove Hour dicts below to widen or narrow the window;
-         adding 22,23,0,1,2,3,4,5 makes it literally 24x7. -->
+    <!-- Hourly at :05, EVERY hour, every day. Carlos asked for round-the-clock
+         on 2026-08-11 ("again at 7 and every hour from there") after an initial
+         6am-9pm window.
+
+         Overnight passes mostly rewrite the week with identical numbers - nobody
+         books interviews at 3am - but they are cheap insurance against a stale
+         board and they cost only browser time on Lucy 1. The 4:05 pass and the
+         4am orchestrator pass overlap by design: whichever starts second sees
+         the first via the wrapper's pgrep / run.py's state/run.lock and skips.
+         TIME KNOB: delete Hour dicts below to narrow the window again. -->
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>5</integer></dict>
@@ -55,6 +63,8 @@
         <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>5</integer></dict>
     </array>
 
     <!-- A missed window (mini asleep/off) should NOT stampede every skipped hour

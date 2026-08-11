@@ -79,7 +79,7 @@ Two things to know before you trust the total:
 | When | What runs it | Why |
 |---|---|---|
 | 4am daily | the orchestrator batch (`funnel_board`) | the day's run + the Monday close-out of the prior week |
-| :05 past the hour, 6am-9pm | launchd `com.alphalete.funnel-board-hourly` | keeps the Board and Trend from showing hours-old numbers |
+| :05 past the hour, **every hour** | launchd `com.alphalete.funnel-board-hourly` | keeps the Board and Trend from showing hours-old numbers |
 
 Running it 16 extra times a day is safe because **every pass re-pulls and
 overwrites the whole current week** rather than appending — see the restatement
@@ -90,10 +90,12 @@ whole column once (2026-08-10). Two guards now: the wrapper skips if any
 funnel_board run is alive, and `run.py` takes `state/run.lock` (broken
 automatically if older than 90 minutes, so a crash can't wedge the report).
 
-Nothing runs 10pm-5am: a pass costs ~8-10 minutes of real browser across 17
-offices, and nobody is booking interviews overnight, so it would rewrite the week
-with identical numbers. To make it literally 24x7, add the missing `Hour` dicts
-to `deploy/com.alphalete.funnel-board-hourly.plist` and re-run the installer.
+It runs round the clock (Carlos, 2026-08-11). Overnight passes mostly rewrite the
+week with identical numbers, since nobody books interviews at 3am, but they cost
+only browser time on Lucy 1. The 4:05 pass and the 4am orchestrator pass overlap
+by design — whichever starts second sees the first and skips. To narrow the
+window, delete `Hour` dicts from
+`deploy/com.alphalete.funnel-board-hourly.plist` and re-run the installer.
 
 Each run:
 
