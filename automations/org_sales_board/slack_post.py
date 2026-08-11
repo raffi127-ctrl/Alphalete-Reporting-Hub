@@ -209,6 +209,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--post", action="store_true",
                     help="ACTUALLY post to Slack (default dry-run — no posting)")
+    ap.add_argument("--force", action="store_true",
+                    help="post again even if today's post already went out — "
+                         "for re-posting a CORRECTED board")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args(argv)
 
@@ -221,7 +224,7 @@ def main(argv=None) -> int:
     # Slack post (Eve 2026-07-23). Only when we're actually going to post and
     # haven't posted today yet — skip on dry-runs (no expensive pull) and once
     # today's post is out. Best-effort inside _refresh_je: never blocks the post.
-    if args.post and not _already_posted(day_key):
+    if args.post and (args.force or not _already_posted(day_key)):
         _refresh_je()
 
     ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB))
@@ -243,9 +246,18 @@ def main(argv=None) -> int:
     if not ok:
         print("NOT FILLED — holding. (Scheduler retries in 25 min.)")
         return 75
-    if _already_posted(day_key):
+    # Once-a-day guard, so the 8 scheduled passes don't post 8 images. --force
+    # is the deliberate override: the board was CORRECTED after the post went
+    # out, so the channel needs the fixed image (Eve 2026-08-11, the per-rep
+    # prior-week repair). It posts a SECOND image rather than editing the first
+    # — a Slack file post can't be swapped in place — so delete the stale one.
+    if _already_posted(day_key) and not args.force:
         print(f"already posted {day_key} — nothing to do.")
         return 0
+    if args.force and _already_posted(day_key):
+        print(f"--force: {day_key} already posted, posting the corrected board "
+              f"again. DELETE the earlier post so the channel isn't left with "
+              f"two boards for the same day.")
     if not args.post:
         r = post_to_slack(out, caption, filename, dry_run=True)
         print(f"dry-run (default): not posting. WOULD post to {r['channel']} ({r['id']}).")
