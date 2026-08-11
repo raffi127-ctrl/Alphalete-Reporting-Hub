@@ -536,6 +536,14 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     else:
         logfn("  ⚠ 5/5 no static daily date anchor found — daily dates may not "
               "have advanced (daily fill could skip the new week)")
+
+    # 6/6 Cosmetic, and LAST because it changes no value: re-hide any daily
+    # section's 'Prior Week' / '2 Weeks Prior' / '3 Weeks Prior' row that drifted
+    # back into view. Someone opening one to read history and leaving it open
+    # gives that section a different shape from the other seven in the posted
+    # board (Eve 2026-08-11). Costs one metadata read when nothing is wrong.
+    hid = apply_history_row_visibility(ws, grid, dry_run=dry_run, logfn=logfn)
+    summary["history_rows_rehidden"] = len(hid)
     logfn("=== rollover done ===")
     return summary
 
@@ -1256,6 +1264,96 @@ def find_campaign_history_tables(grid: List[List[str]]) -> List[dict]:
                     "day_c0": dv0 if dv0 is not None else min(daycols),
                     "day_cN": dvN if dvN is not None else max(daycols)})
     return out
+
+
+# --------------------------------------------------------------------------
+# History-row VISIBILITY on the daily sections
+# --------------------------------------------------------------------------
+# Each daily section keeps four history rows but the board only ever SHOWS
+# 'Last Week'; 'Prior Week' / '2 Weeks Prior' / '3 Weeks Prior' are hidden. That
+# is a DISPLAY convention, not a data one — the hidden rows still carry the
+# weeks the roll shifts into them, and all 8 sections on the VA's own tab follow
+# it.
+#
+# The rows are hidden by hand, so opening one to look at history and forgetting
+# to re-hide it leaves that section a different SHAPE from the other seven:
+# three pale rows carrying no section colour, right at the top of the posted
+# board. Nothing else on the board notices, because every value is correct —
+# Retail NL sat like that in the 2026-08-11 post until Eve spotted it ("unas
+# celdas que se veían sin formato").
+#
+# Idempotent: one metadata read, and a write ONLY for a row actually out of
+# line, so a clean board costs nothing. Scoped to the CAMPAIGN blocks — the
+# 'X ORG - Current vs Prior Weeks' summaries carry the same four labels and are
+# meant to stay visible.
+
+_HIST_HIDDEN_LABELS = ("prior week", "2 weeks prior", "3 weeks prior")
+
+
+def _section_of(grid, row: int) -> str:
+    """Name of the daily section a row belongs to — the nearest header row above
+    it carrying 'RUNNING WEEK TOTALS'."""
+    for r in range(row - 1, max(row - 90, 0), -1):
+        if any(_cell(grid, r - 1, c).strip().upper() == _J_HDR
+               for c in range(len(grid[r - 1]))):
+            return _cell(grid, r - 1, 0).strip() or _cell(grid, r - 1, 1).strip()
+    return "?"
+
+
+def _hidden_row_map(ws, last_row: int) -> dict:
+    """{1-based row: hidden?} straight off the sheet's row metadata."""
+    meta = ws.spreadsheet.fetch_sheet_metadata({
+        "includeGridData": True,
+        "ranges": [f"{ws.title}!A1:A{last_row}"],
+        "fields": "sheets.data.rowMetadata(hiddenByUser)",
+    })
+    data = ((meta.get("sheets") or [{}])[0].get("data") or [{}])[0]
+    rm = data.get("rowMetadata") or []
+    return {i + 1: bool((rm[i] or {}).get("hiddenByUser")) for i in range(len(rm))}
+
+
+def find_history_row_visibility_drift(ws, grid) -> List[Tuple[int, str, str]]:
+    """[(row, label, section)] for every daily-section history row that the
+    board's convention says should be hidden and that is currently showing."""
+    tables = find_campaign_history_tables(grid)
+    if not tables:
+        return []
+    wanted = {}
+    for t in tables:
+        for key, lab in (("pw", "Prior Week"), ("2wp", "2 Weeks Prior"),
+                         ("3wp", "3 Weeks Prior")):
+            wanted[t[key]] = lab
+    hidden = _hidden_row_map(ws, max(wanted))
+    return [(row, lab, _section_of(grid, row))
+            for row, lab in sorted(wanted.items()) if not hidden.get(row)]
+
+
+def apply_history_row_visibility(ws, grid=None, dry_run: bool = False,
+                                 logfn=print) -> List[Tuple[int, str, str]]:
+    """Re-hide any daily-section history row that drifted back into view."""
+    grid = ws.get_all_values() if grid is None else grid
+    try:
+        drift = find_history_row_visibility_drift(ws, grid)
+    except Exception as e:  # noqa: BLE001 — cosmetic; never abort a good roll
+        logfn(f"  ⚠ history-row visibility check skipped ({type(e).__name__}: "
+              f"{str(e)[:70]})")
+        return []
+    if not drift:
+        logfn("  history rows: all 'Prior Week'/'2 Weeks'/'3 Weeks' hidden ✓")
+        return []
+    for row, lab, sec in drift:
+        logfn(f"      re-hiding row {row} '{lab}' ({sec}) — it was showing")
+    if not dry_run:
+        ws.spreadsheet.batch_update({"requests": [
+            {"updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "ROWS",
+                          "startIndex": row - 1, "endIndex": row},
+                "properties": {"hiddenByUser": True},
+                "fields": "hiddenByUser"}}
+            for row, _lab, _sec in drift]})
+    logfn(f"  history rows: re-hid {len(drift)} row(s)"
+          f"{' [dry-run]' if dry_run else ''}")
+    return drift
 
 
 def plan_org_history_rollover(ws, table: dict):
