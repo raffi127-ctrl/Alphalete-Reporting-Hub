@@ -109,13 +109,25 @@ ALIASES = {
     # name below, which is what makes the reading safe rather than a guess.
     "zoey": "Zoria Johnson",
     "charlie": "Charley Alan Perez",
+    # He posts as "Tim"; the board carries the legal name with the English one
+    # in parens, and _norm strips parenthesised text — so "Qilu(Timothy) Zhao"
+    # reduces to "qilu zhao" and nothing in "tim" bridges to it. He was ALSO
+    # listed in PARTNERS_SEEN below as a ride-along, which is the opposite of
+    # true: he is on the Energy roster (r27 of WE 8.16) and his sales were
+    # going uncounted. He is the only tim/qilu/zhao on the whole tab, so this
+    # can't go ambiguous. (Eve 2026-08-11)
+    "tim": "Qilu(Timothy) Zhao",
+    "timothy": "Qilu(Timothy) Zhao",    # same trap: _norm eats the parens
 }
 
 # Names that appear on Energy lines but are NOT the credited rep — trainees and
 # partners riding along on someone else's sale. Listed so a "/" pair resolves
 # without guessing, and so a new one shows up as unmatched instead of silently
 # stealing the credit.
-PARTNERS_SEEN = {"abdallah", "soto", "tim"}
+# "tim" removed 2026-08-11 — he is a CREDITED Energy rep (see ALIASES), not a
+# ride-along. NOTE "soto" is likewise on the Energy roster as 'Ivan Soto', so
+# treat this set as a note-to-self, not a rule: nothing reads it.
+PARTNERS_SEEN = {"abdallah", "soto"}
 
 
 @dataclass
