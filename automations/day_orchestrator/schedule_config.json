@@ -3314,7 +3314,9 @@
         "type": "manifest",
         "report_id": "alphalete-org-run"
       },
-      "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week)."
+      "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week).",
+      "timeout_minutes": 90,
+      "_timeout_note": "Was UNSET, i.e. the 45m default — for a wrapper that chains SIX steps (recruiting pull + NDS + BOX + JE + B2B + Retail), each its own patchright Tableau session. That budget was never measured against a real run: on 2026-08-10 the 45m cap fired INSIDE B2B (step 5), so Retail (step 6) never ran at all and the two steps had to be recovered by hand. Measured that day: steps 1-4 ~10min, B2B ~17min, Retail ~6min = ~33min with the mini otherwise idle — under the 4am batch, with several browser reports competing for the same Chrome profile, every step is slower. 90 gives real headroom without being unbounded. The per-step ids (_retail/_box/_je/_b2b, 30-40m each) stay the escape hatch when only one step needs redoing."
     },
     "alphalete_org_retail": {
       "on_scheduler": true,
