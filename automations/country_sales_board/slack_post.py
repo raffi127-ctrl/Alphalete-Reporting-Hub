@@ -21,7 +21,11 @@ email. So we render THREE blocks and stitch them into one image, in tab order:
   2. THE DAILY SALES BREAKDOWN — the day block ('Fiber - All Units'), every rep
      by day with the running week total and their last two weeks, cols A..L
      (Eve 2026-07-31: the draft had the summary and the deltas but not the raw
-     per-day numbers they are computed from). See `daily_range`.
+     per-day numbers they are computed from), down through its Totals row AND
+     the HISTORY_ROWS closed weeks under it (Eve 2026-08-11). Those history rows
+     are HIDDEN on the tab from the 4th down and the PDF export skips hidden
+     rows, so the render unhides exactly them and restores the tab afterwards.
+     See `daily_range` / `daily_last_row`.
 
   3. THE DELTA UNITS CHART — the per-rep 'Total for week' triplet plus ALL
      SEVEN DAYS, each as This week / Last week / Delta (Eve 2026-07-27: the
@@ -53,6 +57,7 @@ from pathlib import Path
 from automations.recruiting_report.fill import open_by_key
 from automations.org_sales_board.screenshot_email import (
     _export_png, _access_token, stitch_vertical, column_pixels, _range_width_px,
+    _set_rows_hidden,
 )
 from automations.shared import slack_metrics_post as smp
 from automations.country_sales_board.run import SHEET_ID, PROD_TAB, CENTRAL
@@ -65,6 +70,7 @@ except Exception:
 TARGET_TAB = PROD_TAB                 # 'Country Sales Board' — the real tab
 TITLE_PREFIX = "Country Sales Board"
 HISTORY_WEEKS = 7                     # frozen leaderboard weeks shown beside the live one
+HISTORY_ROWS = 4                      # WE rows of the stack shown under the day block's Totals
 STITCH_GAP_PX = 28                    # white gutter between the two stitched blocks
 
 # Slack user IDs (not names) so delivery never depends on the bot having the
@@ -146,6 +152,15 @@ def daily_range(grid) -> str:
     compare it against, which is the same complaint that put the delta chart
     in this image in the first place.
 
+    It runs one row PAST its Totals row: the HISTORY_ROWS most recent 'WE m.d'
+    rows of the stack underneath (Eve 2026-08-11 — 'faltaron las 4 filas de
+    históricos'). A day block whose week is one day old is all zeroes to the
+    right of Monday, so the Totals row on its own compares the week against
+    nothing; the four closed weeks under it are what make it readable. This is
+    exactly what the ORG board already does for its captainship day tables
+    (`screenshot_email._captainship_ranges`, 'as ONE image so there's no gap
+    between the Totals row and WE 7.5') — same constant, same reason.
+
     Located by LABEL via the same finder the fill writes through, so the render
     and the write can never disagree about where the block is."""
     from automations.org_sales_board.fill_section import find_daily_section
@@ -154,7 +169,29 @@ def daily_range(grid) -> str:
 
     a = find_daily_section(grid, BLOCK_LABEL)
     last_col = a.running_total_col + 2          # J -> L (last / previous week)
-    return f"A{a.header_row}:{a1col(last_col)}{a.totals_row}"
+    return f"A{a.header_row}:{a1col(last_col)}{daily_last_row(grid, a)}"
+
+
+def daily_last_row(grid, anchor) -> int:
+    """Bottom row of the daily-breakdown render: the block's Totals row plus the
+    HISTORY_ROWS most recent 'WE m.d' rows of the history stack below it.
+
+    Walks the stack by LABEL and stops at the first non-WE row, so a shorter
+    stack (or none at all) degrades to the Totals row instead of dragging in
+    whatever happens to sit underneath."""
+    from automations.org_sales_board.rollover import _WE_ROW_RE
+
+    row, n = anchor.totals_row, 0
+    for rr in range(anchor.totals_row + 1, min(anchor.totals_row + 30,
+                                               len(grid) + 1)):
+        label = (grid[rr - 1][0] if grid[rr - 1] else "").strip()
+        if _WE_ROW_RE.match(label):
+            row, n = rr, n + 1
+            if n >= HISTORY_ROWS:
+                break
+        elif label:
+            break                       # non-WE row -> the stack ended
+    return row
 
 
 def capture_ranges(grid) -> list[tuple[str, str]]:
@@ -187,6 +224,34 @@ def capture_ranges(grid) -> list[tuple[str, str]]:
     return out
 
 
+def _hidden_rows_in_blocks(sh, gid: int, blocks) -> list[int]:
+    """The 1-based rows inside the blocks about to be rendered that are HIDDEN.
+
+    Returned one by one rather than as a span, because the span we care about
+    straddles the boundary: on this tab the WE stack's first rows are visible
+    and the rest are hidden, so re-hiding the whole range afterwards would hide
+    weeks the VAs can see today. We touch only what we actually unhid.
+    [[No toques datos del usuario sin confirmar]]"""
+    import re
+
+    wanted = set()
+    for _name, rng in blocks:
+        m = re.match(r"^[A-Z]+(\d+):[A-Z]+(\d+)$", rng.strip())
+        if m:
+            wanted.update(range(int(m.group(1)), int(m.group(2)) + 1))
+    if not wanted:
+        return []
+    meta = sh.fetch_sheet_metadata({
+        "fields": "sheets(properties(sheetId),data(rowMetadata(hiddenByUser)))"})
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("sheetId") != gid:
+            continue
+        rows = (s.get("data") or [{}])[0].get("rowMetadata", []) or []
+        return [i + 1 for i, m in enumerate(rows)
+                if (i + 1) in wanted and m.get("hiddenByUser")]
+    return []
+
+
 def render_parts(tab: str = TARGET_TAB, rngs: list[str] | None = None
                  ) -> tuple[list[tuple[str, Path, int]], str]:
     """Render each block to its OWN PNG. [(name, path, sheet_px)], plus the
@@ -209,13 +274,29 @@ def render_parts(tab: str = TARGET_TAB, rngs: list[str] | None = None
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     token = _access_token()
     colpx = column_pixels(sh, ws.id)
+
+    # The WE history stack is HIDDEN on this tab from its 4th row down, and the
+    # PDF export skips hidden rows — so the daily block's history rows would
+    # silently collapse to whatever happens to be visible. Reveal exactly the
+    # rows this render needs, and put them back in a `finally` so a crash mid
+    # render can never leave the board expanded for the VAs.
+    hidden = _hidden_rows_in_blocks(sh, ws.id, blocks)
+    if hidden:
+        _set_rows_hidden(sh, ws.id, [(r, r) for r in hidden], hidden=False)
+        print(f"  revealed {len(hidden)} hidden WE-history row(s) for the "
+              f"render: {hidden}")
     parts = []
-    for name, rng in blocks:
-        p = OUT_DIR / f"country_{name}.png"
-        # spreadsheet_id is REQUIRED here: _export_png defaults to the ORG
-        # board's workbook, and this tab lives in ATT Program - Focus Report.
-        _export_png(ws.id, rng, p, token, spreadsheet_id=SHEET_ID)
-        parts.append((f"country_{name}", p, _range_width_px(colpx, rng)))
+    try:
+        for name, rng in blocks:
+            p = OUT_DIR / f"country_{name}.png"
+            # spreadsheet_id is REQUIRED here: _export_png defaults to the ORG
+            # board's workbook, and this tab lives in ATT Program - Focus Report.
+            _export_png(ws.id, rng, p, token, spreadsheet_id=SHEET_ID)
+            parts.append((f"country_{name}", p, _range_width_px(colpx, rng)))
+    finally:
+        if hidden:
+            _set_rows_hidden(sh, ws.id, [(r, r) for r in hidden], hidden=True)
+            print(f"  re-hid {len(hidden)} WE-history row(s)")
     return parts, " + ".join(r for _n, r in blocks)
 
 

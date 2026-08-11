@@ -2,6 +2,10 @@
 
     review_gate.py --board country   --post           build -> PDF -> Drive ->
                                                       Lucy posts the link
+    review_gate.py --board country   --refresh        the board was corrected
+                                                      after the link went out:
+                                                      rebuild and overwrite the
+                                                      PDF, same link, no post
     review_gate.py --board country   --check --send   a checkmark mails it
 
 Everything that decides WHO may approve and WHERE — the channel, the two
@@ -359,6 +363,10 @@ def main(argv=None) -> int:
     ap.add_argument("--close-day", action="store_true",
                     help="past the checking window: say once in the thread that "
                          "nobody approved, so an unapproved day isn't silence.")
+    ap.add_argument("--refresh", action="store_true",
+                    help="the board was corrected AFTER the link went out: "
+                         "rebuild and overwrite the PDF in Drive so the link "
+                         "already posted shows the new version. Posts nothing.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the preview + PDF and stop (no Drive, no Slack).")
     ap.add_argument("--channel", default=None,
@@ -374,6 +382,32 @@ def main(argv=None) -> int:
 
     if args.pdf_only:
         build_pdf(board, run_day, build_preview(board, run_day))
+        return 0
+    # Checked BEFORE --post on purpose: the scheduler entry's base_args are
+    # ["--board", "<key>", "--post"], so `lucy rerun <report> --refresh` arrives
+    # here as "--post --refresh" and has to mean refresh — otherwise the one
+    # case this exists for could not be triggered the one way it is triggered.
+    # Same flag, same order, same reason as org_sales_board.review_gate.
+    if args.refresh:
+        # Rebuilding the preview also rewrites the day's manifest, so the images
+        # --check --send mails are the corrected ones too: what is reviewed and
+        # what is sent stay the same artifact.
+        link = upload_pdf(build_pdf(board, run_day, build_preview(board, run_day)),
+                          folder_name=board.drive_folder)
+        # Same PDF name = same day, so upload_pdf updated the file IN PLACE and
+        # the link already sitting in the channel now shows the rebuilt PDF.
+        # Nothing is posted: a correction must not hand the approvers a second
+        # message to choose between.
+        print(f"✓ refreshed in place, existing link still valid: {link}",
+              flush=True)
+        # A day that ALREADY carries a checkmark approved a PDF that no longer
+        # exists. The gate can't undo that, so say it out loud rather than let a
+        # silent overwrite turn into a send of something nobody reviewed.
+        post = _find_post(board, run_day, args.channel)
+        who = _approver_of(post) if post else None
+        if who:
+            print(f"  ⚠ this day was ALREADY approved by {who[1]} — that "
+                  f"checkmark was put on the PREVIOUS PDF. Tell Eve.", flush=True)
         return 0
     if args.post:
         pdf = build_pdf(board, run_day, build_preview(board, run_day))
