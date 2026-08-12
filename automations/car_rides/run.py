@@ -15,7 +15,8 @@ Reuses the existing Lucy 2 routes (do NOT rebuild these):
                        this run FLAGS it and stops (never touches the Turnstile).
 
 WHAT A RUN DOES:
-  1. Read Stations A5:E25 (AT&T box) and A28:E38 (BOX box) -> leader -> [riders].
+  1. Read the Stations car-ride boxes (rows 5-25 AT&T, 28-38 BOX) -> leader ->
+     [riders], locating the Leader / Rep #1-4 columns BY HEADER (not position).
   2. Open v2.ownerville.com Territory Assignment (index.cfm?p=158), campaign
      "B2B AT&T SBS" then "B2B-BOX-Energy".
   3. Enumerate every territory (all pages). Compute the reconciliation plan:
@@ -69,12 +70,22 @@ STATE_DIR = REPO_ROOT / "output" / "car_rides"
 # --- Source of truth ---------------------------------------------------------
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master Sales Board
 STATIONS_GID = 1999003555
-# Read ONLY cols A-E: col A = Territory Leader, B-E = Rep #1-4 riders. Header
-# rows are 5 (AT&T) and 28 (BOX). Everything right of E is the station matrix.
+# The car-ride box is one "Territory Leader" column + the "Rep #1..4" columns.
+# Header rows are 5 (AT&T) and 28 (BOX); everything past the rep columns is the
+# station matrix and must stay out of the read.
+# Columns are located BY HEADER, not by position — the box just has to be inside
+# this range. 2026-08-12: a "Territory Status" column was inserted at A, pushing
+# Territory Leader to B; the old positional read (A5:E25, "col A = leader") then
+# read the STATUS as the leader, the real leader as Rep #1, and dropped Rep #4
+# entirely. Widened through G so "Rep List" is visible to the header scan (and
+# explicitly excluded — it is a spill formula, not a car-ride rider).
 BOXES = {
-    "att": {"range": "A5:E25",  "campaign": "B2B AT&T SBS"},
-    "box": {"range": "A28:E38", "campaign": "B2B-BOX-Energy"},
+    "att": {"range": "A5:G25",  "campaign": "B2B AT&T SBS"},
+    "box": {"range": "A28:G38", "campaign": "B2B-BOX-Energy"},
 }
+LEADER_HDR_RE = re.compile(r"leader", re.I)
+# "Rep #1".."Rep #4" — the trailing digit is what keeps "Rep List" out.
+RIDER_HDR_RE = re.compile(r"rep\s*#?\s*\d+", re.I)
 
 OWNERVILLE_TERRITORY_URL = "https://v2.ownerville.com/index.cfm?p=158"
 
@@ -183,16 +194,26 @@ def read_expected(log=_log) -> dict[str, dict[str, list[str]]]:
             raise RuntimeError(f"Stations {box['range']} came back empty — "
                                "range/tab drift, refusing to reconcile.")
         header = [str(c).strip().lower() for c in rows[0]]
-        if not any("leader" in h for h in header):
+        # Find the columns by NAME. The old check only asked whether "leader"
+        # appeared ANYWHERE in the header, which is exactly why the 2026-08-12
+        # column insert sailed through it: 'Territory Leader' was still present,
+        # just no longer in column 0.
+        lead_i = next((i for i, h in enumerate(header) if LEADER_HDR_RE.search(h)),
+                      None)
+        rider_i = [i for i, h in enumerate(header) if RIDER_HDR_RE.search(h)]
+        if lead_i is None or not rider_i:
             raise RuntimeError(
-                f"Stations {box['range']} header row is {rows[0]!r} — expected "
-                "'Territory Leader | Rep #1..4'. Box rows moved; fix BOXES.")
+                f"Stations {box['range']} header row is {rows[0]!r} — expected a "
+                "'Territory Leader' column and 'Rep #1..4' columns. Box moved; "
+                "fix BOXES.")
         exp = {}
         for r in rows[1:]:
-            leader = str(r[0]).strip() if r else ""
+            # gspread trims trailing empties, so rows are ragged — index-check.
+            leader = str(r[lead_i]).strip() if len(r) > lead_i else ""
             if not leader:
                 continue
-            riders = [str(c).strip() for c in r[1:5] if str(c).strip()]
+            riders = [str(r[i]).strip() for i in rider_i
+                      if len(r) > i and str(r[i]).strip()]
             exp[leader] = riders
         out[key] = exp
         log(f"{key.upper()} box: {len(exp)} leaders — " +
@@ -432,6 +453,38 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
     return plan
 
 
+# --- Step 3b: is this plan even plausible? ------------------------------------
+# A bad board read doesn't fail loudly — it makes every real territory look
+# leaderless, and the stale rule then strips the riders out of all of them.
+# 2026-08-12: the inserted "Territory Status" column meant the run parsed 2 of 6
+# leaders and planned to empty 17 live territories; the ONLY reason nothing was
+# destroyed is that every Playwright edit happened to throw. So before applying
+# anything, sanity-check the plan against the campaign as a whole. A genuine day
+# retires a couple of car rides; it does not retire most of them at once.
+STALE_ABORT_FRACTION = 0.5
+STALE_ABORT_FLOOR = 3          # below this, "most of them" isn't meaningful
+
+
+def stale_sanity(expected: dict, territories: list[dict], plan: dict) -> str | None:
+    """None = safe to apply. A string = why live edits must be refused.
+
+    Vetoes the WHOLE campaign, not just the stale edits: if the board read is
+    wrong then the adds and one-rep-one-car-ride removes are equally suspect."""
+    if not expected:
+        return "board read returned 0 leaders"
+    active = [t for t in territories if not is_skip_territory(t["name"])]
+    if not active:
+        return None
+    stale = {e["territory"] for e in plan["edits"]
+             if str(e.get("why", "")).startswith("stale leader")}
+    limit = max(STALE_ABORT_FLOOR, int(len(active) * STALE_ABORT_FRACTION))
+    if len(stale) >= limit:
+        return (f"{len(stale)} of {len(active)} territories parsed as stale "
+                f"(limit {limit}) from only {len(expected)} board leaders — "
+                "that is a bad board read, not a real day")
+    return None
+
+
 # --- Step 4: apply (live only) ------------------------------------------------
 def apply_edit(page, edit: dict, log=_log) -> bool:
     """Open one territory, add/remove chips, Escape, Save, verify. True=verified.
@@ -594,11 +647,19 @@ def main(argv: list[str] | None = None) -> int:
                     plan = plan_campaign(expected[key], terrs, prev_flags)
                     flags += [f"{camp}: {f}" for f in plan["flags"]]
                     lines.append(f"\n### {camp}")
+                    veto = stale_sanity(expected[key], terrs, plan)
+                    if veto:
+                        msg = f"LIVE EDITS ABORTED — {veto}"
+                        flags.append(f"{camp}: {msg}. Plan is reported below; "
+                                     "NOTHING was changed. Check the Stations "
+                                     "tab layout before re-running --live.")
+                        lines.append(f"- ⚠️ {msg}; plan shown, not applied")
+                        _log(f"!! {camp}: {msg}")
                     for e in plan["edits"]:
                         why = f" ({e['why']})" if e.get("why") else ""
                         lines.append(f"- {e['territory']}: +{e['add'] or '—'} "
                                      f"-{e['remove'] or '—'}{why}")
-                        if live:
+                        if live and not veto:
                             ok = apply_edit(page, e)
                             if ok:
                                 changes[key] += 1
