@@ -40,6 +40,8 @@ from typing import Optional, Tuple
 from automations.captainship_drafts import config
 # Publishes the "approved" phase row the Hub card colours green.
 from automations.shared import review_approval as RA
+# Sat/Sun: a clean day releases itself — nobody is in the channel to tick it.
+from automations.shared import weekend_release as wr
 
 # The private channel with Evelyn, Jolie and Lucy. Set once (Slack blocks the
 # reporting token from creating channels — it has no groups:write), then never
@@ -101,6 +103,10 @@ REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
 # be triggered from either machine and output/ gets wiped, so a local file would
 # be a lock only one of them can see.
 SENT_MARKER = "CAPTAINSHIP-SENT"
+# The scheduler id of the job that BUILDS these drafts' review post.
+# weekend_release walks its dependency chain (the 8 metric modules included) to
+# decide whether a Sat/Sun day is clean enough to release itself.
+REPORT_ID = "captainship_drafts_review"
 # Posted once when the day closes with no approval. Without it, a day nobody
 # reacted to looks exactly like a day that went fine: the checker stops at
 # END_HOUR, the captains get nothing, and the only trace is a post with no
@@ -505,6 +511,25 @@ def mark_sent(msg: dict, failures: int, channel: Optional[str] = None) -> None:
                                text=f"{note}\n`{SENT_MARKER}`")
 
 
+def hold_weekend(msg: dict, reason: str, channel: Optional[str] = None,
+                 verbose: bool = True) -> bool:
+    """Say ONCE in the thread that the weekend auto-send did not release today.
+
+    Sat/Sun a clean day mails itself (weekend_release). A day that doesn't has
+    nobody watching the channel either, so without this it is silence — the same
+    silence as twelve reports that went out fine."""
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if any(wr.HELD_MARK in (r.get("text") or "") for r in replies[1:]):
+        return False
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=f"{_mentions()} {wr.held_note(reason, 'the captainship reports')}")
+    if verbose:
+        print(f"✓ weekend hold said once in the thread — {reason}", flush=True)
+    return True
+
+
 def find_approval(today: dt.date, channel: Optional[str] = None,
                   verbose: bool = True) -> Optional[Tuple[str, str]]:
     """(user_id, name) of the first authorised checkmark on today's post, else
@@ -619,6 +644,9 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="with --check: actually send. Without it, --check only "
                          "reports what it found.")
+    ap.add_argument("--no-auto", action="store_true",
+                    help="never release without a checkmark, not even on the "
+                         "weekend (weekend_release).")
     ap.add_argument("--remind", action="store_true",
                     help="nudge the channel if the day's reports are still "
                          "unapproved after --after-hours. Nudges once.")
@@ -678,7 +706,21 @@ def main(argv=None) -> int:
     if args.check:
         who = find_approval(today, args.channel)
         if not who:
-            return 1
+            # Sat/Sun nobody is in the channel to tick it. A day whose whole
+            # chain is DONE releases itself; anything short of that keeps
+            # waiting for a human (Eve 2026-08-12). This gate matters most here:
+            # a captainship day can exit 0 with a section quietly skipped, and
+            # that shows up as its own job never reaching DONE.
+            ok, why = wr.auto_release([REPORT_ID], today,
+                                      enabled=not args.no_auto)
+            print(f"  weekend auto-send: {why}", flush=True)
+            if not ok:
+                msg = _find_post(today, args.channel)
+                if (msg is not None and args.send and wr.is_weekend(today)
+                        and not args.no_auto):
+                    hold_weekend(msg, why, args.channel)
+                return 1
+            who = (wr.AUTO_ID, wr.AUTO_WHO)
         print(f"✓ approved by {who[1]}", flush=True)
         # Tell the Hub the human said yes — this is what turns the card's phase
         # pill from purple (awaiting ✅) to green. Idempotent, so the 15-minute

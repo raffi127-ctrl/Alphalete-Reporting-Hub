@@ -40,6 +40,9 @@ from typing import Optional, Tuple
 
 # Publishes the "approved" phase row the Hub card colours green.
 from automations.shared import review_approval as RA
+# Sat/Sun policy: a clean day releases itself, because nobody is in the channel
+# to tick it. One module for all four gates, so the weekend rule can't drift.
+from automations.shared import weekend_release as wr
 
 # The private channel where the day's email is reviewed — THE SAME ONE THE
 # CAPTAINSHIP DRAFTS USE (Eve, 2026-07-29). One channel, one review habit: the
@@ -107,6 +110,11 @@ def _mentions() -> str:
 # still RECOGNISES them so a post made before the switch stays approvable. They
 # are read-only — nothing writes them any more — and can be deleted once no
 # unapproved Spanish post is left in the channel.
+# The scheduler id of the job that BUILDS this day's draft. weekend_release
+# walks its dependency chain to decide whether a Sat/Sun day is clean enough to
+# mail itself — so it must stay the id in schedule_config.json, not a label.
+REPORT_ID = "org_sales_board_email"
+
 TITLE = "Org Sales Board Email"                 # + " — M/D"
 TITLE_LEGACY = "Org Sales Board — correo del"   # + " M/D"
 REMIND_MARK = "reminder: the Org Sales Board email"
@@ -462,6 +470,30 @@ def close_day(today: dt.date, channel: Optional[str] = None,
     return True
 
 
+def hold_weekend(today: dt.date, reason: str,
+                 channel: Optional[str] = None, verbose: bool = True) -> bool:
+    """Say in the thread that the weekend auto-send did NOT release this day.
+
+    Sat/Sun a clean day mails itself (weekend_release). A day that DOESN'T is
+    the one nobody is watching: no approver in the channel, no email, and — with
+    nothing said — no difference from a weekend that went fine. Says it once,
+    names what blocked it, and tags the approvers so the checkmark path is still
+    open to whoever reads it."""
+    msg = _find_post(today, channel)
+    if msg is None:
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, wr.HELD_MARK):
+        return False
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=f"{_mentions()} {wr.held_note(reason, 'the Org Sales Board email')}")
+    if verbose:
+        print(f"✓ weekend hold said once in the thread — {reason}", flush=True)
+    return True
+
+
 def confirm_sent(today: dt.date, who: str, to_note: str = "",
                  channel: Optional[str] = None) -> None:
     """Reply in-thread that it went out. Doubles as the once-a-day lock, so it
@@ -569,6 +601,9 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="with --check: actually send. Without it, --check only "
                          "reports what it found.")
+    ap.add_argument("--no-auto", action="store_true",
+                    help="never release without a checkmark, not even on the "
+                         "weekend (weekend_release).")
     ap.add_argument("--distro", action="store_true",
                     help="with --check --send: mail the real distro groups "
                          "instead of the proving list.")
@@ -634,7 +669,18 @@ def main(argv=None) -> int:
             return 0
         who = find_approval(today, args.channel)
         if not who:
-            return 1
+            # Sat/Sun there is nobody in the channel to tick it, and a report
+            # that built cleanly should not die waiting for a reader who isn't
+            # there (Eve 2026-08-12). A clean weekend day releases itself; a
+            # dirty one still waits for a checkmark, and says so in the thread.
+            ok, why = wr.auto_release([REPORT_ID], today,
+                                      enabled=not args.no_auto)
+            print(f"  weekend auto-send: {why}", flush=True)
+            if not ok:
+                if args.send and wr.is_weekend(today) and not args.no_auto:
+                    hold_weekend(today, why, args.channel)
+                return 1
+            who = (wr.AUTO_ID, wr.AUTO_WHO)
         print(f"✓ approved by {who[1]}", flush=True)
         # Tell the Hub the human said yes — this is what turns the card's phase
         # pill from purple (awaiting ✅) to green. Before the send, so an

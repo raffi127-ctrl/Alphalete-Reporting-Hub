@@ -44,6 +44,9 @@ from automations.org_sales_board.review_gate import (
 )
 # Publishes the "approved" phase row the Hub card colours green.
 from automations.shared import review_approval as RA
+# Sat/Sun: a clean day releases itself. Same module as the other gates, so the
+# weekend rule is one rule.
+from automations.shared import weekend_release as wr
 
 SENT_MARK = "Sent — approved by"
 REMIND_MARK = "reminder: this board email"
@@ -312,6 +315,29 @@ def close_day(board: B.Board, run_day: dt.date,
     return True
 
 
+def hold_weekend(board: B.Board, run_day: dt.date, reason: str,
+                 channel: Optional[str] = None, verbose: bool = True) -> bool:
+    """Say ONCE in the thread that the weekend auto-send did not release today.
+
+    Same reasoning as close_day: on a Sat/Sun nobody is reading the channel, so
+    a board that neither sends nor says anything is indistinguishable from one
+    that went out fine. This names what blocked it while the checkmark path
+    stays open."""
+    msg = _find_post(board, run_day, channel)
+    if msg is None:
+        return False
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, wr.HELD_MARK):
+        return False
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=f"{_mentions()} {wr.held_note(reason, f'the {board.name} email')}")
+    if verbose:
+        print(f"✓ weekend hold said once in the thread — {reason}", flush=True)
+    return True
+
+
 def find_approval(board: B.Board, run_day: dt.date,
                   channel: Optional[str] = None,
                   verbose: bool = True) -> Optional[Tuple[str, str]]:
@@ -356,6 +382,9 @@ def main(argv=None) -> int:
                          "the reviewed image when it is there.")
     ap.add_argument("--send", action="store_true",
                     help="with --check: actually send.")
+    ap.add_argument("--no-auto", action="store_true",
+                    help="never release without a checkmark, not even on the "
+                         "weekend (weekend_release).")
     ap.add_argument("--remind", action="store_true",
                     help="nudge the channel if still unapproved after "
                          "--after-hours. Nudges once.")
@@ -432,7 +461,18 @@ def main(argv=None) -> int:
             return 0
         who = find_approval(board, run_day, args.channel)
         if not who:
-            return 1
+            # Sat/Sun nobody is in the channel to tick it, so a clean day
+            # releases itself and a dirty one keeps waiting (Eve 2026-08-12).
+            # Keyed off run_day — the day the board is FOR, which is the day
+            # whose orchestrator state says whether it built cleanly.
+            ok, why = wr.auto_release([board.report_id], run_day,
+                                      enabled=not args.no_auto)
+            print(f"  weekend auto-send: {why}", flush=True)
+            if not ok:
+                if args.send and wr.is_weekend(run_day) and not args.no_auto:
+                    hold_weekend(board, run_day, why, args.channel)
+                return 1
+            who = (wr.AUTO_ID, wr.AUTO_WHO)
         print(f"✓ approved by {who[1]}", flush=True)
         # Tell the Hub the human said yes — this is what turns the card's phase
         # pill from purple (awaiting ✅) to green. Before the send, so an
