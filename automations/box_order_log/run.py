@@ -331,6 +331,18 @@ def main(argv: Optional[list] = None) -> int:
     if _block:
         print("\n✗ NOT posting to {} — {}".format(chan_name, _block),
               file=sys.stderr, flush=True)
+        # Suppressed post = nothing in the channel, so ping #claudecorrections
+        # so it's heard, not silently missed. Never let it break the exit.
+        try:
+            from automations.shared import section_drop_alert as sda
+            _newest = max(dated) if dated else None
+            _behind = (today - _newest).days if _newest else None
+            _detail = ("newest sale {}, {} days behind".format(_newest, _behind)
+                       if _newest else "no dated sales at all")
+            sda.alert(report_id="box-order-log", failed=[_detail],
+                      kind="capped", day=today)
+        except Exception:
+            pass
         return 3
 
     try:

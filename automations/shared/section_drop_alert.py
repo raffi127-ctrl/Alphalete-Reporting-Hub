@@ -59,6 +59,19 @@ _KINDS = {
                "re-run `{report_id}` — the fill is idempotent. If it fails "
                "again, the Tableau view itself is the problem, not the run.",
                "The tabs filled, but every metric fed by that source is empty."),
+    # A CAPPED Tableau pull: the Contract ID / Account Id quick filters on the
+    # BOX view re-pinned to a stale ID snapshot, so the export froze days behind
+    # and the counts understate reality. The report REFUSED to send rather than
+    # ship wrong numbers (window.should_block_send). Added 2026-08-12 after
+    # Roshan's "accepted sales are wrong" — a bad viz load skipped the filter
+    # release and the pull capped at 8/4. Nothing was delivered, so this alert
+    # is the only trace: without it a suppressed run is silent.
+    "capped": ("Tableau pull", "it capped to a stale ID list, so nothing was "
+               "sent.",
+               "re-run `{report_id}` once a clean pull lands — the Contract ID "
+               "/ Account Id filters likely re-pinned (see box_order_log/"
+               "window.py). The fill/merge is idempotent.",
+               "No email/post went out — a gap beats numbers that undercount."),
 }
 
 

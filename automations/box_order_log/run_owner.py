@@ -190,6 +190,19 @@ def main(argv: Optional[list] = None) -> int:
     if block and send_now:
         print("✗ {} — {}: {}".format(
             cfg.display, today.isoformat(), block), file=sys.stderr, flush=True)
+        # Make the suppression AUDIBLE — a blocked run delivers nothing, so
+        # without a ping it's silent. Only for the real owner send (--email),
+        # not a --test-to proving send. Never let the alert break the exit.
+        if args.email:
+            try:
+                from automations.shared import section_drop_alert as sda
+                behind = (today - newest).days if newest else None
+                detail = ("newest sale {}, {} days behind".format(newest, behind)
+                          if newest else "no dated sales at all")
+                sda.alert(report_id="box-order-log-{}".format(cfg.key),
+                          failed=[detail], kind="capped", day=today)
+            except Exception:
+                pass
         return 3
 
     # ---- 4. build the owner's workbook + payout image ------------------
