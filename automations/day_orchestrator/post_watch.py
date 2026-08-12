@@ -139,7 +139,11 @@ WATCH_TARGETS: List[WatchTarget] = [
         deadline="11:45",   # last retry pass is 11:25
         marker_glob="output/logs/.org-board-slack-ran-{date}",
         note="the org-board Slack agent left no ran-marker by 11:45 — its launchd "
-             "entry may have stopped firing (none of the 08:30–11:25 passes ran)",
+             "entry may have stopped firing (none of the 07:15–11:25 passes ran). "
+             "NB this catches a TOTAL no-show only: the marker is dropped on any "
+             "fire, so an agent still running the OLD 08:30-first schedule (i.e. "
+             "a plist change that was never re-installed on the mini) looks clean "
+             "here — check the post's actual time in #top-leaders for that",
         rerun_hint="on Lucy 1: bash deploy/org_board_slack.sh",
         wrapper="deploy/org_board_slack.sh",
         agent="org-board-slack",
