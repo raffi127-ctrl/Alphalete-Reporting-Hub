@@ -16,6 +16,9 @@ Each run does two things, in this order:
      just rolls Wednesday, and every other day of the week is a no-op. Gated
      behind --enable-rollover.
   2. FILL — pull the board's week from Tableau and write the day cells.
+  3. SORT — re-rank both rep tables descending, the daily breakdown by its
+     RUNNING WEEK TOTALS (col J) and the leaderboard by the live week (col C),
+     so the rank column beside them is true every morning (sort_board.py).
 
   python -m automations.country_sales_board.run                 # sandbox, live write
   python -m automations.country_sales_board.run --dry-run       # plan only
@@ -90,6 +93,9 @@ def main() -> int:
                     help="Allow the Tuesday rollover to run before the fill.")
     ap.add_argument("--force-rollover", action="store_true",
                     help="Roll even when the week check says not to (repair).")
+    ap.add_argument("--no-sort", action="store_true",
+                    help="skip the post-fill descending re-sort of the daily "
+                         "breakdown (col J) and the leaderboard (col C).")
     ap.add_argument("--no-verify", action="store_true",
                     help="skip the post-write check that yesterday carries "
                          "numbers on the board.")
@@ -197,6 +203,17 @@ def main() -> int:
     from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
     apply_elapsed_totals(ws, today=today, dry_run=args.dry_run,
                          include_delta=False)
+
+    # Re-rank both rep tables, highest first: the daily breakdown by its
+    # RUNNING WEEK TOTALS (col J) and the week-total leaderboard by the live
+    # week (col C). Neither ever re-sorted itself, so the 1..77 rank column
+    # beside them had drifted into fiction (Eve 2026-08-12). Runs LAST, after
+    # every write, so it sorts on the numbers this run just landed — and the
+    # sheet's own formulas are all name- or row-keyed, so the new order changes
+    # nothing but the order (sort_board.py).
+    if not args.no_sort:
+        from automations.country_sales_board import sort_board as sbd
+        sbd.sort_board(ws, grid, dry_run=args.dry_run)
 
     if rollover_summary and rollover_summary.get("rolled"):
         print(f"  rolled {rollover_summary['closed']} -> "
