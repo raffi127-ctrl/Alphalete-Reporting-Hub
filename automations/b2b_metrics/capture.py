@@ -429,3 +429,54 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
         except Exception:  # noqa: BLE001
             pass
         cdp_pull._kill_ours()
+
+
+def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    """#2 Activation Rate — RECREATED full-height board (every rep), not Tableau's
+    scroll-clipped Download→Image.
+
+    Tableau renders the 'Activation Rates Owner (+/-) Rep' table in a fixed-height
+    scroll zone, so the image export cuts it at the fold (Carlos: 45 reps, ~21
+    shown). The zone can't be resized in the published view, so we DOWNLOAD the
+    'Activation Office' crosstab (the same per-rep source vantura_churn pulls) and
+    rebuild the board ourselves — every row, with Tableau's own Activation Color
+    per cell so the green/yellow/red matches exactly.
+
+    Office-parameterised: each office's per-office ACTIVATIONRATES view + owner
+    prefix come from vantura_churn's _activation_cfg (carlos/atef/jamis…). An
+    office with no cfg, or any pull/parse failure, FALLS BACK to the old
+    Download→Image so the section still posts — logged loudly, since the fallback
+    can be clipped."""
+    out = out_dir / "activation_rate.png"
+    try:
+        import datetime as _dt
+        import csv as _csv
+        from automations.vantura_churn import cdp_pull as _cdp, compute as _compute
+        from automations.vantura_churn import activation_rates as _ar
+        from automations.vantura_churn.run import _activation_cfg
+        from automations.b2b_metrics import activation_board as _ab
+
+        cfg = _activation_cfg().get(o.key)
+        if not cfg:
+            raise RuntimeError("no activation cfg for office {!r}".format(o.key))
+        view_url, _cv, owner_prefix = cfg
+        grid_path = out_dir / "activation_office_{}.csv".format(o.key)
+        totals_path = out_dir / "activation_totals_{}.csv".format(o.key)
+        with _cdp._cdp_lock(label="b2b activation board {}".format(o.key), log=log):
+            _cdp.download_views([(view_url, _ar.REP_SHEET, grid_path)],
+                                today=_dt.date.today(), verbose=False, log=log,
+                                csv_fetches=[(_ar.CSV_URL, totals_path)])
+        board = _ab.parse_grid(_compute._load_grid(grid_path), owner_prefix)
+        with open(totals_path, encoding="utf-8-sig", errors="replace") as fh:
+            totals = list(_csv.reader(fh))
+        _ab.apply_office_colors(board, totals, owner_prefix)
+        _ab.set_national(board, _ab.compute_national(totals))
+        _ab.render_png(board, out)
+        log("   ✓ activation board [{}]: {} reps (recreated, all rows)".format(
+            o.key, len(board.reps)))
+        return out
+    except Exception as e:  # noqa: BLE001 — must still post SOMETHING
+        log("   ⚠ activation board [{}] failed ({}: {}) — falling back to "
+            "Download→Image (MAY BE CLIPPED)".format(
+                o.key, type(e).__name__, str(e).splitlines()[0][:120]))
+        return tableau_image(o, "activation_rate", out_dir, log=log)

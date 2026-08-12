@@ -73,6 +73,14 @@ def _sheet_shot(which: str):
     return cap
 
 
+def _activation_board(o: B2BOffice, out_dir: Path, log):
+    """#2 Activation Rate — recreated full-height board (every rep) instead of
+    Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
+    the section; falls back to Download→Image inside capture on failure."""
+    from automations.b2b_metrics import capture
+    return capture.activation_board_image(o, out_dir, log=log)
+
+
 def _order_log(o: B2BOffice, out_dir: Path, log):
     from automations.b2b_metrics import capture
     return capture.order_log_workbook(o, out_dir, log=log)
@@ -87,7 +95,7 @@ ITEMS = [
     dict(id="sales_metrics", emoji="\U0001F4CA", title="Sales Metrics",
          capture=_tableau_shot("sales_metrics")),
     dict(id="activation_rate", emoji="\U000026A1", title="Activation Rate",
-         capture=_tableau_shot("activation_rate")),
+         capture=_activation_board),
     dict(id="churn_wireless", emoji="\U0001F4C9", title="Wireless Churn",
          capture=_tableau_shot("churn_wireless")),
     dict(id="churn_int", emoji="\U0001F4C9", title="INT Churn",
