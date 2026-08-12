@@ -113,9 +113,13 @@ VIEW_META: dict = {
     # verified 2026-07-23 (Atef's posted unsorted). Unlike churn (sort baked),
     # activation needs a sort click on "0-7 Days" high->low, the way b2b_quality
     # does it. apply_sort is best-effort, so a miss just leaves it alphabetical,
-    # never blank. Show every rep (Megan 2026-07-21: a crop can't isolate the
-    # last rep with a 0-7 SALE — a 0/0 rep renders the same red 0% as a 0/1).
-    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 4,
+    # never blank.
+    # NO data_cols -> no crop: show EVERY rep (Carlos 2026-08-12). The crop trims
+    # to the last COLOURED row, but an Activations/Sales rep whose orders are all
+    # still PENDING renders blank/white cells (not a red 0%) and sorts to the
+    # bottom, so the crop was dropping real reps. Same reasoning as
+    # order_tiered_bonus/out_of_bounds below — keep the whole ranking table.
+    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD,
                         "sort_header": "0-7 Days"},
     "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
