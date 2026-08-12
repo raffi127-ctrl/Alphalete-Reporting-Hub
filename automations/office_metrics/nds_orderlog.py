@@ -50,11 +50,12 @@ THEME_SLATE = {"title_bg": (51, 65, 85), "header_bg": (30, 41, 59),
                "stripe": (236, 240, 245)}
 
 BOARDS = {
-    # The standard combined board every (non-NDS) office posts: two weekly tables
-    # (Rep · Posted · Pending · Total · Canceled/Disconnected), rendered by the
-    # SAME house function so Isaiah's looks identical to Raf's. Replaces the old
-    # custom slate "Order Log" table + green "Rep Activations" table.
-    "rep_summary": ("📋 Order Log / 🆕 Rep Activations", "clipboard"),
+    # Rep Activations — the two weekly tables (Rep · Posted · Pending · Total ·
+    # Canceled/Disconnected), rendered by the house rep_activations function. This
+    # is its OWN board; the raw Order Log .xlsx is the separate "order_log" board
+    # below — so this one is labeled just "Rep Activations" (Megan 2026-08-12: the
+    # rep-activations image shouldn't be tagged "Order Log").
+    "rep_summary": ("🆕 Rep Activations", "new"),
     "order_log":   ("📋 Order Log", "clipboard"),
     "cancels":     ("🚫 Canceled Orders", "no_entry_sign"),
     "disconnects": ("❎ Disconnected Orders", "negative_squared_cross_mark"),
