@@ -128,22 +128,56 @@ def pending_days(rows: list[Termination], day: dt.date) -> list[dt.date]:
                    if monday <= t.term_date <= day})
 
 
+def pending_by_week(rows: list[Termination],
+                    day: dt.date) -> list[tuple[dt.date, list[dt.date]]]:
+    """Every not-in-the-future termination day, grouped into ITS OWN week.
+
+    A SUNDAY TERMINATION USED TO VANISH. The board's weeks close on Sunday and
+    the roll-call for it is filled in Sunday evening or Monday — after that
+    day's run. Monday's run then files the row correctly but posted nothing,
+    because it only ever looked at the week `day` falls in and Sunday belongs
+    to the week before. Brian Bivens (terminated 8/9, filed on the tracker
+    2026-08-10) is the row that showed it: on the tracker, never in the 'WE
+    8.9' thread, and no later run would ever go back for him.
+
+    So the day is bucketed by ITS OWN `week_sunday`, not the run's, and each
+    bucket goes into that week's thread. Nothing older can appear: `board.scan`
+    already refuses to hand back terminations more than LOOKBACK_DAYS old, so
+    this reaches back over a week boundary and no further.
+    """
+    weeks: dict[dt.date, set] = {}
+    for t in rows:
+        if t.term_date <= day:
+            weeks.setdefault(week_sunday(t.term_date), set()).add(t.term_date)
+    return [(s, sorted(weeks[s])) for s in sorted(weeks)]
+
+
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
          dry_run: bool = True, logfn=print) -> dict:
-    """Post every not-yet-posted day of `day`'s week into that week's thread."""
+    """Post every not-yet-posted day into the thread of the week it belongs to.
+
+    Usually that's one week. On a Monday it can be two: last week's Sunday,
+    marked on the board after Sunday's run, still belongs in last week's
+    thread. See `pending_by_week`.
+    """
     title = week_title(day)
-    days = pending_days(rows, day)
-    if not days:
+    weeks = pending_by_week(rows, day)
+    if not weeks:
         logfn(f"  nobody terminated this week yet — nothing to post ({title})")
         return {"posted": False, "reason": "none this week", "title": title}
 
     if dry_run:
-        logfn(f"  DRY-RUN — would post to {channel} in thread {title!r}:")
-        for d in days:
-            for line in render_reply(for_day(rows, d), d).splitlines():
-                logfn(f"     {line}")
+        logfn(f"  DRY-RUN — would post to {channel}:")
+        for sunday, days in weeks:
+            logfn(f"    thread {week_title(sunday)!r}:")
+            for d in days:
+                for line in render_reply(for_day(rows, d), d).splitlines():
+                    logfn(f"       {line}")
         return {"dry_run": True, "posted": False, "title": title,
-                "days": [d.isoformat() for d in days], "channel": channel}
+                "channel": channel,
+                "weeks": [{"title": week_title(s),
+                           "days": [d.isoformat() for d in days]}
+                          for s, days in weeks]}
 
     client = smp._client()
     try:
@@ -152,30 +186,37 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
     except Exception:                                           # noqa: BLE001
         pass
 
-    thread_ts = find_thread_ts(client, title, channel)
-    created = False
-    seen: set = set()
-    if not thread_ts:
-        parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
-        thread_ts = parent.get("ts")
-        created = True
-        logfn(f"  opened this week's thread {title!r} (ts {thread_ts})")
-    else:
-        seen = already_posted(client, thread_ts, channel)
+    out = []
+    for sunday, days in weeks:
+        wtitle = week_title(sunday)
+        thread_ts = find_thread_ts(client, wtitle, channel)
+        created = False
+        seen: set = set()
+        if not thread_ts:
+            parent = client.chat_postMessage(channel=channel, text=f"*{wtitle}*")
+            thread_ts = parent.get("ts")
+            created = True
+            logfn(f"  opened the thread {wtitle!r} (ts {thread_ts})")
+        else:
+            seen = already_posted(client, thread_ts, channel)
 
-    posted = []
-    for d in days:
-        todays = [t for t in for_day(rows, d) if norm_name(t.name) not in seen]
-        if not todays:
-            continue
-        client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                text=render_reply(todays, d))
-        seen.update(norm_name(t.name) for t in todays)
-        posted.append((d, len(todays)))
-        logfn(f"  posted {d.isoformat()}: {len(todays)} rep(s)")
-    if not posted:
-        logfn(f"  every termination this week is already in the thread — "
-              f"nothing to add")
-    return {"posted": bool(posted), "title": title, "thread_ts": thread_ts,
-            "thread_created": created, "channel": channel,
-            "days": [(d.isoformat(), n) for d, n in posted]}
+        posted = []
+        for d in days:
+            todays = [t for t in for_day(rows, d)
+                      if norm_name(t.name) not in seen]
+            if not todays:
+                continue
+            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                    text=render_reply(todays, d))
+            seen.update(norm_name(t.name) for t in todays)
+            posted.append((d, len(todays)))
+            logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
+        if not posted:
+            logfn(f"  {wtitle}: every termination is already in the thread — "
+                  f"nothing to add")
+        out.append({"title": wtitle, "thread_ts": thread_ts,
+                    "thread_created": created,
+                    "days": [(d.isoformat(), n) for d, n in posted]})
+
+    return {"posted": any(w["days"] for w in out), "title": title,
+            "channel": channel, "weeks": out}
