@@ -254,6 +254,38 @@ def _orchestrator_ids(cfg, target_date) -> set:
     return ids
 
 
+def _oneshot_utility_ids(cfg) -> set:
+    """Registry ids that are ONE-SHOT UTILITIES, not reports: the LaunchAgent
+    installers / disablers (`day_orchestrator.install_agent` / `.disable_agent`).
+    They only ever run when a human asks for them, so they must never enter the
+    historical-expected baseline — but the baseline is derived from the Activity
+    log alone, and a utility run by hand on two same-weekdays looks exactly like a
+    daily 7am report. That's how `disable_oat_processing_agent` (run 2026-08-05
+    07:30 to pause OAT after it folded into Applicant Push) started posting
+    "Disable/Pause: OAT Processing LaunchAgent — did not run today" every
+    Wednesday (Eve 2026-08-12). Matched by the same id/card-alias fan-out as
+    _orchestrator_ids, since Activity rows are written under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    ids = set()
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        cmd = " ".join(str(c) for c in (rep_raw.get("command") or []))
+        if not cmd.endswith(("day_orchestrator.install_agent",
+                             "day_orchestrator.disable_agent")):
+            continue
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
+
 def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
     'the mini' for the scheduler Mac mini, else 'Lucy 1' — so an alert names the
@@ -362,7 +394,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         return 1
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
-    skip = _orchestrator_ids(cfg, target_date)
+    skip = _orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
     already = _load_alerted(day)
     ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()
