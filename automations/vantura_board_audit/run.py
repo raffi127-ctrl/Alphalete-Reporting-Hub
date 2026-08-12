@@ -399,8 +399,22 @@ def audit(write: bool, log=_log) -> int:
         return 0
 
     ri = sh.worksheet("Report an Issue")
-    existing = " ".join(" ".join(r) for r in ri.get_all_values()[-40:])
-    new = [f for f in findings if f[:60] not in existing]
+    # Dedupe on the FULL finding text, matched per-cell against the "What's
+    # wrong" column — NOT a 60-char prefix searched inside a joined blob of the
+    # last 40 rows. Every finding here opens with a fixed sentence and only
+    # names the rep well past char 60, so the prefix could never distinguish two
+    # findings of the same KIND: on 2026-08-12 Yesenia Zuniga's "TERMINATION
+    # BATCH NOT CLOSED: 1 Roll Call row(s) still say A[ctive]" was swallowed by
+    # an 8/4 row about Aaron Tovar that shared that exact opening, so the
+    # finding never reached this tab at all while the run still reported
+    # "logged to the tab". A swallowed finding reads as a clean day.
+    def _dedupe_key(s: str) -> str:
+        return " ".join(str(s).split())
+
+    ISSUE_COL = 3                      # col D, "What's wrong" (header row r4)
+    existing = {_dedupe_key(r[ISSUE_COL]) for r in ri.get_all_values()[-40:]
+                if len(r) > ISSUE_COL and str(r[ISSUE_COL]).strip()}
+    new = [f for f in findings if _dedupe_key(f) not in existing]
     for f in findings:
         log(("NEW: " if f in new else "already reported: ") + f)
     if not write:

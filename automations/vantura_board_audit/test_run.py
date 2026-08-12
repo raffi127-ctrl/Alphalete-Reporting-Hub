@@ -95,6 +95,44 @@ def _stations_with_unknown_name():
     return rows, form
 
 
+def _roll_with_open_termination():
+    """Roll Call where a second person is Active AND carries a Date Gone (col M)
+    -> exactly ONE finding: the missing-board-row symptom is suppressed for
+    gone-dated rows, so the termination finding is the only thing that fires."""
+    gone = _pad([""], 14)
+    gone[1] = "Active"                 # col B status
+    gone[3] = "Yesenia Test"           # col D name
+    gone[12] = "8/11/2026"             # col M date gone
+    return [
+        ["", "Status", "", "Name"],
+        ["", "Active", "", "Casey Rep"],
+        gone,                          # roll row 3
+    ]
+
+
+def _termination_finding(who):
+    """The exact text run.py builds for one open termination. Kept as a literal
+    (not imported) so a reworded finding fails these tests loudly instead of
+    silently agreeing with itself."""
+    return ("TERMINATION BATCH NOT CLOSED: 1 Roll Call row(s) still say Active "
+            f"but carry a Date Gone — {who}. Set col B to 'Terminated'. Until "
+            "then they count as active headcount and the audit reports them as "
+            "missing from the Sales Board.")
+
+
+# The two share their first 60 characters — that prefix is exactly what the old
+# dedupe compared, and it stops before either name.
+_YESENIA_FINDING = _termination_finding("Yesenia Test (r3, gone 8/11/2026)")
+_AARON_FINDING = _termination_finding("Aaron Tovar (r32, gone 8/3/2026)")
+
+# Report an Issue: Date | Who | Where (tab / area) | What's wrong | Status
+_ISSUE_HEADER = ["Date", "Who", "Where (tab / area)", "What's wrong", "Status"]
+
+
+def _issue_row(date, what):
+    return [date, "board-audit (mini 4am)", "Sales Board", what, ""]
+
+
 def _roll_matching():
     """Roll Call where 'Casey Rep' is Active — so no off-menu-add and no
     missing-from-board findings fire."""
@@ -176,6 +214,77 @@ class ExitCodeSemantics(unittest.TestCase):
         self.assertEqual(sheet.worksheet("Report an Issue").appended, [])
         self.assertFalse(wm.called)
         self.assertFalse(mc.called)
+
+
+class ReportAnIssueDedupe(unittest.TestCase):
+    """The dedupe that decides whether a finding reaches the board's tab.
+
+    It has to hold BOTH ends: don't re-append the same finding every morning,
+    but never let a finding about one rep silence a finding about another.
+    """
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet_with_issues(self, issue_rows):
+        board_v, board_f = _board_with_one_rep()
+        st_v, st_f = _stations_clean()
+        return _FakeSheet({
+            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "Roll Call": _FakeWS(_roll_with_open_termination()),
+            "Report an Issue": _FakeWS([_ISSUE_HEADER] + list(issue_rows)),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+
+    def test_same_kind_different_rep_still_logged(self):
+        """REGRESSION (2026-08-12). The dedupe compared a 60-char PREFIX against
+        one joined blob of the last 40 rows. Every finding of a given kind opens
+        with the same fixed sentence and names the rep only PAST char 60, so the
+        prefix could not tell two of them apart: Yesenia Zuniga's termination
+        finding matched an 8/4 row about Aaron Tovar and never reached the tab,
+        while the run still reported it as 'logged to the tab'. A finding that
+        vanishes this way reads as a clean day."""
+        # Guard: this test only exercises the bug while the two findings really
+        # do share the old 60-char window. Reword the finding so the name moves
+        # earlier and this assert fires — the test is no longer testing anything.
+        self.assertIn(_YESENIA_FINDING[:60], _AARON_FINDING,
+                      "the two findings no longer collide on the old 60-char "
+                      "prefix — update this test, it has stopped covering the "
+                      "regression it was written for")
+        sheet = self._sheet_with_issues([_issue_row("8/4/2026", _AARON_FINDING)])
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        appended = sheet.worksheet("Report an Issue").appended
+        self.assertTrue(
+            appended,
+            "a finding about a DIFFERENT rep must not be swallowed by an older "
+            "finding of the same kind")
+        self.assertTrue(
+            any("Yesenia Test" in " ".join(map(str, r)) for r in appended),
+            "the appended row must name the rep the finding is actually about")
+        self.assertTrue(wm.called, "findings still record a soft manifest")
+
+    def test_identical_finding_is_not_reappended(self):
+        """The other end: the SAME finding, already sitting on the tab, must not
+        be appended again tomorrow morning — that is what the dedupe is for."""
+        sheet = self._sheet_with_issues([_issue_row("8/11/2026", _YESENIA_FINDING)])
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            sheet.worksheet("Report an Issue").appended, [],
+            "an already-reported finding must not be duplicated")
+        self.assertTrue(wm.called, "still a soft INCOMPLETE — the issue is open")
+        self.assertFalse(mc.called, "an open finding must never mark itself clean")
+
+    def test_dedupe_ignores_whitespace_and_other_columns(self):
+        """Match on the 'What's wrong' cell, normalised — a re-wrapped or
+        re-typed copy of the same finding is still the same finding, and text
+        that only appears in OTHER columns must not count as a match."""
+        wrapped = _YESENIA_FINDING.replace(" ", "  ").replace("— ", "—\n")
+        sheet = self._sheet_with_issues([_issue_row("8/11/2026", wrapped)])
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Report an Issue").appended, [],
+                         "whitespace differences must not defeat the dedupe")
 
 
 if __name__ == "__main__":
