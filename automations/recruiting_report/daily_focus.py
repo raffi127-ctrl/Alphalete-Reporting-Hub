@@ -79,6 +79,15 @@ _OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 # additions into the base when you want to share them.
 BASE_OVERRIDES_PATH = Path(__file__).resolve().parent / "icd_office_mappings.json"
 OVERRIDES_PATH = Path(__file__).resolve().parent.parent.parent / "output" / "icd_office_mappings.json"
+# Map a name to this instead of an office id to take it OFF the report for good:
+# the row is passed over silently — no fetch, no "not pulled" warning, no manifest
+# failure, no 🚨 dropped-section alert. Two reasons to use it:
+#   - the row isn't a person at all (a header / title row), or
+#   - the person is on the tab but doesn't recruit, so AppStream has nothing to
+#     give and every run flagged them as "no AppStream access" (Javeon Lara and
+#     Melik El Jaiez, Eve 2026-08-12 — the alert was crying wolf daily).
+# Their sections on the Sheet are LEFT ALONE, never cleared. Don't "fix" a
+# __SKIP__ back to an office id without checking that the person recruits now.
 SKIP_SENTINEL = "__SKIP__"
 
 # Section structure
@@ -813,7 +822,10 @@ def _resolve_office_id(name: str) -> Optional[str]:
 
 
 def _is_skipped(name: str) -> bool:
-    """True if the user marked this name as 'not an ICD' in overrides."""
+    """True if the user took this name off the report in overrides — a non-ICD
+    row, or a real person who doesn't recruit. See SKIP_SENTINEL. Keys are
+    lowercased, so one entry covers every capitalization on the tabs (the tabs
+    carry both 'Melik El Jaiez' and 'MELIK EL JAIEZ')."""
     return _load_overrides().get(name.lower().strip()) == SKIP_SENTINEL
 
 
@@ -981,8 +993,13 @@ def run_captainship(captainship: str, args, week_start: dt.date,
 
         for icd in icds:
             if _is_skipped(icd):
-                # User dismissed this row as 'not an ICD' (e.g. header text).
-                # Silent skip — don't log a warning every run.
+                # Taken off the report on purpose (header text, or someone who
+                # doesn't recruit). Silent skip — no warning, and crucially it
+                # never reaches inaccessible/unmapped, so it can't raise a
+                # dropped-section alarm every morning. Log at debug so a
+                # "where did this person go?" question still has an answer.
+                log.debug("[%s] marked __SKIP__ in the ICD mappings — "
+                          "off the report on purpose", icd)
                 continue
             office_id = _resolve_office_id(icd)
             if not office_id:
