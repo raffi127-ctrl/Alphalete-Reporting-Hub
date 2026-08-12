@@ -295,6 +295,12 @@ SECTION_OVERRIDES: dict = {
     # both shown, not combined).
     "isaiah": ("knocks_gaps", "churn", "rep_activations", "order_log",
                "cancels", "disconnects"),
+    # PAUSED (Megan 2026-08-12): drew (Precision, #precisionmanagement-nds-sales)
+    # was form-onboarded as D2D, but he's WIRELESS/NDS — every D2D board pulled
+    # empty and posted a blank thread ("looks HORRIBLE"). Empty tuple = post
+    # nothing. Un-pause only after wiring his NDS boards like isaiah (add to
+    # NDS_OFFICES + his own per-rep churn view) — see [[project_isaiah_legacy_wireless]].
+    "drew": (),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
