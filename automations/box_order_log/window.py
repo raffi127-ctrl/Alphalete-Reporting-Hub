@@ -92,21 +92,46 @@ def _all_item(viz, field: str):
 
 
 def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
-                           verbose: bool = True) -> None:
+                           verbose: bool = True,
+                           hydrate_timeout_ms: int = 20_000) -> None:
     """Check '(All)' on each pinned categorical filter that isn't already on.
 
     Fail-SOFT on purpose: a filter we can't reach must not kill the whole
     report (Carlos's daily Slack post rides this same hook). The runners
-    compare the export's newest sale date against today and flag a short pull,
-    so a silent regression here surfaces there instead of vanishing.
+    compare the export's newest sale date against today and REFUSE to
+    email/post a clearly-capped pull (see should_block_send), so a regression
+    here can't silently ship a third of the numbers.
+
+    WAIT FOR HYDRATION (2026-08-12): the viz loads the filter panel async, and
+    `_all_item(...).count()` reads 0 the instant it's called if the checkbox
+    hasn't rendered yet. That made the release SILENTLY skip on a slow load —
+    the 4:29pm re-pull that day capped at 8/4 with "no (All) item found" for
+    both filters, exactly this race. So each field now waits for its (All)
+    item to attach before concluding it's absent, and the whole pass retries
+    once if any field couldn't be released.
     """
-    for field in fields:
-        try:
+    unresolved = list(fields)
+    for attempt in range(2):
+        if not unresolved:
+            break
+        if attempt and verbose:
+            print("  -> BOX filter release retry for {}".format(unresolved),
+                  flush=True)
+        still_pending = []
+        for field in unresolved:
+          try:
             box = _all_item(viz, field)
+            # Give the async panel time to render before deciding it's missing.
+            try:
+                box.wait_for(state="attached", timeout=hydrate_timeout_ms)
+            except Exception:
+                pass
             if box.count() == 0:
                 if verbose:
-                    print("  ⚠ BOX filter {!r}: no (All) item found — "
-                          "the pull may be capped".format(field), flush=True)
+                    print("  ⚠ BOX filter {!r}: no (All) item found after "
+                          "{}s — the pull may be capped".format(
+                              field, hydrate_timeout_ms // 1000), flush=True)
+                still_pending.append(field)
                 continue
             if box.get_attribute("aria-checked") == "true":
                 if verbose:
@@ -124,13 +149,17 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
             if verbose:
                 print("  -> BOX filter {!r} released to (All) "
                       "(aria-checked={!r})".format(field, state), flush=True)
-            if state != "true" and verbose:
-                print("  ⚠ {!r} did NOT flip — export will be capped to the "
-                      "view's saved ID list".format(field), flush=True)
-        except Exception as exc:                          # noqa: BLE001
+            if state != "true":
+                still_pending.append(field)
+                if verbose:
+                    print("  ⚠ {!r} did NOT flip — export will be capped to "
+                          "the view's saved ID list".format(field), flush=True)
+          except Exception as exc:                          # noqa: BLE001
+            still_pending.append(field)
             if verbose:
                 print("  ⚠ BOX filter {!r} release failed ({!r}) — "
                       "continuing".format(field, exc), flush=True)
+        unresolved = still_pending
 
 
 def capped_pull_warning(newest: Optional[dt.date],
@@ -156,6 +185,45 @@ def capped_pull_warning(newest: Optional[dt.date],
             "Contract ID / Account Id filters have probably re-pinned to a "
             "stale ID list (see window.py); the counts below UNDERSTATE "
             "reality.".format(newest, behind, today))
+
+
+# The send/post gate is deliberately LOOSER than the warning above: a warning is
+# cheap and should fire on any short pull (>2 days), but REFUSING to deliver is
+# not — a false block means an owner gets no email that day. A real cap sits the
+# frozen ID snapshot 5–8+ days behind; the widest legitimate gap is a weekend
+# (Fri sale, Mon pull = 3 days). So block only at >= 4 days behind, which no
+# normal week can reach but every genuine cap blows past.
+BLOCK_SEND_MIN_DAYS_BEHIND = 4
+
+
+def should_block_send(newest: Optional[dt.date],
+                      today: Optional[dt.date] = None,
+                      min_days_behind: int = BLOCK_SEND_MIN_DAYS_BEHIND) -> str:
+    """Return a loud reason string when a pull is too capped to DELIVER, else ''.
+
+    This is the safety net the 2026-08-07 fix lacked: `release_pinned_filters`
+    is best-effort and can still miss on a bad viz load (Roshan, 2026-08-12 —
+    the release found no '(All)' item and the pull capped to 8/4). When that
+    happens the counts understate reality by a third or more, and the only prior
+    guard (`--require-fresh`) fails OPEN on the later pass. Rather than email
+    an owner numbers that are quietly wrong, the runners call this and skip the
+    send, failing loudly instead. The Sheet still merges safely (it keeps its
+    newer existing rows), so nothing good is lost — only the wrong email/post is
+    suppressed until a clean pull lands.
+    """
+    today = today or dt.date.today()
+    if newest is None:
+        return ("CAPPED PULL: export has no dated sales at all — refusing to "
+                "send. Check the Start/End Date and Contract ID / Account Id "
+                "filters (must read '(All)').")
+    behind = (today - newest).days
+    if behind < min_days_behind:
+        return ""
+    return ("CAPPED PULL: newest sale is {} — {} days behind {} — refusing to "
+            "send numbers that would understate reality. The Contract ID / "
+            "Account Id filters likely re-pinned to a stale ID list; re-run "
+            "once a clean pull lands (newest within {} days).".format(
+                newest, behind, today, min_days_behind - 1))
 
 
 def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):

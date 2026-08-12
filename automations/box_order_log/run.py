@@ -321,6 +321,18 @@ def main(argv: Optional[list] = None) -> int:
             print("    re-run with --post")
         return 0
 
+    # HARD GATE (2026-08-12): don't POST a clearly-capped pull. The filter
+    # release is best-effort and can miss on a bad viz load, capping the export
+    # to a stale ID snapshot; posting it puts numbers that understate reality in
+    # front of the whole channel. Skip the post and fail loudly instead — the
+    # Sheet merge already ran above and keeps its newer rows, so nothing good is
+    # lost. Same net as run_owner's send gate. See window.should_block_send.
+    _block = window_mod.should_block_send(max(dated) if dated else None, today)
+    if _block:
+        print("\n✗ NOT posting to {} — {}".format(chan_name, _block),
+              file=sys.stderr, flush=True)
+        return 3
+
     try:
         from automations.shared import slack_metrics_post as smp
     except Exception as exc:

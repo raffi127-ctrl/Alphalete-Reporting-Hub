@@ -164,10 +164,11 @@ def main(argv: Optional[list] = None) -> int:
                   flush=True)
             return 3
 
+    dated = [s.sale_date for s in sales if s.sale_date]
+    newest = max(dated) if dated else None
     if verbose:
         reps = sorted({(s.fields.get("Rep Name") or "").strip()
                        for s in sales if (s.fields.get("Rep Name") or "").strip()})
-        dated = [s.sale_date for s in sales if s.sale_date]
         print("\nBOX Order Log — {} — {}".format(
             cfg.display, today.strftime("%B %d, %Y")))
         print("  matched {} of {} sales to {} (office #{})".format(
@@ -175,9 +176,21 @@ def main(argv: Optional[list] = None) -> int:
         print("  {} rep(s): {}".format(len(reps), ", ".join(reps)))
         if dated:
             print("  sale dates {} … {}".format(min(dated), max(dated)))
-        warn = window.capped_pull_warning(max(dated) if dated else None, today)
+        warn = window.capped_pull_warning(newest, today)
         if warn:
             print("  " + warn)
+
+    # HARD GATE (2026-08-12): if the pull is clearly capped, do NOT email the
+    # owner numbers that understate reality — skip the send and fail loudly.
+    # The filter-release hook is best-effort and occasionally misses on a bad
+    # viz load; this is the net that stops the wrong email from going out. Dry
+    # runs are exempt (they're for inspection). See window.should_block_send.
+    send_now = args.email or bool(args.test_to)
+    block = window.should_block_send(newest, today)
+    if block and send_now:
+        print("✗ {} — {}: {}".format(
+            cfg.display, today.isoformat(), block), file=sys.stderr, flush=True)
+        return 3
 
     # ---- 4. build the owner's workbook + payout image ------------------
     out_xlsx = OUTPUT_DIR / "BOX Order Log {} {}.xlsx".format(
