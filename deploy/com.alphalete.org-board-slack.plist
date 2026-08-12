@@ -23,30 +23,38 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- DAILY incl. weekends (no Weekday key). First pass 8:30 CST (Megan
-         2026-07-18; the VA posted ~8:05-8:17), then q25m retries as a safety net.
+    <!-- DAILY incl. weekends (no Weekday key). First pass 7:05 CST (Eve
+         2026-08-12; it was 8:30 when Megan wired this on 2026-07-18 to match the
+         VA's ~8:05-8:17 post, then 07:15 on 08-11), then q25m retries as a
+         safety net.
          The module's LIGHT gate posts unless yesterday is entirely empty, and a
          once-per-day state file no-ops the remaining passes. TIME KNOB: edit
          these entries (Hour/Minute are machine LOCAL time; the mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
-        <!-- THREE EARLY SLOTS PREPENDED, first one 07:15 (Eve 2026-08-11); the
+        <!-- EARLY SLOTS PREPENDED, first one 07:05 (Eve 2026-08-12); the
              original 08:30..11:25 grid below is untouched.
 
-             WHY 07:15 AND NOT EARLIER. The board's last-landing source is the
-             BOX daily tracker, whose Tableau extract refreshes ~7-8am; the
-             board's readiness gate (tableau:box_daily) opened 06:50-07:06 every
-             day over 8/04-8/11, and the fill itself takes 9-14 min, so the fill
-             ENDED 07:04-07:11. A slot at 07:10 would sometimes fire while the
-             fill was still running: slack_post.fill_gate would hold it and the
-             board would slip to the NEXT slot, arriving later than before.
-             07:15 clears the fill's observed tail with margin.
+             WHY 07:05. This slot chases the FILL, and the fill's clock changed
+             on 2026-08-12: org_sales_board no longer waits for the BOX extract
+             (the 'tableau:box_daily' gate was removed — see that report's
+             _box_gate_note in schedule_config.json) and now runs behind a
+             not_before '06:35' floor instead. The fill takes 9-14 min, so it
+             ENDS ~06:44-06:49 rather than the 07:04-07:11 that justified the
+             07:15 slot this replaces. 07:05 clears that tail with margin and
+             puts the REVIEW LINK — which lands ~4 min after this post, because
+             org_sales_board_email is gated on slack:org_board_posted — at about
+             07:10-07:15, which is what Eve asked for.
 
-             Earlier than the fill is not a "slightly early" board — it is one
-             with a stale or empty BOX section. -->
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>40</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>5</integer></dict>
+             This post now shows a BOX section that is normally a day behind.
+             That is the accepted trade (Eve 2026-08-12: 'aunque Box esté
+             siempre un día atrasado'); the 2:30pm board-catchup fixes the
+             board itself the same afternoon. slack_post.fill_gate is LIGHT —
+             it holds only if yesterday is empty across EVERY section — so a
+             blank BOX column does not push this to the next slot. -->
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>20</integer></dict>

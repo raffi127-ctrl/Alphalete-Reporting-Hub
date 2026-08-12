@@ -1988,13 +1988,13 @@
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
-      "_note": "Fills the SANDBOX 'Copy of' tab daily, the fill AND the weekly rollover BOTH run AUTOMATICALLY. Nobody rolls a board by hand (Eve 2026-07-30). The roll was briefly manual ('a person Monday night', 2026-06-30) and that note outlived the change: it was re-automated 2026-07-14 and runs inside '--step daily' with no flag of its own (run.py, before the fill). It is idempotent and keyed to the REPORTING week, so it rolls at most once a week, on the first run of the Tuesday, and a missed Tuesday self-heals on the next run. Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-11): runs in its ORDER (8), gated on DATA readiness \u2014 the not_before '08:00' clock was removed. The board's last-landing source is BOX (extract refreshes ~7-8am); data_sources now includes 'tableau:box_daily' with a box_daily readiness probe, so the orchestrator holds the board until Box has the latest completed day, then it runs (no more fixed 8am wait when Box is in early). The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop. ONLY JE stays a day behind (inherent \u2014 the VAs' manual board is too). COMPARE DEFERRED (Megan 2026-07-14): the fill now runs with --skip-compare. Comparing right after the 4am fill pitted us against a VA tab the VAs hadn't touched yet, so every cell we were merely AHEAD on counted as a difference and the fill closed INCOMPLETE every morning. The real compare is report_id 'board_compare', which runs at 9am CST once the VAs have finished keying.",
+      "_note": "Fills the SANDBOX 'Copy of' tab daily, the fill AND the weekly rollover BOTH run AUTOMATICALLY. Nobody rolls a board by hand (Eve 2026-07-30). The roll was briefly manual ('a person Monday night', 2026-06-30) and that note outlived the change: it was re-automated 2026-07-14 and runs inside '--step daily' with no flag of its own (run.py, before the fill). It is idempotent and keyed to the REPORTING week, so it rolls at most once a week, on the first run of the Tuesday, and a missed Tuesday self-heals on the next run. Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING: was a not_before '08:00' clock (removed Megan 2026-07-11), then a 'tableau:box_daily' readiness gate that held the board until Box had the latest completed day. Both are gone as of 2026-08-12 \u2014 see _box_gate_note: the board now runs in its ORDER (8) behind a not_before '06:35' floor and does NOT wait for Box, so the chain it feeds lands on a predictable clock. The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop, and is now what makes the day-behind Box column correct. ONLY JE stays a day behind (inherent \u2014 the VAs' manual board is too). COMPARE DEFERRED (Megan 2026-07-14): the fill now runs with --skip-compare. Comparing right after the 4am fill pitted us against a VA tab the VAs hadn't touched yet, so every cell we were merely AHEAD on counted as a difference and the fill closed INCOMPLETE every morning. The real compare is report_id 'board_compare', which runs at 9am CST once the VAs have finished keying.",
       "display_name": "Alphalete Org Sales Board",
       "source_type": "tableau",
       "data_sources": [
-        "tableau:sara_byday",
-        "tableau:box_daily"
+        "tableau:sara_byday"
       ],
+      "_box_gate_note": "'tableau:box_daily' REMOVED from data_sources (Eve 2026-08-12): 'que se postee a las 7:15 aunque Box esté siempre un día atrasado'. Box was the board's only real gate and its extract lands 06:50-08:00, so on a slow Box day (8/12: nothing by 07:30) the gate held the fill to its 08:00 fallback and the WHOLE chain behind it — public post, review draft, email — slid to 08:30-09:40. The board no longer waits: it fills at not_before 06:35 with whatever Box has, which is normally the day before. That is accepted, not a bug — the 2:30pm com.alphalete.board-catchup already re-pulls the day-behind sections (Retail NL/Internet/JE + BOX + Frontier), so the CORRECT Box numbers land on the board the same afternoon; only the morning post and the emailed picture show Box a day short. NOTHING ELSE LOSES ITS BOX GATE: tableau_screenshots_box (order 5.5) keeps 'tableau:box_daily' with its 08:00 fallback untouched, so Carlos's channels still get real Box numbers (the 2026-07-16 complaint) instead of yesterday's. Restore by putting 'tableau:box_daily' back here and dropping not_before.",
       "command": [
         "automations.org_sales_board.run"
       ],
@@ -2013,7 +2013,8 @@
           4,
           5,
           6
-        ]
+        ],
+        "not_before": "06:35"
       },
       "priority": "P1",
       "freshness_target": null,

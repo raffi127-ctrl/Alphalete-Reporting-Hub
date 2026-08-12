@@ -37,9 +37,11 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-START_HOUR=7        # first check of the day (the post's first slot is 07:10,
-                    # so the draft is up ~07:20 — a checkmark at 07:25 used to
-                    # sit unread until 09:00. Eve 2026-08-11.)
+START_HOUR=7        # first check of the day (the board's public post fires at
+                    # 07:05, so the review link is up ~07:10 — a checkmark at
+                    # 07:15 used to sit unread until 09:00. Eve 2026-08-11,
+                    # times updated 2026-08-12 when the fill stopped waiting
+                    # for BOX.)
 END_HOUR=20         # last check — after this, tomorrow's run takes over
 
 HOUR=$(date +%H)
