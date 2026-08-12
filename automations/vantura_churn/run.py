@@ -196,6 +196,47 @@ def _write_diag(lines: list[str]) -> None:
         print(f"diag write failed: {e}", flush=True)
 
 
+def _dump_rep_grid(today: dt.date, log) -> int:
+    """DIAG: download Carlos's 'Activation Office' per-rep crosstab + the office
+    totals CSV and dump BOTH raw to the 'Vantura Diag' tab (readable from any
+    machine). Feeds building the full-board recreation (every rep + Tableau's own
+    Activation Color per cell). Read-only w.r.t. report data."""
+    from pathlib import Path as _P
+    import csv as _csv
+    from automations.vantura_churn import cdp_pull, compute
+    from automations.vantura_churn import activation_rates as _ar
+
+    view_url, _cv, own = _activation_cfg()["carlos"]
+    rp = _P("/tmp/_dump_activation_office_carlos.csv")
+    op = _P("/tmp/_dump_activation_office_totals_carlos.csv")
+    lines: list[str] = [f"dump-rep-grid @ {dt.datetime.now().isoformat(timespec='seconds')}",
+                        f"view_url={view_url}", f"owner_prefix={own!r}", ""]
+    try:
+        with cdp_pull._cdp_lock(label="vantura dump-rep-grid", log=log):
+            cdp_pull.download_views([(view_url, _ar.REP_SHEET, rp)], today=today,
+                                    verbose=False, log=log,
+                                    csv_fetches=[(_ar.CSV_URL, op)])
+        grid = compute._load_grid(rp)
+        lines.append(f"=== '{_ar.REP_SHEET}' grid: {len(grid)} rows ===")
+        for r in grid:
+            lines.append(" | ".join("" if c is None else str(c) for c in r))
+        lines.append("")
+        with open(op, encoding="utf-8-sig", errors="replace") as fh:
+            totals = list(_csv.reader(fh))
+        lines.append(f"=== office totals CSV: {len(totals)} rows ===")
+        for r in totals:
+            joined = " | ".join(str(c) for c in r)
+            if own.upper() in joined.upper() or r is totals[0]:
+                lines.append(joined)
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        lines.append(f"DUMP ERROR: {str(e)[:200]}")
+        lines += ["  " + ln[:200] for ln in traceback.format_exc().splitlines()[-6:]]
+    _write_diag(lines)
+    log(f"dump-rep-grid: wrote {len(lines)} lines to '{DIAG_TAB}'")
+    return 0
+
+
 def _probe(today: dt.date, log) -> int:
     """CDP probe: download Carlos's Order Log crosstab via REAL Chrome (the
     patchright-proof path) and report row counts. Findings → the 'Vantura Diag' tab."""
@@ -236,6 +277,10 @@ def main(argv=None) -> int:
                     help="diagnostics only: dump what the ACTIVATION RATES "
                          "view exports (columns, bucket captions, Carlos's "
                          "rows) to the 'Vantura Diag' tab. LUCY 2 ONLY.")
+    ap.add_argument("--dump-rep-grid", action="store_true",
+                    help="diagnostics only: dump Carlos's full 'Activation "
+                         "Office' per-rep grid + office totals to the 'Vantura "
+                         "Diag' tab (feeds the full-board recreation). LUCY 2 ONLY.")
     # Choices come from OWNER_CFG so adding an office is ONE table row, not a
     # row plus a literal here that silently rejects the new key.
     ap.add_argument("--owner", choices=tuple(["both"] + [k for k, *_ in OWNER_CFG]),
@@ -280,6 +325,8 @@ def main(argv=None) -> int:
             cdp_pull.probe_activation_rates(log=log,
                                             view_url=args.probe_activations_url)
         return 0
+    if args.dump_rep_grid:
+        return _dump_rep_grid(today, log)
     if args.theme:
         ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
         fill.apply_theme(ws, log=log)
