@@ -281,6 +281,11 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     for p, sect in sections.items():
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing ICDs")
+    # An ICD on TWO rows in one section is invisible to the fill — only the
+    # last row is written, the other shows a frozen value the daily B+C insert
+    # copies forward. Report it; deleting a row stays a human call.
+    if fill.warn_duplicate_rep_rows:
+        fill.warn_duplicate_rep_rows(sections, ws.title)
 
     # Read the grid ONCE and reuse it for the reconcile + both went-dark
     # checks below — nothing writes in between, so re-fetching only burns a

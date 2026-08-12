@@ -24,6 +24,7 @@ def open_ws():
 # Re-export the operations so wireless_churn.run can call them by the
 # same names new_internet_churn.run uses.
 find_sections             = _shared.find_sections
+warn_duplicate_rep_rows   = _shared.warn_duplicate_rep_rows
 insert_missing_reps       = _shared.insert_missing_reps
 insert_two_cols_at_b      = _shared.insert_two_cols_at_b
 today_already_filled      = _shared.today_already_filled

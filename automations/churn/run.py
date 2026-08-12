@@ -71,6 +71,12 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     for p, sect in sections.items():
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing reps")
+    # A rep on TWO rows in one section: only the last row gets today's value,
+    # the other keeps a frozen one the daily B+C insert copies forward. Report
+    # it (deleting a row is Megan's call), don't fail the Local Office post.
+    _warn_dups = getattr(fill_mod, "warn_duplicate_rep_rows", None)
+    if _warn_dups:
+        _warn_dups(sections, fill_mod.TAB_LOCAL_OFFICE)
 
     already_filled = fill_mod.today_already_filled(ws, sections, today)
     skip_insert = already_filled and not args.force_insert

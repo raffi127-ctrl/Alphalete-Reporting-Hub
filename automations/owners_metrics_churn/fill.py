@@ -118,6 +118,9 @@ def open_ws_nds_jairo():
 # Re-export shared fill operations under their canonical names so the
 # runner can call them by the same names used elsewhere.
 find_sections                = _shared.find_sections
+# Added with the duplicate-row guard; getattr so this module still imports
+# against a checkout that predates it.
+warn_duplicate_rep_rows      = getattr(_shared, "warn_duplicate_rep_rows", None)
 insert_missing_reps          = _shared.insert_missing_reps
 insert_two_cols_at_b         = _shared.insert_two_cols_at_b
 today_already_filled         = _shared.today_already_filled

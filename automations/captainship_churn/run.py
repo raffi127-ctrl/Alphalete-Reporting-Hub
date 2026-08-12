@@ -62,9 +62,11 @@ def _apply_aliases(parsed: dict, aliases: dict) -> dict:
 
 
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
-                    today: dt.date, args) -> dict:
-    """Fill one Captainship Churn tab. Returns {period: [went_dark_rep, ...]} —
-    reps on the tab + recently active but absent from today's pull (empty = clean)."""
+                    today: dt.date, args) -> tuple:
+    """Fill one Captainship Churn tab. Returns
+    ({period: [went_dark_rep, ...]}, {period: {rep: [dup rows]}}) — reps on the
+    tab but absent from today's pull, and reps sitting on more than one row
+    (both empty = clean)."""
     print(f"\n--- {label}: parse + fill ---")
     office = parsed["office_total"]
     reps = parsed["reps"]
@@ -80,6 +82,15 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     for p, sect in sections.items():
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing ICDs")
+
+    # DUPLICATE ROWS — the Rashad Reed case (Eve 2026-08-11): he sat on rows 8
+    # AND 33 of the NI 0-30 block. `rep_rows` keeps only the last row, so the
+    # fill refreshed row 33 while row 8 kept the 3.94% it last got on 7/27 —
+    # copied rightward every day by insert_two_cols_at_b — and his emailed
+    # screenshot showed him twice with two different numbers for 16 days. No
+    # step in this pipeline could see it, so flag it here (report only: which
+    # row to keep is Eve's call, and we never delete her data).
+    dups = fill.warn_duplicate_rep_rows(sections, label)
 
     # Re-point any pulled name that has NO row at the row the tab already has
     # for that person (alias siblings). Runs BEFORE the went-dark check so a
@@ -175,7 +186,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
                                       dry_run=args.dry_run, logfn=print)
     fill.apply_rep_row_borders(ws, sections,
                                dry_run=args.dry_run, logfn=print)
-    return went_dark
+    return went_dark, dups
 
 
 def main(argv=None) -> int:
@@ -239,14 +250,17 @@ def main(argv=None) -> int:
               f"({len(aliases)} canonical names).")
     all_reps: set = set()
     went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
+    dups_all: dict = {}           # {tab label: {period: {rep: [rows]}}}
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
         parsed = pull.parse(csvs[slug])
         parsed = _apply_aliases(parsed, aliases)
-        _wd = _run_fill_phase(label, open_ws_fn, parsed, today, args)
+        _wd, _dups = _run_fill_phase(label, open_ws_fn, parsed, today, args)
         if _wd:
             went_dark_all[label] = _wd
+        if _dups:
+            dups_all[label] = _dups
         all_reps.update(parsed.get("reps", {}).keys())
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
@@ -279,6 +293,10 @@ def main(argv=None) -> int:
         _dark_note = ("rep(s) on the tab stopped filling (recently active but "
                       "absent from today's pull): " + "; ".join(_bits))
 
+    # Same reasoning for a DUPLICATE row: every pull can succeed and the tab
+    # still show a rep twice, one of the two frozen. Never a clean DONE.
+    _dup_note = fill.format_duplicate_note(dups_all) if dups_all else None
+
     # Standard failure manifest → Hub "Retry failed only" + failure-help callout.
     # Only on a FULL run (an --only run is itself the retry). --only is a single
     # choice, so retry just the one when exactly one failed, else full re-run.
@@ -295,6 +313,7 @@ def main(argv=None) -> int:
                     kind="report",
                     note=f"{len(failed)} churn report(s) failed: {failed}."
                          + (f" ⚠ {_dark_note}" if _dark_note else "")
+                         + (f" ⚠ {_dup_note}" if _dup_note else "")
                          + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason=f"{len(failed)} churn report(s) failed in "
@@ -317,6 +336,7 @@ def main(argv=None) -> int:
                     "captainship-new-internet-wireless-churn",
                     failed=list(went_dark_all.keys()), retry_args=[], kind="report",
                     note="⚠ " + _dark_note
+                         + (f" ⚠ {_dup_note}" if _dup_note else "")
                          + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason="A rep on a churn tab stopped filling while every "
@@ -334,6 +354,32 @@ def main(argv=None) -> int:
                                 + _dark_note + ". Usually she was dropped from her "
                                 "captain's Tableau view filter or renamed. Can "
                                 "someone check the view?"))
+            elif _dup_note:
+                # Clean pulls, nobody dark — but a rep is on the tab twice, so
+                # the sheet (and his emailed screenshot) shows two different
+                # numbers for one person. Not a green DONE.
+                _rm.write_manifest(
+                    "captainship-new-internet-wireless-churn",
+                    failed=list(dups_all.keys()), retry_args=[], kind="report",
+                    note="⚠ " + _dup_note
+                         + (f" ⚠ {_term_note}" if _term_note else ""),
+                    remediation=_rm.make_remediation(
+                        reason="A rep occupies more than one row in the same "
+                               "churn section: " + _dup_note,
+                        fix="Only the LAST of those rows gets today's value; "
+                            "the other keeps whatever it held when the "
+                            "duplicate appeared, copied forward every day by "
+                            "the B+C insert. Open the tab, delete the stale "
+                            "row(s) (keep the one whose numbers move day to "
+                            "day), then re-run. A re-run alone will NOT fix "
+                            "it.",
+                        link="https://docs.google.com/spreadsheets/d/"
+                             + fill.SHEET_ID,
+                        message="Heads up — a rep is listed twice in the same "
+                                "section of a Captainship Churn tab, so his "
+                                "report shows two different numbers for him: "
+                                + _dup_note + ". One of the two rows is "
+                                "frozen. Can someone delete the stale row?"))
             elif _term_note:
                 _rm.write_manifest("captainship-new-internet-wireless-churn",
                                    failed=[], kind="report", note="⚠ " + _term_note)
@@ -360,6 +406,14 @@ def main(argv=None) -> int:
               f"{_dark_note} ===")
         print("  Check that rep's Tableau view filter (she was likely removed) "
               "or add an alias if she was renamed, then re-run.")
+        return 1
+    if dups_all and not args.only:
+        # Both pulls fine, nobody dark — but one rep prints twice with two
+        # different numbers. A re-run can't fix it; the stale row has to go.
+        print(f"\n=== run INCOMPLETE — {_dup_note} ===")
+        print("  Only the LAST of those rows is being filled; the other is "
+              "frozen and copied forward daily. Delete the stale row (keep "
+              "the one whose numbers change day to day), then re-run.")
         return 1
     print("\n=== done ===")
     return 0

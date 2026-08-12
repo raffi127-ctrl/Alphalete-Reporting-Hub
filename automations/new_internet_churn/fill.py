@@ -179,6 +179,15 @@ def find_sections(ws) -> dict:
             office_avg_row = header_row + 1
 
         rep_rows: dict[str, int] = {}
+        # Every row a name occupies, so a SECOND row for the same rep can be
+        # reported instead of vanishing. rep_rows keeps last-wins (unchanged
+        # behaviour: the fill writes the bottom-most row), but the collapsed
+        # sibling used to be invisible to the whole pipeline — it was never
+        # written, never cleared, and the daily B+C insert kept copying its
+        # last real value rightward forever. That is how Rashad Reed sat twice
+        # in the Captainship 0-30 block for 16 days with a frozen 3.94% next
+        # to his live 3.29% (Eve 2026-08-11).
+        rep_row_all: dict[str, list] = {}
         for r in range(rep_header_row + 1, end_row + 1):
             if r > n_rows:
                 break
@@ -191,13 +200,57 @@ def find_sections(ws) -> dict:
             if norm == "REP" or "AVG" in norm:
                 continue
             rep_rows[name.lower()] = r
+            rep_row_all.setdefault(name.lower(), []).append(r)
         sections[period] = {
             "header_row": header_row,
             "office_avg_row": office_avg_row,
             "rep_header_row": rep_header_row,
             "rep_rows": rep_rows,
+            "rep_row_all": rep_row_all,
+            "dup_rows": {nm: rows for nm, rows in rep_row_all.items()
+                         if len(rows) > 1},
         }
     return sections
+
+
+def detect_duplicate_rep_rows(sections: dict) -> dict:
+    """{period: {rep_name_lower: [row, row, ...]}} for every rep that occupies
+    MORE THAN ONE row inside the same section — empty dict when clean.
+
+    A duplicate is never self-healing: `rep_rows` keeps only the last row, so
+    the fill refreshes that one and the other keeps whatever it last held,
+    carried forward every day by `insert_two_cols_at_b`'s PASTE_NORMAL. On the
+    sheet (and in the emailed screenshot) the rep shows up twice with two
+    different numbers, one of them stale. Only a human can decide which row to
+    keep, so this reports — it never deletes a row. [[feedback_flag_unfilled_cells]]"""
+    return {p: dict(sect["dup_rows"]) for p, sect in sections.items()
+            if sect.get("dup_rows")}
+
+
+def warn_duplicate_rep_rows(sections: dict, label: str = "",
+                            logfn=print) -> dict:
+    """Print the duplicate-row report (if any) and return it, so a caller can
+    escalate the run to INCOMPLETE. Same shape as detect_duplicate_rep_rows."""
+    dups = detect_duplicate_rep_rows(sections)
+    for period, reps in dups.items():
+        for name, rows in reps.items():
+            logfn(f"  ⚠ {label + ': ' if label else ''}{period}-day has "
+                  f"{len(rows)} rows for '{name}' (rows {rows}) — only row "
+                  f"{rows[-1]} is being filled; the other(s) show a FROZEN "
+                  f"value copied forward each day. Delete the stale row(s).")
+    return dups
+
+
+def format_duplicate_note(dups_by_tab: dict) -> str:
+    """One-line manifest note from {tab label: {period: {name: [rows]}}}."""
+    bits = []
+    for label, per in dups_by_tab.items():
+        for period, reps in per.items():
+            for name, rows in reps.items():
+                bits.append(f"{label} {period}-day: '{name}' on rows "
+                            f"{', '.join(str(r) for r in rows)}")
+    return ("the same rep occupies more than one row (one of them is frozen): "
+            + "; ".join(bits))
 
 
 def recent_active(values: list, row: int,

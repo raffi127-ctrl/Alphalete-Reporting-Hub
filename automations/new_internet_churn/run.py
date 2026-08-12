@@ -68,6 +68,10 @@ def main(argv=None) -> int:
     for p, sect in sections.items():
         print(f"  {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing reps in roster")
+    # A rep sitting on TWO rows in one section is invisible to the fill (only
+    # the last row is written; the other keeps a value the daily column insert
+    # copies forward forever). Report it — deleting a row is Megan's call.
+    fill.warn_duplicate_rep_rows(sections, fill.TAB_LOCAL_OFFICE)
 
     print("Step 4: Insert missing reps (any rep in Tableau but not yet in section)...")
     added = fill.insert_missing_reps(ws, sections, parsed,

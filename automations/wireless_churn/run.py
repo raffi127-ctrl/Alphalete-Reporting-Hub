@@ -60,6 +60,9 @@ def main(argv=None) -> int:
     for p, sect in sections.items():
         print(f"  {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing reps in roster")
+    # See new_internet_churn.run — a rep on two rows in one section is silently
+    # half-filled; the untouched row keeps a frozen value forever.
+    fill.warn_duplicate_rep_rows(sections, fill.TAB_LOCAL_OFFICE)
 
     print("Step 4: Insert missing reps with non-zero churn for that period...")
     added = fill.insert_missing_reps(ws, sections, parsed,
