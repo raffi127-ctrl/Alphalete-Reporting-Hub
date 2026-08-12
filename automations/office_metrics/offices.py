@@ -295,18 +295,18 @@ SECTION_OVERRIDES: dict = {
     # both shown, not combined).
     "isaiah": ("knocks_gaps", "churn", "rep_activations", "order_log",
                "cancels", "disconnects"),
-    # PAUSED (Megan 2026-08-12): drew (Precision, #precisionmanagement-nds-sales)
-    # was form-onboarded as D2D, but he's WIRELESS/NDS — every D2D board pulled
-    # empty and posted a blank thread ("looks HORRIBLE"). Empty tuple = post
-    # nothing. Un-pause only after wiring his NDS boards like isaiah (add to
-    # NDS_OFFICES + his own per-rep churn view) — see [[project_isaiah_legacy_wireless]].
-    "drew": (),
+    # drew (Precision, #precisionmanagement-nds-sales) is WIRELESS/NDS — owner
+    # "DREW TEPPER[precision management team, inc.]" in the NDS-SN workbook (572
+    # wireless orders, verified 2026-08-12). Wired like isaiah. Churn HELD until a
+    # per-rep NDS churn view exists (Megan: must match everyone = per-rep). Time
+    # Gaps HELD until his Time Tracker is verified non-blank (never post blank).
+    "drew": ("rep_activations", "order_log", "cancels"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
 # (NDS owners), so the runner sources the NDS equivalents. Committed here (not in
 # each mini's onboarded_offices.json) so it deploys via git like SECTION_OVERRIDES.
-NDS_OFFICES: set = {"isaiah"}
+NDS_OFFICES: set = {"isaiah", "drew"}
 
 # Offices whose Slack channel lives in a DIFFERENT workspace than AO, so their
 # metrics must post with a workspace-specific BOT token instead of the machine's
