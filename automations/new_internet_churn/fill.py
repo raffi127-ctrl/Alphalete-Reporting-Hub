@@ -178,6 +178,20 @@ def find_sections(ws) -> dict:
         if office_avg_row is None:
             office_avg_row = header_row + 1
 
+        # Goal row: Eve's per-bucket target line ('🎯Goal:  1.50% (max)'), typed
+        # into col A between the Avg row and the 'Rep' header. Found by LABEL like
+        # everything else, so a tab without one just reports None and renders
+        # exactly as before. The % lives inside the label text, not in a cell.
+        goal_row = None
+        goal_label = ""
+        for r in range(office_avg_row + 1, rep_header_row):
+            if r > n_rows:
+                break
+            if "GOAL" in _norm(col_a[r - 1]):
+                goal_row = r
+                goal_label = col_a[r - 1].strip()
+                break
+
         rep_rows: dict[str, int] = {}
         # Every row a name occupies, so a SECOND row for the same rep can be
         # reported instead of vanishing. rep_rows keeps last-wins (unchanged
@@ -188,11 +202,25 @@ def find_sections(ws) -> dict:
         # in the Captainship 0-30 block for 16 days with a frozen 3.94% next
         # to his live 3.29% (Eve 2026-08-11).
         rep_row_all: dict[str, list] = {}
+        # Rows INSIDE the rep block that carry churn values but have NO name in
+        # col A — a ghost. Nothing else in the pipeline can see them: they're
+        # not in rep_rows, so they're never written, never cleared, never hidden
+        # (hide_blanks_today skips nameless rows), and insert_two_cols_at_b's
+        # PASTE_NORMAL copies their last value one column right EVERY day. The
+        # result is a row printing a % and units under today's date with nobody's
+        # name on it, frozen at the same number for as long as the tab has
+        # history (Eve 2026-08-12: 9 of them across the Captainship + fiber-
+        # captain tabs). They're the residue of a name being CLEARED instead of
+        # its row being deleted.
+        blank_name_rows: list[int] = []
         for r in range(rep_header_row + 1, end_row + 1):
             if r > n_rows:
                 break
             name = col_a[r - 1].strip()
             if not name:
+                row_vals = grid[r - 1] if r <= len(grid) else []
+                if any((v or "").strip() for v in row_vals[1:]):
+                    blank_name_rows.append(r)
                 continue
             # Belt + braces: never let a structural header row leak into the
             # rep-data map even if labels/offsets ever disagree.
@@ -201,12 +229,22 @@ def find_sections(ws) -> dict:
                 continue
             rep_rows[name.lower()] = r
             rep_row_all.setdefault(name.lower(), []).append(r)
+        # On the LAST section the block runs to the end of the grid, which is
+        # past the roster — anything down there belongs to whatever else the tab
+        # carries, not to churn. Bound the ghost scan at the last NAMED rep so
+        # write_today's clear can never reach outside the rep block.
+        if idx + 1 >= len(sorted_periods) and rep_rows:
+            last_named = max(rep_rows.values())
+            blank_name_rows = [r for r in blank_name_rows if r < last_named]
         sections[period] = {
             "header_row": header_row,
             "office_avg_row": office_avg_row,
+            "goal_row": goal_row,
+            "goal_label": goal_label,
             "rep_header_row": rep_header_row,
             "rep_rows": rep_rows,
             "rep_row_all": rep_row_all,
+            "blank_name_rows": blank_name_rows,
             "dup_rows": {nm: rows for nm, rows in rep_row_all.items()
                          if len(rows) > 1},
         }
@@ -239,6 +277,33 @@ def warn_duplicate_rep_rows(sections: dict, label: str = "",
                   f"{rows[-1]} is being filled; the other(s) show a FROZEN "
                   f"value copied forward each day. Delete the stale row(s).")
     return dups
+
+
+def detect_nameless_data_rows(sections: dict) -> dict:
+    """{period: [row, ...]} for every rep-block row that carries values but has
+    NO name in col A — empty dict when clean. See the note in find_sections:
+    these are self-perpetuating (the daily B+C insert copies them forward), so
+    they print a nameless % under today's date forever.
+
+    write_today clears today's B+C on them every run, which stops the number
+    from printing and starts flushing the frozen history rightward — but the
+    ROW itself has to be deleted by hand (a nameless row can't be attributed,
+    and deleting rows in a live tab is never the automation's call)."""
+    return {p: list(sect.get("blank_name_rows") or [])
+            for p, sect in sections.items() if sect.get("blank_name_rows")}
+
+
+def warn_nameless_data_rows(sections: dict, label: str = "",
+                            logfn=print) -> dict:
+    """Print the nameless-row report (if any) and return it. Same shape as
+    detect_nameless_data_rows."""
+    ghosts = detect_nameless_data_rows(sections)
+    for period, rows in ghosts.items():
+        logfn(f"  ⚠ {label + ': ' if label else ''}{period}-day has "
+              f"{len(rows)} row(s) with churn values but NO name in col A "
+              f"(rows {rows}) — today's cells are being cleared, but the row "
+              f"itself has to be deleted by hand.")
+    return ghosts
 
 
 def format_duplicate_note(dups_by_tab: dict) -> str:
@@ -511,10 +576,21 @@ def insert_missing_reps(
                 s["header_row"] += delta
                 s["office_avg_row"] += delta
                 s["rep_header_row"] += delta
+                if s.get("goal_row"):
+                    s["goal_row"] += delta
                 s["rep_rows"] = {
                     name: (row + delta if row > req["_anchor"] else row)
                     for name, row in s["rep_rows"].items()
                 }
+            # Ghost rows shift on their own row number, not the section's: one
+            # can sit BELOW this section's insert anchor (the bottom-most named
+            # rep) and still belong to this section. A stale index here would
+            # aim write_today's clear at the wrong row.
+            if s.get("blank_name_rows"):
+                s["blank_name_rows"] = [
+                    (r + delta if r > req["_anchor"] else r)
+                    for r in s["blank_name_rows"]
+                ]
     # Add the freshly-inserted reps to their section's rep_rows map at
     # the same FINAL positions the names were written to.
     for req in insert_requests:
@@ -816,6 +892,19 @@ def write_today(
                 "values": [["", ""]],
             })
             sect_summary["cleared"] += 1
+        # 3c. Same clear for GHOST rows — values with no name in col A. They
+        # belong to nobody, so they can never be filled; without this the
+        # PASTE_NORMAL copy in insert_two_cols_at_b reprints their frozen % under
+        # today's date every single day (Eve 2026-08-12). Clearing today's pair
+        # also flushes the frozen history one column rightward per run. The row
+        # is left in place — deleting it is a human's call (warn_nameless_data_rows).
+        ghosts = sect.get("blank_name_rows") or []
+        for row in ghosts:
+            raw_cells.append({
+                "range": f"{ws.title}!B{row}:C{row}",
+                "values": [["", ""]],
+            })
+        sect_summary["nameless_cleared"] = len(ghosts)
         summary[period] = sect_summary
 
     if dry_run:
@@ -1179,6 +1268,11 @@ def sort_sections_via_sortrange(
             if name:
                 new_map[name.lower()] = first_row + offset
         sect["rep_rows"] = new_map
+        # Ghost-row indices are stale the moment rows move. write_today (which
+        # is the only consumer) has already run by now, and the next run's
+        # find_sections re-detects them from scratch — so drop them rather than
+        # leave numbers pointing at whatever landed there after the sort.
+        sect["blank_name_rows"] = []
 
 
 def apply_units_white_override(
@@ -1385,11 +1479,17 @@ def sort_sections_desc(
         # Refresh the rep_rows map — names moved, so the cached row
         # numbers are stale. Walk the new block + rebuild.
         new_rep_rows: dict = {}
+        new_ghosts: list = []
         for offset, row in enumerate(sorted_block):
             name = (row[0] if row else "").strip()
             if name:
                 new_rep_rows[name.lower()] = first_row + offset
+            elif any((v or "").strip() for v in row[1:]):
+                new_ghosts.append(first_row + offset)
         sect["rep_rows"] = new_rep_rows
+        # Rows moved — re-derive the ghost indices from the block we just
+        # sorted rather than leaving pre-sort numbers behind.
+        sect["blank_name_rows"] = new_ghosts
         summary[period] = {
             "sorted": len(sorted_block),
             "rep_block_rows": (first_row, last_row),
@@ -1430,6 +1530,14 @@ def hide_blanks_today(
             name = (row_data[0] if row_data else "").strip()
             today_pct = (row_data[1] if len(row_data) > 1 else "").strip()
             if not name:
+                # Nameless row sitting between two reps. write_today has just
+                # blanked any ghost values on it, so an empty one is pure
+                # leftover — hide it like any other blank row instead of
+                # leaving a gap in the middle of the block. A nameless row that
+                # still shows a value is NOT hidden: that would bury the very
+                # thing warn_nameless_data_rows is telling Eve to delete.
+                if not today_pct:
+                    actions["hidden"].append((period, sheet_row, "(no name)"))
                 continue
             if today_pct:
                 actions["unhidden"].append((period, sheet_row, name))

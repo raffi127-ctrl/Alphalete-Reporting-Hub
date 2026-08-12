@@ -63,6 +63,8 @@ def main(argv=None) -> int:
     # See new_internet_churn.run — a rep on two rows in one section is silently
     # half-filled; the untouched row keeps a frozen value forever.
     fill.warn_duplicate_rep_rows(sections, fill.TAB_LOCAL_OFFICE)
+    # Rows carrying values with no name in col A — see warn_nameless_data_rows.
+    fill.warn_nameless_data_rows(sections, fill.TAB_LOCAL_OFFICE)
 
     print("Step 4: Insert missing reps with non-zero churn for that period...")
     added = fill.insert_missing_reps(ws, sections, parsed,

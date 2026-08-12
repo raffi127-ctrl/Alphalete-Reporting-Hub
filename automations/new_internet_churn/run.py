@@ -72,6 +72,9 @@ def main(argv=None) -> int:
     # the last row is written; the other keeps a value the daily column insert
     # copies forward forever). Report it — deleting a row is Megan's call.
     fill.warn_duplicate_rep_rows(sections, fill.TAB_LOCAL_OFFICE)
+    # A row with values but NO name is a ghost the pipeline can't otherwise see —
+    # write_today clears today's cells on it, but the row needs deleting by hand.
+    fill.warn_nameless_data_rows(sections, fill.TAB_LOCAL_OFFICE)
 
     print("Step 4: Insert missing reps (any rep in Tableau but not yet in section)...")
     added = fill.insert_missing_reps(ws, sections, parsed,

@@ -15,6 +15,12 @@ from automations.new_internet_churn import render as _shared
 TITLE_BG       = (32, 96, 168)
 OFFICE_AVG_BG  = (210, 226, 246)
 SECTION_HDR_BG = (140, 178, 226)
+# Goal band stays GOLD here (Eve 2026-08-12: dark on New Internet, gold on
+# Wireless). The shared module's default is the dark variant, so these three
+# get swapped in for the duration of the render, same as SECTION_HDR_BG.
+GOAL_BG        = (255, 205, 40)
+GOAL_FG        = (56, 40, 0)
+GOAL_BORDER    = (176, 128, 0)
 
 TITLE_BY_PERIOD = {
     "0-30": "WIRELESS CHURN — 0-30 DAY",
@@ -28,10 +34,14 @@ def render_multi_week(ws, section, period, today, out_path,
                       n_weeks: int = _shared.N_WEEKS,
                       show_subtitle: bool = True) -> Path:
     # Temporarily monkey-patch the shared module's section-header band
-    # so the blue palette propagates through the date-row.
+    # so the blue palette propagates through the date-row. Same for the goal
+    # band's three colors (gold here, dark on New Internet).
     saved = _shared.SECTION_HDR_BG
+    saved_goal = (_shared.GOAL_BG, _shared.GOAL_FG, _shared.GOAL_BORDER)
     try:
         _shared.SECTION_HDR_BG = SECTION_HDR_BG
+        _shared.GOAL_BG, _shared.GOAL_FG, _shared.GOAL_BORDER = (
+            GOAL_BG, GOAL_FG, GOAL_BORDER)
         return _shared.render_multi_week(
             ws, section, period, today, out_path,
             n_weeks=n_weeks,
@@ -42,6 +52,8 @@ def render_multi_week(ws, section, period, today, out_path,
         )
     finally:
         _shared.SECTION_HDR_BG = saved
+        (_shared.GOAL_BG, _shared.GOAL_FG,
+         _shared.GOAL_BORDER) = saved_goal
 
 
 def render_all_sections(ws, sections, today, out_dir,

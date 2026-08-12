@@ -286,6 +286,9 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     # copies forward. Report it; deleting a row stays a human call.
     if fill.warn_duplicate_rep_rows:
         fill.warn_duplicate_rep_rows(sections, ws.title)
+    # Rows with values but no name in col A (ghosts) — see warn_nameless_data_rows.
+    if fill.warn_nameless_data_rows:
+        fill.warn_nameless_data_rows(sections, ws.title)
 
     # Read the grid ONCE and reuse it for the reconcile + both went-dark
     # checks below — nothing writes in between, so re-fetching only burns a

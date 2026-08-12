@@ -51,6 +51,28 @@ YELLOW         = (255, 217, 102)
 RED            = (224, 102, 102)
 TEXT           = (40, 40, 40)
 SECTION_HDR_BG = (250, 178, 117)  # the orange band on date header
+# Goal band — Eve's per-bucket target, drawn as ONE loud full-width band right
+# under Office Avg (Eve 2026-08-12: the captains need the goal inside the image,
+# it's what the incentive is measured against; "una banda única más llamativa,
+# que el % no se repita en cada día"). Same gold on the orange (New Internet)
+# and blue (Wireless) palettes so it reads as the same thing on both.
+# Height is the one knob for "louder": every element inside the band (type,
+# bullseye, chip) scales off it.
+GOAL_BAND_H     = 36
+# New Internet = DARK band with gold type (Eve's pick 2026-08-12 — the gold-on-
+# gold read too soft against the orange palette). Wireless overrides these back
+# to gold in wireless_churn.render, the same way it swaps SECTION_HDR_BG.
+GOAL_BG         = (38, 38, 38)
+GOAL_FG         = (255, 205, 40)
+GOAL_BORDER     = (255, 205, 40)
+GOAL_OVER_BG    = (200, 60, 60)     # today's avg is ABOVE the max → missing it
+GOAL_UNDER_BG   = (60, 140, 70)     # at or under the target → hitting it
+GOAL_CHIP_FG    = (255, 255, 255)
+# The 🎯 is DRAWN, not typed: PIL renders emoji from the system font, which means
+# a tofu box with Arial and a different glyph on Windows vs the mini. Concentric
+# rings look identical everywhere and never depend on a font being installed.
+BULLSEYE_RINGS  = ((224, 62, 62), (255, 255, 255), (224, 62, 62),
+                   (255, 255, 255), (224, 62, 62))
 
 # Per-period thresholds (from Eve's transcript)
 THRESHOLDS = {
@@ -129,6 +151,80 @@ def _col_letter(idx_0: int) -> str:
         if n == 0:
             return out
         n -= 1
+
+
+def _goal_from_section(section: dict):
+    """{'pct': '1.50%', 'value': 1.5, 'is_max': True} from the section's goal
+    row, or None when the tab has no goal line.
+
+    The label Eve types is '🎯Goal:  1.50% (max)' — the target lives INSIDE the
+    col-A text, not in a cell, so it's parsed out here."""
+    raw = (section.get("goal_label") or "").strip()
+    if not raw:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*%", raw)
+    if not m:
+        return None
+    return {"pct": f"{m.group(1)}%",
+            "value": float(m.group(1)),
+            "is_max": "max" in raw.lower()}
+
+
+def _draw_bullseye(d, cx: int, cy: int, r: int) -> None:
+    """The 🎯 as concentric rings — see BULLSEYE_RINGS for why it's drawn."""
+    n = len(BULLSEYE_RINGS)
+    for i, color in enumerate(BULLSEYE_RINGS):
+        rr = r * (n - i) / n
+        d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=color)
+
+
+def _draw_goal_band(d, x: int, y: int, width: int, goal: dict,
+                    today_pct: str) -> None:
+    """One full-width band: bullseye + 'GOAL x.xx%' on the left, and on the right
+    a chip saying whether TODAY's Office Avg is over or under it.
+
+    The chip is the point of the band — a target nobody is measured against is
+    just decoration, and the captains read this image for the incentive."""
+    # Type scales with the band so the height is the single knob for "louder".
+    f_big = _font(max(14, int(GOAL_BAND_H * 0.5)), bold=True)
+    f_small = _font(max(10, int(GOAL_BAND_H * 0.32)), bold=True)
+    f_chip = _font(max(10, int(GOAL_BAND_H * 0.34)), bold=True)
+    r = max(7, int(GOAL_BAND_H * 0.28))
+
+    d.rectangle([x, y, x + width, y + GOAL_BAND_H], fill=GOAL_BG,
+                outline=GOAL_BORDER, width=2)
+    cy = y + GOAL_BAND_H // 2
+    _draw_bullseye(d, x + 12 + r, cy, r)
+
+    label = f"GOAL  {goal['pct']}"
+    d.text((x + 26 + r * 2, cy - int(GOAL_BAND_H * 0.28)), label,
+           fill=GOAL_FG, font=f_big)
+    lw = d.textlength(label, font=f_big)
+    if goal["is_max"]:
+        d.text((x + 32 + r * 2 + lw, cy - int(GOAL_BAND_H * 0.14)), "max",
+               fill=GOAL_FG, font=f_small)
+
+    # Status chip — needs a parsable Office Avg for today.
+    raw = (today_pct or "").strip().rstrip("%")
+    try:
+        avg = float(raw)
+    except ValueError:
+        return
+    diff = avg - goal["value"]
+    # 'AVG' spelled out: the chip compares the AVERAGE row above (office or
+    # captainship, whatever the tab calls it) against the goal — not any one rep.
+    if diff > 0:
+        chip_bg, chip_txt = GOAL_OVER_BG, f"AVG OVER BY {diff:.2f}%"
+    else:
+        chip_bg, chip_txt = GOAL_UNDER_BG, f"AVG UNDER BY {abs(diff):.2f}%"
+    tw = d.textlength(chip_txt, font=f_chip)
+    cw = tw + 24
+    ch = int(GOAL_BAND_H * 0.62)
+    cx0 = x + width - 10 - cw
+    d.rounded_rectangle([cx0, cy - ch // 2, cx0 + cw, cy + ch // 2],
+                        radius=ch // 2, fill=chip_bg)
+    d.text((cx0 + 12, cy - int(ch * 0.34)), chip_txt, fill=GOAL_CHIP_FG,
+           font=f_chip)
 
 
 def _read_section(ws, section: dict, n_weeks: int) -> dict:
@@ -218,7 +314,15 @@ def _read_section(ws, section: dict, n_weeks: int) -> dict:
 
     return {
         "dates": dates,
+        # The tab's OWN label for that row — 'Captainship Avg' on the captainship
+        # tabs, 'Office Avg' on a local office. Hardcoding 'Office Avg' made a
+        # captainship image claim to be an office (Eve asked what the OVER BY
+        # chip was measuring, 2026-08-12 — the row it compares against should
+        # say what it is).
+        "avg_label": (office_avg_row[0] if office_avg_row else "").strip()
+                     or "Office Avg",
         "office_avg": avg_pairs,
+        "goal": _goal_from_section(section),
         "reps": reps,
     }
 
@@ -241,13 +345,16 @@ def render_multi_week(
     data = _read_section(ws, section, n_weeks)
     dates = data["dates"]
     office_avg = data["office_avg"]
+    goal = data.get("goal")
     reps = data["reps"]
 
     total_w = NAME_COL_W + WEEK_COL_W * n_weeks + PAD * 2
     # Shorter title bar when the subtitle is suppressed (captainship email
     # drafts drop it; the Slack post keeps it).
     title_h = TITLE_H if show_subtitle else 36
+    goal_h = GOAL_BAND_H if goal else 0     # tabs without a goal line: unchanged
     h = (title_h + ROW_H * 2 + HEADER_BAR_H        # title + section-hdr + avg + col-hdr
+         + goal_h
          + ROW_H * max(len(reps), 1) + PAD * 2)
 
     img = Image.new("RGB", (total_w, h), "white")
@@ -291,7 +398,8 @@ def render_multi_week(
 
     # 3. Office Avg row
     d.rectangle([x, y, x + total_w - PAD * 2, y + ROW_H], fill=office_avg_bg)
-    d.text((x + 8, y + 4), "Office Avg", fill=TEXT, font=f11b)
+    d.text((x + 8, y + 4), data.get("avg_label") or "Office Avg",
+           fill=TEXT, font=f11b)
     cx = x + NAME_COL_W
     for i in range(n_weeks):
         pct, units = (office_avg[i] if i < len(office_avg) else ("", ""))
@@ -302,6 +410,12 @@ def render_multi_week(
         d.text((cx + PCT_SUB_W + 4, y + 4), units or "", fill=TEXT, font=f11)
         cx += WEEK_COL_W
     y += ROW_H
+
+    # 3b. Goal band — ONE band under Office Avg, before the per-rep breakdown.
+    if goal:
+        today_avg_pct = office_avg[0][0] if office_avg else ""
+        _draw_goal_band(d, x, y, total_w - PAD * 2, goal, today_avg_pct)
+        y += GOAL_BAND_H
 
     # 4. Col-header bar (Rep / % units repeating)
     d.rectangle([x, y, x + total_w - PAD * 2, y + HEADER_BAR_H], fill=COL_HEADER_BG)

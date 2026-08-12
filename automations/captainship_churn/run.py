@@ -92,6 +92,13 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     # row to keep is Eve's call, and we never delete her data).
     dups = fill.warn_duplicate_rep_rows(sections, label)
 
+    # GHOST ROWS — same invisibility, different cause: a row whose NAME was
+    # cleared (instead of the row being deleted) keeps its last % + units and
+    # the daily insert copies them forward forever, so the tab prints a churn
+    # number with nobody's name on it. write_today clears today's pair; the row
+    # still has to be deleted by hand (report only — never delete Eve's rows).
+    fill.warn_nameless_data_rows(sections, label)
+
     # Re-point any pulled name that has NO row at the row the tab already has
     # for that person (alias siblings). Runs BEFORE the went-dark check so a
     # reversed 'ICD Aliases' row — canonical typed as the ownerville variant,

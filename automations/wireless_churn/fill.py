@@ -25,6 +25,8 @@ def open_ws():
 # same names new_internet_churn.run uses.
 find_sections             = _shared.find_sections
 warn_duplicate_rep_rows   = _shared.warn_duplicate_rep_rows
+warn_nameless_data_rows   = _shared.warn_nameless_data_rows
+detect_nameless_data_rows = _shared.detect_nameless_data_rows
 insert_missing_reps       = _shared.insert_missing_reps
 insert_two_cols_at_b      = _shared.insert_two_cols_at_b
 today_already_filled      = _shared.today_already_filled

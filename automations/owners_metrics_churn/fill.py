@@ -121,6 +121,9 @@ find_sections                = _shared.find_sections
 # Added with the duplicate-row guard; getattr so this module still imports
 # against a checkout that predates it.
 warn_duplicate_rep_rows      = getattr(_shared, "warn_duplicate_rep_rows", None)
+# Same getattr guard as above — added with the nameless-row (ghost) guard.
+warn_nameless_data_rows      = getattr(_shared, "warn_nameless_data_rows", None)
+detect_nameless_data_rows    = getattr(_shared, "detect_nameless_data_rows", None)
 insert_missing_reps          = _shared.insert_missing_reps
 insert_two_cols_at_b         = _shared.insert_two_cols_at_b
 today_already_filled         = _shared.today_already_filled

@@ -77,6 +77,11 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     _warn_dups = getattr(fill_mod, "warn_duplicate_rep_rows", None)
     if _warn_dups:
         _warn_dups(sections, fill_mod.TAB_LOCAL_OFFICE)
+    # Same class of invisible row: values with NO name in col A. write_today
+    # clears today's pair on them; deleting the row itself stays a human call.
+    _warn_ghosts = getattr(fill_mod, "warn_nameless_data_rows", None)
+    if _warn_ghosts:
+        _warn_ghosts(sections, fill_mod.TAB_LOCAL_OFFICE)
 
     already_filled = fill_mod.today_already_filled(ws, sections, today)
     skip_insert = already_filled and not args.force_insert
