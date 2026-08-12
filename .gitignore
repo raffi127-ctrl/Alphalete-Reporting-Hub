@@ -3,6 +3,14 @@ output/
 service-account.json
 oauth-token.json
 ownerville-creds.json
+# ...and their timestamped BACKUPS. The bare names above were ignored but
+# `ownerville-creds.json.bak.20260802-230835` was not, so a rotated credential
+# sat untracked in the root of a PUBLIC repo, one `git add .` from being
+# published (found 2026-08-12). Cover every secret-file backup, not just this one.
+*.bak
+*.bak.*
+*-creds.json*
+*-token.json*
 brand-audit-keys.json
 vantura-payroll-webapp.json
 .venv/
