@@ -76,18 +76,21 @@ if [ "$#" -eq 0 ]; then set -- --send; fi
 # 08:00 dropped that day's post entirely, unnoticed until the Hub was read hours
 # later. A DETERMINISTIC failure just costs ~2 wasted minutes at 8am.
 #
-# It CANNOT double-post: post_slack() catches every per-channel exception and
-# returns normally, so a delivery failure exits 0 and never reaches this retry —
-# an exit != 0 always means we died BEFORE anything was sent. (Corollary, not
-# fixed here: a Slack upload that fails still exits 0 and greens the Hub card.)
+# It CANNOT double-post, and EXIT 3 IS WHY. The module exits 3 (never 1) when the
+# build succeeded but a live Slack upload didn't land, so every other non-zero
+# code means we died BEFORE sending anything and is safe to re-run. Re-running a
+# 3 would repost to whichever channel the upload DID reach.
 "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
-if [ "$ST" -ne 0 ]; then
+if [ "$ST" -ne 0 ] && [ "$ST" -ne 3 ]; then
   echo "[$(date)] attempt 1 failed (exit $ST) — retrying once in 180s" >> "$LOG_FILE"
   sleep 180
   "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
   echo "[$(date)] retry finished exit=$ST" >> "$LOG_FILE"
+elif [ "$ST" -eq 3 ]; then
+  echo "[$(date)] exit 3 = built fine, Slack delivery incomplete — NOT retrying" \
+       "(a re-run would double-post where the upload landed)" >> "$LOG_FILE"
 fi
 
 # PUSH back what THIS run just auto-detected, so the next run on any other
@@ -102,7 +105,9 @@ if [ "$ST" -eq 0 ] && [[ " $* " != *" --dry-run "* ]]; then
   "$VENV_PY" -c "from automations.day_orchestrator import hub_publish as H; H.publish_done('june_texas_de_brazil_monthly_competition','Texas De Brazil Monthly Competition')" >> "$LOG_FILE" 2>&1 || true
 fi
 
-if [ "$ST" -ne 0 ]; then
+if [ "$ST" -eq 3 ]; then
+  osascript -e "display notification \"Texas de Brazil built fine but the Slack upload FAILED — nothing posted to at least one channel. Hub card left grey; post it by hand or re-run once Slack is back.\" with title \"Texas de Brazil\" sound name \"Sosumi\"" 2>/dev/null || true
+elif [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Texas de Brazil daily post failed (exit $ST) — check the log; Chrome/OAuth/Slack or the iMessage group may need attention\" with title \"Texas de Brazil\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
 exit 0
