@@ -40,14 +40,65 @@ DIAG_TAB = "Carlos Bonus Probe"
 
 # Worksheets worth dumping when --dump is on: the ones whose names suggest they
 # could carry what tableau_pull needs. Names come from the 2026-08-13 listing.
+# The (LW)/(LW2) pair matters: the plain "_Captain View" sales sheet ignores the
+# week param and always renders the IN-PROGRESS week as day columns, so the
+# completed week has to come from a last-week sheet.
 CANDIDATES = (
     "Sales By ICD (ATT) (V2)_Captain View",
+    "Sales By ICD (ATT) (V2) (LW2)",
+    "ICD Summary - ATT (V2) (LW)_Captain's View",
     "ICD Summary - ATT (V2) (TW) (3)",
     "ICD Churn Rate- Captain's View",
     "Churn, Activation and Tiers",
     "Captains View - Non pmt%",
     "Activation Rate- Captains View",
 )
+
+# The captain-team filter, same field captainship_drafts drives (proven live
+# 2026-07-22). Applying it is what collapses the new views' CRU/IRU split into a
+# single "Grand Total" row per team — which is the shape the old, now-deleted
+# 'Captain Team Check' worksheets had.
+TEAM_FIELD = "B2B Captain's Teams (SFDC)"
+TEAM_VALUE = "Carlos's Team"
+
+# GROUND TRUTH for identifying the replacement worksheet. These are the values
+# the report itself wrote into the 'Carlos B2B Captainship' tab for WE 8.9 — the
+# last week that filled BEFORE the workbook was restructured. A candidate sheet
+# that reproduces them (pinned to that week, team-filtered) is the replacement;
+# one that doesn't, isn't. Beats guessing from worksheet names, which no longer
+# resemble the old ones at all.
+FINGERPRINT_WEEK_SAT = "2026-08-08"      # the Saturday of WE 8.9
+FINGERPRINT_TOTAL = 827
+FINGERPRINT_REPS = {
+    "atef choudhury": 221, "carlos hidalgo": 90, "george hipolito": 101,
+    "jamis garay": 87, "joey ramirez": 81, "justin wood": 70,
+    "kinsey guenther": 76, "joseph eckhart": 48, "sabrina alicea": 34,
+    "gary whitaker": 19,
+}
+
+
+def _fingerprint(rows, rec) -> None:
+    """Does this crosstab carry the WE 8.9 per-owner numbers the report already
+    wrote? Scans EVERY cell of each row for the expected integer, so it works
+    regardless of which column ends up holding the weekly total."""
+    from automations.carlos_captainship_bonus import tableau_pull as T
+
+    found, missing = [], []
+    for name, want in sorted(FINGERPRINT_REPS.items()):
+        row = next((r for r in rows if any(T._norm(c) == name for c in r[:3])), None)
+        if row is None:
+            missing.append(f"{name}=<no row>")
+            continue
+        hit = next((f"col{ci}" for ci, c in enumerate(row)
+                    if T._parse_int(c) == want and (c or "").strip()), None)
+        (found if hit else missing).append(
+            f"{name}={want}@{hit}" if hit else
+            f"{name}!={want} (row={[str(c)[:10] for c in row[:8]]})")
+    rec(f"  FINGERPRINT: {len(found)}/{len(FINGERPRINT_REPS)} owners matched WE 8.9")
+    if found:
+        rec("    hit : " + ", ".join(found[:10]))
+    if missing:
+        rec("    miss: " + ", ".join(missing[:4]))
 
 
 def _upload(lines) -> None:
@@ -72,6 +123,11 @@ def main(argv=None) -> int:
                          "columns + first rows")
     ap.add_argument("--no-upload", action="store_true",
                     help="print only; don't write the diag tab")
+    ap.add_argument("--team", action="store_true",
+                    help=f"apply the {TEAM_FIELD!r}={TEAM_VALUE!r} URL filter")
+    ap.add_argument("--week-sat", default=None, metavar="YYYY-MM-DD",
+                    help="pin the activation week to this SATURDAY (ISO only — "
+                         "M/D/YYYY silently no-ops) instead of last cycle's")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
 
     buf = []
@@ -80,8 +136,22 @@ def main(argv=None) -> int:
         print(msg, flush=True)
         buf.append(str(msg))
 
+    from urllib.parse import quote
+
+    def _url(week_sat=None) -> str:
+        """Base view + optional team filter + optional pinned activation week."""
+        parts = []
+        if args.team:
+            parts.append(f"{quote(TEAM_FIELD)}={quote(TEAM_VALUE)}")
+        if week_sat:
+            parts.append(f"{T.WEEK_FIELD}={week_sat}")
+        parts.append(":iid=1")
+        return f"{args.url}?" + "&".join(parts)
+
     rec(f"Carlos bonus source probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
     rec(f"view: {args.url}")
+    rec(f"team filter: {TEAM_VALUE!r}" if args.team else "team filter: (none)")
+    rec(f"week pinned to Sat: {args.week_sat or '(last cycle)'}")
     rec("")
 
     names = list_crosstab_sheets(args.url, verbose=False)
@@ -95,6 +165,7 @@ def main(argv=None) -> int:
             f"{'PRESENT' if want in names else 'MISSING'}")
 
     if args.dump:
+        from automations.fiber_activations import pull as P
         from automations.shared.tableau_patchright import download_crosstab_patchright
         today = dt.date.today()
         scratch = Path(T.CACHE_DIR) / "probe"
@@ -109,8 +180,9 @@ def main(argv=None) -> int:
             # The per-rep sales sheet is the only one that needs the week pinned;
             # the rate sheets degenerate if you pin it (see tableau_pull._rates_url).
             is_sales = "Sales By ICD" in sheet or "ICD Summary" in sheet
-            url = T._act_url(today) if is_sales else T._rates_url(today)
-            rec(f"  url: {'week-pinned' if is_sales else 'default view'}")
+            sat = (args.week_sat or P.cycle_saturday(today).isoformat()) if is_sales else None
+            url = _url(sat)
+            rec(f"  url: {url}")
             out = scratch / f"probe_{i}.csv"
             try:
                 download_crosstab_patchright(url, sheet, out, verbose=False)
@@ -135,6 +207,7 @@ def main(argv=None) -> int:
             rec(f"  rows whose first 3 cols contain {T.TEAM!r}: {len(hits)}")
             for ri, r in hits[:6]:
                 rec(f"    [row {ri}] " + " | ".join(str(c or "")[:26] for c in r[:10]))
+            _fingerprint(rows, rec)
 
     if not args.no_upload:
         try:
