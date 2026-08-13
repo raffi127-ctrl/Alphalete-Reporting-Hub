@@ -497,17 +497,31 @@ def _alert_download_failure(detail: str, *, dry_run: bool = False) -> None:
             return
     except Exception:
         pass
+    # Parent = the headline only; the raw `detail` (a traceback or a page of
+    # renamed HTML) goes in the thread so one alert can't own the channel
+    # (Megan 2026-08-13). Chunked, never truncated.
     text = (
         "🚨 *Sara+ issue escalation* couldn't download the screenshots — the "
         "email was NOT sent (it will retry every 5 min).\n"
-        f"```{detail}```\n"
-        "Nothing went to Sara+ support with a broken attachment.")
+        "Nothing went to Sara+ support with a broken attachment. "
+        "_Detail in the thread ↓_")
+    from automations.shared import alert_thread
+    replies = alert_thread.chunk(["```", str(detail), "```"])
     if dry_run:
         print("  --- corrections alert (dry-run, not sent) ---")
+        print("  [channel post]")
         print("  " + text.replace("\n", "\n  "))
+        for i, r in enumerate(replies, 1):
+            print(f"  [thread reply {i}/{len(replies)}]")
+            print("  " + r.replace("\n", "\n  "))
         return
     try:
-        _client().chat_postMessage(channel=_CORRECTIONS_CHANNEL, text=text)
+        resp = _client().chat_postMessage(channel=_CORRECTIONS_CHANNEL, text=text)
+        for r in replies:
+            kw = {"channel": _CORRECTIONS_CHANNEL, "text": r}
+            if resp.get("ts"):
+                kw["thread_ts"] = resp.get("ts")
+            _client().chat_postMessage(**kw)
         _ALERT_STAMP.parent.mkdir(parents=True, exist_ok=True)
         _ALERT_STAMP.write_text(today)
         print("  🚨 posted a download-failure alert to #claudecorrections-and-requests")

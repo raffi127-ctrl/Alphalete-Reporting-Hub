@@ -329,11 +329,21 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
 
     # PARENT — report name, then the error. The error NAMES the specific ICDs /
     # items that didn't fill (Megan 2026-07-23: say WHICH ICDs, not just "timeout").
+    # A long missing-list is the single biggest channel-flooder, so the parent
+    # names the COUNT and the reason and the list itself moves in-thread
+    # (Megan 2026-08-13). Short lists still read inline — no extra click for a
+    # two-ICD miss.
+    long_missing = []
     if kind == "INCOMPLETE":
         n = len(rs.missing)
         title = f":warning: *{label}* — ran, but {n or 'some'} didn't fill"
         if rs.missing:
-            err = f"Didn't fill: {', '.join(rs.missing)}"
+            joined = ", ".join(rs.missing)
+            if n > 4 or len(joined) > 200:
+                long_missing = list(rs.missing)
+                err = f"Didn't fill: {n} item(s) — see thread for the list"
+            else:
+                err = f"Didn't fill: {joined}"
             if reason and reason not in ("INCOMPLETE",) and not reason.lower().startswith(
                     ("completed", "ran; ", "manifest")):
                 err += f" — {reason}"
@@ -362,6 +372,10 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
 
     # REPLY — the details + the fix, threaded under the parent.
     reply = []
+    if long_missing:
+        reply.append(f"*Didn't fill ({len(long_missing)}):*")
+        reply += [f"   • {m}" for m in long_missing]
+        reply.append("")
     if term_hits:
         reply.append("*These ICDs are on the terminated list — remove them from this "
                      "report* (a re-run won't fill them):")
@@ -906,15 +920,8 @@ def _corrections_channel(cfg):
     return (cfg.settings.get("corrections_slack_channel") or "").strip() or None
 
 
-def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
-    """Post ONE message to the corrections channel and return its ts (so a caller
-    can thread replies under it). thread_ts posts as a reply instead of a new
-    top-level message. Best-effort: a Slack failure is logged, never raised into
-    the batch; returns None on skip/failure."""
-    ch = _corrections_channel(cfg)
-    if not ch:
-        return None
-    text = "\n".join(([title] if title else []) + list(body_lines))
+def _post_one(ch, text, dry_run, *, tag, thread_ts=None):
+    """Send exactly one message (or print it on a dry run) and return its ts."""
     if dry_run:
         where = f"reply→{thread_ts}" if thread_ts else "NEW POST"
         print(f"[notify] DRY-RUN — corrections {where} ({tag}) → {ch}:\n{text}\n",
@@ -940,6 +947,67 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
     except Exception as e:  # noqa: BLE001 — an alert that sinks the batch is worse
         print(f"[notify] corrections post failed ({tag}): {e}", flush=True)
         return None
+
+
+def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
+    """Post to the corrections channel and return the ts of the message a caller
+    can thread under. thread_ts posts as a reply instead of a new top-level
+    message. Best-effort: a Slack failure is logged, never raised into the batch;
+    returns None on skip/failure.
+
+    LENGTH IS HANDLED HERE so no caller has to think about it (Megan 2026-08-13:
+    "this error is too long in the slack channel — it should be in the reply on
+    the thread"). A new top-level post keeps its headline + the first short lines
+    and pushes the rest — always including any ``` block, i.e. paste-to-Claude and
+    log tails — into threaded replies. Anything over Slack's per-message limit is
+    chunked across replies, never truncated: the whole alert still arrives, it
+    just stops owning the channel."""
+    ch = _corrections_channel(cfg)
+    if not ch:
+        return None
+    from automations.shared import alert_thread
+    lines = ([title] if title else []) + list(body_lines)
+
+    # Already a reply: nothing to split off, only chunk if it's over the limit.
+    if thread_ts:
+        first = None
+        for msg in alert_thread.chunk(lines) or [""]:
+            ts = _post_one(ch, msg, dry_run, tag=tag, thread_ts=thread_ts)
+            first = first or ts
+        return first
+
+    parent_lines, detail = alert_thread.split_for_thread(lines)
+    ts = _post_one(ch, "\n".join(parent_lines), dry_run, tag=tag)
+    if ts and detail:
+        for msg in alert_thread.chunk(detail):
+            _post_one(ch, msg, dry_run, tag=f"{tag}-detail", thread_ts=ts)
+    elif detail and not ts:
+        # Parent never landed — don't silently drop the body; the caller falls
+        # back to email on a None return, which carries the full text.
+        print(f"[notify] corrections detail not posted ({tag}): no parent ts",
+              flush=True)
+    return ts
+
+
+def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None):
+    """Public one-shot alert into #claudecorrections-and-requests, for a REPORT
+    module that hits a problem the orchestrator can't see from the outside — e.g.
+    the country trackers holding a board because its Tableau extract is stale.
+    Megan's standing rule: every fail / glitch / missed part goes to that channel
+    in real time, not into a log nobody reads.
+
+    Loads the orchestrator config itself so a caller doesn't have to. Silent
+    no-op when the corrections channel isn't configured, and best-effort like
+    every other post here — an alert must never sink the run it is describing."""
+    if cfg is None:
+        try:
+            from automations.day_orchestrator import registry
+            cfg = registry.load_config()
+        except Exception as e:  # noqa: BLE001 — no config, no alert; never raise
+            print(f"[notify] alert skipped ({tag}): cannot load config ({e})",
+                  flush=True)
+            return None
+    return _post_corrections(cfg, title, body_lines, dry_run, tag=tag)
 
 
 # ---------------- dispatch ----------------

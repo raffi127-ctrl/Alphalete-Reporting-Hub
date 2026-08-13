@@ -75,27 +75,60 @@ _KINDS = {
 }
 
 
+# A drop with more items (or more text) than this doesn't belong in the channel —
+# the list goes to the thread. Below it, a 1-2 item drop reads fine inline and a
+# thread would just be an extra click (Megan 2026-08-13).
+_INLINE_ITEMS = 2
+_INLINE_CHARS = 220
+
+
 def _compose(report_id: str, failed: Sequence[str],
              remediation: Optional[dict], note: str,
              kind: str = "section") -> str:
+    """Back-compat single-blob text (used by the dry-run preview and tests)."""
+    parent, detail = _compose_parts(report_id, failed, remediation, note, kind)
+    return "\n".join(parent + detail)
+
+
+def _compose_parts(report_id: str, failed: Sequence[str],
+                   remediation: Optional[dict], note: str,
+                   kind: str = "section"):
+    """(parent_lines, detail_lines) — the channel post and its threaded detail.
+
+    PARENT: what broke, how many, and the one-line fix. DETAIL: the actual list
+    of missing items + the run's note. Same information as before, just not all
+    of it on the channel's screen (Megan 2026-08-13: the 13-finding Vantura board
+    audit alert filled the whole channel).
+    """
     what, headline_tail, default_fix, tail = _KINDS.get(kind, _KINDS["section"])
     n = len(failed)
     s = "s" if n != 1 else ""
-    lines = [
-        f"🚨 *{report_id}* dropped {n} {what}{s} this run — "
-        f"{headline_tail}",
-        f"*Missing:* {', '.join(failed)}",
-    ]
-    if note:
-        lines.append(f"_{note}_")
+    missing = f"*Missing:* {', '.join(failed)}"
+    body = [missing] + ([f"_{note}_"] if note else [])
+    threaded = (n > _INLINE_ITEMS
+                or sum(len(b) for b in body) > _INLINE_CHARS)
+
+    headline = (f"🚨 *{report_id}* dropped {n} {what}{s} this run — "
+                f"{headline_tail}")
+    if threaded:
+        headline += "  See thread for the list."
+    parent = [headline]
+    if not threaded:
+        parent += body
     fix = remediation.get("fix") if isinstance(remediation, dict) else None
     if fix:
-        lines.append(f"*Fix:* {fix}")
+        parent.append(f"*Fix:* {fix}")
     else:
-        lines.append("*Fix:* " + default_fix.format(
+        parent.append("*Fix:* " + default_fix.format(
             what=what, s=s, report_id=report_id))
-    lines.append(tail)
-    return "\n".join(lines)
+    parent.append(tail)
+    if not threaded:
+        return parent, []
+    detail = [f"*The {n} {what}{s} that dropped:*"]
+    detail += [f"   • {f}" for f in failed]
+    if note:
+        detail += ["", f"_{note}_"]
+    return parent, detail
 
 
 def alert(*, report_id: str, failed: Sequence[str],
@@ -117,14 +150,32 @@ def alert(*, report_id: str, failed: Sequence[str],
             return True
     except Exception:
         pass
-    text = _compose(report_id, failed, remediation, note, kind)
+    parent_lines, detail = _compose_parts(report_id, failed, remediation,
+                                          note, kind)
+    from automations.shared import alert_thread
+    parent = "\n".join(parent_lines)
+    replies = alert_thread.chunk(detail) if detail else []
     if dry_run:
         print("  --- section-drop alert (dry-run, not sent) ---")
-        print("  " + text.replace("\n", "\n  "))
+        print("  [channel post]")
+        print("  " + parent.replace("\n", "\n  "))
+        for i, r in enumerate(replies, 1):
+            print(f"  [thread reply {i}/{len(replies)}]")
+            print("  " + r.replace("\n", "\n  "))
         return False
     try:
         from automations.shared import slack_metrics_post as smp
-        smp._client().chat_postMessage(channel=CHANNEL, text=text)
+        client = smp._client()
+        resp = client.chat_postMessage(channel=CHANNEL, text=parent)
+        ts = resp.get("ts")
+        # Detail goes UNDER the parent. If the parent's ts came back empty we
+        # still post the detail (as its own message) — a lost finding is worse
+        # than an unthreaded one.
+        for r in replies:
+            kw = {"channel": CHANNEL, "text": r}
+            if ts:
+                kw["thread_ts"] = ts
+            client.chat_postMessage(**kw)
     except Exception as e:  # noqa: BLE001 — alerting must never break the report
         print(f"  ⚠ section-drop alert didn't post "
               f"({type(e).__name__}: {str(e)[:120]})")
