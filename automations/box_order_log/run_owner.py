@@ -215,22 +215,27 @@ def main(argv: Optional[list] = None) -> int:
               file=sys.stderr)
         return 1
 
-    # Freshness gate for the EARLY (7:00) pass — same idea as box_order_log's:
-    # if the owner's newest sale hasn't reached yesterday, the extract likely
-    # hasn't refreshed yet, so DON'T email; exit 3 and let the 8:30 pass (which
-    # omits --require-fresh) send once the data's in.
-    if args.require_fresh and (args.email or args.test_to):
-        dated_all = [s.sale_date for s in sales if s.sale_date]
-        expected = today - dt.timedelta(days=1)
-        newest = max(dated_all) if dated_all else None
-        if newest is None or newest < expected:
-            print("extract not fresh yet (newest sale {}, need >= {}) — "
-                  "deferring to the later pass".format(newest, expected),
-                  flush=True)
-            return 3
-
     dated = [s.sale_date for s in sales if s.sale_date]
     newest = max(dated) if dated else None
+    # The EXPORT's newest sale, across every owner in it — the honest measure of
+    # whether the PULL is capped. See the gate below for why this matters.
+    export_dated = [s.sale_date for s in all_sales if s.sale_date]
+    export_newest = max(export_dated) if export_dated else None
+
+    # Freshness gate for the EARLY (7:00) pass — same idea as box_order_log's:
+    # if the extract hasn't reached yesterday, it likely hasn't refreshed yet,
+    # so DON'T email; exit 3 and let the 8:30 pass (which omits --require-fresh)
+    # send once the data's in. Measured on the EXPORT, not this owner: "has the
+    # extract landed" is a property of the feed, and asking it of one small
+    # office defers every quiet morning for no reason (same confusion that
+    # suppressed both owners on 2026-08-13 — see the send gate below).
+    if args.require_fresh and (args.email or args.test_to):
+        expected = today - dt.timedelta(days=1)
+        if export_newest is None or export_newest < expected:
+            print("extract not fresh yet (newest sale in the export {}, need "
+                  ">= {}) — deferring to the later pass".format(
+                      export_newest, expected), flush=True)
+            return 3
     if verbose:
         reps = sorted({(s.fields.get("Rep Name") or "").strip()
                        for s in sales if (s.fields.get("Rep Name") or "").strip()})
@@ -241,7 +246,21 @@ def main(argv: Optional[list] = None) -> int:
         print("  {} rep(s): {}".format(len(reps), ", ".join(reps)))
         if dated:
             print("  sale dates {} … {}".format(min(dated), max(dated)))
-        warn = window.capped_pull_warning(newest, today)
+        print("  export newest sale (all owners): {}".format(export_newest))
+        # Newest sale PER OWNER: the one readout that separates "the pull is
+        # capped" (everybody frozen on the same day) from "this office is quiet"
+        # (others current, this one behind). Reading it cost a whole morning on
+        # 2026-08-13, so it's printed every run now.
+        per_owner = {}
+        for s in all_sales:
+            o = (s.fields.get("Owner & Office") or "").strip()
+            if not o or not s.sale_date:
+                continue
+            if o not in per_owner or s.sale_date > per_owner[o]:
+                per_owner[o] = s.sale_date
+        for o in sorted(per_owner, key=lambda k: per_owner[k], reverse=True):
+            print("    newest {}  {}".format(per_owner[o], o))
+        warn = window.capped_pull_warning(export_newest, today)
         if warn:
             print("  " + warn)
 
@@ -250,8 +269,19 @@ def main(argv: Optional[list] = None) -> int:
     # The filter-release hook is best-effort and occasionally misses on a bad
     # viz load; this is the net that stops the wrong email from going out. Dry
     # runs are exempt (they're for inspection). See window.should_block_send.
+    #
+    # JUDGED ON THE EXPORT, NOT THE OWNER (2026-08-13). The gate shipped on
+    # 8/12 measuring THIS owner's newest sale against today, and the next
+    # morning it suppressed both owners — Roshan at 9 days, Abel at 14. But
+    # "capped" is a property of the PULL, and a small office simply not selling
+    # for a fortnight looks identical from one owner's rows. Abel's office is 14
+    # sales deep: an owner-scoped gate would have blocked his email every day
+    # forever, with no path back. So the freshness of the whole export decides —
+    # if any owner in it has sales through yesterday, the pull is fine and this
+    # owner is merely quiet, which is news worth mailing, not a reason to go
+    # silent. Only a genuinely frozen export (every owner stale) blocks.
     send_now = args.email or bool(args.test_to)
-    block = window.should_block_send(newest, today)
+    block = window.should_block_send(export_newest, today)
     if block and send_now:
         print("✗ {} — {}: {}".format(
             cfg.display, today.isoformat(), block), file=sys.stderr, flush=True)
@@ -261,9 +291,14 @@ def main(argv: Optional[list] = None) -> int:
         if args.email:
             try:
                 from automations.shared import section_drop_alert as sda
-                behind = (today - newest).days if newest else None
-                detail = ("newest sale {}, {} days behind".format(newest, behind)
-                          if newest else "no dated sales at all")
+                # Report the EXPORT's date — that's what the gate judged. The
+                # 8/13 alert quoted the owner's own newest sale and read as
+                # "Abel's numbers are 14 days behind" when the question was
+                # whether the feed had frozen.
+                behind = (today - export_newest).days if export_newest else None
+                detail = ("newest sale in the export {}, {} days behind".format(
+                    export_newest, behind)
+                    if export_newest else "no dated sales at all")
                 sda.alert(report_id="box-order-log-{}".format(cfg.key),
                           failed=[detail], kind="capped", day=today)
             except Exception:
