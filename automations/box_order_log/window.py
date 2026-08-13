@@ -109,6 +109,20 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
     both filters, exactly this race. So each field now waits for its (All)
     item to attach before concluding it's absent, and the whole pass retries
     once if any field couldn't be released.
+
+    THE CONTROLS ARE GONE (2026-08-13): SCI removed both quick filters from the
+    workbook. A probe found ZERO nodes carrying "Contract ID" or "Account Id" in
+    their id — not an unchecked (All), not a collapsed panel, nothing — while the
+    Start/End Date textareas in the same panel still drive fine. And the pull is
+    healthy without them: that morning's team export reached Carlos's 2026-08-12
+    sales, so whatever pinned the include list left with the controls.
+
+    So "field not on this view" is now the EXPECTED case and says so plainly. It
+    used to shout "the pull may be capped" and burn 80s retrying (2 fields x 2
+    attempts x 20s) on every single pull — a warning that fired every run, on
+    every view, for a control that no longer exists. A field that IS present but
+    won't flip is still a real problem and still warns. The release stays wired
+    up: if SCI ever re-adds the filters, it starts working again on its own.
     """
     unresolved = list(fields)
     for attempt in range(2):
@@ -127,10 +141,22 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
             except Exception:
                 pass
             if box.count() == 0:
+                # Absent (All) has two very different meanings. If NOTHING on the
+                # view carries the field name, the filter isn't on this view at
+                # all — nothing to release, nothing wrong, don't retry. If the
+                # field IS there but its (All) isn't, that's the 8/12 race and
+                # worth another pass.
+                present = viz.locator('[id*="{}"]'.format(field)).count()
+                if not present:
+                    if verbose:
+                        print("  -> BOX filter {!r} not on this view — nothing "
+                              "to release".format(field), flush=True)
+                    continue
                 if verbose:
-                    print("  ⚠ BOX filter {!r}: no (All) item found after "
-                          "{}s — the pull may be capped".format(
-                              field, hydrate_timeout_ms // 1000), flush=True)
+                    print("  ⚠ BOX filter {!r}: {} node(s) but no (All) item "
+                          "after {}s — the pull may be capped".format(
+                              field, present, hydrate_timeout_ms // 1000),
+                          flush=True)
                 still_pending.append(field)
                 continue
             if box.get_attribute("aria-checked") == "true":
