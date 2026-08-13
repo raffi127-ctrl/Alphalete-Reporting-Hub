@@ -48,7 +48,15 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # A BLANK campaign deliberately still gets checked: blank is ambiguous, and
 # silently skipping it would be the same class of coverage hole this audit
 # exists to catch.
-BOARD_CAMPAIGNS = {"B2B", "BOX"}
+#
+# 'JE' is LISTED ON PURPOSE even though the board has no JE rep rows today
+# (17 Roll Call rows, none currently Active). Only Base was dropped; nobody
+# has ruled on JE, and dropping a campaign is a business call, not a tidy-up.
+# Leaving it in means a JE person who goes Active with no board row still gets
+# reported — noisy if JE is in fact dead, silent if it isn't. Noisy is the
+# right failure here: it asks the question instead of burying it. Take JE out
+# only once Carlos says JE is off the board too.
+BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
 ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
 
 
