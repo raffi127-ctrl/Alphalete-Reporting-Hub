@@ -443,9 +443,11 @@ def _cut_at_second_band(path: Path, margin_px: int = 6,
     from PIL import Image
     bands = _navy_band_rows(path)
     if len(bands) < 2:
-        if verbose:
-            print(f"   ⚠ {path.name}: found {len(bands)} navy band(s), expected "
-                  f"2 — keeping the whole shot", flush=True)
+        # NOT gated on verbose: "I was asked to cut and did not" has to reach
+        # the run log. The first deploy of this cropped nothing and looked like
+        # a clean run — the only clue was the image itself.
+        print(f"   ⚠ {path.name}: found {len(bands)} navy band(s), expected 2 "
+              f"— keeping the whole shot", flush=True)
         return
     with Image.open(path) as im:
         im = im.convert("RGB")
@@ -550,9 +552,14 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
                 f"{spec['id']}: the board never rendered "
                 f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
     board.screenshot(path=str(out))
+    # AFTER _trim_right, never before. The raw element shot is as wide as the
+    # browser window and carries a few hundred px of empty canvas on the right,
+    # so a band that spans the whole BOARD only covers ~70% of the IMAGE and
+    # falls under _BAND_MIN_WIDTH_FRAC — the cut then silently no-ops, which is
+    # exactly what happened on the first deploy of this (2026-08-13).
+    _trim_right(out)
     if spec.get("cut_second_band"):
         _cut_at_second_band(out, verbose=verbose)
-    _trim_right(out)
     capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
     _trim_footer_after_gap(out)
     if verbose:
