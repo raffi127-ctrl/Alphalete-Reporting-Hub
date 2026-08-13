@@ -110,6 +110,34 @@ def probe(from_file: str = "", verbose: bool = True) -> int:
         print("   raw {}  kept {}   {!r}".format(
             max(raws) if raws else "(none)   ",
             kept_max.get(val, "(none)   "), val))
+
+    # WHY the kept date lags the raw one. Roshan's log stopped at 8/4 on
+    # 2026-08-13 while her rows ran to 8/11 — seven days present in the export
+    # and dropped by clean.load. "Dropped" alone doesn't say whether that's
+    # correct (genuine Drafts) or a status we've started mis-reading, so name
+    # the statuses: for every office, count the raw rows dated PAST its kept
+    # max, grouped by Status / sub-status. If those read Draft, the log is
+    # honest and the sales just haven't firmed up. If they read anything else,
+    # JUNK_STATUSES / DEAD_VERIFICATION_SUBS has drifted from the source.
+    print("\n[box probe] statuses on raw rows NEWER than the kept max:")
+    for val, _n in counts.most_common():
+        cut = kept_max.get(val)
+        if not cut:
+            continue
+        late = collections.Counter()
+        for r in rows:
+            if (r.get(col) or "").strip() != val:
+                continue
+            d = clean._parse_date(r.get("Sale Date", ""))
+            if d and d > cut:
+                late[((r.get("Status") or "").strip(),
+                      (r.get("Contr. Sub-status") or "").strip())] += 1
+        if not late:
+            print("   {!r}: none — the export simply stops there".format(val))
+            continue
+        print("   {!r}: {} row(s) past {}".format(val, sum(late.values()), cut))
+        for (st, sub), n in late.most_common(6):
+            print("      {:5d}  Status={!r} Sub={!r}".format(n, st, sub))
     return 0
 
 
