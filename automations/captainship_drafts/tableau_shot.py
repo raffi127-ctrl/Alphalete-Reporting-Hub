@@ -411,6 +411,7 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
 # down, so running this on NDS would throw away almost the whole report. The
 # flag is what makes "the second band" mean anything.
 _BAND_MIN_WIDTH_FRAC = 0.80     # a band spans the board; a blue cell does not
+_MIN_SECTION_PX = 80            # the shortest first section worth keeping
 
 
 def _navy_band_rows(path: Path) -> list:
@@ -459,14 +460,19 @@ def _cut_at_second_band(path: Path, margin_px: int = 6,
     with Image.open(path) as im:
         im = im.convert("RGB")
         cut = max(1, bands[1][0] - margin_px)
-        if not 0.2 <= cut / im.height <= 0.97:
-            if verbose:
-                print(f"   ⚠ {path.name}: second band at {cut / im.height:.0%} "
-                      f"of the shot — keeping the whole shot", flush=True)
+        # Sanity in PIXELS, never as a fraction of the height. At this point the
+        # shot still carries the board's empty canvas below the content — the
+        # B2B board measures 1694x8000 here — so a cut that is 55% of the
+        # FINISHED image is 7% of this one. The fraction guard this replaces
+        # rejected every real cut, and quietly (its message was behind
+        # --verbose): the third time this crop shipped doing nothing.
+        if cut <= bands[0][1] + _MIN_SECTION_PX:
+            print(f"   ⚠ {path.name}: 2nd band at y={bands[1][0]} sits right "
+                  f"under the 1st (ends y={bands[0][1]}) — that is not a "
+                  f"section, keeping the whole shot", flush=True)
             return
-        if verbose:
-            print(f"   ✂ {path.name}: cutting at y={cut} "
-                  f"({cut / im.height:.0%}), above the 2nd navy band", flush=True)
+        print(f"   ✂ {path.name}: cutting at y={cut} of {im.height}, above the "
+              f"2nd navy band", flush=True)
         im.crop((0, 0, im.width, cut)).save(path)
 
 
