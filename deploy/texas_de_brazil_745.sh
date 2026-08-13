@@ -68,8 +68,27 @@ echo "[$(date)] Texas de Brazil daily run starting (extra args: ${*:-none})" > "
 
 # LIVE by default (--send). Any extra arg (e.g. --dry-run) is appended and wins.
 if [ "$#" -eq 0 ]; then set -- --send; fi
+
+# One whole-run retry, 3 minutes later. Belt-and-suspenders on top of the
+# per-fetch retries in tdb_data.fetch_from_drive: those cover a slow Google, this
+# covers anything else transient before delivery (Chrome dying on the PDF render,
+# a Sheets read blowing up mid-build). 2026-08-13: a single Drive ReadTimeout at
+# 08:00 dropped that day's post entirely, unnoticed until the Hub was read hours
+# later. A DETERMINISTIC failure just costs ~2 wasted minutes at 8am.
+#
+# It CANNOT double-post: post_slack() catches every per-channel exception and
+# returns normally, so a delivery failure exits 0 and never reaches this retry —
+# an exit != 0 always means we died BEFORE anything was sent. (Corollary, not
+# fixed here: a Slack upload that fails still exits 0 and greens the Hub card.)
 "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
+if [ "$ST" -ne 0 ]; then
+  echo "[$(date)] attempt 1 failed (exit $ST) — retrying once in 180s" >> "$LOG_FILE"
+  sleep 180
+  "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1
+  ST=$?
+  echo "[$(date)] retry finished exit=$ST" >> "$LOG_FILE"
+fi
 
 # PUSH back what THIS run just auto-detected, so the next run on any other
 # machine pays it out too. (Same command — the sync is a two-way union.)
