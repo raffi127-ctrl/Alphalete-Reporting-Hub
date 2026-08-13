@@ -5,7 +5,7 @@ corran sin el gate de revisión, ya que no hay nada que los revise… a no ser q
 algo lance una alerta o quede incompleto o falle".
 
 El gate normal es: Lucy postea el link del borrador en #revision-emails y el ✅
-de Evelyn o Jolie es lo que dispara el envío. Los fines de semana no hay nadie
+de Evelyn es lo que dispara el envío. Los fines de semana no hay nadie
 mirando el canal, así que el ✅ nunca llega y el correo simplemente no sale —
 un reporte que se armó bien y se murió esperando a alguien. Este módulo es la
 excepción: **el sábado y el domingo, un día limpio se aprueba solo.**
@@ -55,7 +55,7 @@ WEEKEND = {5, 6}                        # sábado, domingo (Python weekday())
 ENABLED = True
 
 # Quién figura como "aprobador" cuando el día se libera solo. Va al mismo lugar
-# donde iría el nombre de Evelyn o Jolie, así el hilo dice quién lo soltó.
+# donde iría el nombre de Evelyn, así el hilo dice quién lo soltó.
 AUTO_ID = "auto-weekend"
 AUTO_WHO = "envío automático de fin de semana (nadie revisa sáb/dom)"
 

@@ -4,7 +4,7 @@ Board and the All Units (All Campaigns) Org Sales Board.
 Both already produce an exact-sheet PNG for their Slack DM. This package puts
 that same image in an email, behind the SAME review gate the Org Sales Board
 email and the captainship drafts use — one post in #revision-emails, one
-checkmark from Evelyn or Jolie, then it goes out.
+checkmark from Evelyn, then it goes out.
 
 NOTHING NEW HAD TO BE INSTALLED for that last step: the checkmark is picked up
 by deploy/org_board_email_review.sh, the every-15-min watcher already running on

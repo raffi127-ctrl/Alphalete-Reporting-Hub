@@ -66,7 +66,7 @@ yet.</p>
 <div class="box">
 <b>Look right?</b> Back on the Hub, press
 <b>&laquo;2. Post to Slack for approval&raquo;</b>. The reports go out when
-Evelyn or Jolie reacts with a ✅ in #revision-emails &mdash; nobody
+Evelyn reacts with a ✅ in #revision-emails &mdash; nobody
 gets anything until then.<br><br>
 <b>A number is wrong?</b> Fix it on the Sales Board, press
 <b>&laquo;1. Build + review the 12&raquo;</b> again, and re-check here.

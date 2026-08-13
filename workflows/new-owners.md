@@ -51,8 +51,8 @@ gate no longer fires.
 
     detect   a captainship report pulls its captain's team and finds a rep with
              no row -> `captain_gate.propose()` posts ONE line in the year's
-             captainship thread, tagging Evelyn and Jolie
-    approve  either of them reacts ✅ on that line
+             captainship thread, tagging Evelyn
+    approve  she reacts ✅ on that line
     apply    the next Org Sales Board captainship run calls `captain_gate.
              resolve()`: it inserts the rep into EVERY table of that captainship
              and replies saying where they landed
@@ -110,7 +110,7 @@ Channel **#revision-emails** (`C0BLLU9M0A2`), one parent thread per year:
 - `New Owners - Active and Added <year>` — campaign side. Pure notice, tags
   nobody, nothing to approve: the bank row was the decision.
 - `Captainship New Owner - Active and Added <year>` — the GATE. Each new rep is
-  one line tagging Evelyn and Jolie; the ✅ is what puts them on the board, and
+  one line tagging Evelyn; the ✅ is what puts them on the board, and
   a reply confirms where they landed.
 
 The parent's ts lives in the `New Owners Log` tab (not a file on one machine) so

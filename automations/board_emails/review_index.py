@@ -59,7 +59,7 @@ def build_index(run_day: dt.date | None = None, *, logfn=print) -> Path:
  {''.join(rows)}
 </table>
 <p class="note">Estos son PREVIEWS: no se ha enviado nada. El envío lo libera
-un ✅ de Evelyn o Jolie sobre el post del día en #revision-emails, y sale la
+un ✅ de Evelyn sobre el post del día en #revision-emails, y sale la
 imagen ya capturada — lo que se aprobó es lo que se manda.</p>
 """
 
