@@ -1,7 +1,7 @@
 """Pull Carlos' B2B team weekly bonus inputs from Tableau.
 
-Source: ATTTRACKER-B2B / CaptainsTeam, the "B2B Leader Recognition" dashboard
-(the Loom's "Captain Team"). Filtered to the just-completed week via the
+Source: ATTTRACKER-B2B / B2B 1-PAGER_Captain View, the BASE view. Filtered to
+the just-completed week via the
 **"Activation Date Week Ending (copy)"** URL param set to that week's SATURDAY
 in **ISO (YYYY-MM-DD)** form — M/D/YYYY silently no-ops and leaves the
 in-progress week (verified 2026-07-07). Four crosstab worksheets:
@@ -29,8 +29,19 @@ from automations.fiber_activations import pull as P
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
 CACHE_DIR = Path("/tmp/carlos_captainship_bonus")
+# The BASE view. It used to be a saved custom view on a 'CaptainsTeam' sheet
+# (B2BLeaderRecognition, GUID 15e2f8c1-…). On 2026-08-13 the workbook was
+# restructured, that sheet stopped existing, and the URL answered with a
+# permission/not-found page — the viz never hydrates, so the pull died on a
+# 120s timeout waiting for the Download button (3 attempts, no partial write).
+# Same republish took captainship_drafts' §2 down the same day; it moved to this
+# same base view. Do NOT go back to a saved custom view: they are per-user (the
+# bot signs in as Rafael) and die on every republish.
+# The 4 worksheets below are unfiltered here — each crosstab carries every
+# captain's team and the parsers pick TEAM's rows — so no team filter is applied.
+# [[project_captainship-b2b-teamstats-view]] [[project_broken-custom-view-failure-mode]]
 VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-        "CaptainsTeam/15e2f8c1-420b-4ab4-8ce1-49b5d85ab969/B2BLeaderRecognition")
+        "B2B1-PAGER_CaptainView")
 WEEK_FIELD = "Activation%20Date%20Week%20Ending%20(copy)"  # value = Saturday ISO
 TEAM = "carlos's team"          # SFDC team label in the crosstabs
 CARLOS_OWNER = "carlos hidalgo"  # for the personal 0-30 churn
@@ -143,7 +154,7 @@ def _pull(today, scratch, verbose, use_cache):
     ]
     if not use_cache:
         if verbose:
-            print(f"  CaptainsTeam week ending (Sat) {P.cycle_saturday(today)} "
+            print(f"  B2B1-PAGER_CaptainView week ending (Sat) {P.cycle_saturday(today)} "
                   f"(sheet WE {P.cycle_sunday(today)})", flush=True)
         for key, sh, url in jobs:
             download_crosstab_patchright(url, sh, files[key], verbose=verbose)

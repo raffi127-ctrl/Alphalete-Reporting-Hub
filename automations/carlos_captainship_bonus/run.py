@@ -2,7 +2,8 @@
 
 Inserts a fresh week column on the "Carlos B2B Captainship" tab of the
 *All In One - CARLOS* sheet, fills each active rep's Total Activations for
-Carlos' B2B team (Tableau ATTTRACKER-B2B / Captain Team, current cycle), sets
+Carlos' B2B team (Tableau ATTTRACKER-B2B / B2B 1-PAGER_Captain View, current
+cycle), sets
 the four metric cells (team 0-30 churn %, personal 0-30 churn %, 31-60
 activation %, non-payment %), lets the Total Activations / Money Made / TOTAL
 AMOUNT formulas recompute, re-points the chart's series at the Total - All
