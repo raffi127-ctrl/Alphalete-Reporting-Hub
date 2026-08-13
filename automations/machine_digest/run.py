@@ -286,6 +286,51 @@ def _oneshot_utility_ids(cfg) -> set:
     return ids
 
 
+def _offday_standalone_ids(cfg, target_date) -> set:
+    """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
+    on `target_date`'s weekday, per an explicit `standalone_weekdays` list in
+    schedule_config (Python weekday(): Mon=0 … Sun=6).
+
+    on_scheduler:false reports have no usable `cadence.weekdays` — their real
+    schedule lives in a plist the watcher can't read — so the "didn't run today"
+    baseline has to guess from the Activity log alone. That guess breaks on a
+    WEEKDAY-PINNED report the moment it's hand-rerun on the same off-weekday a few
+    times: vantura_payroll fires Wednesday 11:00 (com.alphalete.vantura-payroll-wed,
+    Weekday 3), but manual Thursday reruns on 7/23, 7/30 and 8/6 taught
+    _historical_expected that it's a Thursday 11:00 report, so it posted "Vantura
+    Weekly Payroll (prep) — did not run today" every Thursday from 13:00 on, while
+    the real Wednesday run had succeeded the day before (Eve 2026-08-13).
+
+    Declaring `standalone_weekdays` pins the truth: on any other weekday the report
+    is exempt from the "didn't run" check ONLY. It stays fully watched for FAILED /
+    INCOMPLETE / STUCK on every day — an off-day hand-rerun that crashes (as
+    vantura_payroll's did on 2026-08-06) must still alert. Undeclared reports keep
+    the historical guess, so this changes nothing for anyone who doesn't opt in.
+    Matched by the same id/card-alias fan-out as _orchestrator_ids, since Activity
+    rows are written under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    wd = target_date.weekday()
+    ids = set()
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        days = rep_raw.get("standalone_weekdays")
+        if not isinstance(days, list) or not days:
+            continue   # not declared → keep the historical-expected guess
+        if wd in days:
+            continue   # it IS supposed to run today → a missing run is a real miss
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
+
 def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
     'the mini' for the scheduler Mac mini, else 'Lucy 1' — so an alert names the
@@ -395,6 +440,10 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
     skip = _orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
+    # Off-day exemption for weekday-pinned standalone reports. Deliberately NOT
+    # folded into `skip`: it must suppress the "didn't run" guess only, never a
+    # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.
+    offday = _offday_standalone_ids(cfg, target_date)
     already = _load_alerted(day)
     ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()
@@ -428,7 +477,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    "didn't run today" (MISSED) alert at the noon backstop.
     now = dt.datetime.now()
     for cid, info in _historical_expected(rows, target_date).items():
-        if cid in ran_ids or cid in skip or cid in already:
+        if cid in ran_ids or cid in skip or cid in already or cid in offday:
             continue
         if now.hour < info["start_hour"] + _DIDNT_RUN_GRACE_HOURS:
             continue   # too early to call it missing
