@@ -129,7 +129,10 @@ def _spec_for(captain_key: str, flavor: str) -> Optional[dict]:
     if not entry:
         return None
     base, field, value = entry
-    return {"id": title, "url": _filtered_url(base, field, value), "title": title}
+    return {"id": title, "url": _filtered_url(base, field, value), "title": title,
+            # Only the B2B 1-PAGER carries a second, last-week report below the
+            # fold — see _cut_at_second_band. NDS is shot whole.
+            "cut_second_band": flavor == "b2b"}
 
 
 # The cancel board renders ~18 day columns; the daily email shows only the last
@@ -390,57 +393,71 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
         im.crop((0, 0, im.width, cut)).save(path)
 
 
-# The B2B 1-PAGER stacks a SECOND report under this band — "Sales By ICD - Last
-# Week" + "Summary Sales - Last Week" + the server-update footer. §2 is the
-# current week only, so the shot stops at the band (Eve 2026-08-13). Matched by
-# its TEXT: the band slides down every time the team above it has more ICD rows,
-# so there is no pixel row to hardcode.
-_CUT_BELOW_BANDS = (r"B2B\s*-\s*LAST\s+WEEK",)
+# The B2B 1-PAGER stacks a SECOND report under its "B2B - LAST WEEK" band —
+# "Sales By ICD - Last Week", "Summary Sales - Last Week" and the server-update
+# footer. §2 is the current week only, so the shot stops at that band (Eve
+# 2026-08-13).
+#
+# Found by COLOUR, not by text: Tableau paints worksheet content (band titles
+# included) into a canvas, so `get_by_text("B2B - LAST WEEK")` matches nothing
+# in the DOM and the first attempt at this cropped nothing at all. What the band
+# is, on screen, is a full-width navy rule — and there are exactly two of them
+# on this board ("B2B - Current Week" on top, "B2B - LAST WEEK" in the middle),
+# so the second one is the cut. Detected per-run rather than hardcoded: the band
+# slides down every time the team above it has more ICD rows.
+#
+# ONLY for the B2B board (spec['cut_second_band']). The NDS board is built out
+# of navy bands too — four of them, measured — and its second one sits 113px
+# down, so running this on NDS would throw away almost the whole report. The
+# flag is what makes "the second band" mean anything.
+_BAND_MIN_WIDTH_FRAC = 0.80     # a band spans the board; a blue cell does not
 
 
-def _cut_fraction(page, board, verbose: bool = False) -> Optional[float]:
-    """Where to cut the board, as a FRACTION of its height (None = keep it all).
-
-    A fraction rather than pixels because the PNG's height is not the element's:
-    the device scale factor multiplies it, and Playwright stitches an element
-    taller than the window. The band's relative position survives both. The two
-    boxes are read back to back on purpose — their difference only means
-    anything within one layout/scroll state.
-
-    A board without the band (NDS) matches nothing and is returned uncropped."""
-    for pattern in _CUT_BELOW_BANDS:
-        try:
-            band = page.frame_locator(_VIZ_IFRAME).get_by_text(
-                re.compile(pattern, re.I)).first
-            if not band.count():
-                continue
-            bb_band, bb_board = band.bounding_box(), board.bounding_box()
-        except Exception:       # noqa: BLE001 — no crop beats no shot
-            continue
-        if not bb_band or not bb_board or not bb_board.get("height"):
-            continue
-        frac = (bb_band["y"] - bb_board["y"]) / bb_board["height"]
-        # Off the top or off the bottom means we matched something else (a
-        # legend, a tooltip, a hidden copy) — keep the whole shot rather than
-        # mail a sliver.
-        if not 0.2 <= frac <= 0.97:
-            if verbose:
-                print(f"   ⚠ {pattern!r} sits at {frac:.0%} of the board — "
-                      f"keeping the whole shot", flush=True)
-            continue
-        if verbose:
-            print(f"   ✂ cutting at {frac:.0%}, above {pattern!r}", flush=True)
-        return frac
-    return None
-
-
-def _crop_to_fraction(path: Path, frac: float, margin_px: int = 6) -> None:
-    """Cut the PNG at `frac` of its height, leaving a hair of white above the
-    band so the section above doesn't end flush against the edge."""
+def _navy_band_rows(path: Path) -> list:
+    """(start, end) of every full-width navy rule in the PNG, top to bottom."""
+    import numpy as np
     from PIL import Image
-    im = Image.open(path).convert("RGB")
-    cut = max(1, int(im.height * frac) - margin_px)
-    if cut < im.height - 2:
+    with Image.open(path) as im:
+        a = np.asarray(im.convert("RGB")).astype(np.int16)
+    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    # "dark and clearly blue" — loose enough to survive a palette tweak, tight
+    # enough that no table header or heat-map cell qualifies.
+    navy = (b > r + 30) & (b > g + 20) & (a.mean(axis=2) < 140)
+    is_band = navy.mean(axis=1) >= _BAND_MIN_WIDTH_FRAC
+    bands, y, h = [], 0, len(is_band)
+    while y < h:
+        if is_band[y]:
+            s = y
+            while y < h and is_band[y]:
+                y += 1
+            bands.append((s, y))
+        else:
+            y += 1
+    return bands
+
+
+def _cut_at_second_band(path: Path, margin_px: int = 6,
+                        verbose: bool = False) -> None:
+    """Crop the PNG to everything ABOVE its second navy band. No-op when the
+    board doesn't have two, or when the cut would land somewhere absurd."""
+    from PIL import Image
+    bands = _navy_band_rows(path)
+    if len(bands) < 2:
+        if verbose:
+            print(f"   ⚠ {path.name}: found {len(bands)} navy band(s), expected "
+                  f"2 — keeping the whole shot", flush=True)
+        return
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        cut = max(1, bands[1][0] - margin_px)
+        if not 0.2 <= cut / im.height <= 0.97:
+            if verbose:
+                print(f"   ⚠ {path.name}: second band at {cut / im.height:.0%} "
+                      f"of the shot — keeping the whole shot", flush=True)
+            return
+        if verbose:
+            print(f"   ✂ {path.name}: cutting at y={cut} "
+                  f"({cut / im.height:.0%}), above the 2nd navy band", flush=True)
         im.crop((0, 0, im.width, cut)).save(path)
 
 
@@ -532,12 +549,9 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
             raise RuntimeError(
                 f"{spec['id']}: the board never rendered "
                 f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
-    # Measured BEFORE the screenshot: .screenshot() scrolls the element into
-    # view, and the two boxes have to come from the same scroll state.
-    frac = _cut_fraction(page, board, verbose=verbose)
     board.screenshot(path=str(out))
-    if frac is not None:
-        _crop_to_fraction(out, frac)
+    if spec.get("cut_second_band"):
+        _cut_at_second_band(out, verbose=verbose)
     _trim_right(out)
     capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
     _trim_footer_after_gap(out)
