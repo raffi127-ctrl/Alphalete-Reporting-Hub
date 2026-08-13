@@ -442,6 +442,13 @@ def _cut_at_second_band(path: Path, margin_px: int = 6,
     board doesn't have two, or when the cut would land somewhere absurd."""
     from PIL import Image
     bands = _navy_band_rows(path)
+    # One audit line per shot, always. This crop has now silently done nothing
+    # twice — once for looking up text Tableau paints into a canvas, once for
+    # running before the white canvas was trimmed — and both times the run was
+    # exit 0 with a full-height image, so there was nothing to read anywhere.
+    with Image.open(path) as _im:
+        print(f"   · cut check {path.name}: {_im.width}x{_im.height}, "
+              f"{len(bands)} navy band(s) at {[b[0] for b in bands]}", flush=True)
     if len(bands) < 2:
         # NOT gated on verbose: "I was asked to cut and did not" has to reach
         # the run log. The first deploy of this cropped nothing and looked like
@@ -552,6 +559,8 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
                 f"{spec['id']}: the board never rendered "
                 f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
     board.screenshot(path=str(out))
+    print(f"   · shot {out.name} (cut_second_band="
+          f"{bool(spec.get('cut_second_band'))})", flush=True)
     # AFTER _trim_right, never before. The raw element shot is as wide as the
     # browser window and carries a few hundred px of empty canvas on the right,
     # so a band that spans the whole BOARD only covers ~70% of the IMAGE and
