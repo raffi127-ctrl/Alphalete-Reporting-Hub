@@ -287,5 +287,76 @@ class ReportAnIssueDedupe(unittest.TestCase):
                          "whitespace differences must not defeat the dedupe")
 
 
+class UntrackedCampaignsAreSkipped(unittest.TestCase):
+    """A Roll Call campaign the board does not scoreboard (Base, dropped
+    2026-08-13) must not produce 'missing from the board' findings.
+
+    The board has no Base rep rows BY DESIGN, so the reverse rule ("Active on
+    the roll => must have a board row") cannot hold for them: on 2026-08-13 it
+    reported all 13 active Base people every morning and the report could never
+    go green again.
+    """
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet_with_roll(self, campaign):
+        """Casey Rep (on the board) plus one Active person in `campaign` who has
+        NO board row and no sales — old enough to trip STALLED TRAINEE."""
+        board_v, board_f = _board_with_one_rep()
+        st_v, st_f = _stations_clean()
+        stray = _pad([""], 14)
+        stray[0] = "1.4"               # roll week tag, always >= 4 weeks old
+        stray[1] = "Active"            # col B status
+        stray[2] = campaign            # col C campaign
+        stray[3] = "Pat Offboard"      # col D name
+        roll = [
+            ["Week Ending", "Status", "Campaign", "Roll Call"],
+            ["", "Active", "B2B", "Casey Rep"],
+            stray,
+        ]
+        return _FakeSheet({
+            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+
+    def test_untracked_campaign_produces_no_finding(self):
+        sheet = self._sheet_with_roll("Base")
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            sheet.worksheet("Report an Issue").appended, [],
+            "a campaign the board does not track must not be reported missing")
+        self.assertTrue(mc.called, "with nothing else wrong the run is clean")
+        self.assertFalse(wm.called)
+
+    def test_tracked_campaign_still_produces_the_finding(self):
+        """Control: the SAME row under a tracked campaign must still fire, so
+        the test above proves the campaign skip did the work rather than some
+        unrelated fixture detail swallowing the finding."""
+        sheet = self._sheet_with_roll("B2B")
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        appended = sheet.worksheet("Report an Issue").appended
+        self.assertTrue(
+            any("Pat Offboard" in " ".join(map(str, r)) for r in appended),
+            "a tracked-campaign rep with no board row must still be reported — "
+            "if this fails the skip test above has stopped covering anything")
+        self.assertTrue(wm.called)
+        self.assertFalse(mc.called)
+
+    def test_blank_campaign_is_still_checked(self):
+        """Blank is ambiguous, not 'untracked' — skipping it would be the same
+        silent coverage hole this audit exists to catch."""
+        sheet = self._sheet_with_roll("")
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertTrue(
+            any("Pat Offboard" in " ".join(map(str, r))
+                for r in sheet.worksheet("Report an Issue").appended),
+            "a blank campaign must keep getting audited")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -31,6 +31,26 @@ SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 WK_TAG = re.compile(r"^\d+(st|nd|rd|th) Wk$")
 RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 
+# Campaigns the Sales Board actually scoreboards. The reverse check below
+# ("Active on the roll => must have a board row") ONLY holds for these: a
+# campaign with no board section cannot have board rows, so every active person
+# in it gets reported missing every morning, forever, and the report never goes
+# green again.
+#
+# 'Base' was dropped 2026-08-13 (Carlos, via Eve). The board keeps a Base
+# campaign row (r43) with zero rep rows under it on purpose — Base is simply not
+# tracked here any more. Until this constant existed the audit reported all 13
+# active Base reps as MISSING FROM BOARD / STALLED TRAINEE every day; that pile
+# is what surfaced the question. Their sales still land in RAW and still get
+# paid off the Commission tab — they just no longer roll up into the board's
+# campaign totals, which is the intended behaviour, not a gap.
+#
+# A BLANK campaign deliberately still gets checked: blank is ambiguous, and
+# silently skipping it would be the same class of coverage hole this audit
+# exists to catch.
+BOARD_CAMPAIGNS = {"B2B", "BOX"}
+ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
+
 
 def _log(msg: str) -> None:
     print(f"[{dt.datetime.now().replace(microsecond=0).isoformat()}] {msg}",
@@ -275,6 +295,13 @@ def audit(write: bool, log=_log) -> int:
             continue
         n = _norm(r[3])
         if n in EXEMPT:
+            continue
+        # not scoreboarded here at all -> "missing from the board" is meaningless
+        camp = (str(r[ROLL_CAMPAIGN_COL]).strip()
+                if len(r) > ROLL_CAMPAIGN_COL else "")
+        if camp and camp not in BOARD_CAMPAIGNS:
+            log(f"campaign {camp!r} is not on this board — skipping "
+                f"{str(r[3]).strip()} (roll r{ri})")
             continue
         if _on_board(n):
             continue

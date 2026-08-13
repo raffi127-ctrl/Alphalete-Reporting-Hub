@@ -119,6 +119,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
+                    "set_credico_state",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
@@ -134,7 +135,10 @@ SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
                   # The xoxp- USER token is the one channel posts actually use
                   # and the more sensitive of the two — it was relying on the
                   # queuer clearing the cell by hand (2026-08-08).
-                  "set_slack_user_token"}
+                  "set_slack_user_token",
+                  # A live Credico browser session — same class of secret as a
+                  # token, and it transits the Args cell to reach Lucy 1.
+                  "set_credico_state"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -2492,6 +2496,94 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
     return True, f"Gmail token installed + verified: mailbox {who}"
 
 
+def _action_set_credico_state(args: str) -> tuple[bool, str]:
+    """Install a Credico browser session on THIS machine so the DD pull can run
+    unattended. Args is the CONTENTS of the .credico_storage_state.json produced
+    by `python -m automations.credico.session --login` on a machine where a HUMAN
+    did the login.
+
+    WHY THIS EXISTS. credico_fetch died on 2026-08-13 with "Credico session
+    expired", and session.py's only documented fix is an interactive headed login
+    ON LUCY 1 with someone at the screen — but nobody had access to that screen,
+    and the Thursday DD Bulletin needs the Credico fold by 10:30 Central. Same
+    escape hatch as set_contacts_ro_token: the human step does not have to happen
+    on the mini. Eve logs in on her own machine; this ships the RESULT.
+
+    No password travels — a Credico session is cookies + localStorage, and
+    session.py never types credentials on either machine.
+
+    This is NOT the Chrome-profile copy _action_sheets_login rules out. That
+    fails because Chrome seals its cookie store with an OS key. A Playwright
+    storage_state is a plain JSON file with no OS key in it, so it replays
+    elsewhere. Credico may still refuse a session presented from a different
+    IP — the verify below is what tells us, and a rejection costs only the round
+    trip (the saved session is already dead, so there is nothing to lose).
+
+    Backs up any existing state, writes it 0600, then verifies with the REAL
+    loader. NEVER echoes the state. In SECRET_ACTIONS, so the poller blanks the
+    Args cell the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    # Same two delivery paths as set_gmail_token: `lucy` shlex-JOINS its args,
+    # while enqueue() writes the cell verbatim. Try the raw text FIRST — shlex
+    # on raw JSON eats the quotes — then fall back to un-shlexing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    if parsed is None:
+        return False, ("set_credico_state needs the CONTENTS of "
+                       ".credico_storage_state.json (a JSON object) as Args")
+    # Credico is a hash-router SPA that keeps its auth token in localStorage, NOT
+    # in cookies (see session.credico_session). A cookies-only state passes every
+    # cheap check and then fails on the NEXT pull, a week later — refuse it here
+    # instead, the same way save_login warns about it at the source.
+    n_c = len(parsed.get("cookies") or [])
+    n_ls = sum(len(o.get("localStorage", []) or [])
+               for o in (parsed.get("origins") or []))
+    if n_ls == 0:
+        return False, ("no localStorage in this state — that's where Credico "
+                       "keeps its auth token, so the login never completed. "
+                       "Re-run --login and wait for the dashboard to be fully "
+                       "on screen before closing it.")
+
+    from automations.credico.session import STATE as path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=1), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify through the SAME loader every Credico report uses — proof the
+    # replayed session authenticates FROM THIS MACHINE, not just from Eve's.
+    ok, res = _run_cmd([sys.executable, "-m", "automations.credico.session",
+                        "--check"],
+                       timeout_s=5 * 60, log_name="credico-set-state.log")
+    head = f"{n_c} cookie(s) + {n_ls} localStorage item(s) installed · "
+    if ok:
+        return True, head + "session VERIFIED here — credico_fetch can run"
+    return False, (head + "but Credico REJECTED it on this machine: " +
+                   res[:150] + " — the session may be bound to the browser/IP "
+                   "that logged in; full log: lucy logtail credico-set-state")
+
+
 def _action_set_contacts_ro_token(args: str) -> tuple[bool, str]:
     """Install the alphaletereporting READ-ONLY Contacts token on THIS machine —
     the one `shared.contacts_auth` uses to expand the distro groups that address
@@ -3602,6 +3694,7 @@ ACTIONS = {
     "set_gbp_token": _action_set_gbp_token,
     "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
+    "set_credico_state": _action_set_credico_state,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
     "restart_holder": _action_restart_holder,
