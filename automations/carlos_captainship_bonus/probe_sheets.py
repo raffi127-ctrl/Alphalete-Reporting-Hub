@@ -117,7 +117,12 @@ def main(argv=None) -> int:
     from automations.recruiting_report.opt_phase import list_crosstab_sheets
 
     ap = argparse.ArgumentParser(prog="carlos_captainship_bonus.probe_sheets")
-    ap.add_argument("--url", default=T.VIEW, help="view to probe (default: the report's)")
+    ap.add_argument("--url", action="append", default=None,
+                    help="view to probe; repeatable. Default: the report's. "
+                         "Names-only listing runs for EVERY url given, so one "
+                         "run can settle 'which dashboard did these worksheets "
+                         "move to' across several candidates. --dump uses the "
+                         "FIRST url only.")
     ap.add_argument("--dump", action="store_true",
                     help="also download each CANDIDATE worksheet and print its "
                          "columns + first rows")
@@ -138,6 +143,8 @@ def main(argv=None) -> int:
 
     from urllib.parse import quote
 
+    urls = args.url or [T.VIEW]
+
     def _url(week_sat=None) -> str:
         """Base view + optional team filter + optional pinned activation week."""
         parts = []
@@ -146,23 +153,34 @@ def main(argv=None) -> int:
         if week_sat:
             parts.append(f"{T.WEEK_FIELD}={week_sat}")
         parts.append(":iid=1")
-        return f"{args.url}?" + "&".join(parts)
+        return f"{urls[0]}?" + "&".join(parts)
 
     rec(f"Carlos bonus source probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
-    rec(f"view: {args.url}")
     rec(f"team filter: {TEAM_VALUE!r}" if args.team else "team filter: (none)")
     rec(f"week pinned to Sat: {args.week_sat or '(last cycle)'}")
-    rec("")
 
-    names = list_crosstab_sheets(args.url, verbose=False)
-    rec(f"dialog offers {len(names)} worksheet(s):")
-    for n in names:
-        rec(f"XTAB: {n}")
+    names = []
+    for u in urls:
+        rec("")
+        rec(f"### view: {u}")
+        try:
+            found = list_crosstab_sheets(u, verbose=False)
+        except Exception as e:  # noqa: BLE001 — a dead view must not kill the run
+            rec(f"  !! could not open: {type(e).__name__}: {str(e)[:160]}")
+            continue
+        rec(f"  dialog offers {len(found)} worksheet(s):")
+        for n in found:
+            rec(f"XTAB: {n}")
+        hit = [w for w in T.SHEETS.values() if w in found]
+        rec(f"  MATCHES the report's needs: {len(hit)}/{len(T.SHEETS)}"
+            + (f" -> {hit}" if hit else ""))
+        if u == urls[0]:
+            names = found
 
     rec("")
     for key, want in sorted(T.SHEETS.items()):
         rec(f"NEED: {key:<8} {want!r} -> "
-            f"{'PRESENT' if want in names else 'MISSING'}")
+            f"{'PRESENT' if want in names else 'MISSING'} (on first url)")
 
     if args.dump:
         from automations.fiber_activations import pull as P

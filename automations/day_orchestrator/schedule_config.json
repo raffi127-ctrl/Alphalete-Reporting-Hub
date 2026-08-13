@@ -2979,7 +2979,7 @@
         "type": "not_configured"
       },
       "machine": "Lucy 2",
-      "timeout_minutes": 20
+      "timeout_minutes": 45
     },
     "disable_carlos_captainship_bonus_agent": {
       "on_scheduler": false,
