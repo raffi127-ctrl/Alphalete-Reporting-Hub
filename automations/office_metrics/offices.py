@@ -298,9 +298,11 @@ SECTION_OVERRIDES: dict = {
     # drew (Precision, #precisionmanagement-nds-sales) is WIRELESS/NDS — owner
     # "DREW TEPPER[precision management team, inc.]" in the NDS-SN workbook (572
     # wireless orders, verified 2026-08-12). Wired like isaiah. Churn = per-rep,
-    # sliced from the shared ChurnALlExp view (Megan built it 2026-08-12). Time
-    # Gaps HELD until his Time Tracker is verified non-blank (never post blank).
-    "drew": ("churn", "rep_activations", "order_log", "cancels"),
+    # sliced from the shared ChurnALlExp view. Time Gaps: his knocks_office
+    # "Precision management Drew Tepper" isn't an ownerville name, so an alias maps
+    # it to his office NUMBER 22583 (Megan 2026-08-12) — validated live at 4am (a
+    # failed impersonation just omits the board, never posts blank).
+    "drew": ("knocks_gaps", "churn", "rep_activations", "order_log", "cancels"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
