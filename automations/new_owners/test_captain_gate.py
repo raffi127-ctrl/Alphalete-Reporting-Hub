@@ -1,0 +1,187 @@
+"""Two contracts of the captainship new-rep gate (2026-08-13).
+
+(a) A MATURING COHORT IS NOT A NEW REP.
+    Every captainship metrics tab carries a 0-30 section and a 30-60 one, and
+    the 30-60 metric is a 30-60-DAYS-AGO cohort. Someone who joined ~45 days
+    ago therefore gets their FIRST 30-60 row long after their 0-30 row was
+    filled — `insert_missing_reps` reports that row as "added", and the gate
+    read it as a new rep. It asked Evelyn for a ✅ on Audrey (Blue) Mendoza on
+    2026-08-13, who had been in Starr's boxes on the Org Sales Board since WE
+    7.19 and on the 0-30 rows since 7/23; the only possible resolution was
+    "already had a row". Left alone it repeats for every rep ~45 days in.
+    `observe_added(known=...)` drops those; a rep the tab has never seen still
+    opens the gate.
+
+(b) THE ✅ IS THE CONFIRMATION — AND ONLY A FAILURE SPEAKS.
+    `resolve()` used to reply in the thread on every add ("added to the Starr
+    captainship …"). Eve, 2026-08-13: not wanted — reacting already means "add
+    them"; only tell her if something fails. So a clean add says nothing and
+    the log tab keeps the record, while a failed add posts in the thread and
+    leaves the rep PENDING. That pairing is the contract: without the failure
+    notice, silence would mean both "done" and "broken".
+
+Run:  python -m automations.new_owners.test_captain_gate   (or via pytest)
+
+3.9-safe (no walrus, no match, no PEP-604 unions evaluated at runtime).
+"""
+from __future__ import annotations
+
+import datetime as dt
+import sys
+import unittest
+from unittest import mock
+
+from automations.new_owners import captain_gate, captain_watch
+from automations.org_sales_board.review_gate import APPROVE_EMOJI, APPROVERS
+
+TODAY = dt.date(2026, 8, 13)
+GATE_TS = "1786623197.909789"
+APPROVER_ID = sorted(APPROVERS)[0]
+EMOJI = sorted(APPROVE_EMOJI)[0]
+
+
+def _sections(*, upper: bool):
+    """The {section: {rep_rows: {name: row}}} map the fills build. Cancel Rate
+    keys it UPPERCASE, Activation Rate / ABP key it lowercase — both must fold
+    to the same set, or the filter silently stops working on one of them."""
+    def k(n):
+        return n.upper() if upper else n.lower()
+    return {
+        "0-30": {"header_row": 2, "rep_rows": {k("Starr Rodenhurst"): 11,
+                                               k("Audrey Mendoza"): 13}},
+        "30-60": {"header_row": 17, "rep_rows": {k("Starr Rodenhurst"): 22}},
+    }
+
+
+class TestNamesOnTab(unittest.TestCase):
+    def test_flattens_both_key_casings(self):
+        for upper in (True, False):
+            got = captain_watch.names_on_tab(_sections(upper=upper))
+            self.assertEqual(got, {"starr rodenhurst", "audrey mendoza"},
+                             msg="upper=%s" % upper)
+
+    def test_junk_shapes_contribute_nothing_instead_of_raising(self):
+        for bad in (None, {}, {"0-30": None}, {"0-30": {}}, {"0-30": {"rep_rows": None}}):
+            self.assertEqual(captain_watch.names_on_tab(bad), set())
+
+
+class TestObserveAddedFiltersMaturingCohorts(unittest.TestCase):
+    def setUp(self):
+        self.proposed = []
+
+        def _fake_propose(names, **kw):
+            self.proposed.append(list(names))
+            return [{"name": n, "captain": kw.get("captain"), "ts": None}
+                    for n in names]
+
+        p = mock.patch.object(captain_gate, "propose", _fake_propose)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_rep_already_on_the_tab_does_not_open_a_gate(self):
+        # Her 30-60 row is new; her 0-30 row is weeks old -> not a new rep.
+        added = {"30-60": ["Audrey Mendoza"]}
+        out = captain_watch.observe_added(
+            added, captain="starr", source="Captainship Cancel Rate",
+            known=captain_watch.names_on_tab(_sections(upper=True)),
+            logfn=lambda *_a: None)
+        self.assertEqual(self.proposed, [[]])
+        self.assertEqual(out, [])
+
+    def test_a_genuinely_new_rep_still_opens_the_gate(self):
+        added = {"0-30": ["Nikola Vance"], "30-60": ["Audrey Mendoza",
+                                                     "Nikola Vance"]}
+        out = captain_watch.observe_added(
+            added, captain="starr", source="Captainship Cancel Rate",
+            known=captain_watch.names_on_tab(_sections(upper=False)),
+            logfn=lambda *_a: None)
+        self.assertEqual(self.proposed, [["Nikola Vance"]])
+        self.assertEqual([a["name"] for a in out], ["Nikola Vance"])
+
+    def test_without_known_nothing_is_filtered(self):
+        captain_watch.observe_added(
+            {"30-60": ["Audrey Mendoza"]}, captain="starr",
+            source="Captainship Cancel Rate", logfn=lambda *_a: None)
+        self.assertEqual(self.proposed, [["Audrey Mendoza"]])
+
+    def test_the_skip_is_logged_not_silent(self):
+        lines = []
+        captain_watch.observe_added(
+            {"30-60": ["Audrey Mendoza"]}, captain="starr",
+            source="Captainship Cancel Rate",
+            known={"Audrey Mendoza"}, logfn=lines.append)
+        self.assertTrue(any("Audrey Mendoza" in l for l in lines), lines)
+
+
+class _FakeBank:
+    """Just enough of new_owners.bank for resolve()."""
+    KIND_CAPTAINSHIP = "Captainship"
+
+    def __init__(self):
+        self.updates = []
+
+    def open_log(self, ss, logfn=print):
+        return "LOG_WS"
+
+    def log_entries(self, lws):
+        return [{"row": 10, "date": "08/13/2026", "kind": "Captainship",
+                 "name": "Audrey Mendoza", "scope": "Starr",
+                 "action": "awaiting ✅ (via Captainship Cancel Rate)",
+                 "notes": GATE_TS}]
+
+    def thread_anchor(self, lws, key):
+        return {"channel": "C0BLLU9M0A2", "ts": "1786623197.113879"}
+
+    def update_log(self, lws, row, *, action=None, notes=None, logfn=print):
+        self.updates.append({"row": row, "action": action, "notes": notes})
+
+
+class TestResolveDoesNotReply(unittest.TestCase):
+    def setUp(self):
+        self.bank = _FakeBank()
+        self.client = mock.Mock()
+        self.client.conversations_replies.return_value = {"messages": [
+            {"ts": GATE_TS,
+             "reactions": [{"name": EMOJI, "users": [APPROVER_ID]}]}]}
+        for name, val in (("bank", self.bank),
+                          ("cap_insert", mock.Mock()),
+                          ("_client", lambda: self.client)):
+            p = mock.patch.object(captain_gate, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+        captain_gate.cap_insert.add_rep.return_value = {
+            "rows": {}, "already": "leaderboard/new_internet"}
+
+    def test_a_failed_add_DOES_speak_and_stays_pending(self):
+        # Silence means "done", so the one case that must never be silent is the
+        # ✅ that couldn't be applied (Eve, 2026-08-13: "que solo avise si algo
+        # falla"). The log line stays PENDING so the next run retries.
+        captain_gate.cap_insert.add_rep.side_effect = ValueError(
+            "no leaderboard/daily block found for 'Starr'")
+        out = captain_gate.resolve(mock.Mock(), today=TODAY,
+                                   logfn=lambda *_a: None)
+        self.assertEqual(out["added"], [])
+        self.assertEqual(self.bank.updates, [],
+                         "a failed add must not be logged as added")
+        self.client.chat_postMessage.assert_called_once()
+        posted = self.client.chat_postMessage.call_args.kwargs["text"]
+        self.assertIn("Audrey Mendoza", posted)
+        self.assertIn("Starr", posted)
+
+    def test_approved_rep_is_added_and_logged_with_no_thread_reply(self):
+        out = captain_gate.resolve(mock.Mock(), today=TODAY,
+                                   logfn=lambda *_a: None)
+        self.assertEqual([a["name"] for a in out["added"]], ["Audrey Mendoza"])
+        self.assertEqual(out["added"][0]["approved_by"],
+                         APPROVERS[APPROVER_ID])
+        captain_gate.cap_insert.add_rep.assert_called_once()
+        # the record still lands on the log tab…
+        self.assertEqual(len(self.bank.updates), 1)
+        self.assertIn("added ✅", self.bank.updates[0]["action"])
+        # …and nothing is posted back to the channel.
+        self.client.chat_postMessage.assert_not_called()
+
+
+if __name__ == "__main__":
+    sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful()
+             else 1)

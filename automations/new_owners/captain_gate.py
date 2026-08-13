@@ -7,11 +7,14 @@ only remaining judgement is a human's.
 
     detect   a captainship report pulls its captain's team from Tableau and
              finds a rep with no row -> `propose()` posts ONE gate line per rep
-             in the year's captainship thread, tagging Evelyn and Jolie
-    approve  either of them reacts ✅ on that line
+             in the year's captainship thread, tagging Evelyn
+    approve  she reacts ✅ on that line
     apply    the next Org Sales Board captainship run calls `resolve()`, which
-             reads the reactions, inserts the rep into every table of that
-             captainship (`cap_insert`) and replies saying where they landed
+             reads the reactions and inserts the rep into every table of that
+             captainship (`cap_insert`). A clean add says NOTHING in the thread
+             — the ✅ is the confirmation (Eve, 2026-08-13) and the log tab
+             records who approved it and where the rep landed. It speaks only
+             when the add FAILS, so silence always means "done"
 
 Nothing is added without a checkmark, and nothing is proposed twice: the log tab
 carries one line per rep with its gate ts, so a pending rep is neither re-posted
@@ -27,7 +30,7 @@ import datetime as dt
 from typing import Dict, List, Optional
 
 from automations.new_owners import bank, cap_insert, notify
-from automations.new_owners.captain_watch import captain_name, sibling_reports
+from automations.new_owners.captain_watch import captain_name
 from automations.org_sales_board.review_gate import (
     APPROVE_EMOJI,
     APPROVERS,
@@ -109,7 +112,7 @@ def propose(names: List[str], *, captain: str, source: str,
                                bank.KIND_CAPTAINSHIP, n, capt,
                                f"{PENDING} (via {source})", r["ts"]]],
                         logfn=logfn)
-        logfn(f"  🕓 {n} ({capt}): waiting for a ✅ from Evelyn or Jolie")
+        logfn(f"  🕓 {n} ({capt}): waiting for a ✅ from Evelyn")
         out.append({"name": n, "captain": capt, "ts": r["ts"]})
     return out
 
@@ -174,29 +177,40 @@ def resolve(ws, *, today: Optional[dt.date] = None, dry_run: bool = False,
             logfn(f"  ⚠ couldn't add {e['name']} to {e['scope']} "
                   f"({type(ex).__name__}: {str(ex)[:100]}) — still pending, "
                   f"the next run retries.")
+            # THE ONLY thing this gate posts back: the ✅ was read and the add
+            # did NOT happen (Eve, 2026-08-13 — "que solo avise si algo falla").
+            # Without it a failed apply is invisible to whoever ticked: silence
+            # is what a SUCCESS looks like now, so a failure has to speak.
+            # In the thread, under the rep's own gate line, so it can't be read
+            # as being about somebody else.
+            if not dry_run:
+                try:
+                    _client().chat_postMessage(
+                        channel=anchor.get("channel") or notify.CHANNEL,
+                        thread_ts=anchor["ts"],
+                        text=(f":warning: *{e['name']}* — el ✅ está leído pero "
+                              f"NO pude agregarla/o a la captainship *{e['scope']}* "
+                              f"en el Org Sales Board ({type(ex).__name__}: "
+                              f"{str(ex)[:120]}). Queda pendiente y la próxima "
+                              f"corrida reintenta sola — si vuelve a aparecer "
+                              f"este aviso, hay que mirarlo."),
+                        unfurl_links=False)
+                except Exception:  # noqa: BLE001 — the run log already has it
+                    logfn("  ⚠ (no pude postear el aviso de la falla en Slack)")
             continue
         placed = ", ".join(f"{k} row {v}" for k, v in
                            sorted(res.get("rows", {}).items()))
         note = placed or (f"already had a row ({res['already']})"
                           if res.get("already") else "")
+        # NO reply on success. Eve, 2026-08-13: "no necesito ese mensaje cada
+        # vez que le doy a checkmark, ya asumo que lo hace cuando reacciono con
+        # ese emoji" — the ✅ is the confirmation. Silence means it landed; the
+        # log tab keeps the record (who approved, which rows, when). Only the
+        # FAILURE path above posts, which is what makes the silence readable.
         if not dry_run:
             bank.update_log(lws, e["row"],
                             action=f"{ADDED} {who} {today.strftime('%m/%d/%Y')}",
                             notes=f"{e['notes']} · {note}"[:480], logfn=logfn)
-            try:
-                _client().chat_postMessage(
-                    channel=anchor.get("channel") or notify.CHANNEL,
-                    thread_ts=anchor["ts"],
-                    text=(f":white_check_mark: *{e['name']}* added to the "
-                          f"*{e['scope']}* captainship on the Org Sales Board "
-                          f"— {note}. (approved by {who})"
-                          + (f"\n_Their other {e['scope']} reports pick them up "
-                             f"on their next run: "
-                             f"{', '.join(sibling_reports(e['scope']))}._"
-                             if sibling_reports(e["scope"]) else "")),
-                    unfurl_links=False)
-            except Exception:  # noqa: BLE001 — the row is in; the note is extra
-                pass
         out["added"].append({"name": e["name"], "captain": e["scope"],
                              "approved_by": who, "rows": res.get("rows", {})})
     if out["unresolved"]:

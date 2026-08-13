@@ -84,6 +84,11 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
     else:
         fill.insert_col_at_b(ws, sections, dry_run=args.dry_run, logfn=print)
 
+    # Who this tab already carried, BEFORE the insert updates `sections` in
+    # place. A rep gaining their FIRST 30-60 row while their 0-30 row is weeks
+    # old is a maturing cohort, not a new rep — see captain_watch.observe_added.
+    roster_before = {n for s in sections.values() for n in s["rep_rows"]}
+
     added = fill.insert_missing_reps(ws, sections, data,
                                      dry_run=args.dry_run, logfn=print)
     for period, names in added.items():
@@ -99,6 +104,7 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
         from automations.new_owners import captain_watch as _cw
         _cw.observe_added(added, captain=cap.slug,
                           source="Captainship Cancel Rate",
+                          known=roster_before,
                           dry_run=args.dry_run)
     except Exception as _e:  # noqa: BLE001 — never break the fill on a notice
         print(f"  (new-rep notice skipped: {type(_e).__name__}: {str(_e)[:60]})")
