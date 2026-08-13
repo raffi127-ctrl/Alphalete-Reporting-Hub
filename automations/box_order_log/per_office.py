@@ -87,6 +87,29 @@ def probe(from_file: str = "", verbose: bool = True) -> int:
         len(rows), len(counts)))
     for val, n in counts.most_common():
         print("   {:6d}  {!r}".format(n, val))
+
+    # RAW newest sale date per office, straight off the crosstab — no collapse,
+    # no status filtering. Added 2026-08-13 to answer the one question the
+    # collapsed numbers can't: when Roshan's and Abel's logs suddenly stopped
+    # at 8/4 and 7/30 while Carlos stayed current, was it (a) their recent rows
+    # being DROPPED by clean.load as Draft / TPV Failed / Rejected QC, or (b)
+    # those rows simply not being in the export at all? Same export, two very
+    # different owners of the problem — us vs Smart Circle. Printing the raw max
+    # beside the kept max says which, in one line, on any day it happens again.
+    kept, _stats = clean.load(src)
+    kept_max = {}
+    for s in kept:
+        o = (s.fields.get(col) or "").strip()
+        if o and s.sale_date and (o not in kept_max or s.sale_date > kept_max[o]):
+            kept_max[o] = s.sale_date
+    print("\n[box probe] newest Sale Date per office — RAW vs KEPT:")
+    for val, _n in counts.most_common():
+        raws = [d for d in (clean._parse_date(r.get("Sale Date", ""))
+                            for r in rows
+                            if (r.get(col) or "").strip() == val) if d]
+        print("   raw {}  kept {}   {!r}".format(
+            max(raws) if raws else "(none)   ",
+            kept_max.get(val, "(none)   "), val))
     return 0
 
 
