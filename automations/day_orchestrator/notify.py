@@ -220,6 +220,10 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     short from 04:29 and nobody knew until she looked). Carries the SAME real-cause
     diagnosis + paste-to-Claude block the summary emails use, so it's actionable on
     its own. One per report per day (deduped by the caller via failure_alerts_sent).
+
+    Returns {'ts', 'text'} for the Slack post it made (so the caller can later
+    EDIT that same post into ✅ RESOLVED via resolve_failure_alert instead of
+    posting a second message), or None when it fell back to email.
     """
     label = rs.display_name or rs.report_id
     if rs.status == "INCOMPLETE":
@@ -253,13 +257,62 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     # skipped to avoid double-notifying (Megan 2026-07-23). The daily summary is
     # unaffected — it still follows on its own channel.
     if _corrections_channel(cfg):
-        if _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
-            return
+        post = _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed,
+                                         rerun, dry_run)
+        if post:
+            return post
         # Slack post failed (e.g. Lucy isn't a member of the private channel) — fall
         # through to email so a real problem is never silently lost.
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
             f"{_esc(text).replace(chr(10), '<br>')}</div>")
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
+    return None
+
+
+def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
+    """EDIT an already-posted failure alert into ✅ RESOLVED, in place.
+
+    WHY (Eve 2026-08-13): several reports are DESIGNED to heal themselves later —
+    b2b_metrics defers its order-log sections until the ORDERLOG extract lands and
+    posts them on the 8:30 floor pass; the auto-retry recovers a transient miss on
+    the next pass. The alert that fired at 05:00 stayed in the channel reading like
+    open work, so the morning's real state had to be re-derived by hand ("didn't
+    this already get fixed?"). Editing the original message means the channel
+    always shows the CURRENT truth and — crucially — NO second message: an edit
+    doesn't re-notify, so a healed problem costs zero extra noise.
+
+    `post` is the {'ts','text'} send_failure_alert returned. Returns True when the
+    message was updated. Best-effort: never raises into the batch."""
+    ch = _corrections_channel(cfg)
+    ts = (post or {}).get("ts")
+    if not ch or not ts:
+        return False
+    label = rs.display_name or rs.report_id
+    hhmm = (now or dt.datetime.now()).strftime("%H:%M")
+    was = (post or {}).get("text") or ""
+    lines = [f":white_check_mark: *{label}* — RESOLVED {hhmm}. Nothing to do."]
+    if rs.missing:
+        lines.append(f"*Landed since:* {', '.join(rs.missing)}")
+    if rs.last_reason:
+        lines.append(f"_{rs.last_reason}_")
+    if was:
+        # Keep the original wording visible (struck through) so the history of the
+        # morning is still readable — this REPLACES the alert, it doesn't hide it.
+        lines += ["", "~" + was.replace("\n", "~\n~") + "~"]
+    text = "\n".join(lines)
+    if dry_run:
+        print(f"[notify] DRY-RUN — would edit corrections post {ts} → {ch}:\n"
+              f"{text}\n", flush=True)
+        return True
+    try:
+        from automations.shared.slack_metrics_post import _client
+        _client().chat_update(channel=ch, ts=ts, text=text)
+    except Exception as e:  # noqa: BLE001 — a failed edit must never sink the batch
+        print(f"[notify] corrections edit failed ({rs.report_id}): {e}", flush=True)
+        return False
+    print(f"[notify] corrections post {ts} edited to RESOLVED "
+          f"({rs.report_id})", flush=True)
+    return True
 
 
 def _is_findings_report(rs) -> bool:
@@ -301,7 +354,7 @@ def _post_findings_corrections(cfg, rs, label, dry_run):
     ]
     _post_corrections(cfg, "", reply, dry_run,
                       tag=f"finding-{rs.report_id}-details", thread_ts=ts)
-    return ts
+    return {"ts": ts, "text": "\n".join([title] + parent)}
 
 
 def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
@@ -309,7 +362,11 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     threaded REPLY that carries the details (what to re-run, which ICDs were left
     out, that everything else ran, and the paste-to-Claude fix block). Megan
     2026-07-23: the post itself is the name + error; the how-to-fix and the extras
-    live in the thread so the channel skims clean and each fix happens in-thread."""
+    live in the thread so the channel skims clean and each fix happens in-thread.
+
+    Returns {'ts', 'text'} of the PARENT post (None if it didn't go out) —
+    resolve_failure_alert edits that exact message when the report later goes
+    clean, so a fixed problem never keeps sitting in the channel as an open one."""
     label = rs.display_name or rs.report_id
 
     # A data-quality AUDIT (kind='finding' manifest) is a special case: its
@@ -409,7 +466,7 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     reply.append("_Reply here and we'll correct it in this thread._")
     _post_corrections(cfg, "", reply, dry_run,
                       tag=f"failure-{rs.report_id}-details", thread_ts=ts)
-    return ts
+    return {"ts": ts, "text": "\n".join([title] + parent)}
 
 
 # ---------------- failure diagnosis (real reason + copy-paste fix) ----------------

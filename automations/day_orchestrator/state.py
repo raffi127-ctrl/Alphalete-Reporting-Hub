@@ -82,6 +82,13 @@ class DayState:
     # report re-detected as failed on a later pass (or across a resume) doesn't
     # re-email. One alert per report per day, mirroring session_alert_sent.
     failure_alerts_sent: List[str] = field(default_factory=list)
+    # report_id -> {"ts", "text", "resolved"} for the Slack failure alert we
+    # posted today. Kept so a report that HEALS later (auto-retry, a scheduled
+    # floor pass, a manual re-run) gets that same message EDITED into
+    # "✅ RESOLVED" instead of leaving an open-looking alert in the channel —
+    # zero extra posts, and the channel reads as the current truth (Eve
+    # 2026-08-13). Absent/empty for an alert that fell back to email.
+    failure_alert_posts: Dict[str, dict] = field(default_factory=dict)
     reports: Dict[str, ReportState] = field(default_factory=dict)
 
     # ---- transitions ----
@@ -133,6 +140,7 @@ def load_or_create(date: str, report_ids_with_names: Dict[str, str]) -> DayState
                 final_sent=raw.get("final_sent", False),
                 session_alert_sent=raw.get("session_alert_sent", False),
                 failure_alerts_sent=list(raw.get("failure_alerts_sent", [])),
+                failure_alert_posts=dict(raw.get("failure_alert_posts", {})),
                 reports=reports,
             )
             # Add any newly-scheduled reports not in the saved file.
@@ -159,6 +167,7 @@ def save(ds: DayState) -> None:
         "final_sent": ds.final_sent,
         "session_alert_sent": ds.session_alert_sent,
         "failure_alerts_sent": list(ds.failure_alerts_sent),
+        "failure_alert_posts": dict(ds.failure_alert_posts),
         "reports": {rid: asdict(rs) for rid, rs in ds.reports.items()},
     }
     tmp = p.with_suffix(".json.tmp")

@@ -56,7 +56,8 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
                    note: str = "", remediation: Optional[dict] = None,
                    ok: Optional[bool] = None, succeeded: List[str] = (),
                    run_ts: Optional[_dt.datetime] = None,
-                   alert: bool = True) -> Path:
+                   alert: bool = True,
+                   alert_after: Optional[str] = None) -> Path:
     """Record this run's outcome for `report_id`:
       - `failed` + `retry_args`: the parts that failed and the CLI args that
         re-run ONLY those (powers the Hub's 'Retry failed only' button).
@@ -67,6 +68,14 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
         WHY it failed + how to fix it (powers the Hub's failure-help callout).
       - `alert=False`: write the manifest WITHOUT the loud Slack ping. The one
         legitimate use is a START-OF-RUN SEED (see below) — never a real failure.
+      - `alert_after`: ISO local datetime. "A SCHEDULED later pass is expected to
+        fix this — stay quiet until then." The manifest still records the miss
+        (orange Hub card, retry button, auto-retry) but nobody is pinged before
+        that clock. For a report whose own design defers work — b2b_metrics holds
+        the order-log sections until the ORDERLOG extract lands and its 8:30 floor
+        pass posts them — the early miss is EXPECTED, and alerting on it sends Eve
+        to re-check something that fixes itself an hour later (Eve 2026-08-13).
+        Past the clock the miss is real and alerts exactly as before.
     `ok` defaults to True only when nothing failed AND there's no remediation.
     Pass run_ts to avoid clock calls in tests."""
     MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
@@ -84,6 +93,7 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
         "retry_args": list(retry_args),
         "note": note,
         "remediation": remediation,
+        "alert_after": alert_after,
     }
     p = _path(report_id)
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -104,7 +114,7 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
     # NOT post" ping for a report that then finished fine (2026-08-09). A crash
     # after the seed still exits non-zero, so the orchestrator's own failure
     # alert covers it; the loud ping stays for REAL recorded failures only.
-    if failed and run_ts is None and alert:
+    if failed and run_ts is None and alert and not alert_held(data):
         try:
             from automations.shared import section_drop_alert as _sda
             # Forward `kind` so a caller can pick the wording (see _KINDS).
@@ -117,6 +127,33 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
         except Exception:  # noqa: BLE001 — the alarm must never break the writer
             pass
     return p
+
+
+def alert_held(manifest: Optional[dict],
+               now: Optional[_dt.datetime] = None) -> bool:
+    """True while this manifest's `alert_after` clock hasn't passed — i.e. the
+    report itself says "a scheduled later pass is expected to fix this, don't
+    page anyone yet".
+
+    Deliberately fails OPEN: a missing/unparseable/past clock means alert as
+    normal, so a typo can never silence a real failure. Shared by write_manifest
+    (the loud section-drop ping) and the orchestrator's failure alert, so BOTH
+    voices honour the same hold — otherwise silencing one just moves the noise."""
+    if not isinstance(manifest, dict):
+        return False
+    raw = manifest.get("alert_after")
+    if not raw:
+        return False
+    try:
+        return (now or _dt.datetime.now()) < _dt.datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return False
+
+
+def alert_held_for(report_id: str, now: Optional[_dt.datetime] = None) -> bool:
+    """alert_held() for a report's CURRENT manifest (the orchestrator's entry
+    point — it holds a ReportState, not the manifest dict)."""
+    return alert_held(read_manifest(report_id), now)
 
 
 def mark_clean(report_id: str, *, kind: str = "part",
