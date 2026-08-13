@@ -270,18 +270,45 @@ def main(argv: Optional[list] = None) -> int:
     # viz load; this is the net that stops the wrong email from going out. Dry
     # runs are exempt (they're for inspection). See window.should_block_send.
     #
-    # JUDGED ON THE EXPORT, NOT THE OWNER (2026-08-13). The gate shipped on
-    # 8/12 measuring THIS owner's newest sale against today, and the next
-    # morning it suppressed both owners — Roshan at 9 days, Abel at 14. But
-    # "capped" is a property of the PULL, and a small office simply not selling
-    # for a fortnight looks identical from one owner's rows. Abel's office is 14
-    # sales deep: an owner-scoped gate would have blocked his email every day
-    # forever, with no path back. So the freshness of the whole export decides —
-    # if any owner in it has sales through yesterday, the pull is fine and this
-    # owner is merely quiet, which is news worth mailing, not a reason to go
-    # silent. Only a genuinely frozen export (every owner stale) blocks.
+    # JUDGED AGAINST WHAT WE ALREADY HAVE (2026-08-13, after two wrong gates).
+    #
+    # Measuring this owner against TODAY (the 8/12 gate) silences an office that
+    # simply hasn't sold — Abel's is 14 sales deep, so it would have blocked him
+    # permanently, with no path back. Measuring the whole EXPORT against today
+    # (my first fix, same day) passes a pull that's healthy for one office and
+    # gutted for another: Carlos came back current at 8/12 while Roshan's and
+    # Abel's rows lost the week the 8/11 pull had delivered, and on that reading
+    # both owners were emailed undercounted numbers.
+    #
+    # The stored high-water mark settles both. The Sheet's data tab only merges
+    # forward, so it's the newest sale we've ever successfully pulled for this
+    # office. A quiet office matches it; a short pull falls behind it. Today
+    # Roshan's sheet holds sales through 8/10 and the pull returned 8/04 —
+    # caught, in the one comparison that doesn't depend on how busy the office is
+    # or on how the other offices happen to look.
+    #
+    # The export-wide check stays as the backstop for an owner with no sheet on
+    # file (nothing to compare against) and for a wholesale frozen feed.
     send_now = args.email or bool(args.test_to)
+    known_newest = None
+    try:
+        from . import sheet as box_sheet
+        known_newest = box_sheet.newest_sale_date(cfg.sheet_id)
+    except Exception as exc:                              # noqa: BLE001
+        print("  ⚠ could not read {}'s stored high-water mark ({!r}) — falling "
+              "back to the export-wide check".format(cfg.display, exc),
+              file=sys.stderr, flush=True)
     block = window.should_block_send(export_newest, today)
+    if known_newest and newest and newest < known_newest:
+        block = ("SHORT PULL: this office's newest sale came back {} but the "
+                 "Sheet already holds {} — the pull LOST {} day(s) of sales it "
+                 "delivered before. Refusing to send numbers that undercount. "
+                 "The Sheet keeps its newer rows; re-run once a full pull "
+                 "lands.".format(newest, known_newest,
+                                 (known_newest - newest).days))
+    elif verbose and known_newest:
+        print("  stored high-water mark for {}: {} (pull: {})".format(
+            cfg.display, known_newest, newest))
     if block and send_now:
         print("✗ {} — {}: {}".format(
             cfg.display, today.isoformat(), block), file=sys.stderr, flush=True)
@@ -291,14 +318,20 @@ def main(argv: Optional[list] = None) -> int:
         if args.email:
             try:
                 from automations.shared import section_drop_alert as sda
-                # Report the EXPORT's date — that's what the gate judged. The
-                # 8/13 alert quoted the owner's own newest sale and read as
-                # "Abel's numbers are 14 days behind" when the question was
-                # whether the feed had frozen.
-                behind = (today - export_newest).days if export_newest else None
-                detail = ("newest sale in the export {}, {} days behind".format(
-                    export_newest, behind)
-                    if export_newest else "no dated sales at all")
+                # Say which comparison actually fired. The 8/13 alert quoted the
+                # owner's newest sale against today and read as "Abel's numbers
+                # are 14 days behind", which sent me looking for a frozen feed
+                # when the real question was whether the pull came back short.
+                if known_newest and newest and newest < known_newest:
+                    detail = ("pull returned {} but the Sheet already holds {} "
+                              "— lost {} day(s) of sales".format(
+                                  newest, known_newest,
+                                  (known_newest - newest).days))
+                elif export_newest:
+                    detail = "newest sale in the export {}, {} days behind".format(
+                        export_newest, (today - export_newest).days)
+                else:
+                    detail = "no dated sales at all"
                 sda.alert(report_id="box-order-log-{}".format(cfg.key),
                           failed=[detail], kind="capped", day=today)
             except Exception:
