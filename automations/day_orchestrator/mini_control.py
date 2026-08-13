@@ -126,6 +126,19 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "nsf_screenshot_diag", "nsf_status",
                     "find_group"}
+# READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
+# NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
+# repeated REPORT runs, and _autoruns_today's own docstring says "side-effecting".
+#
+# WHY THIS IS SPLIT OUT (2026-08-13): the mini hit 100/100 by mid-afternoon and
+# started leaving every rerun queued. 55 of those 100 rows were reads — 39
+# logtail, 8 git_status, 3 slack_channel, 3 slack_find, 2 git_diff — i.e. the
+# cost of DIAGNOSING the morning's failures was what exhausted the budget for
+# FIXING them. Worse, the failure is quiet: the poller keeps running plumbing, so
+# `update` still succeeds and the queue looks alive while every rerun sits at
+# "queued" for hours. Reading a log should never spend a fix.
+READONLY_ACTIONS = {"logtail", "git_status", "git_diff",
+                    "slack_channel", "slack_find"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -3762,13 +3775,17 @@ def _autoruns_today(rows: list[dict]) -> int:
     runaway cap. PLUMBING_ACTIONS (ping, update, restart_*, pip_install, …) are
     bounded/idempotent deploy churn, not runaway risks, so they're excluded: a
     hands-on multi-person deploy day shouldn't burn the budget that's meant to
-    bound repeated REPORT runs (rerun)."""
+    bound repeated REPORT runs (rerun). READONLY_ACTIONS (logtail, git_status,
+    git_diff, …) are excluded for the same reason and one more: they're how a
+    failure gets diagnosed, so charging them means a bad morning spends the
+    budget it needs (2026-08-13 — 55 of the day's 100 rows were reads)."""
     today = dt.date.today().isoformat()
+    free = PLUMBING_ACTIONS | READONLY_ACTIONS
     return sum(
         1 for r in rows
         if str(r.get("Status", "")).strip().lower() in ("done", "failed", "running")
         and str(r.get("Queued At", "")).startswith(today)
-        and str(r.get("Action", "")).strip().lower() not in PLUMBING_ACTIONS
+        and str(r.get("Action", "")).strip().lower() not in free
     )
 
 
@@ -3799,9 +3816,17 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         # Never let a secret-carrying Args reach a log line or the Result cell.
         shown = "<redacted>" if action in SECRET_ACTIONS else args
         if (action.strip().lower() not in PLUMBING_ACTIONS
+                and action.strip().lower() not in READONLY_ACTIONS
                 and cap_used >= DAILY_AUTORUN_CAP):
+            # SAY SO OUT LOUD. A capped row stays "queued" while plumbing keeps
+            # succeeding, so the queue reads as alive and the skipped rerun looks
+            # like it's merely waiting its turn — on 2026-08-13 that cost an hour
+            # of watching a row that was never going to run.
             print(f"[mini_control] daily cap ({DAILY_AUTORUN_CAP}) reached — "
                   f"leaving {action} {shown} queued for a human")
+            _set(ws, rownum, "queued",
+                 f"daily cap {DAILY_AUTORUN_CAP} reached @ {_now()} — NOT run; "
+                 f"waiting for a human or for the date to roll")
             continue
         if dry_run:
             print(f"[mini_control] DRY-RUN would run: {action} {shown}")
