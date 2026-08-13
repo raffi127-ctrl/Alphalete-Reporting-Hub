@@ -55,7 +55,7 @@ def _find_ws(sh, title: str):
 def run(*, dry_run: bool = True, today: dt.date = None,
         source_tab: str = SOURCE_TAB, target_tab: str = TARGET_TAB,
         enable_rollover: bool = False, enable_roster: bool = True,
-        logfn=print) -> dict:
+        enable_sort: bool = True, logfn=print) -> dict:
     today = today or dt.datetime.now(CENTRAL).date()
     sh = open_by_key(SHEET_ID)
     src_ws = _find_ws(sh, source_tab)
@@ -150,6 +150,23 @@ def run(*, dry_run: bool = True, today: dt.date = None,
     apply_elapsed_totals(tgt_ws, today=today, dry_run=dry_run, logfn=logfn,
                          include_delta=False)
 
+    # LAST STEP: re-rank both rep tables high->low (Eve 2026-08-13). The ORG
+    # board's own tab has sorted itself since 2026-06-04, so the Org Board Email
+    # went out every morning with a ranked first section and an unranked second
+    # one — and this tab is what capture_all_units renders that second section
+    # from, LIVE. Runs after every write above so it sorts the numbers this run
+    # just produced, not the ones it started with. Never fatal: an unsorted
+    # board is worse than a sorted one, but far better than no board.
+    if enable_sort:
+        try:
+            from automations.all_campaigns_board import sort_board as _sb
+            _sb.sort_board(tgt_ws, tgt_ws.get_all_values(), dry_run=dry_run,
+                           logfn=logfn)
+        except Exception as e:  # noqa: BLE001 — the fill is the job
+            logfn(f"  ⚠ sort skipped ({type(e).__name__}: {e}) — the tables keep "
+                  f"the order they had; repair with "
+                  f"`python -m automations.all_campaigns_board.sort_board`")
+
     return {"filled_section": TARGET_SECTION,
             "reps_on_board": len(anchor.icd_rows),
             "reps_pulled": len(pull),
@@ -170,6 +187,9 @@ def main(argv=None):
     ap.add_argument("--target-tab", default=TARGET_TAB)
     ap.add_argument("--enable-rollover", action="store_true",
                     help="allow the Tuesday rollover to run (off until validated)")
+    ap.add_argument("--no-sort", action="store_true",
+                    help="skip the final re-rank of the two rep tables "
+                         "(they are sorted high->low after every fill)")
     ap.add_argument("--no-add-missing", action="store_true",
                     help="do NOT add campaign reps who have no row on the "
                          "board (the roster sync is on by default)")
@@ -181,7 +201,8 @@ def main(argv=None):
     summary = run(dry_run=not args.apply, today=today,
                   source_tab=args.source_tab, target_tab=args.target_tab,
                   enable_rollover=args.enable_rollover,
-                  enable_roster=not args.no_add_missing)
+                  enable_roster=not args.no_add_missing,
+                  enable_sort=not args.no_sort)
     print(f"=== summary: {summary} ===")
     # INCOMPLETE if a rep on the board never matched the pull, or a producing
     # rep has no board row — mirrors the ORG board's fill-but-flag exit.

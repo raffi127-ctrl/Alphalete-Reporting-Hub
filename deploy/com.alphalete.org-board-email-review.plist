@@ -23,14 +23,22 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 15 minutes, all day, every day. The WINDOW lives in the wrapper
+    <!-- Every 5 minutes, all day, every day. The WINDOW lives in the wrapper
          (org_board_email_review.sh: 7am-8pm), not here — same shape as
          resume_pushing_10min.sh. A checkmark should turn into a sent email
-         within a quarter hour, not at a fixed clock time nobody can predict:
-         the approver reacts when they read it. Off-window ticks exit 0 in
-         milliseconds without touching Slack. -->
+         quickly, not at a fixed clock time nobody can predict: the approver
+         reacts when they read it. Off-window ticks exit 0 in milliseconds
+         without touching Slack.
+
+         900 -> 300 (Eve 2026-08-13): the ask is "el link a las 7 para aprobar y
+         que se envíe a las 7:15 más tardar". The link now goes up at 07:00
+         (com.alphalete.org-board-review-post), so a checkmark at ~07:05 has to
+         become a sent email inside ten minutes — which a quarter-hour poll
+         cannot promise (a tick at 07:04 would not come back until 07:19). At
+         300s the worst case from any approval is five minutes. The cost is
+         nothing: an off-window or no-checkmark tick is one Slack read. -->
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>300</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/org-board-email-review.launchd.out.log</string>

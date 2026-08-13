@@ -46,13 +46,21 @@
              org_sales_board_email is gated on slack:org_board_posted — at about
              07:10-07:15, which is what Eve asked for.
 
+             07:05 -> 06:55 (Eve 2026-08-13). The fill no longer waits for the
+             orchestrator's serial pass at all — org_sales_board moved to order
+             4.95 and ends ~05:20 — so the tail this slot was chasing is gone,
+             and the ask moved with it: the REVIEW LINK has to be up at 07:00
+             (com.alphalete.org-board-review-post), which means the public post
+             has to be already out. 06:55 puts it there; the q25m ladder below
+             is unchanged and still covers a late board.
+
              This post now shows a BOX section that is normally a day behind.
              That is the accepted trade (Eve 2026-08-12: 'aunque Box esté
              siempre un día atrasado'); the 2:30pm board-catchup fixes the
              board itself the same afternoon. slack_post.fill_gate is LIGHT —
              it holds only if yesterday is empty across EVERY section — so a
              blank BOX column does not push this to the next slot. -->
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
