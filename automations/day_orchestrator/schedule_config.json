@@ -2959,6 +2959,28 @@
       "verify": null,
       "timeout_minutes": 20
     },
+    "probe_carlos_bonus_sheets": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.carlos_captainship_bonus.probe_sheets). Opens the Carlos bonus source view's Download -> Crosstab dialog and prints the worksheet names it currently offers, ONE PER LINE prefixed 'XTAB:', then flags which of tableau_pull.SHEETS are still present. Downloads nothing, writes no Sheet. Exists because the 2026-08-13 ATTTRACKER-B2B republish killed the old CaptainsTeam sheet AND renamed all four worksheets on the replacement view: the pull dies on the FIRST worksheet so its error names only that one, and `lucy logtail` caps the result cell at ~470 chars, which truncated the dialog's one-long-line name list every time. Run this, then `lucy logtail <its log> XTAB 15` to get the full list, then re-map tableau_pull.SHEETS. `lucy rerun probe_carlos_bonus_sheets --machine \"Lucy 2\"`.",
+      "display_name": "Carlos Bonus - probe source worksheets (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.carlos_captainship_bonus.probe_sheets"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2",
+      "timeout_minutes": 20
+    },
     "disable_carlos_captainship_bonus_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",

@@ -43,6 +43,16 @@ CACHE_DIR = Path("/tmp/carlos_captainship_bonus")
 VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
         "B2B1-PAGER_CaptainView")
 WEEK_FIELD = "Activation%20Date%20Week%20Ending%20(copy)"  # value = Saturday ISO
+# The 4 crosstab worksheets on that view, by role. Hoisted into ONE dict because
+# a workbook republish renames them as a set (2026-08-13 renamed all four at
+# once) — re-map here, not in four scattered call sites. `probe_sheets.py` lists
+# what the dialog currently offers and flags which of these went missing.
+SHEETS = {
+    "sales":   "CB-Owner Sales",           # per-rep weekly activations
+    "check2":  "Captain Team Check (2)",   # team churn 0-30 + activation 31-60
+    "check4":  "Captain Team Check (4)",   # team Non Pmt %
+    "metrics": "CB-Owner Metrics",         # per-owner churn 0-30 (+ SFDC roster)
+}
 TEAM = "carlos's team"          # SFDC team label in the crosstabs
 CARLOS_OWNER = "carlos hidalgo"  # for the personal 0-30 churn
 
@@ -147,10 +157,10 @@ def _pull(today, scratch, verbose, use_cache):
     # per-rep activations need the pinned completed week; the rate worksheets
     # need the DEFAULT view (pinning the week breaks their cohort math).
     jobs = [
-        ("sales", "CB-Owner Sales", _act_url(today)),
-        ("check2", "Captain Team Check (2)", _rates_url(today)),
-        ("check4", "Captain Team Check (4)", _rates_url(today)),
-        ("metrics", "CB-Owner Metrics", _rates_url(today)),
+        ("sales", SHEETS["sales"], _act_url(today)),
+        ("check2", SHEETS["check2"], _rates_url(today)),
+        ("check4", SHEETS["check4"], _rates_url(today)),
+        ("metrics", SHEETS["metrics"], _rates_url(today)),
     ]
     if not use_cache:
         if verbose:
@@ -198,7 +208,7 @@ def probe_ready(today: dt.date, scratch_dir: Optional[Path] = None,
     scratch = scratch_dir or CACHE_DIR
     scratch.mkdir(parents=True, exist_ok=True)
     out = scratch / "cb_owner_sales_probe.csv"
-    download_crosstab_patchright(_act_url(today), "CB-Owner Sales", out, verbose=verbose)
+    download_crosstab_patchright(_act_url(today), SHEETS["sales"], out, verbose=verbose)
     reps = parse_activations(out)
     return sum(reps.values()), len(reps)
 
