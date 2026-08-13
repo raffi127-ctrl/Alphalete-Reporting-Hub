@@ -252,16 +252,104 @@ def reply_caption(spec: dict, today: dt.date) -> str:
     return f"*{spec['title']} - {today.strftime('%b')} {today.day}*"
 
 
+class DedupReadUnavailable(Exception):
+    """ONE channel's "what's already posted today?" read failed.
+
+    Every post into a channel starts with a READ — conversations.history to find
+    today's parent, conversations.replies to see which images are already under
+    it. That read is the whole dedup: without it we cannot tell "today's thread is
+    already there" from "nothing posted yet", and posting blind would create a
+    SECOND tracker thread in the channel (and a third, and a fourth — the
+    orchestrator retries a failed run up to MAX_RUN_RETRIES).
+
+    So a failed read is neither "posted" nor "safe to post": it's UNKNOWN. Raised
+    here, caught per-channel in post_all, and reported as a SOFT miss —
+    ok=False (Hub flags it, the manifest alert fires) but exit 0, so one channel
+    we can't read never drags the other ~14 that posted fine into a hard failure.
+    2026-08-13: #precisionmanagement-nds-sales (drew) failed conversations.history
+    on the Box catch-up and took the whole run to exit 1 with 14/15 orgs posted.
+    """
+
+    def __init__(self, channel: str, err: str, method: str = ""):
+        self.channel, self.err, self.method = channel, err, method
+        super().__init__(f"{channel}: {method or 'read'} failed ({err})")
+
+
+def _slack_err(e) -> str:
+    """The Slack error CODE from an exception — 'not_in_channel', 'ratelimited',
+    'channel_not_found' — instead of the ~900-char SlackApiError repr.
+
+    WHY (2026-08-13): the truncated log line read
+    `SlackApiError: The request to the Slack API failed. (url: .../conversations
+    .history) The server responded with: {'ok'...` — every byte that says WHAT
+    went wrong sat past our own `str(e)[:120]` cut, so the failure was
+    undiagnosable from the log. Non-Slack exceptions fall back to Type: message."""
+    resp = getattr(e, "response", None)
+    code = ""
+    if resp is not None:
+        try:
+            code = resp.get("error") or ""
+        except Exception:                                   # noqa: BLE001
+            code = ""
+    if not code:
+        return f"{type(e).__name__}: {str(e)[:100]}"
+    bits = [code]
+    status = getattr(resp, "status_code", None)
+    if status:
+        bits.append(f"HTTP {status}")
+    for key in ("needed", "provided"):
+        try:
+            val = resp.get(key)
+        except Exception:                                   # noqa: BLE001
+            val = None
+        if val:
+            bits.append(f"{key}={val}")
+    return f"{code} ({', '.join(bits[1:])})" if len(bits) > 1 else code
+
+
+def _read_with_retry(call, chan: str, method: str, **kwargs):
+    """Run a Slack READ (history/replies), retrying ONCE on `ratelimited`.
+
+    Slack's own Retry-After is honored (capped at 30s so a rate-limited channel
+    can't stall the whole run). Anything else — or a second 429 — becomes a
+    DedupReadUnavailable naming the exact Slack error code, so the caller can
+    degrade that ONE channel instead of failing the run."""
+    for attempt in (1, 2):
+        try:
+            return call(**kwargs)
+        except Exception as e:                              # noqa: BLE001
+            err = _slack_err(e)
+            resp = getattr(e, "response", None)
+            retry_after = 0
+            if attempt == 1 and err.startswith("ratelimited"):
+                try:
+                    retry_after = int(
+                        (resp.headers or {}).get("Retry-After") or 5)
+                except Exception:                           # noqa: BLE001
+                    retry_after = 5
+                retry_after = max(1, min(retry_after, 30))
+                print(f"  {chan}: {method} rate-limited — waiting "
+                      f"{retry_after}s and retrying once", flush=True)
+                time.sleep(retry_after)
+                continue
+            raise DedupReadUnavailable(chan, err, method) from e
+
+
 def find_thread_ts(client, channel: str, today: dt.date):
     """(ts, is_legacy) of today's tracker parent in `channel`, or (None, False).
 
     Matches the CURRENT title first, then the legacy one — a thread posted this
     morning under the old name must still be found, or a rerun would post a
-    second tracker thread into the same channel."""
+    second tracker thread into the same channel.
+
+    Raises DedupReadUnavailable if the history read itself fails — "I couldn't
+    look" must never be mistaken for "there's no thread today", which would post
+    a duplicate."""
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
     title, legacy = header_title(today), _legacy_title(today)
-    resp = client.conversations_history(
-        channel=channel, oldest=str(oldest), limit=200)
+    resp = _read_with_retry(client.conversations_history, channel,
+                            "conversations.history",
+                            channel=channel, oldest=str(oldest), limit=200)
     msgs = resp.get("messages", [])
     for msg in msgs:
         if title in (msg.get("text", "") or ""):
@@ -336,7 +424,10 @@ def _sanitize_title(name: str) -> str:
 
 
 def _image_replies(client, channel: str, thread_ts: str) -> list:
-    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    # Same rule as find_thread_ts: a failed read is UNKNOWN, not "no images yet".
+    resp = _read_with_retry(client.conversations_replies, channel,
+                            "conversations.replies",
+                            channel=channel, ts=thread_ts, limit=200)
     return [m for m in resp.get("messages", [])
             if m.get("ts") != thread_ts and m.get("files")]
 
@@ -565,7 +656,12 @@ def retitle_today(pages: list, today: dt.date | None = None,
     client = smp._client()
     out = []
     for channel in channels_for(org):
-        ts, is_legacy = find_thread_ts(client, channel, today)
+        try:
+            ts, is_legacy = find_thread_ts(client, channel, today)
+        except DedupReadUnavailable as e:   # one unreadable channel, not a crash
+            out.append({"channel": channel,
+                        "status": f"SKIPPED — {e.method} failed ({e.err})"})
+            continue
         if not ts:
             out.append({"channel": channel, "status": "no thread today"})
             continue
@@ -667,10 +763,23 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
                                  replace=replace, late_all=late_all,
                                  new_thread=new_thread, note=note,
                                  updated=updated))
-        except Exception as e:
+        except DedupReadUnavailable as e:
+            # SOFT miss: we could not read what's already in this channel, so we
+            # deliberately post NOTHING (a blind post duplicates today's thread).
+            # `soft` tells run.py to record an INCOMPLETE + fire the alert without
+            # exiting 1 — one unreadable channel must not fail the whole run.
+            print(f"  {channel}: {e.method} failed ({e.err}) — SKIPPING this "
+                  f"channel; can't confirm what's already posted, and posting "
+                  f"blind would duplicate today's thread", flush=True)
             channel_results.append(
-                {"channel": channel, "ok": False,
-                 "error": f"{type(e).__name__}: {str(e)[:120]}"})
+                {"channel": channel, "ok": False, "soft": True,
+                 "error": f"dedup read blocked: {e.method} → {e.err} "
+                          f"(nothing posted — no duplicate thread)"})
+        except Exception as e:
+            # _slack_err already names the Slack code (or the exception type for a
+            # non-Slack error) — no second type prefix.
+            channel_results.append(
+                {"channel": channel, "ok": False, "error": _slack_err(e)[:160]})
 
     return {
         "ok": all(c.get("ok") for c in channel_results) if channel_results else False,

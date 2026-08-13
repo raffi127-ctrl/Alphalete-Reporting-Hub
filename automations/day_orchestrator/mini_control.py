@@ -1288,6 +1288,59 @@ def _action_slack_whoami(args: str) -> tuple[bool, str]:
     return True, "\n".join(out)
 
 
+def _action_slack_channel(args: str) -> tuple[bool, str]:
+    """READ-ONLY: can THIS machine's Slack token see one channel — and if not,
+    what is the exact Slack error code?
+
+      slack_channel <channel_id>        e.g. slack_channel C0A7871FAUV
+
+    Why this exists (2026-08-13): #precisionmanagement-nds-sales failed the
+    tracker run's dedup read with `SlackApiError ... conversations.history` and
+    the code that logged it truncated the message before the error CODE, so the
+    log couldn't tell membership (`not_in_channel`) from a rate limit
+    (`ratelimited`) from a wrong id (`channel_not_found`) — three different fixes.
+    Answers it without posting anything: conversations.info, then a 1-message
+    conversations.history, reporting each call's raw code."""
+    import ssl as _ssl
+
+    cid = (args or "").strip().split()[0] if (args or "").strip() else ""
+    if not cid:
+        return False, "slack_channel needs a channel id (e.g. C0A7871FAUV)"
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+        who = client.auth_test()
+    except Exception as e:  # noqa: BLE001
+        return False, f"auth.test FAILED: {type(e).__name__} {str(e)[:120]}"
+
+    def _code(e):
+        data = getattr(getattr(e, "response", None), "data", {}) or {}
+        return (data.get("error") or f"{type(e).__name__}: {str(e)[:60]}")
+
+    out = [f"as {who.get('user')} ({who.get('user_id')}) in {who.get('team')}",
+           f"channel {cid}"]
+    try:
+        ch = client.conversations_info(channel=cid)["channel"]
+        out.append("  info: #{n} private={p} archived={a} member={m} "
+                   "members={c}".format(n=ch.get("name"), p=ch.get("is_private"),
+                                        a=ch.get("is_archived"),
+                                        m=ch.get("is_member"),
+                                        c=ch.get("num_members")))
+    except Exception as e:  # noqa: BLE001
+        out.append(f"  info: FAILED → {_code(e)}")
+    try:
+        h = client.conversations_history(channel=cid, limit=1)
+        out.append(f"  history: OK ({len(h.get('messages', []))} msg read)")
+    except Exception as e:  # noqa: BLE001
+        out.append(f"  history: FAILED → {_code(e)}")
+    out.append("READ-ONLY — nothing posted.")
+    # A probe that RAN is a success even when the answer is "no access".
+    return True, "\n".join(out)
+
+
 def _action_diag(args: str) -> tuple[bool, str]:
     """Read-only machine health — diagnose a runner remotely without anyone AT
     the machine (the 'is it asleep / is the poller alive / is the OV session
@@ -3512,6 +3565,7 @@ ACTIONS = {
     "chrome_sync_diag": _action_chrome_sync_diag,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
+    "slack_channel": _action_slack_channel,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,

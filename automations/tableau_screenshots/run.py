@@ -733,6 +733,14 @@ def main(argv=None) -> int:
         return 1 if failed else 0
 
     posted_ok, posted_bad, status_rows = [], [], []
+    # Orgs whose ONLY problem was an unreadable channel — conversations.history /
+    # .replies failed, so we couldn't tell "already posted" from "not posted yet"
+    # and deliberately posted nothing rather than duplicate today's thread
+    # (slack_post.DedupReadUnavailable). SOFT: ok=False + the manifest alert, but
+    # exit 0. A single unreadable channel must never hard-fail a run that
+    # delivered every other org — 2026-08-13, #precisionmanagement-nds-sales
+    # sank a Box catch-up that had already posted 14/15.
+    posted_soft: list = []
     # Orgs this run owed NOTHING (their ORG_TRACKERS subset excludes every board
     # captured — e.g. #domin8-b2b-sales on the Box-only catch-up). They're `ok`,
     # but they did NOT post, so they're tracked separately: a ✅ next to a channel
@@ -789,6 +797,14 @@ def main(argv=None) -> int:
                 print(f"✓ [{org}] posted {len(c.get('posted', []))} image(s) to "
                       f"{c['channel']} thread {c.get('thread_ts')}"
                       + (f", replaced {rm} old" if rm else ""), flush=True)
+            elif c.get("soft"):
+                # lucy's action id uses underscores; report_id is the hyphenated
+                # manifest id, so translate rather than hardcode a second name.
+                _lucy_id = report_id.replace("-", "_")
+                _late = " --late-only" if args.late_only else ""
+                print(f"⚠ [{org}] {c['channel']} SKIPPED — {c.get('error')}. "
+                      f"Re-run once the channel reads again: "
+                      f"lucy rerun {_lucy_id}{_late} --orgs {org}", flush=True)
             else:
                 print(f"⚠ [{org}] {c['channel']} post FAILED: "
                       f"{c.get('error', 'see above')}", flush=True)
@@ -803,11 +819,25 @@ def main(argv=None) -> int:
             noop_orgs.append(org)
             print(f"↷ [{org}] no board in this run belongs to {label} — nothing "
                   f"owed, nothing posted", flush=True)
-        (posted_ok if result.get("ok") else posted_bad).append(org)
+        # THREE outcomes, not two. An org whose only misses are SOFT (a channel we
+        # couldn't read, so we posted nothing rather than duplicate) is neither a
+        # success nor a hard failure: it's INCOMPLETE. Hard-failing it would take
+        # the exit code — and every other org's clean post — down with it.
+        _chans = result.get("channels", [])
+        _soft_miss = [c for c in _chans if not c.get("ok") and c.get("soft")]
+        _hard_miss = [c for c in _chans if not c.get("ok") and not c.get("soft")]
+        if result.get("ok"):
+            posted_ok.append(org)
+        elif _soft_miss and not _hard_miss and not result.get("error"):
+            posted_soft.append(org)
+        else:
+            posted_bad.append(org)
         status_rows.append({
             "org": org, "label": label, "ok": bool(result.get("ok")),
             "no_op": bool(result.get("no_op")),
+            "soft": org in posted_soft,
             "channels": [{"channel": c.get("channel"), "ok": bool(c.get("ok")),
+                          "soft": bool(c.get("soft")),
                           "thread_ts": c.get("thread_ts"),
                           "error": c.get("error")}
                          for c in result.get("channels", [])],
@@ -826,9 +856,15 @@ def main(argv=None) -> int:
     print(f"\n=== POSTED: {len(posted_ok) - n_noop}/{len(orgs) - n_noop} org(s)"
           + (f" ({n_noop} not owed this run)" if n_noop else ""), flush=True)
     for org in orgs:
-        mark = "↷" if org in noop_orgs else ("✅" if org in posted_ok else "❌")
-        print(f"  {mark} {sp.ORG_LABEL[org]}"
-              + (" (nothing owed)" if org in noop_orgs else ""), flush=True)
+        if org in noop_orgs:
+            mark, why = "↷", " (nothing owed)"
+        elif org in posted_ok:
+            mark, why = "✅", ""
+        elif org in posted_soft:
+            mark, why = "⚠", " (channel unreadable — nothing posted, re-runnable)"
+        else:
+            mark, why = "❌", ""
+        print(f"  {mark} {sp.ORG_LABEL[org]}{why}", flush=True)
 
     # A capture failure is only a REAL gap when the board is genuinely absent from
     # the channels. A board that failed to capture NOW but is already sitting in
@@ -864,16 +900,24 @@ def main(argv=None) -> int:
     # A held board makes the run INCOMPLETE, never FAILED: ok=False + exit 0 is
     # the soft path (Hub flags it, reconcile can self-heal, no 4:31am page), and
     # the data really is missing from today's thread until the catch-up posts it.
-    ok = (not missing_trackers) and not posted_bad and not held
+    # A SOFT channel miss counts exactly like a held board: ok=False (Hub flags it
+    # orange, section_drop_alert fires from write_manifest) but exit 0 below.
+    ok = ((not missing_trackers) and not posted_bad and not posted_soft
+          and not held)
     parts = ([sp.ORG_LABEL[o] for o in posted_bad]
+             + [f"{sp.ORG_LABEL[o]} (channel unreadable)" for o in posted_soft]
              + [f"tracker:{f}" for f in missing_trackers]
              + [f"stale:{i}" for i in held])
     # A channel miss re-posts exactly the missed channels; a lone capture gap
     # re-captures just that tracker (self-heals a transient Tableau flake; a board
     # whose SOURCE isn't in yet — e.g. an email tracker — stays flagged, softly).
-    if posted_bad:
+    if posted_bad or posted_soft:
+        # --replace only where something may have half-landed (a hard miss). A
+        # soft-missed channel got NOTHING, and --replace would just start with the
+        # very read that failed — plain find-or-create is both correct and cheaper.
         retry_args = (["--late-only"] if args.late_only else []) + \
-                     ["--orgs", ",".join(posted_bad), "--replace"]
+                     ["--orgs", ",".join(posted_bad + posted_soft)] + \
+                     (["--replace"] if posted_bad else [])
     elif missing_trackers:
         # --late-only and --only are mutually exclusive (a late run already selects
         # exactly the late trackers), so re-run the late catch-up as-is; a normal
@@ -885,9 +929,18 @@ def main(argv=None) -> int:
     # The omitted clause renders even on an ok=True run (a clean run that simply
     # couldn't include an email board whose source wasn't in yet) — that's the
     # whole point: say what actually posted.
+    soft_errs = "; ".join(
+        f"{sp.ORG_LABEL[o]}: " + (next(
+            (c.get("error") for r in status_rows if r["org"] == o
+             for c in r["channels"] if c.get("soft")), "read failed"))
+        for o in posted_soft)
     note = "; ".join(filter(None, [
         f"{len(posted_bad)} channel(s) missed: "
         f"{', '.join(sp.ORG_LABEL[o] for o in posted_bad)}" if posted_bad else "",
+        f"{len(posted_soft)} channel(s) SKIPPED — couldn't read what's already "
+        f"posted there, so nothing was posted (no duplicate thread): "
+        f"{soft_errs}. Everything else posted; re-run scoped to that org once "
+        f"the channel reads again" if posted_soft else "",
         f"{len(missing_trackers)} tracker(s) missing from the thread: "
         f"{', '.join(missing_trackers)}" if missing_trackers else "",
         f"posted {total_morning - len(gated_out)} of {total_morning} boards — "
@@ -921,6 +974,13 @@ def main(argv=None) -> int:
     # checklist + a bounded self-heal retry), instead of a hard 4:31am page for a
     # single board — while "everything already posted, nothing to re-post" stays a
     # clean exit 0. (A total capture failure still returns 1 above.)
+    #
+    # A SOFT channel miss is likewise exit 0 (2026-08-13): the channel's dedup read
+    # failed, so we posted nothing there to avoid duplicating today's thread — but
+    # every other org DID get its images. Exiting 1 would (a) page as if the whole
+    # run broke, and (b) make the orchestrator retry all ~15 orgs three times over
+    # one unreadable channel. The manifest carries ok=False + the loud alert +
+    # a scoped retry, which is the right amount of noise for "14 of 15 landed".
     if posted_bad:
         return 1
     return 0
