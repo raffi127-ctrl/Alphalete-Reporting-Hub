@@ -257,6 +257,12 @@ _VIZ_IFRAME = 'iframe[title="Data Visualization"]'
 # (1250x2000 on the NDS board), most of which is empty canvas below the content;
 # _trim_bottom cuts that away.
 _DASHBOARD = ".tab-dashboard"
+# How long to let the board draw itself. Was 60s until 2026-08-13, when all
+# three B2B captains lost §2 to a bare `Locator.wait_for: Timeout 60000ms` two
+# runs in a row while the NDS board (different, lighter workbook) drew fine.
+# The B2B EXPANDEDCHURN layout is the heaviest board we shoot, so the first
+# thing to rule out is that 60s is simply not enough for it.
+_DASHBOARD_TIMEOUT_MS = 150_000
 
 # --------------------------------------------------------------------------
 # Week filter: fall back to the newest week this captain actually has.
@@ -377,6 +383,35 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
         im.crop((0, 0, im.width, cut)).save(path)
 
 
+def _why_no_dashboard(page) -> str:
+    """Tableau's OWN words for why the board isn't there, in one line.
+
+    `Locator.wait_for: Timeout 60000ms exceeded` is unactionable: a deleted
+    custom view, a republished workbook and a board that is merely slow all look
+    identical from the outside, and the only place that difference exists is the
+    page itself — an error toast inside the viz iframe, or an error page where
+    the iframe never appears at all. Read it here so it rides the exception into
+    the draft's pending note, where Eve actually sees it (the run log lives on
+    whichever machine built the draft). Never raises: a diagnostic that fails
+    must not replace the failure it is describing."""
+    try:
+        if page.locator(_VIZ_IFRAME).count() == 0:
+            body = " ".join(((page.locator("body").inner_text(timeout=5_000)
+                              or "").strip()).split())[:300]
+            return (f"the viz iframe never appeared — the page says: {body!r}"
+                    if body else "the viz iframe never appeared (blank page)")
+        toast = page.frame_locator(_VIZ_IFRAME).locator(
+            '[data-tb-test-id^="banner-error-toast"]')
+        if toast.count():
+            msg = " ".join(((toast.first.inner_text(timeout=5_000)
+                             or "").strip()).split())[:300]
+            return f"Tableau error on the view: {msg!r}"
+    except Exception as e:      # noqa: BLE001 — see docstring
+        return f"(could not read the page: {type(e).__name__}: {e})"
+    return ("no Tableau error on the page — the board loaded but never "
+            "finished drawing")
+
+
 def _shoot_rendered(page, spec: dict, out_dir: Path, *,
                     verbose: bool = False) -> Path:
     """Screenshot the board as a human sees it, cropped to the board itself.
@@ -406,8 +441,36 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
             raise RuntimeError(
                 f"{spec['id']}: '{field}' would not move to {week} — the board "
                 f"still sits on a week with no data for this team")
-    board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
-    board.wait_for(state="visible", timeout=60_000)
+    try:
+        from patchright.sync_api import TimeoutError as _PWTimeout
+    except Exception:           # noqa: BLE001 — fall back to a broad catch
+        _PWTimeout = Exception  # type: ignore[assignment]
+    # Two goes at the board, then give up NAMING the reason. One reload is worth
+    # it: the whole failure mode here is a board that didn't finish, and a fresh
+    # load is the cheapest thing that fixes that. A third would only add minutes
+    # to a §2 that is already going to end up as a pending note.
+    landed = page.url
+    for attempt in (1, 2):
+        board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
+        try:
+            board.wait_for(state="visible", timeout=_DASHBOARD_TIMEOUT_MS)
+            break
+        except _PWTimeout:
+            why = _why_no_dashboard(page)
+            if attempt == 1:
+                if verbose:
+                    print(f"   ↻ {spec['id']}: no board after "
+                          f"{_DASHBOARD_TIMEOUT_MS // 1000}s ({why}) — "
+                          f"reloading once", flush=True)
+                page.goto(landed, wait_until="domcontentloaded")
+                page.wait_for_timeout(_SHOT_HYDRATE_MS)
+                continue
+            # RuntimeError, not the raw timeout: run._tableau_shots puts this
+            # text in the draft's pending note, and "Timeout 150000ms exceeded"
+            # tells the reader nothing they can act on.
+            raise RuntimeError(
+                f"{spec['id']}: the board never rendered "
+                f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
     board.screenshot(path=str(out))
     _trim_right(out)
     capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
