@@ -332,6 +332,48 @@ def build_destinations(o, wired, target_chan, to_named, *, manual_channel):
         "metrics": wired}], []
 
 
+def _channel_block_reason(client, channel_id: str) -> str:
+    """"" if this token can post to `channel_id`, else a one-line WHY + fix.
+
+    A READ-ONLY preflight (conversations.info) run once per destination before any
+    Tableau work. Two things it buys (2026-08-13, Drew/Precision Management):
+
+    1. SPEED + a usable alert. Drew's office reported "0/4 metrics posted" after
+       every metric pulled Tableau for minutes and only then died at the post —
+       four times over, ~20 wasted minutes, and the alert said "churn,
+       rep_activations, order_log, cancels failed" when the real cause was one
+       channel Lucy can't reach. Now the run says so in seconds, and the note
+       carries the actual fix (invite her) instead of four metric names.
+    2. It distinguishes the two failures that look identical from a log:
+       `not_in_channel` / `channel_not_found` = MEMBERSHIP (invite the posting
+       account to that channel) vs anything else = a real error worth reading.
+       For a PRIVATE channel a non-member gets `channel_not_found` — Slack won't
+       admit it exists — so that code does NOT mean the id is wrong.
+
+    Never raises and never blocks on doubt: any unexpected exception returns ""
+    (proceed as before), because a preflight that guesses wrong must not be the
+    thing that stops a healthy office from posting."""
+    try:
+        info = client.conversations_info(channel=channel_id)["channel"]
+    except Exception as e:                        # noqa: BLE001
+        data = getattr(getattr(e, "response", None), "data", {}) or {}
+        code = data.get("error") or ""
+        if code in ("not_in_channel", "channel_not_found"):
+            return (f"{code} — the posting account can't reach {channel_id}. "
+                    f"Invite it to that channel (a PRIVATE channel returns "
+                    f"channel_not_found to non-members, so this is membership, "
+                    f"not a bad id).")
+        if code == "is_archived":
+            return f"is_archived — {channel_id} is archived; nothing can post there."
+        return ""                                 # unknown → let the run proceed
+    if info.get("is_archived"):
+        return f"is_archived — #{info.get('name')} is archived; nothing can post."
+    if info.get("is_private") and info.get("is_member") is False:
+        return (f"not a member of #{info.get('name')} ({channel_id}) — invite "
+                f"the posting account to that channel.")
+    return ""
+
+
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
@@ -932,6 +974,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # so it finds THAT channel's daily thread. results carry the channel for the
     # summary; a slug that fails in ANY channel counts as failed (for the retry).
     results: list[tuple[str, str, str, bool, str]] = []  # (chan, slug, label, ok, note)
+    # Destinations we couldn't reach at all (membership/archived) — named in the
+    # manifest note so the alert says "invite the bot", not "4 metrics failed".
+    blocked_channels: list = []
     overall_start = time.monotonic()
     for dest in destinations:
         chan = dest["channel_id"]
@@ -941,6 +986,24 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             child_env["METRICS_HEADER_LABEL"] = hdr
         else:
             child_env.pop("METRICS_HEADER_LABEL", None)
+
+        # PREFLIGHT: can we even reach this channel? If not, record every metric
+        # for THIS destination as failed with the real reason and move on to the
+        # next channel — instead of pulling Tableau once per metric only to die at
+        # the post. Other destinations are untouched, the run still exits 0 (soft
+        # INCOMPLETE + alert, unchanged), and the note names the fix.
+        if mode == "live":
+            blocked = _channel_block_reason(client, chan)
+            if blocked:
+                print(f"\n⚠ [{dest['channel_name']} ({chan})] SKIPPED — {blocked}\n"
+                      f"   {len(dest['metrics'])} metric(s) not posted; no Tableau "
+                      f"pull attempted. Re-run this office once the channel is "
+                      f"reachable.", flush=True)
+                blocked_channels.append((dest["channel_name"], chan, blocked))
+                for m in dest["metrics"]:
+                    results.append((dest["channel_name"], m["slug"], m["label"],
+                                    False, f"channel unreachable: {blocked}"))
+                continue
 
         if mode == "live":
             # slack_metrics_post read CHANNEL_ID + HEADER_LABEL at import — rebind
@@ -1029,11 +1092,19 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             retry += ["--only", ",".join(failed_slugs)]
         _dest_desc = (f"{len(destinations)} channels" if len(destinations) > 1
                       else o.channel_name)
+        # A blocked channel is THE headline: without it the note reads "0/4
+        # metrics posted; failed: churn, rep_activations, order_log, cancels",
+        # which sends whoever reads the alert hunting four Tableau views for a
+        # problem that is one Slack invite.
+        _blocked_note = "; ".join(
+            f"CHANNEL UNREACHABLE — {cname} ({cid}): {why}"
+            for cname, cid, why in blocked_channels)
         _rm.write_manifest(
             o.report_id, failed=failed_labels, succeeded=ok_labels,
             retry_args=retry, kind="metric",
             note=(f"{n_ok}/{len(results)} metrics posted to {_dest_desc}"
-                  + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")))
+                  + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")
+                  + (f"; {_blocked_note}" if _blocked_note else "")))
         # Feed the ONE Hub card's per-office ✅/❌ checklist. Only a FULL live run
         # speaks for the whole office (an --only re-run covers a single metric,
         # so it must not overwrite the office's row with a partial verdict).
@@ -1041,6 +1112,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             o, ok=not failed_slugs,
             error=("; ".join(failed_labels) if failed_labels else ""))
 
+    if blocked_channels:
+        for cname, cid, why in blocked_channels:
+            print(f"\n⚠ {cname} ({cid}) was UNREACHABLE — {why}")
     if failed_slugs:
         print(f"\n{len(failed_slugs)} metric(s) didn't post — run COMPLETE with a "
               f"note. Re-run just those: --only <slug>. Missing: {failed_labels}")

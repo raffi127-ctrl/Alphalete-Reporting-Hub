@@ -1341,6 +1341,68 @@ def _action_slack_channel(args: str) -> tuple[bool, str]:
     return True, "\n".join(out)
 
 
+def _action_slack_find(args: str) -> tuple[bool, str]:
+    """READ-ONLY: which channels can THIS machine's Slack token see whose name
+    contains <text>, and what are their real ids?
+
+      slack_find precisionmanagement
+
+    The question `slack_channel` can't answer. A channel id that returns
+    `channel_not_found` is either wrong OR simply one this account isn't in, and
+    those need opposite fixes (re-onboard vs. invite). conversations.list settles
+    it: it returns every public channel plus the PRIVATE ones this account is a
+    member of, so
+      • name found, id matches config  -> config is right, membership is right
+      • name found, id DIFFERENT       -> the config id is STALE (re-onboard)
+      • name not found at all          -> this account isn't in it (invite), or
+                                          the name is different than we think
+    Built 2026-08-13: two configs disagreed about what C0A7871FAUV is called
+    (trackers said #precisionmanagement-nds-sales, office metrics said
+    Precision management-att-sales) and nothing on the laptop could adjudicate."""
+    import ssl as _ssl
+
+    needle = (args or "").strip().lstrip("#").lower()
+    if not needle:
+        return False, "slack_find needs some text (e.g. slack_find precisionmanagement)"
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+        who = client.auth_test()
+    except Exception as e:  # noqa: BLE001
+        return False, f"auth.test FAILED: {type(e).__name__} {str(e)[:120]}"
+
+    hits, cursor, pages = [], None, 0
+    try:
+        while pages < 10:                      # ~10k channels max, then stop
+            pages += 1
+            resp = client.conversations_list(
+                types="public_channel,private_channel", limit=1000,
+                exclude_archived=False, cursor=cursor)
+            for c in resp.get("channels", []):
+                if needle in (c.get("name") or "").lower():
+                    hits.append("  #{n}  {i}  private={p} archived={a} member={m}"
+                                .format(n=c.get("name"), i=c.get("id"),
+                                        p=c.get("is_private"),
+                                        a=c.get("is_archived"),
+                                        m=c.get("is_member")))
+            cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+    except Exception as e:  # noqa: BLE001
+        data = getattr(getattr(e, "response", None), "data", {}) or {}
+        return True, (f"as {who.get('user')} — conversations.list FAILED → "
+                      f"{data.get('error') or type(e).__name__} "
+                      f"(needs channels:read + groups:read on the token)")
+    head = f"as {who.get('user')} ({who.get('user_id')}) — {len(hits)} match(es) for {needle!r}"
+    if not hits:
+        head += "\n  (nothing this account can SEE — a private channel it isn't " \
+                "in is invisible here, which is itself the answer)"
+    return True, "\n".join([head] + hits[:12] + ["READ-ONLY — nothing posted."])
+
+
 def _action_diag(args: str) -> tuple[bool, str]:
     """Read-only machine health — diagnose a runner remotely without anyone AT
     the machine (the 'is it asleep / is the poller alive / is the OV session
@@ -3566,6 +3628,7 @@ ACTIONS = {
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
+    "slack_find": _action_slack_find,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,
