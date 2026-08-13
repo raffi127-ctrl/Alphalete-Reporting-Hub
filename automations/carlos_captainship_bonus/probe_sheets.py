@@ -1,45 +1,148 @@
-"""List the worksheets the Carlos bonus source view currently offers.
+"""Inspect the Carlos bonus source view: what worksheets it offers, and what
+shape each one actually has.
 
-READ-ONLY: opens the view's Download -> Crosstab dialog, reads the worksheet
-thumbnail names, and prints them. Downloads nothing, writes no Sheet.
+READ-ONLY with respect to report data: it downloads crosstabs to a scratch dir
+and writes its findings to a DIAGNOSTIC tab. It never touches the
+*All In One - CARLOS* sheet.
 
 Why this exists: when ATTTRACKER-B2B was restructured on 2026-08-13 the old
 `CaptainsTeam` sheet vanished and every worksheet on the replacement view had
 been renamed, so the pull failed on the FIRST worksheet and its error only
-named that one. Reading the failure through `lucy logtail` doesn't help either
-— the result cell caps at ~470 chars and the dialog's name list is one long
-line, so it always came back truncated.
+named that one. Reading the failure through `lucy logtail` didn't help either —
+the result cell caps at ~470 chars and the dialog's name list is one long line,
+so it always came back truncated.
 
-Hence: ONE NAME PER LINE, each prefixed `XTAB:` so a narrow logtail grep
-returns the whole list inside the cap:
+Two modes:
 
-    lucy rerun probe_carlos_bonus_sheets --machine "Lucy 2"
-    lucy logtail <that log> XTAB 15
+  # names only (fast, no downloads) — one per line, prefixed XTAB:
+  lucy rerun probe_carlos_bonus_sheets --machine "Lucy 2"
+  lucy logtail <that log> XTAB 15
 
-Re-run this after any republish of the workbook before re-mapping
+  # names + column headers + sample rows for the candidate worksheets
+  lucy rerun probe_carlos_bonus_sheets --dump --machine "Lucy 2"
+  ...then read the '<DIAG_TAB>' tab (too big for logtail).
+
+Re-run this after any republish of the workbook, then re-map
 tableau_pull.SHEETS. [[project_carlos-captainship-bonus-view-dead]]
 """
 from __future__ import annotations
 
+import argparse
+import datetime as dt
 import sys
+import traceback
+from pathlib import Path
+
+# Same scratch workbook the ATT Order Log probe writes to — a diagnostics-only
+# book, so a new tab here is never someone's filled-in work.
+DIAG_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+DIAG_TAB = "Carlos Bonus Probe"
+
+# Worksheets worth dumping when --dump is on: the ones whose names suggest they
+# could carry what tableau_pull needs. Names come from the 2026-08-13 listing.
+CANDIDATES = (
+    "Sales By ICD (ATT) (V2)_Captain View",
+    "ICD Summary - ATT (V2) (TW) (3)",
+    "ICD Churn Rate- Captain's View",
+    "Churn, Activation and Tiers",
+    "Captains View - Non pmt%",
+    "Activation Rate- Captains View",
+)
+
+
+def _upload(lines) -> None:
+    from automations.recruiting_report import fill as _fill
+    sh = _fill._client().open_by_key(DIAG_SHEET_ID)
+    try:
+        ws = sh.worksheet(DIAG_TAB)
+    except Exception:  # noqa: BLE001 — tab may not exist yet
+        ws = sh.add_worksheet(title=DIAG_TAB, rows=800, cols=1)
+    ws.clear()
+    ws.update("A1", [[ln[:900]] for ln in lines[:800]])
 
 
 def main(argv=None) -> int:
     from automations.carlos_captainship_bonus import tableau_pull as T
     from automations.recruiting_report.opt_phase import list_crosstab_sheets
 
-    url = (argv or sys.argv[1:] or [T.VIEW])[0]
-    print(f"probing crosstab worksheets on:\n  {url}", flush=True)
-    names = list_crosstab_sheets(url, verbose=False)
-    print(f"dialog offers {len(names)} worksheet(s):", flush=True)
-    for n in names:
-        print(f"XTAB: {n}", flush=True)
+    ap = argparse.ArgumentParser(prog="carlos_captainship_bonus.probe_sheets")
+    ap.add_argument("--url", default=T.VIEW, help="view to probe (default: the report's)")
+    ap.add_argument("--dump", action="store_true",
+                    help="also download each CANDIDATE worksheet and print its "
+                         "columns + first rows")
+    ap.add_argument("--no-upload", action="store_true",
+                    help="print only; don't write the diag tab")
+    args = ap.parse_args(argv if argv is not None else sys.argv[1:])
 
-    # Which of the ones this report needs are still present, by exact name?
-    print("", flush=True)
+    buf = []
+
+    def rec(msg=""):
+        print(msg, flush=True)
+        buf.append(str(msg))
+
+    rec(f"Carlos bonus source probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
+    rec(f"view: {args.url}")
+    rec("")
+
+    names = list_crosstab_sheets(args.url, verbose=False)
+    rec(f"dialog offers {len(names)} worksheet(s):")
+    for n in names:
+        rec(f"XTAB: {n}")
+
+    rec("")
     for key, want in sorted(T.SHEETS.items()):
-        print(f"NEED: {key:<8} {want!r} -> "
-              f"{'PRESENT' if want in names else 'MISSING'}", flush=True)
+        rec(f"NEED: {key:<8} {want!r} -> "
+            f"{'PRESENT' if want in names else 'MISSING'}")
+
+    if args.dump:
+        from automations.shared.tableau_patchright import download_crosstab_patchright
+        today = dt.date.today()
+        scratch = Path(T.CACHE_DIR) / "probe"
+        scratch.mkdir(parents=True, exist_ok=True)
+        for i, sheet in enumerate(CANDIDATES):
+            if sheet not in names:
+                rec("")
+                rec(f"=== {sheet!r}: NOT OFFERED by this view, skipping ===")
+                continue
+            rec("")
+            rec(f"=== {sheet!r} ===")
+            # The per-rep sales sheet is the only one that needs the week pinned;
+            # the rate sheets degenerate if you pin it (see tableau_pull._rates_url).
+            is_sales = "Sales By ICD" in sheet or "ICD Summary" in sheet
+            url = T._act_url(today) if is_sales else T._rates_url(today)
+            rec(f"  url: {'week-pinned' if is_sales else 'default view'}")
+            out = scratch / f"probe_{i}.csv"
+            try:
+                download_crosstab_patchright(url, sheet, out, verbose=False)
+                rows = T._read(out)
+            except Exception as e:  # noqa: BLE001 — one bad sheet must not kill the probe
+                rec(f"  !! download/parse failed: {type(e).__name__}: {str(e)[:160]}")
+                for ln in traceback.format_exc().splitlines()[-4:]:
+                    rec("    " + ln[:180])
+                continue
+            if not rows:
+                rec("  (empty export)")
+                continue
+            rec(f"  {len(rows)} rows, {len(rows[0])} columns")
+            for c, h in enumerate(rows[0]):
+                rec(f"  COL [{c:>2}] {h!r}")
+            rec("  first 12 data rows:")
+            for r in rows[1:13]:
+                rec("    " + " | ".join(str(c or "")[:26] for c in r[:10]))
+            # Does Carlos' team actually appear, and where?
+            hits = [(ri, r) for ri, r in enumerate(rows[1:], 1)
+                    if any(T._norm(c) == T.TEAM for c in r[:3])]
+            rec(f"  rows whose first 3 cols contain {T.TEAM!r}: {len(hits)}")
+            for ri, r in hits[:6]:
+                rec(f"    [row {ri}] " + " | ".join(str(c or "")[:26] for c in r[:10]))
+
+    if not args.no_upload:
+        try:
+            _upload(buf)
+            rec("")
+            rec(f"findings -> {DIAG_TAB!r} tab")
+        except Exception as e:  # noqa: BLE001 — never fail the probe on upload
+            print(f"diag upload failed: {e}", flush=True)
     return 0
 
 
