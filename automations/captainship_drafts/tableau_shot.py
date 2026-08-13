@@ -390,6 +390,60 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
         im.crop((0, 0, im.width, cut)).save(path)
 
 
+# The B2B 1-PAGER stacks a SECOND report under this band — "Sales By ICD - Last
+# Week" + "Summary Sales - Last Week" + the server-update footer. §2 is the
+# current week only, so the shot stops at the band (Eve 2026-08-13). Matched by
+# its TEXT: the band slides down every time the team above it has more ICD rows,
+# so there is no pixel row to hardcode.
+_CUT_BELOW_BANDS = (r"B2B\s*-\s*LAST\s+WEEK",)
+
+
+def _cut_fraction(page, board, verbose: bool = False) -> Optional[float]:
+    """Where to cut the board, as a FRACTION of its height (None = keep it all).
+
+    A fraction rather than pixels because the PNG's height is not the element's:
+    the device scale factor multiplies it, and Playwright stitches an element
+    taller than the window. The band's relative position survives both. The two
+    boxes are read back to back on purpose — their difference only means
+    anything within one layout/scroll state.
+
+    A board without the band (NDS) matches nothing and is returned uncropped."""
+    for pattern in _CUT_BELOW_BANDS:
+        try:
+            band = page.frame_locator(_VIZ_IFRAME).get_by_text(
+                re.compile(pattern, re.I)).first
+            if not band.count():
+                continue
+            bb_band, bb_board = band.bounding_box(), board.bounding_box()
+        except Exception:       # noqa: BLE001 — no crop beats no shot
+            continue
+        if not bb_band or not bb_board or not bb_board.get("height"):
+            continue
+        frac = (bb_band["y"] - bb_board["y"]) / bb_board["height"]
+        # Off the top or off the bottom means we matched something else (a
+        # legend, a tooltip, a hidden copy) — keep the whole shot rather than
+        # mail a sliver.
+        if not 0.2 <= frac <= 0.97:
+            if verbose:
+                print(f"   ⚠ {pattern!r} sits at {frac:.0%} of the board — "
+                      f"keeping the whole shot", flush=True)
+            continue
+        if verbose:
+            print(f"   ✂ cutting at {frac:.0%}, above {pattern!r}", flush=True)
+        return frac
+    return None
+
+
+def _crop_to_fraction(path: Path, frac: float, margin_px: int = 6) -> None:
+    """Cut the PNG at `frac` of its height, leaving a hair of white above the
+    band so the section above doesn't end flush against the edge."""
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    cut = max(1, int(im.height * frac) - margin_px)
+    if cut < im.height - 2:
+        im.crop((0, 0, im.width, cut)).save(path)
+
+
 def _why_no_dashboard(page) -> str:
     """Tableau's OWN words for why the board isn't there, in one line.
 
@@ -478,7 +532,12 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
             raise RuntimeError(
                 f"{spec['id']}: the board never rendered "
                 f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
+    # Measured BEFORE the screenshot: .screenshot() scrolls the element into
+    # view, and the two boxes have to come from the same scroll state.
+    frac = _cut_fraction(page, board, verbose=verbose)
     board.screenshot(path=str(out))
+    if frac is not None:
+        _crop_to_fraction(out, frac)
     _trim_right(out)
     capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
     _trim_footer_after_gap(out)
