@@ -66,6 +66,19 @@ MAX_AUTO_RETRIES = 2
 # full inter-pass gap. One quick retry per flaked report per pass; anything still
 # flaking defers to the next pass, bounded overall by MAX_RUN_RETRIES.
 FLAKE_RETRY_BACKOFF_S = 90
+# EX_TEMPFAIL — the "held / incomplete" exit code the sales-board family already
+# agreed on (energy_slack_fill, all_campaigns_board, sales_boards, pnl_office,
+# vantura_slack_sales, org_sales_board.slack_post, b2b_quality). It does NOT mean
+# the run crashed: those modules write everything they're sure of and return 75
+# only to flag the leftover doubt — no source post that day, a line nobody could
+# be matched to, or a tally that didn't add up. The orchestrator read every
+# non-zero code as a crash, so a clean run with a note showed up RED all week
+# (Eve 2026-08-13: Energy Sales 8/10, 8/11, 8/13 — the board was fully filled in
+# all three, and 8/10's "failure" was simply a Sunday with no board posted).
+# Treated as ran-with-a-note here: the reconcile below still has the last word,
+# so a report that ALSO dropped parts still lands INCOMPLETE/orange via its
+# manifest. Nothing loses a retry — 75 was terminal FAILED before, never retried.
+HOLD_EXIT_CODE = 75
 # A full pass runs every ready report sequentially and can take HOURS (heavy
 # daily_rep_breakdown alone budgets ~130m). A source that wasn't ready when its
 # report was checked early in the pass often LANDS during that long pass, so we
@@ -913,6 +926,10 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
                 return False, f"timed out after {timeout_s//60}m{note}"
         if rc == 0:
             return True, "exit 0"
+        if rc == HOLD_EXIT_CODE:
+            # Ran and wrote what it was sure of; the code only carries the note.
+            return True, (f"exit {rc} — ran, held with a note "
+                          f"(see {logf.name})")
         return False, f"exit {rc} (see {logf.name})"
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:120]}"
