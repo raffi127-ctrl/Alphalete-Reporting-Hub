@@ -35,11 +35,18 @@ from automations.captainship_drafts.config import BY_KEY
 # --------------------------------------------------------------------------
 # Per-§2-board base view URLs.
 # --------------------------------------------------------------------------
-# teamstats (b2b): the CaptainsTeam workbook's ...EXPANDEDCHURN layout — the team
-# is overridden per-captain via the filter param, so this one base serves all 3.
+# teamstats (b2b): the B2B 1-PAGER_Captain View, a BASE view — the team is
+# overridden per-captain via the filter param, so this one base serves all 3.
+#
+# It used to be a saved custom view on a 'CaptainsTeam' sheet
+# (CarlosLocalOfficeEXPANDEDCHURN, GUID 4248bfd2-…). On 2026-08-13 that URL
+# started answering "That page could not be accessed. Either the view does not
+# exist or you do not have the necessary permissions" and all three B2B captains
+# lost §2; the workbook had been restructured and the sheet is gone (Eve).
+# Pointing at the BASE view instead of a saved one is also what NDS does, and it
+# is the arrangement that survives a republish — a custom view does not.
 _B2B_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "ATTTRACKER-B2B/CaptainsTeam/4248bfd2-397d-40f8-81bb-2f7b89ee8b9a/"
-             "CarlosLocalOfficeEXPANDEDCHURN")
+             "ATTTRACKER-B2B/B2B1-PAGER_CaptainView")
 # teamstats (nds): the CaptainsTeam base view.
 _NDS_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "NDS-SNRES-ATT-OOFWorkbook/CaptainsTeam")
