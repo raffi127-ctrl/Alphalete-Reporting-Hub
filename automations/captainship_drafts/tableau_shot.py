@@ -412,6 +412,9 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
 # flag is what makes "the second band" mean anything.
 _BAND_MIN_WIDTH_FRAC = 0.80     # a band spans the board; a blue cell does not
 _MIN_SECTION_PX = 80            # the shortest first section worth keeping
+# Browser window for the B2B board only (default elsewhere is 1680x1280). Wide
+# enough that the third table stops being cut off; the surplus canvas is trimmed.
+_B2B_WINDOW = (2400, 1280)
 
 
 def _navy_band_rows(path: Path) -> list:
@@ -605,7 +608,14 @@ def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
     # into ONE tableau_session (login once) via a pre-pass in run.main, mirroring
     # how sheet_shot captures all ranges in one browser. Fine pre-go-live (manual
     # cadence); an unconfigured captain never reaches here, so no wasted login.
-    with tableau_session(headless=True, verbose=verbose) as page:
+    # The B2B 1-PAGER is wider than the 1680px default window, so its right-hand
+    # "Non - Pmt (60-90)" table came back sliced mid-column — a whole column of
+    # numbers missing from a report that goes to ~145 people (Eve 2026-08-13).
+    # Only b2b: every other board fits, and a window change is a re-layout risk
+    # on boards that are currently correct. Asking for too much width is free —
+    # _trim_right drops whatever canvas the board doesn't use.
+    session_kw = {"window_size": _B2B_WINDOW} if flavor == "b2b" else {}
+    with tableau_session(headless=True, verbose=verbose, **session_kw) as page:
         if flavor in _TEAMSTATS_FLAVORS:
             return _shoot_rendered(page, spec, out_dir, verbose=verbose)
         png = capture.capture_page(page, spec, out_dir, verbose=verbose)
