@@ -15,6 +15,13 @@ is ADDITIVE: the exit-0 / no-double-post behavior is unchanged; this is the alar
 bolted on top. (No @-mention: Megan asked to stop being pinged on every drop,
 2026-08-10 — the 🚨 + channel is enough to catch the eye without a notification.)
 
+SHAPE (2026-08-13): the CHANNEL message is the headline + the one-line fix only;
+the list of what dropped goes in a threaded reply, chunked across replies if it's
+long. The Vantura board audit's 13 findings used to land in the channel post and
+filled the whole screen, burying every other report's alert — "this error is too
+long in the slack channel, it should be in the reply on the thread" (Megan). Same
+information, just not all of it at eye level. A 1-2 item drop still reads inline.
+
 Dedup: one post per (report_id, date, failed-set). A morning re-run that drops
 the SAME section again won't re-spam; a different drop still alerts. Posted as
 Lucy (the xoxp user token every Slack post here uses). Always English — the whole
