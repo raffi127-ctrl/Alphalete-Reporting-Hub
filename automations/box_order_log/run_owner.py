@@ -44,7 +44,28 @@ CROSSTAB_SHEET = "Order Log"      # same worksheet Carlos's pull uses
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None) -> Path:
+def _view_url(team: bool) -> str:
+    """Which all-owners view to pull.
+
+    BASE (`BoxOrderLog`, no custom-view segment) carries every owner, but its
+    SAVED state is what keeps re-pinning the Contract ID / Account Id include
+    lists, and on 2026-08-13 the '(All)' checkboxes weren't even reachable in
+    the DOM any more, so `release_pinned_filters` had nothing to un-pin and both
+    owner pulls capped (Roshan 8/4, Abel 7/30) and self-suppressed.
+
+    TEAM is Megan's `ALLEXPORDERLOG` custom view (per_office.TEAM_VIEW_URL) —
+    same workbook + worksheet, same "Owner & Office" column, every office in one
+    export, but its OWN saved filter state. `per_office` has pulled it since
+    2026-07-29. Imported (not re-declared) so the two can never drift.
+    """
+    if not team:
+        return BASE_VIEW_URL
+    from .per_office import TEAM_VIEW_URL
+    return TEAM_VIEW_URL
+
+
+def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None,
+          team: bool = False) -> Path:
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
     from . import window
@@ -54,8 +75,32 @@ def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None) -> 
     hook = window.date_window_hook(start, end, verbose=verbose)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
-            BASE_VIEW_URL, CROSSTAB_SHEET, dest, verbose=verbose, page=page,
+            _view_url(team), CROSSTAB_SHEET, dest, verbose=verbose, page=page,
             pre_export=hook)
+
+
+def _probe_filters(verbose: bool = True, team: bool = False) -> int:
+    """Open the view and DUMP its filter controls — no export, no send.
+
+    Diagnostic for the failure mode the 2026-08-12 hardening could not fix: the
+    release logs '(All) item not found' for both fields on both attempts, i.e.
+    the selector no longer matches anything rather than losing a hydration race.
+    This prints what IS in the DOM so the selector can be corrected against
+    fact instead of guesswork. See window.describe_filters.
+    """
+    from automations.shared.tableau_patchright import tableau_session
+    from . import window
+    url = _view_url(team)
+    print("-> probing filters on {}".format(url), flush=True)
+    with tableau_session(verbose=verbose) as page:
+        page.goto(url, wait_until="domcontentloaded")
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        viz.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+        ).wait_for(state="visible", timeout=120_000)
+        page.wait_for_timeout(25_000)
+        print(window.describe_filters(page, viz), flush=True)
+    return 0
 
 
 def _owners_present(sales) -> List[str]:
@@ -96,11 +141,25 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull; use an existing ALL-OWNERS "
                          "BoxOrderLog crosstab")
+    ap.add_argument("--team-view", action="store_true",
+                    help="pull Megan's ALLEXPORDERLOG custom view instead of the "
+                         "bare BoxOrderLog base view. Same rows, but its own "
+                         "saved filter state — the base view's Contract ID / "
+                         "Account Id include lists keep re-pinning and cap the "
+                         "export (see window.py).")
+    ap.add_argument("--probe-filters", action="store_true",
+                    help="diagnostic: open the view, print its filter controls, "
+                         "and exit. No export, no email, no sheet write.")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
     verbose = not args.quiet
     today = dt.date.today()
+
+    # Diagnostic short-circuit: --probe-filters needs no owner data, so it runs
+    # before the registry lookup and never touches a deliverable.
+    if args.probe_filters:
+        return _probe_filters(verbose=verbose, team=args.team_view)
 
     cfg = owners_mod.OWNERS.get(args.owner)
     if not cfg:
@@ -117,9 +176,15 @@ def main(argv: Optional[list] = None) -> int:
             print("✗ no such file: {}".format(src), file=sys.stderr)
             return 2
     else:
-        src = OUTPUT_DIR / "box_order_log_all_{}.csv".format(today.isoformat())
+        # One file name per VIEW. `box_order_log_all_<date>.csv` is what
+        # per_office._shared_team_file() treats as "today's TEAM ALLEXP export"
+        # and reuses without re-pulling — so a BASE-view pull must not land
+        # there wearing the team export's name (it did until 2026-08-13).
+        src = OUTPUT_DIR / ("box_order_log_all_{}.csv" if args.team_view
+                            else "box_order_log_base_{}.csv").format(
+                                today.isoformat())
         try:
-            _pull(src, verbose=verbose, today=today)
+            _pull(src, verbose=verbose, today=today, team=args.team_view)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()

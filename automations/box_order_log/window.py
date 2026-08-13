@@ -162,6 +162,64 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
         unresolved = still_pending
 
 
+def describe_filters(page, viz, limit: int = 25) -> str:
+    """Dump what filter controls the loaded viz actually exposes.
+
+    WHY (2026-08-13): both owner pulls capped again and the log said
+    "no (All) item found after 20s" for BOTH fields on BOTH attempts. The
+    2026-08-12 hardening added exactly that hydration wait, so 80s of waiting
+    ruling the item absent is not a race — the node the selector describes is
+    not in the DOM at all. Rather than guess at a new selector, this prints the
+    ground truth: how many checkboxes the viz has, every id that ends in
+    `_(All)` (whatever its field), and the quick-filter titles on the view.
+
+    Read-only and defensive: every probe is wrapped, because the point is to
+    come back with a description even when half the page is unexpected.
+    """
+    lines = ["--- filter probe ---"]
+
+    def _try(label, fn):
+        try:
+            lines.append("{}: {}".format(label, fn()))
+        except Exception as exc:                            # noqa: BLE001
+            lines.append("{}: <probe failed: {!r}>".format(label, exc))
+
+    _try("checkbox nodes", lambda: viz.locator('[role="checkbox"]').count())
+    _try("nodes with id ending _(All)",
+         lambda: viz.locator('[id$="_(All)"]').count())
+    _try("date textareas",
+         lambda: viz.locator('textarea[aria-label$="Date"]').count())
+
+    def _all_ids():
+        loc = viz.locator('[id$="_(All)"]')
+        n = min(loc.count(), limit)
+        return "\n" + "\n".join(
+            "    {!r}".format(loc.nth(i).get_attribute("id")) for i in range(n)
+        ) if n else "(none)"
+    _try("ids ending _(All)", _all_ids)
+
+    def _titles():
+        # Tableau labels each quick filter's header with the field name; the
+        # class has been stable across the SCI views we drive.
+        loc = viz.locator(".tabComboBoxNameContainer, .fltrTitle, "
+                          '[data-tb-test-id="filter-title"]')
+        n = min(loc.count(), limit)
+        return "\n" + "\n".join(
+            "    {!r}".format((loc.nth(i).inner_text() or "").strip())
+            for i in range(n)) if n else "(none)"
+    _try("quick-filter titles", _titles)
+
+    # Each pinned field, matched loosely: does ANY node carry the field name in
+    # its id? If the field is present but has no _(All) child, the control is a
+    # dropdown/search filter, not a checkbox list — a different release path.
+    for field in PINNED_ID_FILTERS:
+        _try("nodes with {!r} in id".format(field),
+             (lambda f=field: viz.locator('[id*="{}"]'.format(f)).count()))
+
+    lines.append("--- end filter probe ---")
+    return "\n".join(lines)
+
+
 def capped_pull_warning(newest: Optional[dt.date],
                         today: Optional[dt.date] = None,
                         tolerance_days: int = 2) -> str:
