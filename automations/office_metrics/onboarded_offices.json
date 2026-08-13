@@ -9,6 +9,7 @@
     "sheet_id": "1Jjq8htt9jKu7BQ2hOKxHxD5iT7feuUNU0aoCebdPwBg",
     "knocks_office": "Haytham Nagi",
     "ov_account": "22524",
+    "owner_office": "",
     "business_name": "Horizon Edge Alliance, Inc.",
     "website": "https://horizonedgealliance.com/",
     "header_label": "",
@@ -43,11 +44,11 @@
       "tableau_shot": 11
     },
     "per_office_views": {},
+    "machine": "Lucy 1",
+    "notes": "",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
-    "abp_tab": "Lucy New INT ABP%",
-    "machine": "Lucy 1",
-    "notes": ""
+    "abp_tab": "Lucy New INT ABP%"
   },
   {
     "key": "trang",
@@ -182,6 +183,136 @@
           "churn_wl",
           "activations",
           "abp",
+          "tableau_shot"
+        ],
+        "header_label": ""
+      }
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "nii",
+    "report_id": "nii_metrics",
+    "label": "Nii's Local Office",
+    "owner": "Nii Tagoe",
+    "channel_id": "C0BMETPJT70",
+    "channel_name": "nii-teiko-tagoe-office",
+    "sheet_id": "1BP3g5PyaskFr0wmI7BiUT2lYWYNePdtwaTVBoFM01tc",
+    "knocks_office": "Next Horizon Group, Inc. Nii Tagoe",
+    "ov_account": "23275",
+    "owner_office": "",
+    "business_name": "Next Horizon Group, INC.",
+    "website": "https://nexthorizongroupinc.com/",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "notes": "",
+    "channel_plans": [
+      {
+        "channel_id": "C0BMETPJT70",
+        "channel_name": "nii-teiko-tagoe-office",
+        "report_keys": [
+          "knocks",
+          "order_log",
+          "sales_6plus",
+          "cancels",
+          "ongoing_cancel",
+          "disconnects",
+          "churn_ni",
+          "churn_wl",
+          "activations",
+          "abp",
+          "tableau_shot"
+        ],
+        "header_label": ""
+      }
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "drew",
+    "report_id": "drew_metrics",
+    "label": "Drew's Local Office",
+    "owner": "Drew Tepper",
+    "channel_id": "C0A7871FAUV",
+    "channel_name": "Precision management-att-sales",
+    "sheet_id": "11_gwSfFZcA26H8LeAg83rMIpMVBylgzPvJ_mnN1i0l4",
+    "knocks_office": "Precision management Drew Tepper",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Precision Management Team",
+    "website": "https://precisionmanagementteam.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "ongoing_cancel",
+      "churn_wl",
+      "activations",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "ongoing_cancel": 4,
+      "churn_wl": 5,
+      "activations": 6,
+      "tableau_shot": 7
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "notes": "",
+    "channel_plans": [
+      {
+        "channel_id": "C0A7871FAUV",
+        "channel_name": "Precision management-att-sales",
+        "report_keys": [
+          "knocks",
+          "order_log",
+          "cancels",
+          "ongoing_cancel",
+          "churn_wl",
+          "activations",
           "tableau_shot"
         ],
         "header_label": ""
