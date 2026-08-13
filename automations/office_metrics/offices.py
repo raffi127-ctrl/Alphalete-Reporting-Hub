@@ -297,10 +297,10 @@ SECTION_OVERRIDES: dict = {
                "cancels", "disconnects"),
     # drew (Precision, #precisionmanagement-nds-sales) is WIRELESS/NDS — owner
     # "DREW TEPPER[precision management team, inc.]" in the NDS-SN workbook (572
-    # wireless orders, verified 2026-08-12). Wired like isaiah. Churn HELD until a
-    # per-rep NDS churn view exists (Megan: must match everyone = per-rep). Time
+    # wireless orders, verified 2026-08-12). Wired like isaiah. Churn = per-rep,
+    # sliced from the shared ChurnALlExp view (Megan built it 2026-08-12). Time
     # Gaps HELD until his Time Tracker is verified non-blank (never post blank).
-    "drew": ("rep_activations", "order_log", "cancels"),
+    "drew": ("churn", "rep_activations", "order_log", "cancels"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook

@@ -135,10 +135,13 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              env={"KNOCKS_OFFICE": o.knocks_office},
              retry_on_fail=1, dry_flag="--dry-run", post_flag="--live"),
-        # 📊 Wireless Churn — office-level, from NDS CHURNRATES.
+        # 📊 Wireless Churn — per-rep, day-over-day. nds_churn slices the shared
+        # ChurnALlExp view to this owner + fills THIS office's own churn tab, so
+        # CHURN_SHEET_ID must be the office's sheet (else it defaults to Isaiah's).
         dict(slug="churn", label="📊 Wireless Churn",
              module="automations.office_metrics.nds_churn",
-             owner_args=["--owner", o.owner], env={},
+             owner_args=["--owner", o.owner],
+             env={"CHURN_SHEET_ID": o.sheet_id},
              dry_flag="--dry-run", post_flag="--live"),
         # 🆕 Rep Activations — the house two-week Posted/Pending/Total/Canceled
         # summary (rep_activations pipeline), built from the NDS ORDER LOG current

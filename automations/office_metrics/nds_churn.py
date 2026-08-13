@@ -37,13 +37,19 @@ from automations.shared.tableau_patchright import download_crosstab_patchright
 from automations.wireless_churn import pull as wl_pull
 from automations.churn import run as churn_run
 
-# Megan's per-rep CHURNRATES custom view ("Isaiahchurnexp"), sliced to Isaiah's
-# office + expanded to Rep. Crosstab worksheet = the standard "Churn Rates (ICD)".
+# Shared per-rep NDS churn view ("ChurnALlExp", Megan 2026-08-12): CHURNRATES
+# expanded to Rep for ALL NDS owners (no owner filter). We slice it by owner in
+# _parse — exactly how the D2D side slices the one WirelessAllTeams view — so
+# every NDS office (isaiah, drew, and any future one) uses this ONE view, no
+# per-office custom view. Crosstab worksheet = the standard "Churn Rates (ICD)".
 CHURN_VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                   "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/"
-                  "bc6f631f-377f-4365-acd5-4201581de20a/Isaiahchurnexp?:iid=1")
+                  "4fdc2f44-19b3-4941-a9c2-831e88172728/ChurnALlExp?:iid=1")
 WORKSHEET = "Churn Rates (ICD)"
 PERIODS = ("0-30", "30", "60", "90")
+
+# Set by run() to the owner whose rows to keep when slicing the all-owners view.
+_SLICE_OWNER = ""
 
 
 def _fetch(out_path: Path | None = None, verbose: bool = False, page=None) -> Path:
@@ -79,43 +85,52 @@ def _num(v: str) -> float | None:
 
 
 def _parse(csv_path: Path) -> dict:
-    """Drop-in for wl_pull.parse. Isaiahchurnexp crosstab → the house
-    {office_total, reps} shape, where each period slot is {pct, num, denom,
-    color}. Layout: col0 owner, col1 rep, col2 color, col3 metric, cols4-7 =
-    0-30/30/60/90. Owner/Rep are merged (blank on repeat) → forward-fill."""
+    """Drop-in for wl_pull.parse. ChurnALlExp crosstab → the house
+    {office_total, reps} shape, SLICED to _SLICE_OWNER. Layout: col0 owner, col1
+    rep, col2 color, col3 metric, cols4-7 = 0-30/30/60/90 (col8 = 120, ignored).
+    Owner/Rep are merged (blank on repeat) → forward-fill. The view's own average
+    row is a GRAND total across all owners, so we skip it and recompute this
+    office's total from its reps (same as the D2D slice path)."""
+    from automations.alphalete_org_report.opt_nds import _norm_owner
+    from automations.new_internet_churn.pull import _recompute_office_total
+    want = _norm_owner(_SLICE_OWNER) if _SLICE_OWNER else ""
     rows = _decode(csv_path)
     owner = rep = ""
-    office: dict = {}
     reps: dict = {}
     for r in rows[1:] if rows else []:
         if len(r) < 8:
             continue
         owner = (r[0] or "").strip() or owner
         rep = (r[1] or "").strip() or rep
+        if "average" in owner.lower() or "average" in rep.lower():
+            continue                                  # grand-total row — skip
+        if want and _norm_owner(owner) != want:
+            continue                                  # slice: this owner only
         color = (r[2] or "").strip()
         metric = (r[3] or "").strip()
-        is_office = "average" in owner.lower() or "average" in rep.lower()
         for pi, pkey in enumerate(PERIODS):
             cell = (r[4 + pi] or "").strip()
             if not cell:
                 continue
-            target = office if is_office else reps.setdefault(rep, {})
-            slot = target.setdefault(pkey, {})
-            if not is_office and color and color != "Total":
+            slot = reps.setdefault(rep, {}).setdefault(pkey, {})
+            if color and color != "Total":
                 slot.setdefault("color", color)
-            if metric.startswith("Churn Rate"):
+            ml = metric.lower()                       # view-name-tolerant match:
+            if ml.startswith("churn rate"):           # "Churn Rate"
                 slot["pct"] = cell
-            elif metric.startswith("Disconnect count"):
+            elif ml.startswith("disconnect count"):   # "Disconnect Count Churn"
                 slot["num"] = _num(cell)
-            elif metric.startswith("Activated"):
+            elif ml.startswith("activated"):          # "Activated SPE/SP"
                 slot["denom"] = _num(cell)
-    return {"office_total": office, "reps": reps}
+    return {"office_total": _recompute_office_total(reps), "reps": reps}
 
 
 def run(owner: str | None = None, *, dry_run: bool = False,
         verbose: bool = False) -> int:
-    """Substitute the house wireless pull/parse with Isaiah's view, then run the
-    full house churn flow (fill his tab + render + post) for the wireless side."""
+    """Slice the shared per-rep NDS churn view to `owner`, then run the full house
+    churn flow (fill this office's tab + render + post) for the wireless side."""
+    global _SLICE_OWNER
+    _SLICE_OWNER = owner or ""
     wl_pull.fetch_crosstab = _fetch      # monkeypatch: same module churn.run holds
     wl_pull.parse = _parse
     argv = ["--only", "wireless"]
