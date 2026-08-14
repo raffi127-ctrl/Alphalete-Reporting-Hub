@@ -130,6 +130,11 @@ def main(argv=None) -> int:
                     help="print only; don't write the diag tab")
     ap.add_argument("--team", action="store_true",
                     help=f"apply the {TEAM_FIELD!r}={TEAM_VALUE!r} URL filter")
+    ap.add_argument("--cached", action="store_true",
+                    help="skip Tableau entirely: dump the crosstab CSVs the LAST "
+                         "GOOD run left in CACHE_DIR. These are the deleted "
+                         "worksheets' exact output — the spec any replacement has "
+                         "to reproduce.")
     ap.add_argument("--week-sat", default=None, metavar="YYYY-MM-DD",
                     help="pin the activation week to this SATURDAY (ISO only — "
                          "M/D/YYYY silently no-ops) instead of last cycle's")
@@ -158,6 +163,47 @@ def main(argv=None) -> int:
     rec(f"Carlos bonus source probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
     rec(f"team filter: {TEAM_VALUE!r}" if args.team else "team filter: (none)")
     rec(f"week pinned to Sat: {args.week_sat or '(last cycle)'}")
+
+    if args.cached:
+        # The four files pull_carlos() writes every run. They are still whatever
+        # the LAST SUCCESSFUL run downloaded, so after the source view died they
+        # are the only surviving record of the deleted worksheets' shape.
+        import time
+        names = {"sales": "cb_owner_sales.csv",
+                 "check2": "captain_team_check_2.csv",
+                 "check4": "captain_team_check_4.csv",
+                 "metrics": "cb_owner_metrics.csv"}
+        for key, fn in names.items():
+            p = Path(T.CACHE_DIR) / fn
+            rec("")
+            rec(f"=== {key}: {T.SHEETS[key]!r}  ({fn}) ===")
+            if not p.exists():
+                rec("  MISSING — no cached copy on this machine")
+                continue
+            age_h = (time.time() - p.stat().st_mtime) / 3600.0
+            rec(f"  downloaded {age_h:.1f}h ago ({p.stat().st_size} bytes)")
+            try:
+                rows = T._read(p)
+            except Exception as e:  # noqa: BLE001
+                rec(f"  !! unreadable: {type(e).__name__}: {str(e)[:120]}")
+                continue
+            if not rows:
+                rec("  (empty)")
+                continue
+            rec(f"  {len(rows)} rows, {len(rows[0])} columns")
+            for c, h in enumerate(rows[0]):
+                rec(f"  COL [{c:>2}] {h!r}")
+            rec("  first 15 data rows:")
+            for r in rows[1:16]:
+                rec("    " + " | ".join(str(c or "")[:26] for c in r[:10]))
+        if not args.no_upload:
+            try:
+                _upload(buf)
+                rec("")
+                rec(f"findings -> {DIAG_TAB!r} tab")
+            except Exception as e:  # noqa: BLE001
+                print(f"diag upload failed: {e}", flush=True)
+        return 0
 
     names = []
     for u in urls:
