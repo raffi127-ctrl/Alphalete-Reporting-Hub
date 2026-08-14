@@ -29,13 +29,19 @@ WHAT IT WILL NOT DO
   * overwrite a roll-call status ('X', 'T', 'RT', 'STF', ...) sitting in a day
     cell, because those share the cells with the counts;
   * write anybody but the rep asked for.
-IT ONLY FILLS DAYS NOBODY HAS FILLED (Eve 2026-08-14). A day already carrying
-numbers may have been corrected by hand, so a disagreement is printed and the
-day is left exactly as it stands -- e.g. 8/10 reads 2 Int + 1 DTV on the board
-where Tableau says 1 NEW INTERNET + 1 UPGRADE + 1 WIRELESS (same three units,
-different columns; and since the Apps formula drops upgrades, "correcting" it
-would take that Monday from 3 apps to 2). Pass --overwrite to force a day you
-know is wrong.
+WHICH DAYS IT TOUCHES (Eve 2026-08-14):
+  * the TARGET day (--date, default yesterday) is the day being closed, so
+    Tableau wins outright and the four cells are written to match it;
+  * any EARLIER day in the week is filled only when it is completely empty. A
+    day already carrying numbers may have been corrected by hand, so the
+    disagreement is printed and nothing moves -- e.g. 8/10 reads 2 Int + 1 DTV
+    where Tableau says 1 NEW INTERNET + 1 UPGRADE + 1 WIRELESS (same three
+    units, different columns; and since the Apps formula drops upgrades,
+    "correcting" it would take that Monday from 3 apps to 2);
+  * TODAY and later are never written. The export carries the running count of
+    a day still in progress, and filling it would freeze a partial number the
+    "only empty days" rule can never revisit.
+Pass --overwrite to force an older day you know is wrong.
 
   python -m automations.rep_sales_fill.run                    # preview yesterday's week
   python -m automations.rep_sales_fill.run --date 2026-08-13
@@ -295,12 +301,29 @@ def main(argv=None) -> int:
     plan, held = [], []
     _log("")
     _log("--- board vs Tableau ---")
+    monday = day - dt.timedelta(days=day.weekday())
+    today = dt.date.today()
     for d in P.WEEKDAYS:
         if d not in blocks:
             continue
+        d_date = monday + dt.timedelta(days=P.WEEKDAYS.index(d))
+        # NEVER write a day that is not over. The export carries today's
+        # running count, and the "only fill empty days" rule would freeze that
+        # partial number forever -- the first live run wrote Friday NL=3 at
+        # 13:15 with the day still going.
+        if d_date >= today:
+            if days.get(d):
+                _log(f"  {d:<10} en curso ({d_date.isoformat()}) -- no se toca")
+            continue
         wanted = days.get(d, {})
         cols = blocks[d]
-        writes, notes = B.plan_day(grid, row, cols, wanted, overwrite=a.overwrite)
+        # THE TARGET DAY IS THE ONE WE ARE CLOSING, so Tableau wins outright:
+        # that is what "de ahora en mas usa Tableau para Sanborn" means. Every
+        # OTHER day is only filled when empty, so a hand correction on an older
+        # day (8/10) survives.
+        is_target = d_date == day
+        writes, notes = B.plan_day(grid, row, cols, wanted,
+                                   overwrite=a.overwrite or is_target)
         cur = {m: B.cell(grid, row, c).strip() for m, c in sorted(cols.items())}
         shown = ", ".join(f"{m} {v or '-'}" for m, v in cur.items())
         want = ", ".join(f"{m} {wanted.get(m, 0) or '-'}" for m in sorted(cols))
