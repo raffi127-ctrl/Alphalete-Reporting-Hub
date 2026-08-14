@@ -221,6 +221,11 @@ def probe_filters(sunday: dt.date, rep: str) -> int:
                     _log(f"  <{tag}{' role=' + role if role else ''}> "
                          f"aria-label={lab!r}  texto={txt!r}")
         _log(f"--- {len(seen)} control(es) ---")
+        # ONE line, LAST: the queue keeps only the tail of the log in its
+        # result cell, so a 15-line listing is invisible from here.
+        short = [lab for lab, _tag in seen
+                 if len(lab) < 60 and not lab.startswith("Data Visualization")]
+        _log("LABELS: " + " | ".join(short))
     return 0
 
 
