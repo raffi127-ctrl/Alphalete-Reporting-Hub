@@ -37,11 +37,29 @@ revisión).
 `gmail-app-password-raffi127`, otro archivo) · Tableau · AppStream · ownerville ·
 Double Entry · Slack · Vantura.
 
-## 1. Cambiar la contraseña y generar la llave nueva
-En la cuenta: Seguridad → cambiar contraseña. Después, en la MISMA pantalla de
-Seguridad → **Contraseñas de aplicaciones** → generar una nueva (requiere que la
-verificación en 2 pasos siga activa). Son 16 letras en 4 grupos; los espacios no
-importan, el código los saca.
+## 1. Cambiar la contraseña y generar las llaves nuevas
+En la cuenta: Seguridad → cambiar contraseña. Después ir a
+**myaccount.google.com/apppasswords** (requiere que la verificación en 2 pasos
+siga activa). Se escribe un NOMBRE y se aprieta Create; salen 16 letras en 4
+grupos, **una sola vez**. Los espacios no importan, el código los saca.
+
+**No es una llave, son cuatro** — una por máquina/app, y así conviene dejarlo: la
+columna "last used" de esa pantalla es cómo se ve qué máquina dejó de mandar
+(estado al 2026-08-13):
+
+| Nombre en Google | Quién la usa |
+|---|---|
+| `Alphalete Reporting Hub` | la Windows de Eve / el Hub |
+| `Report's Mini` | Lucy 1 |
+| `Lucy 2 Reports` | Lucy 2 |
+| `Document Builder` | `document_builder` (config propia, ver su README) |
+
+Regenerá una por nombre. **No borres las viejas con el tacho antes de tiempo** —
+mientras la contraseña de la cuenta no cambió, siguen vivas y son el respaldo.
+Después del cambio quedan muertas igual y se pueden borrar tranquilas.
+
+Generar una llave nueva NO revoca las otras: por eso se puede ENSAYAR la rotación
+entera (generar + instalar + verificar) sin tocar la contraseña de la cuenta.
 
 ## 2. Ponerla en las 3 máquinas
 
@@ -50,7 +68,10 @@ importan, el código los saca.
 Set-Content -Path "$HOME\.config\recruiting-report\gmail-app-password" -Value "LLAVE" -Encoding utf8 -NoNewline
 ```
 
-**Lucy 1 y Lucy 2** — desde la Windows, por la cola:
+**Lucy 1 y Lucy 2** — desde la Windows, por la cola. Si alguna de las dos no
+bajó código desde el 2026-08-13, mandale primero un `--enqueue update` (Lucy 2
+NUNCA actualiza sola): sin la acción nueva en su copia del repo, la fila vuelve
+"unknown action".
 ```
 python -m automations.day_orchestrator.mini_control --enqueue set_alphalete_app_password LLAVE --machine "Lucy 1"
 python -m automations.day_orchestrator.mini_control --enqueue set_alphalete_app_password LLAVE --machine "Lucy 2"
