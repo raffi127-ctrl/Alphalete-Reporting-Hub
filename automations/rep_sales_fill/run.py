@@ -85,21 +85,31 @@ def week_ending(day: dt.date) -> dt.date:
     return day + dt.timedelta(days=6 - day.weekday())
 
 
-def view_url(sunday: dt.date, rep: str, filters: bool = True) -> str:
-    """The view, optionally with the two URL filters.
+def view_url(sunday: dt.date, rep: str, filters: str = "both",
+             refresh: bool = True) -> str:
+    """The view URL, with the filters named by `filters`.
 
-    `filters=False` is a DIAGNOSTIC. Lucy 2's Crosstab dialog came back with
-    zero sheets on this view while the same dialog, opened by hand, lists three
+    WHY THIS IS A DIAL. On Lucy 2 the Crosstab dialog came back with ZERO
+    sheets on this view, while the same dialog opened by hand lists three
     ("Last Refresh (2)", "Product Sales Summary by ORG", "Sales By ICD (Weekly
-    View)"). A filter name Tableau does not recognise can leave the viz
-    unrendered, and an unrendered viz has no worksheets to offer -- so pulling
-    the bare view tells us whether the filters are what breaks it.
+    View)"). Dropping every url parameter made all three appear -- so something
+    in the query string leaves the viz unrendered, and an unrendered viz has no
+    worksheets to offer. Three suspects: the week filter's field name, the Rep
+    filter's field name, and `:refresh=yes` (a forced re-query on a 4-week
+    dashboard). This picks one at a time so the culprit is named, not guessed.
+
+    Pulling unfiltered and selecting the rep in code is NOT an option here: the
+    unfiltered sheet comes back one row per ICD ('Aron Corral', 'Total', ...),
+    with REP collapsed, so Andrew's numbers are buried inside his owner's.
     """
-    if not filters:
-        return VIEW
-    return (f"{VIEW}?:refresh=yes"
-            f"&Sale%20Date%20Week%20Ending={sunday.isoformat()}"
-            f"&Rep={quote(rep)}")
+    parts = []
+    if refresh:
+        parts.append(":refresh=yes")
+    if filters in ("both", "week"):
+        parts.append(f"Sale%20Date%20Week%20Ending={sunday.isoformat()}")
+    if filters in ("both", "rep"):
+        parts.append(f"Rep={quote(rep)}")
+    return VIEW + ("?" + "&".join(parts) if parts else "")
 
 
 def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
@@ -111,7 +121,8 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
                                         dest, verbose=True)
 
 
-def list_sheets(sunday: dt.date, rep: str, filters: bool = True) -> int:
+def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
+                refresh: bool = True) -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
 
     The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
@@ -123,8 +134,8 @@ def list_sheets(sunday: dt.date, rep: str, filters: bool = True) -> int:
     """
     from automations.shared.tableau_patchright import download_crosstab_patchright
     try:
-        _log(f"  url: {view_url(sunday, rep, filters)}")
-        download_crosstab_patchright(view_url(sunday, rep, filters),
+        _log(f"  url: {view_url(sunday, rep, filters, refresh)}")
+        download_crosstab_patchright(view_url(sunday, rep, filters, refresh),
                                      "__LIST_SHEETS__ (deliberate miss)",
                                      OUT_DIR / "_list_sheets.csv", verbose=True)
     except Exception as exc:  # noqa: BLE001 -- the message IS the payload
@@ -149,9 +160,14 @@ def main(argv=None) -> int:
     ap.add_argument("--dump", action="store_true",
                     help="diagnostic: pull and print the crosstab's first rows "
                          "raw, to see which columns it actually carries")
-    ap.add_argument("--no-filters", action="store_true",
-                    help="diagnostic: open the view with NO url filters, to tell "
-                         "an unrecognised filter name from a render problem")
+    ap.add_argument("--filters", choices=("both", "none", "rep", "week"),
+                    default="both",
+                    help="which url filters to send. Diagnostic dial: the "
+                         "Crosstab dialog comes back empty with 'both' and full "
+                         "with 'none', so one of them leaves the viz unrendered")
+    ap.add_argument("--no-refresh", action="store_true",
+                    help="drop ':refresh=yes' (a forced re-query -- the third "
+                         "suspect for the empty dialog)")
     ap.add_argument("--sheet-id", help="write to a different workbook (a copy)")
     ap.add_argument("--apply", action="store_true", help="write (default: preview)")
     ap.add_argument("--overwrite", action="store_true",
@@ -169,7 +185,8 @@ def main(argv=None) -> int:
     _log(f"rep: {a.rep}   week ending {sunday.isoformat()}")
 
     if a.list_sheets:
-        return list_sheets(sunday, a.rep, filters=not a.no_filters)
+        return list_sheets(sunday, a.rep, filters=a.filters,
+                           refresh=not a.no_refresh)
 
     if a.dump:
         # The URL filters break this view: with them the viz never renders and
@@ -180,8 +197,8 @@ def main(argv=None) -> int:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         dest = OUT_DIR / "_dump.csv"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _log(f"  url: {view_url(sunday, a.rep, not a.no_filters)}")
-        download_crosstab_patchright(view_url(sunday, a.rep, not a.no_filters),
+        _log(f"  url: {view_url(sunday, a.rep, a.filters, not a.no_refresh)}")
+        download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh),
                                      a.sheet, dest, verbose=True)
         rows = P.read_rows(dest)
         _log("")
