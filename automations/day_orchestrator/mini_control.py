@@ -48,6 +48,11 @@ Actions:
   set_gmail_token <json>  install the gmail.compose token (gmail-token.json contents)
                         so draft-creating reports (captainship_drafts) can run
                         unattended. Verifies the mailbox is alphaletereporting@.
+  set_alphalete_app_password <pw>  install the alphaletereporting@ Gmail APP
+                        PASSWORD — the one credential every emailing report
+                        shares (SMTP sends + IMAP inbox reads). Push it here
+                        after rotating that account's password, which revokes
+                        the old one. Verifies SMTP + IMAP. Args auto-redacted.
   applicant_key [remove]  is the Applicant Tracker service-account key on THIS
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
@@ -119,7 +124,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "set_credico_state",
+                    "set_credico_state", "set_alphalete_app_password",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
@@ -151,7 +156,10 @@ SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
                   "set_slack_user_token",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
-                  "set_credico_state"}
+                  "set_credico_state",
+                  # The shared reporting mailbox's app password: one paste feeds
+                  # every emailing report on the machine (2026-08-13).
+                  "set_alphalete_app_password"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -2778,6 +2786,85 @@ def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     return True, f"raffi127 app password installed + IMAP login verified ({path.name})"
 
 
+def _action_set_alphalete_app_password(args: str) -> tuple[bool, str]:
+    """Install the alphaletereporting@ Gmail APP PASSWORD on THIS machine. Args
+    is the 16-char app password (spaces ok). Writes it to
+    ~/.config/recruiting-report/gmail-app-password (chmod 600), then verifies by
+    logging into BOTH Gmail SMTP (the sending half) and IMAP (the reading half).
+    NEVER echoes the password.
+
+    This one file is what nearly every emailing report shares: the SMTP sender
+    (scheduled_6_days_out.email_send.app_password — captainship, org board, board
+    emails, override bulletin, BOX order log, SARA down, the orchestrator's own
+    notifications) and the IMAP readers (shared.email_ingest, sci_campaigns,
+    residential_rep_count). Changing that account's Gmail password REVOKES the
+    app password, so a rotation silently breaks all of them at once until the new
+    one lands on every runner. Only raffi127's could be pushed remotely; this one
+    had to be typed at each mini, which nobody can sit at (Eve 2026-08-13).
+
+    In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row ends.
+    """
+    import shlex
+    import smtplib
+    import ssl
+
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        pw = parts[0].strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        pw = raw
+    pw = "".join(pw.split())        # Google shows it in 4 groups of 4
+    if len(pw) < 12:
+        return False, ("set_alphalete_app_password needs the 16-char app password "
+                       "as Args (generate it at myaccount.google.com → Security → "
+                       "App passwords, signed in as alphaletereporting@)")
+    path = Path.home() / ".config" / "recruiting-report" / "gmail-app-password"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(pw + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+
+    # Verify through the SAME loaders the reports use. SMTP first: it is the half
+    # with the most consumers, and an auth failure there means the paste is wrong
+    # (or belongs to another account) — worth failing the row over, since a
+    # written-but-dead credential looks installed while every send still breaks.
+    from automations.scheduled_6_days_out.email_send import (
+        FROM_ADDR, SMTP_HOST, SMTP_PORT, _APP_PW_ENV, app_password)
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT,
+                              context=ssl.create_default_context(),
+                              timeout=45) as s:
+            s.login(FROM_ADDR, app_password())
+    except Exception as e:  # noqa: BLE001
+        return False, (f"written to {path} but SMTP login FAILED "
+                       f"({type(e).__name__}: {str(e).splitlines()[0][:100]}) — "
+                       f"wrong app password, or it belongs to another account. "
+                       f"Reports on this machine still can't send.")
+    # email_send reads the env var BEFORE the file, so a stale env var on this
+    # machine would keep winning over what we just wrote — and the SMTP check
+    # above would have tested the env var, not the new paste.
+    env_note = ""
+    if os.environ.get(_APP_PW_ENV, "").strip():
+        env_note = (f" ⚠ {_APP_PW_ENV} is set in this machine's environment and "
+                    f"OVERRIDES the file — unset it or the old password keeps "
+                    f"being used by the sending half")
+    try:
+        from automations.shared import email_ingest
+        M = email_ingest._connect()
+        M.logout()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"app password installed, SMTP send verified — but IMAP "
+                      f"login FAILED ({type(e).__name__}: "
+                      f"{str(e).splitlines()[0][:90]}); inbox-reading reports "
+                      f"(financial, sci_campaigns, residential_rep_count) are "
+                      f"still down{env_note}")
+    return True, (f"alphaletereporting app password installed + verified "
+                  f"(SMTP send + IMAP read){env_note}")
+
+
 def _action_set_doubleentry_creds(args: str) -> tuple[bool, str]:
     """Install the Double Entry (doubleentry.com) login on THIS machine, so the
     Thursday financial_report can pull the ORG SUMMARY REPORT unattended now that
@@ -3718,6 +3805,7 @@ ACTIONS = {
     "install_card_scheduler": _action_install_card_scheduler,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
+    "set_alphalete_app_password": _action_set_alphalete_app_password,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
