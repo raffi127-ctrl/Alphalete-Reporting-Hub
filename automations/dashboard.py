@@ -3293,6 +3293,72 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "energy-crossref",
+        "name": "Energy Cross-reference (webform check)",
+        "creator": "Eve",
+        "emoji": "🔎",
+        "color": "#F2C744",
+        "category": "📊 Metrics",
+        "description": "Checks that every Energy sale from yesterday has its Google-Form ('webform') submission, and posts the result in that morning's 🐺 Alphalete Production thread — tagging the reps who still owe one, plus Rafael and Dylan. Replaces the check Evelyn was doing by hand every morning.",
+        "breakdown": (
+            "WHY IT MATTERS\n"
+            "A rep doesn't get paid on a sale whose webform was never filled "
+            "out. This is the daily nudge, sent to the people who owe one.\n\n"
+            "IT COUNTS THE DAY THREE WAYS\n"
+            "1. Slack — the last running Energy board of the night in "
+            "#alphalete-sales\n"
+            "2. Sales Board — the EN column on 'Alphalete SALES BOARD 2025'\n"
+            "3. Webform — the 'Base Power Energy' form responses, filtered on "
+            "'Date of Sale' (NOT the timestamp: reps file days late)\n\n"
+            "WHO GETS TAGGED\n"
+            "Each rep owes one form per sale and is asked for the HIGHER of "
+            "their two sale counts, so nobody is let off because one source "
+            "lagged. Whoever is short is tagged by name, then Rafael Hidalgo "
+            "and Dylan Twaddle — always, even on a clean day.\n\n"
+            "DOUBLE-FILED FORMS DON'T COUNT TWICE\n"
+            "Two rows from one rep with the same phone number or the same "
+            "customer are one sale, so a rep who submitted the same one twice "
+            "still shows as owing the other. The post names it.\n\n"
+            "IMAGES\n"
+            "The Energy Sales Board (re-rendered, because the 4:34 AM copy "
+            "predates the board's own fill) and the day's webform rows.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, right after the ~4 AM Production post creates the thread "
+            "it replies into. It never starts a thread of its own."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1wwvSEQAYqeGfgguvUeBR5ebtmez0JSik4BCHKOswa50/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "4 AM flow (after the Production post)",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Cross-reference posted in the day's 🐺 thread. Anyone short of a webform was tagged.",
+            "message_failed": "❌ Held or failed. The log says why — no Energy sales in either source, the 🐺 thread isn't up yet, or a rep couldn't be matched to a Slack account.",
+        },
+        "actions": [
+            {
+                "label": "Preview Yesterday",
+                "icon": "👁",
+                "primary": True,
+                "help": "Shows the rep-by-rep table and the exact message that would go out. Posts nothing.",
+                "module": "automations.energy_crossref.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Post Yesterday's Check",
+                "icon": "▶",
+                "primary": False,
+                "help": "Renders both images and posts the check as a reply in the day's 🐺 Alphalete Production thread, tagging the reps who owe a webform.",
+                "module": "automations.energy_crossref.run",
+                "args_fn": lambda: ["--post"],
+            },
+        ],
+    },
+    {
         "id": "fiber-owners-distro",
         "name": "AT&T Fiber Owners — Email Distro Sync",
         "creator": "Raf & Claude",

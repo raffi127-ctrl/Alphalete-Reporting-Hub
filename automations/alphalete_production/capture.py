@@ -234,10 +234,15 @@ def _access_token() -> str:
     return creds.token
 
 
-def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
+def _export_png(gid: int, rng: str, out_path: Path, token: str,
+                sheet_id: str = SHEET_ID) -> Path:
+    """Range of one tab -> trimmed PNG, via the Sheets PDF export endpoint.
+
+    `sheet_id` defaults to the Sales Board so every existing caller is unchanged;
+    energy_crossref passes the webform workbook through it."""
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
-    base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
+    base = (f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=pdf"
             f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
             f"&printtitle=false&pagenumbers=false&fzr=false"
             f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")

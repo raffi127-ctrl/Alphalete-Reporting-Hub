@@ -1617,6 +1617,39 @@
         "report_id": "alphalete-production"
       }
     },
+    "energy_crossref": {
+      "order": 4.1,
+      "on_scheduler": true,
+      "_note": "Posts the morning Energy webform check as a reply in that day's ':wolf: Alphalete Production MM/DD/YYYY' thread in #alphalete-sales - which is why order is 4.1, right after alphalete_production (4) creates that thread. It FINDS the thread and never starts one. Counts yesterday's Energy sales three ways: the last running board of the night in #alphalete-sales (same parser as energy_slack_fill), the 'EN' column of 'Alphalete SALES BOARD 2025', and the 'Base Power Energy' Google Form (1wwvSEQ...wa50, tab 'Form Responses 1') filtered on col J 'Date of Sale' - NOT the timestamp, reps file days late. Every rep owes ONE form per sale and is asked for the HIGHER of their two sale counts; whoever is short gets tagged, plus Rafael Hidalgo and Dylan Twaddle always. A rep who filed the SAME sale twice (same phone or same customer) is not covered twice. Carries two images: the Energy Sales Board re-rendered (the 4:34am one predates the board's own fill) and the day's webform rows. Replaces what Evelyn posted by hand - it reproduces her 8/13 post word for word and tag for tag.",
+      "_warn": "Posts AS Evelyn (the Slack user token) and TAGS REAL REPS. Preview any day without posting: `python -m automations.energy_crossref.run --date YYYY-MM-DD` - prints the rep-by-rep table and the exact message. HOLDS (exit 75, posts nothing) when neither source has a single Energy sale, or when the day's wolf thread isn't up yet. Exit 75 AFTER posting means it went out but the day wasn't clean: a rep with no Slack account (named in bold instead of tagged), a Slack line matching nobody, or a tally that didn't close. Slack ids are PINNED in energy_crossref/roster.py - the token has no users:read and two active accounts are both 'Miguel Vargas'; add a new rep there.",
+      "display_name": "Energy Cross-reference (webform check)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.energy_crossref.run"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "alphalete_production"
+      ],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "harvest_prime": {
       "order": 5.9,
       "on_scheduler": true,
