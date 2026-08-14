@@ -198,14 +198,19 @@ def probe_filters(sunday: dt.date, rep: str) -> int:
         page.wait_for_timeout(25_000)          # let the viz hydrate
         viz = page.frame_locator('iframe[title="Data Visualization"]')
         _log("")
-        _log("--- controles con aria-label dentro de la viz ---")
+        _log("--- controles con aria-label ---")
         seen = []
-        for sel in ("[aria-label]",):
+        # BOTH scopes: the first pass looked only inside the viz frame and came
+        # back with nothing but chrome (sheet tabs, titles), so the quick
+        # filters may hang off the page itself -- or off a nested frame.
+        scopes = [("viz", viz), ("page", page)]
+        for scope_name, scope in scopes:
             try:
-                els = viz.locator(sel)
-                n = min(els.count(), 120)
+                els = scope.locator("[aria-label]")
+                n = min(els.count(), 300)
+                _log(f"  [{scope_name}] {els.count()} elemento(s)")
             except Exception as exc:  # noqa: BLE001
-                _log(f"  {sel}: {exc}")
+                _log(f"  [{scope_name}] {exc}")
                 continue
             for i in range(n):
                 try:
@@ -216,9 +221,10 @@ def probe_filters(sunday: dt.date, rep: str) -> int:
                     txt = (el.inner_text() or "").strip().replace("\n", " ")[:40]
                 except Exception:  # noqa: BLE001
                     continue
-                if lab and (lab, tag) not in seen:
+                if lab and lab not in [s[0] for s in seen]:
                     seen.append((lab, tag))
-                    _log(f"  <{tag}{' role=' + role if role else ''}> "
+                    _log(f"  [{scope_name}] <{tag}"
+                         f"{' role=' + role if role else ''}> "
                          f"aria-label={lab!r}  texto={txt!r}")
         _log(f"--- {len(seen)} control(es) ---")
         # ONE line, LAST: the queue keeps only the tail of the log in its
