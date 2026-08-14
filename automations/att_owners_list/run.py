@@ -8,9 +8,11 @@ Every Friday, for the week that closed on Sunday:
   2. FILL   that week's column on the 'ATT Owners List' tab: a name where they
             sold, a red blank where they didn't, a new row (yellow) for anyone
             who has never been on the list.
-  3. TELL   #revision-emails who joined and who didn't sell. Nobody is removed:
-            a red cell says "not this week", and the weeks beside it say whether
-            it was a quiet week or the end of the road.
+  3. TELL   #revision-emails who joined and who didn't sell — as a reply in the
+            YEAR's thread ('ATT Owners List — 2026'), which is started on the
+            first run of a new year. Nobody is removed: a red cell says "not
+            this week", and the weeks beside it say whether it was a quiet week
+            or the end of the road.
   4. SEED   any brand-new owner into all THREE Country Sales Board boxes, so
             their sales have somewhere to land the very next morning.
 
@@ -251,7 +253,9 @@ def main(argv=None) -> int:
 
     # ---- Slack ----------------------------------------------------------
     text = SP.build(plan, pull, board=board_result, tab=tab)
-    SP.post(text, dry_run=not args.post)
+    # The year of the WEEK, not of today: a week ending in late December that
+    # gets filled in January still belongs to December's thread.
+    SP.post(text, year=want.year, dry_run=not args.post)
 
     print(f"=== done — {plan.in_program} owner(s) in the program for "
           f"WE {want.isoformat()} ===")
