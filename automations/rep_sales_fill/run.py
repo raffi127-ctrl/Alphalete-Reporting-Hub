@@ -18,9 +18,12 @@ SOURCE, spelled out:
   workbook  ATT Tracker 2.1 - D2D
   view      PRODUCT SALES SUMMARY 4WK
   sheet     "Sales By ICD (+/-) REP - (+/-) Weekdays"  (the lower table)
-  filters   Sale Date Week Ending = the week's SUNDAY (ISO in the URL --
-            Tableau silently ignores 8/16/2026 and keeps the default week)
-            Rep = the rep
+  filters   Rep = the rep -- this one works.
+            Sale Date Week Ending = the week's SUNDAY -- THIS ONE DOES NOT
+            WORK IN THE URL, in either format. ISO leaves the viz unrendered
+            (the Crosstab dialog then offers zero sheets); '8/16/2026' renders
+            but is ignored, and two different weeks return identical data.
+            See view_url() -- the module is off the scheduler over this.
   target    'Alphalete SALES BOARD 2025' -> tab 'Sales Board WE m.d' ->
             rep's row in col C -> that day's Int / Int Up / DTV / NL cells
 
@@ -127,17 +130,32 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
     unfiltered sheet comes back one row per ICD ('Aron Corral', 'Total', ...),
     with REP collapsed, so Andrew's numbers are buried inside his owner's.
 
-    THE FILTER VALUES ARE FULLY ESCAPED (safe=""), and the week one has to be.
-    `quote()` leaves '/' alone by default, so '8/16/2026' went into the query
-    string with raw slashes -- Tableau did not recognise the value, dropped the
-    filter without a word, and served its own default window. That is what
-    poisoned every pull on 2026-08-14: the crosstab came back with the right
-    OWNER (John Richard Young, the ICD Andrew's sales land in, so the Rep
-    filter was applying) but the wrong WEEK -- 21 units across Tue-Fri, no
-    Monday, and not one UPGRADE INTERNET or VIDEO row, while Andrew's WE 8/16
-    is 10 units with an upgrade on Monday and a video on Thursday. The board
-    got written from that, and the target-day overwrite then blanked his real
-    Thursday down to 2 apps.
+    The values are fully escaped (safe=""), because `quote()` leaves '/' alone
+    by default and '8/16/2026' was going into the query string with raw
+    slashes. That is correct hygiene but it is NOT what is broken here -- see
+    below; the escaped url returns exactly the same export as the raw one.
+
+    THE WEEK FILTER IS INERT (proved on Lucy 2, 2026-08-14). Asking for WE
+    8/16 and for WE 7/19 -- four weeks apart -- returns byte-identical data:
+
+        Tue {Int 1, NL 5} · Wed {Int 1, NL 9} · Thu {NL 2} · Fri {NL 3}
+
+    So Tableau is not reading 'Sale Date Week Ending' as a url-filterable
+    field at all; it serves the same default window whatever we ask for. The
+    Rep filter DOES apply -- the export comes back with a single owner, John
+    Richard Young, which is the ICD Andrew's sales are credited to.
+
+    How to tell the wrong week apart from a quiet one, without another pull:
+    that export carries no UPGRADE INTERNET and no VIDEO row at all, while
+    Andrew's real WE 8/16 is 10 units WITH an upgrade on Monday and a video on
+    Thursday (and no Monday column at all, though he sold 3 that Monday).
+    Writing from it blanked his real Thursday from 4 apps down to 2.
+
+    NEXT SUSPECT is the field NAME, not the value: it may be a dashboard
+    PARAMETER rather than a filter, or carry a different caption. Until that is
+    settled the module stays off the scheduler -- and whatever replaces it has
+    to be validated against a known figure of the week asked for, not just
+    against the export's own total row (that reconciles fine here: 2 + 19 = 21).
     """
     parts = []
     if refresh:
