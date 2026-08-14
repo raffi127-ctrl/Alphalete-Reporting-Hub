@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import colorsys
 import datetime as dt
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -117,6 +118,30 @@ def _lum(rgb) -> float:
     return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
 
 
+_WE_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+
+
+def header_row_from_dates(col_a, avg_row):
+    """The header row derived from the WE dates alone, or None.
+
+    Fallback for when col A's 'WE' label isn't there. On 2026-08-14 someone
+    cleared A1 on the 'Captainship Activations' tab (the orange table's copy in
+    Q1 survived) and the whole run died at exit 1 — even though the fill, which
+    only anchors on AVG, had already written the day fine. A missing cosmetic
+    header should not cost a report: the header always sits directly above the
+    first WE row, so walk up from AVG through the contiguous block of dates and
+    take the row above it."""
+    first_date = None
+    for r in range(avg_row - 1, 0, -1):
+        s = (col_a[r - 1] if r - 1 < len(col_a) else "").strip()
+        if not _WE_DATE_RE.match(s):
+            break
+        first_date = r
+    if first_date is None or first_date <= 1:
+        return None
+    return first_date - 1
+
+
 def _find_anchors(ws):
     """Return (header_row, [9 data rows], avg_row) by label, not index."""
     col_a = ws.col_values(1)
@@ -128,9 +153,17 @@ def _find_anchors(ws):
         if s == AVG_LABEL:
             avg_row = i
             break
-    if header_row is None or avg_row is None:
-        raise RuntimeError("Couldn't locate 'WE' header row and/or "
-                           f"'{AVG_LABEL}' row in col A.")
+    if avg_row is None:
+        raise RuntimeError(f"Couldn't locate the '{AVG_LABEL}' row in col A.")
+    if header_row is None:
+        header_row = header_row_from_dates(col_a, avg_row)
+        if header_row is not None:
+            print(f"  ⚠ col A has no 'WE' header cell — using row {header_row} "
+                  f"(the row above the first WE date). Put 'WE' back in "
+                  f"A{header_row} when you get a chance.", flush=True)
+    if header_row is None:
+        raise RuntimeError("Couldn't locate the 'WE' header row in col A, and "
+                           "no WE dates above the AVG row to infer it from.")
     first = max(header_row + 1, avg_row - N_ROWS)
     return header_row, list(range(first, avg_row)), avg_row
 

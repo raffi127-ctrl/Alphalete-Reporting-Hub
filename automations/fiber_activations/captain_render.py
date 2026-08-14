@@ -62,9 +62,20 @@ def _find_we_and_avg(ws):
         if s == R.AVG_LABEL:
             avg_row = i
             break
-    if header_row is None or avg_row is None:
-        raise RuntimeError(f"Couldn't find 'WE' header and/or '{R.AVG_LABEL}' "
-                           f"in col A of {ws.title!r}.")
+    if avg_row is None:
+        raise RuntimeError(f"Couldn't find '{R.AVG_LABEL}' in col A of "
+                           f"{ws.title!r}.")
+    if header_row is None:
+        # A cleared 'WE' cell shouldn't cost the whole render — infer the header
+        # from the WE dates instead. See render.header_row_from_dates.
+        header_row = R.header_row_from_dates(col_a, avg_row)
+        if header_row is not None:
+            print(f"  ⚠ {ws.title!r}: col A has no 'WE' header cell — using "
+                  f"row {header_row}. Put 'WE' back in A{header_row}.",
+                  flush=True)
+    if header_row is None:
+        raise RuntimeError(f"Couldn't find the 'WE' header in col A of "
+                           f"{ws.title!r}, and no WE dates to infer it from.")
     return header_row, avg_row
 
 
