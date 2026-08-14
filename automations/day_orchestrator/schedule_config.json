@@ -4568,7 +4568,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 35,
       "verify": null,
       "machine": "Lucy 2"
     },

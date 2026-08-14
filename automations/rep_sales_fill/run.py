@@ -87,13 +87,37 @@ def view_url(sunday: dt.date, rep: str) -> str:
             f"&Rep={quote(rep)}")
 
 
-def pull(sunday: dt.date, rep: str, dest: Path) -> Path:
+def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
     from automations.shared.tableau_patchright import download_crosstab_patchright
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _log(f"  pulling {CROSSTAB_SHEET!r}")
+    _log(f"  pulling {sheet!r}")
     _log(f"  {view_url(sunday, rep)}")
-    return download_crosstab_patchright(view_url(sunday, rep), CROSSTAB_SHEET,
+    return download_crosstab_patchright(view_url(sunday, rep), sheet,
                                         dest, verbose=True)
+
+
+def list_sheets(sunday: dt.date, rep: str) -> int:
+    """Print the worksheet names the Crosstab dialog actually offers.
+
+    The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
+    the dashboard -- 'Sales By ICD (+/-) REP - (+/-) Weekdays' is what the user
+    reads on screen and is NOT what the dialog calls it (that mismatch is what
+    made the first live run fail). Asking for a sheet that cannot exist makes
+    the helper raise with the real list attached, which is the only way to see
+    the names without a human at the browser.
+    """
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    try:
+        download_crosstab_patchright(view_url(sunday, rep),
+                                     "__LIST_SHEETS__ (deliberate miss)",
+                                     OUT_DIR / "_list_sheets.csv", verbose=True)
+    except Exception as exc:  # noqa: BLE001 -- the message IS the payload
+        _log("")
+        _log("--- hojas que ofrece el Crosstab dialog ---")
+        _log(str(exc))
+        return 0
+    _log("!! the sentinel sheet name somehow matched -- nothing to report")
+    return 1
 
 
 def main(argv=None) -> int:
@@ -102,6 +126,10 @@ def main(argv=None) -> int:
     ap.add_argument("--date", help="any day in the target week (YYYY-MM-DD); "
                                    "default yesterday")
     ap.add_argument("--from-file", help="parse this crosstab instead of pulling")
+    ap.add_argument("--sheet", default=CROSSTAB_SHEET,
+                    help="worksheet name in the Crosstab dialog")
+    ap.add_argument("--list-sheets", action="store_true",
+                    help="print the worksheet names the dialog offers, then stop")
     ap.add_argument("--sheet-id", help="write to a different workbook (a copy)")
     ap.add_argument("--apply", action="store_true", help="write (default: preview)")
     ap.add_argument("--overwrite", action="store_true",
@@ -118,13 +146,16 @@ def main(argv=None) -> int:
     sunday = week_ending(day)
     _log(f"rep: {a.rep}   week ending {sunday.isoformat()}")
 
+    if a.list_sheets:
+        return list_sheets(sunday, a.rep)
+
     # ---- source -----------------------------------------------------------
     if a.from_file:
         src = Path(a.from_file)
         _log(f"  reading {src} (offline)")
     else:
         src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
-                   f"{a.rep.replace(' ', '_').lower()}.csv")
+                   f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet)
     days = P.parse(src)
 
     week_total = sum(P.day_total(m) for m in days.values())
