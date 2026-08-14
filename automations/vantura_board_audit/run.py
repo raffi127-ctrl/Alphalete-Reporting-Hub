@@ -14,10 +14,15 @@ Two invariants, both broken silently in the past:
    row 5, pushing range starts down).
 
 Findings are appended to the board's "Report an Issue" tab, deduped against
-rows already there. Read-only against the board except that tab.
+rows already there. The tab is the only thing this writes, with ONE deliberate
+exception since 2026-08-14: it closes open terminations itself (Roll Call
+Status -> 'Terminated' for anyone already carrying a past Date Gone) instead of
+asking a human to flip the same cell every few weeks. See the auto-close block
+below for how narrow that write is and what it refuses to touch.
 
-  python -m automations.vantura_board_audit.run            # audit + report
-  python -m automations.vantura_board_audit.run --dry-run  # print only
+  python -m automations.vantura_board_audit.run                  # audit + fix + report
+  python -m automations.vantura_board_audit.run --dry-run        # print only
+  python -m automations.vantura_board_audit.run --no-auto-close  # report, don't fix
 """
 from __future__ import annotations
 
@@ -58,6 +63,35 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # only once Carlos says JE is off the board too.
 BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
 ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
+
+# --- auto-close of open terminations (2026-08-14, Eve) ---------------------
+# Roll Call col B 'Status' and col M 'Date Gone' are maintained BY HAND and
+# independently, so they drift apart every few weeks: 15 rows on 2026-07-31,
+# 8 still open on 2026-08-11, 1 more on 2026-08-14. Every time, the audit
+# reported it, a human flipped the same cell, and the report went green again.
+# Eve asked for the loop to close itself — a Date Gone in the past IS the
+# termination; the status is bookkeeping that trails it.
+#
+# This is the ONE place the audit writes outside 'Report an Issue', and it is
+# deliberately narrow:
+#   - only 'Active' -> 'Terminated', never any other status. 'New Start' rows
+#     carry a Date Gone all week (8 of them on 2026-08-14, r8-r17) — that is
+#     the live wash-out cohort, which rolls to Terminated on its own. Touching
+#     them would rewrite a working process.
+#   - only a date that PARSES and is not in the future. Someone who gives
+#     notice gets a future Date Gone and is still working; closing them early
+#     would drop them out of headcount while they are on the board.
+#   - only when the columns were found BY HEADER (see _roll_cols). A write to
+#     a guessed index after a re-layout is the expensive kind of wrong.
+#   - only up to MAX_AUTO_CLOSE rows at once. A sudden pile is far more likely
+#     to be a shifted column than 40 people quitting overnight, so past the cap
+#     it refuses to write and reports instead — the old behaviour.
+# Anything it declines to close still comes out as the usual finding, with the
+# reason attached, so declining is never silent.
+TERMINATED = "Terminated"
+MAX_AUTO_CLOSE = 25
+ROLL_HEADERS = {"status": "status", "name": "roll call", "gone": "date gone"}
+ROLL_FALLBACK = {"status": 1, "name": 3, "gone": 12}   # cols B / D / M today
 
 
 def _log(msg: str) -> None:
@@ -204,7 +238,111 @@ def _later(a: str, b: str) -> str:
     return a or b
 
 
-def audit(write: bool, log=_log) -> int:
+def _parse_mdy(s):
+    """'8/13/2026' -> date, or None. Roll Call dates are typed by hand, so the
+    cell can hold anything at all — treat 'unparseable' as 'don't touch it'."""
+    for f in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(str(s).strip(), f).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _roll_cols(roll, log=_log):
+    """Roll Call's Status / name / Date Gone column indexes, found BY HEADER.
+
+    Returns (cols, resolved). `resolved` False means the header row wasn't
+    found: reads fall back to today's positions (cols B/D/M) so the audit still
+    runs, but auto-close refuses to write — the repo rule is label lookup over
+    indexes, and that matters far more when writing than when reading."""
+    for r in roll[:5]:
+        hdr = {str(c).strip().lower(): j for j, c in enumerate(r)}
+        got = {k: hdr.get(v) for k, v in ROLL_HEADERS.items()}
+        if all(v is not None for v in got.values()):
+            return got, True
+    log("Roll Call header row not found (Status / Roll Call / Date Gone) — "
+        "reading at today's positions, auto-close OFF this run")
+    return dict(ROLL_FALLBACK), False
+
+
+def _close_terminations(ws, roll, cols, resolved, write, log=_log):
+    """Flip Status -> 'Terminated' for rows still 'Active' with a PAST Date Gone.
+
+    Mutates `roll` in place for the rows it closes, so the checks further down
+    stop counting them as active headcount in the same run — otherwise the very
+    rows just closed would come straight back as MISSING FROM BOARD findings.
+
+    Returns (closed, still_open):
+      closed     [(row, name, date_gone)] actually written and read back
+      still_open [(row, name, date_gone, why)] left alone — `why` is "" when it
+                 was simply not this run's job (dry-run / --no-auto-close), and
+                 a real explanation when the row was REFUSED. The caller only
+                 spells out non-empty reasons, so the plain finding text stays
+                 exactly what it always was."""
+    st, nm, gn = cols["status"], cols["name"], cols["gone"]
+    today = dt.date.today()
+    ready, held = [], []
+    for ri, r in enumerate(roll, start=1):
+        if len(r) <= max(st, nm, gn):
+            continue
+        if str(r[st]).strip() != "Active":
+            continue
+        who, gone = str(r[nm]).strip(), str(r[gn]).strip()
+        if not who or not gone:
+            continue
+        d = _parse_mdy(gone)
+        if d is None:
+            held.append((ri, who, gone, f"Date Gone {gone!r} isn't a date"))
+        elif d > today:
+            held.append((ri, who, gone, "Date Gone is in the future — they may "
+                                        "still be working their notice"))
+        else:
+            ready.append((ri, who, gone))
+
+    if ready and not resolved:
+        held += [(ri, w, g, "Roll Call headers moved — refusing to write a "
+                  "guessed column") for ri, w, g in ready]
+        ready = []
+    elif len(ready) > MAX_AUTO_CLOSE:
+        held += [(ri, w, g, f"{len(ready)} rows at once is over the "
+                  f"{MAX_AUTO_CLOSE}-row auto-close cap — that looks like a "
+                  "shifted column, not a leaver batch") for ri, w, g in ready]
+        ready = []
+    elif ready and not write:
+        for ri, w, g in ready:
+            log(f"(no write) would close {_a1col(st)}{ri}: {w} "
+                f"Active -> {TERMINATED} (Date Gone {g})")
+        held += [(ri, w, g, "") for ri, w, g in ready]
+        ready = []
+
+    if not ready:
+        return [], held
+
+    ws.batch_update([{"range": "%s%d" % (_a1col(st), ri),
+                      "values": [[TERMINATED]]} for ri, _, _ in ready],
+                    value_input_option="RAW")
+
+    # Read back before believing it. A silent no-op write here would leave the
+    # row Active AND drop its finding — the worst of both.
+    back = ws.get_all_values()
+    closed, missed = [], []
+    for ri, who, gone in ready:
+        got = (str(back[ri - 1][st]).strip()
+               if len(back) >= ri and len(back[ri - 1]) > st else "")
+        if got == TERMINATED:
+            roll[ri - 1][st] = TERMINATED
+            closed.append((ri, who, gone))
+            log(f"auto-closed {_a1col(st)}{ri}: {who} Active -> {TERMINATED} "
+                f"(Date Gone {gone})")
+        else:
+            missed.append((ri, who, gone,
+                           f"auto-close wrote {TERMINATED!r} but the cell reads "
+                           f"{got!r} — protected range?"))
+    return closed, held + missed
+
+
+def audit(write: bool, log=_log, auto_close: bool = True) -> int:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
     # Sheets TRIMS trailing empty cells, so a rep row that stops at col L comes
@@ -220,7 +358,13 @@ def audit(write: bool, log=_log) -> int:
     board = _pad(sh.worksheet("Sales Board").get("A1:AQ110"))
     board_form = _pad(sh.worksheet("Sales Board").get(
         "A1:AQ110", value_render_option="FORMULA"))
-    roll = sh.worksheet("Roll Call").get_all_values()
+    roll_ws = sh.worksheet("Roll Call")
+    roll = roll_ws.get_all_values()
+    # One column resolution for the whole run, by header — the roll's Status /
+    # name / Date Gone were three separate hardcoded indexes before, and the
+    # auto-close below WRITES one of them.
+    roll_cols, roll_hdr_ok = _roll_cols(roll, log=log)
+    R_STATUS, R_NAME = roll_cols["status"], roll_cols["name"]
     alias = _alias_map(sh, log=log)
 
     # rep block = rows >=5 with a name and a week tag, or (for tag-less manual
@@ -246,7 +390,8 @@ def audit(write: bool, log=_log) -> int:
 
     # 1. off-menu adds: board rep with no roll-call row (script's prefix rule)
     roll_names = _with_aliases(
-        {_norm(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}, alias)
+        {_norm(r[R_NAME]) for r in roll
+         if len(r) > R_NAME and str(r[R_NAME]).strip()}, alias)
     for i, name in reps:
         n = _norm(name)
         hit = n in roll_names or any(
@@ -266,20 +411,25 @@ def audit(write: bool, log=_log) -> int:
     #      through sales history, so check it before inferring anything.
     #      Reported as one grouped finding: 15 separate lines would blow past
     #      the per-run cap and bury the typos this tab exists to surface.
+    #      Since 2026-08-14 the audit CLOSES these itself rather than asking a
+    #      human to flip the same cell every few weeks (see the auto-close block
+    #      at the top of this file for exactly how narrow that write is). What
+    #      it declines to close still reports here, with the reason.
     def _gone_date(r):
-        return str(r[12]).strip() if len(r) > 12 else ""
+        j = roll_cols["gone"]
+        return str(r[j]).strip() if len(r) > j else ""
 
-    open_terms = [(ri, str(r[3]).strip(), _gone_date(r))
-                  for ri, r in enumerate(roll, start=1)
-                  if len(r) > 12 and str(r[1]).strip() == "Active"
-                  and str(r[3]).strip() and _gone_date(r)]
-    if open_terms:
-        who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g in open_terms)
+    closed, still_open = _close_terminations(
+        roll_ws, roll, roll_cols, roll_hdr_ok, write and auto_close, log=log)
+    if still_open:
+        who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g, _ in still_open)
+        why = sorted({w for _, _, _, w in still_open if w})
+        extra = (" Auto-close left them alone: " + "; ".join(why) + ".") if why else ""
         findings.append(
-            f"TERMINATION BATCH NOT CLOSED: {len(open_terms)} Roll Call row(s) "
+            f"TERMINATION BATCH NOT CLOSED: {len(still_open)} Roll Call row(s) "
             f"still say Active but carry a Date Gone — {who}. Set col B to "
             "'Terminated'. Until then they count as active headcount and the "
-            "audit reports them as missing from the Sales Board.")
+            f"audit reports them as missing from the Sales Board.{extra}")
 
     # 1b. reverse direction (added 2026-07-20 after Edgar's board row vanished
     #     mid-morning with no alert): every roll person whose status shows
@@ -297,11 +447,13 @@ def audit(write: bool, log=_log) -> int:
         return n in board_names or any(
             k.startswith(n + " ") or n.startswith(k + " ") for k in board_names)
     for ri, r in enumerate(roll, start=1):
-        if len(r) < 4 or not str(r[3]).strip():
+        if len(r) <= R_NAME or not str(r[R_NAME]).strip():
             continue
-        if str(r[1]).strip() != "Active":
+        # rows auto-closed a moment ago read 'Terminated' here (roll was mutated
+        # in place), so they drop out of this loop exactly as they should
+        if str(r[R_STATUS]).strip() != "Active":
             continue
-        n = _norm(r[3])
+        n = _norm(r[R_NAME])
         if n in EXEMPT:
             continue
         # not scoreboarded here at all -> "missing from the board" is meaningless
@@ -309,7 +461,7 @@ def audit(write: bool, log=_log) -> int:
                 if len(r) > ROLL_CAMPAIGN_COL else "")
         if camp and camp not in BOARD_CAMPAIGNS:
             log(f"campaign {camp!r} is not on this board — skipping "
-                f"{str(r[3]).strip()} (roll r{ri})")
+                f"{str(r[R_NAME]).strip()} (roll r{ri})")
             continue
         if _on_board(n):
             continue
@@ -322,7 +474,7 @@ def audit(write: bool, log=_log) -> int:
         # "deleted by accident?" line for everyone, and on 2026-07-30 that was
         # 8 people of whom only 2 were really missing: 2 had already been closed
         # out in New DU and 4 were still in training. Split by evidence.
-        who = str(r[3]).strip()
+        who = str(r[R_NAME]).strip()
         cohort = _cohort_weeks_old(str(r[0]) if r else "")
         du = du_status.get(n, "")
         sales, last_sale, by_wk = sales_by_rep.get(n, (0, "", {}))
@@ -409,7 +561,8 @@ def audit(write: bool, log=_log) -> int:
                 bound_end = end if bound_end is None else min(bound_end, end)
     if hits:
         roll_last = max((k for k, r in enumerate(roll, start=1)
-                         if len(r) > 3 and str(r[3]).strip()), default=0)
+                         if len(r) > R_NAME and str(r[R_NAME]).strip()),
+                        default=0)
         over = ""
         if bound_end and roll_last > bound_end:
             over = (f" The Roll Call already carries names down to r{roll_last}, "
@@ -422,15 +575,36 @@ def audit(write: bool, log=_log) -> int:
             "('Roll Call'!$B:$B): a bounded range misses rows appended past its "
             f"end AND shifts when rows go in above its start.{over}")
 
-    findings += audit_stations(sh, last_rep, reps, roll, log=log, alias=alias)
+    findings += audit_stations(sh, last_rep, reps, roll, log=log, alias=alias,
+                               name_col=R_NAME)
 
     from automations.shared import run_manifest
 
+    # What auto-close DID has to leave a trace. A run that quietly rewrote four
+    # Roll Call statuses and then said "clean" is indistinguishable from a run
+    # that found nothing — and the second one is the only one that's true.
+    closed_note = ""
+    if closed:
+        closed_note = (
+            f"auto-closed {len(closed)} Roll Call termination(s) "
+            "(Active -> Terminated, Date Gone already set): "
+            + "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g in closed))
+        log(closed_note)
+
     if not findings:
         log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}, "
-            "stations OK")
+            "stations OK" + (f"; {len(closed)} termination(s) auto-closed"
+                             if closed else ""))
         if write:
-            run_manifest.mark_clean(REPORT_ID, kind="finding")
+            # mark_clean() can't carry a note, and the closures are worth one:
+            # ok=True keeps the Hub card green and clears any prior finding,
+            # exactly as mark_clean would.
+            if closed_note:
+                run_manifest.write_manifest(REPORT_ID, ok=True, kind="finding",
+                                            failed=[], retry_args=[],
+                                            note=closed_note)
+            else:
+                run_manifest.mark_clean(REPORT_ID, kind="finding")
         return 0
 
     ri = sh.worksheet("Report an Issue")
@@ -473,12 +647,15 @@ def audit(write: bool, log=_log) -> int:
     # IO) still exits non-zero from main(); a layout break still returns 2 above.
     note = (f"{len(findings)} board data-quality finding(s) logged to the "
             "board's 'Report an Issue' tab: " + " | ".join(f[:140] for f in findings))
+    if closed_note:
+        note += " | " + closed_note
     run_manifest.write_manifest(REPORT_ID, ok=False, kind="finding",
                                 failed=findings, note=note, retry_args=[])
     return 0
 
 
-def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None) -> list[str]:
+def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
+                   name_col: int = 3) -> list[str]:
     """Stations-tab invariants (added 2026-07-19 after the audit that found
     all of these broken at once):
       1. no formula-error cells (#REF!/#N/A/... — e.g. the deleted week-label
@@ -563,7 +740,8 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None) -> list[
 
     known = _with_aliases(
         {_n(n) for _, n in reps} | {
-            _n(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()},
+            _n(r[name_col]) for r in roll
+            if len(r) > name_col and str(r[name_col]).strip()},
         alias or {})
     def matches(name):
         n = _n(name)
@@ -634,9 +812,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Vantura board daily audit.")
     ap.add_argument("--dry-run", action="store_true",
                     help="print findings; don't write to Report an Issue")
+    ap.add_argument("--no-auto-close", action="store_true",
+                    help="don't flip Roll Call statuses; just report open "
+                         "terminations the way the audit did before 2026-08-14")
     args = ap.parse_args(argv)
     try:
-        return audit(write=not args.dry_run)
+        return audit(write=not args.dry_run,
+                     auto_close=not args.no_auto_close)
     except Exception as e:  # noqa: BLE001 — audit must fail loud in the log
         _log(f"AUDIT ERROR: {type(e).__name__}: {e}")
         return 3

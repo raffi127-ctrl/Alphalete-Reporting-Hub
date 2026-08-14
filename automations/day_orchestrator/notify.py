@@ -315,7 +315,27 @@ def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
     return True
 
 
-def _is_findings_report(rs) -> bool:
+def _manifest_id(cfg, rs) -> str:
+    """The id this report's manifest is FILED under, which is not always its
+    config key: schedule_config's `verify: {type: manifest, report_id: …}` may
+    name a different one. vantura_board_audit is keyed with an underscore in the
+    config but writes 'vantura-board-audit' (run.py REPORT_ID).
+
+    reconcile.verify() already resolves it this way; anything reading a manifest
+    off `rs.report_id` alone silently reads NOTHING for those reports and takes
+    whatever the not-found branch does. That is how the Vantura audit's findings
+    post kept coming out as the generic "ran, but 1 didn't fill" with a re-run
+    block attached (2026-08-14) — _is_findings_report looked up the underscore
+    key, got None, and fell through to the fill-report path every single day."""
+    try:
+        r = cfg.reports.get(rs.report_id)
+        vid = (getattr(r, "verify", None) or {}).get("report_id")
+        return vid or rs.report_id
+    except Exception:  # noqa: BLE001
+        return rs.report_id
+
+
+def _is_findings_report(cfg, rs) -> bool:
     """True when this report is a data-quality AUDIT — its last manifest was
     written with kind='finding' (e.g. the Vantura board audit). Those runs list
     open findings, not failed fills: the channel post stays a one-line count and
@@ -324,7 +344,7 @@ def _is_findings_report(rs) -> bool:
     falls back to the normal fill-report path."""
     try:
         from automations.shared import run_manifest
-        m = run_manifest.read_manifest(rs.report_id)
+        m = run_manifest.read_manifest(_manifest_id(cfg, rs))
         return bool(m) and m.get("kind") == "finding"
     except Exception:  # noqa: BLE001
         return False
@@ -375,7 +395,7 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     # channel makes a wall of text (Megan 2026-08-02: the Vantura board audit "is
     # too long in the channel"). Keep the PARENT to a one-line count and push the
     # finding text into the thread; skip the re-run / paste-to-Claude boilerplate.
-    if kind == "INCOMPLETE" and _is_findings_report(rs):
+    if kind == "INCOMPLETE" and _is_findings_report(cfg, rs):
         return _post_findings_corrections(cfg, rs, label, dry_run)
 
     # Split the missing units into TERMINATED (on the terminated-ICD list — should

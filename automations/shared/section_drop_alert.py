@@ -47,25 +47,51 @@ def _dedup_path(report_id: str, day: dt.date, failed: Sequence[str]) -> Path:
 # What the report LOST, per kind — a fill that drops a day is not a thread that
 # dropped a section, and telling Eve "it did NOT post" about a board that filled
 # fine sends her looking in the wrong place (2026-08-09).
+#
+# Each entry owns its WHOLE headline, not just a tail. 'dropped N X this run'
+# was hard-coded into _compose, which meant a kind whose run didn't drop
+# anything (see 'finding') could not be worded truthfully no matter what it put
+# in the other fields.
+#   what    unit label, pluralised with {s}
+#   headline  first line; {report_id} {n} {what} {s} {tail}
+#   label   the second line's prefix ('Missing', 'Findings')
+#   bullets one item per line instead of a comma-joined run-on
+#   fix     default *Fix:* line when the caller passes no remediation
+#   tail    closing line: what the reader is left with
 _KINDS = {
-    "section": ("section", "it did NOT post.",
-                "re-run only the missing {what}{s} for `{report_id}` — "
-                "don't re-post the whole thread.",
-                "The thread is live but incomplete."),
-    "day": ("day of sales", "the board filled, but SHORT.",
-            "fix the frozen day-number cell to '=<prev cell>+1', then re-run "
-            "`{report_id}` — the fill is idempotent.",
-            "Every total on that board is undercounting until it's re-run."),
+    "section": {
+        "what": "section",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "it did NOT post.",
+        "label": "Missing",
+        "fix": "re-run only the missing {what}{s} for `{report_id}` — "
+               "don't re-post the whole thread.",
+        "tail": "The thread is live but incomplete.",
+    },
+    "day": {
+        "what": "day of sales",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "the board filled, but SHORT.",
+        "label": "Missing",
+        "fix": "fix the frozen day-number cell to '=<prev cell>+1', then re-run "
+               "`{report_id}` — the fill is idempotent.",
+        "tail": "Every total on that board is undercounting until it's re-run.",
+    },
     # A Tableau SOURCE that didn't download. The tab still fills from the other
     # sources, so nothing looks broken — the metrics fed by the missing pull are
     # simply blank. Added 2026-08-10: opt_retail's SARA Plus scrape had been
     # returning 0 offices since at least 7/20 and the only trace was an
     # `Errors: 1` buried in a log, so three weeks of Internet / New Lines /
     # Next Up % / Extra-Premium % went missing across every Retail tab unnoticed.
-    "source": ("Tableau source", "those metrics are BLANK for this week.",
-               "re-run `{report_id}` — the fill is idempotent. If it fails "
+    "source": {
+        "what": "Tableau source",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "those metrics are BLANK for this week.",
+        "label": "Missing",
+        "fix": "re-run `{report_id}` — the fill is idempotent. If it fails "
                "again, the Tableau view itself is the problem, not the run.",
-               "The tabs filled, but every metric fed by that source is empty."),
+        "tail": "The tabs filled, but every metric fed by that source is empty.",
+    },
     # A CAPPED Tableau pull: the Contract ID / Account Id quick filters on the
     # BOX view re-pinned to a stale ID snapshot, so the export froze days behind
     # and the counts understate reality. The report REFUSED to send rather than
@@ -73,13 +99,57 @@ _KINDS = {
     # Roshan's "accepted sales are wrong" — a bad viz load skipped the filter
     # release and the pull capped at 8/4. Nothing was delivered, so this alert
     # is the only trace: without it a suppressed run is silent.
-    "capped": ("Tableau pull", "it capped to a stale ID list, so nothing was "
-               "sent.",
-               "re-run `{report_id}` once a clean pull lands — the Contract ID "
+    "capped": {
+        "what": "Tableau pull",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "it capped to a stale ID list, so nothing was sent.",
+        "label": "Missing",
+        "fix": "re-run `{report_id}` once a clean pull lands — the Contract ID "
                "/ Account Id filters likely re-pinned (see box_order_log/"
                "window.py). The fill/merge is idempotent.",
-               "No email/post went out — a gap beats numbers that undercount."),
+        "tail": "No email/post went out — a gap beats numbers that undercount.",
+    },
+    # A data-quality AUDIT finding (kind='finding' — vantura_board_audit today).
+    # NOTHING DROPPED. The audit ran end to end and did exactly the job it
+    # exists to do: report a contradiction it found on the board. It posts no
+    # thread, fills no cells, and re-running it changes nothing — a human fixes
+    # the Sheet. So every clause of the 'section' fallback was false here.
+    # 2026-08-14 one open termination (Samantha Rodriguez, Roll Call r41, Date
+    # Gone 8/13 but still Active) went out as "dropped 1 section this run — it
+    # did NOT post … re-run only the missing section … the thread is live but
+    # incomplete", and the morning went to hunting a broken run instead of the
+    # one Roll Call cell. The orchestrator already words findings correctly
+    # (day_orchestrator/notify.py _post_findings_corrections); this alert was
+    # the last place that didn't.
+    # Bulleted: findings are full sentences, and comma-joining three of them
+    # makes one unreadable line.
+    "finding": {
+        "what": "open board data-quality finding",
+        "headline": "🔎 *{report_id}* found {n} {what}{s} — {tail}",
+        "tail_headline": "the run itself was fine.",
+        "label": "Findings",
+        "bullets": True,
+        "see_thread": "Listed in thread.",
+        "detail_header": "*The {n} {what}{s}:*",
+        # the audit's manifest note is a truncated re-listing of the same
+        # findings already bulleted above — printing both says it twice.
+        "skip_note": True,
+        "fix": "fix it on the board itself (Roll Call status, Stations formula, "
+               "…). Re-running `{report_id}` will NOT clear it — the audit only "
+               "detects, it never edits the board. Findings are also logged to "
+               "the board's 'Report an Issue' tab.",
+        "tail": "Nothing to re-run and nothing is missing: the alert clears on "
+                "the next run once the board is corrected.",
+    },
 }
+
+# Manifest kinds that mean "a fill lost part of its work" — they read correctly
+# under the 'section' wording, so they fall back on purpose. Anything ELSE that
+# isn't listed in _KINDS is a kind nobody has worded yet: say so in the log
+# rather than shipping it as "it did NOT post" (that silent aliasing is exactly
+# how 'finding' went out wrong for a week).
+_FILL_SHAPED = {"part", "step", "phase", "report", "tracker", "week", "tab",
+                "owner", "ICD", "captainship", "recruiter", "team", "title"}
 
 
 # A drop with more items (or more text) than this doesn't belong in the channel —
@@ -106,34 +176,45 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     of missing items + the run's note. Same information as before, just not all
     of it on the channel's screen (Megan 2026-08-13: the 13-finding Vantura board
     audit alert filled the whole channel).
+
+    Every phrase comes off the kind's spec (see _KINDS) — the wording used to be
+    baked in here, which is why a kind whose run dropped NOTHING could not be
+    described truthfully no matter what it declared.
     """
-    what, headline_tail, default_fix, tail = _KINDS.get(kind, _KINDS["section"])
-    n = len(failed)
+    spec = _KINDS.get(kind)
+    if spec is None:
+        if kind not in _FILL_SHAPED:
+            print(f"  ⚠ section-drop alert: kind {kind!r} has no wording — "
+                  "falling back to 'section' (\"it did NOT post\"), which may "
+                  "be wrong. Add it to _KINDS.")
+        spec = _KINDS["section"]
+    what, n = spec["what"], len(failed)
     s = "s" if n != 1 else ""
-    missing = f"*Missing:* {', '.join(failed)}"
-    body = [missing] + ([f"_{note}_"] if note else [])
-    threaded = (n > _INLINE_ITEMS
+    fmt = dict(report_id=report_id, n=n, what=what, s=s)
+
+    body = [f"*{spec['label']}:* {', '.join(failed)}"]
+    if note and not spec.get("skip_note"):
+        body.append(f"_{note}_")
+    # A bulleted kind ALWAYS threads: its items are full sentences, and even one
+    # of them fills the channel — which is the whole point of the split.
+    threaded = (bool(spec.get("bullets")) or n > _INLINE_ITEMS
                 or sum(len(b) for b in body) > _INLINE_CHARS)
 
-    headline = (f"🚨 *{report_id}* dropped {n} {what}{s} this run — "
-                f"{headline_tail}")
+    headline = spec["headline"].format(tail=spec["tail_headline"], **fmt)
     if threaded:
-        headline += "  See thread for the list."
+        headline += "  " + spec.get("see_thread", "See thread for the list.")
     parent = [headline]
     if not threaded:
         parent += body
     fix = remediation.get("fix") if isinstance(remediation, dict) else None
-    if fix:
-        parent.append(f"*Fix:* {fix}")
-    else:
-        parent.append("*Fix:* " + default_fix.format(
-            what=what, s=s, report_id=report_id))
-    parent.append(tail)
+    parent.append(f"*Fix:* {fix or spec['fix'].format(**fmt)}")
+    parent.append(spec["tail"])
     if not threaded:
         return parent, []
-    detail = [f"*The {n} {what}{s} that dropped:*"]
+    detail = [spec.get("detail_header",
+                       "*The {n} {what}{s} that dropped:*").format(**fmt)]
     detail += [f"   • {f}" for f in failed]
-    if note:
+    if note and not spec.get("skip_note"):
         detail += ["", f"_{note}_"]
     return parent, detail
 
@@ -144,8 +225,9 @@ def alert(*, report_id: str, failed: Sequence[str],
           kind: str = "section") -> bool:
     """Post a loud dropped-section ping. One post per (report, day, failed-set).
     Returns True if posted (or already posted today for this exact drop).
-    `kind` picks the wording: 'section' (a thread that didn't post) or 'day' (a
-    board that filled short — see _KINDS).
+    `kind` picks the wording: 'section' (a thread that didn't post), 'day' (a
+    board that filled short), 'source'/'capped' (a Tableau pull) or 'finding'
+    (a data-quality audit that found something — nothing dropped). See _KINDS.
     NEVER raises — a failed alert must not fail the report it's warning about."""
     failed = [f for f in (failed or []) if f]
     if not failed:
