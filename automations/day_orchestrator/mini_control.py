@@ -159,7 +159,12 @@ SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
                   "set_credico_state",
                   # The shared reporting mailbox's app password: one paste feeds
                   # every emailing report on the machine (2026-08-13).
-                  "set_alphalete_app_password"}
+                  "set_alphalete_app_password",
+                  # A Gmail refresh token for that same mailbox. It was relying
+                  # on the queuer blanking the cell by hand, so a token stayed
+                  # readable in the Sheet for anyone with the link — noticed
+                  # while re-pushing it after the 2026-08-13 password rotation.
+                  "set_gmail_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60

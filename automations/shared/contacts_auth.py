@@ -11,14 +11,14 @@ alphaletereporting@gmail.com (the account whose contacts hold those groups), sco
 to contacts.readonly. Token: ~/.config/recruiting-report/contacts-token.json
 (gitignored, NEVER commit).
 
-One-time authorization (interactive — opens a browser; sign in as
+One-time authorization (interactive - opens a browser; sign in as
 alphaletereporting@gmail.com and approve the Contacts permission):
 
     python -m automations.shared.contacts_auth
 
 Prereqs: the People API must be ENABLED in the GCP project, and contacts.readonly
 added to the OAuth consent screen (alphaletereporting may need to be a Test User if
-the app isn't verified — it's a sensitive scope).
+the app isn't verified - it's a sensitive scope).
 """
 from __future__ import annotations
 
@@ -48,9 +48,9 @@ def authorize() -> None:
         prompt="select_account consent",   # always show the account chooser
         authorization_prompt_message=(
             "Opening your browser to authorize Contacts (read-only).\n"
-            f"➡  Sign in as {CONTACTS_ACCOUNT} (NOT raffi127) and approve.\n"
+            f"-> Sign in as {CONTACTS_ACCOUNT} (NOT raffi127) and approve.\n"
             "If it doesn't open, copy this URL into your browser:\n{url}"),
-        success_message="Done — close this tab and return to the terminal.",
+        success_message="Done - close this tab and return to the terminal.",
     )
     granted = set(creds.scopes or [])
     if not granted.issuperset(CONTACTS_SCOPES):
@@ -59,7 +59,7 @@ def authorize() -> None:
             f"{granted or 'none'}). Re-run and approve the Contacts permission.")
     CONTACTS_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONTACTS_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
-    print(f"✓ Saved contacts token to {CONTACTS_TOKEN_PATH}")
+    print(f"OK - Saved contacts token to {CONTACTS_TOKEN_PATH}")
     print("  Scopes:", ", ".join(sorted(granted)))
 
 
@@ -77,7 +77,7 @@ def load_credentials():
             creds.refresh(Request())
         else:
             raise RuntimeError(
-                "Contacts token is invalid/expired without a refresh token — "
+                "Contacts token is invalid/expired without a refresh token - "
                 "re-run:  python -m automations.shared.contacts_auth")
     return creds
 
@@ -88,7 +88,7 @@ def _norm(s: str) -> str:
 
 def list_groups() -> List[Tuple[str, int]]:
     """Every contact group on the account as (name, member_count), user-created
-    first. Answers "what are my groups actually called?" — the names have to
+    first. Answers "what are my groups actually called?" - the names have to
     match EXACTLY (case/spacing aside) for expand_groups to find them."""
     from googleapiclient.discovery import build
     svc = build("people", "v1", credentials=load_credentials(),
@@ -109,7 +109,7 @@ def list_groups() -> List[Tuple[str, int]]:
 
 
 def expand_groups(group_names: List[str]) -> Tuple[List[str], List[str]]:
-    """Return (emails, missing_group_names) — the deduped union of email addresses
+    """Return (emails, missing_group_names) - the deduped union of email addresses
     across the named contact groups. `missing_group_names` lists any requested
     group not found, so a caller can fail loudly rather than silently under-send."""
     from googleapiclient.discovery import build
@@ -135,9 +135,9 @@ def expand_groups(group_names: List[str]) -> Tuple[List[str], List[str]]:
         full = svc.contactGroups().get(
             resourceName=g["resourceName"], maxMembers=1000).execute()
         rns = full.get("memberResourceNames", []) or []
-        if len(rns) >= 1000:               # truncated — surface it rather than hide
+        if len(rns) >= 1000:               # truncated - surface it rather than hide
             print(f"⚠ group {g.get('formattedName') or g.get('name')!r} hit the "
-                  f"1000-member cap — some members may be missing.")
+                  f"1000-member cap - some members may be missing.")
         member_rns += rns
     member_rns = list(dict.fromkeys(member_rns))          # dedupe people
 
@@ -161,7 +161,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Contacts auth + group expansion")
     ap.add_argument("--expand", nargs="+", metavar="GROUP",
                     help="list emails for the named contact group(s) and exit "
-                         "(smoke test — no email sent)")
+                         "(smoke test - no email sent)")
     ap.add_argument("--list-groups", action="store_true",
                     help="print every contact group on the account with its "
                          "member count, and exit")
