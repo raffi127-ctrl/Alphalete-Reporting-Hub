@@ -126,14 +126,27 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
     Pulling unfiltered and selecting the rep in code is NOT an option here: the
     unfiltered sheet comes back one row per ICD ('Aron Corral', 'Total', ...),
     with REP collapsed, so Andrew's numbers are buried inside his owner's.
+
+    THE FILTER VALUES ARE FULLY ESCAPED (safe=""), and the week one has to be.
+    `quote()` leaves '/' alone by default, so '8/16/2026' went into the query
+    string with raw slashes -- Tableau did not recognise the value, dropped the
+    filter without a word, and served its own default window. That is what
+    poisoned every pull on 2026-08-14: the crosstab came back with the right
+    OWNER (John Richard Young, the ICD Andrew's sales land in, so the Rep
+    filter was applying) but the wrong WEEK -- 21 units across Tue-Fri, no
+    Monday, and not one UPGRADE INTERNET or VIDEO row, while Andrew's WE 8/16
+    is 10 units with an upgrade on Monday and a video on Thursday. The board
+    got written from that, and the target-day overwrite then blanked his real
+    Thursday down to 2 apps.
     """
     parts = []
     if refresh:
         parts.append(":refresh=yes")
     if filters in ("both", "week"):
-        parts.append("Sale%20Date%20Week%20Ending=" + quote(week_value(sunday, week_format)))
+        parts.append("Sale%20Date%20Week%20Ending="
+                     + quote(week_value(sunday, week_format), safe=""))
     if filters in ("both", "rep"):
-        parts.append(f"Rep={quote(rep)}")
+        parts.append(f"Rep={quote(rep, safe='')}")
     return VIEW + ("?" + "&".join(parts) if parts else "")
 
 
