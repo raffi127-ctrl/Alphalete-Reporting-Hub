@@ -60,7 +60,11 @@ from automations.rep_sales_fill import parse as P
 
 VIEW = ("https://us-east-1.online.tableau.com/t/sci/views/"
         "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK")
-CROSSTAB_SHEET = "Sales By ICD (+/-) REP - (+/-) Weekdays"
+# The WORKSHEET name in the Crosstab dialog, which is NOT the title drawn on the
+# dashboard. On screen the lower table reads "Sales By ICD (+/-) REP - (+/-)
+# Weekdays"; the dialog calls it this. (Eve's screenshot 2026-08-14 -- the
+# dialog offers "Last Refresh (2)", "Product Sales Summary by ORG" and this.)
+CROSSTAB_SHEET = "Sales By ICD (Weekly View)"
 DEFAULT_REP = "Andrew Sanborn"
 
 # A single rep's week. Anything past this means the Rep filter did not apply
