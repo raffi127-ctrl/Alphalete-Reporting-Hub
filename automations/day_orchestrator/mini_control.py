@@ -2804,17 +2804,16 @@ def _action_set_alphalete_app_password(args: str) -> tuple[bool, str]:
 
     In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row ends.
     """
-    import shlex
     import smtplib
     import ssl
 
-    raw = (args or "").strip()
-    try:
-        parts = shlex.split(raw)
-        pw = parts[0].strip() if parts else raw
-    except Exception:  # noqa: BLE001
-        pw = raw
-    pw = "".join(pw.split())        # Google shows it in 4 groups of 4
+    # Google DISPLAYS the password as 4 groups of 4, and that is how it gets
+    # copied, so the whole Args cell is the password — join every whitespace-
+    # separated piece instead of taking the first token (shlex.split + parts[0]
+    # would keep only 'jlar' out of 'jlar ukpl vlce kfwz' and fail the length
+    # check below). Surrounding quotes are dropped for the caller who quotes it.
+    raw = (args or "").strip().strip('"').strip("'")
+    pw = "".join(raw.split())
     if len(pw) < 12:
         return False, ("set_alphalete_app_password needs the 16-char app password "
                        "as Args (generate it at myaccount.google.com → Security → "
