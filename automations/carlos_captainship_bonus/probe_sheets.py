@@ -91,15 +91,31 @@ def _fingerprint(rows, rec) -> None:
 
     found, missing = [], []
     for name, want in sorted(FINGERPRINT_REPS.items()):
-        row = next((r for r in rows if any(_is(c, name) for c in r[:3])), None)
-        if row is None:
+        mine = [r for r in rows if any(_is(c, name) for c in r[:3])]
+        if not mine:
             missing.append(f"{name}=<no row>")
             continue
-        hit = next((f"col{ci}" for ci, c in enumerate(row)
-                    if T._parse_int(c) == want and (c or "").strip()), None)
+        # Try the value in ONE row, then the SUM down each column. A view that
+        # splits an owner across rows (ACTIVATIONRATES has a row per Activation
+        # Bucket) only reconciles once the buckets are added up, and checking
+        # single rows there would report a false miss.
+        width = max(len(r) for r in mine)
+        hit = None
+        for ci in range(width):
+            vals = [T._parse_int(r[ci]) for r in mine
+                    if ci < len(r) and (r[ci] or "").strip()]
+            if not vals:
+                continue
+            if len(mine) == 1 and vals[0] == want:
+                hit = f"col{ci}"
+                break
+            if sum(vals) == want:
+                hit = f"col{ci}(sum of {len(vals)})"
+                break
         (found if hit else missing).append(
             f"{name}={want}@{hit}" if hit else
-            f"{name}!={want} (row={[str(c)[:10] for c in row[:8]]})")
+            f"{name}!={want} ({len(mine)} row(s), e.g. "
+            f"{[str(c)[:10] for c in mine[0][:8]]})")
     rec(f"  FINGERPRINT: {len(found)}/{len(FINGERPRINT_REPS)} owners matched WE 8.9")
     if found:
         rec("    hit : " + ", ".join(found[:10]))
@@ -148,6 +164,10 @@ def main(argv=None) -> int:
                     help="never append the week param. The (LW)/(LW2) sheets are "
                          "already scoped to last week, so pinning a week on top "
                          "may be what empties them.")
+    ap.add_argument("--rows", type=int, default=15, metavar="N",
+                    help="how many data rows to print per sheet (default 15). "
+                         "Raise it for bucketed views, where one owner spans "
+                         "several rows.")
     ap.add_argument("--sheet", action="append", default=None, metavar="NAME",
                     help="dump these EXACT worksheet names instead of CANDIDATES; "
                          "repeatable. Lets --dump work on any view, not just the "
@@ -293,8 +313,8 @@ def main(argv=None) -> int:
             rec(f"  {len(rows)} rows, {len(rows[0])} columns")
             for c, h in enumerate(rows[0]):
                 rec(f"  COL [{c:>2}] {h!r}")
-            rec("  first 12 data rows:")
-            for r in rows[1:13]:
+            rec(f"  first {args.rows} data rows:")
+            for r in rows[1:1 + args.rows]:
                 rec("    " + " | ".join(str(c or "")[:26] for c in r[:10]))
             # Does Carlos' team actually appear, and where?
             hits = [(ri, r) for ri, r in enumerate(rows[1:], 1)
