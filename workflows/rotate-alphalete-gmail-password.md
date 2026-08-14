@@ -84,6 +84,40 @@ Args entera, con la llave adentro.
 
 La cola es serial: si hay un job colgado, estas filas esperan.
 
+## 2b. La cuarta llave: Document Builder (Streamlit Cloud)
+
+**Esta no va en ninguna máquina** — por eso se escapa. El Document Builder es
+`document_builder/` (en la RAÍZ del repo, no bajo `automations/`) y corre en
+Streamlit Community Cloud, que guarda la llave en sus propios Secrets. No hay
+`.streamlit/secrets.toml` local: Streamlit Cloud es el único lugar a tocar.
+
+1. **share.streamlit.io** → iniciar sesión con la cuenta de GitHub dueña de
+   `raffi127-ctrl/Alphalete-Reporting-Hub`.
+2. La app cuyo "Main file path" es `document_builder/app.py` → **⋮ → Settings →
+   Secrets**. (El `alphalete-orientation.streamlit.app` del README es un
+   ejemplo, no el link real: al 2026-08-14 ese subdominio da "does not exist".
+   El link verdadero es el que figura en el dashboard, y es el mismo que está
+   en `app_url` dentro de los Secrets.)
+3. En el bloque `[smtp]`, reemplazar sólo la línea `password`:
+   ```toml
+   password = "abcdefghijklmnop"
+   ```
+4. **Save.** La app se reinicia sola, ~1 minuto. El resto de los secretos
+   (`access_code`, `admin_code`, `gcp_service_account`, `log_sheet_id`) no se
+   tocan.
+
+**Pegala sin espacios.** Google la muestra en 4 grupos de 4; el resto del Hub
+los saca solo (`mini_control` hace `"".join(raw.split())`), pero este manda el
+valor crudo a `srv.login()` (`document_builder/app.py:88`). Con espacios, falla.
+
+**Cómo se ve rota mientras tanto:** el ICD igual descarga su PDF, pero le
+aparece un `SMTPAuthenticationError` en pantalla y la copia BCC nunca llega a
+alphaletereporting@ — de este lado no salta ninguna alerta. Distinto de
+"email isn't configured (missing [smtp] secrets)", que es la llave FALTANTE.
+
+**Probarla:** abrir el link con `?admin=1`, entrar con el `admin_code` y generar
+un documento de prueba a tu propia dirección. Si el mail llega, quedó.
+
 ## 3. Probar que volvió
 ```
 python -m automations.day_orchestrator.mini_control --enqueue ping --machine "Lucy 1"
