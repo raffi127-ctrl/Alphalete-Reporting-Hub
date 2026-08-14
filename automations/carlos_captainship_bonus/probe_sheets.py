@@ -138,6 +138,14 @@ def main(argv=None) -> int:
     ap.add_argument("--week-sat", default=None, metavar="YYYY-MM-DD",
                     help="pin the activation week to this SATURDAY (ISO only — "
                          "M/D/YYYY silently no-ops) instead of last cycle's")
+    ap.add_argument("--no-week", action="store_true",
+                    help="never append the week param. The (LW)/(LW2) sheets are "
+                         "already scoped to last week, so pinning a week on top "
+                         "may be what empties them.")
+    ap.add_argument("--only", action="append", default=None, metavar="SUBSTR",
+                    help="restrict --dump to CANDIDATES containing SUBSTR "
+                         "(case-insensitive); repeatable. Each sheet costs "
+                         "5-10 min, so narrow it or blow the timeout.")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
 
     buf = []
@@ -234,7 +242,13 @@ def main(argv=None) -> int:
         today = dt.date.today()
         scratch = Path(T.CACHE_DIR) / "probe"
         scratch.mkdir(parents=True, exist_ok=True)
-        for i, sheet in enumerate(CANDIDATES):
+        wanted = CANDIDATES
+        if args.only:
+            subs = [s.lower() for s in args.only]
+            wanted = [c for c in CANDIDATES if any(s in c.lower() for s in subs)]
+            rec("")
+            rec(f"--only {args.only} -> dumping {len(wanted)}: {list(wanted)}")
+        for i, sheet in enumerate(wanted):
             if sheet not in names:
                 rec("")
                 rec(f"=== {sheet!r}: NOT OFFERED by this view, skipping ===")
@@ -244,7 +258,8 @@ def main(argv=None) -> int:
             # The per-rep sales sheet is the only one that needs the week pinned;
             # the rate sheets degenerate if you pin it (see tableau_pull._rates_url).
             is_sales = "Sales By ICD" in sheet or "ICD Summary" in sheet
-            sat = (args.week_sat or P.cycle_saturday(today).isoformat()) if is_sales else None
+            sat = None if args.no_week else (
+                (args.week_sat or P.cycle_saturday(today).isoformat()) if is_sales else None)
             url = _url(sat)
             rec(f"  url: {url}")
             out = scratch / f"probe_{i}.csv"
