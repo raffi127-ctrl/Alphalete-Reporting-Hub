@@ -84,39 +84,61 @@ Args entera, con la llave adentro.
 
 La cola es serial: si hay un job colgado, estas filas esperan.
 
-## 2b. La cuarta llave: Document Builder (Streamlit Cloud)
+## 2b. La cuarta llave: las DOS apps de Streamlit Cloud
 
-**Esta no va en ninguna máquina** — por eso se escapa. El Document Builder es
-`document_builder/` (en la RAÍZ del repo, no bajo `automations/`) y corre en
-Streamlit Community Cloud, que guarda la llave en sus propios Secrets. No hay
+**Esta no va en ninguna máquina** — por eso se escapa. Son apps de Streamlit
+Community Cloud, que guarda la llave en sus propios Secrets. No hay
 `.streamlit/secrets.toml` local: Streamlit Cloud es el único lugar a tocar.
 
+**Y no es una app, son dos.** La cuenta `raffi127-ctrl` tiene seis apps
+publicadas; de esas, **dos mandan correo** y las dos comparten el mismo bloque
+`[smtp]` (verificado 2026-08-14):
+
+| App (Main file path) | Manda | Qué manda |
+|---|---|---|
+| `document_builder/app.py` | **SÍ** | los PDFs branded a los ICDs |
+| `office_onboarding/app.py` | **SÍ** | la invitación de Pay Structure (`app.py:133`) |
+| `automations/tdb_standings/app.py` | no | — |
+| `metric_request/app.py` | no | — |
+| `pay_structure/app.py` | no | — |
+| `tracker_onboarding/app.py` | no | — |
+
+Ojo: `document_builder/` y `office_onboarding/` están en la **RAÍZ** del repo, no
+bajo `automations/`. Y **cada app tiene su propia cajita de Secrets** — no se
+comparten, así que el mismo cambio va hecho DOS veces.
+
 1. **share.streamlit.io** → iniciar sesión con la cuenta de GitHub dueña de
-   `raffi127-ctrl/Alphalete-Reporting-Hub`.
-2. La app cuyo "Main file path" es `document_builder/app.py` → **⋮ → Settings →
-   Secrets**. (El `alphalete-orientation.streamlit.app` del README es un
-   ejemplo, no el link real: al 2026-08-14 ese subdominio da "does not exist".
-   El link verdadero es el que figura en el dashboard, y es el mismo que está
-   en `app_url` dentro de los Secrets.)
+   `raffi127-ctrl/Alphalete-Reporting-Hub`. Al 2026-08-14 esa cuenta la controla
+   **Megan**, no Eve, y no acepta login por contraseña (es social/passkey). Si
+   Eve tiene que hacerlo sola, primero hay que agregarla como admin de cada app
+   (**Share** → alphaletereporting@gmail.com).
+2. Abrir la app por su "Main file path" → **⋮ → Settings → Secrets**. (El
+   `alphalete-orientation.streamlit.app` del README es un ejemplo, no el link
+   real: al 2026-08-14 ese subdominio da "does not exist". El link verdadero es
+   el del dashboard, el mismo que está en `app_url` dentro de los Secrets.)
 3. En el bloque `[smtp]`, reemplazar sólo la línea `password`:
    ```toml
    password = "abcdefghijklmnop"
    ```
 4. **Save.** La app se reinicia sola, ~1 minuto. El resto de los secretos
-   (`access_code`, `admin_code`, `gcp_service_account`, `log_sheet_id`) no se
-   tocan.
+   (`access_code`, `admin_code`, `gcp_service_account`, `log_sheet_id`,
+   `thread_admin_password`) no se tocan.
+5. **Repetir 2–4 en la otra app.**
 
 **Pegala sin espacios.** Google la muestra en 4 grupos de 4; el resto del Hub
-los saca solo (`mini_control` hace `"".join(raw.split())`), pero este manda el
-valor crudo a `srv.login()` (`document_builder/app.py:88`). Con espacios, falla.
+los saca solo (`mini_control` hace `"".join(raw.split())`), pero estas dos mandan
+el valor crudo a `srv.login()` (`document_builder/app.py:88`,
+`office_onboarding/app.py:133`). Con espacios, fallan.
 
-**Cómo se ve rota mientras tanto:** el ICD igual descarga su PDF, pero le
+**Cómo se ven rotas mientras tanto:** el ICD igual descarga su PDF, pero le
 aparece un `SMTPAuthenticationError` en pantalla y la copia BCC nunca llega a
 alphaletereporting@ — de este lado no salta ninguna alerta. Distinto de
 "email isn't configured (missing [smtp] secrets)", que es la llave FALTANTE.
 
-**Probarla:** abrir el link con `?admin=1`, entrar con el `admin_code` y generar
-un documento de prueba a tu propia dirección. Si el mail llega, quedó.
+**Probarlas:** en el Document Builder, abrir el link con `?admin=1`, entrar con
+el `admin_code` y generar un documento de prueba a tu propia dirección. En
+Office Onboarding, mandarte una invitación de Pay Structure a vos misma. Si los
+dos correos llegan, quedó.
 
 ## 3. Probar que volvió
 ```
