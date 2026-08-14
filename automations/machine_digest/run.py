@@ -419,6 +419,47 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     return out
 
 
+def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
+    """Close the incident thread of any standalone report whose latest run today
+    is clean. Returns how many were closed.
+
+    The watcher only ever OPENED threads; nothing closed them, so a report fixed
+    on Wednesday left Tuesday's alert reading as open work — which is what made
+    the channel impossible to skim (Eve 2026-08-14)."""
+    from automations.day_orchestrator import notify
+    try:
+        from automations.shared import incident_thread as inc
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception as e:  # noqa: BLE001 — closing is a nicety, never fatal
+        print(f"[{ts}] watch: incident index unreadable: {e}", flush=True)
+        return 0
+    if not open_keys:
+        return 0
+    closed = 0
+    for r in reports:
+        if _classify(r["status"])[1] != "ok":
+            continue
+        rid = r.get("report_id") or r.get("name") or "?"
+        for key in (f"standalone-{rid}", f"nonew-{rid}"):
+            if key not in open_keys:
+                continue
+            lines = [
+                f":white_check_mark: *{r['name']}* — RESOLVED. It ran clean today "
+                f"({_time_only(r['started'])}), so this is closed.",
+                "_If it breaks again it'll open a fresh post, not revive this one._",
+            ]
+            try:
+                if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                    closed += 1
+                    print(f"[{ts}] watch: closed incident {key} — ran clean today",
+                          flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[{ts}] watch: incident close failed for {key}: {e}",
+                      flush=True)
+    return closed
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -535,6 +576,12 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
             print(f"[{ts}] watch: stuck alert failed for {rid}: "
                   f"{type(e).__name__}: {e}", flush=True)
+
+    # 4) RECOVERED — a report that ran clean today but still has an OPEN incident
+    #    thread from an earlier day. Say so IN that thread and close it, so the
+    #    channel never leaves a fixed problem sitting there looking open (Eve
+    #    2026-08-14). Free when nothing is open: open_keys reads a local index.
+    _close_recovered_incidents(cfg, reports, dry_run, ts)
 
     if newly and not dry_run:
         _save_alerted(day, already | newly)

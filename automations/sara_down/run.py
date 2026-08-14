@@ -516,17 +516,52 @@ def _alert_download_failure(detail: str, *, dry_run: bool = False) -> None:
             print("  " + r.replace("\n", "\n  "))
         return
     try:
-        resp = _client().chat_postMessage(channel=_CORRECTIONS_CHANNEL, text=text)
-        for r in replies:
-            kw = {"channel": _CORRECTIONS_CHANNEL, "text": r}
-            if resp.get("ts"):
-                kw["thread_ts"] = resp.get("ts")
-            _client().chat_postMessage(**kw)
+        # This outage ran for three weeks in July/August. Once a day for three
+        # weeks is 21 near-identical posts, which is what buried the channel —
+        # so day 2 onward replies in day 1's thread (Eve 2026-08-14). It closes
+        # itself the moment a download works again (_clear_download_alert).
+        posted = None
+        try:
+            from automations.shared import incident_thread as _inc
+            posted = _inc.open_or_followup(key="sara-down-download",
+                                           title=text, body=[], details=replies,
+                                           channel=_CORRECTIONS_CHANNEL)
+        except Exception as e:  # noqa: BLE001 — fall back to a plain post
+            print(f"  ⚠ incident thread unavailable ({type(e).__name__}: "
+                  f"{str(e)[:80]}) — posting standalone")
+        if not posted:
+            resp = _client().chat_postMessage(channel=_CORRECTIONS_CHANNEL,
+                                              text=text)
+            for r in replies:
+                kw = {"channel": _CORRECTIONS_CHANNEL, "text": r}
+                if resp.get("ts"):
+                    kw["thread_ts"] = resp.get("ts")
+                _client().chat_postMessage(**kw)
         _ALERT_STAMP.parent.mkdir(parents=True, exist_ok=True)
         _ALERT_STAMP.write_text(today)
         print("  🚨 posted a download-failure alert to #claudecorrections-and-requests")
     except Exception as e:  # noqa: BLE001
         print(f"  ⚠ alert didn't post ({type(e).__name__}: {str(e)[:100]})")
+
+
+def _clear_download_alert(*, dry_run: bool = False) -> None:
+    """Downloads work again — say so in the open alert thread and close it.
+
+    Without this the alarm was write-only: it told the channel the day it broke
+    and never said it came back, so the last thing anyone read about Sara+ was
+    always bad news (Eve 2026-08-14). Free when nothing is open."""
+    try:
+        from automations.shared import incident_thread as _inc
+        if "sara-down-download" not in _inc.open_keys():
+            return
+        _inc.resolve(key="sara-down-download",
+                     lines=["✅ *Sara+ screenshots download again* — RESOLVED. "
+                            "Escalations are going out normally.",
+                            "_Closed. A new outage opens a fresh post._"],
+                     channel=_CORRECTIONS_CHANNEL, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — never break a working run
+        print(f"  ⚠ couldn't close the download alert ({type(e).__name__}: "
+              f"{str(e)[:80]})")
 
 
 # ---- the polled processor ---------------------------------------------------
@@ -606,6 +641,8 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
             actions.append({"ts": ts, "action": "download_failed",
                             "error": str(e)})
             continue
+        # Real image bytes in hand — if an outage was being alerted, it's over.
+        _clear_download_alert(dry_run=dry_run)
 
         # Effective recipients: a test run emails only test_to (no CC, never the
         # vendor); a real run uses the configured To + CC.

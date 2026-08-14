@@ -1043,8 +1043,6 @@ def _resolve_failure_alerts(cfg, ds, dry_run):
     re-investigated. Editing costs no new message — an edit doesn't re-notify —
     which is the whole point: fewer messages about the same thing, not more.
     Best-effort: never crashes the loop."""
-    if not ds.failure_alert_posts:
-        return
     from automations.day_orchestrator import notify
     for rid, post in list(ds.failure_alert_posts.items()):
         if not isinstance(post, dict) or post.get("resolved"):
@@ -1061,6 +1059,46 @@ def _resolve_failure_alerts(cfg, ds, dry_run):
             post["resolved"] = True
             _log(f"  {rid}: DONE now — failure alert edited to RESOLVED")
             state.save(ds)
+    _close_carryover_incidents(cfg, ds, dry_run)
+
+
+def _close_carryover_incidents(cfg, ds, dry_run):
+    """Close incident threads left OPEN from an earlier day by reports that ran
+    clean today.
+
+    Without this, the only thing that ever resolved an alert was same-day healing
+    (ds.failure_alert_posts is per-day state), so a report that broke on Tuesday
+    and was fixed on Wednesday left Tuesday's thread hanging open forever —
+    exactly the "which of these is still real?" problem the incident threads were
+    added to kill (Eve 2026-08-14). Costs nothing when nothing is open: the check
+    reads a local index, no Slack call."""
+    try:
+        from automations.day_orchestrator import notify
+        from automations.shared import incident_thread as inc
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception:  # noqa: BLE001
+        return
+    if not open_keys:
+        return
+    for rs in list(ds.reports.values()):
+        if rs.status != state.DONE:
+            continue
+        for key in (f"failure-{rs.report_id}", f"finding-{rs.report_id}",
+                    f"standalone-{rs.report_id}"):
+            if key not in open_keys:
+                continue
+            label = rs.display_name or rs.report_id
+            lines = [
+                f":white_check_mark: *{label}* — RESOLVED. It ran clean today, so "
+                "this is closed.",
+                "_If it breaks again it'll open a fresh post, not revive this one._",
+            ]
+            try:
+                if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                    _log(f"  {rs.report_id}: carried-over incident {key} closed")
+            except Exception as e:  # noqa: BLE001
+                _log(f"  ({rs.report_id}: incident close failed: {e})")
 
 
 def _check_post_watch(ds, target, now):

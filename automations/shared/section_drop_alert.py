@@ -22,6 +22,11 @@ filled the whole screen, burying every other report's alert — "this error is t
 long in the slack channel, it should be in the reply on the thread" (Megan). Same
 information, just not all of it at eye level. A 1-2 item drop still reads inline.
 
+Thread per report (2026-08-14): the first drop opens a post; a drop on a LATER
+day replies in that post's thread instead of adding another one, and the first
+clean run closes it with a ✅ in the same thread (`resolved`, called from
+run_manifest). See automations/shared/incident_thread.py.
+
 Dedup: one post per (report_id, date, failed-set). A morning re-run that drops
 the SAME section again won't re-spam; a different drop still alerts. Posted as
 Lucy (the xoxp user token every Slack post here uses). Always English — the whole
@@ -219,6 +224,30 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     return parent, detail
 
 
+def resolved(report_id: str, *, dry_run: bool = False) -> bool:
+    """This report just ran CLEAN — say so in its open alert thread and close it.
+
+    Called from run_manifest.write_manifest on any successful run, so a drop that
+    fixes itself stops looking open the moment it's fixed instead of sitting in
+    the channel until somebody asks (Eve 2026-08-14). Silent and free when there
+    is no open incident: it reads a local index, not Slack. Never raises."""
+    try:
+        from automations.shared import incident_thread as _inc
+        key = "drop-{}".format(report_id)
+        if key not in _inc.open_keys():
+            return False
+        return _inc.resolve(
+            key=key,
+            lines=["✅ *{}* — RESOLVED. It just ran clean, nothing "
+                   "dropped.".format(report_id),
+                   "_Closed. A new drop opens a fresh post, not this thread._"],
+            channel=CHANNEL, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — closing must never break a good run
+        print("  ⚠ couldn't close the drop alert for {} ({}: {})".format(
+            report_id, type(e).__name__, str(e)[:80]))
+        return False
+
+
 def alert(*, report_id: str, failed: Sequence[str],
           remediation: Optional[dict] = None, note: str = "",
           day: Optional[dt.date] = None, dry_run: bool = False,
@@ -255,16 +284,34 @@ def alert(*, report_id: str, failed: Sequence[str],
     try:
         from automations.shared import slack_metrics_post as smp
         client = smp._client()
-        resp = client.chat_postMessage(channel=CHANNEL, text=parent)
-        ts = resp.get("ts")
-        # Detail goes UNDER the parent. If the parent's ts came back empty we
-        # still post the detail (as its own message) — a lost finding is worse
-        # than an unthreaded one.
-        for r in replies:
-            kw = {"channel": CHANNEL, "text": r}
-            if ts:
-                kw["thread_ts"] = ts
-            client.chat_postMessage(**kw)
+        # One THREAD per report, not one post per day: a drop that keeps
+        # happening replies under the first alert instead of adding another
+        # near-identical message to the channel (Eve 2026-08-14). The incident
+        # closes itself on the first clean run (see `resolved`, called from
+        # run_manifest), so the next drop opens a fresh post. Falls back to the
+        # plain post if anything about it fails.
+        posted = None
+        try:
+            from automations.shared import incident_thread as _inc
+            posted = _inc.open_or_followup(key="drop-{}".format(report_id),
+                                           title=parent_lines[0],
+                                           body=parent_lines[1:],
+                                           details=detail, channel=CHANNEL,
+                                           day=day, client=client)
+        except Exception as e:  # noqa: BLE001
+            print("  ⚠ incident thread unavailable ({}: {}) — posting "
+                  "standalone".format(type(e).__name__, str(e)[:80]))
+        if not posted:
+            resp = client.chat_postMessage(channel=CHANNEL, text=parent)
+            ts = resp.get("ts")
+            # Detail goes UNDER the parent. If the parent's ts came back empty we
+            # still post the detail (as its own message) — a lost finding is worse
+            # than an unthreaded one.
+            for r in replies:
+                kw = {"channel": CHANNEL, "text": r}
+                if ts:
+                    kw["thread_ts"] = ts
+                client.chat_postMessage(**kw)
     except Exception as e:  # noqa: BLE001 — alerting must never break the report
         print(f"  ⚠ section-drop alert didn't post "
               f"({type(e).__name__}: {str(e)[:120]})")

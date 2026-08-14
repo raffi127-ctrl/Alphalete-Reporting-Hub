@@ -126,6 +126,16 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
                        remediation=remediation, note=note, kind=kind)
         except Exception:  # noqa: BLE001 — the alarm must never break the writer
             pass
+    # The mirror image: a run with nothing failed CLOSES whatever alert thread
+    # this report left open, with a "resolved" note in that same thread (Eve
+    # 2026-08-14). Costs a local index read when there's nothing open, which is
+    # the normal case. Seed writes (alert=False) and tests (run_ts) stay silent.
+    elif not failed and run_ts is None and alert and ok is not False:
+        try:
+            from automations.shared import section_drop_alert as _sda
+            _sda.resolved(report_id)
+        except Exception:  # noqa: BLE001
+            pass
     return p
 
 
