@@ -127,7 +127,7 @@ def week_value(sunday: dt.date, fmt: str = "mdy") -> str:
 
 def view_url(sunday: dt.date, rep: str, filters: str = "both",
              refresh: bool = True, week_format: str = "mdy",
-             week_field: str = "") -> str:
+             week_field: str = "", revert: bool = False) -> str:
     """The view URL, with the filters named by `filters`.
 
     WHY THIS IS A DIAL. On Lucy 2 the Crosstab dialog came back with ZERO
@@ -171,6 +171,16 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
     it (that reconciles fine here: 2 + 19 = 21).
     """
     parts = []
+    if revert:
+        # WHY THIS EXISTS. The export keeps coming back from JANUARY (the ORG
+        # sheet's own column headers read '1/18/2026' and '1/25/2026') no
+        # matter which week is asked for, and no url filter moves it. Tableau
+        # Server restores the SIGNED-IN USER'S LAST VIEWED STATE of a view --
+        # Lucy 2 signs in as CH (Carlos Hidalgo), so whatever week Carlos last
+        # left this dashboard on is what every pull gets. ':revert=all' resets
+        # the view to its published state, which is the only url parameter that
+        # can undo a remembered selection.
+        parts.append(":revert=all")
     if refresh:
         parts.append(":refresh=yes")
     if filters in ("both", "week"):
@@ -182,11 +192,11 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
 
 
 def pull(sunday: dt.date, rep: str, dest: Path, sheet: str,
-         week_field: str = "") -> Path:
+         week_field: str = "", revert: bool = False) -> Path:
     from automations.shared.tableau_patchright import download_crosstab_patchright
     dest.parent.mkdir(parents=True, exist_ok=True)
     _log(f"  pulling {sheet!r}")
-    url = view_url(sunday, rep, week_field=week_field)
+    url = view_url(sunday, rep, week_field=week_field, revert=revert)
     _log(f"  {url}")
     return download_crosstab_patchright(url, sheet, dest, verbose=True)
 
@@ -251,7 +261,7 @@ def probe_filters(sunday: dt.date, rep: str) -> int:
 
 def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
                 refresh: bool = True, week_format: str = "mdy",
-                week_field: str = "") -> int:
+                week_field: str = "", revert: bool = False) -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
 
     The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
@@ -263,7 +273,8 @@ def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
     """
     from automations.shared.tableau_patchright import download_crosstab_patchright
     try:
-        _url = view_url(sunday, rep, filters, refresh, week_format, week_field)
+        _url = view_url(sunday, rep, filters, refresh, week_format, week_field,
+                        revert)
         _log(f"  url: {_url}")
         download_crosstab_patchright(_url,
                                      "__LIST_SHEETS__ (deliberate miss)",
@@ -305,6 +316,10 @@ def main(argv=None) -> int:
                     help="the week filter's caption in the url. Overridable "
                          "so a caption change can be tested without a deploy "
                          "-- a wrong one is a SILENT no-op, never an error")
+    ap.add_argument("--revert", action="store_true",
+                    help="prepend ':revert=all' -- reset the view to its "
+                         "published state, undoing the week the signed-in "
+                         "Tableau user last left it on")
     ap.add_argument("--no-refresh", action="store_true",
                     help="drop ':refresh=yes' (a forced re-query -- the third "
                          "suspect for the empty dialog)")
@@ -330,7 +345,7 @@ def main(argv=None) -> int:
     if a.list_sheets:
         return list_sheets(sunday, a.rep, filters=a.filters,
                            refresh=not a.no_refresh, week_format=a.week_format,
-                           week_field=a.week_field)
+                           week_field=a.week_field, revert=a.revert)
 
     if a.dump:
         # The URL filters break this view: with them the viz never renders and
@@ -342,7 +357,7 @@ def main(argv=None) -> int:
         dest = OUT_DIR / "_dump.csv"
         dest.parent.mkdir(parents=True, exist_ok=True)
         _url = view_url(sunday, a.rep, a.filters, not a.no_refresh,
-                        a.week_format, a.week_field)
+                        a.week_format, a.week_field, a.revert)
         _log(f"  url: {_url}")
         download_crosstab_patchright(_url,
                                      a.sheet, dest, verbose=True)
@@ -371,7 +386,7 @@ def main(argv=None) -> int:
     else:
         src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
                    f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet,
-                   week_field=a.week_field)
+                   week_field=a.week_field, revert=a.revert)
     days, totals = P.parse(src)
 
     # RECONCILE AGAINST THE CROSSTAB'S OWN TOTAL ROW before anything is
