@@ -15,10 +15,11 @@ Two invariants, both broken silently in the past:
 
 Findings are appended to the board's "Report an Issue" tab, deduped against
 rows already there. The tab is the only thing this writes, with ONE deliberate
-exception since 2026-08-14: it closes open terminations itself (Roll Call
-Status -> 'Terminated' for anyone already carrying a past Date Gone) instead of
-asking a human to flip the same cell every few weeks. See the auto-close block
-below for how narrow that write is and what it refuses to touch.
+exception since 2026-08-14: when the Sales Board marks a rep 'T' (terminated,
+on the day it happens), it flips that rep's Roll Call Status to 'Terminated'
+instead of asking a human to chase the same cell every few weeks. See the
+auto-close block below for how narrow that write is and what it refuses to
+touch.
 
   python -m automations.vantura_board_audit.run                  # audit + fix + report
   python -m automations.vantura_board_audit.run --dry-run        # print only
@@ -65,33 +66,54 @@ BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
 ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
 
 # --- auto-close of open terminations (2026-08-14, Eve) ---------------------
-# Roll Call col B 'Status' and col M 'Date Gone' are maintained BY HAND and
-# independently, so they drift apart every few weeks: 15 rows on 2026-07-31,
-# 8 still open on 2026-08-11, 1 more on 2026-08-14. Every time, the audit
-# reported it, a human flipped the same cell, and the report went green again.
-# Eve asked for the loop to close itself — a Date Gone in the past IS the
-# termination; the status is bookkeeping that trails it.
+# WHERE A VANTURA TERMINATION IS ACTUALLY RECORDED: the SALES BOARD. On the day
+# a rep is let go, their remaining day cells (Monday..Sunday) are filled with
+# 'T' (Eve 2026-08-14, with a screenshot of WE 8.16). That mark is the event;
+# the Roll Call's col B 'Status' and col M 'Date Gone' are bookkeeping that
+# trails it and gets forgotten — 15 rows still Active on 2026-07-31, 8 on
+# 2026-08-11, Samantha Rodriguez on 2026-08-14. Every time, the audit reported
+# it, a human flipped the same cell, and the report went green again.
+#
+# So this syncs the Roll Call FROM the board's 'T', and as a second net also
+# closes a row whose Date Gone is already set and in the past.
+#
+# The first design of this read New DU col A instead, on the theory that
+# 'Not Active' meant terminated. It does NOT: New DU is the RECRUITING funnel
+# (col A is the stage — '1 - Orientation Scheduled', '3 - In Training',
+# '5 - Leader'), and 'Not Active' is its default parking bucket holding 2170 of
+# 2243 rows, every applicant who never started included. Three Roll Call reps
+# sat in it while selling — Jayden Luna had 32 sales the week before and was
+# marked 'Here' Mon-Fri, and is a Trainer. Wiring that up would have terminated
+# the campaign's best seller overnight. Do not use New DU as a status source.
 #
 # This is the ONE place the audit writes outside 'Report an Issue', and it is
 # deliberately narrow:
-#   - only 'Active' -> 'Terminated', never any other status. 'New Start' rows
-#     carry a Date Gone all week (8 of them on 2026-08-14, r8-r17) — that is
-#     the live wash-out cohort, which rolls to Terminated on its own. Touching
-#     them would rewrite a working process.
-#   - only a date that PARSES and is not in the future. Someone who gives
-#     notice gets a future Date Gone and is still working; closing them early
-#     would drop them out of headcount while they are on the board.
-#   - only when the columns were found BY HEADER (see _roll_cols). A write to
-#     a guessed index after a re-layout is the expensive kind of wrong.
+#   - a 'T' run must not be followed by a SALE. A number after the mark means
+#     it was wrong or the rep came back; that is not a termination to copy.
+#   - never touches a row already 'Terminated', and never writes any status
+#     other than 'Terminated'.
+#   - the Date-Gone net only fires on a date that PARSES and is not in the
+#     future. Someone working out their notice has a future Date Gone and is
+#     still on the board; closing them early drops them out of headcount.
+#   - only when the columns were found BY HEADER (Roll Call Status/Roll Call/
+#     Date Gone, board Monday..Sunday). A write to a guessed index after a
+#     re-layout is the expensive kind of wrong.
 #   - only up to MAX_AUTO_CLOSE rows at once. A sudden pile is far more likely
 #     to be a shifted column than 40 people quitting overnight, so past the cap
 #     it refuses to write and reports instead — the old behaviour.
 # Anything it declines to close still comes out as the usual finding, with the
 # reason attached, so declining is never silent.
+#
+# It writes col B ONLY. Date Gone is left to a human even when the 'T' implies
+# it: col N 'Days Lasted' and col O 'Reason Lost' hang off that date, and
+# inventing it would be writing a second hand-kept column nobody asked for.
 TERMINATED = "Terminated"
+TERM_MARK = "T"
 MAX_AUTO_CLOSE = 25
 ROLL_HEADERS = {"status": "status", "name": "roll call", "gone": "date gone"}
 ROLL_FALLBACK = {"status": 1, "name": 3, "gone": 12}   # cols B / D / M today
+BOARD_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday",
+              "saturday", "sunday"]
 
 
 def _log(msg: str) -> None:
@@ -249,6 +271,72 @@ def _parse_mdy(s):
     return None
 
 
+def _tag_date(tag):
+    """'8.16' -> date. Same year rule as _cohort_weeks_old, except this one is
+    used on the CURRENT week-ending tag, which is in the FUTURE for most of the
+    week — so allow a week of lead before deciding the tag means last year."""
+    m = re.match(r"^\s*(\d{1,2})\.(\d{1,2})\s*$", str(tag))
+    if not m:
+        return None
+    today = dt.date.today()
+    mo, day = int(m.group(1)), int(m.group(2))
+    for year in (today.year, today.year - 1):
+        try:
+            d = dt.date(year, mo, day)
+        except ValueError:
+            return None
+        if d <= today + dt.timedelta(days=7):
+            return d
+    return None
+
+
+def _board_day_cols(board, log=_log):
+    """Sales Board Monday..Sunday column indexes, in week order, BY HEADER.
+    Empty list when the header row isn't found — the 'T' sync then stays off
+    rather than reading whatever sits at E..K today."""
+    for r in board[:8]:
+        low = {str(c).strip().lower(): j for j, c in enumerate(r)}
+        if all(d in low for d in BOARD_DAYS):
+            return [low[d] for d in BOARD_DAYS]
+    log("Sales Board: no Monday..Sunday header row — 'T' termination sync OFF")
+    return []
+
+
+def _board_terminations(board, day_cols, week_end, log=_log):
+    """{normalised name: (board row, termination date or None)} for every rep
+    whose day cells carry the 'T' termination mark.
+
+    The date is derived from the week-ending tag and WHICH day the run starts
+    on — Samantha Rodriguez sold Mon-Wed and went 'T' from Thursday, and
+    week_end (Sunday 8.16) minus 3 days is 8/13, exactly her Date Gone. That
+    derivation was checked against all six 'T' rows on WE 8.16 and matched
+    every one, so it is reported in the log but NOT written (see the block at
+    the top of this file).
+
+    A 'T' followed by a SALE is skipped: the mark was wrong or the rep came
+    back, and either way it is not a termination to copy into the roll."""
+    out = {}
+    if not day_cols:
+        return out
+    for i, r in enumerate(board, start=1):
+        name = str(r[1]).strip() if len(r) > 1 else ""
+        if not name:
+            continue
+        marks = [str(r[j]).strip().upper() if len(r) > j else "" for j in day_cols]
+        first = next((k for k, m in enumerate(marks) if m == TERM_MARK), None)
+        if first is None:
+            continue
+        rest = marks[first:]
+        if any(m not in (TERM_MARK, "") for m in rest):
+            log(f"board r{i} {name}: {TERM_MARK!r} followed by {rest!r} — not a "
+                "clean termination, leaving the roll alone")
+            continue
+        when = (week_end - dt.timedelta(days=len(marks) - 1 - first)
+                if week_end else None)
+        out[_norm(name)] = (i, when)
+    return out
+
+
 def _roll_cols(roll, log=_log):
     """Roll Call's Status / name / Date Gone column indexes, found BY HEADER.
 
@@ -266,30 +354,68 @@ def _roll_cols(roll, log=_log):
     return dict(ROLL_FALLBACK), False
 
 
-def _close_terminations(ws, roll, cols, resolved, write, log=_log):
-    """Flip Status -> 'Terminated' for rows still 'Active' with a PAST Date Gone.
+def _close_terminations(ws, roll, cols, resolved, write, log=_log,
+                        board_terms=None, alias=None):
+    """Flip Roll Call Status -> 'Terminated' for anyone already recorded as gone.
+
+    TWO signals, in priority order:
+      1. the SALES BOARD 'T' mark (board_terms) — this is where a termination is
+         recorded on the day it happens, so it is the one that closes the loop.
+      2. a Roll Call Date Gone already set and in the past — the backstop for a
+         leaver who never had a board row to mark.
 
     Mutates `roll` in place for the rows it closes, so the checks further down
     stop counting them as active headcount in the same run — otherwise the very
     rows just closed would come straight back as MISSING FROM BOARD findings.
 
     Returns (closed, still_open):
-      closed     [(row, name, date_gone)] actually written and read back
+      closed     [(row, name, why_closed)] actually written and read back
       still_open [(row, name, date_gone, why)] left alone — `why` is "" when it
                  was simply not this run's job (dry-run / --no-auto-close), and
                  a real explanation when the row was REFUSED. The caller only
                  spells out non-empty reasons, so the plain finding text stays
                  exactly what it always was."""
     st, nm, gn = cols["status"], cols["name"], cols["gone"]
+    board_terms, alias = board_terms or {}, alias or {}
     today = dt.date.today()
+
+    def _board_mark(n):
+        """The board's 'T' for this roll name, through Name Aliases — the board
+        and the roll spell people differently often enough that this is the
+        whole reason that tab exists."""
+        if n in board_terms:
+            return board_terms[n]
+        for other in alias.get(n, ()):
+            if other in board_terms:
+                return board_terms[other]
+        return None
+
     ready, held = [], []
     for ri, r in enumerate(roll, start=1):
         if len(r) <= max(st, nm, gn):
             continue
-        if str(r[st]).strip() != "Active":
+        status = str(r[st]).strip()
+        if status == TERMINATED:
             continue
         who, gone = str(r[nm]).strip(), str(r[gn]).strip()
-        if not who or not gone:
+        if not who:
+            continue
+
+        # 1. the board says T
+        mark = _board_mark(_norm(who))
+        if mark:
+            brow, when = mark
+            why = f"Sales Board r{brow} marks {TERM_MARK!r}"
+            if when:
+                why += f" from {when.month}/{when.day}/{when.year}"
+                if not gone:
+                    why += " (Roll Call Date Gone is still empty)"
+            ready.append((ri, who, gone, why))
+            continue
+
+        # 2. Date Gone already set. Only from 'Active': a New Start carries one
+        #    all week as part of the wash-out flow and rolls over on its own.
+        if status != "Active" or not gone:
             continue
         d = _parse_mdy(gone)
         if d is None:
@@ -298,43 +424,42 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log):
             held.append((ri, who, gone, "Date Gone is in the future — they may "
                                         "still be working their notice"))
         else:
-            ready.append((ri, who, gone))
+            ready.append((ri, who, gone, f"Date Gone {gone}"))
 
     if ready and not resolved:
         held += [(ri, w, g, "Roll Call headers moved — refusing to write a "
-                  "guessed column") for ri, w, g in ready]
+                  "guessed column") for ri, w, g, _ in ready]
         ready = []
     elif len(ready) > MAX_AUTO_CLOSE:
         held += [(ri, w, g, f"{len(ready)} rows at once is over the "
                   f"{MAX_AUTO_CLOSE}-row auto-close cap — that looks like a "
-                  "shifted column, not a leaver batch") for ri, w, g in ready]
+                  "shifted column, not a leaver batch") for ri, w, g, _ in ready]
         ready = []
     elif ready and not write:
-        for ri, w, g in ready:
-            log(f"(no write) would close {_a1col(st)}{ri}: {w} "
-                f"Active -> {TERMINATED} (Date Gone {g})")
-        held += [(ri, w, g, "") for ri, w, g in ready]
+        for ri, w, _g, why in ready:
+            log(f"(no write) would close {_a1col(st)}{ri}: {w} -> "
+                f"{TERMINATED} ({why})")
+        held += [(ri, w, g, "") for ri, w, g, _ in ready]
         ready = []
 
     if not ready:
         return [], held
 
     ws.batch_update([{"range": "%s%d" % (_a1col(st), ri),
-                      "values": [[TERMINATED]]} for ri, _, _ in ready],
+                      "values": [[TERMINATED]]} for ri, _, _, _ in ready],
                     value_input_option="RAW")
 
     # Read back before believing it. A silent no-op write here would leave the
     # row Active AND drop its finding — the worst of both.
     back = ws.get_all_values()
     closed, missed = [], []
-    for ri, who, gone in ready:
+    for ri, who, gone, why in ready:
         got = (str(back[ri - 1][st]).strip()
                if len(back) >= ri and len(back[ri - 1]) > st else "")
         if got == TERMINATED:
             roll[ri - 1][st] = TERMINATED
-            closed.append((ri, who, gone))
-            log(f"auto-closed {_a1col(st)}{ri}: {who} Active -> {TERMINATED} "
-                f"(Date Gone {gone})")
+            closed.append((ri, who, why))
+            log(f"auto-closed {_a1col(st)}{ri}: {who} -> {TERMINATED} ({why})")
         else:
             missed.append((ri, who, gone,
                            f"auto-close wrote {TERMINATED!r} but the cell reads "
@@ -419,8 +544,13 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
         j = roll_cols["gone"]
         return str(r[j]).strip() if len(r) > j else ""
 
+    board_terms = _board_terminations(
+        board, _board_day_cols(board, log=log),
+        _tag_date(str(sh.worksheet("Sales Board").acell("B2").value or "")),
+        log=log)
     closed, still_open = _close_terminations(
-        roll_ws, roll, roll_cols, roll_hdr_ok, write and auto_close, log=log)
+        roll_ws, roll, roll_cols, roll_hdr_ok, write and auto_close, log=log,
+        board_terms=board_terms, alias=alias)
     if still_open:
         who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g, _ in still_open)
         why = sorted({w for _, _, _, w in still_open if w})
@@ -586,9 +716,8 @@ def audit(write: bool, log=_log, auto_close: bool = True) -> int:
     closed_note = ""
     if closed:
         closed_note = (
-            f"auto-closed {len(closed)} Roll Call termination(s) "
-            "(Active -> Terminated, Date Gone already set): "
-            + "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g in closed))
+            f"auto-closed {len(closed)} Roll Call status(es) -> {TERMINATED}: "
+            + "; ".join(f"{nm} (roll r{ri} — {why})" for ri, nm, why in closed))
         log(closed_note)
 
     if not findings:
