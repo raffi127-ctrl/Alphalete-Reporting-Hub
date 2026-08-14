@@ -177,6 +177,53 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
                                         dest, verbose=True)
 
 
+def probe_filters(sunday: dt.date, rep: str) -> int:
+    """Print every filter control on the dashboard, with its aria-label.
+
+    WHY. The week filter is silently DISCARDED when sent in the url -- the
+    export comes back from Tableau's own default window (21 units Tue-Fri for
+    an owner whose asked-for week is 10 units Mon-Thu), which is how another
+    period's numbers landed in Sanborn's row. Rep= applies fine, so it is this
+    one field. Guessing the field name a pull at a time costs ~7 minutes an
+    attempt, so read the DOM once instead: Tableau puts the filter's real
+    caption in aria-label, which is both the url parameter name AND the
+    selector a pre_export hook would drive (see box_order_log.window
+    .date_window_hook, which fills textarea[aria-label="Start Date"]).
+    """
+    from automations.shared.tableau_patchright import (
+        tableau_session, _ensure_tableau_authenticated)
+    with tableau_session(verbose=True) as page:
+        _ensure_tableau_authenticated(page, verbose=False, allow_form_login=True)
+        page.goto(VIEW, wait_until="domcontentloaded", timeout=120_000)
+        page.wait_for_timeout(25_000)          # let the viz hydrate
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        _log("")
+        _log("--- controles con aria-label dentro de la viz ---")
+        seen = []
+        for sel in ("[aria-label]",):
+            try:
+                els = viz.locator(sel)
+                n = min(els.count(), 120)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"  {sel}: {exc}")
+                continue
+            for i in range(n):
+                try:
+                    el = els.nth(i)
+                    lab = el.get_attribute("aria-label") or ""
+                    tag = el.evaluate("e => e.tagName.toLowerCase()")
+                    role = el.get_attribute("role") or ""
+                    txt = (el.inner_text() or "").strip().replace("\n", " ")[:40]
+                except Exception:  # noqa: BLE001
+                    continue
+                if lab and (lab, tag) not in seen:
+                    seen.append((lab, tag))
+                    _log(f"  <{tag}{' role=' + role if role else ''}> "
+                         f"aria-label={lab!r}  texto={txt!r}")
+        _log(f"--- {len(seen)} control(es) ---")
+    return 0
+
+
 def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
                 refresh: bool = True, week_format: str = "mdy") -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
@@ -211,6 +258,9 @@ def main(argv=None) -> int:
     ap.add_argument("--from-file", help="parse this crosstab instead of pulling")
     ap.add_argument("--sheet", default=CROSSTAB_SHEET,
                     help="worksheet name in the Crosstab dialog")
+    ap.add_argument("--probe-filters", action="store_true",
+                    help="print the dashboard's filter controls + aria-labels, "
+                         "then stop (to learn the week filter's real name)")
     ap.add_argument("--list-sheets", action="store_true",
                     help="print the worksheet names the dialog offers, then stop")
     ap.add_argument("--dump", action="store_true",
@@ -242,6 +292,9 @@ def main(argv=None) -> int:
            else dt.date.today() - dt.timedelta(days=1))
     sunday = week_ending(day)
     _log(f"rep: {a.rep}   week ending {sunday.isoformat()}")
+
+    if a.probe_filters:
+        return probe_filters(sunday, a.rep)
 
     if a.list_sheets:
         return list_sheets(sunday, a.rep, filters=a.filters,
