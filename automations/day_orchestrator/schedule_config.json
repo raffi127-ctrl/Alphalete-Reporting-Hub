@@ -5075,6 +5075,27 @@
       },
       "machine": "Lucy 1"
     },
+    "override_compare": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY. Compara la pestana que Eve llena A MANO (Org Overrides Ongoing Report) contra la que llena el bot (Copy of Org Overrides Ongoing Report), que es la que el bulletin renderiza. No escribe nada, en ninguna pestana, y corre en cualquier maquina (solo Sheets, ni Tableau ni browser). Default: las 5 semanas mas nuevas, la MISMA ventana que backtrack.DEFAULT_WEEKS. Lee celdas CRUDAS (build.read_data descarta las filas con \"credico\" y recalcula los totales, asi que una comparacion hecha con el parser del modulo se come justo la diferencia), cruza por NOMBRE via ICD Aliases (las dos pestanas tienen las filas en orden distinto) y mete la SECCION en la clave (los siete lideres estan en ALL ORG y otra vez en CAPTAIN/SPECIAL). Tolerancia default de un dolar porque el bulletin publica dolares enteros; imprime cuantas celdas salteo y --tolerance 0 muestra los centavos. Sale con 0 aunque encuentre diferencias: una diferencia es informacion, no una corrida fallida. `lucy rerun override_compare [--weeks N] [--slack]`. Agregado 2026-08-14 (Eve).",
+      "display_name": "Override Bulletin - comparar con la pestana de Eve",
+      "source_type": "sheets",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.compare"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "override_backtrack": {
       "on_scheduler": false,
       "_off_scheduler_note": "Re-reads the last 4 weeks of the Override Bulletin and corrects any that DRIFTED. Prior weeks keep settling: between 2026-07-23 and 07-24 the VA's own 7.12 column moved (Rafael +$294.51, Carlos +$441.77, Burden +$480.18). Runs automatically inside override_bulletin (including on a HOLD pass); this entry is for a manual `lucy rerun override_backtrack`. Corrects the REGULAR component only and rebuilds each cell as fresh-regular + the captain/special ALREADY on the sheet (DD only ever carries the just-closed week). DRY-RUN unless --write; sandbox only; a person absent from the source is reported, never zeroed.",
