@@ -86,9 +86,29 @@ class SectionDropTests(unittest.TestCase):
             "finding")
         text = "\n".join(parent)
         self.assertLess(len(text), 400)
-        self.assertIn("See thread for the list", text)
+        # The parent must SAY the rest is in the thread — but not in one fixed
+        # phrase: a kind whose run dropped nothing can't honestly say "the list
+        # of missing items" and overrides the wording (`see_thread`). Pinning
+        # the default string here is what made this test fail on a truthful
+        # rewording rather than on a real regression.
+        self.assertIn("thread", text.lower())
         self.assertNotIn(FINDINGS[0], text)
         self.assertTrue(all(f in "\n".join(detail) for f in FINDINGS))
+
+    def test_a_paragraph_long_fix_goes_to_the_thread(self):
+        """A 240-char remediation in the CHANNEL is the wall of text this split
+        exists to prevent — it belongs with the detail it explains."""
+        parent, detail = sda._compose_parts(
+            "vantura-board-audit", FINDINGS, None, "", "finding")
+        self.assertNotIn("*Fix:*", "\n".join(parent))
+        self.assertIn("*Fix:*", "\n".join(detail))
+
+    def test_a_short_fix_still_reads_in_the_channel(self):
+        """The other half of the rule: a one-line fix is the parent's whole
+        value, so threading it would be an extra click for nothing."""
+        parent, _ = sda._compose_parts(
+            "office_metrics", FINDINGS, {"fix": "re-run it."}, "", "finding")
+        self.assertIn("*Fix:* re-run it.", "\n".join(parent))
 
     def test_single_drop_stays_inline(self):
         parent, detail = sda._compose_parts(

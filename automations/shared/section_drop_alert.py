@@ -212,7 +212,17 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     if not threaded:
         parent += body
     fix = remediation.get("fix") if isinstance(remediation, dict) else None
-    parent.append(f"*Fix:* {fix or spec['fix'].format(**fmt)}")
+    fix_line = f"*Fix:* {fix or spec['fix'].format(**fmt)}"
+    # The fix goes wherever it can actually be read. A one-liner stays in the
+    # channel — that's the whole value of the parent. But once an alert is
+    # already threading its detail, a PARAGRAPH-length remediation is the same
+    # wall of text this split exists to prevent, so it goes down with the rest.
+    # The 'finding' fix is 240 chars on its own, which is what left the Vantura
+    # audit's parent at 456 against this module's own 400-char contract
+    # (test_alert_thread has been failing on main since 2026-08-13).
+    fix_threaded = threaded and len(fix_line) > _INLINE_CHARS
+    if not fix_threaded:
+        parent.append(fix_line)
     parent.append(spec["tail"])
     if not threaded:
         return parent, []
@@ -221,6 +231,8 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     detail += [f"   • {f}" for f in failed]
     if note and not spec.get("skip_note"):
         detail += ["", f"_{note}_"]
+    if fix_threaded:
+        detail += ["", fix_line]
     return parent, detail
 
 
