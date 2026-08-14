@@ -269,6 +269,7 @@ def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
+                     stamp: Optional[str] = None,
                      channel: str = CHANNEL, day: Optional[dt.date] = None,
                      dry_run: bool = False, client=None,
                      max_age_days: int = MAX_AGE_DAYS,
@@ -282,6 +283,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
       followup  what a RECURRENCE says in-thread; defaults to title + body. The
                 recurrence stamp ("Happened again — Thu Aug 14 · 3rd time") is
                 prepended here, so callers don't each invent their own wording.
+      stamp     replaces that first line when the reply is NOT a recurrence —
+                e.g. a sibling report joining a shared incident key.
 
     Returns {'ts', 'new', 'key', 'text', 'count'} — 'ts' is always the PARENT, so
     a caller can thread more under it and resolve() can find it later. None means
@@ -348,15 +351,22 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         n = int(inc.get("count") or 0) + 1
         # n counts FOLLOW-UPS; the reader counts OCCURRENCES, and the parent post
         # is the first one — so the first reply is the 2nd time this happened.
-        stamp = ":repeat: *Happened again* — {} · {} time".format(_human(day),
-                                                                 _ordinal(n + 1))
+        line = ":repeat: *Happened again* — {} · {} time".format(
+            _human(day), _ordinal(n + 1))
         opened = inc.get("opened")
         if opened and opened != day.isoformat():
             try:
-                stamp += " since {}".format(_human(dt.date.fromisoformat(opened)))
+                line += " since {}".format(_human(dt.date.fromisoformat(opened)))
             except Exception:  # noqa: BLE001
-                stamp += " since {}".format(opened)
-        lines = [stamp] + list(followup or ([title] + body))
+                line += " since {}".format(opened)
+        # A caller can own that first line instead. Not every reply is a
+        # RECURRENCE: when several reports share one incident key (the three BOX
+        # order logs do, so one stuck export is one thread — Eve 2026-08-14), the
+        # second reply is a different OFFICE in the same run, and "Happened again
+        # · 2nd time" describes something that didn't happen. The count and the
+        # date still live in the index; they just stop being asserted in words
+        # nobody can check.
+        lines = [stamp or line] + list(followup or ([title] + body))
         try:
             _send(client, channel, lines, thread_ts=inc["ts"])
         except Exception as e:  # noqa: BLE001 — fall back to a standalone post

@@ -113,6 +113,13 @@ _KINDS = {
                "/ Account Id filters likely re-pinned (see box_order_log/"
                "window.py). The fill/merge is idempotent.",
         "tail": "No email/post went out — a gap beats numbers that undercount.",
+        # The three BOX order logs share one incident key on purpose, so a reply
+        # in this thread is usually a DIFFERENT OFFICE in the same run, not the
+        # same one failing twice. The default ":repeat: Happened again · 2nd
+        # time" said the wrong thing about it (Eve 2026-08-14). Each reply names
+        # its own office, so the line above it only has to say "this one didn't
+        # send either".
+        "followup_stamp": ":heavy_plus_sign: *Also didn't send*",
     },
     # A data-quality AUDIT finding (kind='finding' — vantura_board_audit today).
     # NOTHING DROPPED. The audit ran end to end and did exactly the job it
@@ -309,6 +316,8 @@ def alert(*, report_id: str, failed: Sequence[str],
                                            title=parent_lines[0],
                                            body=parent_lines[1:],
                                            details=detail, channel=CHANNEL,
+                                           stamp=(_KINDS.get(kind) or {}).get(
+                                               "followup_stamp"),
                                            day=day, client=client)
         except Exception as e:  # noqa: BLE001
             print("  ⚠ incident thread unavailable ({}: {}) — posting "
