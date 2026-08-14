@@ -339,7 +339,17 @@ def main(argv: Optional[list] = None) -> int:
             _behind = (today - _newest).days if _newest else None
             _detail = ("newest sale {}, {} days behind".format(_newest, _behind)
                        if _newest else "no dated sales at all")
-            sda.alert(report_id="box-order-log", failed=[_detail],
+            # ONE alert for the whole BOX family (Eve 2026-08-14). Carlos's run
+            # here and the per-owner runs on the mini share this report_id on
+            # purpose: section_drop_alert keys its incident thread off it, so
+            # three offices failing the same morning land as three lines in ONE
+            # thread instead of three near-identical 🚨 posts — which is what
+            # happened on 8/14 and made one stuck export read as three broken
+            # reports. Whoever fails first opens it; the rest reply. So the
+            # OFFICE has to be inside the line: the headline can no longer say
+            # whose numbers are missing.
+            sda.alert(report_id="box-order-log",
+                      failed=["Carlos Hidalgo — {}".format(_detail)],
                       kind="capped", day=today)
         except Exception:
             pass
