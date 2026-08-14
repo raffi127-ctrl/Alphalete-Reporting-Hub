@@ -140,6 +140,19 @@ def main(argv=None) -> int:
         _log(f"  !! {units} units for one rep is not credible -- the Rep filter "
              "almost certainly did not apply. Nothing written.")
         return 75
+    # THE TARGET DAY MUST BE IN THE EXPORT. This runs at ~4am inside the
+    # morning chain, ahead of the single production post, and Tableau publishes
+    # the previous day on its own schedule -- if yesterday has not landed yet
+    # the crosstab simply has no column for it, which is indistinguishable from
+    # "he sold nothing". Holding (75) makes the orchestrator say so and re-run;
+    # writing nothing silently would let the post go out with him at zero,
+    # which is the exact failure this module exists to stop.
+    target_day = P.WEEKDAYS[day.weekday()]
+    if target_day not in days:
+        _log(f"  !! {target_day} ({day.isoformat()}) is not a column in the "
+             "export -- Tableau has not published that day yet. HOLDING, "
+             "nothing written.")
+        return 75
     if not any(days.values()):
         _log("  no sales in this week's export -- nothing to write")
         return 0
