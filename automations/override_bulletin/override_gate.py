@@ -97,7 +97,26 @@ def build_preview(tab: str = None, verbose: bool = True):
     Returns (html_path, week, gaps): `week` is the leftmost tab header, `gaps`
     are the captain/program rows whose weekly figure has not been sourced yet —
     shown in the review post as a heads-up, never as a blocker (see the module
-    docstring)."""
+    docstring).
+
+    A BLANK IS NOT AUTOMATICALLY A GAP. Carlos' and Colten's Special Override is
+    a retail-PERIOD item — it posts at period end and shows on the first week of
+    the next period, so it is legitimately blank ~3 weeks out of 4. Listing it
+    put the same two names in front of Eve nearly every Friday under the heading
+    "not sourced yet", which is exactly the warning-that-cries-wolf that trains
+    people to skim past the real one (Eve 2026-08-14). `send.py` already made
+    this distinction for its #claudecorrections alert; the review post now uses
+    the SAME two rules, imported rather than re-implemented so the two can never
+    disagree about what counts as a gap:
+
+      * routine  — the row's own recent history says it is blank most weeks
+                   (`send._blank_is_routine`); no name list, so a new
+                   period-based row needs no code change and a weekly row that
+                   goes quiet still shouts.
+      * override — a RED P#-YYYY marker sitting on THIS week is the sheet saying
+                   "money is expected here and has not landed"
+                   (`send._week_has_pending_marker`); then every blank counts.
+    """
     tab = tab or F.SANDBOX_TAB
     week_labels, combined, regular, captainship, program = _read(tab)
     B.OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -106,10 +125,22 @@ def build_preview(tab: str = None, verbose: bool = True):
         B.build_html(week_labels, combined, regular, captainship, program),
         encoding="utf-8")
     wk = (week_labels[0] if week_labels else "").strip()
-    gaps = [r["name"] for r in (captainship + program) if r.get("week") is None]
+    blank_rows = [r for r in (captainship + program) if r.get("week") is None]
+    gaps, routine = [], []
+    if blank_rows:
+        from automations.override_bulletin import send as S
+        from automations.recruiting_report import fill as _fill
+        ws = _fill._client().open_by_key(F.WORKBOOK_ID).worksheet(tab)
+        marker_pending = S._week_has_pending_marker(ws, wk)
+        for r in blank_rows:
+            (gaps if (marker_pending or not S._blank_is_routine(r))
+             else routine).append(r["name"])
     if verbose:
         print(f"✓ page built — week {wk!r}, {len(combined)} org rows"
               f"{f', {len(gaps)} gap(s)' if gaps else ''}", flush=True)
+        if routine:
+            print(f"  routine blank(s), NOT shown in the post (period-based, "
+                  f"blank most weeks): {', '.join(routine)}", flush=True)
     return html_path, wk, gaps
 
 

@@ -191,11 +191,19 @@ def _do_backtrack(tab, weeks, write, verbose):
     spent fixing them. Verified drift on the VA's own 7.12 column between
     2026-07-23 and 07-24 — Rafael +$294.51, Carlos +$441.77, Burden +$480.18.
 
+    `weeks=None` means "whatever backtrack itself says" — ONE knob, not two. It
+    used to default to 4 here while `backtrack.DEFAULT_WEEKS` said 5 (Eve raised
+    it on 2026-08-07 precisely because a 4-week window let 6.14-7.5 go stale),
+    so the scheduled Friday fill — the only caller that matters — silently kept
+    re-reading 4. Resolve it from the module so raising it there is enough.
+
     Best-effort: a backtrack failure must never lose (or fail) the fill."""
-    if not weeks:
-        return
     try:
         from automations.override_bulletin import backtrack as BT
+        if weeks is None:
+            weeks = BT.DEFAULT_WEEKS
+        if not weeks:                       # explicit 0 disables it
+            return
         print(f"\n--- backtrack: re-reading the last {weeks} week(s) ---")
         BT.backtrack(tab=tab, weeks=weeks, write=write, verbose=verbose)
     except Exception as e:  # noqa: BLE001
@@ -203,7 +211,7 @@ def _do_backtrack(tab, weeks, write, verbose):
 
 
 def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
-        force=False, backtrack_weeks=4):
+        force=False, backtrack_weeks=None):
     from automations.recruiting_report import fill as _fill
     from automations.shared.tableau_patchright import tableau_session
     wb = _fill._client().open_by_key(F.WORKBOOK_ID)
@@ -354,9 +362,10 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="refill the week even if the tab already has values for "
                          "it (overwrites mapped cells; deletes nothing)")
-    ap.add_argument("--backtrack-weeks", type=int, default=4,
+    ap.add_argument("--backtrack-weeks", type=int, default=None,
                     help="how many recent weeks to re-read and correct for "
-                         "source drift (0 disables)")
+                         "source drift (0 disables; default: whatever "
+                         "backtrack.DEFAULT_WEEKS says — currently 5)")
     ap.add_argument("--clear-week", metavar="WEEK",
                     help="blank this week's mapped cells so it can be filled "
                          "again (sandbox only; needs --write to actually clear)")
