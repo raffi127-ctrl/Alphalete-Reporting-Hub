@@ -146,6 +146,9 @@ def main(argv=None) -> int:
                     help="worksheet name in the Crosstab dialog")
     ap.add_argument("--list-sheets", action="store_true",
                     help="print the worksheet names the dialog offers, then stop")
+    ap.add_argument("--dump", action="store_true",
+                    help="diagnostic: pull and print the crosstab's first rows "
+                         "raw, to see which columns it actually carries")
     ap.add_argument("--no-filters", action="store_true",
                     help="diagnostic: open the view with NO url filters, to tell "
                          "an unrecognised filter name from a render problem")
@@ -167,6 +170,26 @@ def main(argv=None) -> int:
 
     if a.list_sheets:
         return list_sheets(sunday, a.rep, filters=not a.no_filters)
+
+    if a.dump:
+        # The URL filters break this view: with them the viz never renders and
+        # the Crosstab dialog offers zero sheets (proved on Lucy 2 2026-08-14,
+        # --no-filters lists all three). So the plan is to pull UNFILTERED and
+        # select the rep in code -- this prints the raw shape to confirm the
+        # sheet carries a Rep column and which week it defaults to.
+        from automations.shared.tableau_patchright import download_crosstab_patchright
+        dest = OUT_DIR / "_dump.csv"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _log(f"  url: {view_url(sunday, a.rep, not a.no_filters)}")
+        download_crosstab_patchright(view_url(sunday, a.rep, not a.no_filters),
+                                     a.sheet, dest, verbose=True)
+        rows = P.read_rows(dest)
+        _log("")
+        _log(f"--- {dest.name}: {len(rows)} filas, ancho max "
+             f"{max((len(r) for r in rows), default=0)} ---")
+        for i, r in enumerate(rows[:20], start=1):
+            _log(f"  {i:>3}: {r}")
+        return 0
 
     # ---- source -----------------------------------------------------------
     if a.from_file:
