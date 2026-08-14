@@ -314,7 +314,15 @@ def _action_rerun(args: str) -> tuple[bool, str]:
             chrome_guard.close_stray_chrome()
         except Exception:  # noqa: BLE001 — a guard must never crash the rerun
             pass
-    cmd = ([sys.executable, "-m", r.command[0]] + list(r.command[1:])
+    # -u (unbuffered) is load-bearing, not tidiness. The child's stdout is a
+    # PIPE, so Python block-buffers it; when a rerun hits the timeout below,
+    # everything still sitting in that buffer dies with the process and
+    # _run_cmd writes a log holding nothing but the stderr warnings. On
+    # 2026-08-14 two 20-minute box_order_log_roshan reruns both left a 13-line
+    # log with no trace of WHERE they stopped — the timeouts we most need to
+    # read are exactly the ones this loses. The LaunchAgents already run their
+    # modules with -u for the same reason (deploy/box_order_log_owners.sh:66).
+    cmd = ([sys.executable, "-u", "-m", r.command[0]] + list(r.command[1:])
            + list(r.base_args) + extra)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
 
