@@ -364,7 +364,10 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
     captures each run cdp_pull._kill_ours()/_launch() and their own
     sync_playwright, which killed a shared page and can't nest two playwrights in
     one thread (proven 2026-07-22). Sharing one Chrome needs every Chrome user in
-    the batch to accept a passed page — a bigger refactor, deferred."""
+    the batch to accept a passed page — a bigger refactor, deferred.
+
+    Each view is captured under the shared CDP-9246 lock, so "own Chrome per
+    view" never means "own Chrome AT THE SAME TIME as somebody else's"."""
     import time
 
     from patchright.sync_api import sync_playwright
@@ -399,36 +402,55 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             pass
         apply_sort(page, hdr, clicks=meta.get("sort_clicks", 1), verbose=True)
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    try:
-        with sync_playwright() as p:
-            browser = None
-            for attempt in range(10):
-                time.sleep(5)
-                try:
-                    browser = p.chromium.connect_over_cdp(
-                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-                    break
-                except Exception:  # noqa: BLE001 — retry a not-yet-up port
-                    if attempt == 9:
-                        raise
-                    log("  [cdp] port not up yet (try {}/10)".format(attempt + 1))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
-        if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
-            _crop_to_last_colored_row(
-                out, leading=(meta.get("crop_mode") == "leading"), verbose=True)
-        return out
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
+    # SERIALISE on the shared CDP-9246 lock — the same one activation_board_image
+    # below and EVERY att_order_log / vantura_churn entry point already take.
+    # Without it the _kill_ours() on the next line is a bare
+    # `pkill -f vantura_cdp_profile`: it murders another report's Chrome mid-pull,
+    # and that report's own _kill_ours() murders ours right back. Both sides then
+    # die with patchright TargetClosedError, which reads like a broken Tableau
+    # view but is only two jobs fighting over one Chrome.
+    #
+    # This was the LAST unlocked user of port 9246, and it was the aggressor on
+    # both sides of 2026-08-14: it dropped `carlos: order_tiered_bonus` from the
+    # 4am thread (04:57-05:06) and it killed the 07:00 vantura-churn ORDERLOG
+    # pull when the 07:45 backstop pass fired. tableau_image feeds 6 of the 11
+    # sections (sales_metrics, the 3 churns, order_tiered_bonus, out_of_bounds),
+    # so the exposure was most of the thread, not one card.
+    with cdp_pull._cdp_lock(label="b2b {} {}".format(o.key, view_key), log=log):
         cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        try:
+            with sync_playwright() as p:
+                browser = None
+                for attempt in range(10):
+                    time.sleep(5)
+                    try:
+                        browser = p.chromium.connect_over_cdp(
+                            "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                        break
+                    except Exception:  # noqa: BLE001 — retry a not-yet-up port
+                        if attempt == 9:
+                            raise
+                        log("  [cdp] port not up yet (try {}/10)".format(
+                            attempt + 1))
+                ctx = (browser.contexts[0] if browser.contexts
+                       else browser.new_context())
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                capture_page(page, spec, out_dir, after_load=after_load,
+                             verbose=False)
+            if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
+                _crop_to_last_colored_row(
+                    out, leading=(meta.get("crop_mode") == "leading"),
+                    verbose=True)
+            return out
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
 
 
 def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
