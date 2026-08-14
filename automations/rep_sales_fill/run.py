@@ -85,7 +85,18 @@ def week_ending(day: dt.date) -> dt.date:
     return day + dt.timedelta(days=6 - day.weekday())
 
 
-def view_url(sunday: dt.date, rep: str) -> str:
+def view_url(sunday: dt.date, rep: str, filters: bool = True) -> str:
+    """The view, optionally with the two URL filters.
+
+    `filters=False` is a DIAGNOSTIC. Lucy 2's Crosstab dialog came back with
+    zero sheets on this view while the same dialog, opened by hand, lists three
+    ("Last Refresh (2)", "Product Sales Summary by ORG", "Sales By ICD (Weekly
+    View)"). A filter name Tableau does not recognise can leave the viz
+    unrendered, and an unrendered viz has no worksheets to offer -- so pulling
+    the bare view tells us whether the filters are what breaks it.
+    """
+    if not filters:
+        return VIEW
     return (f"{VIEW}?:refresh=yes"
             f"&Sale%20Date%20Week%20Ending={sunday.isoformat()}"
             f"&Rep={quote(rep)}")
@@ -100,7 +111,7 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
                                         dest, verbose=True)
 
 
-def list_sheets(sunday: dt.date, rep: str) -> int:
+def list_sheets(sunday: dt.date, rep: str, filters: bool = True) -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
 
     The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
@@ -112,7 +123,8 @@ def list_sheets(sunday: dt.date, rep: str) -> int:
     """
     from automations.shared.tableau_patchright import download_crosstab_patchright
     try:
-        download_crosstab_patchright(view_url(sunday, rep),
+        _log(f"  url: {view_url(sunday, rep, filters)}")
+        download_crosstab_patchright(view_url(sunday, rep, filters),
                                      "__LIST_SHEETS__ (deliberate miss)",
                                      OUT_DIR / "_list_sheets.csv", verbose=True)
     except Exception as exc:  # noqa: BLE001 -- the message IS the payload
@@ -134,6 +146,9 @@ def main(argv=None) -> int:
                     help="worksheet name in the Crosstab dialog")
     ap.add_argument("--list-sheets", action="store_true",
                     help="print the worksheet names the dialog offers, then stop")
+    ap.add_argument("--no-filters", action="store_true",
+                    help="diagnostic: open the view with NO url filters, to tell "
+                         "an unrecognised filter name from a render problem")
     ap.add_argument("--sheet-id", help="write to a different workbook (a copy)")
     ap.add_argument("--apply", action="store_true", help="write (default: preview)")
     ap.add_argument("--overwrite", action="store_true",
@@ -151,7 +166,7 @@ def main(argv=None) -> int:
     _log(f"rep: {a.rep}   week ending {sunday.isoformat()}")
 
     if a.list_sheets:
-        return list_sheets(sunday, a.rep)
+        return list_sheets(sunday, a.rep, filters=not a.no_filters)
 
     # ---- source -----------------------------------------------------------
     if a.from_file:
