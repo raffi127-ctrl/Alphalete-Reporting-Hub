@@ -3800,6 +3800,91 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok_all, " · ".join(out)
 
 
+def _action_chrome_unstick(args: str) -> tuple[bool, str]:
+    """Kill an AUTOMATION Chrome left holding a shared browser profile.
+
+      chrome_unstick [profile-name] [--dry]
+        profile-name  the profile dir's name, default '.browser_profile'
+                      (tableau_patchright.PROFILE_DIR — what every Tableau
+                      report on this machine launches on)
+        --dry         list what would be killed and change nothing
+
+    WHY THIS EXISTS (2026-08-14): when `lucy rerun` kills a browser report at
+    its timeout, Playwright's Chrome can outlive the Python parent and keep the
+    profile's ProcessSingleton. Every later run on that profile then dies with
+    "Failed to create a ProcessSingleton for your profile directory", AFTER
+    burning the full 30-minute profile-lock wait (_PROFILE_LOCK_WAIT_S) — which
+    is exactly how box_order_log_abel failed twice that afternoon while Roshan's
+    identical run had gone through an hour earlier.
+
+    chrome_guard can't clean this up: it protects everything under
+    `automations/uploaded` on purpose, so the orphan survives every guard pass
+    and would have broken the 7:00 LaunchAgents the next morning too.
+
+    Matched on the `--user-data-dir=` VALUE, by exact dir name, not a substring:
+    '.browser_profile' must not also match the session holder's
+    '.browser_profile_holder' (killing the holder logs every report out). Only
+    the main browser process is signalled; helpers (`--type=`) die with it."""
+    import shlex
+    import signal as _signal
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    dry = "--dry" in parts
+    named = [p for p in parts if not p.startswith("-")]
+    target = named[0] if named else ".browser_profile"
+    if sys.platform != "darwin":
+        return False, f"chrome_unstick is macOS-only (this machine: {sys.platform})"
+    try:
+        out = subprocess.run(["ps", "-Ao", "pid=,command="], capture_output=True,
+                             text=True, timeout=15).stdout
+    except Exception as e:  # noqa: BLE001
+        return False, f"ps failed: {type(e).__name__}: {str(e)[:100]}"
+    victims = []
+    for line in out.splitlines():
+        line = line.strip()
+        if "Google Chrome.app/Contents/MacOS/Google Chrome" not in line:
+            continue
+        if "--type=" in line:
+            continue                       # helper process, not the browser
+        udd = ""
+        for tok in line.split():
+            if tok.startswith("--user-data-dir="):
+                udd = tok.split("=", 1)[1]
+                break
+        if not udd or os.path.basename(udd.rstrip("/")) != target:
+            continue
+        try:
+            victims.append(int(line.split(None, 1)[0]))
+        except ValueError:
+            continue
+    if not victims:
+        return True, f"no Chrome is holding {target!r} — nothing to unstick"
+    if dry:
+        return True, f"DRY: would kill PID(s) {victims} holding {target!r}"
+    killed = []
+    for pid in victims:
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            pass
+        except Exception as e:  # noqa: BLE001
+            return False, f"kill {pid} failed: {type(e).__name__}: {str(e)[:80]}"
+    time.sleep(5)
+    still = []
+    for pid in killed:
+        try:
+            os.kill(pid, 0)
+            os.kill(pid, _signal.SIGKILL)
+            still.append(pid)
+        except OSError:
+            pass
+    return True, (f"unstuck {target!r}: closed PID(s) {killed}"
+                  + (f" (SIGKILL needed for {still})" if still else ""))
+
+
 ACTIONS = {
     "ping": _action_ping,
     "messages_diag": _action_messages_diag,
@@ -3868,6 +3953,7 @@ ACTIONS = {
     "nsf_fix_rollcall": _action_nsf_fix_rollcall,
     "nsf_status": _action_nsf_status,
     "chrome_sync_diag": _action_chrome_sync_diag,
+    "chrome_unstick": _action_chrome_unstick,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
