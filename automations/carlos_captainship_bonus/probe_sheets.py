@@ -224,7 +224,9 @@ def main(argv=None) -> int:
 
     from urllib.parse import quote
 
-    urls = args.url or [T.VIEW]
+    # Both of the report's sources by default — since 2026-08-13 the numbers come
+    # from TWO views, not one (activations moved to ACTIVATIONRATES).
+    urls = args.url or [T.VIEW_RATES, T.VIEW_ACTIVATIONS]
 
     def _url(week_sat=None) -> str:
         """Base view + optional team filter + optional pinned activation week."""
@@ -245,14 +247,21 @@ def main(argv=None) -> int:
         # the LAST SUCCESSFUL run downloaded, so after the source view died they
         # are the only surviving record of the deleted worksheets' shape.
         import time
-        names = {"sales": "cb_owner_sales.csv",
-                 "check2": "captain_team_check_2.csv",
-                 "check4": "captain_team_check_4.csv",
-                 "metrics": "cb_owner_metrics.csv"}
+        # Keyed by the DELETED worksheet name, not by T.SHEETS: SHEETS now names
+        # the replacements, while these files are the last download the old ones
+        # ever produced (2026-08-12). Both sets are listed so the two shapes can
+        # be diffed side by side.
+        names = {"CB-Owner Sales": "cb_owner_sales.csv",
+                 "Captain Team Check (2)": "captain_team_check_2.csv",
+                 "Captain Team Check (4)": "captain_team_check_4.csv",
+                 "CB-Owner Metrics": "cb_owner_metrics.csv"}
+        names.update({T.SHEETS["activations"]: "activation_office.csv",
+                      T.SHEETS["rates"]: "churn_activation_tiers.csv",
+                      T.SHEETS["nonpmt"]: "captains_non_pmt.csv"})
         for key, fn in names.items():
             p = Path(T.CACHE_DIR) / fn
             rec("")
-            rec(f"=== {key}: {T.SHEETS[key]!r}  ({fn}) ===")
+            rec(f"=== {key!r}  ({fn}) ===")
             if not p.exists():
                 rec("  MISSING — no cached copy on this machine")
                 continue
@@ -374,9 +383,10 @@ def main(argv=None) -> int:
             for r in rows[1:1 + args.rows]:
                 rec("    " + " | ".join(str(c or "")[:26] for c in r[:10]))
             # Does Carlos' team actually appear, and where?
+            team_label = T._norm(TEAM_VALUE)
             hits = [(ri, r) for ri, r in enumerate(rows[1:], 1)
-                    if any(T._norm(c) == T.TEAM for c in r[:3])]
-            rec(f"  rows whose first 3 cols contain {T.TEAM!r}: {len(hits)}")
+                    if any(T._norm(c) == team_label for c in r[:3])]
+            rec(f"  rows whose first 3 cols contain {team_label!r}: {len(hits)}")
             for ri, r in hits[:6]:
                 rec(f"    [row {ri}] " + " | ".join(str(c or "")[:26] for c in r[:10]))
             _fingerprint(rows, rec)

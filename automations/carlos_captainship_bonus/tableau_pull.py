@@ -1,17 +1,38 @@
 """Pull Carlos' B2B team weekly bonus inputs from Tableau.
 
-Source: ATTTRACKER-B2B / B2B 1-PAGER_Captain View, the BASE view. Filtered to
-the just-completed week via the
-**"Activation Date Week Ending (copy)"** URL param set to that week's SATURDAY
-in **ISO (YYYY-MM-DD)** form — M/D/YYYY silently no-ops and leaves the
-in-progress week (verified 2026-07-07). Four crosstab worksheets:
+REBUILT 2026-08-13. The old source — ATTTRACKER-B2B / CaptainsTeam, custom view
+"B2B Leader Recognition" — was deleted in a workbook republish, and its four
+worksheets (CB-Owner Sales, Captain Team Check (2)/(4), CB-Owner Metrics) do not
+exist anywhere in the workbook any more: the dashboard was rebuilt, not moved
+(enumerated across every candidate view, 0/4 on each). So this is not a rename
+— every number below comes from a different place now.
 
-  * CB-Owner Sales        -> per-rep **weekly activations** for Carlos' team
-                             (+ team total = 808 for WE 2026-07-05).
-  * Captain Team Check (2)-> team **Churn Rate (0-30)** + **Activation Rate
-                             (31-60)** (Carlos's Team row).
-  * Captain Team Check (4)-> team **Non Pmt %** (Carlos's Team row).
-  * CB-Owner Metrics      -> Carlos Hidalgo's personal **Churn Rate (0-30)**.
+Both sources are BASE views, never saved custom views: those are per-user (the
+bot signs in as Rafael) and die on every republish. Both are scoped with the
+**team filter in the URL**, which is also what collapses the new rate views'
+CRU/IRU split back into the single per-team row the old worksheets had.
+
+  ACTIVATIONRATES / "Activation Office"  (team filter + week pinned)
+      per-owner **weekly activations**. Each owner spans THREE rows
+      (Activation % / Total Activations / Total Volume) x FOUR age buckets
+      (0-7, 8-14, 15-30, 31-60 Days); the week's number is the
+      "Total Activations" row SUMMED across the four buckets. The buckets are
+      how long after the sale it activated -- not weeks -- so summing is
+      required, not optional.
+
+  B2B1-PAGER_CaptainView / "Churn, Activation and Tiers"  (team filter)
+      Grand Total row -> team **Churn Rate (0-30)** + **Activation Rate
+      (31-60)**; CARLOS HIDALGO's row -> his personal churn. Also the roster.
+
+  B2B1-PAGER_CaptainView / "Captains View - Non pmt%"  (team filter)
+      Grand Total row, "Grand Total" column -> team **Non Pmt %**.
+
+Verified against WE 8.9 -- the last week that filled before the republish, whose
+numbers are still in the sheet. Pulled 2 days later: activations Atef 221=221,
+George 101=101, Gary 19=19, team 833 vs 827; churn team 3.8 vs 3.7; activation
+76 vs 76.7; non-pmt 3.58 vs 3.48. The small drift is late-posted activations and
+the rolling 0-30/31-60 cohorts moving on -- the report has always been a
+Tuesday snapshot.
 
 Reuses fiber_activations.pull.cycle_saturday for the week + the patchright
 ownerville SSO downloader. One FRESH session per download (page=None): sharing
@@ -29,32 +50,35 @@ from automations.fiber_activations import pull as P
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
 CACHE_DIR = Path("/tmp/carlos_captainship_bonus")
-# The BASE view. It used to be a saved custom view on a 'CaptainsTeam' sheet
-# (B2BLeaderRecognition, GUID 15e2f8c1-…). On 2026-08-13 the workbook was
-# restructured, that sheet stopped existing, and the URL answered with a
-# permission/not-found page — the viz never hydrates, so the pull died on a
-# 120s timeout waiting for the Download button (3 attempts, no partial write).
-# Same republish took captainship_drafts' §2 down the same day; it moved to this
-# same base view. Do NOT go back to a saved custom view: they are per-user (the
-# bot signs in as Rafael) and die on every republish.
-# The 4 worksheets below are unfiltered here — each crosstab carries every
-# captain's team and the parsers pick TEAM's rows — so no team filter is applied.
-# [[project_captainship-b2b-teamstats-view]] [[project_broken-custom-view-failure-mode]]
-VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-        "B2B1-PAGER_CaptainView")
+_SITE = "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
+# Where the per-owner activation COUNT lives. The rebuilt 1-pager views only
+# publish SALES (team 1057 vs 827 activations for WE 8.9, and the ratio differs
+# per owner, so it cannot be derived) -- this view is the only one carrying the
+# count itself. [[project_carlos-captainship-bonus-view-dead]]
+VIEW_ACTIVATIONS = _SITE + "ACTIVATIONRATES"
+# Where the four rate/percentage cells come from.
+VIEW_RATES = _SITE + "B2B1-PAGER_CaptainView"
+
 WEEK_FIELD = "Activation%20Date%20Week%20Ending%20(copy)"  # value = Saturday ISO
-# The 4 crosstab worksheets on that view, by role. Hoisted into ONE dict because
-# a workbook republish renames them as a set (2026-08-13 renamed all four at
-# once) — re-map here, not in four scattered call sites. `probe_sheets.py` lists
-# what the dialog currently offers and flags which of these went missing.
+# Scopes both views to Carlos' team. Same field captainship_drafts drives, and
+# the reason the rate sheets return a single Grand Total row instead of a
+# CRU + IRU pair. Proven live 2026-08-13 (70 rows -> 12).
+TEAM_FIELD = "B2B Captain's Teams (SFDC)"
+TEAM_VALUE = "Carlos's Team"
+
+# Worksheet per role. Hoisted into ONE dict because a republish renames them as
+# a set (2026-08-13 renamed all four at once) -- re-map here, not at scattered
+# call sites. `probe_sheets.py` lists what each dialog currently offers and
+# flags which of these went missing.
 SHEETS = {
-    "sales":   "CB-Owner Sales",           # per-rep weekly activations
-    "check2":  "Captain Team Check (2)",   # team churn 0-30 + activation 31-60
-    "check4":  "Captain Team Check (4)",   # team Non Pmt %
-    "metrics": "CB-Owner Metrics",         # per-owner churn 0-30 (+ SFDC roster)
+    "activations": "Activation Office",           # per-owner weekly activations
+    "rates":       "Churn, Activation and Tiers",  # team + personal churn, activation
+    "nonpmt":      "Captains View - Non pmt%",     # team Non Pmt %
 }
-TEAM = "carlos's team"          # SFDC team label in the crosstabs
 CARLOS_OWNER = "carlos hidalgo"  # for the personal 0-30 churn
+_GRAND_TOTAL = "grand total"
+# The measure whose row carries the activation count on 'Activation Office'.
+_ACT_MEASURE = "total activations"
 
 
 @dataclass
@@ -95,98 +119,152 @@ def _col(header: List[str], *substrs: str) -> Optional[int]:
     return None
 
 
+def _team(url: str) -> str:
+    """`url` scoped to Carlos' team. Both views need it: it is what limits the
+    export to his owners AND what makes the rate sheets emit one Grand Total row
+    instead of a CRU + IRU pair."""
+    from urllib.parse import quote
+    return f"{url}?{quote(TEAM_FIELD)}={quote(TEAM_VALUE)}&:iid=1"
+
+
 def _act_url(today: dt.date) -> str:
-    """URL for the per-rep ACTIVATIONS worksheet: pin the completed week via
-    'Activation Date Week Ending (copy)' = that week's Saturday in ISO. Without
-    it the dashboard shows the in-progress week (Carlos 62, not 808)."""
+    """URL for the ACTIVATIONS worksheet: team-scoped and pinned to the completed
+    week via 'Activation Date Week Ending (copy)' = that week's Saturday in ISO.
+    ISO ONLY — M/D/YYYY is ignored in silence and leaves the in-progress week
+    (verified 2026-07-07). [[project_tableau-url-date-filter-iso]]"""
     sat = P.cycle_saturday(today).isoformat()
-    return f"{VIEW}?:iid=1&{WEEK_FIELD}={sat}"
+    return f"{_team(VIEW_ACTIVATIONS)}&{WEEK_FIELD}={sat}"
 
 
 def _rates_url(today: dt.date) -> str:
-    """URL for the RATE worksheets (Captain Team Check 2/4, CB-Owner Metrics).
-    These are rolling 0-30 / 31-60 day cohort metrics — the dashboard DEFAULT
-    view gives the correct current rates (Carlos 4.2% / 78.2% / 2.58% / 4.4%).
-    Pinning the activation-week filter degenerates them (1.0% / 100.0% / blank),
-    so we deliberately do NOT apply it here."""
-    return f"{VIEW}?:iid=1"
+    """URL for the RATE worksheets. These are rolling 0-30 / 31-60 day cohort
+    metrics, so the view's own current state is the right answer — pinning the
+    activation-week filter degenerates them (1.0% / 100.0% / blank), which is why
+    the week is deliberately NOT applied here."""
+    return _team(VIEW_RATES)
+
+
+def _owner(cell: str) -> str:
+    """'CARLOS HIDALGO\\r [alphalete specialized…]' -> 'carlos hidalgo'. The
+    Activation Office member glues the office onto the name after an embedded CR
+    (not LF), so splitting on newlines alone leaves the bracket attached."""
+    head = str(cell or "").replace("\r", "\n").split("\n")[0]
+    return _norm(head.split("[")[0])
 
 
 def parse_activations(path: Path) -> Dict[str, int]:
-    """CB-Owner Sales -> {owner lower: activations} for Carlos' team."""
+    """Activation Office -> {owner lower: weekly activations}.
+
+    Each owner spans three rows (Activation % / Total Activations / Total Volume)
+    across four AGE buckets (0-7, 8-14, 15-30, 31-60 Days). We take the
+    'Total Activations' row and SUM the buckets: they are how long after the sale
+    it activated, not weeks, so any single bucket is a fraction of the week.
+    """
     rows = _read(path)
+    if not rows:
+        return {}
+    header = rows[0]
+    # Bucket columns by HEADER ("0-7 Days", …), and the measure-name column as
+    # the one actually holding 'Total Activations' — its header is blank, so it
+    # can't be found by name. [[feedback_no_hardcoded_rows_or_columns]]
+    buckets = [i for i, h in enumerate(header) if "days" in _norm(h)]
+    measure = next(
+        (i for i in range(len(header))
+         if any(_norm(r[i]) == _ACT_MEASURE for r in rows[1:] if i < len(r))),
+        None)
+    if measure is None or not buckets:
+        raise RuntimeError(
+            f"'{SHEETS['activations']}' export has no {_ACT_MEASURE!r} row or no "
+            f"bucket columns — header was {header!r}. The view changed again; "
+            f"run probe_carlos_bonus_sheets.")
     reps: Dict[str, int] = {}
     for r in rows[1:]:
-        if len(r) >= 3 and _norm(r[0]) == TEAM and _norm(r[1]):
-            reps[_norm(r[1])] = _parse_int(r[2])
+        if len(r) <= measure or _norm(r[measure]) != _ACT_MEASURE:
+            continue
+        name = _owner(r[0])
+        if not name or name == _GRAND_TOTAL:
+            continue
+        reps[name] = sum(_parse_int(r[b]) for b in buckets if b < len(r))
     return reps
 
 
 def parse_roster(path: Path) -> set:
-    """CB-Owner Metrics -> set of Carlos' team owner names (lower). This is the
-    SFDC team membership (every current member, incl a 0-activation week), so
-    it drives who to keep vs hide — NOT the activation list."""
+    """Churn, Activation and Tiers -> Carlos' team owner names (lower). Every
+    current member, including one who had a 0-activation week, so it drives who
+    to keep vs hide — NOT the activation list."""
     rows = _read(path)
-    return {_norm(r[1]) for r in rows[1:]
-            if len(r) > 1 and _norm(r[0]) == TEAM and _norm(r[1])}
+    if not rows:
+        return set()
+    oi = _col(rows[0], "icd owner name") or 0
+    out = set()
+    for r in rows[1:]:
+        name = _owner(r[oi]) if len(r) > oi else ""
+        if name and name != _GRAND_TOTAL:
+            out.add(name)
+    return out
 
 
-def _team_row(path: Path):
+def _rows_by_owner(path: Path):
+    """(header, {owner lower: row}) for a sheet whose first column is the owner.
+    'Grand Total' is kept under its own key — on the team-filtered rate sheets
+    that row IS the team's number."""
     rows = _read(path)
-    header = rows[0]
-    row = next((r for r in rows[1:] if r and _norm(r[0]) == TEAM), None)
-    return header, row
+    if not rows:
+        return [], {}
+    out = {}
+    for r in rows[1:]:
+        name = _owner(r[0]) if r else ""
+        if name and name not in out:
+            out[name] = r
+    return rows[0], out
 
 
-def _owner_row(path: Path, owner: str):
-    rows = _read(path)
-    header = rows[0]
-    row = next((r for r in rows[1:]
-                if len(r) > 1 and _norm(r[0]) == TEAM and _norm(r[1]) == owner), None)
-    return header, row
+def _cell(header, row, *substrs) -> Optional[str]:
+    i = _col(header, *substrs)
+    if i is None or row is None or i >= len(row):
+        return None
+    return (row[i] or "").strip() or None
 
 
 def _pull(today, scratch, verbose, use_cache):
     scratch.mkdir(parents=True, exist_ok=True)
     files = {
-        "sales": scratch / "cb_owner_sales.csv",
-        "check2": scratch / "captain_team_check_2.csv",
-        "check4": scratch / "captain_team_check_4.csv",
-        "metrics": scratch / "cb_owner_metrics.csv",
+        "activations": scratch / "activation_office.csv",
+        "rates": scratch / "churn_activation_tiers.csv",
+        "nonpmt": scratch / "captains_non_pmt.csv",
     }
-    # per-rep activations need the pinned completed week; the rate worksheets
-    # need the DEFAULT view (pinning the week breaks their cohort math).
+    # Activations need the pinned completed week AND a different view; the rate
+    # sheets are rolling cohorts, so they take the view as it stands.
     jobs = [
-        ("sales", SHEETS["sales"], _act_url(today)),
-        ("check2", SHEETS["check2"], _rates_url(today)),
-        ("check4", SHEETS["check4"], _rates_url(today)),
-        ("metrics", SHEETS["metrics"], _rates_url(today)),
+        ("activations", SHEETS["activations"], _act_url(today)),
+        ("rates", SHEETS["rates"], _rates_url(today)),
+        ("nonpmt", SHEETS["nonpmt"], _rates_url(today)),
     ]
     if not use_cache:
         if verbose:
-            print(f"  B2B1-PAGER_CaptainView week ending (Sat) {P.cycle_saturday(today)} "
-                  f"(sheet WE {P.cycle_sunday(today)})", flush=True)
+            print(f"  {TEAM_VALUE} · activations week ending (Sat) "
+                  f"{P.cycle_saturday(today)} (sheet WE {P.cycle_sunday(today)})",
+                  flush=True)
         for key, sh, url in jobs:
             download_crosstab_patchright(url, sh, files[key], verbose=verbose)
 
-    sales = parse_activations(files["sales"])
-    roster = parse_roster(files["metrics"]) | set(sales)  # SFDC members ∪ any with activity
-    reps = {n: sales.get(n, 0) for n in roster}            # 0-fill members with no activation
+    sales = parse_activations(files["activations"])
+    roster = parse_roster(files["rates"]) | set(sales)  # members ∪ any with activity
+    reps = {n: sales.get(n, 0) for n in roster}          # 0-fill members with no activation
     grand = sum(reps.values())
 
-    hdr2, row2 = _team_row(files["check2"])
-    ci = _col(hdr2, "churn") or 1
-    ai = _col(hdr2, "activation") or 2
-    churn_team = row2[ci].strip() if row2 else None
-    activation = row2[ai].strip() if row2 else None
+    # Team churn + activation: the Grand Total row of the TEAM-FILTERED rate
+    # sheet. Carlos' own row on the same sheet is his personal churn.
+    hdr_r, by_owner = _rows_by_owner(files["rates"])
+    total_row = by_owner.get(_GRAND_TOTAL)
+    churn_team = _cell(hdr_r, total_row, "churn rate")
+    activation = _cell(hdr_r, total_row, "activation rate")
+    churn_personal = _cell(hdr_r, by_owner.get(CARLOS_OWNER), "churn rate")
 
-    hdr4, row4 = _team_row(files["check4"])
-    ni = _col(hdr4, "non", "pmt") or 1
-    nonpmt = row4[ni].strip() if row4 else None
-
-    hdrm, rowm = _owner_row(files["metrics"], CARLOS_OWNER)
-    mci = _col(hdrm, "churn") or 2
-    churn_personal = rowm[mci].strip() if rowm else None
+    # Non Pmt %: same idea, and here the wanted number is the row's own
+    # 'Grand Total' COLUMN (the per-product columns are the breakdown).
+    hdr_n, by_team = _rows_by_owner(files["nonpmt"])
+    nonpmt = _cell(hdr_n, by_team.get(_GRAND_TOTAL), "grand total")
 
     return CarlosPull(reps=reps, roster=roster, grand_total=grand,
                       churn_team=churn_team, churn_personal=churn_personal,
@@ -201,14 +279,15 @@ def pull_carlos(today: dt.date, scratch_dir: Optional[Path] = None,
 def probe_ready(today: dt.date, scratch_dir: Optional[Path] = None,
                 verbose: bool = False) -> tuple[int, int]:
     """LIGHT readiness pull for the 4am orchestrator (Lucy 2): download ONLY the
-    week-filtered **CB-Owner Sales** crosstab and return (grand_total, n_reps).
+    week-filtered **activations** crosstab and return (grand_total, n_reps).
     A 0-activation week still lists reps, so grand_total > 0 is the real signal
     that the just-ended week's activations are in the extract. One small
     crosstab; used by readiness._probe_captainship_bonus (fail-open at 10am)."""
     scratch = scratch_dir or CACHE_DIR
     scratch.mkdir(parents=True, exist_ok=True)
-    out = scratch / "cb_owner_sales_probe.csv"
-    download_crosstab_patchright(_act_url(today), SHEETS["sales"], out, verbose=verbose)
+    out = scratch / "activation_office_probe.csv"
+    download_crosstab_patchright(_act_url(today), SHEETS["activations"], out,
+                                 verbose=verbose)
     reps = parse_activations(out)
     return sum(reps.values()), len(reps)
 
