@@ -5,6 +5,13 @@
     <key>Label</key>
     <string>com.alphalete.vantura-churn-daily</string>
 
+    <!-- RETIRED 2026-08-14: booted out on Lucy 2 and stashed as
+         .plist.disabled (lucy rerun disable_vantura_churn_agent). The 4am
+         orchestrator flow owns vantura_churn now; this 7:00 backstop was losing
+         Chrome to the crowded 7:00 slot and closing the Hub card red every
+         morning for a board 04:30 had already written.
+         Re-enable: lucy rerun install_vantura_churn_agent --machine "Lucy 2" -->
+
     <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
          to that machine's repo path (lucy rerun install_vantura_churn_agent). -->
     <!-- --no-post added 2026-07-20: vantura keeps REFRESHING the board (full

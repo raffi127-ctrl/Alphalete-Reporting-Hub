@@ -66,10 +66,12 @@ _HUB_CARD = {
     # separate card from the board FILL above. Publishes only when it actually
     # posts, not on every 25-min pass.
     "org_board_slack": "org-sales-board-slack",
-    # Standalone launchd job on Lucy 2 (com.alphalete.vantura-churn-daily) —
-    # never in the 4am batch, so without this entry its card stays grey and a
-    # blocked run looks exactly like a clean one. It ran unreported until
-    # 2026-07-19, when a reconciliation failure went unnoticed for a day.
+    # Added when this was a standalone launchd job outside the 4am batch, so a
+    # blocked run wouldn't look exactly like a clean one — it ran unreported
+    # until 2026-07-19, when a reconciliation failure went unnoticed for a day.
+    # It joined Lucy 2's 4am flow 2026-07-23 and the 7:00 standalone
+    # (com.alphalete.vantura-churn-daily) was retired 2026-08-14; the mapping
+    # still matters, it's what puts the FLOW run on the card.
     "vantura_churn": "vantura-churn",
     # Vantura Weekly Payroll PREP (Carlos). Standalone Wed-11am LaunchAgent on
     # Lucy 2 (com.alphalete.vantura-payroll-wed) — LIVE since 2026-07-15 but it
