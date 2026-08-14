@@ -179,6 +179,100 @@ def ensure_root_ts(client, year: int, *, channel: str = CHANNEL,
     return r["ts"]
 
 
+WEEK_PREFIX = "*ATT Owners List — WE "
+
+
+def backfill(year: int, *, dry_run: bool = True, delete_originals: bool = False,
+             channel: str = CHANNEL, logfn=print) -> dict:
+    """Pull the loose weekly posts of `year` into the year's thread.
+
+    Slack cannot MOVE a message into a thread — there is no such API and no
+    such menu item. So the only honest 'retroactive' is to re-post each loose
+    summary, VERBATIM, as a reply under the parent, and then (opt-in) delete
+    the loose original so the channel isn't showing the same week twice.
+
+    Idempotent: a week already answered in the thread is skipped, so running
+    this twice does not double-post. `delete_originals` only works on messages
+    the running token posted itself — Slack refuses to delete anyone else's,
+    so a backfill run from the wrong machine reposts fine and reports the
+    deletions it couldn't do rather than pretending they happened."""
+    client = smp._client()
+    marker = _root_marker(year)
+
+    # --- the loose weeks, oldest first (history returns top-level only) ---
+    oldest = dt.datetime(year, 1, 1).timestamp()
+    loose, root_ts, cursor, pages = [], None, None, 0
+    while pages < 25:
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200, cursor=cursor)
+        for msg in resp.get("messages", []):
+            text = msg.get("text", "")
+            if text.startswith(marker):
+                root_ts = msg.get("thread_ts") or msg.get("ts")
+            elif text.startswith(WEEK_PREFIX):
+                loose.append(msg)
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        pages += 1
+        if not cursor:
+            break
+    loose.sort(key=lambda m: float(m["ts"]))
+    logfn(f"  {len(loose)} loose weekly post(s) in {year}"
+          + (f", parent ts={root_ts}" if root_ts else ", no parent yet"))
+
+    # --- what the thread already answers ---
+    done = set()
+    if root_ts:
+        cursor = None
+        while True:
+            resp = client.conversations_replies(
+                channel=channel, ts=root_ts, limit=200, cursor=cursor)
+            for msg in resp.get("messages", []):
+                first = msg.get("text", "").splitlines()[0]
+                if first.startswith(WEEK_PREFIX):
+                    done.add(first)
+            cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+
+    todo = [m for m in loose if m["text"].splitlines()[0] not in done]
+    for m in loose:
+        label = m["text"].splitlines()[0]
+        when = dt.datetime.fromtimestamp(float(m["ts"]))
+        mark = "→ reply" if m in todo else "already in the thread, skipping"
+        logfn(f"    {when:%Y-%m-%d %H:%M}  {label}  {mark}")
+
+    if dry_run:
+        logfn(f"  (dry-run) would move {len(todo)} week(s) into the {year} "
+              f"thread" + (" and delete the originals" if delete_originals
+                           else " and leave the originals where they are"))
+        return {"dry_run": True, "year": year, "found": len(loose),
+                "would_move": len(todo), "root_ts": root_ts}
+
+    if not root_ts:
+        root_ts = ensure_root_ts(client, year, channel=channel, logfn=logfn)
+
+    moved, deleted, undeletable = [], [], []
+    for m in todo:
+        label = m["text"].splitlines()[0]
+        client.chat_postMessage(channel=channel, text=m["text"],
+                                thread_ts=root_ts, unfurl_links=False)
+        moved.append(label)
+        logfn(f"  ✓ {label} → thread")
+        if delete_originals:
+            try:
+                client.chat_delete(channel=channel, ts=m["ts"])
+                deleted.append(label)
+            except Exception as e:
+                undeletable.append(label)
+                logfn(f"    could not delete the original ({type(e).__name__}: "
+                      f"{str(e)[:80]}) — it was posted by someone else's token")
+    if undeletable:
+        logfn(f"  {len(undeletable)} original(s) still loose in the channel: "
+              f"{', '.join(undeletable)}")
+    return {"year": year, "root_ts": root_ts, "moved": moved,
+            "deleted": deleted, "undeletable": undeletable}
+
+
 def post(text: str, *, year: int, dry_run: bool = True,
          channel: str = CHANNEL, logfn=print) -> Optional[str]:
     """Send the week's detail as a reply in the year's thread.
