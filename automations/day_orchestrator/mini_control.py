@@ -1365,9 +1365,7 @@ def _action_slack_find(args: str) -> tuple[bool, str]:
     Precision management-att-sales) and nothing on the laptop could adjudicate."""
     import ssl as _ssl
 
-    needle = (args or "").strip().lstrip("#").lower()
-    if not needle:
-        return False, "slack_find needs some text (e.g. slack_find precisionmanagement)"
+    needle = (args or "").strip().lower()
     try:
         import certifi
         from slack_sdk import WebClient
@@ -1378,33 +1376,82 @@ def _action_slack_find(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"auth.test FAILED: {type(e).__name__} {str(e)[:120]}"
 
-    hits, cursor, pages = [], None, 0
+    # SPACE-SEPARATED TERMS = OR. Nobody remembers a channel's exact name ("was it
+    # -nds-sales or -att-sales?"), and one call per guess is one queue round-trip
+    # per guess. No terms at all = list every channel this account belongs to.
+    needles = [n.lstrip("#") for n in needle.split() if n.lstrip("#")]
+
+    # users.conversations = the channels THIS ACCOUNT IS A MEMBER OF. That is the
+    # decisive question ("is Lucy in a Precision Management channel under ANY
+    # name?"), and its result set is small — dozens, not thousands — so it can be
+    # paged to completion. conversations.list cannot: Slack ignores `limit` and
+    # returns ~5 channels per page, so a workspace-wide scan silently truncates.
+    # That is exactly how a truncated 0-match scan was nearly read as PROOF that a
+    # channel id was wrong (2026-08-13). An incomplete scan is now reported as
+    # incomplete, and absence is only claimed when the scan actually finished.
+    import time as _time
+    rows, cursor, pages, ratelimits = [], None, 0, 0
+    truncated = ""
+    started = _time.monotonic()
     try:
-        while pages < 10:                      # ~10k channels max, then stop
+        while True:
             pages += 1
-            resp = client.conversations_list(
-                types="public_channel,private_channel", limit=1000,
-                exclude_archived=False, cursor=cursor)
+            try:
+                resp = client.users_conversations(
+                    types="public_channel,private_channel", limit=1000,
+                    exclude_archived=False, cursor=cursor)
+            except Exception as e:                          # noqa: BLE001
+                data = getattr(getattr(e, "response", None), "data", {}) or {}
+                if data.get("error") == "ratelimited" and ratelimits < 5:
+                    ratelimits += 1
+                    hdrs = getattr(getattr(e, "response", None), "headers", {}) or {}
+                    try:
+                        wait = int(hdrs.get("Retry-After") or 5)
+                    except Exception:                       # noqa: BLE001
+                        wait = 5
+                    _time.sleep(max(1, min(wait, 30)))
+                    pages -= 1
+                    continue
+                raise
             for c in resp.get("channels", []):
-                if needle in (c.get("name") or "").lower():
-                    hits.append("  #{n}  {i}  private={p} archived={a} member={m}"
-                                .format(n=c.get("name"), i=c.get("id"),
-                                        p=c.get("is_private"),
-                                        a=c.get("is_archived"),
-                                        m=c.get("is_member")))
+                rows.append((c.get("name") or "", c.get("id"),
+                             bool(c.get("is_private")), bool(c.get("is_archived"))))
             cursor = (resp.get("response_metadata") or {}).get("next_cursor")
             if not cursor:
                 break
-    except Exception as e:  # noqa: BLE001
+            if pages >= 200:
+                truncated = "hit the 200-page cap"
+                break
+            if _time.monotonic() - started > 240:
+                truncated = "hit the 4-minute cap"
+                break
+    except Exception as e:                                  # noqa: BLE001
         data = getattr(getattr(e, "response", None), "data", {}) or {}
-        return True, (f"as {who.get('user')} — conversations.list FAILED → "
-                      f"{data.get('error') or type(e).__name__} "
-                      f"(needs channels:read + groups:read on the token)")
-    head = f"as {who.get('user')} ({who.get('user_id')}) — {len(hits)} match(es) for {needle!r}"
-    if not hits:
-        head += "\n  (nothing this account can SEE — a private channel it isn't " \
-                "in is invisible here, which is itself the answer)"
-    return True, "\n".join([head] + hits[:12] + ["READ-ONLY — nothing posted."])
+        code = data.get("error") or type(e).__name__
+        return True, (f"as {who.get('user')} — users.conversations FAILED → {code}"
+                      + ("  (the token needs users:read + channels:read + "
+                         "groups:read)" if code == "missing_scope" else "")
+                      + "\n  NOT an answer about membership — the probe couldn't "
+                        "look. Do not treat this as 'the channel isn't there'.")
+
+    n_priv = sum(1 for _n, _i, p, _a in rows if p)
+    hits = [r for r in rows if any(n in r[0].lower() for n in needles)] \
+        if needles else rows
+    head = (f"as {who.get('user')} ({who.get('user_id')}) is a member of "
+            f"{len(rows)} channel(s) ({n_priv} private), scanned in {pages} page(s)"
+            + (f"  ⚠ INCOMPLETE — {truncated}" if truncated else "  ✓ complete")
+            + (f"\n  {len(hits)} match(es) for {needles}" if needles else ""))
+    body = ["  #{n}  {i}  private={p} archived={a}".format(n=n, i=i, p=p, a=a)
+            for n, i, p, a in sorted(hits)[:14]]
+    if needles and not hits and not truncated:
+        body = ["  → this account is in NO channel whose name contains any of "
+                f"{needles}. The scan was COMPLETE, so that is real — but it only "
+                "rules out those NAMES, not a channel called something else. "
+                "Re-run with other terms, or with no terms to list all "
+                f"{len(rows)}."]
+    if len(hits) > 14:
+        body.append(f"  … {len(hits) - 14} more (narrow with a search term)")
+    return True, "\n".join([head] + body + ["READ-ONLY — nothing posted."])
 
 
 def _action_diag(args: str) -> tuple[bool, str]:
