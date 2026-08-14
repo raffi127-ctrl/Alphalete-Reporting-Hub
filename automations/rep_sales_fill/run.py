@@ -64,6 +64,7 @@ except Exception:  # noqa: BLE001
     pass
 
 from automations.rep_sales_fill import board as B
+from automations.rep_sales_fill import order_log as OL
 from automations.rep_sales_fill import parse as P
 
 VIEW = ("https://us-east-1.online.tableau.com/t/sci/views/"
@@ -201,6 +202,54 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str,
     return download_crosstab_patchright(url, sheet, dest, verbose=True)
 
 
+def pull_order_log(start: dt.date, end: dt.date, dest: Path) -> Path:
+    """Download the D2D ORDER LOG as a DIRECT .csv through real Chrome.
+
+    Same path att_order_log uses for its own log. It sidesteps BOTH things that
+    sank the summary crosstab: no Crosstab dialog (the one that kept returning
+    zero sheets), and range date filters instead of a discrete week dropdown
+    that Tableau answers with somebody's remembered window.
+    """
+    import time
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
+
+    url = OL.csv_url(start, end)
+    _log(f"  {url}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with cdp_pull._cdp_lock(label="rep_sales_fill orderlog", log=_log):
+        cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        _log(f"  [cdp] real Chrome pid={proc.pid}; esperando 20s")
+        time.sleep(20)
+        try:
+            from patchright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    f"http://127.0.0.1:{cdp_pull.CDP_PORT}")
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                _log("  [cdp] auth OK")
+                r = page.context.request.get(url, timeout=300_000)
+                body = r.body() or b""
+                _log(f"  [csv] status={r.status} bytes={len(body):,}")
+                if r.status != 200 or len(body) < 200:
+                    raise RuntimeError(
+                        f"order-log export fallo: status={r.status} "
+                        f"bytes={len(body)}")
+                dest.write_bytes(body)
+                return dest
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
+
+
 def probe_filters(sunday: dt.date, rep: str) -> int:
     """Print every filter control on the dashboard, with its aria-label.
 
@@ -294,6 +343,14 @@ def main(argv=None) -> int:
     ap.add_argument("--date", help="any day in the target week (YYYY-MM-DD); "
                                    "default yesterday")
     ap.add_argument("--from-file", help="parse this crosstab instead of pulling")
+    ap.add_argument("--source", choices=("order-log", "summary"),
+                    default="order-log",
+                    help="order-log = una fila por venta, .csv directo, filtros "
+                         "de fecha de RANGO (el camino confiable). summary = el "
+                         "crosstab viejo, cuya semana Tableau descarta")
+    ap.add_argument("--preview", action="store_true",
+                    help="fuerza una corrida sin escribir aunque venga --apply "
+                         "(el scheduler lo trae en base_args)")
     ap.add_argument("--sheet", default=CROSSTAB_SHEET,
                     help="worksheet name in the Crosstab dialog")
     ap.add_argument("--probe-filters", action="store_true",
@@ -380,27 +437,62 @@ def main(argv=None) -> int:
         return 0
 
     # ---- source -----------------------------------------------------------
-    if a.from_file:
-        src = Path(a.from_file)
-        _log(f"  reading {src} (offline)")
+    if a.source == "order-log":
+        monday_ = sunday - dt.timedelta(days=6)
+        if a.from_file:
+            src = Path(a.from_file)
+            _log(f"  leyendo {src} (offline)")
+        else:
+            src = pull_order_log(monday_, sunday,
+                                 OUT_DIR / f"orderlog_{sunday.isoformat()}.csv")
+        days, stats = OL.daily_counts(src, a.rep, P.PRODUCT_TO_METRIC,
+                                      start=monday_, end=sunday)
+        _log(f"  {stats['rows']:,} venta(s) en el export, {stats['reps_seen']} "
+             f"rep(s) distintos; fechas {stats['dates_seen']}; "
+             f"{stats['mine']} son de {a.rep}")
+        if stats["unmapped"]:
+            _log(f"  !! product types sin mapear: {stats['unmapped']} -- se "
+                 "ignoraron; agregarlos a parse.PRODUCT_TO_METRIC")
+        if stats["no_date"]:
+            _log(f"  !! {stats['no_date']} fila(s) suyas sin fecha legible")
+        if stats["out_of_range"]:
+            _log(f"  !! {stats['out_of_range']} venta(s) suyas FUERA de "
+                 f"{monday_} .. {sunday} -- el filtro de fechas no aplico. HOLD.")
+            return 75
+        if not stats["mine"]:
+            _log(f"  !! el log no trae NINGUNA venta de {a.rep} en la semana. "
+                 "Puede ser real, pero con el board mostrandolo vendiendo es "
+                 "mas probable que el nombre no matchee. HOLD.")
+            return 75
+        totals = None                      # el order log no trae fila de total
     else:
-        src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
-                   f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet,
-                   week_field=a.week_field, revert=a.revert)
-    days, totals = P.parse(src)
+        if a.from_file:
+            src = Path(a.from_file)
+            _log(f"  reading {src} (offline)")
+        else:
+            src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
+                       f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet,
+                       week_field=a.week_field, revert=a.revert)
+        days, totals = P.parse(src)
 
     # RECONCILE AGAINST THE CROSSTAB'S OWN TOTAL ROW before anything is
     # written. A pull of this view can come back with a day's product rows
     # missing (2026-08-14: 13:14 gave Thursday 1 Int + 1 DTV + 2 NL, 13:20 gave
     # the same Thursday as 2 NL alone), and a partial day looks exactly like a
     # quiet day. The total row is the independent check that tells them apart.
-    if not totals:
+    # The order log needs no total row: every number there is a COUNT OF ROWS
+    # selected by rep and by date, each one checkable, and the window check
+    # already ran against the sale dates themselves.
+    if totals is None:
+        bad = {}
+    elif not totals:
         _log("  !! the export carries no 'Sales Total' / 'Total' row -- nothing "
              "can confirm these numbers. HOLDING, nothing written.")
         return 75
-    bad = {d: (sum(m.values()), totals.get(d, 0))
-           for d, m in days.items()
-           if sum(m.values()) != totals.get(d, 0)}
+    else:
+        bad = {d: (sum(m.values()), totals.get(d, 0))
+               for d, m in days.items()
+               if sum(m.values()) != totals.get(d, 0)}
     if bad:
         _log("")
         _log("  !! el export vino INCOMPLETO -- las filas de producto no suman "
@@ -515,9 +607,11 @@ def main(argv=None) -> int:
     for a1, metric, old, new in plan:
         _log(f"  {a1:<8} {metric:<7} {old or '(blank)':>8} -> {new or '(blank)'}")
 
-    if not a.apply:
+    if a.preview or not a.apply:
         _log("")
-        _log("PREVIEW -- re-run with --apply to write")
+        _log("PREVIEW -- nada escrito"
+             + (" (--preview manda sobre --apply)" if a.preview
+                else " -- re-correr con --apply para escribir"))
         return 0
 
     _retry(ws.batch_update, [{"range": a1, "values": [[new]]}
