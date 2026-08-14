@@ -134,6 +134,40 @@ def _upload(lines) -> None:
     ws.update("A1", [[ln[:900]] for ln in lines[:800]])
 
 
+def list_workbook_views(workbook_url: str, rec, verbose: bool = False) -> list:
+    """Every view in a workbook's `/views` page, as (name, href).
+
+    Do this BEFORE reaching for list_crosstab_sheets: the workbook page is one
+    page load, while listing a view's worksheets has to open that view and wait
+    for its Download dialog (minutes each). Enumerating first is what turns
+    "probe the whole workbook" from a timeout into a shortlist.
+
+    Same approach as att_order_log.probe._list_views. Never raises: a workbook
+    that won't render is a finding, not a crash."""
+    from automations.shared.tableau_patchright import tableau_session
+    out: list = []
+    with tableau_session(headless=True, verbose=verbose) as page:
+        page.goto(workbook_url, wait_until="domcontentloaded")
+        # The list is rendered by the SPA well after domcontentloaded.
+        page.wait_for_timeout(15_000)
+        try:
+            links = page.eval_on_selector_all(
+                "a[href*='/views/']",
+                "els => els.map(e => [(e.innerText||'').trim(), "
+                "e.getAttribute('href')])")
+        except Exception as e:      # noqa: BLE001 — see docstring
+            rec(f"  !! could not read the view list: "
+                f"{type(e).__name__}: {str(e)[:160]}")
+            return out
+        seen = set()
+        for name, href in links:
+            if not href or href in seen:
+                continue
+            seen.add(href)
+            out.append(((name or "(unnamed)").replace("\n", " ")[:70], href))
+    return out
+
+
 def main(argv=None) -> int:
     from automations.carlos_captainship_bonus import tableau_pull as T
     from automations.recruiting_report.opt_phase import list_crosstab_sheets
@@ -172,6 +206,10 @@ def main(argv=None) -> int:
                     help="dump these EXACT worksheet names instead of CANDIDATES; "
                          "repeatable. Lets --dump work on any view, not just the "
                          "report's own.")
+    ap.add_argument("--workbook", default=None, metavar="URL",
+                    help="enumerate every VIEW in a workbook's /views page and "
+                         "stop. One page load, so it is the cheap first step "
+                         "when you don't yet know which view to open.")
     ap.add_argument("--only", action="append", default=None, metavar="SUBSTR",
                     help="restrict --dump to CANDIDATES containing SUBSTR "
                          "(case-insensitive); repeatable. Each sheet costs "
@@ -240,6 +278,25 @@ def main(argv=None) -> int:
                 rec("")
                 rec(f"findings -> {DIAG_TAB!r} tab")
             except Exception as e:  # noqa: BLE001
+                print(f"diag upload failed: {e}", flush=True)
+        return 0
+
+    if args.workbook:
+        rec("")
+        rec(f"### workbook: {args.workbook}")
+        views = list_workbook_views(args.workbook, rec)
+        rec(f"  {len(views)} view link(s):")
+        for name, href in views:
+            rec(f"VIEW: {name}  ->  {href}")
+        if not views:
+            rec("  (none — the workbook page may not have rendered, or the "
+                "account cannot see it)")
+        if not args.no_upload:
+            try:
+                _upload(buf)
+                rec("")
+                rec(f"findings -> {DIAG_TAB!r} tab")
+            except Exception as e:      # noqa: BLE001 — never fail on upload
                 print(f"diag upload failed: {e}", flush=True)
         return 0
 
