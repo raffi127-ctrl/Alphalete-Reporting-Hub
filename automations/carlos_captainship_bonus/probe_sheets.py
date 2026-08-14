@@ -83,9 +83,15 @@ def _fingerprint(rows, rec) -> None:
     regardless of which column ends up holding the weekly total."""
     from automations.carlos_captainship_bonus import tableau_pull as T
 
+    def _is(cell, name) -> bool:
+        # startswith, not equality: ACTIVATIONRATES' member is
+        # "CARLOS HIDALGO\r [alphalete …]" — the office is glued onto the name.
+        c = T._norm(str(cell).replace("\r", " ").replace("\n", " "))
+        return c == name or c.startswith(name + " ")
+
     found, missing = [], []
     for name, want in sorted(FINGERPRINT_REPS.items()):
-        row = next((r for r in rows if any(T._norm(c) == name for c in r[:3])), None)
+        row = next((r for r in rows if any(_is(c, name) for c in r[:3])), None)
         if row is None:
             missing.append(f"{name}=<no row>")
             continue
@@ -142,6 +148,10 @@ def main(argv=None) -> int:
                     help="never append the week param. The (LW)/(LW2) sheets are "
                          "already scoped to last week, so pinning a week on top "
                          "may be what empties them.")
+    ap.add_argument("--sheet", action="append", default=None, metavar="NAME",
+                    help="dump these EXACT worksheet names instead of CANDIDATES; "
+                         "repeatable. Lets --dump work on any view, not just the "
+                         "report's own.")
     ap.add_argument("--only", action="append", default=None, metavar="SUBSTR",
                     help="restrict --dump to CANDIDATES containing SUBSTR "
                          "(case-insensitive); repeatable. Each sheet costs "
@@ -242,7 +252,7 @@ def main(argv=None) -> int:
         today = dt.date.today()
         scratch = Path(T.CACHE_DIR) / "probe"
         scratch.mkdir(parents=True, exist_ok=True)
-        wanted = CANDIDATES
+        wanted = args.sheet or CANDIDATES
         if args.only:
             subs = [s.lower() for s in args.only]
             wanted = [c for c in CANDIDATES if any(s in c.lower() for s in subs)]
@@ -257,9 +267,15 @@ def main(argv=None) -> int:
             rec(f"=== {sheet!r} ===")
             # The per-rep sales sheet is the only one that needs the week pinned;
             # the rate sheets degenerate if you pin it (see tableau_pull._rates_url).
+            # An explicit --week-sat wins everywhere: the is_sales guess only
+            # knows this report's own view, and we now probe others too.
             is_sales = "Sales By ICD" in sheet or "ICD Summary" in sheet
-            sat = None if args.no_week else (
-                (args.week_sat or P.cycle_saturday(today).isoformat()) if is_sales else None)
+            if args.no_week:
+                sat = None
+            elif args.week_sat:
+                sat = args.week_sat
+            else:
+                sat = P.cycle_saturday(today).isoformat() if is_sales else None
             url = _url(sat)
             rec(f"  url: {url}")
             out = scratch / f"probe_{i}.csv"
