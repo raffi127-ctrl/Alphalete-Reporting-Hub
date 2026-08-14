@@ -92,28 +92,53 @@ def find_weekday_columns(rows: List[List[str]]) -> Dict[str, int]:
     return {}
 
 
-def parse(path) -> Dict[str, Dict[str, int]]:
-    """-> {weekday: {board metric: count}}, only for days the export carries."""
+def parse(path) -> tuple:
+    """-> ({weekday: {board metric: count}}, {weekday: total units})
+
+    The second half is the crosstab's OWN total row, and it is the whole point.
+    Two pulls of this view six minutes apart returned different data for the
+    same Thursday -- one with all three product rows, one with only WIRELESS --
+    and a partial export is indistinguishable from a quiet day unless something
+    independent says otherwise. The sheet ships that something: a 'Sales Total'
+    row (and a per-owner 'Total' row) whose day figures count every product.
+    run.py refuses to write when the two disagree.
+    """
     rows = read_rows(path)
     daycols = find_weekday_columns(rows)
     if not daycols:
         raise RuntimeError(
             "no weekday header row in the crosstab -- the export is probably "
-            "the wrong sheet (want 'Sales By ICD (+/-) REP - (+/-) Weekdays')")
+            "the wrong sheet (want the worksheet 'Sales By ICD (Weekly View)')")
 
     out: Dict[str, Dict[str, int]] = {d: {} for d in daycols}
+    totals: Dict[str, int] = {}
+    totals_from = ""
     seen_products = set()
+    first_day_col = min(daycols.values())
     for row in rows:
         label = None
-        # The product label sits in the first non-empty cell LEFT of the days,
-        # because the owner-name column is merged/blank on continuation rows.
-        for cell in row[:min(daycols.values())]:
+        # The label sits in the first matching cell LEFT of the days, because
+        # the owner-name column is merged/blank on continuation rows.
+        for cell in row[:first_day_col]:
             t = _norm(cell).upper()
-            if t in PRODUCT_TO_METRIC:
+            if t in PRODUCT_TO_METRIC or t in ("TOTAL", "SALES TOTAL"):
                 label = t
                 break
         if label is None:
             continue
+
+        if label in ("TOTAL", "SALES TOTAL"):
+            # Prefer the grand 'Sales Total'; an owner 'Total' is the fallback
+            # (filtered to one rep they agree, but only one of them is certain
+            # to be the whole export).
+            if totals_from == "SALES TOTAL" and label == "TOTAL":
+                continue
+            if label == "SALES TOTAL" or not totals:
+                totals = {d: _clean_number(row[j]) if j < len(row) else 0
+                          for d, j in daycols.items()}
+                totals_from = label
+            continue
+
         seen_products.add(label)
         metric = PRODUCT_TO_METRIC[label]
         for day, j in daycols.items():
@@ -125,7 +150,7 @@ def parse(path) -> Dict[str, Dict[str, int]]:
         raise RuntimeError(
             "no PRODUCT TYPE rows found (want any of: "
             + ", ".join(sorted(PRODUCT_TO_METRIC)) + ")")
-    return out
+    return out, totals
 
 
 def day_total(metrics: Dict[str, int]) -> int:

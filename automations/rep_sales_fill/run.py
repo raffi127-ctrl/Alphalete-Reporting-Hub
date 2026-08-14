@@ -229,6 +229,12 @@ def main(argv=None) -> int:
         download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format),
                                      a.sheet, dest, verbose=True)
         rows = P.read_rows(dest)
+        try:
+            d, t = P.parse(dest)
+            _log(f"  parse -> dias {d}")
+            _log(f"  parse -> totales {t}")
+        except Exception as exc:  # noqa: BLE001
+            _log(f"  parse fallo: {exc}")
         _log("")
         _log(f"--- {dest.name}: {len(rows)} filas, ancho max "
              f"{max((len(r) for r in rows), default=0)} ---")
@@ -243,7 +249,29 @@ def main(argv=None) -> int:
     else:
         src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
                    f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet)
-    days = P.parse(src)
+    days, totals = P.parse(src)
+
+    # RECONCILE AGAINST THE CROSSTAB'S OWN TOTAL ROW before anything is
+    # written. A pull of this view can come back with a day's product rows
+    # missing (2026-08-14: 13:14 gave Thursday 1 Int + 1 DTV + 2 NL, 13:20 gave
+    # the same Thursday as 2 NL alone), and a partial day looks exactly like a
+    # quiet day. The total row is the independent check that tells them apart.
+    if not totals:
+        _log("  !! the export carries no 'Sales Total' / 'Total' row -- nothing "
+             "can confirm these numbers. HOLDING, nothing written.")
+        return 75
+    bad = {d: (sum(m.values()), totals.get(d, 0))
+           for d, m in days.items()
+           if sum(m.values()) != totals.get(d, 0)}
+    if bad:
+        _log("")
+        _log("  !! el export vino INCOMPLETO -- las filas de producto no suman "
+             "el total que declara la propia hoja:")
+        for d, (got, want) in sorted(bad.items()):
+            _log(f"     {d:<10} product rows {got}  vs  total row {want}")
+        _log("     HOLDING, nothing written. Re-correr: el pull no es estable "
+             "y una pasada parcial borraria datos buenos.")
+        return 75
 
     week_total = sum(P.day_total(m) for m in days.values())
     units = sum(sum(m.values()) for m in days.values())
