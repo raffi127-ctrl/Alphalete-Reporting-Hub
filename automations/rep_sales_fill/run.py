@@ -85,8 +85,27 @@ def week_ending(day: dt.date) -> dt.date:
     return day + dt.timedelta(days=6 - day.weekday())
 
 
+def week_value(sunday: dt.date, fmt: str = "mdy") -> str:
+    """The 'Sale Date Week Ending' value as the filter expects it.
+
+    THIS FILTER IS A DISCRETE DROPDOWN, not a date range -- on screen it reads
+    '8/16/2026'. Sending ISO ('2026-08-16') does not merely get ignored here:
+    it leaves the viz unrendered, and the Crosstab dialog then offers ZERO
+    sheets. Proved one filter at a time on Lucy 2 (2026-08-14): :refresh=yes
+    alone -> 3 sheets, Rep alone -> 3 sheets, ISO week alone -> 0.
+    (The house note that Tableau url date filters want ISO holds for RANGE
+    filters -- Start Date / End Date on the order log. Not for this one.)
+
+    Built by hand, never strftime('%-m/%-d/%Y'): that flag is glibc-only and
+    this has to run on macOS and Windows both.
+    """
+    if fmt == "iso":
+        return sunday.isoformat()
+    return f"{sunday.month}/{sunday.day}/{sunday.year}"
+
+
 def view_url(sunday: dt.date, rep: str, filters: str = "both",
-             refresh: bool = True) -> str:
+             refresh: bool = True, week_format: str = "mdy") -> str:
     """The view URL, with the filters named by `filters`.
 
     WHY THIS IS A DIAL. On Lucy 2 the Crosstab dialog came back with ZERO
@@ -106,7 +125,7 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
     if refresh:
         parts.append(":refresh=yes")
     if filters in ("both", "week"):
-        parts.append(f"Sale%20Date%20Week%20Ending={sunday.isoformat()}")
+        parts.append("Sale%20Date%20Week%20Ending=" + quote(week_value(sunday, week_format)))
     if filters in ("both", "rep"):
         parts.append(f"Rep={quote(rep)}")
     return VIEW + ("?" + "&".join(parts) if parts else "")
@@ -122,7 +141,7 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
 
 
 def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
-                refresh: bool = True) -> int:
+                refresh: bool = True, week_format: str = "mdy") -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
 
     The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
@@ -134,8 +153,8 @@ def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
     """
     from automations.shared.tableau_patchright import download_crosstab_patchright
     try:
-        _log(f"  url: {view_url(sunday, rep, filters, refresh)}")
-        download_crosstab_patchright(view_url(sunday, rep, filters, refresh),
+        _log(f"  url: {view_url(sunday, rep, filters, refresh, week_format)}")
+        download_crosstab_patchright(view_url(sunday, rep, filters, refresh, week_format),
                                      "__LIST_SHEETS__ (deliberate miss)",
                                      OUT_DIR / "_list_sheets.csv", verbose=True)
     except Exception as exc:  # noqa: BLE001 -- the message IS the payload
@@ -165,6 +184,9 @@ def main(argv=None) -> int:
                     help="which url filters to send. Diagnostic dial: the "
                          "Crosstab dialog comes back empty with 'both' and full "
                          "with 'none', so one of them leaves the viz unrendered")
+    ap.add_argument("--week-format", choices=("mdy", "iso"), default="mdy",
+                    help="how to write the week-ending value (the filter is a "
+                         "discrete dropdown, so 'mdy' is what it expects)")
     ap.add_argument("--no-refresh", action="store_true",
                     help="drop ':refresh=yes' (a forced re-query -- the third "
                          "suspect for the empty dialog)")
@@ -186,7 +208,7 @@ def main(argv=None) -> int:
 
     if a.list_sheets:
         return list_sheets(sunday, a.rep, filters=a.filters,
-                           refresh=not a.no_refresh)
+                           refresh=not a.no_refresh, week_format=a.week_format)
 
     if a.dump:
         # The URL filters break this view: with them the viz never renders and
@@ -197,8 +219,8 @@ def main(argv=None) -> int:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         dest = OUT_DIR / "_dump.csv"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _log(f"  url: {view_url(sunday, a.rep, a.filters, not a.no_refresh)}")
-        download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh),
+        _log(f"  url: {view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format)}")
+        download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format),
                                      a.sheet, dest, verbose=True)
         rows = P.read_rows(dest)
         _log("")
