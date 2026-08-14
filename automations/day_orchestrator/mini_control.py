@@ -125,6 +125,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "set_credico_state", "set_alphalete_app_password",
+                    "post_note",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
@@ -3032,6 +3033,41 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(tail)[:300] or (out or "")[-200:])
 
 
+def _action_post_note(args: str) -> tuple[bool, str]:
+    """post_note <channel_id> <text>: post a plain message to Slack from THIS
+    machine's Slack identity. On a mini that identity is Lucy, which is the whole
+    point — a note typed from the laptop would go out as Evelyn, and a reminder
+    to the team about the reports should come from the account that runs them
+    ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
+
+    The text is everything after the channel id. Literal '\\n' becomes a newline,
+    since the queue carries the whole thing in one Sheet cell. Slack mrkdwn
+    works (*bold*, `code`, <@U…> mentions).
+
+    Not a report and not idempotent — it posts once per queued row. Queue it
+    again and the channel gets a second copy."""
+    raw = (args or "").strip()
+    parts = raw.split(None, 1)
+    if len(parts) < 2 or not parts[0].upper().startswith("C"):
+        return False, ("post_note needs '<channel_id> <text>' (channel id looks "
+                       "like C0BK5PRG259 — #claudecorrections-and-requests)")
+    channel, text = parts[0].strip(), parts[1].strip().replace("\\n", "\n")
+    if not text:
+        return False, "post_note got an empty message"
+    try:
+        from automations.shared import slack_metrics_post as smp
+        who = "?"
+        try:
+            who = smp._client().auth_test().get("user", "?")
+        except Exception:  # noqa: BLE001
+            pass
+        smp._client().chat_postMessage(channel=channel, text=text)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't post to {channel} "
+                       f"({type(e).__name__}: {str(e).splitlines()[0][:120]})")
+    return True, f"posted to {channel} as {who} ({len(text)} chars)"
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -3810,6 +3846,7 @@ ACTIONS = {
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,
+    "post_note": _action_post_note,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
