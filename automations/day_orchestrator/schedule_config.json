@@ -4901,7 +4901,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_roshan": {
@@ -4923,7 +4923,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_abel": {
@@ -4945,7 +4945,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_per_office": {
@@ -4966,7 +4966,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "b2b_quality": {
