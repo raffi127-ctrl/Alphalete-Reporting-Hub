@@ -170,5 +170,16 @@ def plan_day(grid, row: int, cols: Dict[str, int], wanted: Dict[str, int],
         if cur and not cur.isdigit():
             notes.append(f"{metric} holds {cur!r}, which is not a count -- left alone")
             continue
+        # NEVER BLANK A CELL THAT HOLDS A NUMBER (Eve 2026-08-14). This is the
+        # last line of defence and it is not redundant: on 8/14 two separate
+        # runs erased Andrew's Thursday Int and DTV because the pull came back
+        # short, and the export was internally consistent both times, so the
+        # total-row reconciliation waved it through. A sale that reached the
+        # board is evidence; an empty crosstab cell is not evidence of its
+        # absence. The module may raise or re-split a number, never delete one.
+        if cur.isdigit() and not new_s:
+            notes.append(f"{metric} tiene {cur!r} y el export no trae nada -- "
+                         "NO se borra (un export corto no prueba que no vendio)")
+            continue
         writes.append((metric, col, cur, new_s))
     return writes, notes
