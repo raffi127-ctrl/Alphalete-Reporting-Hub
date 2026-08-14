@@ -18,12 +18,11 @@ SOURCE, spelled out:
   workbook  ATT Tracker 2.1 - D2D
   view      PRODUCT SALES SUMMARY 4WK
   sheet     "Sales By ICD (+/-) REP - (+/-) Weekdays"  (the lower table)
-  filters   Rep = the rep -- this one works.
-            Sale Date Week Ending = the week's SUNDAY -- THIS ONE DOES NOT
-            WORK IN THE URL, in either format. ISO leaves the viz unrendered
-            (the Crosstab dialog then offers zero sheets); '8/16/2026' renders
-            but is ignored, and two different weeks return identical data.
-            See view_url() -- the module is off the scheduler over this.
+  filters   Rep = the rep
+            Sale Date Week Ending (mon-sun) = the week's SUNDAY. THE SUFFIX IS
+            PART OF THE NAME -- sending it as plain "Sale Date Week Ending" is
+            a silent no-op and Tableau serves its own default window instead.
+            See WEEK_FIELD and view_url().
   target    'Alphalete SALES BOARD 2025' -> tab 'Sales Board WE m.d' ->
             rep's row in col C -> that day's Int / Int Up / DTV / NL cells
 
@@ -76,6 +75,19 @@ VIEW = ("https://us-east-1.online.tableau.com/t/sci/views/"
 CROSSTAB_SHEET = "Sales By ICD (Weekly View)"
 DEFAULT_REP = "Andrew Sanborn"
 
+# THE WEEK FILTER'S REAL CAPTION, suffix and all. A Tableau url filter is
+# matched on the field's caption; get it wrong and Tableau drops the parameter
+# in silence and serves its own default window, which is exactly how another
+# period's numbers were written into Andrew's row on 2026-08-14. We sent
+# "Sale Date Week Ending" for a field that is actually called this -- read off
+# the live DOM by --probe-filters:
+#   aria-label='Sale Date Week Ending (mon-sun), margin. …'
+#   aria-label='… Text Table chart of Sale Date Week Ending (mon-sun)
+#               Product Type (Broken Out) …'
+# The "(mon-sun)" also settles the week convention: Mon-Sun, so the Sunday that
+# week_ending() computes is the right value -- only the NAME was wrong.
+WEEK_FIELD = "Sale Date Week Ending (mon-sun)"
+
 # A single rep's week. Anything past this means the Rep filter did not apply
 # and we are looking at the whole org -- refuse rather than paint the row.
 SANE_WEEK_MAX = 60
@@ -114,7 +126,8 @@ def week_value(sunday: dt.date, fmt: str = "mdy") -> str:
 
 
 def view_url(sunday: dt.date, rep: str, filters: str = "both",
-             refresh: bool = True, week_format: str = "mdy") -> str:
+             refresh: bool = True, week_format: str = "mdy",
+             week_field: str = "") -> str:
     """The view URL, with the filters named by `filters`.
 
     WHY THIS IS A DIAL. On Lucy 2 the Crosstab dialog came back with ZERO
@@ -131,50 +144,51 @@ def view_url(sunday: dt.date, rep: str, filters: str = "both",
     with REP collapsed, so Andrew's numbers are buried inside his owner's.
 
     The values are fully escaped (safe=""), because `quote()` leaves '/' alone
-    by default and '8/16/2026' was going into the query string with raw
-    slashes. That is correct hygiene but it is NOT what is broken here -- see
-    below; the escaped url returns exactly the same export as the raw one.
+    by default and '8/16/2026' was going into the query string with raw slashes.
 
-    THE WEEK FILTER IS INERT (proved on Lucy 2, 2026-08-14). Asking for WE
-    8/16 and for WE 7/19 -- four weeks apart -- returns byte-identical data:
+    THE WEEK FILTER'S NAME IS THE WHOLE STORY (2026-08-14). Sending it as
+    "Sale Date Week Ending" is a silent no-op -- Tableau matches url filters on
+    the field CAPTION, the caption is `WEEK_FIELD` above, and an unrecognised
+    parameter is dropped without a word. Proof it was inert: asking for WE 8/16
+    and for WE 7/19, four weeks apart, returned byte-identical data
 
         Tue {Int 1, NL 5} · Wed {Int 1, NL 9} · Thu {NL 2} · Fri {NL 3}
 
-    So Tableau is not reading 'Sale Date Week Ending' as a url-filterable
-    field at all; it serves the same default window whatever we ask for. The
-    Rep filter DOES apply -- the export comes back with a single owner, John
-    Richard Young, which is the ICD Andrew's sales are credited to.
+    which is Tableau's own default window, not either week. The Rep filter was
+    applying the whole time (the export comes back with a single owner, John
+    Richard Young, the ICD Andrew's sales are credited to), which is what made
+    the numbers look plausible enough to write.
 
-    How to tell the wrong week apart from a quiet one, without another pull:
-    that export carries no UPGRADE INTERNET and no VIDEO row at all, while
-    Andrew's real WE 8/16 is 10 units WITH an upgrade on Monday and a video on
-    Thursday (and no Monday column at all, though he sold 3 that Monday).
-    Writing from it blanked his real Thursday from 4 apps down to 2.
+    How to tell a wrong week from a quiet one WITHOUT another pull: that export
+    carries no UPGRADE INTERNET and no VIDEO row at all, while Andrew's real WE
+    8/16 is 10 units WITH an upgrade on Monday and a video on Thursday -- and no
+    Monday column at all, though he sold 3 that Monday. Writing from it blanked
+    his real Thursday from 4 apps down to 2.
 
-    NEXT SUSPECT is the field NAME, not the value: it may be a dashboard
-    PARAMETER rather than a filter, or carry a different caption. Until that is
-    settled the module stays off the scheduler -- and whatever replaces it has
-    to be validated against a known figure of the week asked for, not just
-    against the export's own total row (that reconciles fine here: 2 + 19 = 21).
+    THE CHEAP REGRESSION TEST for any Tableau url filter you doubt: pull two
+    far-apart periods and diff them. Identical output means the filter is inert,
+    and no amount of reconciling the export against its own total row will catch
+    it (that reconciles fine here: 2 + 19 = 21).
     """
     parts = []
     if refresh:
         parts.append(":refresh=yes")
     if filters in ("both", "week"):
-        parts.append("Sale%20Date%20Week%20Ending="
-                     + quote(week_value(sunday, week_format), safe=""))
+        parts.append(quote(week_field or WEEK_FIELD, safe="")
+                     + "=" + quote(week_value(sunday, week_format), safe=""))
     if filters in ("both", "rep"):
         parts.append(f"Rep={quote(rep, safe='')}")
     return VIEW + ("?" + "&".join(parts) if parts else "")
 
 
-def pull(sunday: dt.date, rep: str, dest: Path, sheet: str) -> Path:
+def pull(sunday: dt.date, rep: str, dest: Path, sheet: str,
+         week_field: str = "") -> Path:
     from automations.shared.tableau_patchright import download_crosstab_patchright
     dest.parent.mkdir(parents=True, exist_ok=True)
     _log(f"  pulling {sheet!r}")
-    _log(f"  {view_url(sunday, rep)}")
-    return download_crosstab_patchright(view_url(sunday, rep), sheet,
-                                        dest, verbose=True)
+    url = view_url(sunday, rep, week_field=week_field)
+    _log(f"  {url}")
+    return download_crosstab_patchright(url, sheet, dest, verbose=True)
 
 
 def probe_filters(sunday: dt.date, rep: str) -> int:
@@ -236,7 +250,8 @@ def probe_filters(sunday: dt.date, rep: str) -> int:
 
 
 def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
-                refresh: bool = True, week_format: str = "mdy") -> int:
+                refresh: bool = True, week_format: str = "mdy",
+                week_field: str = "") -> int:
     """Print the worksheet names the Crosstab dialog actually offers.
 
     The dialog lists Tableau WORKSHEET names, which are not the titles drawn on
@@ -248,8 +263,9 @@ def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
     """
     from automations.shared.tableau_patchright import download_crosstab_patchright
     try:
-        _log(f"  url: {view_url(sunday, rep, filters, refresh, week_format)}")
-        download_crosstab_patchright(view_url(sunday, rep, filters, refresh, week_format),
+        _url = view_url(sunday, rep, filters, refresh, week_format, week_field)
+        _log(f"  url: {_url}")
+        download_crosstab_patchright(_url,
                                      "__LIST_SHEETS__ (deliberate miss)",
                                      OUT_DIR / "_list_sheets.csv", verbose=True)
     except Exception as exc:  # noqa: BLE001 -- the message IS the payload
@@ -285,6 +301,10 @@ def main(argv=None) -> int:
     ap.add_argument("--week-format", choices=("mdy", "iso"), default="mdy",
                     help="how to write the week-ending value (the filter is a "
                          "discrete dropdown, so 'mdy' is what it expects)")
+    ap.add_argument("--week-field", default=WEEK_FIELD,
+                    help="the week filter's caption in the url. Overridable "
+                         "so a caption change can be tested without a deploy "
+                         "-- a wrong one is a SILENT no-op, never an error")
     ap.add_argument("--no-refresh", action="store_true",
                     help="drop ':refresh=yes' (a forced re-query -- the third "
                          "suspect for the empty dialog)")
@@ -309,7 +329,8 @@ def main(argv=None) -> int:
 
     if a.list_sheets:
         return list_sheets(sunday, a.rep, filters=a.filters,
-                           refresh=not a.no_refresh, week_format=a.week_format)
+                           refresh=not a.no_refresh, week_format=a.week_format,
+                           week_field=a.week_field)
 
     if a.dump:
         # The URL filters break this view: with them the viz never renders and
@@ -320,8 +341,10 @@ def main(argv=None) -> int:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         dest = OUT_DIR / "_dump.csv"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _log(f"  url: {view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format)}")
-        download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format),
+        _url = view_url(sunday, a.rep, a.filters, not a.no_refresh,
+                        a.week_format, a.week_field)
+        _log(f"  url: {_url}")
+        download_crosstab_patchright(_url,
                                      a.sheet, dest, verbose=True)
         rows = P.read_rows(dest)
         _log("")
@@ -347,7 +370,8 @@ def main(argv=None) -> int:
         _log(f"  reading {src} (offline)")
     else:
         src = pull(sunday, a.rep, OUT_DIR / f"{sunday.isoformat()}_"
-                   f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet)
+                   f"{a.rep.replace(' ', '_').lower()}.csv", a.sheet,
+                   week_field=a.week_field)
     days, totals = P.parse(src)
 
     # RECONCILE AGAINST THE CROSSTAB'S OWN TOTAL ROW before anything is
