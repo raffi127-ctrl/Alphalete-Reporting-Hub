@@ -229,17 +229,21 @@ def main(argv=None) -> int:
         download_crosstab_patchright(view_url(sunday, a.rep, a.filters, not a.no_refresh, a.week_format),
                                      a.sheet, dest, verbose=True)
         rows = P.read_rows(dest)
-        try:
-            d, t = P.parse(dest)
-            _log(f"  parse -> dias {d}")
-            _log(f"  parse -> totales {t}")
-        except Exception as exc:  # noqa: BLE001
-            _log(f"  parse fallo: {exc}")
         _log("")
         _log(f"--- {dest.name}: {len(rows)} filas, ancho max "
              f"{max((len(r) for r in rows), default=0)} ---")
         for i, r in enumerate(rows[:20], start=1):
             _log(f"  {i:>3}: {r}")
+        # LAST, because only the tail of the log survives the queue's result
+        # cell -- and this summary is the whole point of the diagnostic.
+        try:
+            d, t = P.parse(dest)
+            _log(f"HEADER: {rows[0] if rows else '(vacio)'}")
+            _log(f"DAYCOLS: {P.find_weekday_columns(rows)}")
+            _log(f"DAYS: {d}")
+            _log(f"TOTALS: {t}")
+        except Exception as exc:  # noqa: BLE001
+            _log(f"PARSE FALLO: {exc}")
         return 0
 
     # ---- source -----------------------------------------------------------
