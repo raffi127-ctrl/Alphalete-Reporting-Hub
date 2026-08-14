@@ -1,6 +1,12 @@
 """The weekly note to #revision-emails: who joined the ATT program, who didn't
 sell, and what that did to the Country Sales Board.
 
+ONE THREAD PER YEAR (Eve, 2026-08-14). The channel used to get a loose post
+every Friday; now the year has a single parent message ('ATT Owners List —
+2026') and each week's detail is a reply inside it. Fifty-two weeks of roster
+churn read as one story instead of fifty-two orphans scattered between the
+gates, and the channel only ever shows one ATT Owners List item.
+
 NOT a review gate. The other four posts in this channel wait for a ✅ before
 something is sent; this one reports work that has ALREADY happened, so it tags
 nobody and asks for nothing [[project_captainship-review-gate]]. The channel is
@@ -15,6 +21,8 @@ Eve's Windows box the token is Evelyn's and the post carries her name.
 from __future__ import annotations
 
 import datetime as dt
+import json
+from pathlib import Path
 from typing import List, Optional
 
 from automations.shared import slack_metrics_post as smp
@@ -25,6 +33,32 @@ CHANNEL = "C0BLLU9M0A2"
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
              "?gid=601599943#gid=601599943")
+
+# Where the year's parent ts is remembered. A CACHE, never the source of
+# truth: the Friday run happens on Lucy 1 and a catch-up run happens on Eve's
+# Windows box, and neither can see the other's file — a machine that has never
+# posted this year finds the parent by reading the channel instead (below).
+STATE_PATH = (Path.home() / ".config" / "recruiting-report" /
+              "att_owners_list_threads.json")
+
+
+def root_text(year: int) -> str:
+    """The parent message of the year's thread. Deliberately thin: it is a
+    heading people scroll past, and every number lives in the replies."""
+    return "\n".join([
+        f"*ATT Owners List — {year}*",
+        "",
+        "Weekly roster changes for the ATT program land in this thread — one "
+        "reply per week ending.",
+        f"<{SHEET_URL}|Open the 'ATT owners list' tab>",
+    ])
+
+
+def _root_marker(year: int) -> str:
+    """What identifies the parent in the channel. The weekly replies start
+    '*ATT Owners List — WE 8.9*', so matching the full '— <year>*' is what
+    keeps a reply from ever being mistaken for the parent."""
+    return f"*ATT Owners List — {year}*"
 
 
 def we_label(sunday: dt.date) -> str:
@@ -72,14 +106,189 @@ def build(plan, pull, *, board: Optional[dict] = None,
     return "\n".join(L)
 
 
-def post(text: str, *, dry_run: bool = True, channel: str = CHANNEL,
-         logfn=print) -> Optional[str]:
+def _remembered(year: int) -> Optional[str]:
+    try:
+        return (json.loads(STATE_PATH.read_text(encoding="utf-8"))
+                .get(str(year)) or None)
+    except Exception:                      # missing, empty, or hand-mangled
+        return None
+
+
+def _remember(year: int, ts: str) -> None:
+    try:
+        data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    data[str(year)] = ts
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def find_root_ts(client, year: int, *, channel: str = CHANNEL,
+                 logfn=print) -> Optional[str]:
+    """The ts of this year's parent message, or None if it isn't there yet.
+
+    The cached ts is checked against Slack before it is trusted — a parent that
+    was deleted would otherwise send every remaining week of the year into a
+    thread nobody can open. When the cache misses (another machine posted it,
+    or the file is gone) the channel is read back from Jan 1: conversations_
+    history returns only top-level messages, so a weekly reply can't be picked
+    up by mistake."""
+    marker = _root_marker(year)
+    cached = _remembered(year)
+    if cached:
+        try:
+            msgs = client.conversations_replies(
+                channel=channel, ts=cached, limit=1).get("messages", [])
+            if msgs and msgs[0].get("text", "").startswith(marker):
+                return cached
+            logfn(f"  cached thread ts={cached} is not this year's parent "
+                  f"any more — looking it up in the channel")
+        except Exception as e:
+            logfn(f"  cached thread ts={cached} unreadable "
+                  f"({type(e).__name__}) — looking it up in the channel")
+
+    oldest = dt.datetime(year, 1, 1).timestamp()
+    cursor, pages = None, 0
+    while pages < 25:                      # ~5k messages; a year of this channel
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200, cursor=cursor)
+        for msg in resp.get("messages", []):
+            if msg.get("text", "").startswith(marker):
+                ts = msg.get("thread_ts") or msg.get("ts")
+                _remember(year, ts)
+                return ts
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        pages += 1
+        if not cursor:
+            break
+    return None
+
+
+def ensure_root_ts(client, year: int, *, channel: str = CHANNEL,
+                   logfn=print) -> str:
+    """This year's parent ts, posting the parent if the year is new."""
+    ts = find_root_ts(client, year, channel=channel, logfn=logfn)
+    if ts:
+        logfn(f"  thread for {year}: ts={ts}")
+        return ts
+    r = client.chat_postMessage(channel=channel, text=root_text(year),
+                                unfurl_links=False)
+    _remember(year, r["ts"])
+    logfn(f"  started the {year} thread — ts={r['ts']}")
+    return r["ts"]
+
+
+WEEK_PREFIX = "*ATT Owners List — WE "
+
+
+def backfill(year: int, *, dry_run: bool = True, delete_originals: bool = False,
+             channel: str = CHANNEL, logfn=print) -> dict:
+    """Pull the loose weekly posts of `year` into the year's thread.
+
+    Slack cannot MOVE a message into a thread — there is no such API and no
+    such menu item. So the only honest 'retroactive' is to re-post each loose
+    summary, VERBATIM, as a reply under the parent, and then (opt-in) delete
+    the loose original so the channel isn't showing the same week twice.
+
+    Idempotent: a week already answered in the thread is skipped, so running
+    this twice does not double-post. `delete_originals` only works on messages
+    the running token posted itself — Slack refuses to delete anyone else's,
+    so a backfill run from the wrong machine reposts fine and reports the
+    deletions it couldn't do rather than pretending they happened."""
+    client = smp._client()
+    marker = _root_marker(year)
+
+    # --- the loose weeks, oldest first (history returns top-level only) ---
+    oldest = dt.datetime(year, 1, 1).timestamp()
+    loose, root_ts, cursor, pages = [], None, None, 0
+    while pages < 25:
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200, cursor=cursor)
+        for msg in resp.get("messages", []):
+            text = msg.get("text", "")
+            if text.startswith(marker):
+                root_ts = msg.get("thread_ts") or msg.get("ts")
+            elif text.startswith(WEEK_PREFIX):
+                loose.append(msg)
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        pages += 1
+        if not cursor:
+            break
+    loose.sort(key=lambda m: float(m["ts"]))
+    logfn(f"  {len(loose)} loose weekly post(s) in {year}"
+          + (f", parent ts={root_ts}" if root_ts else ", no parent yet"))
+
+    # --- what the thread already answers ---
+    done = set()
+    if root_ts:
+        cursor = None
+        while True:
+            resp = client.conversations_replies(
+                channel=channel, ts=root_ts, limit=200, cursor=cursor)
+            for msg in resp.get("messages", []):
+                first = msg.get("text", "").splitlines()[0]
+                if first.startswith(WEEK_PREFIX):
+                    done.add(first)
+            cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+
+    todo = [m for m in loose if m["text"].splitlines()[0] not in done]
+    for m in loose:
+        label = m["text"].splitlines()[0]
+        when = dt.datetime.fromtimestamp(float(m["ts"]))
+        mark = "→ reply" if m in todo else "already in the thread, skipping"
+        logfn(f"    {when:%Y-%m-%d %H:%M}  {label}  {mark}")
+
     if dry_run:
-        logfn("── DRY-RUN, would post to #revision-emails ──")
+        logfn(f"  (dry-run) would move {len(todo)} week(s) into the {year} "
+              f"thread" + (" and delete the originals" if delete_originals
+                           else " and leave the originals where they are"))
+        return {"dry_run": True, "year": year, "found": len(loose),
+                "would_move": len(todo), "root_ts": root_ts}
+
+    if not root_ts:
+        root_ts = ensure_root_ts(client, year, channel=channel, logfn=logfn)
+
+    moved, deleted, undeletable = [], [], []
+    for m in todo:
+        label = m["text"].splitlines()[0]
+        client.chat_postMessage(channel=channel, text=m["text"],
+                                thread_ts=root_ts, unfurl_links=False)
+        moved.append(label)
+        logfn(f"  ✓ {label} → thread")
+        if delete_originals:
+            try:
+                client.chat_delete(channel=channel, ts=m["ts"])
+                deleted.append(label)
+            except Exception as e:
+                undeletable.append(label)
+                logfn(f"    could not delete the original ({type(e).__name__}: "
+                      f"{str(e)[:80]}) — it was posted by someone else's token")
+    if undeletable:
+        logfn(f"  {len(undeletable)} original(s) still loose in the channel: "
+              f"{', '.join(undeletable)}")
+    return {"year": year, "root_ts": root_ts, "moved": moved,
+            "deleted": deleted, "undeletable": undeletable}
+
+
+def post(text: str, *, year: int, dry_run: bool = True,
+         channel: str = CHANNEL, logfn=print) -> Optional[str]:
+    """Send the week's detail as a reply in the year's thread.
+
+    No reply_broadcast: the point of the thread is that the channel shows ONE
+    ATT Owners List item, and a broadcast copy would put the week back in the
+    channel exactly as before. Anyone following the thread still gets it."""
+    if dry_run:
+        logfn(f"── DRY-RUN, would reply in the {year} thread in "
+              f"#revision-emails ──")
         logfn(text)
         logfn("──────────────────────────────────────────────")
         return None
-    r = smp._client().chat_postMessage(channel=channel, text=text,
-                                       unfurl_links=False)
-    logfn(f"✓ posted to {channel} ts={r['ts']}")
+    client = smp._client()
+    thread_ts = ensure_root_ts(client, year, channel=channel, logfn=logfn)
+    r = client.chat_postMessage(channel=channel, text=text,
+                                thread_ts=thread_ts, unfurl_links=False)
+    logfn(f"✓ posted to {channel} thread={thread_ts} ts={r['ts']}")
     return r["ts"]

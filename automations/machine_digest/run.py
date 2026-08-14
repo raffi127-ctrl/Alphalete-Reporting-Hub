@@ -286,6 +286,51 @@ def _oneshot_utility_ids(cfg) -> set:
     return ids
 
 
+def _offday_standalone_ids(cfg, target_date) -> set:
+    """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
+    on `target_date`'s weekday, per an explicit `standalone_weekdays` list in
+    schedule_config (Python weekday(): Mon=0 … Sun=6).
+
+    on_scheduler:false reports have no usable `cadence.weekdays` — their real
+    schedule lives in a plist the watcher can't read — so the "didn't run today"
+    baseline has to guess from the Activity log alone. That guess breaks on a
+    WEEKDAY-PINNED report the moment it's hand-rerun on the same off-weekday a few
+    times: vantura_payroll fires Wednesday 11:00 (com.alphalete.vantura-payroll-wed,
+    Weekday 3), but manual Thursday reruns on 7/23, 7/30 and 8/6 taught
+    _historical_expected that it's a Thursday 11:00 report, so it posted "Vantura
+    Weekly Payroll (prep) — did not run today" every Thursday from 13:00 on, while
+    the real Wednesday run had succeeded the day before (Eve 2026-08-13).
+
+    Declaring `standalone_weekdays` pins the truth: on any other weekday the report
+    is exempt from the "didn't run" check ONLY. It stays fully watched for FAILED /
+    INCOMPLETE / STUCK on every day — an off-day hand-rerun that crashes (as
+    vantura_payroll's did on 2026-08-06) must still alert. Undeclared reports keep
+    the historical guess, so this changes nothing for anyone who doesn't opt in.
+    Matched by the same id/card-alias fan-out as _orchestrator_ids, since Activity
+    rows are written under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    wd = target_date.weekday()
+    ids = set()
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        days = rep_raw.get("standalone_weekdays")
+        if not isinstance(days, list) or not days:
+            continue   # not declared → keep the historical-expected guess
+        if wd in days:
+            continue   # it IS supposed to run today → a missing run is a real miss
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
+
 def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
     'the mini' for the scheduler Mac mini, else 'Lucy 1' — so an alert names the
@@ -374,6 +419,47 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     return out
 
 
+def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
+    """Close the incident thread of any standalone report whose latest run today
+    is clean. Returns how many were closed.
+
+    The watcher only ever OPENED threads; nothing closed them, so a report fixed
+    on Wednesday left Tuesday's alert reading as open work — which is what made
+    the channel impossible to skim (Eve 2026-08-14)."""
+    from automations.day_orchestrator import notify
+    try:
+        from automations.shared import incident_thread as inc
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception as e:  # noqa: BLE001 — closing is a nicety, never fatal
+        print(f"[{ts}] watch: incident index unreadable: {e}", flush=True)
+        return 0
+    if not open_keys:
+        return 0
+    closed = 0
+    for r in reports:
+        if _classify(r["status"])[1] != "ok":
+            continue
+        rid = r.get("report_id") or r.get("name") or "?"
+        for key in (f"standalone-{rid}", f"nonew-{rid}"):
+            if key not in open_keys:
+                continue
+            lines = [
+                f":white_check_mark: *{r['name']}* — RESOLVED. It ran clean today "
+                f"({_time_only(r['started'])}), so this is closed.",
+                "_If it breaks again it'll open a fresh post, not revive this one._",
+            ]
+            try:
+                if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                    closed += 1
+                    print(f"[{ts}] watch: closed incident {key} — ran clean today",
+                          flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[{ts}] watch: incident close failed for {key}: {e}",
+                      flush=True)
+    return closed
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -395,6 +481,10 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
     skip = _orchestrator_ids(cfg, target_date) | _oneshot_utility_ids(cfg)
+    # Off-day exemption for weekday-pinned standalone reports. Deliberately NOT
+    # folded into `skip`: it must suppress the "didn't run" guess only, never a
+    # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.
+    offday = _offday_standalone_ids(cfg, target_date)
     already = _load_alerted(day)
     ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()
@@ -428,7 +518,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    "didn't run today" (MISSED) alert at the noon backstop.
     now = dt.datetime.now()
     for cid, info in _historical_expected(rows, target_date).items():
-        if cid in ran_ids or cid in skip or cid in already:
+        if cid in ran_ids or cid in skip or cid in already or cid in offday:
             continue
         if now.hour < info["start_hour"] + _DIDNT_RUN_GRACE_HOURS:
             continue   # too early to call it missing
@@ -486,6 +576,12 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
             print(f"[{ts}] watch: stuck alert failed for {rid}: "
                   f"{type(e).__name__}: {e}", flush=True)
+
+    # 4) RECOVERED — a report that ran clean today but still has an OPEN incident
+    #    thread from an earlier day. Say so IN that thread and close it, so the
+    #    channel never leaves a fixed problem sitting there looking open (Eve
+    #    2026-08-14). Free when nothing is open: open_keys reads a local index.
+    _close_recovered_incidents(cfg, reports, dry_run, ts)
 
     if newly and not dry_run:
         _save_alerted(day, already | newly)

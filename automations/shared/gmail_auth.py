@@ -1,10 +1,10 @@
-"""Gmail OAuth — a SEPARATE token from the Sheets one, so drafts land in
+"""Gmail OAuth - a SEPARATE token from the Sheets one, so drafts land in
 the right mailbox without breaking Sheets access.
 
 Why separate (not re-authorizing the existing token):
   * The Sheets/gspread token (~/.config/recruiting-report/oauth-token.json)
     is authorized as raffi127@gmail.com (Rafael Hidalgo) and scoped to
-    spreadsheets only — the ~52 ICD tabs + Tableau Custom Views depend on
+    spreadsheets only - the ~52 ICD tabs + Tableau Custom Views depend on
     that account. Re-consenting it as another account would break them.
   * Gmail drafts must be created in the mailbox of the account that
     authorizes the token. Reports send FROM alphaletereporting@gmail.com,
@@ -13,10 +13,10 @@ Why separate (not re-authorizing the existing token):
 So this stores its own token at:
   ~/.config/recruiting-report/gmail-token.json   (gitignored, NEVER commit)
 
-It reuses the same OAuth *client* (oauth-client.json) — only the granted
+It reuses the same OAuth *client* (oauth-client.json) - only the granted
 scope + the signed-in account differ.
 
-One-time authorization (interactive — opens a browser; pick / log in as
+One-time authorization (interactive - opens a browser; pick / log in as
 alphaletereporting@gmail.com):
 
   python -m automations.shared.gmail_auth
@@ -66,10 +66,10 @@ def authorize() -> None:
         prompt="consent",
         authorization_prompt_message=(
             "Opening your browser to authorize Gmail drafts.\n"
-            f"➡  Sign in as {GMAIL_ACCOUNT} (NOT raffi127) and approve.\n"
+            f"-> Sign in as {GMAIL_ACCOUNT} (NOT raffi127) and approve.\n"
             "If it doesn't open, copy this URL into your browser:\n{url}"),
         success_message=(
-            "Done — you can close this tab and return to the terminal."),
+            "Done - you can close this tab and return to the terminal."),
     )
 
     granted = set(creds.scopes or [])
@@ -82,7 +82,7 @@ def authorize() -> None:
     GMAIL_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     GMAIL_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
     acct = getattr(creds, "account", "") or ""
-    print(f"✓ Saved Gmail token to {GMAIL_TOKEN_PATH}"
+    print(f"OK - Saved Gmail token to {GMAIL_TOKEN_PATH}"
           + (f"  (account: {acct})" if acct else ""))
     print("  Scopes:", ", ".join(sorted(granted)))
 

@@ -348,6 +348,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             # other terminal failure.
             _alert_new_failures(cfg, ds, {r.report_id: r for r in todays},
                                 channel, email_dry)
+            # …and the mirror of that sweep: anything alerted earlier that has
+            # since gone DONE (auto-retry, floor pass, manual re-run) gets its
+            # existing alert EDITED to ✅ RESOLVED — no second message.
+            _resolve_failure_alerts(cfg, ds, email_dry)
             _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
             state.save(ds)
 
@@ -382,6 +386,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 # became ready would strand the retry all morning.
                 _retry_incomplete_parts(ds, todays, target,
                                         dry_run=dry_run, simulate=args.simulate)
+                # A last-shot retry that recovered still owes the channel the
+                # correction — resolve before the day is finalized.
+                _resolve_failure_alerts(cfg, ds, email_dry)
                 # Close the yellow pills of the stragglers we just gave up on (red).
                 _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
                 _finalize(cfg, ds, channel, email_dry, target, stale_after)
@@ -958,11 +965,17 @@ def _maybe_failure_alert(cfg, ds, rs, channel, dry_run):
         return
     from automations.day_orchestrator import notify
     _log(f"  ⚠️ {rs.report_id} {rs.status} — firing immediate failure alert")
+    post = None
     try:
-        notify.send_failure_alert(cfg, ds, rs, channel=channel, dry_run=dry_run)
+        post = notify.send_failure_alert(cfg, ds, rs, channel=channel,
+                                         dry_run=dry_run)
     except Exception as e:  # noqa: BLE001 — never let the alert sink the batch
         _log(f"  ({rs.report_id}: failure alert send failed: {e})")
     ds.failure_alerts_sent.append(rs.report_id)
+    # Remember the Slack message so _resolve_failure_alerts can edit THAT post to
+    # "✅ RESOLVED" if the report heals later — instead of a second message.
+    if isinstance(post, dict) and post.get("ts"):
+        ds.failure_alert_posts[rs.report_id] = dict(post, resolved=False)
     state.save(ds)
 
 
@@ -976,7 +989,14 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
     INCOMPLETE one alerts ONLY when it can no longer self-heal (`_retryable_incomplete`
     is false — no manifest retry left, or the auto-retry cap is hit); a still-
     retryable INCOMPLETE is left alone so a transient partial that the service tick
-    or part-retry will fix doesn't cry wolf."""
+    or part-retry will fix doesn't cry wolf.
+
+    A report can ALSO ask for silence on its own schedule: an `alert_after` clock
+    in its manifest means "a scheduled later pass is expected to fix this" (see
+    run_manifest.alert_held) — b2b_metrics sets it while its order-log sections
+    wait on the ORDERLOG extract that its 8:30 floor pass posts. Past the clock it
+    alerts exactly as before, so a genuine miss is never swallowed, just not
+    announced while it's still on plan (Eve 2026-08-13)."""
     for rs in list(ds.reports.values()):
         if rs.report_id in ds.failure_alerts_sent:
             continue
@@ -984,7 +1004,8 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
             pass
         elif rs.status == state.INCOMPLETE and not _retryable_incomplete(
                 rs, todays_by_id.get(rs.report_id)):
-            pass
+            if _alert_on_hold(rs.report_id):
+                continue
         elif rs.status in (state.MISSED_NOT_READY, state.BLOCKED_SESSION):
             # "Didn't run" — marked terminal at the noon backstop. Since the daily
             # summary email was dropped (Megan 2026-07-25), this per-report alert is
@@ -993,6 +1014,91 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
         else:
             continue
         _maybe_failure_alert(cfg, ds, rs, channel, dry_run)
+
+
+def _alert_on_hold(report_id: str) -> bool:
+    """True while this report's manifest asks to stay quiet (`alert_after` in the
+    future). Logged so a held alert is visible in the orchestrator log rather than
+    just missing. Fails OPEN — any read problem alerts as normal."""
+    try:
+        from automations.shared import run_manifest as _rm
+        if not _rm.alert_held_for(report_id):
+            return False
+        m = _rm.read_manifest(report_id) or {}
+        _log(f"  {report_id}: INCOMPLETE but alert held until "
+             f"{m.get('alert_after')} — {m.get('note') or 'report expects a later pass'}")
+        return True
+    except Exception:  # noqa: BLE001 — never let the hold gate crash the sweep
+        return False
+
+
+def _resolve_failure_alerts(cfg, ds, dry_run):
+    """Edit today's already-posted failure alerts into "✅ RESOLVED" for reports
+    that have since gone clean (auto-retry recovered them, a scheduled floor pass
+    posted the deferred sections, or someone re-ran by hand and _reverify_terminal
+    flipped them to DONE).
+
+    WHY (Eve 2026-08-13): the alert is a snapshot of one moment. Left alone it
+    keeps reading as open work for the rest of the day, so a fixed report gets
+    re-investigated. Editing costs no new message — an edit doesn't re-notify —
+    which is the whole point: fewer messages about the same thing, not more.
+    Best-effort: never crashes the loop."""
+    from automations.day_orchestrator import notify
+    for rid, post in list(ds.failure_alert_posts.items()):
+        if not isinstance(post, dict) or post.get("resolved"):
+            continue
+        rs = ds.reports.get(rid)
+        if not rs or rs.status != state.DONE:
+            continue
+        try:
+            done = notify.resolve_failure_alert(cfg, post, rs=rs, dry_run=dry_run)
+        except Exception as e:  # noqa: BLE001
+            _log(f"  ({rid}: failure-alert resolve failed: {e})")
+            continue
+        if done:
+            post["resolved"] = True
+            _log(f"  {rid}: DONE now — failure alert edited to RESOLVED")
+            state.save(ds)
+    _close_carryover_incidents(cfg, ds, dry_run)
+
+
+def _close_carryover_incidents(cfg, ds, dry_run):
+    """Close incident threads left OPEN from an earlier day by reports that ran
+    clean today.
+
+    Without this, the only thing that ever resolved an alert was same-day healing
+    (ds.failure_alert_posts is per-day state), so a report that broke on Tuesday
+    and was fixed on Wednesday left Tuesday's thread hanging open forever —
+    exactly the "which of these is still real?" problem the incident threads were
+    added to kill (Eve 2026-08-14). Costs nothing when nothing is open: the check
+    reads a local index, no Slack call."""
+    try:
+        from automations.day_orchestrator import notify
+        from automations.shared import incident_thread as inc
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception:  # noqa: BLE001
+        return
+    if not open_keys:
+        return
+    for rs in list(ds.reports.values()):
+        if rs.status != state.DONE:
+            continue
+        for key in (f"failure-{rs.report_id}", f"finding-{rs.report_id}",
+                    f"standalone-{rs.report_id}"):
+            if key not in open_keys:
+                continue
+            label = rs.display_name or rs.report_id
+            lines = [
+                f":white_check_mark: *{label}* — RESOLVED. It ran clean today, so "
+                "this is closed.",
+                "_If it breaks again it'll open a fresh post, not revive this one._",
+            ]
+            try:
+                if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                    _log(f"  {rs.report_id}: carried-over incident {key} closed")
+            except Exception as e:  # noqa: BLE001
+                _log(f"  ({rs.report_id}: incident close failed: {e})")
 
 
 def _check_post_watch(ds, target, now):

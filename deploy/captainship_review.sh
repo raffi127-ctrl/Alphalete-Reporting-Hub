@@ -4,8 +4,8 @@
 # The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run) and
 # then posts them for review as ONE PDF (captainship_drafts_review ->
 # review_gate --post). THIS agent is the other half: every 15 minutes it asks
-# Slack whether Evelyn or Jolie put a checkmark on that post, and mails the
-# reviewed .eml files the moment one has. Until then it does nothing.
+# Slack whether Evelyn put a checkmark on that post, and mails the
+# reviewed .eml files the moment she has. Until then it does nothing.
 #
 # WHY A SEPARATE AGENT and not another orchestrator report: a report runs ONCE a
 # day and goes terminal. Waiting for a human is not a run — it's a watch, and it

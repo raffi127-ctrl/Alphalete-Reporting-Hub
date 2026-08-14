@@ -99,11 +99,21 @@ class Rep:
 # for writing, so they come off in both places.
 _PAREN = re.compile(r"\([^)]*\)")
 
+# An apostrophe CLOSES UP, it does not split. "La'mya" has to fold to the same
+# thing as the "Lamya" the sales board types, or she reads as a different person
+# in every direction at once: OwnerVille never finds her (so no email, no
+# phone), and next week's run doesn't recognise her own row on the list and adds
+# her a second time. Straight and curly both, plus the two stray accent marks
+# keyboards produce. [[la'mya joseph, 2026-08-14]]
+_APOS = re.compile(r"[’'`´]")
+
 
 def norm_name(s) -> str:
-    """Fold a name to compare it. Drops parentheticals, punctuation, digits and
-    the non-breaking spaces pasted names carry."""
-    s = _PAREN.sub(" ", str(s or "").replace("\xa0", " ").replace("\t", " ").lower())
+    """Fold a name to compare it. Closes up apostrophes, then drops
+    parentheticals, punctuation, digits and the non-breaking spaces pasted names
+    carry."""
+    s = _APOS.sub("", str(s or ""))
+    s = _PAREN.sub(" ", s.replace("\xa0", " ").replace("\t", " ").lower())
     return " ".join(re.sub(r"[^a-z ]+", " ", s).split())
 
 
@@ -114,7 +124,7 @@ def name_tokens(s) -> List[str]:
     dropped from the written name but kept here, because it is often the name
     the person's own email is built from (timothy54188@gmail.com).
     """
-    s = str(s or "").replace("\xa0", " ").lower()
+    s = _APOS.sub("", str(s or "")).replace("\xa0", " ").lower()
     return [t for t in re.sub(r"[^a-z ]+", " ", s).split() if t]
 
 
@@ -218,10 +228,18 @@ class Directory:
             # A single word is far too weak to match on loosely.
             return []
         want_set = set(want)
+        want_joined = "".join(want)
         out: List[Rep] = []
         for key, reps in self._by_name.items():
             have = key.split()
-            if not have or have[0] != want[0]:
+            if not have:
+                continue
+            # Same name, spaced differently ("O Neal" / "O'Neal", "De La Cruz")
+            # never shares a first token, so it can't get past the check below.
+            if "".join(have) == want_joined:
+                out.extend(reps)
+                continue
+            if have[0] != want[0]:
                 continue
             have_set = set(have)
             if want_set <= have_set or have_set <= want_set:

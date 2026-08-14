@@ -121,6 +121,12 @@ def _fill_tab(tab: str, all_parsed: dict, today: dt.date, args) -> dict:
     else:
         fill.insert_day_at_b(ws, step, dry_run=args.dry_run, logfn=print)
 
+    # Who this tab already carried, BEFORE place_reps updates `boxes` in place.
+    # A rep gaining their FIRST row in one box while another box has carried
+    # them for weeks is a maturing cohort, not a new rep — see
+    # captain_watch.observe_added.
+    roster_before = {n for s in boxes.values() for n in s["rep_rows"]}
+
     added = fill.place_reps(ws, boxes, parsed, dry_run=args.dry_run, logfn=print)
     for box, names in added.items():
         print(f"  + {box}: added {len(names)} ICD row(s): {names}")
@@ -134,6 +140,7 @@ def _fill_tab(tab: str, all_parsed: dict, today: dt.date, args) -> dict:
         from automations.new_owners import captain_watch as _cw
         _cw.observe_added(added, captain="Raf",
                           source="Captainship Metrics - Rafael",
+                          known=roster_before,
                           dry_run=args.dry_run)
     except Exception as _e:  # noqa: BLE001 — never break the fill on a notice
         print(f"  (new-rep gate skipped: {type(_e).__name__}: {str(_e)[:60]})")

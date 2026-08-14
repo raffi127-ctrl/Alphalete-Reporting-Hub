@@ -146,6 +146,55 @@ def _stamp(now: dt.datetime) -> str:
         "AM" if now.hour < 12 else "PM")
 
 
+def newest_sale_date(sheet_id: Optional[str] = None) -> Optional[dt.date]:
+    """Newest Sale Date already stored on this workbook's hidden data tab.
+
+    The high-water mark of everything we've ever successfully pulled for this
+    office — the data tab MERGES, so it only ever moves forward.
+
+    This is the honest yardstick for "did today's pull come back short", and it
+    took two wrong gates to get here (2026-08-13). Measuring the owner's newest
+    sale against TODAY blocks a small office that simply hasn't sold — Abel's is
+    14 sales deep, so that gate would have silenced him permanently. Measuring
+    the whole EXPORT against today passes a pull that's fine for one office and
+    gutted for another, which is exactly what shipped Roshan and Abel two
+    undercounted emails: Carlos came back current at 8/12 while their rows lost
+    a week that the 8/11 pull had delivered.
+
+    Against the stored high-water mark both cases come out right. A quiet office
+    never regresses — its pull matches what's on file. A short pull always does.
+
+    Returns None when there's no sheet, no tab, or nothing dated on it — callers
+    must treat that as "no opinion" and fall back, never as "everything's fine".
+    """
+    if not sheet_id:
+        return None
+    try:
+        ws = _open(sheet_id).worksheet(TAB_DATA)
+        values = _retry(lambda: ws.get_all_values())
+    except Exception:                                     # noqa: BLE001
+        return None
+    if not values:
+        return None
+    header = [h.strip() for h in values[0]]
+    try:
+        col = header.index("Sale Date")
+    except ValueError:
+        return None
+    seen = []
+    for row in values[1:]:
+        if len(row) <= col:
+            continue
+        raw = (row[col] or "").strip()
+        if not raw:
+            continue
+        try:
+            seen.append(dt.datetime.strptime(raw[:10], "%m/%d/%Y").date())
+        except ValueError:
+            continue
+    return max(seen) if seen else None
+
+
 def _open(sheet_id: Optional[str] = None):
     # Defaults to Carlos's board (SHEET_ID). A per-owner run (run_owner.py)
     # passes that owner's own metrics workbook id — the "Lucy Box Order Log"

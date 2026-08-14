@@ -301,8 +301,8 @@ def main(argv=None) -> int:
             # diff no longer says anything about who is really on a captainship
             # — it would gate on last month's roster and stay silent about this
             # month's. Membership now comes from Tableau through the captainship
-            # gate ([[project_new_owners]]): reps wait for a ✅ from Evelyn or
-            # Jolie, and `captainship.run_captainships` adds the approved ones.
+            # gate ([[project_new_owners]]): reps wait for a ✅ from Evelyn,
+            # and `captainship.run_captainships` adds the approved ones.
             # `_missing_reps` stays as an (always empty) gate input so the
             # manifest/exit wiring below is untouched; what IS surfaced is how
             # many reps are still waiting for their checkmark — informational,

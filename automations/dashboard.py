@@ -3401,7 +3401,7 @@ AUTOMATED_REPORTS = [
         # ("Captainship Report Drafts (12)" + the auto-registered "Captainship
         # Reports (a revisión)" library card, now hidden via the skip-set in
         # _read_shared_library).
-        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn or Jolie mails the exact files reviewed. Pill ramps as it goes: orange after the build, 🟣 **purple while it waits for the ✅**, green the moment it's approved.",
+        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn mails the exact files reviewed. Pill ramps as it goes: orange after the build, 🟣 **purple while it waits for the ✅**, green the moment it's approved.",
         "breakdown": (
             "PHASE 1 — BUILD (4am flow)\n"
             "**•** Builds all 12 previews to output/ — Product Summary + "
@@ -3420,7 +3420,7 @@ AUTOMATED_REPORTS = [
             "PHASE 2 — REVIEW + SEND (Slack)\n"
             "**•** The 12 previews print to one PDF; **Lucy posts the link in "
             "#revision-emails**.\n"
-            "**•** A **✅ from Evelyn or Jolie** sends the exact files reviewed "
+            "**•** A **✅ from Evelyn** sends the exact files reviewed "
             "(mini's watcher, within 15 min) — what goes out can't differ from "
             "what was approved.\n"
             "**•** Pill: **orange** after the build, 🟣 **purple** once it's "
@@ -3449,7 +3449,7 @@ AUTOMATED_REPORTS = [
         # are both written by machines the moment they exit 0 — the build, then
         # the review POST — so the card used to turn green at ~4am with nobody
         # having read a thing. "captainship-drafts-approved" is written only
-        # when review_gate --check finds Evelyn's or Jolie's ✅
+        # when review_gate --check finds Evelyn's ✅
         # (shared/review_approval.py), so the tile now sits PURPLE
         # "awaiting ✅" from the post until the approval, and only then greens.
         "phases": ["captainship-drafts", "captainship_drafts_review",
@@ -3475,7 +3475,7 @@ AUTOMATED_REPORTS = [
                 "label": "2. Post to Slack for approval",
                 "icon": "📮",
                 "primary": False,
-                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn or Jolie is what mails the reports. Posts as Lucy from the mini — run it there, not from a laptop, or it posts under your own account.",
+                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn is what mails the reports. Posts as Lucy from the mini — run it there, not from a laptop, or it posts under your own account.",
                 "module": "automations.captainship_drafts.review_gate",
                 "args_fn": lambda: ["--post"],
             },
@@ -4133,7 +4133,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📧",
         "color": "#DC2626",
         "category": "📊 Metrics",
-        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, the RAF ORG current-vs-prior summary, the ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser). Automated + review-gated: builds the preview, posts it to #revision-emails as Lucy, and sends only on a ✅ from Lucy or Evelyn.",
+        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, the RAF ORG current-vs-prior summary, the ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser). Automated + review-gated: builds the preview, posts it to #revision-emails as Lucy, and sends only on a ✅ from Evelyn.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Emails the Org Sales Board as clean, exact-sheet screenshots "
@@ -4144,7 +4144,7 @@ AUTOMATED_REPORTS = [
             "Runs on the scheduler again. The automated run does NOT send: it "
             "builds the day's preview, prints the PDF, drops it in Drive, and "
             "posts the link in #revision-emails as Lucy. The email goes out only "
-            "when Lucy or Evelyn ✅'s that post — the org-board-email-review "
+            "when Evelyn ✅'s that post — the org-board-email-review "
             "agent (9am-8pm) then mails the already-captured images. A partial "
             "board never sends (data-gated).\n\n"
             "RECIPIENTS\n"
@@ -4180,7 +4180,7 @@ AUTOMATED_REPORTS = [
         # reads it, so green used to mean "posted", not "sent".
         # "…-approved" is written only when review_gate --check finds an
         # authorised ✅ (shared/review_approval.py): PURPLE while it waits on
-        # Evelyn/Jolie, green on the checkmark that actually mails it.
+        # Evelyn, green on the checkmark that actually mails it.
         "phases": ["org-sales-board", "sales-board-screenshot-email",
                    "sales-board-screenshot-email-approved"],
         "approval_phase": "sales-board-screenshot-email-approved",
@@ -4634,7 +4634,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌎",
         "color": "#0D9488",
         "category": "📊 Metrics",
-        "description": "Two phases on one card: (1) the 4am fill writes the Country Sales Board tab from Tableau and rolls the week over every Tuesday — the REAL tab the country reads; (2) at 9:30 AM an exact-sheet screenshot is emailed to Rafael & Maud, after Evelyn or Jolie ✅s it in #revision-emails. The pill is orange after the fill, 🟣 purple while it waits for the ✅, and green only on the approval.",
+        "description": "Two phases on one card: (1) the 4am fill writes the Country Sales Board tab from Tableau and rolls the week over every Tuesday — the REAL tab the country reads; (2) at 9:30 AM an exact-sheet screenshot is emailed to Rafael & Maud, after Evelyn ✅s it in #revision-emails. The pill is orange after the fill, 🟣 purple while it waits for the ✅, and green only on the approval.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls the D2D **'This Week'** crosstab and writes only the "
@@ -4658,7 +4658,7 @@ AUTOMATED_REPORTS = [
             "After the fill, a second step emails an exact-sheet screenshot "
             "(board + per-day delta chart) to **Rafael + Maud**. It posts the "
             "day's image in **#revision-emails** (not before 9:30) and sends "
-            "nothing until **Evelyn or Jolie** ✅s it — the mini's watcher picks "
+            "nothing until **Evelyn** ✅s it — the mini's watcher picks "
             "up the approval within 15 min and mails exactly what was approved. "
             "The card's pill turns **green** on that ✅; while the image is "
             "posted and waiting it sits 🟣 **purple** (*awaiting ✅*), and it is "
@@ -4684,7 +4684,7 @@ AUTOMATED_REPORTS = [
         # THIRD PHASE = THE APPROVAL (Megan 2026-08-10) — same shape as the Org
         # board card. Phase 2 lands when the day's image is POSTED for review,
         # so green used to mean "posted". "…-approved" is written only when
-        # review_gate --check finds Evelyn's or Jolie's ✅
+        # review_gate --check finds Evelyn's ✅
         # (shared/review_approval.py): PURPLE while it waits, green on the ✅.
         # This one IS hyphenated and that is not an oversight — the gate writes
         # it straight to Hub Activity (no resolve_card in the path), so the

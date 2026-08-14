@@ -4,7 +4,7 @@ The daily shape (Eve, 2026-07-29):
 
     run.py --dry-run          build the 12 previews
     review_gate.py --post     one PDF -> Drive -> Lucy posts the link in Slack
-    review_gate.py --check    a checkmark from Evelyn or Jolie fires the send
+    review_gate.py --check    Evelyn's checkmark fires the send
 
 WHY A CHANNEL AND NOT A GROUP DM. The reaction is the approval, so the gate has
 to be able to READ reactions. Reactions ride along on the messages that
@@ -17,7 +17,7 @@ someone has to interpret.
 WHY TWO MACHINES. --post has to run on the MINI: the Slack user token there is
 Lucy's, which is what makes the message arrive from Lucy. Every other machine
 holds its own token and would post as that person instead (on Eve's Windows box
-it is Evelyn's — one of the approvers, which would read as her approving her own
+it is Evelyn's — the approver herself, which would read as her approving her own
 report). --check and the send have to run on EVE'S BOX, because that is where
 the previews and the Gmail token live. The two halves never talk: --check finds
 the day's message by searching the channel for its marker, so nothing has to be
@@ -43,23 +43,21 @@ from automations.shared import review_approval as RA
 # Sat/Sun: a clean day releases itself — nobody is in the channel to tick it.
 from automations.shared import weekend_release as wr
 
-# The private channel with Evelyn, Jolie and Lucy. Set once (Slack blocks the
+# The private channel with Evelyn and Lucy. Set once (Slack blocks the
 # reporting token from creating channels — it has no groups:write), then never
 # again: a renamed channel keeps its id, so this survives a rename.
 REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-emails
 
-# Whose checkmark counts: EVELYN AND JOLIE ONLY (Eve, 2026-07-30). Lucy posts
-# the link but does not read the reports, so her tick must not release them.
-# Slack reports the reacting user, so this is enforceable — a checkmark from
-# anyone else leaves the gate closed.
+# Whose checkmark counts: EVELYN ONLY (Eve, 2026-08-13 — Jolie left the company;
+# she was the second approver here until today). Lucy posts the link but does not
+# read the reports, so her tick must not release them. Slack reports the reacting
+# user, so this is enforceable — a checkmark from anyone else, Jolie's old
+# account included, leaves the gate closed.
 #
-# Jolie is U0ACBT3JVTP (joliecarc@gmail.com), verified against this channel's
-# own members. NOT D0ACU8GQ7TK: that is the DM conversation with her, and a
-# D-id here could never match a reacting user, so her approval would silently
-# never count and the gate would sit closed with no error to explain it.
+# This dict is the ONLY list of approvers: _mentions() below builds the message's
+# @-tags from it, so dropping someone here also stops the post from pinging them.
 APPROVERS = {
     "U088E2KJEV8": "Evelyn",
-    "U0ACBT3JVTP": "Jolie",
 }
 # Any of Slack's checkmarks — nobody should have to remember which one is "the"
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
@@ -75,15 +73,16 @@ HUB_CARD_NAME = "Captainship Reports"
 
 
 def _mentions() -> str:
-    """The approvers as real Slack mentions, e.g. "<@U08…> <@U0A…>".
+    """The approvers as real Slack mentions, e.g. "<@U08…>".
 
-    A plain "Approvers: Evelyn, Jolie" is only text — it lights nothing up, and
-    this channel competes with every other one they are in, so the message just
-    gets lost (Eve, 2026-07-30). "<@ID>" is what actually notifies them, and it
+    A plain "Approvers: Evelyn" is only text — it lights nothing up, and this
+    channel competes with every other one she is in, so the message just gets
+    lost (Eve, 2026-07-30). "<@ID>" is what actually notifies her, and it
     renders as @Name so the sentence still reads normally.
 
     Built from APPROVERS and sorted by display name: the order is stable, and
-    changing who approves changes who gets pinged with no second edit."""
+    changing who approves changes who gets pinged with no second edit — which is
+    exactly how Jolie stopped being tagged (2026-08-13)."""
     return " ".join(f"<@{uid}>" for uid, _ in
                     sorted(APPROVERS.items(), key=lambda kv: kv[1]))
 
@@ -317,7 +316,7 @@ def _channel(channel: Optional[str] = None) -> str:
     if not ch:
         raise RuntimeError(
             "REVIEW_CHANNEL is unset — create the private channel in Slack "
-            "(Evelyn + Jolie + Lucy), then paste its id here. The reporting "
+            "(Evelyn + Lucy), then paste its id here. The reporting "
             "token cannot create it: no groups:write.")
     return ch
 
@@ -585,7 +584,7 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
 
     HELD TO THE SAME STANDARD AS THE 4am BUILD: `run.py --dry-run` only writes
     previews to output/ — it mails nobody — and the twelve reports still go out
-    only on a checkmark from Evelyn or Jolie. This makes them ASKABLE by 11:00;
+    only on a checkmark from Evelyn. This makes them ASKABLE by 11:00;
     it does not make them sent.
 
     Reuses previews already on disk. On 2026-07-30 the build succeeded and only

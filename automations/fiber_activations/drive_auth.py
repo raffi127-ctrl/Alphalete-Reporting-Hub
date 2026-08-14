@@ -1,19 +1,19 @@
-"""Drive OAuth — a SEPARATE token from the Sheets one, mirroring gmail_auth.py.
+"""Drive OAuth - a SEPARATE token from the Sheets one, mirroring gmail_auth.py.
 
 Why separate (NOT re-authorizing the Sheets token):
   * The Sheets/gspread token (~/.config/recruiting-report/oauth-token.json) is
-    authorized as raffi127@gmail.com and scoped to spreadsheets only — the ~52
+    authorized as raffi127@gmail.com and scoped to spreadsheets only - the ~52
     ICD tabs + Tableau Custom Views depend on it. Re-consenting would break them.
   * PNG delivery goes to alphaletereporting's Drive, so THAT account grants this
     token (same account as the Gmail draft token).
 
 Scope is drive.file (NON-sensitive: the app only sees/manages files it creates),
-so no Google app verification is needed — just a one-time consent.
+so no Google app verification is needed - just a one-time consent.
 
 Stores its own token at:
   ~/.config/recruiting-report/drive-token.json   (gitignored, NEVER commit)
 
-One-time authorization (interactive — opens a browser; sign in as
+One-time authorization (interactive - opens a browser; sign in as
 alphaletereporting@gmail.com):
 
   python -m automations.fiber_activations.drive_auth
@@ -50,9 +50,9 @@ def authorize() -> None:
         prompt="consent",
         authorization_prompt_message=(
             "Opening your browser to authorize Drive uploads.\n"
-            f"➡  Sign in as {DRIVE_ACCOUNT} (NOT raffi127) and approve.\n"
+            f"-> Sign in as {DRIVE_ACCOUNT} (NOT raffi127) and approve.\n"
             "If it doesn't open, copy this URL:\n{url}"),
-        success_message="Done — close this tab and return to the terminal.",
+        success_message="Done - close this tab and return to the terminal.",
     )
 
     granted = set(creds.scopes or [])
@@ -64,7 +64,7 @@ def authorize() -> None:
     DRIVE_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     DRIVE_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
     acct = getattr(creds, "account", "") or ""
-    print(f"✓ Saved Drive token to {DRIVE_TOKEN_PATH}"
+    print(f"OK - Saved Drive token to {DRIVE_TOKEN_PATH}"
           + (f"  (account: {acct})" if acct else ""))
 
 

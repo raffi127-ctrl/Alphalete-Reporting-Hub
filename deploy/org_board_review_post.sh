@@ -20,7 +20,11 @@
 # ~05:20 with its retries and failure alerts intact); the public post already
 # runs on its own agent at 07:05; this puts the link right behind it.
 #
-#   07:10 (then 07:40 / 08:10 / 09:00 as a safety net)  =>  link by ~07:15.
+#   07:00 (then 07:30 / 08:00 / 09:00 as a safety net). Eve 2026-08-13: "el
+#   link de revision todos los dias a las 7am para aprobar y que se envie a las
+#   7:15 mas tardar" — so the link is UP at 07:00 (the board's own post runs at
+#   06:55, five minutes ahead), and com.alphalete.org-board-email-review polls
+#   every 5 min, so a checkmark at ~07:05 is a sent email by ~07:10-07:15.
 #
 # ONE POST PER DAY. review_gate --post REPLACES its own un-approved post for the
 # day, so running it four times would delete and re-post the link under the
@@ -69,7 +73,7 @@ if [ -f "$MARK" ] && [ "$DRY" = "0" ]; then
     exit 0
 fi
 
-# Overlap guard: the 07:40 slot must not fight a 07:10 run still rendering the
+# Overlap guard: the 07:30 slot must not fight a 07:00 run still rendering the
 # preview (the PDF build takes a few minutes).
 if pgrep -f "automations.org_sales_board.review_gate" > /dev/null 2>&1; then
     echo "[$(date)] SKIPPED — a review_gate run is still going" >> "$LOG_FILE"
@@ -118,7 +122,7 @@ try:
         _reg.load_config(), name='Org. Sales Board Email',
         report_id='sales-board-screenshot-email', kind='FAILED',
         status='the review link never went up (last slot exit ' + sys.argv[1] + ')',
-        when='morning review post (07:10-09:00)',
+        when='morning review post (07:00-09:00)',
         day=dt.date.today().isoformat(), machine_label='Lucy 1')
 except Exception as e:
     print('alert failed:', e)

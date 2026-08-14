@@ -35,11 +35,18 @@ from automations.captainship_drafts.config import BY_KEY
 # --------------------------------------------------------------------------
 # Per-§2-board base view URLs.
 # --------------------------------------------------------------------------
-# teamstats (b2b): the CaptainsTeam workbook's ...EXPANDEDCHURN layout — the team
-# is overridden per-captain via the filter param, so this one base serves all 3.
+# teamstats (b2b): the B2B 1-PAGER_Captain View, a BASE view — the team is
+# overridden per-captain via the filter param, so this one base serves all 3.
+#
+# It used to be a saved custom view on a 'CaptainsTeam' sheet
+# (CarlosLocalOfficeEXPANDEDCHURN, GUID 4248bfd2-…). On 2026-08-13 that URL
+# started answering "That page could not be accessed. Either the view does not
+# exist or you do not have the necessary permissions" and all three B2B captains
+# lost §2; the workbook had been restructured and the sheet is gone (Eve).
+# Pointing at the BASE view instead of a saved one is also what NDS does, and it
+# is the arrangement that survives a republish — a custom view does not.
 _B2B_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "ATTTRACKER-B2B/CaptainsTeam/4248bfd2-397d-40f8-81bb-2f7b89ee8b9a/"
-             "CarlosLocalOfficeEXPANDEDCHURN")
+             "ATTTRACKER-B2B/B2B1-PAGER_CaptainView")
 # teamstats (nds): the CaptainsTeam base view.
 _NDS_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "NDS-SNRES-ATT-OOFWorkbook/CaptainsTeam")
@@ -122,7 +129,10 @@ def _spec_for(captain_key: str, flavor: str) -> Optional[dict]:
     if not entry:
         return None
     base, field, value = entry
-    return {"id": title, "url": _filtered_url(base, field, value), "title": title}
+    return {"id": title, "url": _filtered_url(base, field, value), "title": title,
+            # Only the B2B 1-PAGER carries a second, last-week report below the
+            # fold — see _cut_at_second_band. NDS is shot whole.
+            "cut_second_band": flavor == "b2b"}
 
 
 # The cancel board renders ~18 day columns; the daily email shows only the last
@@ -257,6 +267,12 @@ _VIZ_IFRAME = 'iframe[title="Data Visualization"]'
 # (1250x2000 on the NDS board), most of which is empty canvas below the content;
 # _trim_bottom cuts that away.
 _DASHBOARD = ".tab-dashboard"
+# How long to let the board draw itself. Was 60s until 2026-08-13, when all
+# three B2B captains lost §2 to a bare `Locator.wait_for: Timeout 60000ms` two
+# runs in a row while the NDS board (different, lighter workbook) drew fine.
+# The B2B EXPANDEDCHURN layout is the heaviest board we shoot, so the first
+# thing to rule out is that 60s is simply not enough for it.
+_DASHBOARD_TIMEOUT_MS = 150_000
 
 # --------------------------------------------------------------------------
 # Week filter: fall back to the newest week this captain actually has.
@@ -377,6 +393,121 @@ def _trim_footer_after_gap(path: Path, max_gap: int = 60,
         im.crop((0, 0, im.width, cut)).save(path)
 
 
+# The B2B 1-PAGER stacks a SECOND report under its "B2B - LAST WEEK" band —
+# "Sales By ICD - Last Week", "Summary Sales - Last Week" and the server-update
+# footer. §2 is the current week only, so the shot stops at that band (Eve
+# 2026-08-13).
+#
+# Found by COLOUR, not by text: Tableau paints worksheet content (band titles
+# included) into a canvas, so `get_by_text("B2B - LAST WEEK")` matches nothing
+# in the DOM and the first attempt at this cropped nothing at all. What the band
+# is, on screen, is a full-width navy rule — and there are exactly two of them
+# on this board ("B2B - Current Week" on top, "B2B - LAST WEEK" in the middle),
+# so the second one is the cut. Detected per-run rather than hardcoded: the band
+# slides down every time the team above it has more ICD rows.
+#
+# ONLY for the B2B board (spec['cut_second_band']). The NDS board is built out
+# of navy bands too — four of them, measured — and its second one sits 113px
+# down, so running this on NDS would throw away almost the whole report. The
+# flag is what makes "the second band" mean anything.
+_BAND_MIN_WIDTH_FRAC = 0.80     # a band spans the board; a blue cell does not
+_MIN_SECTION_PX = 80            # the shortest first section worth keeping
+# Browser window for the B2B board only (default elsewhere is 1680x1280). Wide
+# enough that the third table stops being cut off; the surplus canvas is trimmed.
+_B2B_WINDOW = (2400, 1280)
+
+
+def _navy_band_rows(path: Path) -> list:
+    """(start, end) of every full-width navy rule in the PNG, top to bottom."""
+    import numpy as np
+    from PIL import Image
+    with Image.open(path) as im:
+        a = np.asarray(im.convert("RGB")).astype(np.int16)
+    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    # "dark and clearly blue" — loose enough to survive a palette tweak, tight
+    # enough that no table header or heat-map cell qualifies.
+    navy = (b > r + 30) & (b > g + 20) & (a.mean(axis=2) < 140)
+    is_band = navy.mean(axis=1) >= _BAND_MIN_WIDTH_FRAC
+    bands, y, h = [], 0, len(is_band)
+    while y < h:
+        if is_band[y]:
+            s = y
+            while y < h and is_band[y]:
+                y += 1
+            bands.append((s, y))
+        else:
+            y += 1
+    return bands
+
+
+def _cut_at_second_band(path: Path, margin_px: int = 6,
+                        verbose: bool = False) -> None:
+    """Crop the PNG to everything ABOVE its second navy band. No-op when the
+    board doesn't have two, or when the cut would land somewhere absurd."""
+    from PIL import Image
+    bands = _navy_band_rows(path)
+    # One audit line per shot, always. This crop has now silently done nothing
+    # twice — once for looking up text Tableau paints into a canvas, once for
+    # running before the white canvas was trimmed — and both times the run was
+    # exit 0 with a full-height image, so there was nothing to read anywhere.
+    with Image.open(path) as _im:
+        print(f"   · cut check {path.name}: {_im.width}x{_im.height}, "
+              f"{len(bands)} navy band(s) at {[b[0] for b in bands]}", flush=True)
+    if len(bands) < 2:
+        # NOT gated on verbose: "I was asked to cut and did not" has to reach
+        # the run log. The first deploy of this cropped nothing and looked like
+        # a clean run — the only clue was the image itself.
+        print(f"   ⚠ {path.name}: found {len(bands)} navy band(s), expected 2 "
+              f"— keeping the whole shot", flush=True)
+        return
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        cut = max(1, bands[1][0] - margin_px)
+        # Sanity in PIXELS, never as a fraction of the height. At this point the
+        # shot still carries the board's empty canvas below the content — the
+        # B2B board measures 1694x8000 here — so a cut that is 55% of the
+        # FINISHED image is 7% of this one. The fraction guard this replaces
+        # rejected every real cut, and quietly (its message was behind
+        # --verbose): the third time this crop shipped doing nothing.
+        if cut <= bands[0][1] + _MIN_SECTION_PX:
+            print(f"   ⚠ {path.name}: 2nd band at y={bands[1][0]} sits right "
+                  f"under the 1st (ends y={bands[0][1]}) — that is not a "
+                  f"section, keeping the whole shot", flush=True)
+            return
+        print(f"   ✂ {path.name}: cutting at y={cut} of {im.height}, above the "
+              f"2nd navy band", flush=True)
+        im.crop((0, 0, im.width, cut)).save(path)
+
+
+def _why_no_dashboard(page) -> str:
+    """Tableau's OWN words for why the board isn't there, in one line.
+
+    `Locator.wait_for: Timeout 60000ms exceeded` is unactionable: a deleted
+    custom view, a republished workbook and a board that is merely slow all look
+    identical from the outside, and the only place that difference exists is the
+    page itself — an error toast inside the viz iframe, or an error page where
+    the iframe never appears at all. Read it here so it rides the exception into
+    the draft's pending note, where Eve actually sees it (the run log lives on
+    whichever machine built the draft). Never raises: a diagnostic that fails
+    must not replace the failure it is describing."""
+    try:
+        if page.locator(_VIZ_IFRAME).count() == 0:
+            body = " ".join(((page.locator("body").inner_text(timeout=5_000)
+                              or "").strip()).split())[:300]
+            return (f"the viz iframe never appeared — the page says: {body!r}"
+                    if body else "the viz iframe never appeared (blank page)")
+        toast = page.frame_locator(_VIZ_IFRAME).locator(
+            '[data-tb-test-id^="banner-error-toast"]')
+        if toast.count():
+            msg = " ".join(((toast.first.inner_text(timeout=5_000)
+                             or "").strip()).split())[:300]
+            return f"Tableau error on the view: {msg!r}"
+    except Exception as e:      # noqa: BLE001 — see docstring
+        return f"(could not read the page: {type(e).__name__}: {e})"
+    return ("no Tableau error on the page — the board loaded but never "
+            "finished drawing")
+
+
 def _shoot_rendered(page, spec: dict, out_dir: Path, *,
                     verbose: bool = False) -> Path:
     """Screenshot the board as a human sees it, cropped to the board itself.
@@ -406,10 +537,47 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
             raise RuntimeError(
                 f"{spec['id']}: '{field}' would not move to {week} — the board "
                 f"still sits on a week with no data for this team")
-    board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
-    board.wait_for(state="visible", timeout=60_000)
+    try:
+        from patchright.sync_api import TimeoutError as _PWTimeout
+    except Exception:           # noqa: BLE001 — fall back to a broad catch
+        _PWTimeout = Exception  # type: ignore[assignment]
+    # Two goes at the board, then give up NAMING the reason. One reload is worth
+    # it: the whole failure mode here is a board that didn't finish, and a fresh
+    # load is the cheapest thing that fixes that. A third would only add minutes
+    # to a §2 that is already going to end up as a pending note.
+    landed = page.url
+    for attempt in (1, 2):
+        board = page.frame_locator(_VIZ_IFRAME).locator(_DASHBOARD).first
+        try:
+            board.wait_for(state="visible", timeout=_DASHBOARD_TIMEOUT_MS)
+            break
+        except _PWTimeout:
+            why = _why_no_dashboard(page)
+            if attempt == 1:
+                if verbose:
+                    print(f"   ↻ {spec['id']}: no board after "
+                          f"{_DASHBOARD_TIMEOUT_MS // 1000}s ({why}) — "
+                          f"reloading once", flush=True)
+                page.goto(landed, wait_until="domcontentloaded")
+                page.wait_for_timeout(_SHOT_HYDRATE_MS)
+                continue
+            # RuntimeError, not the raw timeout: run._tableau_shots puts this
+            # text in the draft's pending note, and "Timeout 150000ms exceeded"
+            # tells the reader nothing they can act on.
+            raise RuntimeError(
+                f"{spec['id']}: the board never rendered "
+                f"(2 x {_DASHBOARD_TIMEOUT_MS // 1000}s) — {why}") from None
     board.screenshot(path=str(out))
+    print(f"   · shot {out.name} (cut_second_band="
+          f"{bool(spec.get('cut_second_band'))})", flush=True)
+    # AFTER _trim_right, never before. The raw element shot is as wide as the
+    # browser window and carries a few hundred px of empty canvas on the right,
+    # so a band that spans the whole BOARD only covers ~70% of the IMAGE and
+    # falls under _BAND_MIN_WIDTH_FRAC — the cut then silently no-ops, which is
+    # exactly what happened on the first deploy of this (2026-08-13).
     _trim_right(out)
+    if spec.get("cut_second_band"):
+        _cut_at_second_band(out, verbose=verbose)
     capture._trim_bottom(out, verbose, spec_id=spec["id"], peel_footer=False)
     _trim_footer_after_gap(out)
     if verbose:
@@ -440,7 +608,14 @@ def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
     # into ONE tableau_session (login once) via a pre-pass in run.main, mirroring
     # how sheet_shot captures all ranges in one browser. Fine pre-go-live (manual
     # cadence); an unconfigured captain never reaches here, so no wasted login.
-    with tableau_session(headless=True, verbose=verbose) as page:
+    # The B2B 1-PAGER is wider than the 1680px default window, so its right-hand
+    # "Non - Pmt (60-90)" table came back sliced mid-column — a whole column of
+    # numbers missing from a report that goes to ~145 people (Eve 2026-08-13).
+    # Only b2b: every other board fits, and a window change is a re-layout risk
+    # on boards that are currently correct. Asking for too much width is free —
+    # _trim_right drops whatever canvas the board doesn't use.
+    session_kw = {"window_size": _B2B_WINDOW} if flavor == "b2b" else {}
+    with tableau_session(headless=True, verbose=verbose, **session_kw) as page:
         if flavor in _TEAMSTATS_FLAVORS:
             return _shoot_rendered(page, spec, out_dir, verbose=verbose)
         png = capture.capture_page(page, spec, out_dir, verbose=verbose)

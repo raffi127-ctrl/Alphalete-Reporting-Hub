@@ -412,7 +412,7 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     # anything — a rep who joined a captainship this month never appears on it,
     # and the reps it does carry are last month's. The source is now TABLEAU: the
     # per-captain reports detect a new rep and post a gate in #revision-emails,
-    # and `captain_gate.resolve` adds the ones Evelyn or Jolie ticked
+    # and `captain_gate.resolve` adds the ones Evelyn ticked
     # ([[project_new_owners]]). Approval is the only way a rep gets a row.
     #
     # Skipped on dry-run, on a granular --programs retry (surgical re-pull of an

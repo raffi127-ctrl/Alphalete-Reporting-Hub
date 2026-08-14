@@ -109,6 +109,20 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
     both filters, exactly this race. So each field now waits for its (All)
     item to attach before concluding it's absent, and the whole pass retries
     once if any field couldn't be released.
+
+    THE CONTROLS ARE GONE (2026-08-13): SCI removed both quick filters from the
+    workbook. A probe found ZERO nodes carrying "Contract ID" or "Account Id" in
+    their id — not an unchecked (All), not a collapsed panel, nothing — while the
+    Start/End Date textareas in the same panel still drive fine. And the pull is
+    healthy without them: that morning's team export reached Carlos's 2026-08-12
+    sales, so whatever pinned the include list left with the controls.
+
+    So "field not on this view" is now the EXPECTED case and says so plainly. It
+    used to shout "the pull may be capped" and burn 80s retrying (2 fields x 2
+    attempts x 20s) on every single pull — a warning that fired every run, on
+    every view, for a control that no longer exists. A field that IS present but
+    won't flip is still a real problem and still warns. The release stays wired
+    up: if SCI ever re-adds the filters, it starts working again on its own.
     """
     unresolved = list(fields)
     for attempt in range(2):
@@ -127,10 +141,22 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
             except Exception:
                 pass
             if box.count() == 0:
+                # Absent (All) has two very different meanings. If NOTHING on the
+                # view carries the field name, the filter isn't on this view at
+                # all — nothing to release, nothing wrong, don't retry. If the
+                # field IS there but its (All) isn't, that's the 8/12 race and
+                # worth another pass.
+                present = viz.locator('[id*="{}"]'.format(field)).count()
+                if not present:
+                    if verbose:
+                        print("  -> BOX filter {!r} not on this view — nothing "
+                              "to release".format(field), flush=True)
+                    continue
                 if verbose:
-                    print("  ⚠ BOX filter {!r}: no (All) item found after "
-                          "{}s — the pull may be capped".format(
-                              field, hydrate_timeout_ms // 1000), flush=True)
+                    print("  ⚠ BOX filter {!r}: {} node(s) but no (All) item "
+                          "after {}s — the pull may be capped".format(
+                              field, present, hydrate_timeout_ms // 1000),
+                          flush=True)
                 still_pending.append(field)
                 continue
             if box.get_attribute("aria-checked") == "true":
@@ -160,6 +186,64 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
                 print("  ⚠ BOX filter {!r} release failed ({!r}) — "
                       "continuing".format(field, exc), flush=True)
         unresolved = still_pending
+
+
+def describe_filters(page, viz, limit: int = 25) -> str:
+    """Dump what filter controls the loaded viz actually exposes.
+
+    WHY (2026-08-13): both owner pulls capped again and the log said
+    "no (All) item found after 20s" for BOTH fields on BOTH attempts. The
+    2026-08-12 hardening added exactly that hydration wait, so 80s of waiting
+    ruling the item absent is not a race — the node the selector describes is
+    not in the DOM at all. Rather than guess at a new selector, this prints the
+    ground truth: how many checkboxes the viz has, every id that ends in
+    `_(All)` (whatever its field), and the quick-filter titles on the view.
+
+    Read-only and defensive: every probe is wrapped, because the point is to
+    come back with a description even when half the page is unexpected.
+    """
+    lines = ["--- filter probe ---"]
+
+    def _try(label, fn):
+        try:
+            lines.append("{}: {}".format(label, fn()))
+        except Exception as exc:                            # noqa: BLE001
+            lines.append("{}: <probe failed: {!r}>".format(label, exc))
+
+    _try("checkbox nodes", lambda: viz.locator('[role="checkbox"]').count())
+    _try("nodes with id ending _(All)",
+         lambda: viz.locator('[id$="_(All)"]').count())
+    _try("date textareas",
+         lambda: viz.locator('textarea[aria-label$="Date"]').count())
+
+    def _all_ids():
+        loc = viz.locator('[id$="_(All)"]')
+        n = min(loc.count(), limit)
+        return "\n" + "\n".join(
+            "    {!r}".format(loc.nth(i).get_attribute("id")) for i in range(n)
+        ) if n else "(none)"
+    _try("ids ending _(All)", _all_ids)
+
+    def _titles():
+        # Tableau labels each quick filter's header with the field name; the
+        # class has been stable across the SCI views we drive.
+        loc = viz.locator(".tabComboBoxNameContainer, .fltrTitle, "
+                          '[data-tb-test-id="filter-title"]')
+        n = min(loc.count(), limit)
+        return "\n" + "\n".join(
+            "    {!r}".format((loc.nth(i).inner_text() or "").strip())
+            for i in range(n)) if n else "(none)"
+    _try("quick-filter titles", _titles)
+
+    # Each pinned field, matched loosely: does ANY node carry the field name in
+    # its id? If the field is present but has no _(All) child, the control is a
+    # dropdown/search filter, not a checkbox list — a different release path.
+    for field in PINNED_ID_FILTERS:
+        _try("nodes with {!r} in id".format(field),
+             (lambda f=field: viz.locator('[id*="{}"]'.format(f)).count()))
+
+    lines.append("--- end filter probe ---")
+    return "\n".join(lines)
 
 
 def capped_pull_warning(newest: Optional[dt.date],

@@ -178,17 +178,48 @@ def observe(names: List[str], *, captain: str, source: str,
     return adds
 
 
+def names_on_tab(sections) -> set:
+    """Every rep that already had a row somewhere on a report tab.
+
+    Takes the {section/box: {'rep_rows': {name: row}}} map every captainship
+    fill builds (`find_sections` / `find_boxes`) and flattens it to one set of
+    normalized names. Snapshot it BEFORE the fill's insert step — those maps are
+    updated in place once rows are added.
+
+    Read-only and total: a shape it doesn't recognise contributes nothing rather
+    than raising, because its only caller is an advisory notice."""
+    out: set = set()
+    try:
+        for sect in (sections or {}).values():
+            for n in ((sect or {}).get("rep_rows") or {}):
+                out.add(_norm(n))
+    except Exception:  # noqa: BLE001 — advisory input, never fail the fill
+        pass
+    return out
+
+
 def observe_added(added, *, captain: str, source: str, today=None, ss=None,
-                  dry_run: bool = False, logfn=print) -> List[dict]:
+                  dry_run: bool = False, known=(), logfn=print) -> List[dict]:
     """The entry point every captainship report calls after its own fill.
 
     They all return `added` as {box/period: [names]} from `insert_missing_reps`
     — the same rep usually appears in every box, so the names are flattened and
     de-duped first.
 
+    `known` — the reps the tab ALREADY carried before this run (see
+    `names_on_tab`). A new row in ONE section of a tab that already knows the
+    person is not a new rep: these tabs carry a 0-30 section and a 30-60 one,
+    and the 30-60 metric is a 30-60-DAYS-AGO COHORT, so someone who joined ~45
+    days ago debuts in that section long after their 0-30 row was filled. Read
+    as "new", it asks Evelyn for a ✅ that can only resolve to "already had a
+    row" — noise on a channel whose whole value is that a ✅ means something.
+    (Audrey/Blue Mendoza under Starr, 2026-08-13: on the board since WE 7.19 and
+    on the 0-30 rows since 7/23, proposed as new the day her 30-60 cohort
+    matured.) Left empty, nothing is filtered and the old behaviour stands.
+
     This does NOT add anyone to the Org Sales Board. It opens the GATE: one line
-    per rep in #revision-emails asking Evelyn or Jolie for a ✅, and the board
-    rows only appear once one of them ticks it (Eve, 2026-08-10 — the VA board
+    per rep in #revision-emails asking Evelyn for a ✅, and the board
+    rows only appear once she ticks it (Eve, 2026-08-10 — the VA board
     that used to decide captainship membership is no longer maintained, so the
     decision is a person's again). See `captain_gate`."""
     from automations.new_owners import captain_gate
@@ -196,6 +227,15 @@ def observe_added(added, *, captain: str, source: str, today=None, ss=None,
         names = [n for v in added.values() for n in (v or [])]
     else:
         names = list(added or [])
+    names = list(dict.fromkeys(names))   # a rep added in every box, listed once
+    on_tab = {_norm(k) for k in (known or ())}
+    if on_tab:
+        matured = [n for n in names if _norm(n) in on_tab]
+        names = [n for n in names if _norm(n) not in on_tab]
+        if matured:
+            logfn(f"  (not new to {captain_name(captain)} — already on this tab "
+                  f"before the run, a maturing cohort: "
+                  f"{', '.join(dict.fromkeys(matured))})")
     return captain_gate.propose(names, captain=captain, source=source,
                                 today=today, ss=ss, dry_run=dry_run,
                                 logfn=logfn)

@@ -1,26 +1,26 @@
-"""Sheets OAuth — the one-time interactive authorization that creates the
+"""Sheets OAuth - the one-time interactive authorization that creates the
 gspread token every recruiting/OPT report reads.
 
 Why this exists as its own command: fill.py's runtime client is deliberately
-NON-interactive — it never opens a browser (an unattended 4am batch that popped
+NON-interactive - it never opens a browser (an unattended 4am batch that popped
 a Chrome would stall every report, 2026-07-04). So the one-time consent lives
 here instead. Run this ONCE on each machine that runs reports; it opens a
 browser, you sign in, and it writes the token fill.py then reuses.
 
 The token is authorized as alphaletereporting@gmail.com, scoped to spreadsheets
-(Megan 2026-08-01: "just like everything else" — one service identity for every
+(Megan 2026-08-01: "just like everything else" - one service identity for every
 report surface, rather than a per-machine human account).
 
 HISTORY, because this reversed on purpose: until 2026-08-01 this said "sign in
 as raffi127, NOT alphaletereporting", added with this file on 2026-07-06
 (82e8c9b) on the reasoning that raffi127 holds the ~52 ICD tabs + the Tableau
-Custom Views. That reasoning still has teeth — the recruiting/focus workbooks
+Custom Views. That reasoning still has teeth - the recruiting/focus workbooks
 are RESTRICTED (no link sharing) and several are owned by other people
 (Alphaletemarketing, maudmiller4), so alphaletereporting only reaches them if
 it has been shared in explicitly.
 
 BEFORE re-authing a machine to this account, confirm alphaletereporting has
-EDITOR (not just view — these reports write) on every sheet that machine
+EDITOR (not just view - these reports write) on every sheet that machine
 touches. The blocking one is the Mini Control queue sheet: a runner that can't
 write its result row can no longer be driven remotely, and recovering that
 needs someone physically at the machine. `lucy --machine "<name>" sheets_whoami`
@@ -29,7 +29,7 @@ reports what the machine's current token can actually open.
 Token: ~/.config/recruiting-report/oauth-token.json  (gitignored, NEVER commit)
 Reuses the same OAuth client (oauth-client.json) the installer drops in.
 
-One-time authorization (interactive — opens a browser):
+One-time authorization (interactive - opens a browser):
 
   python -m automations.recruiting_report.sheets_auth
 """
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Mirror fill.py exactly (kept local so this script imports nothing heavy —
+# Mirror fill.py exactly (kept local so this script imports nothing heavy -
 # fill.py pulls in gspread etc. and resolves the sheet config at import time).
 SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEETS_ACCOUNT = "alphaletereporting@gmail.com"   # the shared reporting identity
@@ -59,7 +59,7 @@ def authorize() -> None:
     if not OAUTH_CLIENT_PATH.exists():
         raise RuntimeError(
             f"OAuth client not found at {OAUTH_CLIENT_PATH}. The installer "
-            "normally drops it in — re-run the installer, or ask Megan for "
+            "normally drops it in - re-run the installer, or ask Megan for "
             "oauth-client.json and save it there.")
 
     flow = InstalledAppFlow.from_client_secrets_file(
@@ -73,10 +73,10 @@ def authorize() -> None:
         prompt="consent",
         authorization_prompt_message=(
             "Opening your browser to authorize Google Sheets access.\n"
-            f"➡  Sign in as {SHEETS_ACCOUNT} and approve the Sheets scope.\n"
+            f"-> Sign in as {SHEETS_ACCOUNT} and approve the Sheets scope.\n"
             "If it doesn't open, copy this URL into your browser:\n{url}"),
         success_message=(
-            "Done — you can close this tab and return to the terminal."),
+            "Done - you can close this tab and return to the terminal."),
     )
 
     granted = set(creds.scopes or [])
@@ -88,7 +88,7 @@ def authorize() -> None:
     OAUTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     OAUTH_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
     acct = getattr(creds, "account", "") or ""
-    print(f"✓ Saved Sheets token to {OAUTH_TOKEN_PATH}"
+    print(f"OK - Saved Sheets token to {OAUTH_TOKEN_PATH}"
           + (f"  (account: {acct})" if acct else ""))
     print("  Scopes:", ", ".join(sorted(granted)))
     print("  This machine can now run reports.")

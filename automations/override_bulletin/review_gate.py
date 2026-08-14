@@ -11,10 +11,11 @@ habit and not three:
     review_gate.py --check --send   Evelyn's checkmark mails it
 
 WHO APPROVES: **EVELYN ONLY** (Eve, 2026-08-06 — "que la unica aprobadora para
-este bulletin sea Evelyn"). This is the one gate of the four that is not
-Evelyn+Jolie. A checkmark from Jolie, from Lucy, or from anyone else leaves the
-gate closed and sends nothing — Slack reports who reacted, so that is
-enforceable rather than a convention. See APPROVERS below.
+este bulletin sea Evelyn"). This gate got there first; since 2026-08-13 all four
+gates in the channel are Evelyn-only, because Jolie left the company. A checkmark
+from Lucy or from anyone else leaves the gate closed and sends nothing — Slack
+reports who reacted, so that is enforceable rather than a convention. See
+APPROVERS below.
 
 WEEKLY, NOT DAILY. The other gates key their post off a date; this one keys off
 the WEEK ENDING label ("8.2.26"), because that is what the bulletin carries and
@@ -53,10 +54,9 @@ from automations.override_bulletin import dd_data as D
 # neither create a channel nor list channels by name. A rename keeps the id.
 REVIEW_CHANNEL = "C0BLLU9M0A2"
 
-# EVELYN ONLY — see the module docstring. Deliberately NOT the Evelyn+Jolie pair
-# the other gates use. Jolie is in this channel and will see the post; her
-# checkmark must do nothing, so her id is not here. Do not "fix" this by adding
-# her to match the others.
+# EVELYN ONLY — see the module docstring. This was the first gate to drop the
+# Evelyn+Jolie pair; the other three followed on 2026-08-13 when Jolie left, so
+# every gate in the channel now holds exactly this one id.
 APPROVERS = {
     "U088E2KJEV8": "Evelyn",
 }
@@ -281,8 +281,8 @@ def _find_post(today: Optional[dt.date] = None,
 def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:
     """(id, name) of the first AUTHORISED checkmark, else None.
 
-    A tick from Jolie or anyone else simply is not in APPROVERS, so it falls
-    through and the gate stays closed. That is the whole enforcement."""
+    A tick from anyone who is not in APPROVERS simply falls through and the gate
+    stays closed. That is the whole enforcement."""
     for rx in msg.get("reactions", []):
         if rx.get("name") not in APPROVE_EMOJI:
             continue
@@ -393,9 +393,10 @@ def find_approval(today: Optional[dt.date] = None,
         return who
     if verbose:
         got = [f":{r['name']}: x{r['count']}" for r in msg.get("reactions", [])]
-        # Name the reactions we DID see. A tick from Jolie is the likeliest way
-        # for this to sit unsent, and "not approved yet" alone would send
-        # somebody hunting for a post that visibly has a checkmark on it.
+        # Name the reactions we DID see. A tick from someone who is not an
+        # approver is the likeliest way for this to sit unsent, and "not
+        # approved yet" alone would send somebody hunting for a post that
+        # visibly has a checkmark on it.
         print(f"— not approved yet (reactions: {', '.join(got) or 'none'}; "
               f"only {', '.join(APPROVERS.values())} can release this one)",
               flush=True)

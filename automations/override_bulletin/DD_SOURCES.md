@@ -534,9 +534,10 @@ checkmark.
 
 **Only Evelyn's checkmark releases it** (Eve 2026-08-06: *"que la unica
 aprobadora para este bulletin sea Evelyn, que si reacciona Jolie no dispare
-nada"*). This is the only one of the four gates in that channel that is not
-Evelyn+Jolie — `APPROVERS` holds one id and a tick from anyone else falls
-through. Do not "align" it with the others.
+nada"*). It was the first of the four gates in that channel to drop the
+Evelyn+Jolie pair; the other three followed on 2026-08-13 when Jolie left the
+company, so every gate now holds this one id and a tick from anyone else falls
+through.
 
 Three differences from the daily gates, all deliberate:
 - **Weekly key.** The post is titled `Organization Bulletin — WE 8.2.26`, so

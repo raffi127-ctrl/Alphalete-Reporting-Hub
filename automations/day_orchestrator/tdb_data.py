@@ -7,7 +7,7 @@ git-ignored Sheet cell capped at 50K chars) so the heavy logic lives in git and
 the cell stays lean. The report does `from automations.day_orchestrator.tdb_data
 import *` and keeps only the HTML/PDF rendering + Slack/iMessage delivery."""
 
-import os, re, sys, html, glob, shutil, subprocess, tempfile, unicodedata, datetime, importlib, json, calendar, argparse
+import os, re, sys, html, glob, shutil, subprocess, tempfile, unicodedata, datetime, importlib, json, calendar, argparse, time
 from collections import defaultdict
 
 def _ensure(pkg):
@@ -153,6 +153,52 @@ def roster_end(raw):
 def newest(pattern):
     fs = glob.glob(pattern)
     return max(fs, key=os.path.getmtime) if fs else None
+
+# Drive fetch: how hard to try before giving up. One attempt used to be enough
+# "most days" — until 2026-08-13, when a single ReadTimeout on the recruiting
+# workbook killed the whole 8am post (the ~/Downloads fallback below is a
+# LAPTOP path; the mini has no such file, so a failed fetch there is fatal).
+FETCH_TRIES    = int(os.environ.get("TDB_FETCH_TRIES") or 3)
+FETCH_TIMEOUT  = int(os.environ.get("TDB_FETCH_TIMEOUT") or 120)
+FETCH_BACKOFF  = (5, 15)     # seconds to wait before try 2, try 3, ...
+
+def fetch_from_drive(sheet_id, label, workdir):
+    """Sheet -> temp .xlsx via the Hub login. None if unavailable, so the caller
+    falls back to ~/Downloads.
+
+    Retries transient failures (FETCH_TRIES attempts, FETCH_BACKOFF between) —
+    Google's export endpoint stalls for a minute now and then, and each workbook
+    is independent, so a slow recruiting pull no longer discards a good sales
+    pull. Lives HERE (git-tracked) rather than in the Report-Library cell so the
+    retry has a diff and a history; the cell must NOT redefine it, or the cell's
+    copy shadows this one."""
+    try:
+        from automations.recruiting_report import fill as _fill
+    except Exception:
+        return None                      # no creds layer at all — retrying won't help
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    for attempt in range(1, FETCH_TRIES + 1):
+        try:
+            sh = _fill.open_by_key(sheet_id)
+            sess = sh.client.session
+            r = sess.get(url, timeout=FETCH_TIMEOUT); r.raise_for_status()
+            path = os.path.join(workdir, f"{label}.xlsx")
+            with open(path, "wb") as fh:
+                fh.write(r.content)
+            note = "" if attempt == 1 else f" (attempt {attempt}/{FETCH_TRIES})"
+            print(f"{label:11}: live from Google Drive{note}")
+            return path
+        except Exception as e:
+            why = f"{type(e).__name__}: {e}"
+            if attempt < FETCH_TRIES:
+                wait = FETCH_BACKOFF[min(attempt - 1, len(FETCH_BACKOFF) - 1)]
+                print(f"({label} fetch attempt {attempt}/{FETCH_TRIES} failed — "
+                      f"{why}; retrying in {wait}s)")
+                time.sleep(wait)
+            else:
+                print(f"({label} live fetch unavailable after {FETCH_TRIES} "
+                      f"attempts: {why}; trying Downloads)")
+    return None
 
 def find_chrome():
     """Locate Chrome/Chromium (mac/win/linux)."""

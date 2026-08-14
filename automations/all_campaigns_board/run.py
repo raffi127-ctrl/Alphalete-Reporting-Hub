@@ -55,6 +55,7 @@ def _find_ws(sh, title: str):
 def run(*, dry_run: bool = True, today: dt.date = None,
         source_tab: str = SOURCE_TAB, target_tab: str = TARGET_TAB,
         enable_rollover: bool = False, enable_roster: bool = True,
+        enable_sort: bool = True, enable_ranges: bool = True,
         logfn=print) -> dict:
     today = today or dt.datetime.now(CENTRAL).date()
     sh = open_by_key(SHEET_ID)
@@ -150,6 +151,39 @@ def run(*, dry_run: bool = True, today: dt.date = None,
     apply_elapsed_totals(tgt_ws, today=today, dry_run=dry_run, logfn=logfn,
                          include_delta=False)
 
+    # Every aggregate has to cover every rep (Eve 2026-08-13). roster.sync above
+    # grows the rep blocks; the formulas that sum over them do NOT grow with
+    # them, so the tab was running with its last rep outside the leaderboard
+    # TOTALS, the day-block Totals, their own leaderboard =SUMIF and their own
+    # delta-box row — 320 short ranges when this was found. Re-derived from the
+    # blocks' real bounds each run, so the 40th rep can't reopen it. Idempotent:
+    # a correct tab writes nothing. Never fatal — a short total is bad, no board
+    # is worse.
+    if enable_ranges:
+        try:
+            from automations.all_campaigns_board import ranges_repair as _rr
+            _rr.repair(tgt_ws, dry_run=dry_run, logfn=logfn)
+        except Exception as e:  # noqa: BLE001 — the fill is the job
+            logfn(f"  ⚠ range repair skipped ({type(e).__name__}: {e}) — repair "
+                  f"with `python -m automations.all_campaigns_board.ranges_repair`")
+
+    # LAST STEP: re-rank both rep tables high->low (Eve 2026-08-13). The ORG
+    # board's own tab has sorted itself since 2026-06-04, so the Org Board Email
+    # went out every morning with a ranked first section and an unranked second
+    # one — and this tab is what capture_all_units renders that second section
+    # from, LIVE. Runs after every write above so it sorts the numbers this run
+    # just produced, not the ones it started with. Never fatal: an unsorted
+    # board is worse than a sorted one, but far better than no board.
+    if enable_sort:
+        try:
+            from automations.all_campaigns_board import sort_board as _sb
+            _sb.sort_board(tgt_ws, tgt_ws.get_all_values(), dry_run=dry_run,
+                           logfn=logfn)
+        except Exception as e:  # noqa: BLE001 — the fill is the job
+            logfn(f"  ⚠ sort skipped ({type(e).__name__}: {e}) — the tables keep "
+                  f"the order they had; repair with "
+                  f"`python -m automations.all_campaigns_board.sort_board`")
+
     return {"filled_section": TARGET_SECTION,
             "reps_on_board": len(anchor.icd_rows),
             "reps_pulled": len(pull),
@@ -170,6 +204,12 @@ def main(argv=None):
     ap.add_argument("--target-tab", default=TARGET_TAB)
     ap.add_argument("--enable-rollover", action="store_true",
                     help="allow the Tuesday rollover to run (off until validated)")
+    ap.add_argument("--no-sort", action="store_true",
+                    help="skip the final re-rank of the two rep tables "
+                         "(they are sorted high->low after every fill)")
+    ap.add_argument("--no-range-repair", action="store_true",
+                    help="skip widening the tab's aggregates to cover every rep "
+                         "(they are re-derived from the blocks after every fill)")
     ap.add_argument("--no-add-missing", action="store_true",
                     help="do NOT add campaign reps who have no row on the "
                          "board (the roster sync is on by default)")
@@ -181,7 +221,9 @@ def main(argv=None):
     summary = run(dry_run=not args.apply, today=today,
                   source_tab=args.source_tab, target_tab=args.target_tab,
                   enable_rollover=args.enable_rollover,
-                  enable_roster=not args.no_add_missing)
+                  enable_roster=not args.no_add_missing,
+                  enable_sort=not args.no_sort,
+                  enable_ranges=not args.no_range_repair)
     print(f"=== summary: {summary} ===")
     # INCOMPLETE if a rep on the board never matched the pull, or a producing
     # rep has no board row — mirrors the ORG board's fill-but-flag exit.

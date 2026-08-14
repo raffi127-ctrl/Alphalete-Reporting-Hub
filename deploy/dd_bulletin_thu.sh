@@ -10,8 +10,9 @@
 #
 # REVIEWED SINCE 2026-08-06 (Eve). Nothing mails itself any more: each pass posts
 # the week's PDF link to #revision-emails once, and only EVELYN's checkmark
-# releases it. Jolie approves the other three reports in that channel; on this
-# one her reaction does nothing — see APPROVERS in review_gate.py.
+# releases it. Since 2026-08-13 that is true of ALL FOUR gates in the channel:
+# Jolie left, so Evelyn is the only approver anywhere — see APPROVERS in
+# review_gate.py.
 #
 # launchd fires passes Thursday 10:30-13:00 Central, every 25 min. Every pass
 # runs the same three steps, all idempotent:

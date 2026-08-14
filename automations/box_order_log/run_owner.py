@@ -44,7 +44,28 @@ CROSSTAB_SHEET = "Order Log"      # same worksheet Carlos's pull uses
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None) -> Path:
+def _view_url(team: bool) -> str:
+    """Which all-owners view to pull.
+
+    BASE (`BoxOrderLog`, no custom-view segment) carries every owner, but its
+    SAVED state is what keeps re-pinning the Contract ID / Account Id include
+    lists, and on 2026-08-13 the '(All)' checkboxes weren't even reachable in
+    the DOM any more, so `release_pinned_filters` had nothing to un-pin and both
+    owner pulls capped (Roshan 8/4, Abel 7/30) and self-suppressed.
+
+    TEAM is Megan's `ALLEXPORDERLOG` custom view (per_office.TEAM_VIEW_URL) —
+    same workbook + worksheet, same "Owner & Office" column, every office in one
+    export, but its OWN saved filter state. `per_office` has pulled it since
+    2026-07-29. Imported (not re-declared) so the two can never drift.
+    """
+    if not team:
+        return BASE_VIEW_URL
+    from .per_office import TEAM_VIEW_URL
+    return TEAM_VIEW_URL
+
+
+def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None,
+          team: bool = False) -> Path:
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
     from . import window
@@ -54,8 +75,32 @@ def _pull(dest: Path, verbose: bool = True, today: Optional[dt.date] = None) -> 
     hook = window.date_window_hook(start, end, verbose=verbose)
     with tableau_session(verbose=verbose) as page:
         return download_crosstab_patchright(
-            BASE_VIEW_URL, CROSSTAB_SHEET, dest, verbose=verbose, page=page,
+            _view_url(team), CROSSTAB_SHEET, dest, verbose=verbose, page=page,
             pre_export=hook)
+
+
+def _probe_filters(verbose: bool = True, team: bool = False) -> int:
+    """Open the view and DUMP its filter controls — no export, no send.
+
+    Diagnostic for the failure mode the 2026-08-12 hardening could not fix: the
+    release logs '(All) item not found' for both fields on both attempts, i.e.
+    the selector no longer matches anything rather than losing a hydration race.
+    This prints what IS in the DOM so the selector can be corrected against
+    fact instead of guesswork. See window.describe_filters.
+    """
+    from automations.shared.tableau_patchright import tableau_session
+    from . import window
+    url = _view_url(team)
+    print("-> probing filters on {}".format(url), flush=True)
+    with tableau_session(verbose=verbose) as page:
+        page.goto(url, wait_until="domcontentloaded")
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        viz.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+        ).wait_for(state="visible", timeout=120_000)
+        page.wait_for_timeout(25_000)
+        print(window.describe_filters(page, viz), flush=True)
+    return 0
 
 
 def _owners_present(sales) -> List[str]:
@@ -96,11 +141,25 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--from-file", metavar="CSV",
                     help="skip the Tableau pull; use an existing ALL-OWNERS "
                          "BoxOrderLog crosstab")
+    ap.add_argument("--team-view", action="store_true",
+                    help="pull Megan's ALLEXPORDERLOG custom view instead of the "
+                         "bare BoxOrderLog base view. Same rows, but its own "
+                         "saved filter state — the base view's Contract ID / "
+                         "Account Id include lists keep re-pinning and cap the "
+                         "export (see window.py).")
+    ap.add_argument("--probe-filters", action="store_true",
+                    help="diagnostic: open the view, print its filter controls, "
+                         "and exit. No export, no email, no sheet write.")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
     verbose = not args.quiet
     today = dt.date.today()
+
+    # Diagnostic short-circuit: --probe-filters needs no owner data, so it runs
+    # before the registry lookup and never touches a deliverable.
+    if args.probe_filters:
+        return _probe_filters(verbose=verbose, team=args.team_view)
 
     cfg = owners_mod.OWNERS.get(args.owner)
     if not cfg:
@@ -117,9 +176,15 @@ def main(argv: Optional[list] = None) -> int:
             print("✗ no such file: {}".format(src), file=sys.stderr)
             return 2
     else:
-        src = OUTPUT_DIR / "box_order_log_all_{}.csv".format(today.isoformat())
+        # One file name per VIEW. `box_order_log_all_<date>.csv` is what
+        # per_office._shared_team_file() treats as "today's TEAM ALLEXP export"
+        # and reuses without re-pulling — so a BASE-view pull must not land
+        # there wearing the team export's name (it did until 2026-08-13).
+        src = OUTPUT_DIR / ("box_order_log_all_{}.csv" if args.team_view
+                            else "box_order_log_base_{}.csv").format(
+                                today.isoformat())
         try:
-            _pull(src, verbose=verbose, today=today)
+            _pull(src, verbose=verbose, today=today, team=args.team_view)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
@@ -150,22 +215,27 @@ def main(argv: Optional[list] = None) -> int:
               file=sys.stderr)
         return 1
 
-    # Freshness gate for the EARLY (7:00) pass — same idea as box_order_log's:
-    # if the owner's newest sale hasn't reached yesterday, the extract likely
-    # hasn't refreshed yet, so DON'T email; exit 3 and let the 8:30 pass (which
-    # omits --require-fresh) send once the data's in.
-    if args.require_fresh and (args.email or args.test_to):
-        dated_all = [s.sale_date for s in sales if s.sale_date]
-        expected = today - dt.timedelta(days=1)
-        newest = max(dated_all) if dated_all else None
-        if newest is None or newest < expected:
-            print("extract not fresh yet (newest sale {}, need >= {}) — "
-                  "deferring to the later pass".format(newest, expected),
-                  flush=True)
-            return 3
-
     dated = [s.sale_date for s in sales if s.sale_date]
     newest = max(dated) if dated else None
+    # The EXPORT's newest sale, across every owner in it — the honest measure of
+    # whether the PULL is capped. See the gate below for why this matters.
+    export_dated = [s.sale_date for s in all_sales if s.sale_date]
+    export_newest = max(export_dated) if export_dated else None
+
+    # Freshness gate for the EARLY (7:00) pass — same idea as box_order_log's:
+    # if the extract hasn't reached yesterday, it likely hasn't refreshed yet,
+    # so DON'T email; exit 3 and let the 8:30 pass (which omits --require-fresh)
+    # send once the data's in. Measured on the EXPORT, not this owner: "has the
+    # extract landed" is a property of the feed, and asking it of one small
+    # office defers every quiet morning for no reason (same confusion that
+    # suppressed both owners on 2026-08-13 — see the send gate below).
+    if args.require_fresh and (args.email or args.test_to):
+        expected = today - dt.timedelta(days=1)
+        if export_newest is None or export_newest < expected:
+            print("extract not fresh yet (newest sale in the export {}, need "
+                  ">= {}) — deferring to the later pass".format(
+                      export_newest, expected), flush=True)
+            return 3
     if verbose:
         reps = sorted({(s.fields.get("Rep Name") or "").strip()
                        for s in sales if (s.fields.get("Rep Name") or "").strip()})
@@ -176,7 +246,21 @@ def main(argv: Optional[list] = None) -> int:
         print("  {} rep(s): {}".format(len(reps), ", ".join(reps)))
         if dated:
             print("  sale dates {} … {}".format(min(dated), max(dated)))
-        warn = window.capped_pull_warning(newest, today)
+        print("  export newest sale (all owners): {}".format(export_newest))
+        # Newest sale PER OWNER: the one readout that separates "the pull is
+        # capped" (everybody frozen on the same day) from "this office is quiet"
+        # (others current, this one behind). Reading it cost a whole morning on
+        # 2026-08-13, so it's printed every run now.
+        per_owner = {}
+        for s in all_sales:
+            o = (s.fields.get("Owner & Office") or "").strip()
+            if not o or not s.sale_date:
+                continue
+            if o not in per_owner or s.sale_date > per_owner[o]:
+                per_owner[o] = s.sale_date
+        for o in sorted(per_owner, key=lambda k: per_owner[k], reverse=True):
+            print("    newest {}  {}".format(per_owner[o], o))
+        warn = window.capped_pull_warning(export_newest, today)
         if warn:
             print("  " + warn)
 
@@ -185,8 +269,46 @@ def main(argv: Optional[list] = None) -> int:
     # The filter-release hook is best-effort and occasionally misses on a bad
     # viz load; this is the net that stops the wrong email from going out. Dry
     # runs are exempt (they're for inspection). See window.should_block_send.
+    #
+    # JUDGED AGAINST WHAT WE ALREADY HAVE (2026-08-13, after two wrong gates).
+    #
+    # Measuring this owner against TODAY (the 8/12 gate) silences an office that
+    # simply hasn't sold — Abel's is 14 sales deep, so it would have blocked him
+    # permanently, with no path back. Measuring the whole EXPORT against today
+    # (my first fix, same day) passes a pull that's healthy for one office and
+    # gutted for another: Carlos came back current at 8/12 while Roshan's and
+    # Abel's rows lost the week the 8/11 pull had delivered, and on that reading
+    # both owners were emailed undercounted numbers.
+    #
+    # The stored high-water mark settles both. The Sheet's data tab only merges
+    # forward, so it's the newest sale we've ever successfully pulled for this
+    # office. A quiet office matches it; a short pull falls behind it. Today
+    # Roshan's sheet holds sales through 8/10 and the pull returned 8/04 —
+    # caught, in the one comparison that doesn't depend on how busy the office is
+    # or on how the other offices happen to look.
+    #
+    # The export-wide check stays as the backstop for an owner with no sheet on
+    # file (nothing to compare against) and for a wholesale frozen feed.
     send_now = args.email or bool(args.test_to)
-    block = window.should_block_send(newest, today)
+    known_newest = None
+    try:
+        from . import sheet as box_sheet
+        known_newest = box_sheet.newest_sale_date(cfg.sheet_id)
+    except Exception as exc:                              # noqa: BLE001
+        print("  ⚠ could not read {}'s stored high-water mark ({!r}) — falling "
+              "back to the export-wide check".format(cfg.display, exc),
+              file=sys.stderr, flush=True)
+    block = window.should_block_send(export_newest, today)
+    if known_newest and newest and newest < known_newest:
+        block = ("SHORT PULL: this office's newest sale came back {} but the "
+                 "Sheet already holds {} — the pull LOST {} day(s) of sales it "
+                 "delivered before. Refusing to send numbers that undercount. "
+                 "The Sheet keeps its newer rows; re-run once a full pull "
+                 "lands.".format(newest, known_newest,
+                                 (known_newest - newest).days))
+    elif verbose and known_newest:
+        print("  stored high-water mark for {}: {} (pull: {})".format(
+            cfg.display, known_newest, newest))
     if block and send_now:
         print("✗ {} — {}: {}".format(
             cfg.display, today.isoformat(), block), file=sys.stderr, flush=True)
@@ -196,9 +318,20 @@ def main(argv: Optional[list] = None) -> int:
         if args.email:
             try:
                 from automations.shared import section_drop_alert as sda
-                behind = (today - newest).days if newest else None
-                detail = ("newest sale {}, {} days behind".format(newest, behind)
-                          if newest else "no dated sales at all")
+                # Say which comparison actually fired. The 8/13 alert quoted the
+                # owner's newest sale against today and read as "Abel's numbers
+                # are 14 days behind", which sent me looking for a frozen feed
+                # when the real question was whether the pull came back short.
+                if known_newest and newest and newest < known_newest:
+                    detail = ("pull returned {} but the Sheet already holds {} "
+                              "— lost {} day(s) of sales".format(
+                                  newest, known_newest,
+                                  (known_newest - newest).days))
+                elif export_newest:
+                    detail = "newest sale in the export {}, {} days behind".format(
+                        export_newest, (today - export_newest).days)
+                else:
+                    detail = "no dated sales at all"
                 sda.alert(report_id="box-order-log-{}".format(cfg.key),
                           failed=[detail], kind="capped", day=today)
             except Exception:

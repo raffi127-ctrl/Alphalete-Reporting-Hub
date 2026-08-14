@@ -23,7 +23,7 @@ names who reacted, so approval is a person, not a string to interpret.
 
 BOTH HALVES RUN ON THE MINI, unlike the captainship gate. --post has to: the
 Slack user token there is Lucy's, and that is the only reason the message
-arrives from Lucy (on Eve's box it is Evelyn's — one of the approvers, which
+arrives from Lucy (on Eve's box it is Evelyn's — the approver herself, which
 would read as her approving her own report). --check --send can, because this
 email goes out over SMTP with alphaletereporting's app password, which the mini
 already has; there is no Gmail-token half that only exists on Eve's box. The two
@@ -55,19 +55,19 @@ from automations.shared import weekend_release as wr
 # resolved by name at runtime. Safe to hardcode: a renamed channel keeps its id.
 REVIEW_CHANNEL = "C0BLLU9M0A2"      # #revision-emails
 
-# Whose checkmark counts: EVELYN AND JOLIE, the same two as the captainship gate
-# (Eve, 2026-07-30 — "mismos aprobadores en los dos"). Lucy is in the channel and
-# is the one who POSTS the link, but she does not read the reports, so her
-# checkmark must not release them. Slack reports the reacting user, so this is
-# enforceable: a tick from anyone else leaves the gate closed.
+# Whose checkmark counts: EVELYN ONLY (Eve, 2026-08-13 — Jolie left the company;
+# she was the second approver here and on the captainship gate until today). Lucy
+# is in the channel and is the one who POSTS the link, but she does not read the
+# reports, so her checkmark must not release them. Slack reports the reacting
+# user, so this is enforceable: a tick from anyone else — Jolie's old account
+# included — leaves the gate closed.
 #
-# Jolie is U0ACBT3JVTP (joliecarc@gmail.com), verified against the channel's own
-# members. NOT D0ACU8GQ7TK — that is the DM conversation with her, and a D-id
-# here would never match a reacting user, so her approval would silently never
-# count.
+# This dict is the ONLY list of approvers: _mentions() below builds the message's
+# @-tags from it, so dropping someone here also stops the post from pinging them.
+# Same single approver as the DD/override bulletins — one rule across the four
+# gates in this channel now, not two.
 APPROVERS = {
     "U088E2KJEV8": "Evelyn",
-    "U0ACBT3JVTP": "Jolie",
 }
 # Any of Slack's checkmarks — nobody should have to remember which one is "the"
 # checkmark, and picking the wrong green tick must not silently mean "not yet".
@@ -83,16 +83,17 @@ HUB_CARD_NAME = "Org. Sales Board Email"
 
 
 def _mentions() -> str:
-    """The approvers as real Slack mentions, e.g. "<@U08…> <@U0A…>".
+    """The approvers as real Slack mentions, e.g. "<@U08…>".
 
-    A plain "Evelyn, Jolie" is only text — it lights nothing up, and this
-    channel competes with every other one they are in, so the message just gets
-    lost (Eve, 2026-07-30). "<@ID>" is what actually notifies them, and it
-    renders as @Name so the sentence still reads normally.
+    A plain "Evelyn" is only text — it lights nothing up, and this channel
+    competes with every other one she is in, so the message just gets lost
+    (Eve, 2026-07-30). "<@ID>" is what actually notifies her, and it renders as
+    @Name so the sentence still reads normally.
 
     Built from APPROVERS and sorted by display name: the order is stable, and
-    changing who approves changes who gets pinged with no second edit. Same
-    helper, same wording as the captainship gate — one habit, not two."""
+    changing who approves changes who gets pinged with no second edit — which is
+    exactly how Jolie stopped being tagged (2026-08-13). Same helper, same
+    wording as the captainship gate — one habit, not two."""
     return " ".join(f"<@{uid}>" for uid, _ in
                     sorted(APPROVERS.items(), key=lambda kv: kv[1]))
 

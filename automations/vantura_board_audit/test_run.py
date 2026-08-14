@@ -41,6 +41,7 @@ class _FakeWS(object):
         self._formulas = formulas if formulas is not None else (values or [])
         self._b2 = b2
         self.appended = []
+        self.written = []          # [(a1, value)] from batch_update
 
     def get(self, rng, value_render_option=None):
         return self._formulas if value_render_option == "FORMULA" else self._values
@@ -55,6 +56,27 @@ class _FakeWS(object):
 
     def append_rows(self, rows, value_input_option=None):
         self.appended.extend(rows)
+
+    def batch_update(self, updates, value_input_option=None):
+        """Apply an A1 single-cell write to _values, so the audit's read-back
+        check sees what a real Sheet would. Only the 'B41'-shaped ranges the
+        auto-close issues are supported — anything else is a test bug."""
+        import re as _re
+        for u in updates:
+            m = _re.match(r"^([A-Z]{1,2})(\d+)$", str(u["range"]))
+            if not m:
+                raise AssertionError("unexpected range %r" % (u["range"],))
+            col = 0
+            for ch in m.group(1):
+                col = col * 26 + (ord(ch) - 64)
+            col -= 1
+            row = int(m.group(2)) - 1
+            while len(self._values) <= row:
+                self._values.append([])
+            while len(self._values[row]) <= col:
+                self._values[row].append("")
+            self._values[row][col] = u["values"][0][0]
+            self.written.append((u["range"], u["values"][0][0]))
 
 
 class _FakeSheet(object):
@@ -95,16 +117,52 @@ def _stations_with_unknown_name():
     return rows, form
 
 
-def _roll_with_open_termination():
+def _board_with_days(rows, week="8.16"):
+    """A Sales Board carrying the real column shape the 'T' sync reads:
+    r4 is the header row (B 'REP', E..K 'Monday'..'Sunday', L 'Campaign'),
+    rep rows from r5. `rows` is [(name, [7 day cells])].
+
+    Returns (values, formulas, week) — the week tag goes in B2, which is what
+    the termination DATE is derived from."""
+    hdr = [""] * 20
+    hdr[1] = "REP"
+    for k, d in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday"]):
+        hdr[4 + k] = d
+    hdr[11] = "Campaign"
+    values = [[""] * 20, [""] * 20, [""] * 20, hdr]      # rows 1-4
+    for name, days in rows:
+        r = [""] * 20
+        r[1] = name
+        for k, cell in enumerate(days):
+            r[4 + k] = cell
+        r[11] = "B2B"
+        r[13] = "1st Wk"                                 # -> _is_rep True
+        values.append(r)
+    formulas = [[""] * 20 for _ in values]               # no "=" -> no drift
+    return values, formulas, week
+
+
+def _roll_header():
+    """The Roll Call header row as the real sheet spells it. run._roll_cols
+    locates Status / Roll Call / Date Gone off THIS row — the audit writes col B
+    now, and it refuses to write a column it only found by position."""
+    h = _pad([""], 14)
+    h[0], h[1], h[2], h[3] = "Week Ending", "Status", "Campaign", "Roll Call"
+    h[12], h[13] = "Date Gone", "Days Lasted"
+    return h
+
+
+def _roll_with_open_termination(gone_date="8/11/2026"):
     """Roll Call where a second person is Active AND carries a Date Gone (col M)
     -> exactly ONE finding: the missing-board-row symptom is suppressed for
     gone-dated rows, so the termination finding is the only thing that fires."""
     gone = _pad([""], 14)
     gone[1] = "Active"                 # col B status
     gone[3] = "Yesenia Test"           # col D name
-    gone[12] = "8/11/2026"             # col M date gone
+    gone[12] = gone_date               # col M date gone
     return [
-        ["", "Status", "", "Name"],
+        _roll_header(),
         ["", "Active", "", "Casey Rep"],
         gone,                          # roll row 3
     ]
@@ -138,7 +196,7 @@ def _roll_matching():
     missing-from-board findings fire."""
     # cols: [_, status(col B), _, name(col D), ...]
     return [
-        ["", "Status", "", "Name"],
+        _roll_header(),
         ["", "Active", "", "Casey Rep"],
     ]
 
@@ -221,9 +279,17 @@ class ReportAnIssueDedupe(unittest.TestCase):
 
     It has to hold BOTH ends: don't re-append the same finding every morning,
     but never let a finding about one rep silence a finding about another.
+
+    These run with --no-auto-close ON PURPOSE. The fixture's open termination
+    would otherwise be closed by the audit itself (2026-08-14) and produce no
+    finding at all, and what is under test here is the DEDUPE, not the closing.
+    The historical 60-char collision these tests pin happened between two
+    termination findings, so swapping the fixture for a different finding kind
+    would quietly stop covering the regression.
     """
 
     _run = ExitCodeSemantics._run
+    ARGV = ["--no-auto-close"]
 
     def _sheet_with_issues(self, issue_rows):
         board_v, board_f = _board_with_one_rep()
@@ -251,7 +317,7 @@ class ReportAnIssueDedupe(unittest.TestCase):
                       "prefix — update this test, it has stopped covering the "
                       "regression it was written for")
         sheet = self._sheet_with_issues([_issue_row("8/4/2026", _AARON_FINDING)])
-        rc, wm, _ = self._run(sheet, [])
+        rc, wm, _ = self._run(sheet, self.ARGV)
         self.assertEqual(rc, 0)
         appended = sheet.worksheet("Report an Issue").appended
         self.assertTrue(
@@ -267,7 +333,7 @@ class ReportAnIssueDedupe(unittest.TestCase):
         """The other end: the SAME finding, already sitting on the tab, must not
         be appended again tomorrow morning — that is what the dedupe is for."""
         sheet = self._sheet_with_issues([_issue_row("8/11/2026", _YESENIA_FINDING)])
-        rc, wm, mc = self._run(sheet, [])
+        rc, wm, mc = self._run(sheet, self.ARGV)
         self.assertEqual(rc, 0)
         self.assertEqual(
             sheet.worksheet("Report an Issue").appended, [],
@@ -281,7 +347,7 @@ class ReportAnIssueDedupe(unittest.TestCase):
         that only appears in OTHER columns must not count as a match."""
         wrapped = _YESENIA_FINDING.replace(" ", "  ").replace("— ", "—\n")
         sheet = self._sheet_with_issues([_issue_row("8/11/2026", wrapped)])
-        rc, _, _ = self._run(sheet, [])
+        rc, _, _ = self._run(sheet, self.ARGV)
         self.assertEqual(rc, 0)
         self.assertEqual(sheet.worksheet("Report an Issue").appended, [],
                          "whitespace differences must not defeat the dedupe")
@@ -310,7 +376,7 @@ class UntrackedCampaignsAreSkipped(unittest.TestCase):
         stray[2] = campaign            # col C campaign
         stray[3] = "Pat Offboard"      # col D name
         roll = [
-            ["Week Ending", "Status", "Campaign", "Roll Call"],
+            _roll_header(),
             ["", "Active", "B2B", "Casey Rep"],
             stray,
         ]
@@ -356,6 +422,292 @@ class UntrackedCampaignsAreSkipped(unittest.TestCase):
             any("Pat Offboard" in " ".join(map(str, r))
                 for r in sheet.worksheet("Report an Issue").appended),
             "a blank campaign must keep getting audited")
+
+
+class AutoCloseTerminations(unittest.TestCase):
+    """Roll Call Status -> 'Terminated' for rows already carrying a past Date
+    Gone (2026-08-14, Eve). Col B and col M are kept by hand and drift apart
+    every few weeks; before this the audit reported it and a human flipped the
+    same cell — 15 rows on 7/31, 8 on 8/11, 1 on 8/14.
+
+    This is the only write the audit makes outside 'Report an Issue', so the
+    tests below are mostly about what it must REFUSE to touch.
+    """
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet(self, roll):
+        board_v, board_f = _board_with_one_rep()
+        st_v, st_f = _stations_clean()
+        return _FakeSheet({
+            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+
+    def test_past_date_gone_is_closed_and_run_goes_clean(self):
+        """The whole point: a past Date Gone on an Active row closes itself, and
+        the run comes out CLEAN instead of reporting the same thing forever."""
+        sheet = self._sheet(_roll_with_open_termination())
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        roll_ws = sheet.worksheet("Roll Call")
+        self.assertEqual(roll_ws.written, [("B3", "Terminated")],
+                         "col B of the open row is the only cell written")
+        self.assertEqual(
+            sheet.worksheet("Report an Issue").appended, [],
+            "a termination the audit closed itself is not a finding any more")
+        self.assertFalse(wm.called and wm.call_args.kwargs.get("ok") is False,
+                         "closing it must not leave a soft-INCOMPLETE manifest")
+
+    def test_closure_is_recorded_in_the_manifest_note(self):
+        """A run that rewrote statuses and then said 'clean' would be
+        indistinguishable from a run that found nothing. Name them."""
+        sheet = self._sheet(_roll_with_open_termination())
+        rc, wm, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertTrue(wm.called, "the closure needs a manifest to carry it")
+        kwargs = wm.call_args.kwargs
+        self.assertTrue(kwargs.get("ok"), "nothing is wrong — the card stays green")
+        self.assertEqual(list(kwargs.get("failed") or []), [])
+        self.assertIn("Yesenia Test", kwargs.get("note") or "",
+                      "the note must name who was auto-closed")
+
+    def test_closed_row_is_not_then_reported_missing_from_board(self):
+        """The row is mutated in memory too, so the reverse check ('Active must
+        have a board row') stops seeing it in the SAME run. Without that, every
+        row it closed would come straight back as MISSING FROM BOARD."""
+        sheet = self._sheet(_roll_with_open_termination())
+        self._run(sheet, [])
+        blob = " ".join(" ".join(map(str, r))
+                        for r in sheet.worksheet("Report an Issue").appended)
+        self.assertNotIn("MISSING FROM BOARD", blob)
+        self.assertNotIn("STALLED TRAINEE", blob)
+
+    def test_future_date_gone_is_left_alone_and_explained(self):
+        """Someone working out their notice has a FUTURE Date Gone and is still
+        on the board. Closing them early drops them out of headcount while they
+        are still selling."""
+        sheet = self._sheet(_roll_with_open_termination("12/31/2099"))
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "a future leave date must not be auto-closed")
+        appended = " ".join(" ".join(map(str, r))
+                            for r in sheet.worksheet("Report an Issue").appended)
+        self.assertIn("TERMINATION BATCH NOT CLOSED", appended)
+        self.assertIn("future", appended,
+                      "refusing to close must say WHY, or it reads as a bug")
+
+    def test_unparseable_date_gone_is_left_alone(self):
+        """col M is hand-typed. 'quit' is not a date and must not be read as
+        one — the row stays Active and gets reported the old way."""
+        sheet = self._sheet(_roll_with_open_termination("quit"))
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [])
+        self.assertTrue(any("TERMINATION BATCH NOT CLOSED" in " ".join(map(str, r))
+                            for r in sheet.worksheet("Report an Issue").appended))
+
+    def test_new_start_with_a_date_gone_is_never_touched(self):
+        """8 of the 15 New Starts carried a Date Gone on 2026-08-14 — that is
+        the live wash-out cohort, which rolls to Terminated on its own. Only
+        'Active' is auto-closed; touching New Start rewrites a working process
+        and would fire 8 findings a day."""
+        roll = _roll_with_open_termination()
+        roll[2][1] = "New Start"
+        sheet = self._sheet(roll)
+        rc, _, mc = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "a New Start with a Date Gone is not the audit's business")
+        self.assertEqual(sheet.worksheet("Report an Issue").appended, [],
+                         "and it is not a finding either")
+
+    def test_no_auto_close_flag_restores_the_old_reporting(self):
+        """--no-auto-close must leave the Sheet alone and produce the finding
+        with its ORIGINAL wording — the escape hatch has to be a real one."""
+        sheet = self._sheet(_roll_with_open_termination())
+        rc, wm, _ = self._run(sheet, ["--no-auto-close"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [])
+        self.assertTrue(
+            any(_YESENIA_FINDING in " ".join(map(str, r))
+                for r in sheet.worksheet("Report an Issue").appended),
+            "the reported text must be exactly what it was before auto-close")
+
+    def test_dry_run_never_writes(self):
+        sheet = self._sheet(_roll_with_open_termination())
+        rc, wm, mc = self._run(sheet, ["--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [])
+        self.assertFalse(wm.called)
+        self.assertFalse(mc.called)
+
+    def test_over_the_cap_refuses_to_write(self):
+        """A sudden pile of 'terminations' is far likelier to be a shifted
+        column than 40 people quitting overnight. Past the cap it reports."""
+        roll = [_roll_header(), ["", "Active", "", "Casey Rep"]]
+        for i in range(audit_run.MAX_AUTO_CLOSE + 1):
+            r = _pad([""], 14)
+            r[1], r[3], r[12] = "Active", "Leaver %d" % i, "8/11/2026"
+            roll.append(r)
+        sheet = self._sheet(roll)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "past the cap the audit must not write at all")
+        appended = " ".join(" ".join(map(str, r))
+                            for r in sheet.worksheet("Report an Issue").appended)
+        self.assertIn("cap", appended, "and it must say the cap is why")
+
+    def test_missing_headers_block_the_write(self):
+        """The repo rule is label lookup over indexes, and it matters most when
+        writing: a guessed column after a re-layout overwrites real data."""
+        roll = _roll_with_open_termination()
+        roll[0] = ["", "", "", "", ""]          # header row gone
+        sheet = self._sheet(roll)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "no headers -> no write")
+        appended = " ".join(" ".join(map(str, r))
+                            for r in sheet.worksheet("Report an Issue").appended)
+        self.assertIn("TERMINATION BATCH NOT CLOSED", appended)
+        self.assertIn("header", appended.lower())
+
+
+class BoardTerminationMark(unittest.TestCase):
+    """The Sales Board 'T' mark is where a Vantura termination is RECORDED —
+    the day a rep is let go, their remaining day cells are filled with 'T'
+    (Eve 2026-08-14). The Roll Call Status trails it and gets forgotten, which
+    is the whole bug this closes.
+
+    Checked against the live board that day: all seven 'T' rows on WE 8.16
+    derived a date matching their Roll Call Date Gone exactly (Jacqueline Ramos
+    Mon->8/10, Yesenia Zuniga Tue->8/11, Samantha Rodriguez Thu->8/13, Emmanuel
+    Mata Fri->8/14).
+    """
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet(self, board_rows, roll, week="8.16", aliases=None):
+        bv, bf, wk = _board_with_days(board_rows, week)
+        st_v, st_f = _stations_clean()
+        tabs = {
+            "Sales Board": _FakeWS(bv, bf, b2=wk),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        }
+        if aliases:
+            tabs["Name Aliases"] = _FakeWS(
+                [["Board", "Paid"]] + [list(a) for a in aliases])
+        return _FakeSheet(tabs)
+
+    def _roll(self, name, status="Active", gone=""):
+        row = _pad([""], 14)
+        row[1], row[3], row[12] = status, name, gone
+        return [_roll_header(), row]
+
+    def test_T_mark_closes_the_roll_call_status(self):
+        sheet = self._sheet([("Casey Rep", ["T"] * 7)], self._roll("Casey Rep"))
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B2", "Terminated")],
+                         "a board 'T' must close the Roll Call status")
+
+    def test_no_date_gone_needed(self):
+        """The point of reading the board: it fires even when NOBODY typed a
+        Date Gone, which is the case the old Date-Gone-only rule missed."""
+        sheet = self._sheet([("Casey Rep", ["T"] * 7)],
+                            self._roll("Casey Rep", gone=""))
+        self._run(sheet, [])
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B2", "Terminated")])
+
+    def test_termination_date_is_derived_from_the_first_T(self):
+        """Week ending 8.16 (Sunday) with the run starting Friday -> 8/14, the
+        derivation that matched all seven live rows. Reported, never written."""
+        sheet = self._sheet([("Casey Rep", ["0", "5", "X", "X", "T", "T", "T"])],
+                            self._roll("Casey Rep"))
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        note = (wm.call_args.kwargs.get("note") or "") if wm.called else ""
+        self.assertIn("8/14", note,
+                      "the derived termination date belongs in the trace")
+
+    def test_T_followed_by_a_sale_is_not_a_termination(self):
+        """A number after the mark means it was wrong or the rep came back.
+        Copying that into the roll would take a working rep off the board."""
+        sheet = self._sheet([("Casey Rep", ["T", "T", "3", "0", "1", "", ""])],
+                            self._roll("Casey Rep"))
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "a reversed 'T' must not close anyone")
+
+    def test_selling_rep_is_never_touched(self):
+        """The guard that matters most. Jayden Luna sold 32 the week before and
+        sat in New DU's 'Not Active' bucket; only the board's 'T' decides."""
+        sheet = self._sheet([("Casey Rep", ["2", "0", "1", "1", "0", "", ""])],
+                            self._roll("Casey Rep"))
+        self._run(sheet, [])
+        self.assertEqual(sheet.worksheet("Roll Call").written, [])
+
+    def test_already_terminated_row_is_not_rewritten(self):
+        sheet = self._sheet([("Casey Rep", ["T"] * 7)],
+                            self._roll("Casey Rep", status="Terminated"))
+        self._run(sheet, [])
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "no pointless write on a row already closed")
+
+    def test_new_start_with_a_T_is_closed(self):
+        """Unlike a bare Date Gone (which every New Start carries during the
+        wash-out week), a 'T' on the board is an explicit termination."""
+        sheet = self._sheet([("Casey Rep", ["T"] * 7)],
+                            self._roll("Casey Rep", status="New Start"))
+        self._run(sheet, [])
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B2", "Terminated")])
+
+    def test_alias_bridges_board_and_roll_spellings(self):
+        """The board and the roll spell people differently often enough that
+        the hidden 'Name Aliases' tab exists for exactly this."""
+        sheet = self._sheet([("Blue Mendoza", ["T"] * 7)],
+                            self._roll("Audrey Mendoza"),
+                            aliases=[("Blue Mendoza", "Audrey Mendoza")])
+        self._run(sheet, [])
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B2", "Terminated")],
+                         "an aliased name must still close")
+
+    def test_missing_day_headers_turn_the_sync_off(self):
+        """No Monday..Sunday header row -> read nothing rather than guess that
+        the day cells are still at E..K."""
+        bv, bf, wk = _board_with_days([("Casey Rep", ["T"] * 7)])
+        bv[3] = [""] * 20                      # wipe the header row
+        st_v, st_f = _stations_clean()
+        sheet = _FakeSheet({
+            "Sales Board": _FakeWS(bv, bf, b2=wk),
+            "Roll Call": _FakeWS(self._roll("Casey Rep")),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written, [],
+                         "no day headers -> no 'T' write")
+
+    def test_dry_run_and_no_auto_close_never_write(self):
+        for argv in (["--dry-run"], ["--no-auto-close"]):
+            sheet = self._sheet([("Casey Rep", ["T"] * 7)],
+                                self._roll("Casey Rep"))
+            rc, _, _ = self._run(sheet, argv)
+            self.assertEqual(rc, 0, argv)
+            self.assertEqual(sheet.worksheet("Roll Call").written, [], argv)
 
 
 if __name__ == "__main__":

@@ -475,6 +475,8 @@
     "vantura_payroll": {
       "on_scheduler": false,
       "machine": "Lucy 2",
+      "standalone_weekdays": [2],
+      "_standalone_weekdays_note": "Python weekday(): Wednesday. The REAL schedule is com.alphalete.vantura-payroll-wed (plist Weekday 3 = Wed, 11:00 machine-local). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log: hand-reruns on Thu 7/23, 7/30 and 8/6 made _historical_expected believe it was a Thursday 11:00 report, and it posted 'did not run today' every Thursday afternoon even though the Wednesday run had succeeded (Eve 2026-08-13). Off-day exemption covers the DIDN'T-RUN check only — an off-day rerun that FAILS still alerts. Keep this in sync with the plist's Weekday if the day ever moves.",
       "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it \u2014 its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. LIVE since 2026-07-15 \u2014 the WRAPPER passes --live (the module still defaults to --dry-run if you run it bare, but the scheduled job does NOT). It writes the board for real: RAW load incl. self-pulled Tableau crosstab, Commission!B1, per-campaign P&L formulas, read-only checks, kickoff DM to Carlos as Lucy. The one step still skipped is the headless Refresh via the Payroll.gs web app \u2014 it logs 'refresh NOT triggered \u2014 no web-app URL configured' and continues (exit 0); deploy the web app (RUNBOOK \u00a71) to enable it. Verified fired + exit 0 on 2026-07-22 (wrote 16 P&L formulas). Publishes to the vantura-payroll Hub card since 2026-07-22 (wrapper -> hub_publish, mapped in hub_publish._HUB_CARD) so the card shows green/red instead of always-grey. Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
       "display_name": "Vantura Weekly Payroll (prep)",
       "source_type": "tableau",
@@ -913,8 +915,8 @@
     },
     "install_org_board_review_post_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_review_post_agent` can install/refresh the STANDALONE com.alphalete.org-board-review-post LaunchAgent on the mini — the half of the Org Sales Board email that PUTS THE LINK UP. deploy/org_board_review_post.sh runs review_gate --post Tue-Sun at 07:10 (07:40 / 08:10 / 09:00 as a safety net, one post per day via a marker in output/day_state), so the review link lands ~5 min after the 07:05 board post instead of whenever the orchestrator's serial pass happened to reach order 8.2 (08:58 on 08-12; never on 08-13). Sends NOTHING — com.alphalete.org-board-email-review still mails the report only once an approver checkmarks it. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
-      "display_name": "Install Org Sales Board review-post agent (7:10am)",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_review_post_agent` can install/refresh the STANDALONE com.alphalete.org-board-review-post LaunchAgent on the mini — the half of the Org Sales Board email that PUTS THE LINK UP. deploy/org_board_review_post.sh runs review_gate --post Tue-Sun at 07:00 (07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state), so the review link is UP at 07:00 — 5 min after the board's own 06:55 post — and the 5-minute checkmark watcher mails it by ~07:15, which is Eve's 2026-08-13 ask instead of whenever the orchestrator's serial pass happened to reach order 8.2 (08:58 on 08-12; never on 08-13). Sends NOTHING — com.alphalete.org-board-email-review still mails the report only once an approver checkmarks it. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Org Sales Board review-post agent (7am)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -1980,7 +1982,7 @@
     "new_owners_scan": {
       "order": 15.4,
       "on_scheduler": true,
-      "_note": "Rosters every non-fiber captainship straight from Tableau and asks for a ✅ in #revision-emails on anyone who has no row in that captainship's tables on the Org Sales Board. Read-only against the board: it PROPOSES, it never inserts — the rows appear when Evelyn or Jolie tick the line and the next captainship run (org_sales_board --with-captainships) resolves it. Runs at 15.4, right after the per-captain fills (Cancel Rate / Activation Rate / ABP / Raf Metrics), which already detect the six FIBER captainships during their own pulls — so this covers what they can't: NDS (Khalil, Colten, Jairo) via the URL filter '?NDS Captain Teams=<X>'s Team', and B2B (Carlos, Eveliz, Luis) via one saved custom view per captain on the 'B2B 1-PAGER_Captain View' tab. NOT folded into the 4am board fill on purpose: six crosstab exports is ~6 minutes and the board must not wait on them. A rep already in the 'New Owners Log' tab — pending OR added — is never proposed twice, so a re-run is silent. Fiber can be added with --programs all once its rosters are worth the extra six pulls.",
+      "_note": "Rosters every non-fiber captainship straight from Tableau and asks for a ✅ in #revision-emails on anyone who has no row in that captainship's tables on the Org Sales Board. Read-only against the board: it PROPOSES, it never inserts — the rows appear when Evelyn tick the line and the next captainship run (org_sales_board --with-captainships) resolves it. Runs at 15.4, right after the per-captain fills (Cancel Rate / Activation Rate / ABP / Raf Metrics), which already detect the six FIBER captainships during their own pulls — so this covers what they can't: NDS (Khalil, Colten, Jairo) via the URL filter '?NDS Captain Teams=<X>'s Team', and B2B (Carlos, Eveliz, Luis) via one saved custom view per captain on the 'B2B 1-PAGER_Captain View' tab. NOT folded into the 4am board fill on purpose: six crosstab exports is ~6 minutes and the board must not wait on them. A rep already in the 'New Owners Log' tab — pending OR added — is never proposed twice, so a re-run is silent. Fiber can be added with --programs all once its rosters are worth the extra six pulls.",
       "display_name": "New Owners — captainship roster scan",
       "source_type": "tableau",
       "data_sources": [],
@@ -2051,7 +2053,7 @@
     "org_sales_board_email": {
       "order": 8.2,
       "on_scheduler": false,
-      "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-13 (Eve) — the review link now runs on a CLOCK, from the standalone com.alphalete.org-board-review-post LaunchAgent (deploy/org_board_review_post.sh, Tue-Sun 07:10 with 07:40 / 08:10 / 09:00 as a safety net, one post per day via a marker in output/day_state). Kept here so `lucy rerun org_sales_board_email` still works, and because every gate documented below still describes what review_gate --post does. WHY IT HAD TO LEAVE. Its trigger is 'slack:org_board_posted' — ready only once the board is posted at 07:05 — but a pass runs every ready report SEQUENTIALLY and sweeps this entry long before 07:05, stamping it PENDING; from there only an end-of-pass recheck or the next pass can pick it up, i.e. it queues behind fourteen Tableau reports and their flake retries. 2026-08-12 the link landed 08:58 (board out 08:34); 2026-08-13 the pass never got past order 5.5 and there was NO LINK AT ALL and no alert — the exact silent-hold failure the 08-04 note below describes, one gate later. A clock cannot be starved by the queue in front of it. The 11:30 fail-open, the checkmark gate and the recipients are all unchanged; MONDAY still belongs to deploy/board_catchup.sh (the plist has no Weekday 1), same as the cadence below.",
+      "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-13 (Eve) — the review link now runs on a CLOCK, from the standalone com.alphalete.org-board-review-post LaunchAgent (deploy/org_board_review_post.sh, Tue-Sun 07:00 with 07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state). Kept here so `lucy rerun org_sales_board_email` still works, and because every gate documented below still describes what review_gate --post does. WHY IT HAD TO LEAVE. Its trigger is 'slack:org_board_posted' — ready only once the board is posted at 07:05 — but a pass runs every ready report SEQUENTIALLY and sweeps this entry long before 07:05, stamping it PENDING; from there only an end-of-pass recheck or the next pass can pick it up, i.e. it queues behind fourteen Tableau reports and their flake retries. 2026-08-12 the link landed 08:58 (board out 08:34); 2026-08-13 the pass never got past order 5.5 and there was NO LINK AT ALL and no alert — the exact silent-hold failure the 08-04 note below describes, one gate later. A clock cannot be starved by the queue in front of it. The 11:30 fail-open, the checkmark gate and the recipients are all unchanged; MONDAY still belongs to deploy/board_catchup.sh (the plist has no Weekday 1), same as the cadence below.",
       "_order_note": "10.5 -> 8.2 (Eve 2026-08-11), kept BEHIND all_campaigns_board (8.1) — the ordering the 8/06 note above exists to protect, moved forwardas a pair. All gates unchanged: depends_on org_sales_board + all_campaigns_board, and readiness slack:org_board_posted still holds the draft until the board is public, so this cannot outrun the post. The review gate stays: nothing here mails anyone.",
       "_note": "BACK ON, DELAYED, DATA-GATED, AND NOW REVIEW-GATED (Eve 2026-07-29). This entry no longer sends anything: it runs review_gate --post, which builds the day's preview, prints it to PDF, drops it in Drive and posts the link in #revision-emails AS LUCY (the mini's token). The email goes out only when Lucy or Evelyn puts a checkmark on that post \u2014 picked up within 15 min by the com.alphalete.org-board-email-review LaunchAgent (deploy/org_board_email_review.sh, 9am-8pm), which mails the images ALREADY captured, from the run's manifest, so what was approved is what goes out. Same review habit as the captainship drafts, deliberately. History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed it to Eve, who turned it back on with three gates instead of one. (1) + (2) WERE a clock (not_before 09:30) and a completeness rule of its own (data_sources 'sheet:org_board_yesterday' -> readiness._probe_org_board_filled -> org_sales_board.data_gate: hold until YESTERDAY's column is filled for every section but the day-behind ones, opening at 11:30 regardless). BOTH REPLACED 2026-08-04 (Eve) by ONE trigger: 'slack:org_board_posted' -> readiness._probe_org_board_posted, ready the moment the board is POSTED in #top-leaders-alphalete-org. The draft is that same board, so the post is what makes it worth reviewing, and the org seeing it is a stronger signal than any rule of ours. WHY: the post clears a LIGHTER bar than the old gate did (slack_post.fill_gate posts unless yesterday is entirely empty), so the two could disagree and on 2026-08-04 they did \u2014 board out at 08:33, draft still not in #revision-emails at 11:00, and no alert, because a report that never becomes ready never runs, never fails and writes no Hub Activity row. Still fails OPEN at 11:30, before the 12:00 backstop, so a board that never posts cannot also cost the day's email. Gating in READINESS, not in an exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. (3) the human checkmark, unchanged: nothing here mails anyone. RECIPIENTS UNCHANGED: the proving list (Rafael + Megan); the real distro is a separate call \u2014 add '--distro' to the CHECKER's args in deploy/org_board_email_review.sh, not here. depends_on org_sales_board so it only runs AFTER the fill is DONE. ORDER 9 -> 10.5 AND depends_on all_campaigns_board TOO (Eve 2026-08-06): this email carries the All Units board as a SECOND SECTION (screenshot_email.capture_all_units renders 4 blocks off that tab LIVE, via all_campaigns_board.slack_post.build_pngs), but all_campaigns_board is order 10 \u2014 so at order 9 the email always photographed the All Units tab BEFORE the day's fill wrote it, and every draft carried the day-before-yesterday's numbers there. Measured 2026-08-06: email 09:02-09:05, All Campaigns fill 09:05:18. Thirteen seconds, every single day. Nothing caught it because capture_all_units is deliberately fail-soft (logs '\u26a0 All Units section SKIPPED' and carries on \u2014 a missing section beats no email), so the run still exits 0 and the PDF still looks whole. depends_on (not `after`) is right here because INCOMPLETE COUNTS AS MET: all_campaigns_board exits 75 whenever a rep doesn't match, and run._gates treats DONE and INCOMPLETE alike \u2014 only a FAILED fill holds the email, which is exactly when its All Units section would be wrong. A held email is visible: it sits PENDING 'waiting on all_campaigns_board' and the 12:00 backstop makes it terminal and alerts. Monday does not come through here at all \u2014 see deploy/board_catchup.sh, fixed the same day. source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email (a revisi\u00f3n)",
@@ -2163,7 +2165,7 @@
     "all_units_board_email": {
       "order": 10.1,
       "on_scheduler": false,
-      "_note": "RETIRED 2026-07-31 \u2014 on_scheduler false. The All Units board is no longer its own email; it is the second section of the Alphalete Org Sales Board email, under a labelled divider (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Eve: 'lo que antes eran dos mails, hay que juntarlos en uno'. The board entry is gone from board_emails.boards, so this command would now exit with 'unknown board all-units' \u2014 switched off rather than deleted so the history of what used to run here stays readable. PRIOR BEHAVIOUR: BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
+      "_note": "RETIRED 2026-07-31 \u2014 on_scheduler false. The All Units board is no longer its own email; it is the second section of the Alphalete Org Sales Board email, under a labelled divider (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Eve: 'lo que antes eran dos mails, hay que juntarlos en uno'. The board entry is gone from board_emails.boards, so this command would now exit with 'unknown board all-units' \u2014 switched off rather than deleted so the history of what used to run here stays readable. PRIOR BEHAVIOUR: BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/all-units/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). not_before 09:30 so the post lands when the approvers are actually reading, and depends_on all_campaigns_board so the email can never show a board that hasn't filled yet.",
       "display_name": "All Units Org Sales Board Email (a revisi\u00f3n)",
       "source_type": "local",
       "data_sources": [],
@@ -2197,7 +2199,7 @@
     "country_sales_board_email": {
       "order": 11.6,
       "on_scheduler": true,
-      "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/country/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn or Jolie is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). NO not_before since 2026-08-04 (Eve) \u2014 see the cadence note. It used to be 09:30 'so the post lands when the approvers are actually reading', which cost far more than it bought: in a serial queue a clock does not delay a report, it makes it lose its turn, and on 2026-08-04 the draft never went up at all. An early post is not a problem the way a missing one is \u2014 the checker looks every 15 min from 09:00 to 20:00 and nudges the channel if nobody has reacted, so a link posted at 07:20 is still waiting, in one piece, when the approvers open Slack. depends_on country_sales_board stays: the email can never show a board that hasn't filled yet.",
+      "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/country/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). NO not_before since 2026-08-04 (Eve) \u2014 see the cadence note. It used to be 09:30 'so the post lands when the approvers are actually reading', which cost far more than it bought: in a serial queue a clock does not delay a report, it makes it lose its turn, and on 2026-08-04 the draft never went up at all. An early post is not a problem the way a missing one is \u2014 the checker looks every 15 min from 09:00 to 20:00 and nudges the channel if nobody has reacted, so a link posted at 07:20 is still waiting, in one piece, when the approvers open Slack. depends_on country_sales_board stays: the email can never show a board that hasn't filled yet.",
       "display_name": "Country Sales Board Email (a revisi\u00f3n)",
       "source_type": "local",
       "data_sources": [],
@@ -2957,6 +2959,28 @@
       "verify": null,
       "timeout_minutes": 20
     },
+    "probe_carlos_bonus_sheets": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic (automations.carlos_captainship_bonus.probe_sheets). Opens the Carlos bonus source view's Download -> Crosstab dialog and prints the worksheet names it currently offers, ONE PER LINE prefixed 'XTAB:', then flags which of tableau_pull.SHEETS are still present. Downloads nothing, writes no Sheet. Exists because the 2026-08-13 ATTTRACKER-B2B republish killed the old CaptainsTeam sheet AND renamed all four worksheets on the replacement view: the pull dies on the FIRST worksheet so its error names only that one, and `lucy logtail` caps the result cell at ~470 chars, which truncated the dialog's one-long-line name list every time. Run this, then `lucy logtail <its log> XTAB 15` to get the full list, then re-map tableau_pull.SHEETS. `lucy rerun probe_carlos_bonus_sheets --machine \"Lucy 2\"`.",
+      "display_name": "Carlos Bonus - probe source worksheets (read-only)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.carlos_captainship_bonus.probe_sheets"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2",
+      "timeout_minutes": 45
+    },
     "disable_carlos_captainship_bonus_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "RETIRE the standalone Tuesday-10am launchd now that Carlos B2B Captainship Bonus runs in the Lucy 2 Tuesday 4am flow (readiness-gated on tableau:captainship_bonus_carlos, 10am fail-open floor). `lucy rerun disable_carlos_captainship_bonus_agent --machine \"Lucy 2\"` boots out + stashes com.alphalete.carlos-captainship-bonus-tue.plist -> .disabled so it doesn't ALSO fire at 10am (which would re-DM a duplicate PDF). REVERSIBLE: re-run install_carlos_captainship_bonus_agent + set cadence.weekdays []. Read-only w.r.t. Sheet data.",
@@ -3290,7 +3314,7 @@
         "type": "manifest",
         "report_id": "vantura-churn"
       },
-      "_flow_note": "ACTIVE in Lucy 2's 4am flow (2026-07-23). WRITE-ONLY (--no-post): it refreshes the LUCY CHURN / Activations board that b2b_metrics screenshots (#6/#7); b2b_metrics posts the churn now, not this. not_before 04:30 is a SAFETY FLOOR, not a post time \u2014 Carlos confirmed 2026-07-23 the ATTTRACKER data is ready when the trackers post (~04:30), so this can't pull before the data exists; data_sources readiness gates the exact start. b2b_metrics depends_on this so it always runs AFTER the churn write. The standalone com.alphalete.vantura-churn-daily (7:00, --no-post) is kept as a BACKSTOP for the first flow runs (a second write is idempotent) \u2014 retire it via disable_vantura_churn_agent once the 4am flow is verified. Rollback: flip on_scheduler false + keep the standalone."
+      "_flow_note": "ACTIVE in Lucy 2's 4am flow (2026-07-23). WRITE-ONLY (--no-post): it refreshes the LUCY CHURN / Activations board that b2b_metrics screenshots (#6/#7); b2b_metrics posts the churn now, not this. not_before 04:30 is a SAFETY FLOOR, not a post time \u2014 Carlos confirmed 2026-07-23 the ATTTRACKER data is ready when the trackers post (~04:30), so this can't pull before the data exists; data_sources readiness gates the exact start. b2b_metrics depends_on this so it always runs AFTER the churn write. The standalone com.alphalete.vantura-churn-daily (7:00, --no-post) was the BACKSTOP for the first flow runs (a second write is idempotent); RETIRED 2026-08-14 via disable_vantura_churn_agent (booted out, plist stashed as .plist.disabled). Why then: the flow run had been green every day since 2026-07-23, while the 7:00 backstop started dying on its FIRST cdp prime (patchright TargetClosedError = Chrome contention; the 7:00 slot got crowded on 2026-08-13) and closed red every morning. hub_publish._alert_failure then posted 'vantura_churn closed a run with status FAILED' for a board the 04:30 flow run had already written and reconciled: a daily false alarm for a backstop that never backstopped. Rollback: flip on_scheduler false + re-install the standalone with `lucy rerun install_vantura_churn_agent --machine 'Lucy 2'`."
     },
     "disable_vantura_churn_agent": {
       "on_scheduler": false,
@@ -4494,7 +4518,7 @@
     "att_owners_list": {
       "order": 15.7,
       "on_scheduler": true,
-      "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' \u2014 the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed \u2014 red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate \u2014 it tags nobody) and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
+      "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' \u2014 the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed \u2014 red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate \u2014 it tags nobody) as a REPLY inside the year's single thread ('ATT Owners List \u2014 2026'), which the first run of a new year starts; the parent's ts is cached in ~/.config/recruiting-report/att_owners_list_threads.json and, when that file is missing (another machine ran it), found by reading the channel back from Jan 1 and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
       "display_name": "ATT Owners List (weekly roster)",
       "source_type": "tableau",
       "data_sources": [],
@@ -4515,6 +4539,40 @@
       "timeout_minutes": 15,
       "verify": null,
       "machine": "Lucy 1"
+    },
+    "rep_sales_fill": {
+      "order": 3.95,
+      "on_scheduler": false,
+      "_off_scheduler_note": "APAGADO otra vez (Eve 2026-08-14). El pull ya FUNCIONA, pero DOS corridas con 6 minutos de diferencia dieron datos distintos para el MISMO jueves: la de 13:14 leyo Int 1 / DTV 1 / NL 2 (y no toco nada porque coincidia) y la de 13:20 leyo solo NL 2, asi que -- con el dia objetivo en modo overwrite -- borro Int y DTV y dejo el jueves de Andrew en Apps 2.00 en vez de 4.00. Restaurado a mano. NO volver a prenderlo hasta entender por que el crosstab pierde medidas entre dos bajadas seguidas: mirar el CSV en Lucy 2, output/rep_sales_fill/2026-08-16_andrew_sanborn.csv. Sospechas: el export sale a medio renderizar (el helper reintenta hasta 3 veces y puede quedarse con una pasada parcial) o la hoja emite solo los product types con dato y el parser tiene que distinguir 'no vendio' de 'no vino en el export'. Mientras tanto un overwrite ciego del dia objetivo es peligroso.",
+      "_pull_note": "El pull tardo en andar y vale saber por que: el Crosstab dialog volvia con CERO hojas. No era la sesion ni el nombre de la hoja (que es 'Sales By ICD (Weekly View)', NO el titulo que se lee en el dashboard). Aislado en Lucy 2 una prueba por sospechoso: :refresh=yes solo -> 3 hojas, Rep solo -> 3 hojas, 'Sale Date Week Ending' en ISO solo -> 0 hojas. Ese filtro es un DESPLEGABLE discreto y quiere el valor tal cual se ve (8/16/2026); mandarle ISO deja la viz sin renderizar y una viz sin renderizar no ofrece hojas. La nota de la casa de que los filtros de fecha van en ISO vale para los de RANGO (Start/End Date del order log), no para este.",
+      "_note": "Escribe la fila de Andrew Sanborn en 'Alphalete SALES BOARD 2025' desde Tableau (ATT Tracker 2.1 - D2D -> PRODUCT SALES SUMMARY 4WK, hoja 'Sales By ICD (+/-) REP - (+/-) Weekdays', filtros Sale Date Week Ending = el domingo en ISO + Rep). Existe porque sus ventas se acreditan al ICD de John Richard Young mientras el vive en el board de Rafael: todo feed con alcance de la oficina de Raf lo lee en CERO, y su fila es la que llega tarde o no llega (8/13: sus 4 ventas entraron 07:38, tres horas despues del post de produccion de las 04:33, asi que salio dentro del Zero Streak). order 3.95 = entre energy_slack_fill (3.9) y alphalete_production (4), porque el board se postea UNA sola vez a la manana y tiene que estar completo antes del render. El `order` explicito gana sobre la ola de source_type, asi que ser 'tableau' no lo manda al final de la pasada. SOLO LLENA LOS DIAS VACIOS (Eve 2026-08-14): un dia ya cargado que difiera se reporta y se deja intacto, porque pudo corregirlo alguien a mano; --overwrite es la salida para un dia que sabes mal. Nunca escribe la celda Apps (es formula) ni pisa un estado de roll call (X/T/RT/STF), que comparten celdas con los numeros.",
+      "_warn": "Exit 75 = HOLD, no es un crash: significa que Tableau todavia no publico el dia objetivo (no hay columna para el en el crosstab) o que la fila del rep no aparece en el board. No escribio nada; re-correr mas tarde lo completa. Si el pull trae mas de 60 unidades para un rep, el filtro de Rep no aplico y tambien corta sin escribir. Preview sin escribir: `lucy rerun rep_sales_fill` sin --apply, o --from-file <crosstab> para trabajarlo offline.",
+      "display_name": "Rep Sales Fill (Sanborn) -> Sales Board",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.rep_sales_fill.run"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 35,
+      "verify": null,
+      "machine": "Lucy 2"
     },
     "att_order_log": {
       "on_scheduler": true,
@@ -4844,7 +4902,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_roshan": {
@@ -4866,7 +4924,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_abel": {
@@ -4888,7 +4946,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "box_order_log_per_office": {
@@ -4909,7 +4967,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 20,
+      "timeout_minutes": 45,
       "verify": null
     },
     "b2b_quality": {
@@ -5005,6 +5063,27 @@
       "data_sources": [],
       "command": [
         "automations.override_bulletin.verify"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "override_compare": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY. Compara la pestana que Eve llena A MANO (Org Overrides Ongoing Report) contra la que llena el bot (Copy of Org Overrides Ongoing Report), que es la que el bulletin renderiza. No escribe nada, en ninguna pestana, y corre en cualquier maquina (solo Sheets, ni Tableau ni browser). Default: las 5 semanas mas nuevas, la MISMA ventana que backtrack.DEFAULT_WEEKS. Lee celdas CRUDAS (build.read_data descarta las filas con \"credico\" y recalcula los totales, asi que una comparacion hecha con el parser del modulo se come justo la diferencia), cruza por NOMBRE via ICD Aliases (las dos pestanas tienen las filas en orden distinto) y mete la SECCION en la clave (los siete lideres estan en ALL ORG y otra vez en CAPTAIN/SPECIAL). Tolerancia default de un dolar porque el bulletin publica dolares enteros; imprime cuantas celdas salteo y --tolerance 0 muestra los centavos. Sale con 0 aunque encuentre diferencias: una diferencia es informacion, no una corrida fallida. `lucy rerun override_compare [--weeks N] [--slack]`. Agregado 2026-08-14 (Eve).",
+      "display_name": "Override Bulletin - comparar con la pestana de Eve",
+      "source_type": "sheets",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.compare"
       ],
       "base_args": [],
       "cadence": {

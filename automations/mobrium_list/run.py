@@ -131,6 +131,22 @@ def _report(plan: mplan.Plan, logfn=print) -> None:
             logfn(f"     {s.new_start.name:<28} {s.why}")
 
 
+def _sort(ws, tab: str, dry: bool) -> None:
+    """Re-read the tab and put it back in (first, last) order.
+
+    Re-reading rather than reusing the entries from the top of the run is the
+    point: by now rows have been deleted and inserted, so the row numbers we
+    started with are stale. Best-effort — a tab that is correct but out of
+    order is not worth failing a run that already wrote everything it owed.
+    """
+    try:
+        after, _ws = msheet.read(tab=tab)
+        msheet.sort_rows(ws, after, dry_run=dry, logfn=lambda m: print(f"{m}"))
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't re-sort {tab!r}: {type(e).__name__}: {e} — the "
+              f"rows are right, the order isn't")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -221,6 +237,7 @@ def main(argv=None) -> int:
               f"{' — the REAL tab' if args.real else ''}")
     if not plan.removals and not additions and not plan.fills:
         print("  nothing to change.")
+        _sort(ws, target_tab, dry)
         print(f"  before-state: {snap}")
         print(f"  {msheet.tab_url(ws)}")
         return 0
@@ -234,6 +251,10 @@ def main(argv=None) -> int:
         print(f"   the tab's before-state is in {snap} — check the tab before "
               f"re-running, some rows may already be gone")
         return 1
+
+    # The tab has to read alphabetically on both levels whatever happened above
+    # — an append-fallback, or a row somebody typed in during the week.
+    _sort(ws, target_tab, dry)
 
     print(f"  before-state: {snap}")
     print(f"  {msheet.tab_url(ws)}")

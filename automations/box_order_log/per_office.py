@@ -87,6 +87,57 @@ def probe(from_file: str = "", verbose: bool = True) -> int:
         len(rows), len(counts)))
     for val, n in counts.most_common():
         print("   {:6d}  {!r}".format(n, val))
+
+    # RAW newest sale date per office, straight off the crosstab — no collapse,
+    # no status filtering. Added 2026-08-13 to answer the one question the
+    # collapsed numbers can't: when Roshan's and Abel's logs suddenly stopped
+    # at 8/4 and 7/30 while Carlos stayed current, was it (a) their recent rows
+    # being DROPPED by clean.load as Draft / TPV Failed / Rejected QC, or (b)
+    # those rows simply not being in the export at all? Same export, two very
+    # different owners of the problem — us vs Smart Circle. Printing the raw max
+    # beside the kept max says which, in one line, on any day it happens again.
+    kept, _stats = clean.load(src)
+    kept_max = {}
+    for s in kept:
+        o = (s.fields.get(col) or "").strip()
+        if o and s.sale_date and (o not in kept_max or s.sale_date > kept_max[o]):
+            kept_max[o] = s.sale_date
+    print("\n[box probe] newest Sale Date per office — RAW vs KEPT:")
+    for val, _n in counts.most_common():
+        raws = [d for d in (clean._parse_date(r.get("Sale Date", ""))
+                            for r in rows
+                            if (r.get(col) or "").strip() == val) if d]
+        print("   raw {}  kept {}   {!r}".format(
+            max(raws) if raws else "(none)   ",
+            kept_max.get(val, "(none)   "), val))
+
+    # WHY the kept date lags the raw one. Roshan's log stopped at 8/4 on
+    # 2026-08-13 while her rows ran to 8/11 — seven days present in the export
+    # and dropped by clean.load. "Dropped" alone doesn't say whether that's
+    # correct (genuine Drafts) or a status we've started mis-reading, so name
+    # the statuses: for every office, count the raw rows dated PAST its kept
+    # max, grouped by Status / sub-status. If those read Draft, the log is
+    # honest and the sales just haven't firmed up. If they read anything else,
+    # JUNK_STATUSES / DEAD_VERIFICATION_SUBS has drifted from the source.
+    print("\n[box probe] statuses on raw rows NEWER than the kept max:")
+    for val, _n in counts.most_common():
+        cut = kept_max.get(val)
+        if not cut:
+            continue
+        late = collections.Counter()
+        for r in rows:
+            if (r.get(col) or "").strip() != val:
+                continue
+            d = clean._parse_date(r.get("Sale Date", ""))
+            if d and d > cut:
+                late[((r.get("Status") or "").strip(),
+                      (r.get("Contr. Sub-status") or "").strip())] += 1
+        if not late:
+            print("   {!r}: none — the export simply stops there".format(val))
+            continue
+        print("   {!r}: {} row(s) past {}".format(val, sum(late.values()), cut))
+        for (st, sub), n in late.most_common(6):
+            print("      {:5d}  Status={!r} Sub={!r}".format(n, st, sub))
     return 0
 
 

@@ -37,8 +37,12 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
+# Every hostname Lucy 2 has answered to — the list is match-ANY, so keeping the
+# retired names costs nothing and a missing name is silent damage: Lucy 2 moved to
+# Lucys-MacBook-Neo.local after 2026-08-06, so from 8/7 every Lucy-2 alert was
+# labeled "Lucy 1" and pointed people at the wrong machine (Eve 2026-08-13).
 "$VENV_PY" -m automations.machine_digest.run --watch \
-  --host "Mac.attlocal.net,Carloss-Mac-mini-2" "$@" >> "$LOG_FILE" 2>&1
+  --host "Lucys-MacBook-Neo,Mac.attlocal.net,Carloss-Mac-mini-2" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 if [ "$ST" -ne 0 ]; then
   echo "[$(date)] error-watch exit=$ST" >> "$LOG_FILE"

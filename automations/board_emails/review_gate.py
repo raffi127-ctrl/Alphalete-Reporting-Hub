@@ -20,7 +20,7 @@ which mails the image already captured for the day and re-renders nothing.
 
 WHICH MACHINE. --post has to run on the MINI: the Slack user token there is
 Lucy's, and that is the only reason the message arrives from Lucy (on Eve's box
-it is Evelyn's — one of the approvers, which would read as her approving her own
+it is Evelyn's — the approver herself, which would read as her approving her own
 report). --check --send can run there too: these emails go out over SMTP with
 alphaletereporting's app password, which the mini already has. The two halves
 never talk — --check finds the day's post by its title.

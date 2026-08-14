@@ -1,4 +1,14 @@
 #!/bin/bash
+# RETIRED 2026-08-14 — this agent no longer fires. The 4am orchestrator flow
+# owns vantura_churn (schedule_config, not_before 04:30, --no-post); this 7:00
+# job was only the cutover BACKSTOP. It started dying on its first cdp prime on
+# 2026-08-13 (patchright TargetClosedError — Chrome contention now that the 7:00
+# slot is crowded) and closed the Hub card red every morning for a board the
+# 04:30 run had already written, so `lucy rerun disable_vantura_churn_agent
+# --machine "Lucy 2"` booted it out and stashed the plist as .plist.disabled.
+# Re-enable with `lucy rerun install_vantura_churn_agent --machine "Lucy 2"`.
+# Everything below still works if you run it by hand.
+#
 # Daily 7:00am (machine-local; Lucy 2 is Central) — Vantura Master Sales Board
 # churn + activations refresh, on Lucy 2, via launchd
 # (com.alphalete.vantura-churn-daily).

@@ -138,59 +138,74 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
         parent = [f"{'*Status:*' if kind == 'NO_NEW' else '*Error:*'} {err}"]
+        # The detail block is built FIRST (it used to be built after the parent
+        # post) so the whole incident — parent, in-thread detail, and what a
+        # repeat says — goes out in one incident_thread call.
+        if kind == "MISSED":
+            claude = (
+                "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+                f"Report: \"{name}\" (report_id: {report_id})\n"
+                f"Date: {day}\n"
+                f"It NORMALLY runs today on {lbl} but produced NO run in the Hub "
+                "Activity log. Check its LaunchAgent on that machine (loaded? "
+                "last exit?), whether the machine was asleep, and its own log. "
+                "Then re-run it from the Hub.\n"
+                "===== END ====="
+            )
+            reply = [
+                f"It usually runs on {lbl} but hasn't today.",
+                "*To run it now:* open the report on the Hub and hit play (runs "
+                f"from any machine), or trigger it its usual way on {lbl}.",
+                "",
+                "If it's stuck, paste this to Claude:",
+                "```", claude, "```",
+                "_Reply here and we'll sort it out in this thread._",
+            ]
+        elif kind == "NO_NEW":
+            # Benign FYI — nothing broke, nothing to run. No paste-to-Claude.
+            reply = [
+                f"Nothing to sync today — no new background-check emails have "
+                f"come in, so there's no update to write. This is normal on a "
+                f"quiet day, not a miss.",
+                "_If you were expecting results in and don't see them, reply "
+                "here and we'll check._",
+            ]
+        else:
+            claude = (
+                "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+                f"Report: \"{name}\" (report_id: {report_id})\n"
+                f"Date: {day}\n"
+                f"Ran on: {lbl} (standalone launchd agent), status \"{status}\".\n"
+                "This report runs on its OWN agent, not the day-orchestrator loop, "
+                f"so its log is on {lbl} (not in output/logs on Lucy 1 unless {lbl} "
+                "IS Lucy 1). Diagnose from that report's own log / last run and fix "
+                "it in the repo; if it's a transient blip, just re-run it from the Hub.\n"
+                "===== END ====="
+            )
+            reply = [
+                f"This one runs standalone on {lbl} (not the 4am orchestrator flow).",
+                "*To re-run it:* open the report on the Hub and hit play (runs from "
+                f"any machine), or trigger it its usual way on {lbl}.",
+                "",
+                "If it keeps failing, paste this to Claude:",
+                "```", claude, "```",
+                "_Reply here and we'll correct it in this thread._",
+            ]
+        # NO_NEW is a benign FYI that recurs every quiet day; a real problem
+        # recurs every day until it's fixed. Either way the repeat belongs in
+        # the first message's thread, not as another channel post — but they're
+        # SEPARATE incidents, so a quiet day never lands in the same thread as a
+        # genuine miss (Eve 2026-08-14).
+        key = (f"nonew-{report_id}" if kind == "NO_NEW"
+               else f"standalone-{report_id}")
+        inc = _incident_post(cfg, key=key, title=title, body=parent,
+                             details=reply, followup=[title] + parent,
+                             dry_run=dry_run, tag=key)
+        if inc:
+            return True
         ts = _post_corrections(cfg, title, parent, dry_run,
                                tag=f"standalone-{report_id}")
         if ts:
-            if kind == "MISSED":
-                claude = (
-                    "===== PASTE THIS TO CLAUDE TO FIX =====\n"
-                    f"Report: \"{name}\" (report_id: {report_id})\n"
-                    f"Date: {day}\n"
-                    f"It NORMALLY runs today on {lbl} but produced NO run in the Hub "
-                    "Activity log. Check its LaunchAgent on that machine (loaded? "
-                    "last exit?), whether the machine was asleep, and its own log. "
-                    "Then re-run it from the Hub.\n"
-                    "===== END ====="
-                )
-                reply = [
-                    f"It usually runs on {lbl} but hasn't today.",
-                    "*To run it now:* open the report on the Hub and hit play (runs "
-                    f"from any machine), or trigger it its usual way on {lbl}.",
-                    "",
-                    "If it's stuck, paste this to Claude:",
-                    "```", claude, "```",
-                    "_Reply here and we'll sort it out in this thread._",
-                ]
-            elif kind == "NO_NEW":
-                # Benign FYI — nothing broke, nothing to run. No paste-to-Claude.
-                reply = [
-                    f"Nothing to sync today — no new background-check emails have "
-                    f"come in, so there's no update to write. This is normal on a "
-                    f"quiet day, not a miss.",
-                    "_If you were expecting results in and don't see them, reply "
-                    "here and we'll check._",
-                ]
-            else:
-                claude = (
-                    "===== PASTE THIS TO CLAUDE TO FIX =====\n"
-                    f"Report: \"{name}\" (report_id: {report_id})\n"
-                    f"Date: {day}\n"
-                    f"Ran on: {lbl} (standalone launchd agent), status \"{status}\".\n"
-                    "This report runs on its OWN agent, not the day-orchestrator loop, "
-                    f"so its log is on {lbl} (not in output/logs on Lucy 1 unless {lbl} "
-                    "IS Lucy 1). Diagnose from that report's own log / last run and fix "
-                    "it in the repo; if it's a transient blip, just re-run it from the Hub.\n"
-                    "===== END ====="
-                )
-                reply = [
-                    f"This one runs standalone on {lbl} (not the 4am orchestrator flow).",
-                    "*To re-run it:* open the report on the Hub and hit play (runs from "
-                    f"any machine), or trigger it its usual way on {lbl}.",
-                    "",
-                    "If it keeps failing, paste this to Claude:",
-                    "```", claude, "```",
-                    "_Reply here and we'll correct it in this thread._",
-                ]
             _post_corrections(cfg, "", reply, dry_run,
                               tag=f"standalone-{report_id}-details", thread_ts=ts)
             return True
@@ -220,6 +235,10 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     short from 04:29 and nobody knew until she looked). Carries the SAME real-cause
     diagnosis + paste-to-Claude block the summary emails use, so it's actionable on
     its own. One per report per day (deduped by the caller via failure_alerts_sent).
+
+    Returns {'ts', 'text'} for the Slack post it made (so the caller can later
+    EDIT that same post into ✅ RESOLVED via resolve_failure_alert instead of
+    posting a second message), or None when it fell back to email.
     """
     label = rs.display_name or rs.report_id
     if rs.status == "INCOMPLETE":
@@ -253,16 +272,112 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     # skipped to avoid double-notifying (Megan 2026-07-23). The daily summary is
     # unaffected — it still follows on its own channel.
     if _corrections_channel(cfg):
-        if _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
-            return
+        post = _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed,
+                                         rerun, dry_run)
+        if post:
+            return post
         # Slack post failed (e.g. Lucy isn't a member of the private channel) — fall
         # through to email so a real problem is never silently lost.
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
             f"{_esc(text).replace(chr(10), '<br>')}</div>")
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
+    return None
 
 
-def _is_findings_report(rs) -> bool:
+def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
+    """Announce the fix in the alert's OWN thread and edit the parent to ✅ RESOLVED.
+
+    Eve 2026-08-14: "por favor publicar dentro del mismo hilo cuando algo se
+    resolvió". An edit is silent for everyone who already read the alert, so the
+    resolution now goes out as a reply in the incident's thread (one message,
+    only to the people following it) AND edits the parent, which also CLOSES the
+    incident — the next occurrence opens a fresh post instead of reviving this one.
+
+    WHY THE EDIT (Eve 2026-08-13): several reports are DESIGNED to heal themselves later —
+    b2b_metrics defers its order-log sections until the ORDERLOG extract lands and
+    posts them on the 8:30 floor pass; the auto-retry recovers a transient miss on
+    the next pass. The alert that fired at 05:00 stayed in the channel reading like
+    open work, so the morning's real state had to be re-derived by hand ("didn't
+    this already get fixed?"). Editing the original message means the channel
+    always shows the CURRENT truth and — crucially — NO second message: an edit
+    doesn't re-notify, so a healed problem costs zero extra noise.
+
+    `post` is the {'ts','text'} send_failure_alert returned. Returns True when the
+    message was updated. Best-effort: never raises into the batch."""
+    ch = _corrections_channel(cfg)
+    ts = (post or {}).get("ts")
+    if not ch or not ts:
+        return False
+    label = rs.display_name or rs.report_id
+    hhmm = (now or dt.datetime.now()).strftime("%H:%M")
+    was = (post or {}).get("text") or ""
+    # Drop the incident marker before striking the old text through — resolve()
+    # writes a fresh one, and a struck-through marker is unparseable afterwards.
+    was = "\n".join(l for l in was.splitlines()
+                    if not l.startswith("_incident · ")).strip()
+    lines = [f":white_check_mark: *{label}* — RESOLVED {hhmm}. Nothing to do."]
+    if rs.missing:
+        lines.append(f"*Landed since:* {', '.join(rs.missing)}")
+    if rs.last_reason:
+        lines.append(f"_{rs.last_reason}_")
+
+    # Say it IN THE THREAD, not only by editing the parent (Eve 2026-08-14):
+    # anyone who read the alert earlier never sees an edit, so they keep working
+    # a problem that's already fixed. The edit still happens — resolve() does it
+    # — but the reply is the part people actually get.
+    key = (post or {}).get("key") or f"failure-{rs.report_id}"
+    thread_lines = list(lines) + [
+        "_Closing this one out — if it happens again it'll open a fresh post._"]
+    struck = ["", "~" + was.replace("\n", "~\n~") + "~"] if was else []
+    try:
+        from automations.shared import incident_thread as _inc
+        if _inc.resolve(key=key, lines=thread_lines, channel=ch,
+                        parent_text="\n".join(lines + struck), dry_run=dry_run):
+            return True
+    except Exception as e:  # noqa: BLE001 — fall back to the edit-only path
+        print(f"[notify] incident resolve failed ({rs.report_id}): {e}", flush=True)
+
+    if was:
+        # Keep the original wording visible (struck through) so the history of the
+        # morning is still readable — this REPLACES the alert, it doesn't hide it.
+        lines += ["", "~" + was.replace("\n", "~\n~") + "~"]
+    text = "\n".join(lines)
+    if dry_run:
+        print(f"[notify] DRY-RUN — would edit corrections post {ts} → {ch}:\n"
+              f"{text}\n", flush=True)
+        return True
+    try:
+        from automations.shared.slack_metrics_post import _client
+        _client().chat_update(channel=ch, ts=ts, text=text)
+    except Exception as e:  # noqa: BLE001 — a failed edit must never sink the batch
+        print(f"[notify] corrections edit failed ({rs.report_id}): {e}", flush=True)
+        return False
+    print(f"[notify] corrections post {ts} edited to RESOLVED "
+          f"({rs.report_id})", flush=True)
+    return True
+
+
+def _manifest_id(cfg, rs) -> str:
+    """The id this report's manifest is FILED under, which is not always its
+    config key: schedule_config's `verify: {type: manifest, report_id: …}` may
+    name a different one. vantura_board_audit is keyed with an underscore in the
+    config but writes 'vantura-board-audit' (run.py REPORT_ID).
+
+    reconcile.verify() already resolves it this way; anything reading a manifest
+    off `rs.report_id` alone silently reads NOTHING for those reports and takes
+    whatever the not-found branch does. That is how the Vantura audit's findings
+    post kept coming out as the generic "ran, but 1 didn't fill" with a re-run
+    block attached (2026-08-14) — _is_findings_report looked up the underscore
+    key, got None, and fell through to the fill-report path every single day."""
+    try:
+        r = cfg.reports.get(rs.report_id)
+        vid = (getattr(r, "verify", None) or {}).get("report_id")
+        return vid or rs.report_id
+    except Exception:  # noqa: BLE001
+        return rs.report_id
+
+
+def _is_findings_report(cfg, rs) -> bool:
     """True when this report is a data-quality AUDIT — its last manifest was
     written with kind='finding' (e.g. the Vantura board audit). Those runs list
     open findings, not failed fills: the channel post stays a one-line count and
@@ -271,13 +386,13 @@ def _is_findings_report(rs) -> bool:
     falls back to the normal fill-report path."""
     try:
         from automations.shared import run_manifest
-        m = run_manifest.read_manifest(rs.report_id)
+        m = run_manifest.read_manifest(_manifest_id(cfg, rs))
         return bool(m) and m.get("kind") == "finding"
     except Exception:  # noqa: BLE001
         return False
 
 
-def _post_findings_corrections(cfg, rs, label, dry_run):
+def _post_findings_corrections(cfg, rs, label, dry_run, day=None):
     """A data-quality audit's findings → a CONCISE parent (name + count, 'details
     in thread') and a threaded reply listing the findings. No re-run/paste-to-
     Claude: these are fixed on the source (the board), not by re-running the audit
@@ -286,10 +401,6 @@ def _post_findings_corrections(cfg, rs, label, dry_run):
     title = f":warning: *{label}* — {n or 'some'} open data-quality finding(s)"
     parent = [f"*Found:* {n or 'some'} board data-quality issue(s) — details in "
               "thread. Logged to the board's ‘Report an Issue’ tab."]
-    ts = _post_corrections(cfg, title, parent, dry_run,
-                           tag=f"finding-{rs.report_id}")
-    if not ts:
-        return None
     reply = ["*Open findings:*"]
     reply += [f"   • {f}" for f in rs.missing]
     reply += [
@@ -299,9 +410,24 @@ def _post_findings_corrections(cfg, rs, label, dry_run):
         "alert once the board is corrected._",
         "_Reply here if you want a hand._",
     ]
+    # An audit re-reports the SAME open findings every single day until someone
+    # fixes the board, so the repeat carries the current list in-thread — one
+    # message a day in a thread instead of one post a day in the channel.
+    followup = [title] + parent + [""] + [f"   • {f}" for f in rs.missing]
+    inc = _incident_post(cfg, key=f"finding-{rs.report_id}", title=title,
+                         body=parent, details=reply, followup=followup,
+                         day=day, dry_run=dry_run, tag=f"finding-{rs.report_id}")
+    if inc:
+        return {"ts": inc["ts"], "text": inc.get("text") or "\n".join([title] + parent),
+                "key": f"finding-{rs.report_id}", "new": inc.get("new", True)}
+    ts = _post_corrections(cfg, title, parent, dry_run,
+                           tag=f"finding-{rs.report_id}")
+    if not ts:
+        return None
     _post_corrections(cfg, "", reply, dry_run,
                       tag=f"finding-{rs.report_id}-details", thread_ts=ts)
-    return ts
+    return {"ts": ts, "text": "\n".join([title] + parent),
+            "key": f"finding-{rs.report_id}"}
 
 
 def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
@@ -309,7 +435,11 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     threaded REPLY that carries the details (what to re-run, which ICDs were left
     out, that everything else ran, and the paste-to-Claude fix block). Megan
     2026-07-23: the post itself is the name + error; the how-to-fix and the extras
-    live in the thread so the channel skims clean and each fix happens in-thread."""
+    live in the thread so the channel skims clean and each fix happens in-thread.
+
+    Returns {'ts', 'text'} of the PARENT post (None if it didn't go out) —
+    resolve_failure_alert edits that exact message when the report later goes
+    clean, so a fixed problem never keeps sitting in the channel as an open one."""
     label = rs.display_name or rs.report_id
 
     # A data-quality AUDIT (kind='finding' manifest) is a special case: its
@@ -318,8 +448,9 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     # channel makes a wall of text (Megan 2026-08-02: the Vantura board audit "is
     # too long in the channel"). Keep the PARENT to a one-line count and push the
     # finding text into the thread; skip the re-run / paste-to-Claude boilerplate.
-    if kind == "INCOMPLETE" and _is_findings_report(rs):
-        return _post_findings_corrections(cfg, rs, label, dry_run)
+    if kind == "INCOMPLETE" and _is_findings_report(cfg, rs):
+        return _post_findings_corrections(cfg, rs, label, dry_run,
+                                          day=_as_date(_d(ds)))
 
     # Split the missing units into TERMINATED (on the terminated-ICD list — should
     # be REMOVED from the report, a re-run won't help) vs LIVE (actually failed —
@@ -363,14 +494,9 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     if term_hits:
         parent.append(":no_entry: *Terminated — remove from this report:* "
                       + ", ".join(_term_label(h) for h in term_hits))
-    ts = _post_corrections(cfg, title, parent, dry_run,
-                           tag=f"failure-{rs.report_id}")
-    if not ts:
-        # Parent post didn't go out — don't orphan a reply; signal the caller to
-        # fall back to email so the alert isn't lost.
-        return None
-
-    # REPLY — the details + the fix, threaded under the parent.
+    # REPLY — the details + the fix, threaded under the parent. Built BEFORE the
+    # post so the whole incident (parent + detail + what a repeat says) goes to
+    # incident_thread in one call.
     reply = []
     if long_missing:
         reply.append(f"*Didn't fill ({len(long_missing)}):*")
@@ -407,9 +533,36 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     reply.append(_claude_block(rs, reason, cfg, _d(ds)))
     reply.append("```")
     reply.append("_Reply here and we'll correct it in this thread._")
+
+    # A REPEAT of the same problem says what's different today (the error, the
+    # re-run) and nothing else — the paste-to-Claude block is already upthread,
+    # and re-posting it every day is what made this channel unreadable.
+    followup = [title] + parent
+    if long_missing:
+        followup.append(f"*Didn't fill ({len(long_missing)}):* "
+                        + ", ".join(long_missing))
+    if rerun_cmd or rerun:
+        followup.append(f"*To re-run it:* `{rerun_cmd or rerun}`")
+
+    inc = _incident_post(cfg, key=f"failure-{rs.report_id}", title=title,
+                         body=parent, details=reply, followup=followup,
+                         day=_as_date(_d(ds)), dry_run=dry_run,
+                         tag=f"failure-{rs.report_id}")
+    if inc:
+        return {"ts": inc["ts"], "text": inc.get("text") or "\n".join([title] + parent),
+                "key": f"failure-{rs.report_id}", "new": inc.get("new", True)}
+
+    # incident_thread unavailable → the original two-message path, unchanged.
+    ts = _post_corrections(cfg, title, parent, dry_run,
+                           tag=f"failure-{rs.report_id}")
+    if not ts:
+        # Parent post didn't go out — don't orphan a reply; signal the caller to
+        # fall back to email so the alert isn't lost.
+        return None
     _post_corrections(cfg, "", reply, dry_run,
                       tag=f"failure-{rs.report_id}-details", thread_ts=ts)
-    return ts
+    return {"ts": ts, "text": "\n".join([title] + parent),
+            "key": f"failure-{rs.report_id}"}
 
 
 # ---------------- failure diagnosis (real reason + copy-paste fix) ----------------
@@ -920,6 +1073,39 @@ def _corrections_channel(cfg):
     return (cfg.settings.get("corrections_slack_channel") or "").strip() or None
 
 
+def _as_date(value):
+    """ds.date ('2026-08-14') as a date, or None. The incident stamp should say
+    the day the RUN is for, not the day the process happens to be running (a
+    backfill or a post-midnight pass would otherwise mislabel itself)."""
+    try:
+        return dt.date.fromisoformat(str(value)[:10])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _incident_post(cfg, *, key, title, body, details=None, followup=None,
+                   day=None, dry_run=False, tag=""):
+    """Post a problem as an INCIDENT: the first time it opens a top-level message,
+    every repeat replies in that message's thread instead of adding another post
+    (Eve 2026-08-14 — the channel had a new near-identical message per report per
+    day and had stopped being readable). Length/chunking is handled inside
+    incident_thread by the same alert_thread helpers _post_corrections uses.
+
+    Returns the incident dict ({'ts','new',...}) or None, in which case the caller
+    posts the old way — a de-noising feature must never cost us an alert."""
+    ch = _corrections_channel(cfg)
+    if not ch:
+        return None
+    try:
+        from automations.shared import incident_thread as _inc
+        return _inc.open_or_followup(key=key, title=title, body=body,
+                                     details=details, followup=followup,
+                                     channel=ch, day=day, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — fall back to a plain post
+        print(f"[notify] incident post failed ({tag or key}): {e}", flush=True)
+        return None
+
+
 def _post_one(ch, text, dry_run, *, tag, thread_ts=None):
     """Send exactly one message (or print it on a dry run) and return its ts."""
     if dry_run:
@@ -989,7 +1175,8 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
     return ts
 
 
-def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None):
+def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
+               incident=None):
     """Public one-shot alert into #claudecorrections-and-requests, for a REPORT
     module that hits a problem the orchestrator can't see from the outside — e.g.
     the country trackers holding a board because its Tableau extract is stale.
@@ -998,7 +1185,13 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None):
 
     Loads the orchestrator config itself so a caller doesn't have to. Silent
     no-op when the corrections channel isn't configured, and best-effort like
-    every other post here — an alert must never sink the run it is describing."""
+    every other post here — an alert must never sink the run it is describing.
+
+    `incident` opts into thread-per-problem: pass a stable key (e.g.
+    "country-extract-stale") and the SAME problem tomorrow replies under today's
+    post instead of adding another one. Close it with
+    incident_thread.resolve(key=…) when the condition clears. Omit it and the
+    behaviour is exactly as before — a fresh post every time."""
     if cfg is None:
         try:
             from automations.day_orchestrator import registry
@@ -1007,6 +1200,11 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None):
             print(f"[notify] alert skipped ({tag}): cannot load config ({e})",
                   flush=True)
             return None
+    if incident:
+        inc = _incident_post(cfg, key=incident, title=title, body=body_lines,
+                             dry_run=dry_run, tag=tag)
+        if inc:
+            return inc.get("ts")
     return _post_corrections(cfg, title, body_lines, dry_run, tag=tag)
 
 

@@ -48,6 +48,11 @@ Actions:
   set_gmail_token <json>  install the gmail.compose token (gmail-token.json contents)
                         so draft-creating reports (captainship_drafts) can run
                         unattended. Verifies the mailbox is alphaletereporting@.
+  set_alphalete_app_password <pw>  install the alphaletereporting@ Gmail APP
+                        PASSWORD — the one credential every emailing report
+                        shares (SMTP sends + IMAP inbox reads). Push it here
+                        after rotating that account's password, which revokes
+                        the old one. Verifies SMTP + IMAP. Args auto-redacted.
   applicant_key [remove]  is the Applicant Tracker service-account key on THIS
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
@@ -119,13 +124,27 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_gbp_token", "set_gdocs_token", "set_gmail_token",
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
-                    "set_credico_state",
+                    "set_credico_state", "set_alphalete_app_password",
+                    "post_note",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "nsf_screenshot_diag", "nsf_status",
                     "find_group"}
+# READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
+# NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
+# repeated REPORT runs, and _autoruns_today's own docstring says "side-effecting".
+#
+# WHY THIS IS SPLIT OUT (2026-08-13): the mini hit 100/100 by mid-afternoon and
+# started leaving every rerun queued. 55 of those 100 rows were reads — 39
+# logtail, 8 git_status, 3 slack_channel, 3 slack_find, 2 git_diff — i.e. the
+# cost of DIAGNOSING the morning's failures was what exhausted the budget for
+# FIXING them. Worse, the failure is quiet: the poller keeps running plumbing, so
+# `update` still succeeds and the queue looks alive while every rerun sits at
+# "queued" for hours. Reading a log should never spend a fix.
+READONLY_ACTIONS = {"logtail", "git_status", "git_diff",
+                    "slack_channel", "slack_find"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -138,7 +157,15 @@ SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
                   "set_slack_user_token",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
-                  "set_credico_state"}
+                  "set_credico_state",
+                  # The shared reporting mailbox's app password: one paste feeds
+                  # every emailing report on the machine (2026-08-13).
+                  "set_alphalete_app_password",
+                  # A Gmail refresh token for that same mailbox. It was relying
+                  # on the queuer blanking the cell by hand, so a token stayed
+                  # readable in the Sheet for anyone with the link — noticed
+                  # while re-pushing it after the 2026-08-13 password rotation.
+                  "set_gmail_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -287,7 +314,15 @@ def _action_rerun(args: str) -> tuple[bool, str]:
             chrome_guard.close_stray_chrome()
         except Exception:  # noqa: BLE001 — a guard must never crash the rerun
             pass
-    cmd = ([sys.executable, "-m", r.command[0]] + list(r.command[1:])
+    # -u (unbuffered) is load-bearing, not tidiness. The child's stdout is a
+    # PIPE, so Python block-buffers it; when a rerun hits the timeout below,
+    # everything still sitting in that buffer dies with the process and
+    # _run_cmd writes a log holding nothing but the stderr warnings. On
+    # 2026-08-14 two 20-minute box_order_log_roshan reruns both left a 13-line
+    # log with no trace of WHERE they stopped — the timeouts we most need to
+    # read are exactly the ones this loses. The LaunchAgents already run their
+    # modules with -u for the same reason (deploy/box_order_log_owners.sh:66).
+    cmd = ([sys.executable, "-u", "-m", r.command[0]] + list(r.command[1:])
            + list(r.base_args) + extra)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
 
@@ -2812,6 +2847,84 @@ def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     return True, f"raffi127 app password installed + IMAP login verified ({path.name})"
 
 
+def _action_set_alphalete_app_password(args: str) -> tuple[bool, str]:
+    """Install the alphaletereporting@ Gmail APP PASSWORD on THIS machine. Args
+    is the 16-char app password (spaces ok). Writes it to
+    ~/.config/recruiting-report/gmail-app-password (chmod 600), then verifies by
+    logging into BOTH Gmail SMTP (the sending half) and IMAP (the reading half).
+    NEVER echoes the password.
+
+    This one file is what nearly every emailing report shares: the SMTP sender
+    (scheduled_6_days_out.email_send.app_password — captainship, org board, board
+    emails, override bulletin, BOX order log, SARA down, the orchestrator's own
+    notifications) and the IMAP readers (shared.email_ingest, sci_campaigns,
+    residential_rep_count). Changing that account's Gmail password REVOKES the
+    app password, so a rotation silently breaks all of them at once until the new
+    one lands on every runner. Only raffi127's could be pushed remotely; this one
+    had to be typed at each mini, which nobody can sit at (Eve 2026-08-13).
+
+    In SECRET_ACTIONS, so the poller blanks the Args cell the moment the row ends.
+    """
+    import smtplib
+    import ssl
+
+    # Google DISPLAYS the password as 4 groups of 4, and that is how it gets
+    # copied, so the whole Args cell is the password — join every whitespace-
+    # separated piece instead of taking the first token (shlex.split + parts[0]
+    # would keep only 'jlar' out of 'jlar ukpl vlce kfwz' and fail the length
+    # check below). Surrounding quotes are dropped for the caller who quotes it.
+    raw = (args or "").strip().strip('"').strip("'")
+    pw = "".join(raw.split())
+    if len(pw) < 12:
+        return False, ("set_alphalete_app_password needs the 16-char app password "
+                       "as Args (generate it at myaccount.google.com → Security → "
+                       "App passwords, signed in as alphaletereporting@)")
+    path = Path.home() / ".config" / "recruiting-report" / "gmail-app-password"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(pw + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+
+    # Verify through the SAME loaders the reports use. SMTP first: it is the half
+    # with the most consumers, and an auth failure there means the paste is wrong
+    # (or belongs to another account) — worth failing the row over, since a
+    # written-but-dead credential looks installed while every send still breaks.
+    from automations.scheduled_6_days_out.email_send import (
+        FROM_ADDR, SMTP_HOST, SMTP_PORT, _APP_PW_ENV, app_password)
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT,
+                              context=ssl.create_default_context(),
+                              timeout=45) as s:
+            s.login(FROM_ADDR, app_password())
+    except Exception as e:  # noqa: BLE001
+        return False, (f"written to {path} but SMTP login FAILED "
+                       f"({type(e).__name__}: {str(e).splitlines()[0][:100]}) — "
+                       f"wrong app password, or it belongs to another account. "
+                       f"Reports on this machine still can't send.")
+    # email_send reads the env var BEFORE the file, so a stale env var on this
+    # machine would keep winning over what we just wrote — and the SMTP check
+    # above would have tested the env var, not the new paste.
+    env_note = ""
+    if os.environ.get(_APP_PW_ENV, "").strip():
+        env_note = (f" ⚠ {_APP_PW_ENV} is set in this machine's environment and "
+                    f"OVERRIDES the file — unset it or the old password keeps "
+                    f"being used by the sending half")
+    try:
+        from automations.shared import email_ingest
+        M = email_ingest._connect()
+        M.logout()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"app password installed, SMTP send verified — but IMAP "
+                      f"login FAILED ({type(e).__name__}: "
+                      f"{str(e).splitlines()[0][:90]}); inbox-reading reports "
+                      f"(financial, sci_campaigns, residential_rep_count) are "
+                      f"still down{env_note}")
+    return True, (f"alphaletereporting app password installed + verified "
+                  f"(SMTP send + IMAP read){env_note}")
+
+
 def _action_set_doubleentry_creds(args: str) -> tuple[bool, str]:
     """Install the Double Entry (doubleentry.com) login on THIS machine, so the
     Thursday financial_report can pull the ORG SUMMARY REPORT unattended now that
@@ -2973,6 +3086,41 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
                        timeout_s=120, log_name="nsf-correction.log")
     tail = [ln for ln in (out or "").splitlines() if "posted" in ln or "identity" in ln]
     return ok, (" · ".join(tail)[:300] or (out or "")[-200:])
+
+
+def _action_post_note(args: str) -> tuple[bool, str]:
+    """post_note <channel_id> <text>: post a plain message to Slack from THIS
+    machine's Slack identity. On a mini that identity is Lucy, which is the whole
+    point — a note typed from the laptop would go out as Evelyn, and a reminder
+    to the team about the reports should come from the account that runs them
+    ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
+
+    The text is everything after the channel id. Literal '\\n' becomes a newline,
+    since the queue carries the whole thing in one Sheet cell. Slack mrkdwn
+    works (*bold*, `code`, <@U…> mentions).
+
+    Not a report and not idempotent — it posts once per queued row. Queue it
+    again and the channel gets a second copy."""
+    raw = (args or "").strip()
+    parts = raw.split(None, 1)
+    if len(parts) < 2 or not parts[0].upper().startswith("C"):
+        return False, ("post_note needs '<channel_id> <text>' (channel id looks "
+                       "like C0BK5PRG259 — #claudecorrections-and-requests)")
+    channel, text = parts[0].strip(), parts[1].strip().replace("\\n", "\n")
+    if not text:
+        return False, "post_note got an empty message"
+    try:
+        from automations.shared import slack_metrics_post as smp
+        who = "?"
+        try:
+            who = smp._client().auth_test().get("user", "?")
+        except Exception:  # noqa: BLE001
+            pass
+        smp._client().chat_postMessage(channel=channel, text=text)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't post to {channel} "
+                       f"({type(e).__name__}: {str(e).splitlines()[0][:120]})")
+    return True, f"posted to {channel} as {who} ({len(text)} chars)"
 
 
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
@@ -3699,6 +3847,91 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok_all, " · ".join(out)
 
 
+def _action_chrome_unstick(args: str) -> tuple[bool, str]:
+    """Kill an AUTOMATION Chrome left holding a shared browser profile.
+
+      chrome_unstick [profile-name] [--dry]
+        profile-name  the profile dir's name, default '.browser_profile'
+                      (tableau_patchright.PROFILE_DIR — what every Tableau
+                      report on this machine launches on)
+        --dry         list what would be killed and change nothing
+
+    WHY THIS EXISTS (2026-08-14): when `lucy rerun` kills a browser report at
+    its timeout, Playwright's Chrome can outlive the Python parent and keep the
+    profile's ProcessSingleton. Every later run on that profile then dies with
+    "Failed to create a ProcessSingleton for your profile directory", AFTER
+    burning the full 30-minute profile-lock wait (_PROFILE_LOCK_WAIT_S) — which
+    is exactly how box_order_log_abel failed twice that afternoon while Roshan's
+    identical run had gone through an hour earlier.
+
+    chrome_guard can't clean this up: it protects everything under
+    `automations/uploaded` on purpose, so the orphan survives every guard pass
+    and would have broken the 7:00 LaunchAgents the next morning too.
+
+    Matched on the `--user-data-dir=` VALUE, by exact dir name, not a substring:
+    '.browser_profile' must not also match the session holder's
+    '.browser_profile_holder' (killing the holder logs every report out). Only
+    the main browser process is signalled; helpers (`--type=`) die with it."""
+    import shlex
+    import signal as _signal
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    dry = "--dry" in parts
+    named = [p for p in parts if not p.startswith("-")]
+    target = named[0] if named else ".browser_profile"
+    if sys.platform != "darwin":
+        return False, f"chrome_unstick is macOS-only (this machine: {sys.platform})"
+    try:
+        out = subprocess.run(["ps", "-Ao", "pid=,command="], capture_output=True,
+                             text=True, timeout=15).stdout
+    except Exception as e:  # noqa: BLE001
+        return False, f"ps failed: {type(e).__name__}: {str(e)[:100]}"
+    victims = []
+    for line in out.splitlines():
+        line = line.strip()
+        if "Google Chrome.app/Contents/MacOS/Google Chrome" not in line:
+            continue
+        if "--type=" in line:
+            continue                       # helper process, not the browser
+        udd = ""
+        for tok in line.split():
+            if tok.startswith("--user-data-dir="):
+                udd = tok.split("=", 1)[1]
+                break
+        if not udd or os.path.basename(udd.rstrip("/")) != target:
+            continue
+        try:
+            victims.append(int(line.split(None, 1)[0]))
+        except ValueError:
+            continue
+    if not victims:
+        return True, f"no Chrome is holding {target!r} — nothing to unstick"
+    if dry:
+        return True, f"DRY: would kill PID(s) {victims} holding {target!r}"
+    killed = []
+    for pid in victims:
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            pass
+        except Exception as e:  # noqa: BLE001
+            return False, f"kill {pid} failed: {type(e).__name__}: {str(e)[:80]}"
+    time.sleep(5)
+    still = []
+    for pid in killed:
+        try:
+            os.kill(pid, 0)
+            os.kill(pid, _signal.SIGKILL)
+            still.append(pid)
+        except OSError:
+            pass
+    return True, (f"unstuck {target!r}: closed PID(s) {killed}"
+                  + (f" (SIGKILL needed for {still})" if still else ""))
+
+
 ACTIONS = {
     "ping": _action_ping,
     "messages_diag": _action_messages_diag,
@@ -3752,6 +3985,8 @@ ACTIONS = {
     "install_card_scheduler": _action_install_card_scheduler,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
+    "set_alphalete_app_password": _action_set_alphalete_app_password,
+    "post_note": _action_post_note,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
@@ -3765,6 +4000,7 @@ ACTIONS = {
     "nsf_fix_rollcall": _action_nsf_fix_rollcall,
     "nsf_status": _action_nsf_status,
     "chrome_sync_diag": _action_chrome_sync_diag,
+    "chrome_unstick": _action_chrome_unstick,
     "sheets_whoami": _action_sheets_whoami,
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
@@ -3809,13 +4045,17 @@ def _autoruns_today(rows: list[dict]) -> int:
     runaway cap. PLUMBING_ACTIONS (ping, update, restart_*, pip_install, …) are
     bounded/idempotent deploy churn, not runaway risks, so they're excluded: a
     hands-on multi-person deploy day shouldn't burn the budget that's meant to
-    bound repeated REPORT runs (rerun)."""
+    bound repeated REPORT runs (rerun). READONLY_ACTIONS (logtail, git_status,
+    git_diff, …) are excluded for the same reason and one more: they're how a
+    failure gets diagnosed, so charging them means a bad morning spends the
+    budget it needs (2026-08-13 — 55 of the day's 100 rows were reads)."""
     today = dt.date.today().isoformat()
+    free = PLUMBING_ACTIONS | READONLY_ACTIONS
     return sum(
         1 for r in rows
         if str(r.get("Status", "")).strip().lower() in ("done", "failed", "running")
         and str(r.get("Queued At", "")).startswith(today)
-        and str(r.get("Action", "")).strip().lower() not in PLUMBING_ACTIONS
+        and str(r.get("Action", "")).strip().lower() not in free
     )
 
 
@@ -3846,9 +4086,17 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         # Never let a secret-carrying Args reach a log line or the Result cell.
         shown = "<redacted>" if action in SECRET_ACTIONS else args
         if (action.strip().lower() not in PLUMBING_ACTIONS
+                and action.strip().lower() not in READONLY_ACTIONS
                 and cap_used >= DAILY_AUTORUN_CAP):
+            # SAY SO OUT LOUD. A capped row stays "queued" while plumbing keeps
+            # succeeding, so the queue reads as alive and the skipped rerun looks
+            # like it's merely waiting its turn — on 2026-08-13 that cost an hour
+            # of watching a row that was never going to run.
             print(f"[mini_control] daily cap ({DAILY_AUTORUN_CAP}) reached — "
                   f"leaving {action} {shown} queued for a human")
+            _set(ws, rownum, "queued",
+                 f"daily cap {DAILY_AUTORUN_CAP} reached @ {_now()} — NOT run; "
+                 f"waiting for a human or for the date to roll")
             continue
         if dry_run:
             print(f"[mini_control] DRY-RUN would run: {action} {shown}")

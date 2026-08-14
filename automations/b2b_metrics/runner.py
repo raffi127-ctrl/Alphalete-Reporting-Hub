@@ -146,14 +146,56 @@ def _publish_running() -> None:
         pass
 
 
+# The last scheduled pass of the morning (com.alphalete.b2b-metrics.plist: 7:45
+# + 8:30 local). Sections DEFERRED on ORDERLOG freshness are expected to land on
+# that 8:30 FLOOR pass, so a miss before it is on-plan, not news — the alert is
+# held until this clock (see _alert_after_for). Past it the miss is real and
+# alerts as before. Keep in sync with the plist if the floor pass moves.
+FLOOR_PASS_HOUR, FLOOR_PASS_MIN = 8, 30
+# Grace after the floor pass kicks off: a floor pass that actually has to capture
+# re-pulls the ~120MB ORDERLOG export and rebuilds the workbook, so it isn't done
+# the second it starts. 09:00 is comfortably past a full floor pass and still
+# leaves the whole morning to react.
+FLOOR_PASS_GRACE_MIN = 30
+
+
+def _alert_after_for(per_office: list, now: dt.datetime = None) -> str:
+    """ISO 'stay quiet until' clock for this run's manifest, or None to alert now.
+
+    Returns a clock ONLY when EVERY missing section across EVERY office was
+    DEFERRED on ORDERLOG freshness (capture raised OrderLogNotFresh) and the
+    floor pass hasn't run yet. Any other miss — a Tableau capture that blew up, a
+    Slack upload that failed, an office whose whole run raised — alerts
+    immediately, exactly as before.
+
+    WHY (Eve 2026-08-13): the freshness ladder is working as designed when the
+    order-log sections defer, and the 8:30 floor pass posts them. Paging on the
+    05:00 miss meant a 🚨 for something already fixed by 07:00 — noise that
+    trains you to re-check finished work."""
+    now = now or dt.datetime.now()
+    missed = [(po["key"], sid) for po in per_office for sid in po.get("missed", [])]
+    if not missed:
+        return None
+    deferred = {(po["key"], sid) for po in per_office
+                for sid in po.get("deferred", [])}
+    if any(m not in deferred for m in missed):
+        return None                      # a REAL failure is in the set → alert now
+    floor = now.replace(hour=FLOOR_PASS_HOUR, minute=FLOOR_PASS_MIN,
+                        second=0, microsecond=0) \
+        + dt.timedelta(minutes=FLOOR_PASS_GRACE_MIN)
+    return floor.isoformat(timespec="seconds") if now < floor else None
+
+
 def _write_manifest(per_office: list) -> None:
     """Persist section-level completeness so the orchestrator's reconciler can
     turn a silent partial post into an INCOMPLETE alert (the AT&T Order Log went
     missing 2026-07-26 and nothing paged Megan). Additive: the runner already
     KNOWS `present`/`missed` per office — this just records it. No Slack effect.
 
-    `per_office` is a list of dicts: {key, present:[id], missed:[id], failed:bool}
-    where `failed` marks an office whose whole run raised (no parent posted).
+    `per_office` is a list of dicts: {key, present:[id], missed:[id],
+    deferred:[id], failed:bool} where `failed` marks an office whose whole run
+    raised (no parent posted) and `deferred` names the sections that held back on
+    ORDERLOG freshness (they drive the alert hold, NOT what's recorded).
 
       succeeded  -> "<office>: <section>" for each present section
       failed     -> "<office>: <section>" for each missed section
@@ -178,9 +220,14 @@ def _write_manifest(per_office: list) -> None:
                 failed.append(tag)
         n = len(failed)
         note = "" if not n else "{} section(s) missing from the thread".format(n)
+        after = _alert_after_for(per_office)
+        if after:
+            note += " — DEFERRED on ORDERLOG freshness; the 8:30 floor pass " \
+                    "posts them (no alert before {})".format(after[11:16])
         run_manifest.write_manifest(
             "b2b_metrics", failed=failed, succeeded=succeeded,
-            retry_args=["--all", "--post"], kind="section", note=note)
+            retry_args=["--all", "--post"], kind="section", note=note,
+            alert_after=after)
     except Exception:  # noqa: BLE001 — never let bookkeeping sink the report
         pass
 
@@ -277,13 +324,14 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         if not items:
             _exp = expected_ids(o)
             log("  nothing new — every expected section already in today's thread")
-            return {"thread_ts": None, "posted": [],
+            return {"thread_ts": None, "posted": [], "deferred": [],
                     "present": [i for i in _exp if i in _done_all],
                     "missed": [i for i in _exp if i not in _done_all]}
 
     # 1) capture everything first (so a capture crash never leaves a
     #    half-posted thread), continue-on-failure.
     captured = {}
+    deferred = []       # sections held back on ORDERLOG freshness (not failures)
     for item in items:
         try:
             path = item["capture"](o, out_dir, log)
@@ -296,6 +344,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             # crash (and doesn't spew a traceback).
             log("  [{}] DEFERRED — {}".format(item["id"], nf))
             captured[item["id"]] = None
+            deferred.append(item["id"])
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:
@@ -309,7 +358,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             len(ready), len(items), ", ".join(ready)))
         if dm:
             _dm_captures(captured, dm, o, today, log=log)
-        return {"captured": ready, "posted": []}
+        return {"captured": ready, "posted": [], "deferred": deferred}
 
     # 2) post — reuse b2b_quality's thread_state so we join the SAME thread and
     #    survive this channel's no-history-read limitation.
@@ -408,7 +457,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     if missed:
         log("  MISSED (not in every thread): {}".format(", ".join(missed)))
     return {"thread_ts": ts, "posted": posted, "present": present,
-            "missed": missed}
+            "missed": missed, "deferred": deferred}
 
 
 def main(argv=None) -> int:
@@ -529,6 +578,7 @@ def main(argv=None) -> int:
             statuses.append("success" if not missed
                             else ("partial" if present else "failed"))
             per_office.append({"key": key, "present": present, "missed": missed,
+                               "deferred": res.get("deferred") or [],
                                "failed": False})
         except Exception:
             statuses.append("failed")
@@ -536,7 +586,8 @@ def main(argv=None) -> int:
             # section it was supposed to post as missing, so the manifest names
             # them rather than recording an empty (falsely-clean) office.
             per_office.append({"key": key, "present": [],
-                               "missed": expected_ids(o), "failed": True})
+                               "missed": expected_ids(o), "deferred": [],
+                               "failed": True})
             if not args.all_offices:      # single-office: fail loud as before
                 if publishable:
                     _write_manifest(per_office)
