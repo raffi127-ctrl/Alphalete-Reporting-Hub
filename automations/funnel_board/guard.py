@@ -158,22 +158,59 @@ def stamp(S, api, identity, log):
         log("guard: stamp skipped (%s: %s)" % (type(e).__name__, str(e)[:120]))
 
 
+# One thread for "the Daily Log is being hand-edited", however many mornings it
+# keeps happening — each new drift replies under the first notice instead of
+# adding another post, and a clean run closes it (Eve 2026-08-14).
+INCIDENT = "funnel-daily-log-drift"
+
+
 def ping(msg, log, dry_run=False):
     """Say it in Slack too. A log line nobody reads is not an alert.
 
     Never raises — a failed ping must not fail the report it is warning about.
     """
-    text = ("🔎 *Recruiting Funnel Board* — %s\n"
-            "Not a failure: the run still re-pulls and overwrites the whole "
+    head = "🔎 *Recruiting Funnel Board* — %s" % msg
+    body = ["Not a failure: the run still re-pulls and overwrites the whole "
             "week. Worth knowing who edited it, and whether their numbers just "
-            "got overwritten." % msg)
+            "got overwritten."]
     if dry_run or os.environ.get("FUNNEL_NO_SLACK"):
-        log("guard: (not posting) %s" % text.replace("\n", " "))
+        log("guard: (not posting) %s" % " ".join([head] + body))
         return
     try:
         from automations.shared import slack_metrics_post as smp
-        smp._client().chat_postMessage(channel=SLACK_CHANNEL, text=text)
+        posted = None
+        try:
+            from automations.shared import incident_thread as inc
+            posted = inc.open_or_followup(key=INCIDENT, title=head, body=body,
+                                          channel=SLACK_CHANNEL)
+        except Exception as e:  # noqa: BLE001 — fall back to a plain post
+            log("guard: incident thread unavailable (%s: %s)"
+                % (type(e).__name__, str(e)[:80]))
+        if not posted:
+            smp._client().chat_postMessage(channel=SLACK_CHANNEL,
+                                           text="\n".join([head] + body))
         log("guard: posted the drift notice to Slack")
     except Exception as e:  # noqa: BLE001
         log("guard: Slack notice didn't post (%s: %s)"
+            % (type(e).__name__, str(e)[:120]))
+
+
+def resolved(log, dry_run=False):
+    """The Sheet is exactly as this report left it — close an open drift thread.
+
+    Called on the clean path so the channel says when the hand-editing stopped,
+    not only when it started. Free when nothing is open."""
+    if dry_run or os.environ.get("FUNNEL_NO_SLACK"):
+        return
+    try:
+        from automations.shared import incident_thread as inc
+        if inc.resolve_if_open(INCIDENT,
+                               what="*Recruiting Funnel Board* — the Daily Log "
+                                    "is untouched again",
+                               detail="_Nobody has edited it since the last "
+                                      "run._",
+                               channel=SLACK_CHANNEL):
+            log("guard: closed the open drift notice — Sheet is clean")
+    except Exception as e:  # noqa: BLE001
+        log("guard: couldn't close the drift notice (%s: %s)"
             % (type(e).__name__, str(e)[:120]))

@@ -35,6 +35,9 @@ from pathlib import Path
 CHANNEL = "C0BK5PRG259"
 EVELYN = "U088E2KJEV8"          # Evelyn Sobrino — @-mentioned on the post
 STATE = Path("output") / "reps_gross_paycheck" / "last_alert.txt"
+# One thread for "the PNL is missing its source week", however many weeks in a
+# row that stays true — each week replies under the first post (Eve 2026-08-14).
+INCIDENT = "paycheck-pnl-missing"
 
 
 def _already_sent(source_week: dt.date) -> bool:
@@ -47,6 +50,19 @@ def _already_sent(source_week: dt.date) -> bool:
 def _mark(source_week: dt.date) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(source_week.isoformat(), encoding="utf-8")
+
+
+def resolved(source: dt.date, *, dry_run: bool = False) -> bool:
+    """The PNL has its week and the tabs filled — close the open alert thread.
+
+    Free when nothing is open, so the caller can fire it on every clean run."""
+    from automations.shared import incident_thread as inc
+    return inc.resolve_if_open(
+        INCIDENT,
+        what="*Reps Gross Paycheck records*",
+        detail=f"_The PNL has WE {source.month}/{source.day} now, and the rep "
+               "tabs are filled._",
+        channel=CHANNEL, dry_run=dry_run)
 
 
 def compose(target: dt.date, source: dt.date, cells: int, real: int) -> str:
@@ -83,7 +99,21 @@ def notify(target: dt.date, source: dt.date, cells: int, real: int,
         return False
     try:
         from automations.shared import slack_metrics_post as smp
-        smp._client().chat_postMessage(channel=CHANNEL, text=text)
+        # A PNL that stays empty is the SAME problem next week, so week 2 replies
+        # under week 1's post instead of opening another one (Eve 2026-08-14).
+        # The per-week dedup above still holds: one message per missing week,
+        # it just lands in the thread.
+        posted = None
+        try:
+            from automations.shared import incident_thread as inc
+            lines = text.split("\n")
+            posted = inc.open_or_followup(key=INCIDENT, title=lines[0],
+                                          body=lines[1:], channel=CHANNEL)
+        except Exception as e:                          # noqa: BLE001
+            print(f"  ⚠ incident thread unavailable ({type(e).__name__}: "
+                  f"{str(e)[:80]}) — posting standalone")
+        if not posted:
+            smp._client().chat_postMessage(channel=CHANNEL, text=text)
     except Exception as e:                              # noqa: BLE001
         # A failed alert must not also fail the report — the refusal to write
         # is the real protection; this is the notification on top of it.

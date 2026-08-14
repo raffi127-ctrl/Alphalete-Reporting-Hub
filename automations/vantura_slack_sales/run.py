@@ -674,6 +674,13 @@ def main(argv=None) -> int:
         if a.fill and a.yes:
             from automations.vantura_slack_sales import alert
             alert.alert_unknown_posters(unknown_sales, scope_ok, hints=hints)
+    elif a.fill and a.yes:
+        # Every sale landed on a rep's row — close the unknown-poster thread if
+        # one is open. It is closed HERE, not on the run's exit code: a run can
+        # finish clean and still have an unnamed poster, so the two conditions
+        # can't share a signal (Eve 2026-08-14).
+        from automations.vantura_slack_sales import alert
+        alert.resolve_unknown()
 
     skipped = [p for p in posts if p.skipped and p.sales_day in days]
     if skipped:

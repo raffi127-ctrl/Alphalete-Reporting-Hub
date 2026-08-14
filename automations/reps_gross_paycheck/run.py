@@ -279,8 +279,14 @@ def main() -> int:
         # the only remaining signal: keep it.
         return 0 if (posted or args.no_alert) else 1
 
-    return apply(tsh, plan, prototype, sundays, pnl, board, term_log,
-                 delete_terminated=args.delete_terminated, today=today)
+    rc = apply(tsh, plan, prototype, sundays, pnl, board, term_log,
+               delete_terminated=args.delete_terminated, today=today)
+    if rc == 0 and not args.no_alert:
+        # The PNL came through and the tabs filled — close the "missing week"
+        # thread if one is open, so the channel says it recovered instead of
+        # leaving the last word as bad news (Eve 2026-08-14).
+        alert.resolved(wk.source_sunday(target))
+    return rc
 
 
 def apply(spreadsheet, plan, prototype, sundays, pnl, board, term_log, *,

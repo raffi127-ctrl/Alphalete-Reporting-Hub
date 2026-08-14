@@ -468,6 +468,31 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     return told
 
 
+def resolve_if_open(key: str, *, what: str, detail: str = "",
+                    channel: str = CHANNEL, dry_run: bool = False) -> bool:
+    """"This just worked — close its alert thread if one is open."
+
+    The shape every caller wants on its success path, so none of them has to
+    hand-roll it: FREE when nothing is open (a local index read, no Slack call),
+    so it is safe to call on every single clean run. `what` names the thing that
+    recovered, in the channel's voice ("*Sara+ screenshots* download again").
+
+    Never raises: closing an alert must never break the run that earned it."""
+    try:
+        if key not in open_keys():
+            return False
+        lines = [":white_check_mark: {} — RESOLVED. It just ran clean.".format(what)]
+        if detail:
+            lines.append(detail)
+        lines.append("_Closed. If it happens again it opens a fresh post, not "
+                     "this thread._")
+        return resolve(key=key, lines=lines, channel=channel, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ couldn't close incident {} ({}: {})".format(
+            key, type(e).__name__, str(e)[:80]), flush=True)
+        return False
+
+
 def close(key: str) -> None:
     """Forget an incident WITHOUT posting (e.g. it aged out of relevance)."""
     _mark_resolved_in_index(key)
