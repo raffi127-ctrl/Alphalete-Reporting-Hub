@@ -140,8 +140,12 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
         print(f"  · {period}: blank as expected (winding down, row kept for the "
               f"history): {', '.join(names)}")
     for period, names in went_dark.items():
-        print(f"  ⚠ {period}: STOPPED filling (had recent data, nothing today): "
-              f"{', '.join(names)}")
+        # Informational, not alarming: the row filled every other day and has no
+        # number today. That is usually correct (no sales left in the window),
+        # so the log says what happened without implying a break.
+        print(f"  · {period}: no value today (had recent data): "
+              f"{', '.join(names)} — normal if they've no sales left in that "
+              f"window; worth a look only if it repeats for days.")
 
     return {"summary": summary, "added": added, "went_dark": went_dark}
 
@@ -215,7 +219,13 @@ def main(argv=None) -> int:
     print("\nPhase 2: fill the captain tabs")
     failed: list = []
     went_dark_all: dict = {}
+    filled_tabs: list = []
     unmatched_all: dict = {}
+    # One readable line per owner who didn't fill — "Melik El Jaiez (Tony's
+    # team, 0-30)". The ALERT names these, not the tab, because the reader's
+    # question is "which owner?" and a bare tab title makes a fine run look like
+    # a broken tab (Megan 2026-08-15).
+    dark_items: list = []
     for cap in selected:
         try:
             res = _fill_one(cap, parsed, today, args)
@@ -224,8 +234,13 @@ def main(argv=None) -> int:
                   f"{str(e).splitlines()[0][:200]}")
             failed.append(cap.slug)
             continue
+        filled_tabs.append(cap.tab)
         if res["went_dark"]:
             went_dark_all[cap.tab] = res["went_dark"]
+            for period in sorted(res["went_dark"]):
+                for name in res["went_dark"][period]:
+                    dark_items.append(
+                        f"{name} ({cap.slug.title()}'s team, {period})")
         um = sorted({n for s in res["summary"].values() for n in s["unmatched"]})
         if um:
             unmatched_all[cap.tab] = um
@@ -236,7 +251,8 @@ def main(argv=None) -> int:
 
     # --- Manifest (Hub 'Retry failed only' + failure-help callout) ---
     if not args.dry_run and args.only is None:
-        _write_manifest(failed, went_dark_all, args, shape_warning)
+        _write_manifest(failed, went_dark_all, args, shape_warning,
+                        dark_items=dark_items, filled_tabs=filled_tabs)
 
     # EXIT-CODE CONTRACT (Megan 2026-08-15 — same class as owners_metrics_churn
     # e568bf9 and vantura_board_audit 8fa4e2e). The day-orchestrator reads ANY
@@ -259,18 +275,22 @@ def main(argv=None) -> int:
               f"MISSING: {failed} ===")
         return 1   # genuine crash → hard FAILED page (a human is needed now)
     if went_dark_all:
-        print("\n=== run INCOMPLETE (finding) — every tab filled, but an ICD "
-              "stopped filling. Check that owner's Tableau view filter / "
-              "alias. ===")
-        print("  Recorded as a SOFT INCOMPLETE via the run-manifest — not a "
-              "hard failure. Nothing crashed; the tabs ARE filled.")
+        # Says INCOMPLETE (never "done") so the Hub's success markers can't
+        # trip on a run with a blank — but reads as the minor FYI it is.
+        print(f"\n=== ran fine, INCOMPLETE — all {len(selected)} tabs filled; "
+              f"{len(dark_items)} ICD(s) with no value today: "
+              f"{', '.join(dark_items)} ===")
+        print("  Not a failure and nothing to re-run: a blank is correct when "
+              "an owner has no sales left in that window. Recorded as a soft "
+              "INCOMPLETE via the run-manifest.")
         return 0   # finding, not a crash → soft INCOMPLETE via manifest, no page
     print("\n=== done ===")
     return 0
 
 
 def _write_manifest(failed: list, went_dark_all: dict, args,
-                    shape_warning: str | None = None) -> None:
+                    shape_warning: str | None = None,
+                    dark_items: list = (), filled_tabs: list = ()) -> None:
     try:
         from automations.shared import run_manifest as _rm
     except Exception:
@@ -281,6 +301,9 @@ def _write_manifest(failed: list, went_dark_all: dict, args,
                 for tab, per in went_dark_all.items()]
         dark_note = ("ICD(s) stopped filling (recent history, nothing today): "
                      + "; ".join(bits))
+    dark_items = list(dark_items)
+    n_dark = len(dark_items)
+    icd_s = "" if n_dark == 1 else "s"
     try:
         if failed:
             _rm.write_manifest(
@@ -300,23 +323,46 @@ def _write_manifest(failed: list, went_dark_all: dict, args,
                     message="The Captainship Cancel Rate report couldn't fill "
                             f"these captain tabs today: {', '.join(failed)}. "
                             "Can someone check the Metrics view is loading?"))
-        elif dark_note:
+        elif dark_items:
+            # LOW-KEY BY DESIGN (Megan 2026-08-15: "the alert on Melik just
+            # needs to say his is the only one not filled so we know that's not
+            # a big deal / fail"). The run did its whole job; the only news is
+            # WHICH owner has no number. So:
+            #   - `failed` names the OWNERS, not the tabs — kind 'unfilled_icd'
+            #     puts them straight in the channel headline, so the reader
+            #     never has to open the thread to know who it is.
+            #   - `succeeded` names every tab that filled, which is what makes
+            #     outcome() read PARTIAL (orange) instead of failed (red).
+            #   - no retry_args: there is nothing a re-run fixes.
+            # A blank here is usually CORRECT — an owner with no sales left in
+            # the rolling window has no rate to compute, and no data != 0%. So
+            # the remediation leads with "usually nothing to do" instead of the
+            # old "almost always a Tableau-side change", which sent people
+            # hunting a filter that was never broken (Melik El Jaiez, 8/15: his
+            # 30-60 row filled the same minute his 0-30 went blank).
             _rm.write_manifest(
-                REPORT_ID, failed=list(went_dark_all.keys()),
-                retry_args=(["--sandbox"] if args.sandbox else []), kind="report",
-                note="⚠ " + dark_note,
+                REPORT_ID, failed=dark_items, succeeded=list(filled_tabs),
+                retry_args=[], kind="unfilled_icd",
+                note=f"Every captain tab filled. {n_dark} ICD{icd_s} had recent "
+                     f"history but no value today — usually just no sales left "
+                     f"in that window, not a break.",
                 remediation=_rm.make_remediation(
-                    reason="Every captain tab filled, but an ICD that had recent "
-                           "data stopped: " + dark_note,
-                    fix="Almost always a Tableau-side change, not a flaky pull: "
-                        "the ICD was dropped from the Captain's Bonus Teams "
-                        "filter, or renamed so the pull no longer matches the "
-                        "sheet row. Re-add them to the view, or add the alias "
-                        "via focus_office_att.aliases.save_alias, then re-run.",
+                    reason=f"The run filled every captain tab. {n_dark} "
+                           f"ICD{icd_s} didn't fill: {', '.join(dark_items)}.",
+                    fix="Usually nothing. An owner with no sales left inside "
+                        "that window has no rate to compute, so a blank is the "
+                        "correct answer (no data is not 0%). Only if the SAME "
+                        "ICD stays blank for several days: check they're still "
+                        "on the Captain's Bonus Teams filter in the Metrics "
+                        "view, or add an alias if they were renamed (via "
+                        "automations.focus_office_att.aliases.save_alias). "
+                        "A re-run won't change either way.",
                     link=pull.METRICS_URL,
-                    message="Heads up — the Cancel Rate report filled every "
-                            "captain tab, but an ICD stopped showing up: "
-                            + dark_note))
+                    message="FYI, nothing broken — the Cancel Rate report ran "
+                            "and filled every captain tab. The only ICD"
+                            f"{icd_s} without a number today: "
+                            f"{', '.join(dark_items)}. Can someone confirm "
+                            "they're still selling on that program?"))
         elif shape_warning:
             # Tabs all filled, so this is not a failure — but the 30-60 numbers
             # are off and a re-run can't fix it (the view's shape is the

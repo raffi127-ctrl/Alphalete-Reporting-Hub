@@ -117,5 +117,69 @@ class SectionDropTests(unittest.TestCase):
         self.assertIn("*Missing:* ABP", "\n".join(parent))
 
 
+class UnfilledIcdIsLowKey(unittest.TestCase):
+    """Megan 2026-08-15: "the alert on Melik just needs to say his is the only
+    one not filled so we know that's not a big deal / fail." One ICD without a
+    number on a run that filled everything else must read as an FYI, not an
+    incident — the reader should be able to close the tab without opening the
+    thread."""
+
+    ITEMS = ["Melik El Jaiez (Tony's team, 0-30)"]
+    NOTE = ("Every captain tab filled. 1 ICD had recent history but no value "
+            "today — usually just no sales left in that window, not a break.")
+    REM = {"fix": "Usually nothing. " + "x" * 60}
+
+    def _parts(self, items=None):
+        return sda._compose_parts("captainship-cancel-rate",
+                                  items or self.ITEMS, self.REM, self.NOTE,
+                                  "unfilled_icd")
+
+    def test_parent_names_the_icd_and_says_everything_else_filled(self):
+        parent = "\n".join(self._parts()[0])
+        self.assertIn("Melik El Jaiez", parent,
+                      "the reader must see WHO without opening the thread")
+        self.assertIn("every tab filled", parent.lower())
+        self.assertIn("1 ICD didn't fill", parent)
+
+    def test_parent_carries_no_incident_language(self):
+        parent = "\n".join(self._parts()[0]).lower()
+        for word in ("🚨", "dropped", "did not post", "failed", "missing"):
+            self.assertNotIn(word.lower(), parent,
+                             "a run that did its whole job must not read as a "
+                             "break (%r)" % word)
+        self.assertIn("not a break", parent)
+        self.assertIn("nothing to re-run", parent)
+
+    def test_detail_and_fix_go_to_the_thread(self):
+        parent, detail = self._parts()
+        text, thread = "\n".join(parent), "\n".join(detail)
+        self.assertIn("thread", text.lower())
+        self.assertNotIn("*Fix:*", text,
+                         "the what-to-check belongs in the thread, not the "
+                         "channel line")
+        self.assertIn("*Fix:*", thread)
+        self.assertIn("Melik El Jaiez", thread)
+        self.assertIn(self.NOTE, thread)
+
+    def test_parent_is_short(self):
+        self.assertLess(len("\n".join(self._parts()[0])), 400)
+
+    def test_plural_reads_correctly(self):
+        parent, detail = self._parts(
+            self.ITEMS + ["Andrew Burton (Sahil's team, 30-60)"])
+        text = "\n".join(parent)
+        self.assertIn("2 ICDs didn't fill", text)
+        self.assertIn("Andrew Burton (Sahil's team, 30-60)", text)
+        self.assertIn("the ICDs above", text)
+
+    def test_other_kinds_are_unchanged_by_the_items_key(self):
+        """{items} / thread_always / fix_in_thread are opt-in per kind — the
+        existing wordings must render exactly as before."""
+        parent, detail = sda._compose_parts(
+            "office_metrics", ["ABP"], None, "", "section")
+        self.assertEqual(detail, [])
+        self.assertIn("dropped 1 section this run", "\n".join(parent))
+
+
 if __name__ == "__main__":
     unittest.main()

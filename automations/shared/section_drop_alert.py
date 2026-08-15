@@ -153,6 +153,44 @@ _KINDS = {
         "tail": "Nothing to re-run and nothing is missing: the alert clears on "
                 "the next run once the board is corrected.",
     },
+    # ONE ICD with no value on a run that filled EVERYTHING ELSE (kind
+    # 'unfilled_icd' — captainship_cancel_rate today). Nothing dropped, nothing
+    # is broken: every tab filled, every other owner filled, and one owner
+    # simply had no number in the view. Most often that's honest no-data (the
+    # owner has no sales left inside the rolling window, so there is no rate to
+    # compute — a blank is the CORRECT answer, since no data != 0%); sometimes
+    # it's a Tableau filter/alias worth a look.
+    #
+    # Megan 2026-08-15: "the alert on Melik just needs to say his is the only
+    # one not filled so we know that's not a big deal / fail." Under the
+    # 'section' fallback this went out as "🚨 dropped 1 section this run — it
+    # did NOT post … re-run only the missing section … the thread is live but
+    # incomplete" — incident language for a run that did its whole job, which is
+    # exactly what sent the morning hunting a break that wasn't there. Same
+    # lesson as 'finding' above, different shape: a finding says the SOURCE is
+    # wrong; this says the source is fine and one cell is empty.
+    #
+    # The channel line is ONE line and names the owner(s) (thread_always +
+    # {items}) — the reader should be able to close the tab without opening the
+    # thread. Which tab/section and what to check live in the reply.
+    "unfilled_icd": {
+        "what": "ICD",
+        "headline": "✅ *{report_id}* ran fine — every tab filled. "
+                    "{n} {what}{s} didn't fill: {items}.",
+        "tail_headline": "",          # unused: this headline carries itself
+        "label": "Didn't fill",
+        "thread_always": True,        # keep the channel to one skimmable line
+        "fix_in_thread": True,        # ...and the what-to-check with it
+        "see_thread": "Detail in thread.",
+        "detail_header": "*The {n} {what}{s} that didn't fill:*",
+        "fix": "usually nothing. An owner with no sales left inside the "
+               "window has no rate to fill, so a blank is the right answer. If "
+               "the same ICD stays blank for several days, check they're still "
+               "on the view's filter, or add an alias if they were renamed "
+               "(automations.focus_office_att.aliases.save_alias).",
+        "tail": "Not a break and nothing to re-run — just worth an eye on the "
+                "{what}{s} above.",
+    },
 }
 
 # Manifest kinds that mean "a fill lost part of its work" — they read correctly
@@ -202,14 +240,23 @@ def _compose_parts(report_id: str, failed: Sequence[str],
         spec = _KINDS["section"]
     what, n = spec["what"], len(failed)
     s = "s" if n != 1 else ""
-    fmt = dict(report_id=report_id, n=n, what=what, s=s)
+    # `items` lets a kind NAME what didn't land right in the headline, instead of
+    # only counting it. A one-line "1 ICD didn't fill: Melik El Jaiez" is
+    # readable without opening the thread, which is the whole point of a low-key
+    # alert (Megan 2026-08-15). Kinds that don't use {items} are unaffected —
+    # str.format ignores unused keys.
+    fmt = dict(report_id=report_id, n=n, what=what, s=s,
+               items=", ".join(failed))
 
     body = [f"*{spec['label']}:* {', '.join(failed)}"]
     if note and not spec.get("skip_note"):
         body.append(f"_{note}_")
     # A bulleted kind ALWAYS threads: its items are full sentences, and even one
     # of them fills the channel — which is the whole point of the split.
-    threaded = (bool(spec.get("bullets")) or n > _INLINE_ITEMS
+    # `thread_always` does the same for a kind whose headline already names the
+    # items: repeating them inline underneath would just be the same line twice.
+    threaded = (bool(spec.get("bullets")) or bool(spec.get("thread_always"))
+                or n > _INLINE_ITEMS
                 or sum(len(b) for b in body) > _INLINE_CHARS)
 
     headline = spec["headline"].format(tail=spec["tail_headline"], **fmt)
@@ -227,10 +274,13 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     # The 'finding' fix is 240 chars on its own, which is what left the Vantura
     # audit's parent at 456 against this module's own 400-char contract
     # (test_alert_thread has been failing on main since 2026-08-13).
-    fix_threaded = threaded and len(fix_line) > _INLINE_CHARS
+    # `fix_in_thread` is the same call made up front by a kind that wants its
+    # channel line to stay one line no matter how short the fix is.
+    fix_threaded = threaded and (bool(spec.get("fix_in_thread"))
+                                 or len(fix_line) > _INLINE_CHARS)
     if not fix_threaded:
         parent.append(fix_line)
-    parent.append(spec["tail"])
+    parent.append(spec["tail"].format(**fmt))
     if not threaded:
         return parent, []
     detail = [spec.get("detail_header",

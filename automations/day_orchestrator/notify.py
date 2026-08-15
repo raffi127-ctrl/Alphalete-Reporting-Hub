@@ -377,37 +377,79 @@ def _manifest_id(cfg, rs) -> str:
         return rs.report_id
 
 
-def _is_findings_report(cfg, rs) -> bool:
-    """True when this report is a data-quality AUDIT — its last manifest was
-    written with kind='finding' (e.g. the Vantura board audit). Those runs list
-    open findings, not failed fills: the channel post stays a one-line count and
-    the detail goes in-thread, with no re-run / paste-to-Claude block (a human
-    fixes the source, re-running the audit won't). Best-effort: any read problem
-    falls back to the normal fill-report path."""
+# Manifest kinds whose INCOMPLETE is a FINDING, not a broken fill: the run did
+# its whole job and is reporting something it noticed. They share the concise
+# parent + in-thread detail and skip the re-run / paste-to-Claude block, but
+# each owns its own words — a board audit saying "the source is wrong" and a
+# fill saying "one owner had no number" are not the same news, and one wording
+# for both is how the audit's findings went out as "it did NOT post" for a week.
+_FINDING_KINDS = {
+    "finding": {
+        "title": "{n} open data-quality finding(s)",
+        "parent": "*Found:* {n} board data-quality issue(s) — details in "
+                  "thread. Logged to the board's ‘Report an Issue’ tab.",
+        "detail_header": "*Open findings:*",
+        "footer": "_These are fixed on the board itself (Roll Call statuses, "
+                  "Stations formulas, etc.), not by re-running this audit — "
+                  "they'll clear from this alert once the board is corrected._",
+        "icon": ":warning:",
+    },
+    # captainship_cancel_rate: every tab filled, one owner had no number. Megan
+    # 2026-08-15 — the reader must see at a glance that this is fine, so the
+    # parent names the owner(s) and says everything else filled. Detail (which
+    # tab/section, what to check) goes in the thread.
+    "unfilled_icd": {
+        "title": "ran fine, {n} ICD{s} didn't fill",
+        "parent": "*Filled everything except:* {items}. Every other ICD on "
+                  "every tab filled — not a break, nothing to re-run.",
+        "detail_header": "*Didn't fill this run:*",
+        "footer": "_Usually nothing to do: an owner with no sales left inside "
+                  "that window has no rate to compute, so a blank is the "
+                  "correct answer (no data is not 0%). Only worth checking the "
+                  "Tableau view filter / alias if the SAME ICD stays blank for "
+                  "several days._",
+        "icon": ":white_check_mark:",
+    },
+}
+
+
+def _finding_spec(cfg, rs):
+    """The _FINDING_KINDS entry for this report's last manifest, or None when it
+    is an ordinary fill report. Best-effort: any read problem falls back to the
+    normal fill-report path (which is always safe, just louder)."""
     try:
         from automations.shared import run_manifest
         m = run_manifest.read_manifest(_manifest_id(cfg, rs))
-        return bool(m) and m.get("kind") == "finding"
+        return _FINDING_KINDS.get((m or {}).get("kind"))
     except Exception:  # noqa: BLE001
-        return False
+        return None
+
+
+def _is_findings_report(cfg, rs) -> bool:
+    """True when this report's INCOMPLETE is a FINDING rather than a broken
+    fill — its last manifest carries one of _FINDING_KINDS (the Vantura board
+    audit's 'finding', the cancel-rate 'unfilled_icd'). Those runs report what
+    they noticed, not what they lost: the channel post stays a one-line summary
+    and the detail goes in-thread, with no re-run / paste-to-Claude block."""
+    return _finding_spec(cfg, rs) is not None
 
 
 def _post_findings_corrections(cfg, rs, label, dry_run, day=None):
-    """A data-quality audit's findings → a CONCISE parent (name + count, 'details
-    in thread') and a threaded reply listing the findings. No re-run/paste-to-
-    Claude: these are fixed on the source (the board), not by re-running the audit
-    (Megan 2026-08-02)."""
+    """A finding → a CONCISE parent (name + what it found, 'details in thread')
+    and a threaded reply with the list. No re-run/paste-to-Claude: these are
+    fixed at the source — or not a problem at all — and re-running changes
+    nothing (Megan 2026-08-02, 2026-08-15). Wording comes off _FINDING_KINDS."""
+    spec = _finding_spec(cfg, rs) or _FINDING_KINDS["finding"]
     n = len(rs.missing)
-    title = f":warning: *{label}* — {n or 'some'} open data-quality finding(s)"
-    parent = [f"*Found:* {n or 'some'} board data-quality issue(s) — details in "
-              "thread. Logged to the board's ‘Report an Issue’ tab."]
-    reply = ["*Open findings:*"]
+    fmt = {"n": n or "some", "s": "" if n == 1 else "s",
+           "items": ", ".join(rs.missing) or "—"}
+    title = f"{spec['icon']} *{label}* — " + spec["title"].format(**fmt)
+    parent = [spec["parent"].format(**fmt)]
+    reply = [spec["detail_header"]]
     reply += [f"   • {f}" for f in rs.missing]
     reply += [
         "",
-        "_These are fixed on the board itself (Roll Call statuses, Stations "
-        "formulas, etc.), not by re-running this audit — they'll clear from this "
-        "alert once the board is corrected._",
+        spec["footer"],
         "_Reply here if you want a hand._",
     ]
     # An audit re-reports the SAME open findings every single day until someone

@@ -127,11 +127,54 @@ class ExitCodeSemantics(unittest.TestCase):
                         "the tab with the finding must be named in the manifest")
         self.assertIsNotNone(kwargs.get("remediation"),
                              "a finding must carry remediation (-> ok=False)")
-        self.assertIn("stopped filling", kwargs.get("note", ""))
-        self.assertIn("Melik El Jaiez", kwargs.get("note", ""),
-                      "the note must name the owner who stopped filling")
         self.assertFalse(mc.called,
                          "a run with a finding must not mark itself clean")
+
+    def test_alert_is_low_key_and_names_the_owner(self):
+        """Megan 2026-08-15: "the alert on Melik just needs to say his is the
+        only one not filled so we know that's not a big deal / fail." So the
+        manifest must hand the alert (a) the OWNER, not the tab, with enough
+        context to place them, (b) the tabs that DID fill, so the Hub reads
+        PARTIAL/orange rather than red, and (c) the 'unfilled_icd' kind that
+        picks the reassuring wording."""
+        rc, wm, mc = self._run(lambda *a, **k: _DARK_RESULT)
+        self.assertEqual(rc, 0)
+        kwargs = wm.call_args.kwargs
+        self.assertEqual(kwargs.get("kind"), "unfilled_icd",
+                         "the kind is what picks the low-key wording — under "
+                         "the old 'report' it fell back to '🚨 dropped 1 "
+                         "section this run — it did NOT post'")
+        self.assertEqual(list(kwargs.get("failed") or []),
+                         ["Melik El Jaiez (Tony's team, 0-30)"],
+                         "name the OWNER and where, not the tab title")
+        self.assertEqual(list(kwargs.get("succeeded") or []),
+                         ["Cancel Rate - Tony (ATT Fiber)"],
+                         "the filled tabs make outcome() read PARTIAL, not "
+                         "failed — a red pill on a run that did its whole job "
+                         "trains people to ignore red")
+        note = kwargs.get("note", "")
+        self.assertIn("Every captain tab filled", note)
+        self.assertIn("not a break", note)
+        rem = kwargs.get("remediation") or {}
+        blob = (str(rem.get("fix", "")) + " " + str(rem.get("message", "")))
+        self.assertIn("Usually nothing", blob,
+                      "a blank is usually CORRECT — lead with that, not with "
+                      "'almost always a Tableau-side change' (Melik's 30-60 "
+                      "filled the same minute his 0-30 went blank)")
+        self.assertIn("nothing broken", blob.lower())
+
+    def test_partial_outcome_is_not_a_red_pill(self):
+        """The Hub colours `succeeded` + `failed` as PARTIAL (orange). Pin it
+        end-to-end through the real manifest writer, not just the call args."""
+        from automations.shared import run_manifest as rm
+        rc, wm, mc = self._run(lambda *a, **k: _DARK_RESULT)
+        kwargs = wm.call_args.kwargs
+        data = {"ok": False, "succeeded": list(kwargs.get("succeeded") or []),
+                "failed": list(kwargs.get("failed") or [])}
+        self.assertTrue(data["succeeded"] and data["failed"])
+        with mock.patch.object(rm, "read_manifest",
+                               return_value=dict(data, run_ts="")):
+            self.assertEqual(rm.outcome("x", today_only=False), "partial")
 
     def test_tab_that_raised_still_exits_nonzero(self):
         """(b1) A tab whose fill RAISED is a genuine crash (a Tableau/sheet
