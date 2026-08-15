@@ -58,6 +58,23 @@ GROW_COLS_BY = 40
 
 _WEEKDAY_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
+# What goes in a cell when TABLEAU ITSELF has nothing to give (Megan
+# 2026-08-15). An empty cell is indistinguishable from a broken run — that
+# ambiguity is what sent the 8/15 morning hunting a filter that was never
+# broken. Melik El Jaiez's 0-30 cancel rate is `cancels / sales` = 0 / 0, which
+# Tableau returns EMPTY: undefined, not zero. So the cell says so.
+#
+# Writing 0.00% instead would be a lie — 0 cancels out of 0 sales is not a 0%
+# cancel rate, and it would drag the captainship average down with it. "No
+# Data" is the honest value, it is visibly not a crash, and it keeps its
+# meaning as the column ages right into the history.
+#
+# This is ONLY for an owner Tableau HAS and has no number for. An owner missing
+# from the pull entirely still writes "" — that one IS worth chasing (a dropped
+# Captain's Bonus Teams filter or a rename past the alias), and it's the only
+# case that still raises a finding.
+NO_DATA = "No Data"
+
 
 def _norm(s: str) -> str:
     """Match key for names AND labels: uppercase, trimmed, inner whitespace
@@ -311,15 +328,23 @@ def write_today(ws, sections: dict, today: dt.date, data: dict, *,
         cells.append({"range": f"{ws.title}!B{sect['rep_header_row']}",
                       "values": [["%"]]})
 
-        filled, blank = 0, []
+        filled, blank, no_data = 0, [], []
         for key, row in sect["rep_rows"].items():
-            val = ((by_key.get(key) or {}).get(period) or "").strip()
+            slot = by_key.get(key)
+            val = ((slot or {}).get(period) or "").strip()
             if val:
                 filled += 1
+            elif slot is not None:
+                # Tableau HAS this owner and has no number for them — an
+                # undefined rate (0 sales in the window), not a missing owner.
+                # Say so in the cell instead of leaving a blank that reads like
+                # a broken run (see NO_DATA).
+                no_data.append(key.title())
+                val = NO_DATA
             else:
-                # An owner on the tab with no value today: write "" so the
-                # number pasted in from yesterday's column can never sit under
-                # today's date pretending to be fresh.
+                # The owner isn't in the pull AT ALL: write "" so the number
+                # pasted in from yesterday's column can never sit under today's
+                # date pretending to be fresh. This is the case worth chasing.
                 blank.append(key.title())
             cells.append({"range": f"{ws.title}!B{row}", "values": [[val]]})
 
@@ -327,12 +352,14 @@ def write_today(ws, sections: dict, today: dt.date, data: dict, *,
                            if _norm(n) not in sect["rep_rows"]
                            and (slot.get(period) or "").strip())
         summary[period] = {"filled": filled, "unmatched": unmatched,
-                           "blank": sorted(blank), "avg": avg_val}
+                           "blank": sorted(blank), "no_data": sorted(no_data),
+                           "avg": avg_val}
 
     if dry_run:
         for period, s in summary.items():
             logfn(f"  (dry-run) {period}: avg {s['avg'] or '-'}, "
-                  f"{s['filled']} owner cell(s), {len(s['blank'])} blank, "
+                  f"{s['filled']} owner cell(s), "
+                  f"{len(s['no_data'])} '{NO_DATA}', {len(s['blank'])} blank, "
                   f"{len(s['unmatched'])} unmatched")
         return summary
 

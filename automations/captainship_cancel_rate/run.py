@@ -113,13 +113,23 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
     summary = fill.write_today(ws, sections, today, data,
                                dry_run=args.dry_run, logfn=print)
 
-    # An owner who has recent history but no value today STOPPED filling —
+    # An owner MISSING FROM THE PULL who has recent history stopped filling —
     # a dropped view filter or a rename past the alias. Never a silent pass.
+    #
+    # An owner Tableau HAS but has no number for is a different animal: the rate
+    # is undefined (0 sales in the window), the cell now says "No Data", and
+    # there is nothing to chase. write_today separates the two, so only the
+    # genuinely-absent ones reach this guard (Megan 2026-08-15) — which is what
+    # stops Melik El Jaiez, present in the view all along, from being reported
+    # as a drop every morning.
     history = ({} if args.dry_run
                else fill.recent_history(ws, sections))
     went_dark: dict = {}
     expected_blank: dict = {}
+    no_data_all: dict = {}
     for period, s in summary.items():
+        if s.get("no_data"):
+            no_data_all[period] = list(s["no_data"])
         dark = [n for n in s["blank"]
                 if history.get(period, {}).get(fill._norm(n))]
         # A known wind-down going blank is EXPECTED, not a dropped filter —
@@ -133,21 +143,27 @@ def _fill_one(cap, parsed: dict, today: dt.date, args) -> dict:
         extra = ""
         if s["unmatched"]:
             extra += f", {len(s['unmatched'])} not on the tab: {s['unmatched']}"
+        if s.get("no_data"):
+            extra += f", {len(s['no_data'])} '{fill.NO_DATA}'"
         if s["blank"]:
             extra += f", {len(s['blank'])} blank"
         print(f"    {period:>5}: avg {s['avg'] or '-'}, {s['filled']} filled{extra}")
+    for period, names in no_data_all.items():
+        print(f"  · {period}: Tableau has no number for {', '.join(names)} — "
+              f"the rate is undefined (no sales in that window), so the cell "
+              f"says '{fill.NO_DATA}'. Nothing to chase.")
     for period, names in expected_blank.items():
         print(f"  · {period}: blank as expected (winding down, row kept for the "
               f"history): {', '.join(names)}")
     for period, names in went_dark.items():
-        # Informational, not alarming: the row filled every other day and has no
-        # number today. That is usually correct (no sales left in the window),
-        # so the log says what happened without implying a break.
-        print(f"  · {period}: no value today (had recent data): "
-              f"{', '.join(names)} — normal if they've no sales left in that "
-              f"window; worth a look only if it repeats for days.")
+        # This one IS worth a look: the owner has dropped out of the pull
+        # entirely while their recent history is still on the tab.
+        print(f"  · {period}: not in today's pull at all (had recent data): "
+              f"{', '.join(names)} — check the Captain's Bonus Teams filter or "
+              f"an alias if it repeats.")
 
-    return {"summary": summary, "added": added, "went_dark": went_dark}
+    return {"summary": summary, "added": added, "went_dark": went_dark,
+            "no_data": no_data_all}
 
 
 def main(argv=None) -> int:

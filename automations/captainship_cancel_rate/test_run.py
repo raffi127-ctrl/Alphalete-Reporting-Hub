@@ -27,6 +27,7 @@ mini runs Python 3.9.
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import sys
 import types
 import unittest
@@ -53,6 +54,7 @@ if "patchright.sync_api" not in sys.modules:
     sys.modules.setdefault("patchright.sync_api", _pw_api)
 
 from automations.captainship_cancel_rate import captains as C  # noqa: E402
+from automations.captainship_cancel_rate import fill          # noqa: E402
 from automations.captainship_cancel_rate import run as ccr     # noqa: E402
 
 # One fake captain so main() drives exactly one tab and never touches Tableau
@@ -212,6 +214,92 @@ class ExitCodeSemantics(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(wm.called)
         self.assertFalse(mc.called)
+
+
+class NoDataVsMissingFromThePull(unittest.TestCase):
+    """Megan 2026-08-15: "if there's no data on tableau — that's what the report
+    should insert — not leave it blank."
+
+    Verified at the source the same day: Melik El Jaiez IS in the Metrics
+    crosstab under Tony's Team, and his '0-30 day New Internet cancel rate' cell
+    is genuinely EMPTY because it is cancels/sales = 0/0 — undefined, not zero
+    (his '0-30 day new internet sales' column reads 0, and his 30-60 activation
+    reads 90.0%, which is why that section filled).
+
+    So an empty cell has two very different causes and they must not look alike:
+      owner IN the pull, no number  -> write "No Data". Nothing to chase.
+      owner ABSENT from the pull    -> write "". THIS is the drop worth chasing.
+    Writing 0.00% for the first would be a lie that also drags the captainship
+    average down."""
+
+    def _write(self, reps, rows=("Melik El Jaiez", "Tony Chavez")):
+        """Run write_today against a stub worksheet; return (summary, cells)."""
+        sections = {"0-30": {"header_row": 2, "avg_row": 3,
+                             "rep_header_row": 4,
+                             "rep_rows": {fill._norm(n): 5 + i
+                                          for i, n in enumerate(rows)}}}
+        written = {}
+
+        class _WS:
+            title = "Cancel Rate - Tony (ATT Fiber)"
+
+            class spreadsheet:
+                @staticmethod
+                def values_batch_update(body):
+                    for c in body["data"]:
+                        written[c["range"]] = c["values"][0][0]
+
+        fill.write_today(_WS(), sections, dt.date(2026, 8, 15),
+                         {"avg": {"0-30": "7.6%"}, "reps": reps},
+                         logfn=lambda *_a: None)
+        return written
+
+    def test_present_but_empty_writes_no_data(self):
+        written = self._write({"Melik El Jaiez": {"0-30": ""},
+                               "Tony Chavez": {"0-30": "7.7%"}})
+        self.assertEqual(written["Cancel Rate - Tony (ATT Fiber)!B5"],
+                         "No Data",
+                         "Tableau HAS him and has no number — say so")
+        self.assertEqual(written["Cancel Rate - Tony (ATT Fiber)!B6"], "7.7%")
+
+    def test_never_writes_a_zero_for_an_undefined_rate(self):
+        written = self._write({"Melik El Jaiez": {"0-30": ""}})
+        self.assertNotIn(written["Cancel Rate - Tony (ATT Fiber)!B5"],
+                         ("0", "0%", "0.0%", "0.00%"),
+                         "0 cancels / 0 sales is UNDEFINED, not a 0% cancel "
+                         "rate — writing 0 would also drag the avg down")
+
+    def test_absent_from_the_pull_stays_blank(self):
+        written = self._write({"Tony Chavez": {"0-30": "7.7%"}})
+        self.assertEqual(written["Cancel Rate - Tony (ATT Fiber)!B5"], "",
+                         "not in the pull at all -> blank, and THAT is the "
+                         "case the went-dark guard exists for")
+
+    def test_summary_separates_the_two(self):
+        sections = {"0-30": {"header_row": 2, "avg_row": 3,
+                             "rep_header_row": 4,
+                             "rep_rows": {fill._norm("Melik El Jaiez"): 5,
+                                          fill._norm("Ghost Owner"): 6}}}
+        summary = fill.write_today(
+            types.SimpleNamespace(title="t"), sections, dt.date(2026, 8, 15),
+            {"avg": {}, "reps": {"Melik El Jaiez": {"0-30": ""}}},
+            dry_run=True, logfn=lambda *_a: None)
+        self.assertEqual(summary["0-30"]["no_data"], ["Melik El Jaiez"])
+        self.assertEqual(summary["0-30"]["blank"], ["Ghost Owner"])
+
+    def test_no_data_owner_never_reaches_the_went_dark_guard(self):
+        """The whole point: an owner Tableau has is not a drop, so the run stays
+        clean instead of flagging him every morning."""
+        clean = dict(_CLEAN_RESULT)
+        clean["summary"] = {"0-30": {"avg": "7.6%", "filled": 5,
+                                     "blank": [], "no_data": ["Melik El Jaiez"],
+                                     "unmatched": []}}
+        rc, wm, mc = ExitCodeSemantics._run(
+            ExitCodeSemantics("test_clean_run_exits_zero_and_marks_clean"),
+            lambda *a, **k: clean)
+        self.assertEqual(rc, 0)
+        self.assertTrue(mc.called, "a 'No Data' cell is not a finding")
+        self.assertFalse(wm.called)
 
 
 class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
