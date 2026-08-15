@@ -486,6 +486,26 @@ def stale_sanity(expected: dict, territories: list[dict], plan: dict) -> str | N
 
 
 # --- Step 4: apply (live only) ------------------------------------------------
+def _modal_open(page) -> bool:
+    """Is the Edit Layer modal currently covering the page?
+
+    Clicking a territory row either opens that modal or merely zooms the map,
+    which is why a second click existed. But the second click was UNCONDITIONAL,
+    so on the normal path it landed on the row BEHIND the modal the first click
+    had just opened, was intercepted, and timed out after 30s — throwing before
+    a single chip was touched. 2026-08-12: 17 of 17 territories failed exactly
+    this way ("element is visible, enabled and stable" + a modal intercepting
+    pointer events), so the job had been reporting without ever applying."""
+    try:
+        return bool(page.evaluate(
+            "() => [...document.querySelectorAll("
+            "'.modal, [class*=modal], [id*=modal], [id*=Modal]')]"
+            ".some(e => e.offsetParent !== null"
+            " && e.getBoundingClientRect().height > 80)"))
+    except Exception:  # noqa: BLE001 — a probe must never break the edit
+        return False
+
+
 def apply_edit(page, edit: dict, log=_log) -> bool:
     """Open one territory, add/remove chips, Escape, Save, verify. True=verified.
     Conservative: any element we can't confidently find -> False (caller flags)."""
@@ -494,8 +514,14 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
         row = page.get_by_text(name, exact=False).first
         row.click()
         page.wait_for_timeout(2_500)
-        row.click()                          # second click if the first only zoomed
-        page.wait_for_timeout(2_500)
+        if not _modal_open(page):
+            row.click()                      # the first click only zoomed the map
+            page.wait_for_timeout(2_500)
+        if not _modal_open(page):
+            # Fail in ~5s with a real reason instead of burning 30s on a click
+            # the modal was always going to intercept.
+            log(f"  open {name!r}: no Edit Layer modal after two clicks")
+            return False
     except Exception as e:
         log(f"  open {name!r} failed: {e!r}")
         return False

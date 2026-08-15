@@ -107,11 +107,19 @@ Ojo: `document_builder/` y `office_onboarding/` están en la **RAÍZ** del repo,
 bajo `automations/`. Y **cada app tiene su propia cajita de Secrets** — no se
 comparten, así que el mismo cambio va hecho DOS veces.
 
-1. **share.streamlit.io** → iniciar sesión con la cuenta de GitHub dueña de
-   `raffi127-ctrl/Alphalete-Reporting-Hub`. Al 2026-08-14 esa cuenta la controla
-   **Megan**, no Eve, y no acepta login por contraseña (es social/passkey). Si
-   Eve tiene que hacerlo sola, primero hay que agregarla como admin de cada app
-   (**Share** → alphaletereporting@gmail.com).
+1. **Eve entra sola, no hace falta Megan** (comprobado 2026-08-14).
+   **share.streamlit.io** → *Continue with GitHub* → logueada como
+   **`alphaletereporting-ej`**, su propia cuenta. Streamlit hereda los permisos
+   de admin del write access al repo, así que las apps salen igual.
+   - **Su workspace propio aparece VACÍO** ("Create your first app now"). No
+     quiere decir que no tenga acceso: hay que usar el **selector de workspace**
+     —la flechita `⌄` al lado del nombre, arriba a la izquierda— y cambiarse a
+     **`raffi127-ctrl`**. Ahí están las seis apps.
+   - NO intentes entrar como `raffi127-ctrl`: esa cuenta es de Megan y ni
+     siquiera acepta contraseña (es social/passkey).
+   - Si el botón **Authorize streamlit** de GitHub no responde, mirá la URL: si
+     trae `&login=raffi127-ctrl` pegado de un intento anterior, GitHub se traba
+     con el cruce. Arrancá el flujo de cero desde share.streamlit.io.
 2. Abrir la app por su "Main file path" → **⋮ → Settings → Secrets**. (El
    `alphalete-orientation.streamlit.app` del README es un ejemplo, no el link
    real: al 2026-08-14 ese subdominio da "does not exist". El link verdadero es
@@ -135,10 +143,23 @@ aparece un `SMTPAuthenticationError` en pantalla y la copia BCC nunca llega a
 alphaletereporting@ — de este lado no salta ninguna alerta. Distinto de
 "email isn't configured (missing [smtp] secrets)", que es la llave FALTANTE.
 
-**Probarlas:** en el Document Builder, abrir el link con `?admin=1`, entrar con
-el `admin_code` y generar un documento de prueba a tu propia dirección. En
-Office Onboarding, mandarte una invitación de Pay Structure a vos misma. Si los
-dos correos llegan, quedó.
+**El `access_code` y el link real están en la MISMA caja**, arriba de todo
+(`access_code`, `admin_code`, `app_url`). La caja se abre a media altura, hay que
+scrollear para arriba. El `app_url` es el link verdadero de la app.
+
+**Probar sólo el Document Builder.** Abrilo con el `access_code` normal, llená el
+formulario con datos falsos (el logo es OBLIGATORIO, sirve cualquier imagen) y
+poné tu propia dirección. Que el PDF se genere **no prueba nada** —eso andaba
+roto y todo—; la prueba es que llegue el correo con el adjunto.
+
+- **NO uses `?admin=1` para probar.** Ese panel tiene "Send update notice", que
+  le manda un correo a TODOS los ICDs que alguna vez generaron un documento.
+- **NO pruebes Office Onboarding mandando.** Su invitación va al correo del
+  dueño de una oficina REAL (`send_pay_invite(to_addr…)`), no hay forma de
+  probarla sin molestar a alguien. Como comparte el mismo `[smtp]` y el mismo
+  login, si el Document Builder manda, la credencial sirve; alcanza con abrir su
+  caja y comparar a ojo que el renglón `password` sea idéntico.
+- Cada generación deja una fila en la Sheet del log — borrá la fila de prueba.
 
 ## 3. Probar que volvió
 ```

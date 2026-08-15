@@ -36,6 +36,13 @@ TAIL_LINES = 25
 HOLD_STATE = Path(__file__).resolve().parents[2] / "output" / ".vslack_hold_alert"
 HOLD_EXIT = "75"
 
+# One thread PER KIND OF PROBLEM (Eve 2026-08-14). A crash, a wrong-week hold and
+# a sale that landed on nobody's row are three different stories — sharing one
+# thread would bury whichever is not today's. Each repeat replies in its own.
+INC_FAILED = "vantura-sales-failed"
+INC_HOLD = "vantura-sales-week-hold"
+INC_UNKNOWN = "vantura-sales-unknown-poster"
+
 # The run prints: The gold WE cell reads '7.26' but Monday 7/27's sales belong
 # to week '8.2'. Pull the week it wants so the alert can name it.
 WANT_WEEK_RE = re.compile(r"belong to week '([^']+)'")
@@ -191,18 +198,50 @@ def alert_unknown_posters(unknown, scope_ok: bool, hints=None,
     from automations.day_orchestrator import notify
     from automations.day_orchestrator.registry import load_config
 
-    ts = notify._post_corrections(
-        load_config(), None, build_unknown_message(unknown, scope_ok, hints),
-        dry_run=False, tag="vantura_slack_sales-unknown-poster")
+    lines = build_unknown_message(unknown, scope_ok, hints)
+    ts = notify.post_alert(
+        lines[0], lines[1:], tag="vantura_slack_sales-unknown-poster",
+        cfg=load_config(), incident=INC_UNKNOWN)
     print(f"[alert] unknown-poster post {'sent' if ts else 'SKIPPED/failed'}",
           flush=True)
     return bool(ts)
+
+
+def resolve_all(*, dry_run: bool = False) -> None:
+    """A clean EXIT closes the crash and week-hold threads.
+
+    The wrapper only ever called alert.py on a NON-ZERO exit, so these alerts
+    were write-only: the channel heard when the fill broke and never heard when
+    it came back (Eve 2026-08-14). Free when nothing is open.
+
+    Deliberately NOT the unknown-poster thread: a run can exit 0 and still have
+    a sale on nobody's row, so closing that on the exit code would erase a live
+    problem. run.py closes it when the unmatched list is actually empty."""
+    from automations.shared import incident_thread as inc
+    for key, what in ((INC_FAILED, "*{}*".format(REPORT_NAME)),
+                      (INC_HOLD, "*{}* — the week hold cleared".format(REPORT_NAME))):
+        inc.resolve_if_open(key, what=what, dry_run=dry_run)
+
+
+def resolve_unknown(*, dry_run: bool = False) -> bool:
+    """Every sale matched a rep — close the unknown-poster thread."""
+    from automations.shared import incident_thread as inc
+    return inc.resolve_if_open(
+        INC_UNKNOWN,
+        what="*{}* — every sale landed on a rep's row".format(REPORT_NAME),
+        detail="_No unnamed posters this run._", dry_run=dry_run)
 
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     log_path = argv[0] if argv else "(unknown)"
     exit_code = argv[1] if len(argv) > 1 else "?"
+
+    # A clean run closes whatever this module left open and says nothing else —
+    # the wrapper now hands us every exit, not just the bad ones.
+    if str(exit_code) == "0":
+        resolve_all()
+        return 0
 
     today = dt.date.today().isoformat()
     if not should_alert(exit_code, today):
@@ -214,9 +253,10 @@ def main(argv=None) -> int:
     from automations.day_orchestrator.registry import load_config
 
     cfg = load_config()
-    ts = notify._post_corrections(
-        cfg, None, build_message(log_path, exit_code),
-        dry_run=False, tag="vantura_slack_sales-failed")
+    lines = build_message(log_path, exit_code)
+    ts = notify.post_alert(
+        lines[0], lines[1:], tag="vantura_slack_sales-failed", cfg=cfg,
+        incident=(INC_HOLD if str(exit_code) == HOLD_EXIT else INC_FAILED))
     # No channel configured, or Slack refused — say so in the log rather than
     # failing, since this is already the error path.
     print(f"[alert] corrections post {'sent' if ts else 'SKIPPED/failed'}",

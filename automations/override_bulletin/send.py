@@ -249,6 +249,14 @@ def post_slack(png_paths, caption, filenames, channels=None):
 
 CORRECTIONS_CHANNEL = "#claudecorrections-and-requests"
 
+# One thread PER KIND OF GAP (Eve 2026-08-14). A bulletin that can't send three
+# weeks running is one thread with two replies; but "didn't send at all" and
+# "sent, with holes" are different stories and never share a thread — and the DD
+# bulletin's block is not the RCs/NCs board's block.
+INC_DD_BLOCKED = "dd-bulletin-hard-block"
+INC_DD_GAPS = "dd-bulletin-data-gap"
+INC_RCNC_BLOCKED = "rcnc-bulletin-hard-block"
+
 # How many prior weeks decide whether a blank cell is that row's NORMAL state.
 ROUTINE_LOOKBACK = 3
 
@@ -287,13 +295,29 @@ def _week_has_pending_marker(ws, week_label):
         return False
 
 
-def alert_corrections(text):
+def alert_corrections(text, incident=None):
     """Post a data-gap heads-up to #claudecorrections-and-requests (Megan
     2026-07-30: look for all data each week; if something isn't there, notify us
-    in Slack but still send). Best-effort — a failed alert never stops the send."""
+    in Slack but still send). Best-effort — a failed alert never stops the send.
+
+    `incident` is a key PER KIND OF GAP (Eve 2026-08-14): a bulletin blocked
+    three weeks running is one thread with two replies, not three posts — but a
+    hard block and a sent-with-gaps are different stories and keep their own."""
     try:
         from automations.shared import slack_metrics_post as smp
-        smp._client().chat_postMessage(channel=CORRECTIONS_CHANNEL, text=text)
+        posted = None
+        if incident:
+            try:
+                from automations.shared import incident_thread as inc
+                lines = text.split("\n")
+                posted = inc.open_or_followup(key=incident, title=lines[0],
+                                              body=lines[1:],
+                                              channel=CORRECTIONS_CHANNEL)
+            except Exception as e:  # noqa: BLE001 — fall back to a plain post
+                print("⚠ incident thread unavailable ({}: {})".format(
+                    type(e).__name__, str(e)[:80]))
+        if not posted:
+            smp._client().chat_postMessage(channel=CORRECTIONS_CHANNEL, text=text)
         print("posted data-gap alert to {}".format(CORRECTIONS_CHANNEL))
         return True
     except Exception as e:  # noqa: BLE001
@@ -408,7 +432,7 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
     hard = d.get("hard_block") or []
     if hard and do_send:
         alert_corrections("⛔ DD Bulletin NOT SENT WE {} — {}".format(
-            week_label, hard[0]))
+            week_label, hard[0]), incident=INC_DD_BLOCKED)
         print("\n⛔ HARD BLOCK — NOT SENDING ({} problem(s)):".format(len(hard)))
         for h in hard:
             print("   {}".format(h))
@@ -421,7 +445,7 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
                     "re-send to fold it in once it posts")
     if do_send and notify and gaps:
         alert_corrections("⚠ DD Bulletin WE {} sent with data gap(s):\n• {}".format(
-            week_label, "\n• ".join(gaps[:10])))
+            week_label, "\n• ".join(gaps[:10])), incident=INC_DD_GAPS)
 
     # A blocking problem means a figure ON THE PAGE is wrong, not just short.
     # In NOTIFY (go-live) mode we alert and send anyway (above); otherwise the
@@ -462,7 +486,34 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
     if do_send and not to:                 # a custom `to` is a one-off — don't
         mark_sent(week_label, state_path)  # burn the week's send-state on it
     result["published"] = True
+    # It went out. Close a block/gap thread from an earlier week so the channel
+    # records the recovery, not just the failure (Eve 2026-08-14). No gaps this
+    # week is what closes the gap thread — sending WITH gaps already replied in
+    # it above, so the two can't contradict each other.
+    if do_send:
+        _close_gap_incidents(week_label, gaps_this_week=bool(gaps))
     return result
+
+
+def _close_gap_incidents(week_label, *, gaps_this_week, rcnc=False):
+    """Close the data-gap / hard-block threads once a bulletin sends clean."""
+    try:
+        from automations.shared import incident_thread as inc
+        detail = "_WE {} went out.".format(week_label)
+        if rcnc:
+            inc.resolve_if_open(INC_RCNC_BLOCKED, what="*RCs/NCs board*",
+                                detail=detail + "_",
+                                channel=CORRECTIONS_CHANNEL)
+            return
+        inc.resolve_if_open(INC_DD_BLOCKED, what="*DD Bulletin*",
+                            detail=detail + "_", channel=CORRECTIONS_CHANNEL)
+        if not gaps_this_week:
+            inc.resolve_if_open(INC_DD_GAPS, what="*DD Bulletin data gaps*",
+                                detail=detail + " Every source was in._",
+                                channel=CORRECTIONS_CHANNEL)
+    except Exception as e:  # noqa: BLE001 — never let this touch the send
+        print("⚠ couldn't close the gap thread(s) ({}: {})".format(
+            type(e).__name__, str(e)[:80]))
 
 
 def send_rcs_ncs(*, do_send=False, preview=False, test=False, force=False,
@@ -509,7 +560,8 @@ def send_rcs_ncs(*, do_send=False, preview=False, test=False, force=False,
     # A wrong/empty DD week means the board's wire figures are wrong too — never
     # send it, alert instead (same guarantee as the DD bulletin).
     if hard and do_send:
-        alert_corrections("⛔ RCs/NCs NOT SENT WE {} — {}".format(week_label, hard[0]))
+        alert_corrections("⛔ RCs/NCs NOT SENT WE {} — {}".format(week_label, hard[0]),
+                          incident=INC_RCNC_BLOCKED)
         print("⛔ HARD BLOCK — NOT SENDING: {}".format(hard[0]))
         return {"published": False, "reason": "hard block", "week": week_label}
     if missing and do_send:
@@ -526,6 +578,8 @@ def send_rcs_ncs(*, do_send=False, preview=False, test=False, force=False,
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send and not to:
         mark_sent(week_label, state)
+    if do_send:
+        _close_gap_incidents(week_label, gaps_this_week=False, rcnc=True)
     return {"published": True, "week": week_label, "png": str(png), "to": to_addrs}
 
 

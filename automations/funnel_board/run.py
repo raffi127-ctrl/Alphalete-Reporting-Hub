@@ -300,6 +300,10 @@ def main():
     drift = guard.check(S, API, log)
     if drift:
         guard.ping(drift, log, dry_run=a.dry_run)
+    else:
+        # Clean — close an open drift thread so the channel says when the
+        # hand-editing STOPPED, not only when it started (Eve 2026-08-14).
+        guard.resolved(log, dry_run=a.dry_run)
 
     fresh, failed = {}, []
     # headless=True trips a Cloudflare re-challenge on the rcaptain login;

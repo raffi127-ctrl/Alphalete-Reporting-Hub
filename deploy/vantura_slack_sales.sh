@@ -89,8 +89,9 @@ fi
 # too: Monday's 4:00pm pass is the one that matters, since it leaves an hour to
 # get the new week's board up before the 5:00pm pass fills it.
 # alert.py decides whether to actually post (a hold is deduped to once a day, a
-# failure always posts), so the wrapper just hands it every non-zero exit.
-if [ "$ST" -ne 0 ]; then
-    "$VENV_PY" -m automations.vantura_slack_sales.alert "$LOG_FILE" "$ST" >> "$LOG_FILE" 2>&1 || true
-fi
+# failure always posts), so the wrapper just hands it EVERY exit — including 0.
+# A clean run is what closes the open alert thread with a ✅ (Eve 2026-08-14);
+# before this the channel only ever heard that the fill broke, never that it
+# came back, so the last word on it was always bad news.
+"$VENV_PY" -m automations.vantura_slack_sales.alert "$LOG_FILE" "$ST" >> "$LOG_FILE" 2>&1 || true
 exit 0

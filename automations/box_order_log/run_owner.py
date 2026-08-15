@@ -332,8 +332,16 @@ def main(argv: Optional[list] = None) -> int:
                         export_newest, (today - export_newest).days)
                 else:
                     detail = "no dated sales at all"
-                sda.alert(report_id="box-order-log-{}".format(cfg.key),
-                          failed=[detail], kind="capped", day=today)
+                # Shared report_id = shared incident thread: this office joins
+                # Carlos's/the other owner's alert instead of opening its own
+                # (Eve 2026-08-14 — "un solo mensaje, y adentro qué oficinas
+                # fallaron"). The office name and its own re-run command move
+                # INTO the line, because the headline is now family-level and
+                # can't name either. See run.py's twin comment.
+                sda.alert(report_id="box-order-log",
+                          failed=["{} — {} · re-run `box_order_log_{}`".format(
+                              cfg.display, detail, cfg.key)],
+                          kind="capped", day=today)
             except Exception:
                 pass
         return 3
