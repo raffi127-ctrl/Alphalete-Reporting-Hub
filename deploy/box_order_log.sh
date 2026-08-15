@@ -45,7 +45,9 @@ MARKER="$MARKER_DIR/.box-order-log-posted-$(date +%Y-%m-%d)"
 # Scopes, deliberately different:
 #   --sheet  merges the rolling SIX-WEEK log into the Vantura board
 #   --xlsx   writes the day's FULL pull to output/, one tab per rep
-#   --post   the single daily thread in #alphalete-gp-sales
+#   --post   the single daily thread — posted in BOTH #alphalete-gp-sales and
+#            #a-players-b2b (run.TARGETS), each channel its own thread. The
+#            marker below still means "the day is done", covering both.
 if [ -f "$MARKER" ]; then
     MODE="--sheet"                      # already posted today: sheet only
 else
