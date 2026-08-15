@@ -565,6 +565,46 @@ def send_reviewed(today: dt.date, verbose: bool = True) -> int:
 # --------------------------------------------------------------------------
 # 5. the deadline
 # --------------------------------------------------------------------------
+def _alert_deadline_failure(day: dt.date, what: str, detail: str = "") -> None:
+    """Tell #claudecorrections-and-requests that the DEADLINE path failed.
+
+    WHY THIS EXISTS (2026-08-15). The 4am orchestrator alerts on its own failed
+    reports, but the 10:00 deadline runs from deploy/captainship_review.sh — a
+    standalone 15-minute agent the orchestrator knows nothing about. On
+    2026-08-15 its build failed at 12:01 and its review post at 12:03; the Hub
+    card went red, the reports never went up for review, and the channel was
+    never told. Megan's standing rule is that every fail reaches that channel in
+    real time, so this path needs its own voice.
+
+    ONE THREAD PER DAY (incident key carries the date): the agent ticks every 15
+    minutes, and a still-broken day must not repost — it replies under the first
+    message instead. Best-effort: an alert must never sink the tick.
+    """
+    try:
+        from automations.day_orchestrator import notify
+        lines = [
+            f"Reports for {day.month}/{day.day} are NOT up for review — {what}.",
+            "",
+            "*What this means:* nothing was posted to #revision-emails, so "
+            "there is nothing for Evelyn to ✅ and the 12 captain reports have "
+            "not gone out.",
+        ]
+        if detail:
+            lines += ["", detail]
+        lines += [
+            "",
+            "*To fix it now:* `lucy rerun captainship_drafts` (rebuilds the 12 "
+            "previews), then `lucy rerun captainship_drafts_review` (posts the "
+            "PDF for approval). The agent also retries on its own every 15 min "
+            "until 8pm.",
+        ]
+        notify.post_alert("✉️ *Captainship Reports — deadline path failed*",
+                          lines, tag="captainship-deadline",
+                          incident=f"captainship-deadline-{day.isoformat()}")
+    except Exception as e:  # noqa: BLE001 — an alert must never break the tick
+        print(f"  (corrections alert skipped: {e})", flush=True)
+
+
 def ensure_posted(today: dt.date, channel: Optional[str] = None,
                   verbose: bool = True) -> int:
     """THE 11:00 DEADLINE (Eve, 2026-08-04: "necesito que estos drafts se armen
@@ -613,18 +653,45 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
         if rc != 0:
             print(f"✗ the deadline build failed (exit {rc}) — nothing posted. "
                   f"The next tick tries again.", flush=True)
+            _alert_deadline_failure(
+                today,
+                f"the deadline build exited {rc} — nothing was posted",
+                "This ran from the review agent (deploy/captainship_review.sh), "
+                "NOT the 4am orchestrator, so the orchestrator's own failure "
+                "alert never covers it.")
             return rc
         have = preview_htmls(today)
         if not have:
             print("✗ the build reported success but wrote no previews — "
                   "nothing to post.", flush=True)
+            _alert_deadline_failure(
+                today,
+                "the deadline build exited 0 but wrote no previews — nothing "
+                "to post",
+                "Check output/ for captainship_draft_*_{}.html.".format(
+                    today.strftime("%Y%m%d")))
             return 1
     else:
         if verbose:
             print(f"— {len(have)} preview(s) already on disk, never posted: "
                   f"posting them (deadline)", flush=True)
-    post_review(upload_pdf(build_pdf(today), description=eml_digest(today)),
-                today, channel)
+    # The previews exist; only the print → Drive → Slack leg is left. It is also
+    # the leg that fails on a flaky network (2026-08-15: SSL handshake timeouts
+    # to Slack), and a traceback here used to be the whole story — the agent
+    # exited, the next tick tried again, and nobody was told on the day it never
+    # recovered. Alert, then return non-zero so the tick is honestly a failure.
+    try:
+        post_review(upload_pdf(build_pdf(today), description=eml_digest(today)),
+                    today, channel)
+    except Exception as e:  # noqa: BLE001 — report it, don't swallow it silently
+        print(f"✗ the deadline post failed: {type(e).__name__}: {e}", flush=True)
+        _alert_deadline_failure(
+            today,
+            f"the previews are built but posting them failed "
+            f"({type(e).__name__})",
+            f"Error: {str(e)[:300]}\nThe previews are already on disk, so the "
+            f"fix is just the post: `lucy rerun captainship_drafts_review`.")
+        return 1
     return 0
 
 

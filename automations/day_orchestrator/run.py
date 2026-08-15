@@ -386,6 +386,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                 # became ready would strand the retry all morning.
                 _retry_incomplete_parts(ds, todays, target,
                                         dry_run=dry_run, simulate=args.simulate)
+                # The stragglers we just gave up on are terminal MISSED — alert
+                # on them like any other terminal failure. This sweep only ran
+                # at the END OF A PASS, and the backstop breaks out of the loop
+                # instead of taking another pass, so a report that died HERE
+                # went to the channel not at all: 2026-08-15 captainship_drafts
+                # + captainship_drafts_review were marked MISSED at 12:03 and
+                # #claudecorrections never heard about it — the day's only
+                # alerts were the three that failed DURING a pass. Runs after
+                # the last-shot retry so one that recovered doesn't cry wolf.
+                _alert_new_failures(cfg, ds, {r.report_id: r for r in todays},
+                                    channel, email_dry)
                 # A last-shot retry that recovered still owes the channel the
                 # correction — resolve before the day is finalized.
                 _resolve_failure_alerts(cfg, ds, email_dry)
