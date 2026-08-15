@@ -36,11 +36,18 @@ CROSSTAB_SHEET = "Order Log"
 
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 
-# Carlos 2026-08-15: the BOX Order Log thread belongs in BOTH of his rooms, not
-# just the sales channel — he'd assumed it already was in both, and Evelyn
-# confirmed it wasn't. Each channel gets its own parent + replies (a Slack
-# thread can't span channels). Same two rooms, same ids, as the Sales Boards
-# thread that already posts to the pair (sales_boards/run.py TARGETS).
+# Where the thread posts. Each entry gets its own parent + replies (a Slack
+# thread can't span channels). Same two rooms as the Sales Boards thread
+# (sales_boards/run.py TARGETS), and Lucy is a member of both.
+#
+# #a-players-b2b is NEW as of 2026-08-15, not a restoration. Carlos said the
+# order log "is currently posted on Alphalete GP sales and A Players B2B" — it
+# never had been: Evelyn couldn't find it, nothing in this repo had ever pointed
+# the order log at that channel, and the only Lucy posts in that room were the
+# Vantura Production boards, the tracker screenshots, dispositions and
+# b2b_metrics (he was remembering the Box TRACKER images). Megan took the
+# question back to him and he asked for the whole thread there too, so this is
+# what he wants, not what he assumed he already had.
 TARGETS = [
     ("#alphalete-gp-sales", "C07J46MQNUX"),
     ("#a-players-b2b", "C0AJQA8P716"),
@@ -51,7 +58,11 @@ TARGETS = [
 # 2026-07-19). Defined once and reused as the reply captions so the header and
 # the attachments can never drift apart.
 WORKBOOK_LINE = "\U0001F4E6 Overall log + a tab per rep"
-PAYOUT_LINE = "\U0001F4B5 Accepted by supplier — last week & this week"
+# Megan 2026-08-15: the trailing "— last week & this week" came off to clean the
+# header up. Each line is just the name of the thing now; the images say the
+# rest. (The OWNER EMAIL keeps its own longer wording — that copy is separately
+# Megan-approved and doesn't read from here.)
+PAYOUT_LINE = "\U0001F4B5 Accepted by supplier"
 # Third attachment (Carlos 2026-08-15): the Box Tier Bonus - Rep Level board.
 # The line itself lives in tier_bonus.py, next to the capture it describes.
 

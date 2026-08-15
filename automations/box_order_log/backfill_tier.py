@@ -28,7 +28,31 @@ from pathlib import Path
 from typing import Optional
 
 from . import tier_bonus
-from .run import CHANNEL, OUTPUT_DIR
+from .run import CHANNEL, OUTPUT_DIR, PAYOUT_LINE, WORKBOOK_LINE
+
+# The attachment lines, in thread order. Rebuilding the header from these is
+# what lets this script fix WORDING too, not just add a missing line — Megan
+# trimmed every line's trailing description on 2026-08-15 and the already-posted
+# header needed to match. A line is recognised by its leading emoji, so an
+# edited caption still replaces its old version instead of stacking beside it.
+ATTACHMENT_LINES = [WORKBOOK_LINE, PAYOUT_LINE, tier_bonus.TIER_LINE]
+
+
+def canonical_header(existing: str, day: dt.date, with_tier: bool = True) -> str:
+    """The header this thread SHOULD have: its title, the attachment lines as
+    currently worded, then anything else that was in it (a --note, say).
+
+    Extra lines are preserved because they're someone's words; only the
+    attachment lines are ours to rewrite.
+    """
+    lines = (existing or "").split("\n")
+    title = lines[0] if lines and lines[0].strip() else "*{}*".format(
+        header_title(day))
+    leaders = tuple(ln.split(" ")[0] for ln in ATTACHMENT_LINES)
+    extras = [ln for ln in lines[1:]
+              if ln.strip() and not ln.startswith(leaders)]
+    keep = ATTACHMENT_LINES if with_tier else ATTACHMENT_LINES[:-1]
+    return "\n".join([title] + list(keep) + extras)
 
 
 def header_title(day: dt.date) -> str:
@@ -100,10 +124,11 @@ def main(argv: Optional[list] = None) -> int:
     print("Found today's thread: ts={}".format(ts))
 
     have_board = already_in_thread(client, args.channel, ts)
-    needs_line = tier_bonus.BOARD_NAME not in text
+    new_text = canonical_header(text, day)
+    needs_header = new_text.strip() != text.strip()
     print("  board already in thread : {}".format("yes" if have_board else "no"))
-    print("  header lists the board  : {}".format("no" if needs_line else "yes"))
-    if have_board and not needs_line:
+    print("  header already correct  : {}".format("no" if needs_header else "yes"))
+    if have_board and not needs_header:
         print("\n✅ Nothing to do — the thread already has the board and says so.")
         return 0
 
@@ -114,14 +139,13 @@ def main(argv: Optional[list] = None) -> int:
         if warning:
             print("  ⚠ {}".format(warning))
 
-    new_text = text.rstrip() + "\n" + tier_bonus.TIER_LINE if needs_line else text
     if not args.post:
         print("\n  DRY RUN — nothing sent. Would:")
         if not have_board:
             print("    • reply with {}".format(img))
             print("      caption: {}".format(tier_bonus.TIER_LINE))
-        if needs_line:
-            print("    • edit the header to:\n      "
+        if needs_header:
+            print("    • rewrite the header to:\n      "
                   + new_text.replace("\n", "\n      "))
         print("\n  re-run with --post")
         return 0

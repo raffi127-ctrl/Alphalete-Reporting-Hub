@@ -46,7 +46,9 @@ DEFAULT_OWNER = "Carlos Hidalgo"
 # board's name is Megan's exact wording (2026-08-15) — Carlos asked for it by
 # that name, so the thread, the file and the Hub card all say it the same way.
 BOARD_NAME = "Box Tier Bonus Rep Level"
-TIER_LINE = "\U0001F3C6 {} — where each rep lands this week".format(BOARD_NAME)
+# Just the board's name — Megan trimmed the trailing description off every line
+# in the header on 2026-08-15 (see run.py's PAYOUT_LINE).
+TIER_LINE = "\U0001F3C6 {}".format(BOARD_NAME)
 
 # Measured on the live board 2026-08-15 (see the module docstring): the export
 # canvas is 1600px tall and the rep table's scroll region ends ~1490px down.
