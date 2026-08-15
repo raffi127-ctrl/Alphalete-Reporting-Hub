@@ -5304,7 +5304,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📦",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "Carlos's B2B counterpart to Raf's Fiber order log — keeps a rolling 6-week log on the Vantura Master Sales Board and posts the daily workbook + payout image to #alphalete-gp-sales.",
+        "description": "Carlos's B2B counterpart to Raf's Fiber order log — keeps a rolling 6-week log on the Vantura Master Sales Board and posts the daily workbook + payout image + Box Tier Bonus Rep Level board to #alphalete-gp-sales AND #a-players-b2b.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Pulls Carlos's **Box Order Log** Tableau view and collapses "
@@ -5312,8 +5312,12 @@ AUTOMATED_REPORTS = [
             "sale, so a single deal shows up 3-4 times as it moves.\n"
             "**•** Updates the **Lucy Box Order Log** tab on the Vantura "
             "Master Sales Board.\n"
-            "**•** Posts one dated thread to **#alphalete-gp-sales** with the "
-            "workbook and a payout image showing last week and this week.\n\n"
+            "**•** Posts one dated thread to **#alphalete-gp-sales** AND "
+            "**#a-players-b2b** — each channel gets its own thread — carrying "
+            "the workbook, a payout image showing last week and this week, "
+            "and the **Box Tier Bonus Rep Level** board from Tableau, which "
+            "shows where each of Carlos's reps lands on the tier ladder this "
+            "week (Carlos, 2026-08-15).\n\n"
             "EMAILED COPIES (per owner)\n"
             "**•** **Roshan Amin Ahmad** and **Abel Draper** each get their "
             "**own office's** BOX order log **by email** (not Slack) — their "
@@ -5334,7 +5338,14 @@ AUTOMATED_REPORTS = [
             "view only reaches back ~44 days, so a straight rewrite would "
             "silently drop the oldest week.\n"
             "**•** Refuses to run if the pull comes back empty, rather than "
-            "blanking the tab."
+            "blanking the tab.\n"
+            "**•** The **Box Tier Bonus Rep Level** board is sliced to "
+            "Carlos's office, which is also what keeps it to one readable "
+            "image — the full board (every office) is too tall and Tableau "
+            "cuts it off mid-row. If his office ever outgrows one image, or "
+            "the board can't be captured, or it posts to only one of the two "
+            "channels, the log still goes out and the gap is flagged to "
+            "**#claudecorrections-and-requests** instead of passing quietly."
         ),
         # Deep-links to the 'Lucy Box Order Log' tab this run writes to.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"

@@ -36,18 +36,43 @@ CROSSTAB_SHEET = "Order Log"
 
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 
+# Carlos 2026-08-15: the BOX Order Log thread belongs in BOTH of his rooms, not
+# just the sales channel — he'd assumed it already was in both, and Evelyn
+# confirmed it wasn't. Each channel gets its own parent + replies (a Slack
+# thread can't span channels). Same two rooms, same ids, as the Sales Boards
+# thread that already posts to the pair (sales_boards/run.py TARGETS).
+TARGETS = [
+    ("#alphalete-gp-sales", "C07J46MQNUX"),
+    ("#a-players-b2b", "C0AJQA8P716"),
+]
+
 # The parent message lists what's in the thread, one emoji-led line per
 # attachment, matching the other Lucy threads in this channel (Megan
 # 2026-07-19). Defined once and reused as the reply captions so the header and
 # the attachments can never drift apart.
 WORKBOOK_LINE = "\U0001F4E6 Overall log + a tab per rep"
 PAYOUT_LINE = "\U0001F4B5 Accepted by supplier — last week & this week"
+# Third attachment (Carlos 2026-08-15): the Box Tier Bonus - Rep Level board.
+# The line itself lives in tier_bonus.py, next to the capture it describes.
 
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
 def _pull(dest: Path, verbose: bool = True, view_url: str = "",
-          crosstab_sheet: str = "", today: Optional[dt.date] = None) -> Path:
+          crosstab_sheet: str = "", today: Optional[dt.date] = None,
+          tier_owner: str = "", tier_dest: Optional[Path] = None):
+    """Download the order-log crosstab. Returns (csv_path, tier_png, tier_note).
+
+    tier_png is None when the board couldn't be captured, and tier_note then
+    carries the reason; when tier_png IS set, a non-empty tier_note is a
+    clipping warning about the image (both are surfaced, never swallowed).
+
+    When `tier_owner` is set the Box Tier Bonus board is captured in the SAME
+    browser session, right after the crosstab — a second session would mean a
+    second Chrome launch and a second SSO round-trip for one screenshot. The
+    tier capture never breaks the pull: a flake there comes back as a message
+    and the log still posts (see tier_bonus.capture_quietly).
+    """
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
     from . import window
@@ -58,9 +83,51 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
     start, end = window.default_window(today)
     hook = window.date_window_hook(start, end, verbose=verbose)
     with tableau_session(verbose=verbose) as page:
-        return download_crosstab_patchright(
+        out = download_crosstab_patchright(
             view_url or VIEW_URL, crosstab_sheet or CROSSTAB_SHEET, dest,
             verbose=verbose, page=page, pre_export=hook)
+        tier_png, tier_note = None, ""
+        if tier_owner and tier_dest is not None:
+            from . import tier_bonus
+            if verbose:
+                print("\n-> Box Tier Bonus board for {}".format(tier_owner),
+                      flush=True)
+            tier_png, tier_note = tier_bonus.capture_quietly(
+                tier_dest, tier_owner, page=page, day=today, verbose=verbose)
+        return out, tier_png, tier_note
+
+
+def _post_thread(client, channel: str, text: str, xlsx_path: Path,
+                 payout_path: Path, tier_path: Optional[Path],
+                 tier_line: str) -> str:
+    """Post one dated thread — parent, then its attachments — and return its ts.
+
+    One call per destination: Slack threads don't span channels, so Carlos's two
+    rooms each get their own parent and their own replies.
+    """
+    ts = client.chat_postMessage(channel=channel, text=text)["ts"]
+    # Workbook first — the overall log plus a tab per rep plus the payout grid.
+    # Then the payout image, which Slack renders inline so the numbers are
+    # readable without opening anything. Same pairing as the Fiber post. Last
+    # the tier board, so the thread reads log -> pay -> where each rep sits on
+    # the ladder; it goes in only when we have it, matching the header.
+    client.files_upload_v2(
+        channel=channel, thread_ts=ts, file=str(xlsx_path),
+        filename=xlsx_path.name, title=xlsx_path.stem,
+        initial_comment=WORKBOOK_LINE,
+    )
+    client.files_upload_v2(
+        channel=channel, thread_ts=ts, file=str(payout_path),
+        filename=payout_path.name, title=payout_path.stem,
+        initial_comment=PAYOUT_LINE,
+    )
+    if tier_path:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(tier_path),
+            filename=tier_path.name, title=tier_path.stem,
+            initial_comment=tier_line,
+        )
+    return ts
 
 
 def _describe(sales, stats) -> str:
@@ -98,6 +165,7 @@ def _describe(sales, stats) -> str:
 
 
 def main(argv: Optional[list] = None) -> int:
+    from . import tier_bonus          # names the default owner in --help
     ap = argparse.ArgumentParser(description="BOX Order Log -> #alphalete-gp-sales")
     ap.add_argument("--sheet", action="store_true",
                     help="write the Lucy Box Order Log tab on the Vantura "
@@ -146,11 +214,32 @@ def main(argv: Optional[list] = None) -> int:
                     help="override the Slack channel id to post the thread to")
     ap.add_argument("--channel-name", metavar="#name",
                     help="display name for --channel (logs + preview text)")
+    # --- Box Tier Bonus board (Carlos 2026-08-15) ------------------------
+    ap.add_argument("--tier-owner", metavar="NAME",
+                    help="Owner Name to slice the Box Tier Bonus - Rep Level "
+                         "board to. Defaults to {} on Carlos's standalone run; "
+                         "a per-office run (--owner-office) has NO default and "
+                         "skips the board unless this names that office's owner "
+                         "— posting Carlos's tier board to another office's "
+                         "channel would be worse than posting none.".format(
+                             tier_bonus.DEFAULT_OWNER))
+    ap.add_argument("--no-tier", action="store_true",
+                    help="leave the Box Tier Bonus board out of the thread")
     args = ap.parse_args(argv)
 
-    # Resolve the post destination once (override or Carlos's default channel).
-    chan_id = args.channel or CHANNEL[1]
-    chan_name = args.channel_name or (args.channel and args.channel) or CHANNEL[0]
+    # Carlos's run (no --owner-office) gets the board by default; every other
+    # office must name its own owner. See --tier-owner above.
+    tier_owner = "" if args.no_tier else (
+        args.tier_owner or ("" if args.owner_office else tier_bonus.DEFAULT_OWNER))
+
+    # Resolve the post destinations once. A --channel override (per-office runs)
+    # means EXACTLY that one channel; Carlos's own run posts to both of his.
+    if args.channel:
+        targets = [(args.channel_name or args.channel, args.channel)]
+    else:
+        targets = list(TARGETS)
+    chan_id = targets[0][1]
+    chan_name = " + ".join(name for name, _ in targets)
 
     verbose = not args.quiet
     today = dt.date.today()
@@ -174,17 +263,26 @@ def main(argv: Optional[list] = None) -> int:
 
     from . import clean, render
 
-    # ---- 1. get the crosstab -------------------------------------------
+    # ---- 1. get the crosstab (+ the tier board, same session) -----------
+    tier_png, tier_note = None, ""
     if args.from_file:
         src = Path(args.from_file)
         if not src.exists():
             print("✗ no such file: {}".format(src), file=sys.stderr)
             return 2
+        if tier_owner:
+            # --from-file skips the pull, so there's no open session to ride;
+            # the board still gets captured (it's live data either way), just
+            # in a session of its own.
+            tier_png, tier_note = tier_bonus.capture_quietly(
+                OUTPUT_DIR, tier_owner, day=today, verbose=verbose)
     else:
         src = OUTPUT_DIR / "box_order_log_{}.csv".format(today.isoformat())
         try:
-            _pull(src, verbose=verbose, view_url=(args.view_url or ""),
-                  crosstab_sheet=(args.crosstab_sheet or ""), today=today)
+            _, tier_png, tier_note = _pull(
+                src, verbose=verbose, view_url=(args.view_url or ""),
+                crosstab_sheet=(args.crosstab_sheet or ""), today=today,
+                tier_owner=tier_owner, tier_dest=OUTPUT_DIR)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
@@ -310,14 +408,25 @@ def main(argv: Optional[list] = None) -> int:
             print("  PDF: {}".format(out_pdf))
 
     # ---- 7. optional Slack post -----------------------------------------
-    header = "*BOX Order Log — {}*\n{}\n{}".format(
-        today.strftime("%B %d, %Y"), WORKBOOK_LINE, PAYOUT_LINE)
+    # The header lists exactly what's in the thread — so the tier line goes in
+    # only when the board is actually in hand. A capture that failed is called
+    # out below instead of being quietly left off.
+    attach_lines = [WORKBOOK_LINE, PAYOUT_LINE]
+    if tier_png:
+        attach_lines.append(tier_bonus.TIER_LINE)
+    header = "*BOX Order Log — {}*\n{}".format(
+        today.strftime("%B %d, %Y"), "\n".join(attach_lines))
     if not args.post:
         _report_to_hub(started_at, verbose)
         if verbose:
             print("\n  Not posted to Slack. To post the PDF to {}:".format(
                 chan_name))
             print("    header : {}".format(header))
+            if tier_png:
+                print("    tier   : {}{}".format(
+                    tier_png, "  ⚠ " + tier_note if tier_note else ""))
+            elif tier_owner:
+                print("    tier   : NOT captured — {}".format(tier_note))
             print("    re-run with --post")
         return 0
 
@@ -362,14 +471,16 @@ def main(argv: Optional[list] = None) -> int:
         return 1
 
     os.environ["METRICS_CHANNEL_ID"] = chan_id
+    # Each channel is a thread of its own: parent, then workbook, payout and the
+    # tier board as replies. A DM preview collapses to a single destination.
+    posts = list(targets)
     try:
         client = smp._client()
-        target, where = chan_id, chan_name
         text = header
         if args.dm:
             users = ",".join(u.strip() for u in args.dm.split(",") if u.strip())
-            target = client.conversations_open(users=users)["channel"]["id"]
-            where = "DM to {}".format(users)
+            posts = [("DM to {}".format(users),
+                      client.conversations_open(users=users)["channel"]["id"])]
             # Say plainly that this is a preview — a DM that looks exactly
             # like the real post is otherwise easy to mistake for the feed
             # having already gone live.
@@ -378,27 +489,67 @@ def main(argv: Optional[list] = None) -> int:
                     "channel._".format(chan_name))
         if args.note:
             text = text + "\n" + args.note
-        resp = client.chat_postMessage(channel=target, text=text)
-        ts = resp["ts"]
-        # Workbook first — the overall log plus a tab per rep plus the payout
-        # grid. Then the image, which Slack renders inline so the numbers are
-        # readable without opening anything. Same pairing as the Fiber post.
-        client.files_upload_v2(
-            channel=target, thread_ts=ts, file=str(out_xlsx),
-            filename=out_xlsx.name, title=out_xlsx.stem,
-            initial_comment=WORKBOOK_LINE,
-        )
-        client.files_upload_v2(
-            channel=target, thread_ts=ts, file=str(out_png),
-            filename=out_png.name, title=out_png.stem,
-            initial_comment=PAYOUT_LINE,
-        )
+        posted, failed_channels = [], []
+        for name, target in posts:
+            # Per-channel try/except on purpose: aborting the loop after channel
+            # one posted would leave a live thread AND a non-zero exit, and the
+            # 8:30 fallback would then post that channel a SECOND time. So a
+            # channel that fails is recorded and the rest still go out.
+            try:
+                _post_thread(client, target, text, out_xlsx, out_png, tier_png,
+                             tier_bonus.TIER_LINE)
+            except Exception as exc:                      # noqa: BLE001
+                failed_channels.append("{} — {}: {}".format(
+                    name, type(exc).__name__,
+                    str(exc).splitlines()[0][:160]))
+                print("  ✗ post to {} failed: {}".format(name, exc),
+                      file=sys.stderr, flush=True)
+                continue
+            posted.append(name)
+            if verbose:
+                print("  posted to {}".format(name), flush=True)
+        where = " + ".join(posted) if posted else "nowhere"
     except Exception as exc:
         print("✗ Slack post failed: {}".format(exc), file=sys.stderr)
         traceback.print_exc()
         return 1
 
+    if not posted:
+        print("✗ the thread posted to NO channel — {}".format(
+            "; ".join(failed_channels)), file=sys.stderr)
+        return 1
+    if failed_channels:
+        # Live in one room, missing from another: looks completely fine to
+        # anyone reading the channel that DID get it. Say so where dropped
+        # sections get read, and don't let the alert break the run.
+        print("  ⚠ did NOT post to: {}".format("; ".join(failed_channels)),
+              file=sys.stderr, flush=True)
+        try:
+            from automations.shared import section_drop_alert as sda
+            sda.alert(report_id="box-order-log", failed=failed_channels,
+                      kind="section", day=today)
+        except Exception:
+            pass
     print("\n✅ Posted to {}".format(where))
+    # Two ways the tier board can leave the thread short of the truth: it wasn't
+    # captured at all, or it was captured clipped (reps cut off the bottom).
+    # Both look FINE in the channel — the log and payout are right there — so
+    # neither can be left to a log line nobody reads. Never breaks the run.
+    if tier_owner and tier_note:
+        if tier_png:
+            trouble = "the Box Tier Bonus board may be CUT OFF — {}".format(tier_note)
+        else:
+            trouble = "posted WITHOUT the Box Tier Bonus board — {}".format(tier_note)
+        print("  ⚠ {}".format(trouble), file=sys.stderr, flush=True)
+        if not args.dm:
+            try:
+                from automations.shared import section_drop_alert as sda
+                sda.alert(report_id="box-order-log",
+                          failed=["Box Tier Bonus - Rep Level ({}) — {}".format(
+                              tier_owner, tier_note)],
+                          kind="section", day=today)
+            except Exception:
+                pass
     _report_to_hub(started_at, verbose)
     return 0
 
