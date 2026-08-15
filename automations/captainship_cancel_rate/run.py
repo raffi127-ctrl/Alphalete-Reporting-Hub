@@ -238,15 +238,33 @@ def main(argv=None) -> int:
     if not args.dry_run and args.only is None:
         _write_manifest(failed, went_dark_all, args, shape_warning)
 
+    # EXIT-CODE CONTRACT (Megan 2026-08-15 — same class as owners_metrics_churn
+    # e568bf9 and vantura_board_audit 8fa4e2e). The day-orchestrator reads ANY
+    # non-zero exit as a hard FAILED page and fires the immediate failure email,
+    # short-circuiting the graceful manifest -> reconcile -> INCOMPLETE path. So
+    # non-zero is reserved for a GENUINE crash — a Tableau pull that RAISED, a
+    # sheet write that blew up, the missing-column case (9cced82). An ICD that
+    # merely STOPPED FILLING on an otherwise-complete run is a data-quality
+    # FINDING (fill-but-flag): every tab filled, one owner is just absent from
+    # the view. That exits 0 and surfaces as a SOFT INCOMPLETE through the
+    # run-manifest (ok=False + remediation, written above), which
+    # verify:manifest reads at the checkpoint. The MANIFEST — not the exit code
+    # — is what keeps a data-missing run from reading as a green DONE
+    # (Megan 2026-06-08).
     if failed:
+        # A tab whose fill RAISED = a genuine Tableau/sheet exception (caught so
+        # the other tabs still fill). NEVER say "done" when data is missing.
         print(f"\n=== run INCOMPLETE — NOT marking complete. "
               f"{len(selected) - len(failed)}/{len(selected)} tabs filled; "
               f"MISSING: {failed} ===")
-        return 1
+        return 1   # genuine crash → hard FAILED page (a human is needed now)
     if went_dark_all:
-        print("\n=== run INCOMPLETE — every tab filled, but an ICD stopped "
-              "filling. Check that owner's Tableau view filter / alias. ===")
-        return 1
+        print("\n=== run INCOMPLETE (finding) — every tab filled, but an ICD "
+              "stopped filling. Check that owner's Tableau view filter / "
+              "alias. ===")
+        print("  Recorded as a SOFT INCOMPLETE via the run-manifest — not a "
+              "hard failure. Nothing crashed; the tabs ARE filled.")
+        return 0   # finding, not a crash → soft INCOMPLETE via manifest, no page
     print("\n=== done ===")
     return 0
 
