@@ -1372,7 +1372,19 @@ def _action_slack_channel(args: str) -> tuple[bool, str]:
         out.append(f"  info: FAILED → {_code(e)}")
     try:
         h = client.conversations_history(channel=cid, limit=1)
-        out.append(f"  history: OK ({len(h.get('messages', []))} msg read)")
+        msgs = h.get("messages", []) or []
+        out.append(f"  history: OK ({len(msgs)} msg read)")
+        # WHEN the channel was last used, and by whom. An ARCHIVED channel that
+        # was posted in last night is a channel someone archived TODAY — which is
+        # a completely different story from "wrong channel id", and the timestamp
+        # is the only thing that tells them apart (2026-08-15).
+        if msgs:
+            ts = float(msgs[0].get("ts") or 0)
+            when = dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            who = (msgs[0].get("user") or msgs[0].get("username")
+                   or msgs[0].get("bot_id") or "?")
+            text = (msgs[0].get("text") or "").replace("\n", " ")[:60]
+            out.append(f"  last message: {when} by {who} — {text!r}")
     except Exception as e:  # noqa: BLE001
         out.append(f"  history: FAILED → {_code(e)}")
     out.append("READ-ONLY — nothing posted.")

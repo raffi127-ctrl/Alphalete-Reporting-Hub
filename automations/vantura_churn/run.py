@@ -476,6 +476,7 @@ def main(argv=None) -> int:
 
     # ------------------------------------------------------------- writes
     churn_ws = {}               # office key -> its resolved churn worksheet
+    act_problems: list = []     # offices whose activations tab couldn't be written
     for key, prefix, sid, tab, has_act in owners:
         sh = fill.open_sheet(sid)   # each office writes its OWN board
         # Resolve the tab ONCE, case-tolerantly (a hand-duplicated board spells
@@ -504,9 +505,21 @@ def main(argv=None) -> int:
             fill.update_activation_rates(ws, office, reps, log=log)
         if has_act and not args.skip_activations:
             log(f"▶ updating '{fill.TAB_ACTIVATIONS}'…")
-            act = compute.activations_rows(results[key]["lines"], today)
-            fill.update_activations(sh.worksheet(fill.TAB_ACTIVATIONS), act,
-                                    log=log)
+            # The activations half must NOT be able to undo the churn half.
+            # 2026-08-15: the tab was gone from Carlos's board and the bare
+            # sh.worksheet() lookup raised WorksheetNotFound out of main() —
+            # exit 1, no manifest, no Slack post, even though LUCY CHURN had
+            # already been written correctly seconds earlier. Resolve the tab
+            # by content (fill.activations_worksheet), and on failure record
+            # it and carry on: the run finishes and reports activations as the
+            # one broken piece.
+            try:
+                act_ws = fill.activations_worksheet(sh, log=log)
+                act = compute.activations_rows(results[key]["lines"], today)
+                fill.update_activations(act_ws, act, log=log)
+            except Exception as e:  # noqa: BLE001 — churn already landed
+                log(f"  ✗ activations NOT updated ({key}): {e}")
+                act_problems.append(f"{key} — {e}")
 
     # ---------------------------------------------------- screenshot → Slack
     # Runs ONLY after the write above succeeds, so a stale/half-written board
@@ -531,6 +544,21 @@ def main(argv=None) -> int:
                                   log=log)
             except Exception as e:  # noqa: BLE001 — never fail a good write
                 log(f"  ⚠ screenshot post skipped: {e}")
+
+    # ------------------------------------------------- partial-failure report
+    # Churn wrote, activations didn't. Loud, not silent: the board looks fine
+    # to anyone reading it, so nothing but a red manifest + an email tells
+    # Megan that half the report is stale.
+    if act_problems:
+        log("\n✗ CHURN WROTE, ACTIVATIONS DID NOT:")
+        for p in act_problems:
+            log(f"   {p}")
+        detail = ("Churn tabs updated normally, but the activations tab "
+                  "could not be written: " + "; ".join(act_problems))
+        _act_fail_manifest(detail)
+        if not args.dry_run:
+            _email_failure(detail, log=log)
+        return 3
 
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
@@ -616,6 +644,40 @@ def _fail_manifest(msg: str) -> None:
                 message="Vantura churn update stopped before writing — "
                         "computed numbers didn't match the Churn Rates "
                         "dashboard."))
+    except Exception:
+        pass
+
+
+def _act_fail_manifest(msg: str) -> None:
+    """Half-failure: churn is current, activations is stale.
+
+    Deliberately a different message from _fail_manifest — that one means
+    NOTHING was written and the board is stale in full. Here the churn tabs
+    are today's and only the activations tab is behind, and the fix is on the
+    Sheet (restore/rename a tab), not in a re-run.
+    """
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.write_manifest(
+            REPORT_ID, failed=["vantura_churn"], kind="report", note=msg,
+            remediation=_rm.make_remediation(
+                reason=msg,
+                fix="The churn tabs ARE today's — only activations is stale. "
+                    f"The run looks for a tab named '{fill.TAB_ACTIVATIONS}' "
+                    "(any casing/spacing), then any tab with 'activation' in "
+                    "its name, then a tab whose header row is Rep / Customer "
+                    "Name / Total Apps / DTR Status / … — so a rename is "
+                    "handled automatically and reaching here means the tab is "
+                    "GONE. Restore it on the Vantura Master Sales Board with "
+                    "File ▸ Version history ▸ Restore (or undelete the tab), "
+                    f"or rename the replacement back to "
+                    f"'{fill.TAB_ACTIVATIONS}'. Then re-run — a re-run alone "
+                    "will not fix it.",
+                link="https://docs.google.com/spreadsheets/d/"
+                     f"{fill.SHEET_ID}/edit",
+                message="Vantura churn wrote fine, but the Activations tab is "
+                        "missing from the Master Sales Board — that half of "
+                        "the report is stale."))
     except Exception:
         pass
 

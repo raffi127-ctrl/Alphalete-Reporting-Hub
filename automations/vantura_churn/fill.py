@@ -36,6 +36,27 @@ TAB_CHURN_CARLOS = "LUCY CHURN"
 TAB_CHURN_RETIRED = "Churn"
 TAB_CHURN_ATEF = "Churn - Atef"
 TAB_ACTIVATIONS = "Activations"
+# The activations tab is resolved by CONTENT, not by that string alone — see
+# activations_worksheet(). 2026-08-15: the tab vanished from Carlos's board and
+# `sh.worksheet("Activations")` hard-crashed the run AFTER the churn half had
+# already written. Its header row is the stable fingerprint; the title is not.
+ACTIVATIONS_HEADER = ("rep", "customer name", "total apps", "dtr status",
+                      "order date", "posted date", "dtr status date", "ban",
+                      "cru/iru", "product type", "tn", "tn type",
+                      "wireless ip", "abp", "spm", "notes")
+# How many of those 16 header cells must line up before a tab is accepted as
+# the activations tab. Well clear of any other tab on the board (the closest,
+# 'Lucy At&t Data', shares 4 of these words and matches 0 by position).
+ACTIVATIONS_HEADER_MIN = 8
+
+
+class ActivationsTabMissing(Exception):
+    """No activations tab on this board — by name, by pattern, or by header.
+
+    Distinct from gspread's WorksheetNotFound so the caller can let the churn
+    half of the run stand and report ONLY this half as broken.
+    """
+
 
 # Formula templates. Column letters are filled in from helper_bounds() at
 # write time — they are NOT fixed: the block moves when a column left of it
@@ -776,6 +797,96 @@ def dedupe_activation_summary(ws: gspread.Worksheet, log=print) -> int:
     log(f"  ✓ {ws.title}: summary compacted to {len(block)} unique rep(s) "
         f"({removed} duplicate/blank row(s) removed)")
     return removed
+
+
+def _norm_title(s) -> str:
+    return " ".join(str(s or "").strip().lower().split())
+
+
+def activations_worksheet(sh, log=print) -> gspread.Worksheet:
+    """The activations tab, found by name OR by what's actually in it.
+
+    Four passes, cheapest first, each one looser than the last:
+      1. exact title (TAB_ACTIVATIONS) — today's behaviour, one API call;
+      2. case- and whitespace-tolerant title (worksheet_ci), which also
+         catches a trailing space or 'ACTIVATIONS';
+      3. any tab whose title CONTAINS 'activation' and isn't a churn/data
+         tab — covers 'Activations 2026', 'Lucy Activations', 'Activation';
+      4. header fingerprint: the tab whose row 1 matches ACTIVATIONS_HEADER
+         in at least ACTIVATIONS_HEADER_MIN positions. Survives a rename to
+         something with no 'activation' in it at all.
+
+    Raises ActivationsTabMissing (never WorksheetNotFound) listing the real
+    tab names, so the caller can keep the churn half of the run and report
+    only this. Renaming the tab must cost a log line, not the whole report.
+    """
+    try:
+        return _retry(sh.worksheet, TAB_ACTIVATIONS)
+    except gspread.exceptions.WorksheetNotFound:
+        pass
+
+    tabs = _retry(sh.worksheets)
+
+    want = _norm_title(TAB_ACTIVATIONS)
+    for ws in tabs:
+        if _norm_title(ws.title) == want:
+            log(f"  ⚠ activations tab is spelled {ws.title!r}, not "
+                f"{TAB_ACTIVATIONS!r} — matched case-insensitively.")
+            return ws
+
+    # Pass 3 — title contains 'activation'. Exclude the churn tabs: 'LUCY
+    # CHURN' carries activation RATES and would otherwise be a tempting match
+    # for anything looser, and overwriting it with A2:P rows would wipe the
+    # board people read every morning.
+    skip = {_norm_title(t) for t in
+            (TAB_CHURN_CARLOS, TAB_CHURN_RETIRED, TAB_CHURN_ATEF)}
+    named = [ws for ws in tabs
+             if "activation" in _norm_title(ws.title)
+             and _norm_title(ws.title) not in skip
+             and "churn" not in _norm_title(ws.title)]
+    if len(named) == 1:
+        log(f"  ⚠ activations tab renamed to {named[0].title!r} — matched on "
+            f"title. Writing there.")
+        return named[0]
+    if len(named) > 1:
+        raise ActivationsTabMissing(
+            "{} tabs look like the activations tab ({}) — can't tell which "
+            "one to write. Rename the real one back to {!r}.".format(
+                len(named), ", ".join(repr(w.title) for w in named),
+                TAB_ACTIVATIONS))
+
+    # Pass 4 — header fingerprint. One batched read of row 1 across every
+    # candidate tab, not one call per tab.
+    ranges = [f"'{ws.title.replace(chr(39), chr(39) * 2)}'!A1:P1"
+              for ws in tabs if _norm_title(ws.title) not in skip]
+    try:
+        rows = _retry(lambda: sh.values_batch_get(ranges))["valueRanges"]
+    except Exception as e:  # noqa: BLE001 — fall through to the clear error
+        log(f"  ⚠ header scan for the activations tab failed: {e}")
+        rows = []
+    best, best_score = None, 0
+    cands = [ws for ws in tabs if _norm_title(ws.title) not in skip]
+    for ws, vr in zip(cands, rows):
+        vals = (vr.get("values") or [[]])[0]
+        score = sum(1 for want_h, got in zip(ACTIVATIONS_HEADER, vals)
+                    if _norm_title(got) == want_h)
+        if score > best_score:
+            best, best_score = ws, score
+    if best is not None and best_score >= ACTIVATIONS_HEADER_MIN:
+        log(f"  ⚠ activations tab renamed to {best.title!r} — matched on its "
+            f"header row ({best_score}/{len(ACTIVATIONS_HEADER)} columns).")
+        return best
+
+    raise ActivationsTabMissing(
+        "no activations tab on {!r}: nothing named {!r} (any casing), nothing "
+        "with 'activation' in its title, and no tab whose header row matches "
+        "(best was {} at {}/{} columns). It looks deleted, not renamed — "
+        "restore it from File ▸ Version history, or rename it back to {!r}. "
+        "Tabs on the board: {}".format(
+            sh.title, TAB_ACTIVATIONS,
+            repr(best.title) if best is not None else "none", best_score,
+            len(ACTIVATIONS_HEADER), TAB_ACTIVATIONS,
+            ", ".join(w.title for w in tabs)))
 
 
 def update_activations(ws: gspread.Worksheet, rows: list[list],
