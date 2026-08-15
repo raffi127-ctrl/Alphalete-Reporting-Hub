@@ -3135,6 +3135,64 @@ def _action_post_note(args: str) -> tuple[bool, str]:
     return True, f"posted to {channel} as {who} ({len(text)} chars)"
 
 
+def _action_incident_resolve(args: str) -> tuple[bool, str]:
+    """Close an OPEN incident thread in #claudecorrections-and-requests, from
+    THIS machine's Slack identity.
+
+      incident_resolve <key> [note]
+        key   the id in the thread's own marker line, e.g.
+              `_incident · failure-captainship_cancel_rate · open 2026-08-15_`
+        note  optional one-liner appended under the ✅ (say WHY it's closed)
+
+    WHY THIS EXISTS (2026-08-15). Several reports moved to "fill-but-flag": they
+    do the whole job, merely NOTE a data gap, exit 0, and land INCOMPLETE via the
+    run-manifest (captainship_cancel_rate, owners_metrics_churn e568bf9,
+    vantura_board_audit 8fa4e2e). But `_close_carryover_incidents` in run.py only
+    closes a thread for a report that reached **DONE**, and a soft INCOMPLETE
+    never does while the data gap persists — so its thread stays open forever.
+    That is exactly the "which of these is still real?" pile the incident threads
+    were built to prevent, and until now nothing could close one by hand.
+
+    RUN IT FROM THE MINI. `incident_thread.resolve` replies in the thread AND
+    edits the parent post to ✅ — and chat.update only works on your OWN
+    messages. The parents are posted by Lucy, so the same command from a laptop
+    leaves the header still reading `open` while the reply says resolved
+    ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
+
+    Idempotent in the way that matters: a key with no OPEN incident returns a
+    plain "nothing to close", never a second ✅ on a thread that already has one.
+    """
+    raw = (args or "").strip()
+    if not raw:
+        return False, ("incident_resolve needs a key (e.g. "
+                       "failure-captainship_cancel_rate); an optional note "
+                       "follows it")
+    parts = raw.split(None, 1)
+    key = parts[0].strip()
+    note = parts[1].strip().replace("\\n", " ") if len(parts) > 1 else ""
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    lines = [f":white_check_mark: *{key}* — RESOLVED."]
+    if note:
+        lines.append(note)
+    lines.append("_Closed by hand from `lucy incident_resolve`. If it happens "
+                 "again it opens a fresh post, not this thread._")
+    try:
+        told = inc.resolve(key=key, lines=lines)
+    except Exception as e:  # noqa: BLE001 — resolve() swallows its own, but the
+        # import-time client build can still raise (no token on this machine).
+        return False, (f"resolve failed ({type(e).__name__}: {str(e)[:100]})")
+    if not told:
+        return False, (f"no OPEN incident for {key!r} — copy the key from the "
+                       f"thread's marker line (_incident · <key> · open …_); it "
+                       f"may already be closed")
+    return True, (f"closed {key} — replied in its own thread and marked the "
+                  f"parent post resolved")
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -3999,6 +4057,7 @@ ACTIONS = {
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,
     "post_note": _action_post_note,
+    "incident_resolve": _action_incident_resolve,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
@@ -4279,6 +4338,9 @@ def print_help() -> None:
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
         "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
         "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
+        '  lucy incident_resolve <key> ["note"]\n'
+        "                            close an incident thread in #claudecorrections\n"
+        "                            (the key is in its '_incident · … · open …_' line)\n"
         "  lucy help                 show this\n\n"
         "After any command, run 'lucy status' to see if it worked (done / failed).\n"
     )
