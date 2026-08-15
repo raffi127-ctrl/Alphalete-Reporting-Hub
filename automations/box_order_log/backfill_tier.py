@@ -157,11 +157,11 @@ def main(argv: Optional[list] = None) -> int:
             initial_comment=tier_bonus.TIER_LINE,
         )
         print("  ✓ board posted into the thread")
-    if needs_line:
+    if needs_header:
         # Only Lucy can edit Lucy's message — this is why it runs on Lucy 2.
         client.chat_update(channel=args.channel, ts=parent.get("ts"),
                            text=new_text)
-        print("  ✓ header updated to list the board")
+        print("  ✓ header rewritten to the current lines")
     print("\n✅ Today's thread now carries the {}.".format(tier_bonus.BOARD_NAME))
     return 0
 

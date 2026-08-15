@@ -5298,8 +5298,8 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "box-order-log",
-        # Channel in the name; the tile appends "· 7:00 AM CST" from `schedule`.
-        "name": "BOX Order Log → #alphalete-gp-sales",
+        # Channels in the name; the tile appends "· 7:00 AM CST" from `schedule`.
+        "name": "BOX Order Log → #alphalete-gp-sales + #a-players-b2b",
         "creator": "Megan",
         "emoji": "📦",
         "color": "#0EA5E9",
