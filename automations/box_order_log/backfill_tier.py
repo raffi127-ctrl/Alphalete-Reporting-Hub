@@ -38,6 +38,24 @@ from .run import CHANNEL, OUTPUT_DIR, PAYOUT_LINE, WORKBOOK_LINE
 ATTACHMENT_LINES = [WORKBOOK_LINE, PAYOUT_LINE, tier_bonus.TIER_LINE]
 
 
+def line_key(line: str) -> str:
+    """A wording-and-emoji-proof identity for a header line.
+
+    Matching the emoji prefix was the obvious way to recognise our own lines and
+    it FAILED on the live thread 2026-08-15: the rewrite appended three new lines
+    above the three old ones instead of replacing them, doubling the header. So
+    identity ignores the emoji entirely (raw character OR `:shortcode:`, since
+    Slack can hand either one back) and ignores everything after the em-dash —
+    which is exactly the descriptive tail that gets reworded. What's left is the
+    name of the thing, which is what actually identifies the line.
+    """
+    import re
+    s = (line or "").strip()
+    s = re.sub(r"^(?::[a-z0-9_+\-]+:|[^\w\s])+\s*", "", s)   # leading emoji
+    s = re.split(r"[—–]|\s-\s", s)[0]                        # drop the tail
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+
 def canonical_header(existing: str, day: dt.date, with_tier: bool = True) -> str:
     """The header this thread SHOULD have: its title, the attachment lines as
     currently worded, then anything else that was in it (a --note, say).
@@ -48,9 +66,9 @@ def canonical_header(existing: str, day: dt.date, with_tier: bool = True) -> str
     lines = (existing or "").split("\n")
     title = lines[0] if lines and lines[0].strip() else "*{}*".format(
         header_title(day))
-    leaders = tuple(ln.split(" ")[0] for ln in ATTACHMENT_LINES)
+    ours = {line_key(ln) for ln in ATTACHMENT_LINES}
     extras = [ln for ln in lines[1:]
-              if ln.strip() and not ln.startswith(leaders)]
+              if ln.strip() and line_key(ln) not in ours]
     keep = ATTACHMENT_LINES if with_tier else ATTACHMENT_LINES[:-1]
     return "\n".join([title] + list(keep) + extras)
 
