@@ -526,6 +526,15 @@ def main(argv: Optional[list] = None) -> int:
         return 1
 
     if not posted:
+        # Nothing landed anywhere — the loudest case there is, and the one the
+        # channel can't notice for itself (no thread = nothing to look at).
+        if not args.dm:
+            try:
+                from automations.shared import section_drop_alert as sda
+                sda.alert(report_id="box-order-log", failed=failed_channels,
+                          kind="section", day=today)
+            except Exception:
+                pass
         print("✗ the thread posted to NO channel — {}".format(
             "; ".join(failed_channels)), file=sys.stderr)
         return 1
@@ -556,8 +565,8 @@ def main(argv: Optional[list] = None) -> int:
             try:
                 from automations.shared import section_drop_alert as sda
                 sda.alert(report_id="box-order-log",
-                          failed=["Box Tier Bonus - Rep Level ({}) — {}".format(
-                              tier_owner, tier_note)],
+                          failed=["{} ({}) — {}".format(
+                              tier_bonus.BOARD_NAME, tier_owner, tier_note)],
                           kind="section", day=today)
             except Exception:
                 pass

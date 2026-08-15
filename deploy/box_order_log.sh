@@ -85,6 +85,37 @@ case "$MODE" in
         else
             echo "[$(date)] post FAILED (exit $ST) — leaving the marker" \
                  "unset so the later pass retries the post" >> "$LOG_FILE"
+            # ALERT ON THE LAST PASS ONLY. A 7:00 failure is what the 8:30
+            # fallback exists to absorb, so alerting there is noise. If the
+            # 8:30 pass ALSO fails, though, the day produces no thread at all
+            # and nothing else would ever say so: the module's own alerts
+            # (capped pull, missing tier board, one channel down) all run
+            # INSIDE the module, so a crash before them — a Tableau pull that
+            # dies, an empty crosstab, a workbook that won't build, or the run
+            # being killed on timeout — used to end here, in a log file, and
+            # `exit 0` told launchd everything was fine. Exit 3 is excluded on
+            # purpose: it's a deliberate self-suppression that has already
+            # alerted for itself (window.should_block_send).
+            if [ "$ST" -ne 3 ] && [ "$(date +%H)" -ge 8 ]; then
+                BOX_EXIT="$ST" BOX_LOG="$(basename "$LOG_FILE")" \
+                "$VENV_PY" - >> "$LOG_FILE" 2>&1 <<'PY'
+import os
+from automations.shared import section_drop_alert as sda
+sda.alert(
+    report_id="box-order-log",
+    failed=["the daily thread did not post — the run exited {} on its LAST "
+            "pass of the day, so #alphalete-gp-sales and #a-players-b2b both "
+            "have nothing. Log: {}".format(os.environ.get("BOX_EXIT", "?"),
+                                           os.environ.get("BOX_LOG", "?"))],
+    remediation={"fix": "read the log with `lucy logtail {} error` (Lucy 2), "
+                        "fix the cause, then re-post with `lucy rerun "
+                        "box_order_log --post`.".format(
+                            os.environ.get("BOX_LOG", ""))},
+    kind="no_post")
+PY
+                echo "[$(date)] alerted #claudecorrections-and-requests" \
+                     >> "$LOG_FILE"
+            fi
         fi
         ;;
 esac

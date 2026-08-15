@@ -5342,10 +5342,18 @@ AUTOMATED_REPORTS = [
             "**•** The **Box Tier Bonus Rep Level** board is sliced to "
             "Carlos's office, which is also what keeps it to one readable "
             "image — the full board (every office) is too tall and Tableau "
-            "cuts it off mid-row. If his office ever outgrows one image, or "
-            "the board can't be captured, or it posts to only one of the two "
-            "channels, the log still goes out and the gap is flagged to "
-            "**#claudecorrections-and-requests** instead of passing quietly."
+            "cuts it off mid-row.\n\n"
+            "IF SOMETHING FAILS, SLACK HEARS ABOUT IT\n"
+            "Every failure lands in **#claudecorrections-and-requests**, "
+            "because all of them look fine from the channel:\n"
+            "**•** The tier board missing, or grown too tall to fit in one "
+            "image — the log still posts, the gap is flagged.\n"
+            "**•** One channel posting and the other not.\n"
+            "**•** A capped Tableau pull — the post is suppressed rather than "
+            "sent with numbers that undercount.\n"
+            "**•** The whole run dying (pull, workbook, timeout) on the "
+            "**8:30** pass, meaning no thread at all that day. A 7:00 failure "
+            "stays quiet on purpose — that's what the 8:30 fallback is for."
         ),
         # Deep-links to the 'Lucy Box Order Log' tab this run writes to.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -5367,8 +5375,10 @@ AUTOMATED_REPORTS = [
             # `time` stays the sortable 7:00 start so it still orders first.
             "time": "7:00 AM",
             "time_label": "7 AM + 8:30 AM CST",
-            # Measured on Lucy 2: 83s and 89s end to end, pull included.
-            "estimated_minutes": 2,
+            # Measured on Lucy 2: was 83s/89s; a posting run is ~2m45s since it
+            # also captures the tier board and posts a second channel (timed
+            # 2026-08-15). Sheet-only passes are still the shorter ones.
+            "estimated_minutes": 3,
         },
         "checklist": [],
         "post_run": {
@@ -5376,9 +5386,9 @@ AUTOMATED_REPORTS = [
             "message_failed": "❌ Run failed. Check the log above, then run again.",
         },
         # The primary button is the SAFE one on purpose — a mis-click on a
-        # card whose other action posts into Carlos's channel shouldn't be
-        # able to post. Both full-run and sheet-only also sit under More
-        # actions so either can be picked deliberately.
+        # card whose other action posts into both of Carlos's channels
+        # shouldn't be able to post. Both full-run and sheet-only also sit
+        # under More actions so either can be picked deliberately.
         "actions": [
             {
                 "label": "Update Sheet",
@@ -5394,7 +5404,8 @@ AUTOMATED_REPORTS = [
                 "icon": "📣",
                 "help": "Everything the 7:00am run does: refreshes the "
                         "6-week log on the sheet, then posts today's thread "
-                        "(workbook + payout image) to #alphalete-gp-sales.",
+                        "(workbook + payout image + Box Tier Bonus Rep Level "
+                        "board) to #alphalete-gp-sales AND #a-players-b2b.",
                 "module": "automations.box_order_log.run",
                 "args_fn": lambda: ["--sheet", "--xlsx", "--post"],
             },

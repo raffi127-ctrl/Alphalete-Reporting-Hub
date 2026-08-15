@@ -64,6 +64,20 @@ def _dedup_path(report_id: str, day: dt.date, failed: Sequence[str]) -> Path:
 #   fix     default *Fix:* line when the caller passes no remediation
 #   tail    closing line: what the reader is left with
 _KINDS = {
+    # THE WHOLE THREAD IS MISSING — not a section of a live thread, the entire
+    # post. 'section' was wrong for this: its closing line reads "The thread is
+    # live but incomplete", which sends the reader looking for a thread that was
+    # never created. Added 2026-08-15 for box_order_log's last-pass-failed alert
+    # (deploy/box_order_log.sh), where a crash before the post means both of its
+    # channels have nothing at all.
+    "no_post": {
+        "what": "daily thread",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "nothing posted at all.",
+        "label": "Missing",
+        "fix": "read the run's log, fix the cause, then re-post `{report_id}`.",
+        "tail": "There is NO thread in the channel today — not a short one, none.",
+    },
     "section": {
         "what": "section",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
