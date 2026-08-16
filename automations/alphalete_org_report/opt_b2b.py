@@ -20,9 +20,16 @@ Metrics filled (canonical row → label, from ROW_TO_LABEL):
   (* = computed in Python by apply_computed.)
 
 Direct Deposit comes from the shared Program Summary workbook (same source
-+ parser as JE). Personal Production (canonical row 42) is NOT filled here
-— Carlos pulls it from a special REPEXPANDED per-rep view; left manual for
-now (consistent with BOX/Frontier).
++ parser as JE). Personal Production (canonical row 42) comes from the
+per-rep B2BLASTWEEK view — the ICD's OWN self-row. ⚠ That per-rep worksheet
+did not survive the 2026-08 ATTTRACKER-B2B republish; row 42 is blank and
+alarming until someone re-points B2B_PP_URL (see the constant).
+
+Every source below is downloaded inside its own try/except so one dead view
+can't cost the whole fill. The price of that is silence, so anything that
+fails to download is collected into `missing_sources` and turned into a
+#claudecorrections ping by __main__ — a missing source costs CELLS, not tabs,
+and without the ping the run just looks clean.
 """
 
 import datetime as dt
@@ -77,18 +84,45 @@ B2B_ICDS = [
 # REP == the ICD's own name (their own sales), formatted '3 NI / 2 NL'.
 B2B_PP_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
               "B2BATTSalesMetrics/5dc77806-1536-4a20-9c98-54545f786715/B2BLASTWEEK")
-B2B_PP_SHEET = "Sales.Quality Metrics"
+# SUBSTRING, not the exact dialog name — Tableau appends a dedup counter and a
+# republish renames sheets wholesale, so an exact name is the most brittle
+# handle there is.
+#
+# ⚠ THE PER-REP SHEET IS CURRENTLY GONE (probed 2026-08-16). After the 2026-08
+# ATTTRACKER-B2B republish this view's dialog offers only:
+#   Activation & Churn (2) · Low Metric Office Count (2) ·
+#   Sales.Quality Metrics (2) · Sales.Quality Metrics (3) · zzz Last Refresh (3)
+# and NEITHER 'Sales.Quality Metrics' is per-rep: (2) is OWNER-level (key column
+# 'Owner Name', 73 rows, carries a 'Rep Count' — Carlos Hidalgo = 157, his whole
+# team) and (3) is the Grand Total row alone. The product columns the formatter
+# needs (Internet Sales. / VOIP Line Count / Wireless Lines / AIR/AWB Sales) ARE
+# there, which is exactly what makes it a trap: it parses fine and means the
+# wrong thing. _parse_b2b_pp therefore insists on a 'REP' column and reports the
+# source MISSING instead, so row 42 stays blank and the alarm fires.
+# TODO: find the replacement per-rep view (REPEXPANDED) and re-point this URL.
+B2B_PP_SHEET_MATCH = "Sales.Quality Metrics"
 
 
-def _parse_b2b_pp(path) -> dict:
-    """Per-rep B2BLASTWEEK crosstab → {rep-name-lower: {column: value}}."""
+def _parse_b2b_pp(path, logfn=print) -> dict:
+    """Per-rep B2BLASTWEEK crosstab → {rep-name-lower: {column: value}}.
+
+    REQUIRES a 'REP' key column, and returns {} (loudly) without one. The old
+    code fell back to column index 1 when no 'rep' header was found, which is
+    a trap now: the 2026-08 republish left an OWNER-level sheet with the same
+    name and the same product columns, where index 1 is 'Sales'. Keying rows by
+    a sales NUMBER yields a dict that is never empty and never matches an ICD —
+    Personal Production silently stays '-' AND the missing-source alarm never
+    fires. Better to say the source is gone."""
     from automations.alphalete_org_report.opt_nds import _read_tab_csv
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 2:
         return {}
     headers = [(h or "").strip() for h in rows[0]]
-    rep_i = next((i for i, h in enumerate(headers)
-                  if h.lower() == "rep"), 1)
+    rep_i = next((i for i, h in enumerate(headers) if h.lower() == "rep"), None)
+    if rep_i is None:
+        logfn("OPT B2B: ✗ personal production: the worksheet has no 'REP' "
+              f"column — this is not the per-rep sheet. Columns: {headers}")
+        return {}
     by_rep: dict = {}
     for r in rows[1:]:
         if len(r) <= rep_i:
@@ -142,14 +176,21 @@ def _week_col_label(today: Optional[dt.date] = None) -> str:
     return f"{d.month}/{d.day}/{d.year % 100}"
 
 
-def _download_view(page, view: "cb.ViewConfig", out: Path, logfn=print) -> bool:
-    """Download a crosstab view via patchright. view.sheet_thumbnail_match is a
-    SUBSTRING (Tableau appends a dedup counter like '(3)'), so enumerate the
-    dialog's worksheets, find the one that contains it, then download that
-    exact name. Returns True on success."""
-    substr = view.sheet_thumbnail_match
+def _download_by_substring(page, url: str, substr: str, out: Path,
+                           key: str = "", logfn=print) -> bool:
+    """Download the crosstab worksheet whose dialog name CONTAINS `substr`.
+
+    An EXACT worksheet name is the most brittle handle there is: Tableau appends
+    dedup counters ('(3)') and a republish renames sheets wholesale. So
+    enumerate the dialog, substring-match, then download that exact name.
+    Returns True on success.
+
+    On no match the FULL available list is logged, never truncated — when
+    ATTTRACKER-B2B was republished the only thing that would have said what the
+    sheet BECAME was that list, and every trace of it was cut off at 120 chars.
+    """
     try:
-        drive_crosstab_dialog(page, view.url, "__enumerate__", out, verbose=False)
+        drive_crosstab_dialog(page, url, "__enumerate__", out, verbose=False)
         return False   # shouldn't reach — enumerate always raises
     except RuntimeError as e:
         m = re.search(r":\s*(\[.*\])\.", str(e))
@@ -162,24 +203,40 @@ def _download_view(page, view: "cb.ViewConfig", out: Path, logfn=print) -> bool:
                 avail = []
         target = next((s for s in avail if substr.lower() in s.lower()), None)
         if target is None:
-            logfn(f"OPT B2B: ✗ {view.key}: no worksheet matching {substr!r} "
-                  f"in {avail}")
+            logfn(f"OPT B2B: ✗ {key or substr}: no worksheet matching "
+                  f"{substr!r} in {avail}")
             return False
-        drive_crosstab_dialog(page, view.url, target, out, verbose=False)
+        drive_crosstab_dialog(page, url, target, out, verbose=False)
         return True
+
+
+def _download_view(page, view: "cb.ViewConfig", out: Path, logfn=print) -> bool:
+    """Download a crosstab view via patchright, matching its worksheet by
+    view.sheet_thumbnail_match (a SUBSTRING). Returns True on success."""
+    return _download_by_substring(page, view.url, view.sheet_thumbnail_match,
+                                  out, key=view.key, logfn=logfn)
 
 
 def collect_b2b_views(page, logfn=print) -> dict:
     """Download + parse all B2B views + DD + Personal-Production ONCE (the
     crosstabs carry every ICD). Returns the parsed data for per-ICD extraction:
-      {'views': {key: (by_owner, grand, view)}, 'dd': parsed_dd, 'pp': by_rep}."""
+      {'views': {key: (by_owner, grand, view)}, 'dd': parsed_dd, 'pp': by_rep,
+       'missing': [source keys that did not download]}.
+
+    'missing' is what makes a dead source LOUD. Every download below is caught
+    so one bad source can't cost the whole fill — but that also meant a source
+    could disappear and the only trace was a log line: on 2026-08-10 the
+    ATTTRACKER-B2B republish took the Personal Production worksheet with it and
+    every B2B ICD quietly got '-' in row 42, step exit 0, no alert."""
     views: dict = {}
+    missing: List[str] = []
     for view in cb.VIEWS:
         if view.key in ("dd", "personal_production"):
             continue
         out = OUTPUT_DIR / f"opt_b2b_{view.key}.csv"
         try:
             if not _download_view(page, view, out, logfn):
+                missing.append(view.key)
                 continue
             _hdr, by_owner, grand = cb._parse_view_csv(
                 out, key_column=view.key_column, key_clean=view.key_clean,
@@ -189,6 +246,7 @@ def collect_b2b_views(page, logfn=print) -> dict:
             logfn(f"OPT B2B: {view.key}: {len(by_owner)} owner(s)")
         except Exception as e:
             logfn(f"OPT B2B: ✗ {view.key}: {type(e).__name__}: {str(e)[:120]}")
+            missing.append(view.key)
 
     dd_parsed: dict = {}
     try:
@@ -198,18 +256,22 @@ def collect_b2b_views(page, logfn=print) -> dict:
         dd_parsed = parse_direct_deposit(dd_out)
     except Exception as e:
         logfn(f"OPT B2B: ✗ dd: {type(e).__name__}: {str(e)[:120]}")
+        missing.append("dd")
 
     pp_by_rep: dict = {}
+    pp_out = OUTPUT_DIR / "opt_b2b_personal_production.csv"
     try:
-        pp_out = OUTPUT_DIR / "opt_b2b_personal_production.csv"
-        download_crosstab_patchright(B2B_PP_URL, B2B_PP_SHEET, pp_out,
-                                     verbose=False, page=page)
-        pp_by_rep = _parse_b2b_pp(pp_out)
-        logfn(f"OPT B2B: personal production: {len(pp_by_rep)} rep(s)")
+        if _download_by_substring(page, B2B_PP_URL, B2B_PP_SHEET_MATCH, pp_out,
+                                  key="personal production", logfn=logfn):
+            pp_by_rep = _parse_b2b_pp(pp_out, logfn)
+            logfn(f"OPT B2B: personal production: {len(pp_by_rep)} rep(s)")
     except Exception as e:
         logfn(f"OPT B2B: ✗ personal production: {type(e).__name__}: {str(e)[:120]}")
+    if not pp_by_rep:
+        missing.append("personal production")
 
-    return {"views": views, "dd": dd_parsed, "pp": pp_by_rep}
+    return {"views": views, "dd": dd_parsed, "pp": pp_by_rep,
+            "missing": missing}
 
 
 def values_for_b2b_icd(icd: str, tab: str, parsed: dict, logfn=print) -> dict:
@@ -266,7 +328,8 @@ def run_b2b_opt(dry_run: bool = False, logfn=print) -> dict:
     except Exception as e:
         msg = f"{type(e).__name__}: {str(e)[:140]}"
         logfn(f"OPT B2B: ✗ session: {msg}")
-        return {"filled": [], "skipped": [], "errors": [msg]}
+        return {"filled": [], "skipped": [], "errors": [msg],
+                "missing_sources": ["Tableau session"]}
 
     client = rfill._client()
     sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
@@ -284,7 +347,8 @@ def run_b2b_opt(dry_run: bool = False, logfn=print) -> dict:
             logfn(f"OPT B2B: {ln}")
             if ln.lstrip().startswith(("[OK", "[DRY-RUN")):
                 filled.append(tab)
-    return {"filled": filled, "skipped": skipped, "errors": []}
+    return {"filled": filled, "skipped": skipped, "errors": [],
+            "missing_sources": parsed.get("missing") or []}
 
 
 if __name__ == "__main__":
@@ -296,3 +360,29 @@ if __name__ == "__main__":
     print(f"\nFilled: {len(result['filled'])}; Errors: {len(result['errors'])}")
     for e in result["errors"]:
         print(f"  ✗ {e}")
+
+    # A source that doesn't download costs CELLS, not tabs: the tab still lands
+    # in `filled` because its OTHER metrics arrived, so 'Filled: 5; Errors: 0'
+    # reads like a clean run while a whole row is blank across every B2B ICD.
+    # Record it so the loud #claudecorrections ping fires from write_manifest —
+    # the same alarm opt_retail got on 2026-08-10, added here after the
+    # Personal Production worksheet went missing on 2026-08-10 and nothing said
+    # so for a week. Exit stays 0 on purpose: the rest of the fill DID work, and
+    # a non-zero here would mark the whole step failed and hide that.
+    missing = result.get("missing_sources") or []
+    if missing and not args.dry_run:
+        print(f"⚠ SOURCE(S) MISSING — metrics fed by these are blank for this "
+              f"week: {', '.join(missing)}")
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(
+                "alphalete_org_b2b", failed=missing, retry_args=[],
+                kind="source",
+                note=(f"{len(missing)} Tableau source(s) did not download for "
+                      "the B2B OPT step. The B2B tabs filled from the sources "
+                      "that DID come through; the metrics behind the missing "
+                      "ones are blank, not wrong. Re-run with "
+                      "`lucy rerun alphalete_org_b2b` once the view is back."))
+        except Exception as e:  # noqa: BLE001 — alerting never breaks the run
+            print(f"  ⚠ couldn't record the missing-source manifest "
+                  f"({type(e).__name__}: {str(e)[:120]})")
