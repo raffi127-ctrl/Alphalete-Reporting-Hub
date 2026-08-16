@@ -165,7 +165,8 @@ def _parse_at(spec: str):
 
 
 def shoot_view(view_url: str, rec, wait_ms: int = 25_000,
-               verbose: bool = False, at=(), click: bool = False) -> None:
+               verbose: bool = False, at=(), click: bool = False,
+               click_wait_ms: int = 25_000) -> None:
     """Open a view, let it render, and upload a screenshot + a dump of anything
     in the DOM that could be the hierarchy's +/- control.
 
@@ -243,8 +244,11 @@ def shoot_view(view_url: str, rec, wait_ms: int = 25_000,
                 rec(f"  hovered {spec} -> ({cx:.0f}, {cy:.0f})")
                 if click:
                     page.mouse.click(cx, cy)
-                    page.wait_for_timeout(3500)
-                    rec(f"  clicked {spec}")
+                    # Expanding the Owner hierarchy re-renders ~868 rep rows
+                    # (x3 measure rows). 3.5s shot the OLD table back and read
+                    # as "the click did nothing" — give the viz real time.
+                    page.wait_for_timeout(click_wait_ms)
+                    rec(f"  clicked {spec} (waited {click_wait_ms}ms)")
 
         try:
             n = _upload_shot(page.screenshot(full_page=True))
