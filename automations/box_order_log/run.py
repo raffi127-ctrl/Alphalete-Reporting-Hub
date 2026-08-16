@@ -340,6 +340,14 @@ def main(argv: Optional[list] = None) -> int:
             print("box extract not fresh yet (newest sale {}, need >= {}) — "
                   "deferring the post to the 8:30 fallback".format(
                       newest, expected), flush=True)
+            # Still tell the Hub this pass RAN. A deferral is a completed pass
+            # that deliberately did nothing — "ran and had nothing to post" is
+            # success, same rule post_watch.py applies to its done-markers. Skip
+            # it and the card counts 1 of its 2 daily_runs and sits amber all
+            # day on every not-fresh-at-7 morning (8/3, 8/10, 8/16…), even
+            # though the 8:30 pass posted normally. Reported BEFORE the sheet
+            # merge on purpose: this pass writes nothing either way.
+            _report_to_hub(started_at, verbose)
             return 3
 
     # ---- 3. roll to the last N weeks ------------------------------------
