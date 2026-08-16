@@ -276,12 +276,28 @@ VIEWS: List[ViewConfig] = [
         # loading the custom view REP EXPANDED. Re-create the custom view" —
         # so its viz rendered blank and every download/scrape failed, leaving
         # PP stuck at a May-20 cache: identical every week, Megan 2026-06-08).
-        # The base 'Sales.Quality Metrics' worksheet is ALREADY rep-level
-        # (dimensions Owner Name + Rep — verified live 2026-06-08), and a
-        # CROSSTAB export returns the worksheet's full level of detail
-        # regardless of visual collapse, so it gives the same per-rep rows the
-        # custom view used to. The base view's Download→Crosstab flyout opens
-        # cleanly (the custom view's didn't). Week is pinned via the URL
+        # The base 'Sales.Quality Metrics' worksheet WAS rep-level (dimensions
+        # Owner Name + Rep — verified live 2026-06-08), and a CROSSTAB export
+        # returns the worksheet's full level of detail regardless of visual
+        # collapse, so it gave the same per-rep rows the custom view used to.
+        #
+        # ⚠ NO LONGER TRUE (probed 2026-08-16). The 2026-08 republish left this
+        # view offering 'Sales.Quality Metrics (2)' — OWNER-level, key column
+        # 'Owner Name', 73 rows, with a 'Rep Count' — and '(3)', the Grand Total
+        # row alone. The Rep dimension is GONE, but the four product columns
+        # remain, so the download succeeds and means the wrong thing. The
+        # thumbnail match below is a substring, so it happily picks '(2)'; the
+        # parser is what refuses (it demands a 'REP' column and skips the fill).
+        # Replacement candidate: worksheet 'Sales Summary - Owner (+/-) Rep' on
+        # .../ATTTRACKER-B2B/SALESSUMMARY — but its +/- hierarchy must be
+        # EXPANDED before the export (unlike the old sheet, a collapsed
+        # hierarchy really does drop Rep from the level of detail: a crosstab
+        # taken collapsed returns 73 owners x 3 measure rows and no reps), and
+        # its shape differs (CRU/IRU split, 3 rows per entity).
+        # [[project_b2b-worksheet-dedup-suffix-rename]]
+        #
+        # The base view's Download→Crosstab flyout opens cleanly (the custom
+        # view's didn't). Week is pinned via the URL
         # 'Sale Date Week Ending (mon-sun)' filter below.
         url="https://us-east-1.online.tableau.com/#/site/sci/views/"
             "ATTTRACKER-B2B/B2BATTSalesMetrics",
@@ -1443,7 +1459,26 @@ def main() -> int:
         headers = [h.strip() for h in rows[0]]
         # The 'Rep' header has a trailing space in the CSV ('Rep ').
         rep_idx = next((i for i, h in enumerate(headers)
-                        if h.strip().lower() == "rep"), 1)
+                        if h.strip().lower() == "rep"), None)
+        # NO index-1 fallback. The 2026-08 ATTTRACKER-B2B republish left an
+        # OWNER-level sheet whose name still CONTAINS 'Sales.Quality Metrics'
+        # (the dialog now offers '(2)' and '(3)', and the thumbnail match above
+        # is a substring, so we happily download it) carrying the same four
+        # product columns. On that sheet index 1 is 'Sales', so the old
+        # fallback keyed every row by a sales NUMBER: no rep ever matched, PP
+        # went '-' across the board, and the staleness gate stayed happy
+        # because the CSV WAS fresh. Refuse instead — a named failure beats a
+        # blank cell nobody can explain. [[project_b2b-worksheet-dedup-suffix-rename]]
+        if rep_idx is None:
+            print(f"❌ Personal Production: {csv_path.name} has no 'REP' "
+                  f"column — this is NOT the per-rep sheet. Columns: {headers}")
+            print("   The per-rep worksheet did not survive the ATTTRACKER-B2B "
+                  "republish. Re-point the personal_production ViewConfig at "
+                  "the replacement (candidate: 'Sales Summary - Owner (+/-) "
+                  "Rep' on the SALESSUMMARY view — needs the +/- hierarchy "
+                  "EXPANDED before export, or the crosstab is owner-level).")
+            print("   SKIPPING the PP fill — leaving the cells as they are.")
+            return 1
 
         # Build {rep-name lowered: product values} from per-rep rows.
         by_rep: dict[str, dict] = {}
