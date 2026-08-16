@@ -60,6 +60,13 @@ WORKSHEET = "Daily Sales by ICD"
 
 _DAY_RE = re.compile(r"(\d{1,2})/(\d{1,2})\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)")
 _WE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")   # week-ending M/D/YYYY
+# A dropdown OPTION that is a week — 'M/D/YYYY' and nothing else. Everything
+# that is not this shape ('(All)', '(Multiple values)', 'Null', and every
+# option belonging to some OTHER filter card on the dashboard) is never
+# clicked: see _drive_week_selection.
+_WEEK_TXT = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
+# What the combobox reads when the filter is NOT on a single week.
+_MULTI_TXT = re.compile(r"^\((All|Multiple values|None)\)$", re.I)
 # weekday name -> Python weekday() index (Mon=0 .. Sun=6)
 _WD = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 
@@ -101,6 +108,27 @@ def _drive_week_selection(label: str, verbose: bool = False):
     Apply button). We check the target week, uncheck every other still-checked
     week, then collapse the dropdown so it can't overlay the Download button.
 
+    ONLY WEEK-SHAPED OPTIONS ARE EVER CLICKED (2026-08-16). The uncheck pass
+    used to walk EVERY checked `div.FIItem` in the viz and untick anything that
+    wasn't the target — which is not the same set as "the other weeks". It also
+    picks up the dropdown's own '(All)' tri-state row (unticking that re-selects
+    the whole list) and the options of any other filter card rendered on the
+    dashboard. The loop then fought itself for six passes, gave up SILENTLY, and
+    the run died on the final check with box='(Multiple values)'. Retail JE was
+    dropped from the board that day (Sunday board-catchup, 14:30). Every click
+    below is now gated on `_WEEK_TXT`, so nothing outside this filter's week
+    list can be touched.
+
+    Clicks are STATE-AWARE, not blind toggles: `_set(week, want)` reads
+    aria-checked and clicks only when the state has to change. A blind toggle
+    unticks a target that was already ticked — which is how a run that started
+    with several weeks selected could end with the target OFF.
+
+    Convergence is measured against the COMBOBOX, not against our own idea of
+    the state, and a run that can't get there raises with the full option dump
+    in the message (the old failure said only what the box read, so diagnosing
+    it needed a second trip to the mini).
+
     Idempotent: if the box already shows the target, it's a no-op. If JE
     hasn't posted the target week yet, that date is absent from the list — we
     leave the selection as-is and let parse()'s staleness guard handle it."""
@@ -133,18 +161,119 @@ def _drive_week_selection(label: str, verbose: bool = False):
         except Exception:  # noqa: BLE001
             pass
 
-    def pre_export(page, viz):
+    _ROW = 'div.FIItem[role="checkbox"]'
+
+    def _rows(viz):
+        """The dropdown's option rows, preferring the VISIBLE ones: Tableau
+        keeps hidden copies of menu markup in the DOM, and a click that lands
+        on one of those changes nothing while reading as a success. Falls back
+        to the unfiltered set so a Playwright without `:visible` still works."""
+        try:
+            vis = viz.locator(_ROW + ":visible")
+            if vis.count():
+                return vis
+        except Exception:  # noqa: BLE001
+            pass
+        return viz.locator(_ROW)
+
+    def _item(viz, week):
+        """The dropdown row for one week. Weeks are unique, so text is a safe key."""
+        return _rows(viz).filter(
+            has_text=_re.compile(rf"^{_re.escape(week)}$")).first
+
+    def _weeks(viz):
+        """[(week, checked)] for the WEEK-SHAPED options only — '(All)' and
+        anything belonging to another filter card are deliberately invisible
+        here, so no later step can click them."""
+        items = _rows(viz)
+        out = []
+        try:
+            n = items.count()
+        except Exception:  # noqa: BLE001 — menu closed under us
+            return out
+        for j in range(n):
+            it = items.nth(j)
+            try:
+                txt = (it.inner_text() or "").strip()
+                if not _WEEK_TXT.match(txt):
+                    continue
+                out.append((txt, (it.get_attribute("aria-checked") or "") == "true"))
+            except Exception:  # noqa: BLE001 — a row re-rendered mid-read
+                continue
+        return out
+
+    def _set(viz, page, week, want):
+        """Tick/untick ONE week — only if it isn't already in that state."""
+        item = _item(viz, week)
+        try:
+            now = (item.get_attribute("aria-checked") or "") == "true"
+        except Exception:  # noqa: BLE001
+            now = not want          # unreadable → attempt the click
+        if now == want:
+            return False
+        glyph = item.locator(".FICheckRadio").first
+        glyph.scroll_into_view_if_needed()
+        glyph.click(timeout=10000)   # bounded: 3 retries x 30s default = a 90s
+                                     # hang on a glass-intercept regression
+        page.wait_for_timeout(900)
+        return True
+
+    def _only(page, viz, week):
+        """Tableau's per-row 'Only' link — one click selects just this week,
+        with none of the untick dance. Revealed on hover and not present in
+        every Tableau version, so this is best-effort: False falls through to
+        the tick/untick loop, which is checked against the combobox anyway."""
+        try:
+            item = _item(viz, week)
+            item.scroll_into_view_if_needed()
+            item.hover(timeout=5000)
+            page.wait_for_timeout(400)
+            link = item.locator("a, button, span").filter(
+                has_text=_re.compile(r"^\s*Only\s*$", _re.I)).first
+            if link.count() == 0:
+                return False
+            link.click(timeout=5000)
+            page.wait_for_timeout(1500)
+            return True
+        except Exception:  # noqa: BLE001 — never let the fast path fail the pull
+            return False
+
+    def _box_text(tbox):
+        try:
+            return (tbox.inner_text() or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _find_box(page, viz):
+        """The 'Sales Week Ending' combobox + what it currently reads.
+
+        Normally it reads a single week ('8/9/2026'). It can also read
+        '(Multiple values)' / '(All)' — the state a re-saved view or an
+        interrupted run leaves behind, and the exact state the old code could
+        not recover from: it matched a DATE only, so it declared the dropdown
+        'not found' and pulled whatever weeks happened to be ticked."""
         boxes = viz.locator('span.tabComboBox[role="combobox"]')
-        tbox = cur = None
         for _ in range(20):   # poll ~20s for the filter control to hydrate
-            for i in range(boxes.count()):
-                t = (boxes.nth(i).inner_text() or "").strip()
-                if _re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", t):
-                    tbox, cur = boxes.nth(i), t
-                    break
-            if tbox is not None:
-                break
+            dated = multi = None
+            try:
+                n = boxes.count()
+            except Exception:  # noqa: BLE001
+                n = 0
+            for i in range(n):
+                t = _box_text(boxes.nth(i))
+                if _WEEK_TXT.match(t) and dated is None:
+                    dated = (boxes.nth(i), t)
+                elif _MULTI_TXT.match(t) and multi is None:
+                    multi = (boxes.nth(i), t)
+            if dated is not None:
+                return dated
+            if multi is not None:
+                return multi      # week list is confirmed once we open it
             page.wait_for_timeout(1000)
+        return None, None
+
+    def pre_export(page, viz):
+        tbox, cur = _find_box(page, viz)
         if tbox is None:
             if verbose:
                 print("  [je] ⚠ 'Sales Week Ending' dropdown not found — "
@@ -153,22 +282,19 @@ def _drive_week_selection(label: str, verbose: bool = False):
         if cur == label:
             return   # already on the target week
 
-        def _toggle(week):
-            item = viz.locator('div.FIItem[role="checkbox"]').filter(
-                has_text=_re.compile(rf"^{_re.escape(week)}$")).first
-            glyph = item.locator(".FICheckRadio").first
-            glyph.scroll_into_view_if_needed()
-            glyph.click(timeout=10000)   # bounded: 3 retries x 30s default = a 90s
-                                         # hang on a glass-intercept regression
-
-        def _checked():
-            c = viz.locator('div.FIItem[role="checkbox"][aria-checked="true"]')
-            return [(c.nth(j).inner_text() or "").strip() for j in range(c.count())]
-
         tbox.click()               # open the dropdown
         page.wait_for_timeout(1200)
-        if viz.locator('div.FIItem[role="checkbox"]').filter(
-                has_text=_re.compile(rf"^{_re.escape(label)}$")).count() == 0:
+        weeks = _weeks(viz)
+        if not weeks:
+            # The combobox we opened has no week-shaped options — it belongs to
+            # some other filter, so leave the view alone rather than click
+            # blindly in it.
+            if verbose:
+                print(f"  [je] ⚠ the {cur!r} dropdown holds no week options — "
+                      "not touching it; leaving the view's own week")
+            _close_dropdown(page, viz)
+            return
+        if label not in [w for w, _ in weeks]:
             # JE hasn't posted this week yet — nothing to select. Close + bail;
             # parse() will report is_current_week=False and the caller skips.
             if verbose:
@@ -176,25 +302,42 @@ def _drive_week_selection(label: str, verbose: bool = False):
                       "(JE hasn't posted it) — leaving selection unchanged")
             _close_dropdown(page, viz)
             return
-        _toggle(label)             # check the target week
-        page.wait_for_timeout(1200)
-        for _ in range(6):         # uncheck every other still-checked week
-            others = [o for o in _checked() if o and o != label]
-            if not others:
+
+        _only(page, viz, label)    # fast path; the loop below verifies it
+        for _ in range(4):
+            weeks = _weeks(viz)
+            wrong = [w for w, ch in weeks if ch and w != label]
+            on = any(w == label and ch for w, ch in weeks)
+            if on and not wrong:
                 break
-            for o in others:
-                _toggle(o)
-                page.wait_for_timeout(800)
+            # Tick the target FIRST: Tableau re-selects everything when a
+            # categorical filter would be left with nothing selected, so the
+            # target has to be on before the others come off.
+            if not on:
+                _set(viz, page, label, True)
+                continue
+            for w in wrong:
+                _set(viz, page, w, False)
+
+        weeks = _weeks(viz)        # last look while the menu is still open
         _close_dropdown(page, viz)  # collapse (never via the combobox — see above)
         page.wait_for_timeout(2500)
-        final = (tbox.inner_text() or "").strip()
+        final = _box_text(tbox)
+        if final != label:         # the box lags the clicks on a slow viz
+            page.wait_for_timeout(2500)
+            final = _box_text(tbox)
         if verbose:
             print(f"  [je] Sales Week Ending set to {final}")
         if final != label:
             # raise so download_crosstab_patchright's retry re-navigates and
-            # re-applies the selection on a fresh load
+            # re-applies the selection on a fresh load. The option dump rides
+            # along: a box reading '(Multiple values)' says nothing about WHICH
+            # weeks are stuck on, and the menu is gone by the time anyone looks.
+            ticked = [w for w, ch in weeks if ch] or ["(none)"]
             raise RuntimeError(
-                f"JE week select failed: box={final!r} expected {label!r}")
+                f"JE week select failed: box={final!r} expected {label!r}; "
+                f"ticked weeks: {', '.join(ticked)} "
+                f"(of {len(weeks)} week option(s))")
 
     return pre_export
 
