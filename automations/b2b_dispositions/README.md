@@ -1,7 +1,7 @@
 # B2B Dispositions
 
-Auto-posts Carlos's OwnerVille B2B dispositions to Slack. **Slack-only** — Lucy
-can't text (Apple blocked the Messages automation, 7/29).
+Auto-posts Carlos's OwnerVille B2B dispositions to Slack, and texts the same
+shots to the iMessage groups (`--text`, live since 8/6 on Lucy 2).
 
 Source: Carlos Loom (36f30a9222fb4b0fb9307450e0b6d2b7) + #b2b-dispositions spec.
 
@@ -12,11 +12,17 @@ Three per-day threads, each in **both** `#alphalete-gp-sales` and
 
 | Thread | Content | Cadence (Central) |
 |---|---|---|
-| **Today's Activity** | rep list + knock counts, AT&T + Box | 12,1,2,3,4,5,6pm + 6:30pm |
+| **Today's Activity** | rep list + knock counts, AT&T + Box | Mon–Fri 12,1,2,3,4,5,6pm + 7pm · Sat 12,1,2,3pm + 4pm |
 | **Time Tracker** | the two gap-summary cards, AT&T + Box | same |
-| **B2B Dispositions** | Territory Stats, one shot per territory, AT&T + Box | 6:30pm only |
+| **B2B Dispositions** | Territory Stats, one shot per territory, AT&T + Box | the final run only (7pm Mon–Fri, 4pm Sat) |
 
-Replies are captioned `AT&T — 1:00 PM`, `Box — 6:30 PM (Final)`, `AT&T — luis`.
+**No Sunday runs** — Sunday was turned off 2026-08-09 (`b8b89e6`), same commit
+that moved Saturday's wrap to 4pm. The days live in the two plists' `Weekday`
+arrays AND in `schedule_config.json` → `b2b_dispositions.standalone_weekdays`;
+change one, change the other, or the error watcher starts guessing the cadence
+from the Activity log and posts a false "didn't run today".
+
+Replies are captioned `AT&T — 1:00 PM`, `Box — 7:00 PM (Final)`, `AT&T — luis`.
 
 ## OwnerVille page map (office 11580 / Carlos — verified from the Loom)
 

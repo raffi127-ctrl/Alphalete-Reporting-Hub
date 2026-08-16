@@ -4608,6 +4608,36 @@
       "verify": null,
       "machine": "Lucy 2"
     },
+    "b2b_dispositions": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_weekdays": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "_standalone_weekdays_note": "Python weekday(): Mon-Sat. The REAL schedule lives in two plists on Lucy 2 - com.alphalete.b2b-dispositions-hourly (launchd Weekday 1-5 = Mon-Fri 12,13,14,15,16,17,18; Weekday 6 = Sat 12,13,14,15) and com.alphalete.b2b-dispositions-final (Mon-Fri 19:00, Sat 16:00). NEITHER has a Sunday slot: Sunday was turned off on 2026-08-09 (commit b8b89e6, 'b2b dispositions: off on Sunday, Saturday wraps at 4pm'). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log - it still had the OLD Sunday runs in its 3-week window (Sun 8/2 had a full 6-run day on the pre-change schedule, and Sun 8/9 got one 12:00 run before the change landed), so _historical_expected called Sunday 'expected' and posted 'B2B Dispositions - didn't run today on Lucy 2 - usually starts ~12:00' on Sun 2026-08-16 while nothing was wrong (Eve 2026-08-16). Off-day exemption covers the DIDN'T-RUN check only - a Sunday hand-rerun that FAILS still alerts. Keep this in sync with the plists' Weekday arrays if the days ever move.",
+      "_note": "Carlos's OwnerVille B2B dispositions -> Slack (#alphalete-gp-sales + #a-players-b2b as Lucy) + the iMessage groups. on_scheduler:false = the 4am orchestrator NEVER runs it; its real schedule is the two Lucy 2 LaunchAgents above (wrapper deploy/b2b_dispositions.sh). MUST run on Lucy 2 - that machine's OwnerVille login (Carlos / office 11580) is where the B2B campaigns are visible. Source is the OwnerVille portal over CDP, not Tableau. Module DRY-RUNS by default (--send is the only flag that touches Slack, --text the only one that texts), so a bare `lucy rerun b2b_dispositions` captures PNGs and posts nothing; the scheduled jobs pass --send --text. This handle exists so `lucy rerun b2b_dispositions` works and so the watcher can read standalone_weekdays. Owns the auto-registered 'B2B Dispositions (OwnerVille -> Slack)' Hub card.",
+      "display_name": "B2B Dispositions (OwnerVille -> Slack)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.b2b_dispositions.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "12:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null
+    },
     "att_order_log": {
       "on_scheduler": true,
       "_off_scheduler_note": "Carlos's ATT B2B Order Log -> the 'Lucy At&t Order Log' tab on the Vantura Master Sales Board (requested 2026-07-19 via Loom + Slack; the ATT counterpart to box_order_log). CUT OVER 2026-07-20 to Lucy 2's 4am orchestrator flow (first report migrated). on_scheduler:true; runs appstream-first-then-tableau via run_order; source_type tableau. LAYER-2 FRESHNESS GATE LIVE 2026-07-20: data_sources tableau:att_orderlog wires the real _probe_att_orderlog \u2014 from 4am the pass runs it when Carlos's ORDERLOG extract actually has the day's rows and SKIPS + circles back to re-probe when it doesn't (Lucy 1's Box behaviour), instead of a fixed clock (not_before removed). Probe fail-opens past 05:30 so it can never hold the log. Live-verified 2026-07-20: correct ready(today)/not-ready(future) verdicts, non-disruptive (never _kill_ours the shared CDP session). base_args --sheet so the batch WRITES (the module dry-runs by default \u2014 the silent-no-op trap). The standalone com.alphalete.att-order-log agent was RETIRED on Lucy 2 (disable_att_order_log_agent) so it does not double-run; ROLL BACK with `lucy rerun install_att_order_log_agent --machine \"Lucy 2\"` (+ flip this on_scheduler false). Megan asked for 5:30am CST, but 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder and that job MUST finish by 6:00 (Sales Boards starts 6:00, VA posts ~5:57) \u2014 this pull is ~7min on a 120MB export plus a full Chrome-profile copy, so 5:00am is recommended instead; the LaunchAgent is NOT installed until she picks. Present so `lucy rerun att_order_log` (dry) and `lucy rerun att_order_log --sheet` (writes) work. Pulls ATTTRACKER-B2B/ORDERLOG via the DIRECT authenticated .csv \u2014 NOT cdp_pull.probe(), which ignores its url/out arguments, hardcodes the bare view and cost a run on 2026-07-19. Un-pivots the per-measure fan-out (every sale is emitted once per measure, 4x; compute.load_orderlog does NOT collapse this) and filters to Carlos. DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity); a laptop pull evicts the mini's ownerville session holder. Writes only its own two tabs (PROTECTED_TABS guard). Does NOT post to Slack.",
