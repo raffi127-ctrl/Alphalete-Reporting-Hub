@@ -38,7 +38,23 @@ SHEET_MATCH = "Owner (+/-) Rep"
 # right of the "Owner & Office" header text. Same convention as activate_xy.
 # Measured 2026-08-16 from a screenshot: the control is at CSS (54, 434) inside
 # a 1408x606 viz box offset y=38.
+#
+# ⚠ A FRACTION IS ONLY VALID AT THE VIEWPORT IT WAS MEASURED AT. The probe
+# session (1408x646) put the '+' at (54, 434); the report's session ran bigger
+# and the same fraction landed at (64, 548) — 114px low, and the '+' is ~12px,
+# so it missed and the export came back owner-level. Hence VIEWPORT below: the
+# hook pins the window before measuring so the fraction means what it meant when
+# it was measured. ANCHOR_TEXT is tried FIRST and doesn't care about any of this.
 EXPAND_XY = (0.038, 0.654)
+VIEWPORT = {"width": 1408, "height": 646}
+
+# Preferred way in: find the row-header text in the viz's DOM and click just
+# right of it. Survives any viewport. Falls back to EXPAND_XY when Tableau
+# renders the header with no text node to grab (it is a canvas viz, so this is
+# genuinely possible — measure a fresh EXPAND_XY from a screenshot if so).
+ANCHOR_TEXT = "Owner"
+ANCHOR_DX = 26      # px right of the anchor's left edge
+ANCHOR_DY = 22      # px below the anchor's top edge
 
 # Expanding re-renders ~868 rep rows x3 measures. A short wait shoots the OLD
 # table back, which reads exactly like "the click did nothing".
@@ -78,6 +94,15 @@ def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
     since each retry re-navigates and resets both.
     """
     def _hook(page, viz) -> None:
+        # Pin the window BEFORE anything is measured — EXPAND_XY is only
+        # meaningful at the viewport it was measured at.
+        try:
+            page.set_viewport_size(VIEWPORT)
+            page.wait_for_timeout(1500)
+        except Exception as e:  # noqa: BLE001 — not fatal, the anchor may still hit
+            if verbose:
+                print(f"  (couldn't pin the viewport: {type(e).__name__})",
+                      flush=True)
         if verbose:
             print(f"  -> SALES SUMMARY window {_fmt(start)} → {_fmt(end)}",
                   flush=True)
@@ -108,14 +133,31 @@ def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
         if frame_el is None:
             raise RuntimeError("SALES SUMMARY: viz iframe vanished before expand")
         b = frame_el.bounding_box()
-        cx = b["x"] + b["width"] * EXPAND_XY[0]
-        cy = b["y"] + b["height"] * EXPAND_XY[1]
+
+        cx = cy = None
+        how = "fraction"
+        # 1) Anchor on the header's text node if Tableau rendered one. Viewport
+        #    independent, so it survives a session that opens a different size.
+        try:
+            anchor = viz.get_by_text(ANCHOR_TEXT, exact=False).first
+            ab = anchor.bounding_box(timeout=6_000)
+            if ab:
+                cx, cy = ab["x"] + ANCHOR_DX, ab["y"] + ANCHOR_DY
+                how = f"anchor {ANCHOR_TEXT!r} at ({ab['x']:.0f}, {ab['y']:.0f})"
+        except Exception:
+            pass
+        # 2) Fall back to the measured fraction of the (now pinned) viz box.
+        if cx is None:
+            cx = b["x"] + b["width"] * EXPAND_XY[0]
+            cy = b["y"] + b["height"] * EXPAND_XY[1]
+
         page.mouse.move(cx, cy)
         page.wait_for_timeout(1200)      # the '+' only paints on hover
         page.mouse.click(cx, cy)
         if verbose:
-            print(f"  -> expanded Owner→Rep at ({cx:.0f}, {cy:.0f}); "
-                  f"waiting {EXPAND_WAIT_MS // 1000}s for the re-render",
+            print(f"  -> expand click via {how} at ({cx:.0f}, {cy:.0f}) "
+                  f"[viz box {b['x']:.0f},{b['y']:.0f} {b['width']:.0f}x"
+                  f"{b['height']:.0f}]; waiting {EXPAND_WAIT_MS // 1000}s",
                   flush=True)
         page.wait_for_timeout(EXPAND_WAIT_MS)
     return _hook
