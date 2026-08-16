@@ -335,6 +335,15 @@ def main(argv=None) -> int:
                          "that looks like a hierarchy +/- control, then stop. "
                          "The way to SEE a canvas-drawn viz from another "
                          "machine.")
+    ap.add_argument("--expand", action="store_true",
+                    help="with --dump: pin the date window and EXPAND the "
+                         "Owner→Rep hierarchy before exporting, via the shared "
+                         "b2b_sales_summary hook. Without it the SALES SUMMARY "
+                         "rep sheet exports owner-level.")
+    ap.add_argument("--expand-start", default=None, metavar="YYYY-MM-DD",
+                    help="start of the --expand date window")
+    ap.add_argument("--expand-end", default=None, metavar="YYYY-MM-DD",
+                    help="end of the --expand date window (the WE Sunday)")
     ap.add_argument("--at", action="append", default=None, metavar="X,Y",
                     help="with --shot: hover this fractional point of the viz "
                          "before shooting; repeatable, applied in order. A "
@@ -351,6 +360,10 @@ def main(argv=None) -> int:
                          "(case-insensitive); repeatable. Each sheet costs "
                          "5-10 min, so narrow it or blow the timeout.")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
+    if args.expand and not (args.expand_start and args.expand_end):
+        ap.error("--expand needs --expand-start and --expand-end "
+                 "(the Mon..Sun window; guessing the window is how you get a "
+                 "clean-looking export of the wrong week)")
 
     buf = []
 
@@ -514,8 +527,20 @@ def main(argv=None) -> int:
             url = _url(sat)
             rec(f"  url: {url}")
             out = scratch / f"probe_{i}.csv"
+            # --expand: the SALES SUMMARY rep sheet is a +/- HIERARCHY, so a
+            # plain export is owner-level. Use the SAME hook the reports use,
+            # never a probe-only copy — a recipe that works here and nowhere
+            # else is worse than no recipe.
+            hook = None
+            if args.expand:
+                from automations.shared import b2b_sales_summary as B2BSS
+                s, e = (dt.date.fromisoformat(args.expand_start),
+                        dt.date.fromisoformat(args.expand_end))
+                hook = B2BSS.expand_hook(s, e)
+                rec(f"  expand hook: {s} → {e}")
             try:
-                download_crosstab_patchright(url, sheet, out, verbose=False)
+                download_crosstab_patchright(url, sheet, out, verbose=False,
+                                             pre_export=hook)
                 rows = T._read(out)
             except Exception as e:  # noqa: BLE001 — one bad sheet must not kill the probe
                 rec(f"  !! download/parse failed: {type(e).__name__}: {str(e)[:160]}")
