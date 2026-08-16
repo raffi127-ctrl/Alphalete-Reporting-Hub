@@ -134,6 +134,98 @@ def _upload(lines) -> None:
     ws.update("A1", [[ln[:900]] for ln in lines[:800]])
 
 
+SHOT_TAB = "Carlos Bonus Shot"
+
+
+def _upload_shot(png_bytes: bytes) -> int:
+    """base64-chunk a PNG into SHOT_TAB so a screenshot taken on the runner can
+    be decoded and LOOKED AT from another machine. Same trick as 'RP Shot' /
+    'Vantura Shot' — the runner has no display we can see, and a viz whose
+    controls are drawn on canvas can't be found by reading the DOM."""
+    import base64
+    from automations.recruiting_report import fill as _fill
+    b64 = base64.b64encode(png_bytes).decode()
+    chunks = [b64[i:i + 45000] for i in range(0, len(b64), 45000)]
+    sh = _fill._client().open_by_key(DIAG_SHEET_ID)
+    try:
+        ws = sh.worksheet(SHOT_TAB)
+        ws.clear()
+    except Exception:  # noqa: BLE001 — tab may not exist yet
+        ws = sh.add_worksheet(title=SHOT_TAB, rows=max(50, len(chunks) + 5),
+                              cols=1)
+    ws.update("A1", [[c] for c in chunks])
+    return len(chunks)
+
+
+def shoot_view(view_url: str, rec, wait_ms: int = 25_000,
+               verbose: bool = False) -> None:
+    """Open a view, let it render, and upload a screenshot + a dump of anything
+    in the DOM that could be the hierarchy's +/- control.
+
+    Why both: Tableau draws the crosstab on a canvas, so the '+' usually has no
+    DOM node to query — but the accessibility layer sometimes exposes one, and
+    when it doesn't the screenshot is what gives us the pixel position to click.
+    """
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=verbose) as page:
+        page.goto(view_url, wait_until="domcontentloaded")
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        try:
+            viz.locator(
+                '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+            ).wait_for(state="visible", timeout=60_000)
+        except Exception as e:  # noqa: BLE001 — a blank viz is a finding
+            rec(f"  !! toolbar never rendered: {type(e).__name__}: {str(e)[:120]}")
+        page.wait_for_timeout(wait_ms)
+
+        frame = page.frame(url=lambda u: "vizql" in (u or "")) or None
+        box = None
+        try:
+            box = page.query_selector(
+                'iframe[title="Data Visualization"]').bounding_box()
+            rec(f"  viz iframe box: x={box['x']:.0f} y={box['y']:.0f} "
+                f"w={box['width']:.0f} h={box['height']:.0f}")
+        except Exception:
+            rec("  !! could not measure the viz iframe")
+
+        # Anything that smells like an expand control, with its position so a
+        # hit can be turned straight into a fractional click target.
+        js = """() => {
+          const out = [];
+          document.querySelectorAll('*').forEach(e => {
+            const a = (e.getAttribute && (e.getAttribute('aria-label') || '')) || '';
+            const t = (e.getAttribute && (e.getAttribute('title') || '')) || '';
+            const d = (e.getAttribute && (e.getAttribute('data-tb-test-id') || '')) || '';
+            const s = (a + ' ' + t + ' ' + d).toLowerCase();
+            if (!s.trim()) return;
+            if (/expand|collapse|drill|hierarch|\\+\\/-|plus|minus/.test(s)) {
+              const r = e.getBoundingClientRect();
+              out.push([e.tagName, a.slice(0,60), t.slice(0,40), d.slice(0,50),
+                        Math.round(r.x), Math.round(r.y),
+                        Math.round(r.width), Math.round(r.height)]);
+            }
+          });
+          return out.slice(0, 40);
+        }"""
+        for label, target in (("page", page), ("vizql-frame", frame)):
+            if target is None:
+                continue
+            try:
+                hits = target.evaluate(js)
+            except Exception as e:  # noqa: BLE001
+                rec(f"  !! {label}: DOM scan failed: {type(e).__name__}")
+                continue
+            rec(f"  {label}: {len(hits)} expand-ish element(s)")
+            for h in hits:
+                rec(f"CTRL: {h}")
+
+        try:
+            n = _upload_shot(page.screenshot(full_page=True))
+            rec(f"  screenshot -> {SHOT_TAB!r} tab, {n} base64 chunk(s)")
+        except Exception as e:  # noqa: BLE001 — never fail the probe on upload
+            rec(f"  !! screenshot upload failed: {type(e).__name__}: {str(e)[:120]}")
+
+
 def list_workbook_views(workbook_url: str, rec, verbose: bool = False) -> list:
     """Every view in a workbook's `/views` page, as (name, href).
 
@@ -206,6 +298,12 @@ def main(argv=None) -> int:
                     help="dump these EXACT worksheet names instead of CANDIDATES; "
                          "repeatable. Lets --dump work on any view, not just the "
                          "report's own.")
+    ap.add_argument("--shot", action="store_true",
+                    help="open the FIRST url, screenshot it into the "
+                         f"{SHOT_TAB!r} tab (base64) and dump any DOM element "
+                         "that looks like a hierarchy +/- control, then stop. "
+                         "The way to SEE a canvas-drawn viz from another "
+                         "machine.")
     ap.add_argument("--workbook", default=None, metavar="URL",
                     help="enumerate every VIEW in a workbook's /views page and "
                          "stop. One page load, so it is the cheap first step "
@@ -288,6 +386,19 @@ def main(argv=None) -> int:
                 rec(f"findings -> {DIAG_TAB!r} tab")
             except Exception as e:  # noqa: BLE001
                 print(f"diag upload failed: {e}", flush=True)
+        return 0
+
+    if args.shot:
+        rec("")
+        rec(f"### shot: {urls[0]}")
+        shoot_view(urls[0], rec)
+        if not args.no_upload:
+            try:
+                _upload(buf)
+                rec("")
+                rec(f"findings -> {DIAG_TAB!r} tab")
+            except Exception as e:      # noqa: BLE001 — never fail on upload
+                rec(f"(upload failed: {type(e).__name__}: {str(e)[:120]})")
         return 0
 
     if args.workbook:
