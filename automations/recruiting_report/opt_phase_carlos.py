@@ -1469,8 +1469,16 @@ def main() -> int:
         # went '-' across the board, and the staleness gate stayed happy
         # because the CSV WAS fresh. Refuse instead — a named failure beats a
         # blank cell nobody can explain. [[project_b2b-worksheet-dedup-suffix-rename]]
+        #
+        # Exit 0, NOT 1 (Eve 2026-08-16). A dead source costs one ROW, not the
+        # report: the other ~12 Carlos OPT views filled fine. Exiting 1 made
+        # carlos_opt_all count this as a failed step, which suppressed its
+        # '=== done ===' sentinel and left the Hub card reading FAILED — every
+        # Monday, for as long as the source stays gone. The source manifest
+        # below is the right channel: one named ping a week, card stays green.
+        # Same shape opt_retail and the org's opt_b2b already use.
         if rep_idx is None:
-            print(f"❌ Personal Production: {csv_path.name} has no 'REP' "
+            print(f"⚠ Personal Production: {csv_path.name} has no 'REP' "
                   f"column — this is NOT the per-rep sheet. Columns: {headers}")
             print("   The per-rep worksheet did not survive the ATTTRACKER-B2B "
                   "republish. Re-point the personal_production ViewConfig at "
@@ -1478,7 +1486,26 @@ def main() -> int:
                   "Rep' on the SALESSUMMARY view — needs the +/- hierarchy "
                   "EXPANDED before export, or the crosstab is owner-level).")
             print("   SKIPPING the PP fill — leaving the cells as they are.")
-            return 1
+            if not args.dry_run:
+                try:
+                    from automations.shared import run_manifest as _rm
+                    # NOT carlos_opt_all's 'carlos-1on1s-run' id — that one gets
+                    # mark_clean()'d at the end of every good run, which would
+                    # wipe this the moment the other steps pass.
+                    _rm.write_manifest(
+                        "carlos_focus_personal_production",
+                        failed=["personal production"], retry_args=[],
+                        kind="source",
+                        note="The per-rep Tableau worksheet behind Personal "
+                             "Production (row 42) is gone since the 2026-08 "
+                             "ATTTRACKER-B2B republish. Every OTHER Carlos OPT "
+                             "metric filled normally; row 42 is blank, not "
+                             "wrong. Needs the replacement view wired up — see "
+                             "the personal_production ViewConfig.")
+                except Exception as e:  # noqa: BLE001 — alerting never breaks the run
+                    print(f"   ⚠ couldn't record the missing-source manifest "
+                          f"({type(e).__name__}: {str(e)[:120]})")
+            return 0
 
         # Build {rep-name lowered: product values} from per-rep rows.
         by_rep: dict[str, dict] = {}
