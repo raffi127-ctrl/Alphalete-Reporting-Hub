@@ -48,13 +48,16 @@ SHEET_MATCH = "Owner (+/-) Rep"
 EXPAND_XY = (0.038, 0.654)
 VIEWPORT = {"width": 1408, "height": 646}
 
-# Preferred way in: find the row-header text in the viz's DOM and click just
-# right of it. Survives any viewport. Falls back to EXPAND_XY when Tableau
-# renders the header with no text node to grab (it is a canvas viz, so this is
-# genuinely possible — measure a fresh EXPAND_XY from a screenshot if so).
-ANCHOR_TEXT = "Owner"
-ANCHOR_DX = 26      # px right of the anchor's left edge
-ANCHOR_DY = 22      # px below the anchor's top edge
+# NO TEXT ANCHOR. Trying to find the header by its text looked like the
+# viewport-proof answer and was worse: 'Owner' matches the FILTER label
+# "Owner & Office" at the top of the dashboard long before the table's row
+# header. Clicking there opens that filter's dropdown, and the open dropdown
+# then swallowed the Download click — the export failed with a bare
+# "Locator.click: Timeout 30000ms exceeded" that says nothing about the real
+# cause. With VIEWPORT pinned the fraction is deterministic, so it is the
+# whole mechanism. If Tableau moves the control, re-measure it from a
+# screenshot: `probe_carlos_bonus_sheets --shot --at X,Y` hovers a point and
+# shows you where it landed.
 
 # Expanding re-renders ~868 rep rows x3 measures. A short wait shoots the OLD
 # table back, which reads exactly like "the click did nothing".
@@ -134,28 +137,23 @@ def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
             raise RuntimeError("SALES SUMMARY: viz iframe vanished before expand")
         b = frame_el.bounding_box()
 
-        cx = cy = None
-        how = "fraction"
-        # 1) Anchor on the header's text node if Tableau rendered one. Viewport
-        #    independent, so it survives a session that opens a different size.
-        try:
-            anchor = viz.get_by_text(ANCHOR_TEXT, exact=False).first
-            ab = anchor.bounding_box(timeout=6_000)
-            if ab:
-                cx, cy = ab["x"] + ANCHOR_DX, ab["y"] + ANCHOR_DY
-                how = f"anchor {ANCHOR_TEXT!r} at ({ab['x']:.0f}, {ab['y']:.0f})"
-        except Exception:
-            pass
-        # 2) Fall back to the measured fraction of the (now pinned) viz box.
-        if cx is None:
-            cx = b["x"] + b["width"] * EXPAND_XY[0]
-            cy = b["y"] + b["height"] * EXPAND_XY[1]
+        # Sanity-check the pin actually took: EXPAND_XY was measured against a
+        # 1408x606 box, and a box materially wider/taller means the click is
+        # about to land somewhere else entirely. Warn loudly rather than click
+        # blind — a missed click costs a whole run and looks like a data issue.
+        if verbose and (abs(b["width"] - VIEWPORT["width"]) > 40
+                        or abs(b["height"] - 606) > 60):
+            print(f"  ⚠ viz box is {b['width']:.0f}x{b['height']:.0f}, not the "
+                  f"~1408x606 EXPAND_XY was measured at — the expand click may "
+                  f"miss and the export come back owner-level.", flush=True)
 
+        cx = b["x"] + b["width"] * EXPAND_XY[0]
+        cy = b["y"] + b["height"] * EXPAND_XY[1]
         page.mouse.move(cx, cy)
         page.wait_for_timeout(1200)      # the '+' only paints on hover
         page.mouse.click(cx, cy)
         if verbose:
-            print(f"  -> expand click via {how} at ({cx:.0f}, {cy:.0f}) "
+            print(f"  -> expand click at ({cx:.0f}, {cy:.0f}) "
                   f"[viz box {b['x']:.0f},{b['y']:.0f} {b['width']:.0f}x"
                   f"{b['height']:.0f}]; waiting {EXPAND_WAIT_MS // 1000}s",
                   flush=True)
