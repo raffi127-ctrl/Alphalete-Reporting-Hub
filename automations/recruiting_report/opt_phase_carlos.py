@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from . import fill
+from automations.shared import b2b_sales_summary as _B2BSS
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 DOWNLOAD_DIR = WORKSPACE / "output" / "carlos_opt_downloads"
@@ -276,40 +277,24 @@ VIEWS: List[ViewConfig] = [
         # loading the custom view REP EXPANDED. Re-create the custom view" —
         # so its viz rendered blank and every download/scrape failed, leaving
         # PP stuck at a May-20 cache: identical every week, Megan 2026-06-08).
-        # The base 'Sales.Quality Metrics' worksheet WAS rep-level (dimensions
-        # Owner Name + Rep — verified live 2026-06-08), and a CROSSTAB export
-        # returns the worksheet's full level of detail regardless of visual
-        # collapse, so it gave the same per-rep rows the custom view used to.
+        # SOURCE MOVED 2026-08-16. It used to be 'Sales.Quality Metrics' on
+        # B2BATTSalesMetrics, which WAS rep-level (dimensions Owner Name + Rep,
+        # verified 2026-06-08). The 2026-08 republish left only an OWNER-level
+        # sheet under that name, keeping the same product columns — so the
+        # download kept succeeding and meant the wrong thing.
         #
-        # ⚠ NO LONGER TRUE (probed 2026-08-16). The 2026-08 republish left this
-        # view offering 'Sales.Quality Metrics (2)' — OWNER-level, key column
-        # 'Owner Name', 73 rows, with a 'Rep Count' — and '(3)', the Grand Total
-        # row alone. The Rep dimension is GONE, but the four product columns
-        # remain, so the download succeeds and means the wrong thing. The
-        # thumbnail match below is a substring, so it happily picks '(2)'; the
-        # parser is what refuses (it demands a 'REP' column and skips the fill).
-        # Replacement candidate: worksheet 'Sales Summary - Owner (+/-) Rep' on
-        # .../ATTTRACKER-B2B/SALESSUMMARY — but its +/- hierarchy must be
-        # EXPANDED before the export (unlike the old sheet, a collapsed
-        # hierarchy really does drop Rep from the level of detail: a crosstab
-        # taken collapsed returns 73 owners x 3 measure rows and no reps), and
-        # its shape differs (CRU/IRU split, 3 rows per entity).
+        # Now: SALES SUMMARY's 'Sales Summary - Owner (+/-) Rep'. Its rows are a
+        # +/- HIERARCHY, so the export is owner-level unless the hierarchy is
+        # expanded first; the '+' is painted on canvas, has no DOM node, and
+        # only appears on hover. All of that — the date boxes, the pixel click,
+        # the CRU/IRU column sums — lives in automations.shared.b2b_sales_summary,
+        # shared with the Alphalete Org B2B step which reads the same source.
         # [[project_b2b-worksheet-dedup-suffix-rename]]
-        #
-        # The base view's Download→Crosstab flyout opens cleanly (the custom
-        # view's didn't). Week is pinned via the URL
-        # 'Sale Date Week Ending (mon-sun)' filter below.
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/"
-            "ATTTRACKER-B2B/B2BATTSalesMetrics",
-        sheet_thumbnail_match="Sales.Quality Metrics",
-        render_wait_ms=22_000,  # heavy base dashboard — let the rep table render
-        # NO URL week filter. The base dashboard's week control is its canvas
-        # "Time Frame" quick filter (defaults to "Last Week" = the just-finished
-        # reporting week, which is exactly what the weekly run needs). Appending
-        # the ATT workbooks' 'Sale Date Week Ending (mon-sun)' param BLANKS the
-        # Sales.Quality Metrics sheet (it isn't a real filter on this dashboard;
-        # verified 2026-06-08 — the sheet never renders, so the crosstab can't
-        # find it). week_filter_field=None keeps the URL clean.
+        url=_B2BSS.VIEW_URL,
+        sheet_thumbnail_match=_B2BSS.SHEET_MATCH,
+        render_wait_ms=22_000,  # heavy dashboard — let the rep table render
+        # No URL week param on this view either: the window goes in through the
+        # Start Date / End Date boxes, driven by the shared expand hook.
         week_filter_field=None,
         metrics=[
             ViewMetric(sheet_row=42, tableau_column="Total"),  # placeholder
@@ -1232,7 +1217,13 @@ def main() -> int:
             pp_view = next(v for v in VIEWS if v.key == "personal_production")
             try:
                 pp_path = DOWNLOAD_DIR / "personal_production_crosstab.csv"
-                download_view_crosstab(pp_view, pp_path, week=we, page=page)
+                # SALES SUMMARY has no URL week param: the window goes in
+                # through its date boxes, and the Owner→Rep hierarchy has to be
+                # expanded or the export is owner-level. Both live in the hook.
+                _s, _e = _B2BSS.week_bounds(we)
+                download_view_crosstab(
+                    pp_view, pp_path, week=we, page=page,
+                    pre_download_hook=_B2BSS.expand_hook(_s, _e))
                 print(f"  → personal_production: crosstab saved "
                       f"{pp_path.name}", flush=True)
                 ok.append("personal_production")
@@ -1259,7 +1250,9 @@ def main() -> int:
             out = DOWNLOAD_DIR / "personal_production_crosstab.csv"
             print(f"Test-CROSSTAB PP (sheet {view.sheet_thumbnail_match!r}, "
                   f"week ending {we})…")
-            download_view_crosstab(view, out, week=we)
+            _s, _e = _B2BSS.week_bounds(we)
+            download_view_crosstab(view, out, week=we,
+                                   pre_download_hook=_B2BSS.expand_hook(_s, _e))
             # Tableau crosstabs are UTF-16 / tab-delimited (see _parse_view_csv).
             import csv as _csv
             with open(out, encoding="utf-16") as fh:
@@ -1455,37 +1448,29 @@ def main() -> int:
                   f"`--download-all` + `--apply-view personal_production`.")
             return 1
         with open(csv_path, encoding="utf-16") as f:
-            rows = list(_csv.reader(f, delimiter="\t"))
-        headers = [h.strip() for h in rows[0]]
-        # The 'Rep' header has a trailing space in the CSV ('Rep ').
-        rep_idx = next((i for i, h in enumerate(headers)
-                        if h.strip().lower() == "rep"), None)
-        # NO index-1 fallback. The 2026-08 ATTTRACKER-B2B republish left an
-        # OWNER-level sheet whose name still CONTAINS 'Sales.Quality Metrics'
-        # (the dialog now offers '(2)' and '(3)', and the thumbnail match above
-        # is a substring, so we happily download it) carrying the same four
-        # product columns. On that sheet index 1 is 'Sales', so the old
-        # fallback keyed every row by a sales NUMBER: no rep ever matched, PP
-        # went '-' across the board, and the staleness gate stayed happy
-        # because the CSV WAS fresh. Refuse instead — a named failure beats a
-        # blank cell nobody can explain. [[project_b2b-worksheet-dedup-suffix-rename]]
-        #
-        # Exit 0, NOT 1 (Eve 2026-08-16). A dead source costs one ROW, not the
-        # report: the other ~12 Carlos OPT views filled fine. Exiting 1 made
-        # carlos_opt_all count this as a failed step, which suppressed its
-        # '=== done ===' sentinel and left the Hub card reading FAILED — every
-        # Monday, for as long as the source stays gone. The source manifest
-        # below is the right channel: one named ping a week, card stays green.
-        # Same shape opt_retail and the org's opt_b2b already use.
-        if rep_idx is None:
+            rows = list(_csv.reader(f, delimiter="	"))
+        # SALES SUMMARY's expanded Owner->Rep crosstab. parse_owner_rep returns
+        # {} when the export has no 'REP' column, which means the +/- hierarchy
+        # never expanded and the export is OWNER-level. Reading that would put
+        # each ICD's whole TEAM in row 42, so treat it as a dead source instead.
+        # The old code fell back to column index 1 in that case; on the
+        # owner-level sheet index 1 is 'Sales', so it keyed rows by a sales
+        # NUMBER, matched nobody, and left PP '-' with no alarm at all.
+        # [[project_b2b-worksheet-dedup-suffix-rename]]
+        from automations.shared import b2b_sales_summary as B2BSS
+        by_rep = B2BSS.parse_owner_rep(rows)
+        if not by_rep:
+            headers = [h.strip() for h in (rows[0] if rows else [])]
             print(f"⚠ Personal Production: {csv_path.name} has no 'REP' "
-                  f"column — this is NOT the per-rep sheet. Columns: {headers}")
-            print("   The per-rep worksheet did not survive the ATTTRACKER-B2B "
-                  "republish. Re-point the personal_production ViewConfig at "
-                  "the replacement (candidate: 'Sales Summary - Owner (+/-) "
-                  "Rep' on the SALESSUMMARY view — needs the +/- hierarchy "
-                  "EXPANDED before export, or the crosstab is owner-level).")
+                  f"column, so the Owner→Rep hierarchy never expanded. "
+                  f"Columns: {headers}")
             print("   SKIPPING the PP fill — leaving the cells as they are.")
+            # Exit 0, NOT 1 (Eve 2026-08-16). A dead source costs one ROW, not
+            # the report: the other ~12 Carlos OPT views filled fine. Exiting 1
+            # made carlos_opt_all count this a failed step, which suppressed its
+            # '=== done ===' sentinel and left the Hub card reading FAILED every
+            # Monday for as long as the source stayed gone. The source manifest
+            # is the right channel: one named ping a week, card stays green.
             if not args.dry_run:
                 try:
                     from automations.shared import run_manifest as _rm
@@ -1496,28 +1481,16 @@ def main() -> int:
                         "carlos_focus_personal_production",
                         failed=["personal production"], retry_args=[],
                         kind="source",
-                        note="The per-rep Tableau worksheet behind Personal "
-                             "Production (row 42) is gone since the 2026-08 "
-                             "ATTTRACKER-B2B republish. Every OTHER Carlos OPT "
-                             "metric filled normally; row 42 is blank, not "
-                             "wrong. Needs the replacement view wired up — see "
-                             "the personal_production ViewConfig.")
+                        note="The SALES SUMMARY Owner→Rep export came back "
+                             "without a REP column, i.e. the hierarchy did not "
+                             "expand. Every OTHER Carlos OPT metric filled "
+                             "normally; row 42 is blank, not wrong. Re-check "
+                             "b2b_sales_summary.EXPAND_XY against a screenshot.")
                 except Exception as e:  # noqa: BLE001 — alerting never breaks the run
                     print(f"   ⚠ couldn't record the missing-source manifest "
                           f"({type(e).__name__}: {str(e)[:120]})")
             return 0
 
-        # Build {rep-name lowered: product values} from per-rep rows.
-        by_rep: dict[str, dict] = {}
-        for r in rows[1:]:
-            if len(r) <= rep_idx:
-                continue
-            rep = (r[rep_idx] or "").strip()
-            if not rep or rep.lower() == "total":
-                continue
-            rec = {h: (r[i].strip() if i < len(r) and r[i] else "")
-                   for i, h in enumerate(headers)}
-            by_rep[rep.lower()] = rec
         print(f"  → parsed {len(by_rep)} per-rep rows from {csv_path.name}")
 
         sh = fill.open_sheet()
@@ -1599,7 +1572,10 @@ def main() -> int:
                             break
                     if rec:
                         break
-            value = _format_carlos_pp(rec or {})
+            # B2BSS.format_pp, not _format_carlos_pp: the SALES SUMMARY parser
+            # already summed CRU+IRU into {'NI': n, 'NL': n, …}, while
+            # _format_carlos_pp expects the OLD sheet's raw product columns.
+            value = B2BSS.format_pp(rec)
             # Use write_icd_values without row_remap (we already resolved)
             for line in write_icd_values(ws, {pp_actual_row: value},
                                          target_col, dry_run=args.dry_run):

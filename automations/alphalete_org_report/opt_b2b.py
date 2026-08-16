@@ -20,10 +20,10 @@ Metrics filled (canonical row → label, from ROW_TO_LABEL):
   (* = computed in Python by apply_computed.)
 
 Direct Deposit comes from the shared Program Summary workbook (same source
-+ parser as JE). Personal Production (canonical row 42) comes from the
-per-rep B2BLASTWEEK view — the ICD's OWN self-row. ⚠ That per-rep worksheet
-did not survive the 2026-08 ATTTRACKER-B2B republish; row 42 is blank and
-alarming until someone re-points B2B_PP_URL (see the constant).
++ parser as JE). Personal Production (canonical row 42) is the ICD's OWN
+self-row, read from SALES SUMMARY via `automations.shared.b2b_sales_summary`
+(the old per-rep worksheet did not survive the 2026-08 ATTTRACKER-B2B
+republish; that module carries the replacement recipe).
 
 Every source below is downloaded inside its own try/except so one dead view
 can't cost the whole fill. The price of that is silence, so anything that
@@ -45,6 +45,7 @@ from automations.recruiting_report.opt_phase import drive_crosstab_dialog
 from automations.alphalete_org_report.opt_nds import (
     ALPHALETE_ORG_SHEET_ID, OUTPUT_DIR, ORG_DD_URL, ORG_DD_SHEET,
     parse_direct_deposit, match_dd_owner, _norm_owner, _current_target_week_end)
+from automations.shared import b2b_sales_summary as B2BSS
 from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 
@@ -78,61 +79,33 @@ B2B_ICDS = [
     ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
 ]
 
-# Personal Production = the per-rep 'B2BLASTWEEK' view (REPEXPANDED filtered to
-# the finished week — Megan 2026-06-03; 'this week and last' combined the two,
-# so a last-week-only view is what's separable). PP per ICD = the rep row where
-# REP == the ICD's own name (their own sales), formatted '3 NI / 2 NL'.
-B2B_PP_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-              "B2BATTSalesMetrics/5dc77806-1536-4a20-9c98-54545f786715/B2BLASTWEEK")
-# SUBSTRING, not the exact dialog name — Tableau appends a dedup counter and a
-# republish renames sheets wholesale, so an exact name is the most brittle
-# handle there is.
+# Personal Production = the ICD's OWN sales for the week: the rep row where
+# REP == the ICD's own name, formatted '3 NI / 2 NL'.
 #
-# ⚠ THE PER-REP SHEET IS CURRENTLY GONE (probed 2026-08-16). After the 2026-08
-# ATTTRACKER-B2B republish this view's dialog offers only:
-#   Activation & Churn (2) · Low Metric Office Count (2) ·
-#   Sales.Quality Metrics (2) · Sales.Quality Metrics (3) · zzz Last Refresh (3)
-# and NEITHER 'Sales.Quality Metrics' is per-rep: (2) is OWNER-level (key column
-# 'Owner Name', 73 rows, carries a 'Rep Count' — Carlos Hidalgo = 157, his whole
-# team) and (3) is the Grand Total row alone. The product columns the formatter
-# needs (Internet Sales. / VOIP Line Count / Wireless Lines / AIR/AWB Sales) ARE
-# there, which is exactly what makes it a trap: it parses fine and means the
-# wrong thing. _parse_b2b_pp therefore insists on a 'REP' column and reports the
-# source MISSING instead, so row 42 stays blank and the alarm fires.
-# TODO: find the replacement per-rep view (REPEXPANDED) and re-point this URL.
-B2B_PP_SHEET_MATCH = "Sales.Quality Metrics"
+# The source moved (2026-08). The old per-rep 'Sales.Quality Metrics' worksheet
+# did not survive the ATTTRACKER-B2B republish — what is left under that name is
+# OWNER-level and carries the same product columns, which is exactly the trap
+# that made row 42 wrong-or-blank in silence. The replacement is SALES SUMMARY's
+# 'Sales Summary - Owner (+/-) Rep', and everything about reading it (the date
+# boxes, the canvas '+' that has to be clicked to get rep rows at all, the
+# CRU/IRU sums) lives in the shared module — Carlos's own Focus report reads the
+# same source. [[project_b2b-worksheet-dedup-suffix-rename]]
 
 
 def _parse_b2b_pp(path, logfn=print) -> dict:
-    """Per-rep B2BLASTWEEK crosstab → {rep-name-lower: {column: value}}.
+    """Expanded SALES SUMMARY crosstab -> {rep-name-lower: {product: int}}.
 
-    REQUIRES a 'REP' key column, and returns {} (loudly) without one. The old
-    code fell back to column index 1 when no 'rep' header was found, which is
-    a trap now: the 2026-08 republish left an OWNER-level sheet with the same
-    name and the same product columns, where index 1 is 'Sales'. Keying rows by
-    a sales NUMBER yields a dict that is never empty and never matches an ICD —
-    Personal Production silently stays '-' AND the missing-source alarm never
-    fires. Better to say the source is gone."""
+    Returns {} when the export has no 'REP' column. That is not a parse detail:
+    it means the Owner->Rep hierarchy was NOT expanded, so the export is
+    owner-level and reading it would report each ICD's whole TEAM as their
+    personal production. Empty makes the caller flag the source missing."""
     from automations.alphalete_org_report.opt_nds import _read_tab_csv
     rows = _read_tab_csv(path)
-    if not rows or len(rows) < 2:
-        return {}
-    headers = [(h or "").strip() for h in rows[0]]
-    rep_i = next((i for i, h in enumerate(headers) if h.lower() == "rep"), None)
-    if rep_i is None:
-        logfn("OPT B2B: ✗ personal production: the worksheet has no 'REP' "
-              f"column — this is not the per-rep sheet. Columns: {headers}")
-        return {}
-    by_rep: dict = {}
-    for r in rows[1:]:
-        if len(r) <= rep_i:
-            continue
-        rep = (r[rep_i] or "").strip()
-        if not rep or rep.lower() == "total":
-            continue
-        by_rep.setdefault(rep.lower(),
-                          {h: (r[i] if i < len(r) else "")
-                           for i, h in enumerate(headers)})
+    by_rep = B2BSS.parse_owner_rep(rows)
+    if not by_rep:
+        headers = [(h or "").strip() for h in (rows[0] if rows else [])]
+        logfn("OPT B2B: ✗ personal production: the export has no 'REP' "
+              f"column, so the hierarchy never expanded. Columns: {headers}")
     return by_rep
 
 
@@ -149,7 +122,7 @@ def _b2b_pp_for(icd: str, by_rep: dict, fallback: str = "") -> str:
         if len(parts) >= 2:
             rec = next((v for k, v in by_rep.items()
                         if k.startswith(parts[0]) and k.endswith(parts[-1])), None)
-    return cb._format_carlos_pp(rec) if rec else "-"
+    return B2BSS.format_pp(rec)
 
 
 def _b2b_fallback_names(tab: str = B2B_TAB) -> List[str]:
@@ -177,7 +150,7 @@ def _week_col_label(today: Optional[dt.date] = None) -> str:
 
 
 def _download_by_substring(page, url: str, substr: str, out: Path,
-                           key: str = "", logfn=print) -> bool:
+                           key: str = "", logfn=print, pre_export=None) -> bool:
     """Download the crosstab worksheet whose dialog name CONTAINS `substr`.
 
     An EXACT worksheet name is the most brittle handle there is: Tableau appends
@@ -206,7 +179,11 @@ def _download_by_substring(page, url: str, substr: str, out: Path,
             logfn(f"OPT B2B: ✗ {key or substr}: no worksheet matching "
                   f"{substr!r} in {avail}")
             return False
-        drive_crosstab_dialog(page, url, target, out, verbose=False)
+        # pre_export runs only on the REAL download. The enumerate pass above
+        # doesn't need it — the sheet list doesn't depend on filters — and
+        # skipping it there saves re-driving the dates + a 25s expand twice.
+        drive_crosstab_dialog(page, url, target, out, verbose=False,
+                              pre_export=pre_export)
         return True
 
 
@@ -261,10 +238,16 @@ def collect_b2b_views(page, logfn=print) -> dict:
     pp_by_rep: dict = {}
     pp_out = OUTPUT_DIR / "opt_b2b_personal_production.csv"
     try:
-        if _download_by_substring(page, B2B_PP_URL, B2B_PP_SHEET_MATCH, pp_out,
-                                  key="personal production", logfn=logfn):
+        # The week the rest of this step is filling — the SALES SUMMARY view has
+        # no URL date param, so the window goes in through the hook's date boxes.
+        pp_start, pp_end = B2BSS.week_bounds(_current_target_week_end())
+        if _download_by_substring(
+                page, B2BSS.VIEW_URL, B2BSS.SHEET_MATCH, pp_out,
+                key="personal production", logfn=logfn,
+                pre_export=B2BSS.expand_hook(pp_start, pp_end)):
             pp_by_rep = _parse_b2b_pp(pp_out, logfn)
-            logfn(f"OPT B2B: personal production: {len(pp_by_rep)} rep(s)")
+            logfn(f"OPT B2B: personal production: {len(pp_by_rep)} rep(s) "
+                  f"({pp_start} → {pp_end})")
     except Exception as e:
         logfn(f"OPT B2B: ✗ personal production: {type(e).__name__}: {str(e)[:120]}")
     if not pp_by_rep:
