@@ -157,8 +157,15 @@ def _upload_shot(png_bytes: bytes) -> int:
     return len(chunks)
 
 
+def _parse_at(spec: str):
+    """'0.06,0.64' -> (0.06, 0.64). Fractions of the viz iframe box, same
+    convention as activate_xy."""
+    x, y = (float(v) for v in spec.split(","))
+    return x, y
+
+
 def shoot_view(view_url: str, rec, wait_ms: int = 25_000,
-               verbose: bool = False) -> None:
+               verbose: bool = False, at=(), click: bool = False) -> None:
     """Open a view, let it render, and upload a screenshot + a dump of anything
     in the DOM that could be the hierarchy's +/- control.
 
@@ -218,6 +225,26 @@ def shoot_view(view_url: str, rec, wait_ms: int = 25_000,
             rec(f"  {label}: {len(hits)} expand-ish element(s)")
             for h in hits:
                 rec(f"CTRL: {h}")
+
+        # Hover (and optionally click) fractional points inside the viz before
+        # shooting. A Tableau hierarchy's +/- only PAINTS on hover and lives on
+        # the canvas, so "hover here, then show me" is the only way to find it.
+        if at and box:
+            for spec in at:
+                try:
+                    fx, fy = _parse_at(spec)
+                except Exception:
+                    rec(f"  !! bad --at {spec!r} (want 'x,y' fractions)")
+                    continue
+                cx = box["x"] + box["width"] * fx
+                cy = box["y"] + box["height"] * fy
+                page.mouse.move(cx, cy)
+                page.wait_for_timeout(1200)
+                rec(f"  hovered {spec} -> ({cx:.0f}, {cy:.0f})")
+                if click:
+                    page.mouse.click(cx, cy)
+                    page.wait_for_timeout(3500)
+                    rec(f"  clicked {spec}")
 
         try:
             n = _upload_shot(page.screenshot(full_page=True))
@@ -304,6 +331,13 @@ def main(argv=None) -> int:
                          "that looks like a hierarchy +/- control, then stop. "
                          "The way to SEE a canvas-drawn viz from another "
                          "machine.")
+    ap.add_argument("--at", action="append", default=None, metavar="X,Y",
+                    help="with --shot: hover this fractional point of the viz "
+                         "before shooting; repeatable, applied in order. A "
+                         "Tableau hierarchy's +/- only paints on hover.")
+    ap.add_argument("--click", action="store_true",
+                    help="with --shot --at: CLICK each point instead of just "
+                         "hovering, then shoot the result")
     ap.add_argument("--workbook", default=None, metavar="URL",
                     help="enumerate every VIEW in a workbook's /views page and "
                          "stop. One page load, so it is the cheap first step "
@@ -391,7 +425,7 @@ def main(argv=None) -> int:
     if args.shot:
         rec("")
         rec(f"### shot: {urls[0]}")
-        shoot_view(urls[0], rec)
+        shoot_view(urls[0], rec, at=tuple(args.at or ()), click=args.click)
         if not args.no_upload:
             try:
                 _upload(buf)
