@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 53,
+  "confirmed_count": 54,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -392,6 +392,14 @@
       "confidence": 1.0,
       "auto_onboarded": true,
       "note": "Onboarded 2026-08-04 (Eve). Promoted out of Gabe Perez office; her tab was added mid-year so its week columns start WE 7/5/26."
+    },
+    {
+      "sheet_tab": "Michael Murphy",
+      "office_id": "23529",
+      "as_owner": "Michael Murphy",
+      "as_company": "A-List Acquisition LLC",
+      "confidence": 1.0,
+      "note": "Onboarded 2026-08-17 (Eve). Tab created that day from Template Fiber; week columns start WE 7/5/26. He was missing from all-offices.json until the list was refreshed live — the cached copy was from 2026-07-28, before his office existed."
     }
   ],
   "needs_review": [],
@@ -517,11 +525,7 @@
     {
       "sheet_tab": "Jesus Hawthorne",
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
-    },
-    {
-      "sheet_tab": "Michael Murphy",
-      "reason": "no AppStream office (sales-only, no recruiting) \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him. Tableau DOES list him as ICD owner 'MICHAEL MURPHY' (Wayne's Team) in ATT/INT/Metrics/Product Sales, so the OPT half fills. Tab created 2026-08-17 from Template Fiber and backfilled from WE 7/5"
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 2
 }
