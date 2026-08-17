@@ -884,6 +884,71 @@ def _week_variants(o: B2BOffice, view_key: str, today: dt.date = None) -> list:
     ]
 
 
+def _dump_filters(page, url: str, log=print) -> None:
+    """Map each quick filter on the dashboard to the checkbox list it owns.
+
+    WHY (2026-08-17): toggling a frame-wide [role='checkbox'] date list flips
+    aria-checked and changes nothing on screen, while the dropdown reading
+    '8/23/2026' never moves. The dashboard has FOUR filters and two of them read
+    '(All)' — so the 117-item list whose ids say 'Sale Date Week Ending (copy)'
+    is very likely one of those (All) ones, and the week dropdown is a DIFFERENT
+    field whose list we have never touched. This prints, per dropdown, the ids
+    its options carry — which names the field to filter on and the list to
+    drive. Tagged FLT| for logtail.
+    """
+    from automations.b2b_quality.run import _IFRAME
+    page.goto("about:blank", wait_until="domcontentloaded", timeout=60_000)
+    page.goto(url, wait_until="domcontentloaded", timeout=120_000)
+    page.wait_for_timeout(35_000)
+    fr = page.frame_locator(_IFRAME)
+    boxes = fr.locator(".tabComboBox")
+    n = min(boxes.count(), 8)
+    log("FLT| {} combo box(es)".format(boxes.count()))
+    for i in range(n):
+        try:
+            val = " ".join((boxes.nth(i).inner_text(timeout=8_000) or "").split())
+        except Exception:  # noqa: BLE001
+            val = "?"
+        log("FLT| --- box[{}] reads {!r} ---".format(i, val))
+        try:
+            boxes.nth(i).click(timeout=15_000)
+            page.wait_for_timeout(4_000)
+        except Exception as e:  # noqa: BLE001
+            log("FLT|   could not open ({})".format(type(e).__name__))
+            continue
+        try:
+            cbs = fr.locator("[role='checkbox']")
+            m = min(cbs.count(), 300)
+        except Exception:  # noqa: BLE001
+            continue
+        groups = {}
+        for j in range(m):
+            try:
+                cid = cbs.nth(j).get_attribute("id") or ""
+                txt = " ".join((cbs.nth(j).inner_text(timeout=2_500)
+                                or "").split()).lstrip("✓")
+                chk = cbs.nth(j).get_attribute("aria-checked")
+            except Exception:  # noqa: BLE001
+                continue
+            # The field name is the middle ':'-segment of the id.
+            key = next((b for b in cid.split(":")
+                        if b and not b.startswith("FI_")), cid[:40])
+            g = groups.setdefault(key, {"n": 0, "checked": 0, "first": []})
+            g["n"] += 1
+            if chk == "true":
+                g["checked"] += 1
+            if len(g["first"]) < 4 and txt:
+                g["first"].append(txt)
+        for key, g in groups.items():
+            log("FLT|   field={!r} items={} checked={} first={}".format(
+                key[:70], g["n"], g["checked"], g["first"]))
+        try:
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1_500)
+
+
 def _dump_view(page, url: str, log=print) -> None:
     """Print the loaded view's text + every labelled control, so the week
     control can be DRIVEN when it can't be URL-filtered.
@@ -1081,7 +1146,10 @@ def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 tp._ensure_tableau_authenticated(page, verbose=False,
                                                  allow_form_login=True)
-                if dump:
+                if dump == "filters":
+                    _dump_filters(page, variants[0][1], log=log)
+                    variants = []
+                elif dump:
                     _dump_view(page, variants[0][1], log=log)
                     variants = []
                 for label, url in variants:

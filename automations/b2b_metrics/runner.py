@@ -500,6 +500,11 @@ def main(argv=None) -> int:
                          "loaded view's text + labelled controls (tagged TXT| "
                          "LBL| SEL| for logtail), to find the week control when "
                          "no URL filter moves it.")
+    ap.add_argument("--probe-filters", action="store_true",
+                    help="with --probe-week: open EACH quick filter on the "
+                         "dashboard and print the field its options belong to, "
+                         "so the week dropdown can be told apart from the "
+                         "'(All)' ones that share a similar option list.")
     ap.add_argument("--probe-csv", action="store_true",
                     help="DIAGNOSTIC: fetch the view's DIRECT .csv for the "
                          "target week, the next week and the prior one, and "
@@ -567,7 +572,8 @@ def main(argv=None) -> int:
         # every office reads the same OutofBoundsReport.
         from automations.b2b_metrics import capture as _cap
         return _cap.probe_week(_off.get(args.office or "carlos"),
-                               dump=args.probe_dump,
+                               dump=("filters" if args.probe_filters
+                                     else args.probe_dump),
                                today=(dt.date.fromisoformat(args.today)
                                       if args.today else None))
 
