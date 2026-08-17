@@ -65,7 +65,9 @@ fluff. I need clear visuals and concise communications.
   tomando alguien. El ✅ lo pone solo el código cuando el reporte vuelve
   a correr limpio, y saca el `:pending:` en el mismo momento. Si lo
   arreglaste a mano (sin re-corrida), cerralo vos:
-  `--resolve-report <report_id> --note "..."`.
+  `--resolve-report <report_id> --note "..."`. Desde Windows el comando
+  NO postea: encola el trabajo en la mini, porque todo lo que aparece en
+  ese canal sale como Lucy. No lo saltees posteando a mano.
 - **Cite the full source path** when telling me where a number comes
   from: workbook → view → worksheet → filter → row/col. I forget once
   I send the metric to you, so spell it out.
