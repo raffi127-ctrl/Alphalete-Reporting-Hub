@@ -461,6 +461,80 @@ def auto_onboard_tabs(
     return {"onboarded": onboarded, "ambiguous": ambiguous, "unmatched": unmatched}
 
 
+def promote_visible_sales_only(mapping: dict, dry_run: bool = False) -> List[dict]:
+    """Move `sales_only` tabs that have BECOME visible in AppStream into
+    `confirmed`, so their recruiting half starts filling on its own.
+
+    A `sales_only` entry means "Tableau has this ICD but AppStream (under this
+    login) does not", so only the OPT half of its tab fills and rows 2-23 stay
+    blank. That is usually a PENDING VISIBILITY REQUEST, not a permanent state —
+    Amos White Jr, 2026-08-17. Without this, the day Smart Circle / eStream grant
+    the access nothing happens: `auto_onboard_tabs` only considers tabs that are
+    in NO bucket, and `sales_only` counts as categorized, so the tab would sit
+    there half-filled until a human noticed and edited the mapping by hand.
+
+    OPT-IN per entry, via `"promote_when_visible": true`. Entries without the
+    flag are left alone on purpose: Salik Mallick and Jesus Hawthorne are
+    `sales_only` because they genuinely don't recruit, and silently flipping
+    those the moment a name happens to match an office would be a surprise.
+
+    Call this AFTER the office list has been refreshed live from AppStream — the
+    point is to react to a NEW office, and `all-offices.json` is a cache
+    (list_all_offices.refresh_offices_from_page, run.py step 2).
+
+    Mutates `mapping` in place and rewrites the mapping file. Returns the
+    promoted entries, each with `promoted_from_sales_only: True` so the caller
+    knows to backfill their recruiting history rather than just this week."""
+    pending = [e for e in mapping.get("sales_only", [])
+               if e.get("promote_when_visible")]
+    if not pending:
+        return []
+    from automations.focus_office_att import aliases as _al
+    office_index = _load_office_index()
+    try:
+        aliases_map = _al.load_aliases()
+    except Exception:
+        aliases_map = {}
+
+    promoted: List[dict] = []
+    for entry in pending:
+        tab = entry["sheet_tab"]
+        # Try the tab title AND the recorded as_owner: for a sales_only entry
+        # as_owner is the name TABLEAU uses, which is often exactly the spelling
+        # AppStream will use too ('Amos White Jr.' vs the tab's 'Amos White Jr').
+        office = None
+        for cand in (tab, entry.get("as_owner", "")):
+            if not cand:
+                continue
+            found, status, _ = match_tab_to_office(cand, office_index, aliases_map)
+            if status == "ok":
+                office = found
+                break
+        if not office:
+            continue
+        promoted.append({
+            "sheet_tab": tab,
+            "office_id": office["office_id"],
+            "as_owner": office.get("owner", tab),
+            "as_company": office.get("company", ""),
+            "confidence": 1.0,
+            "promoted_from_sales_only": True,
+            "was_sales_only_reason": entry.get("reason", ""),
+        })
+
+    if not promoted:
+        return []
+    promoted_tabs = {p["sheet_tab"] for p in promoted}
+    mapping["confirmed"].extend(promoted)
+    mapping["sales_only"] = [e for e in mapping.get("sales_only", [])
+                            if e["sheet_tab"] not in promoted_tabs]
+    mapping["confirmed_count"] = len(mapping["confirmed"])
+    mapping["sales_only_count"] = len(mapping.get("sales_only", []))
+    if not dry_run:
+        MAPPING_PATH.write_text(json.dumps(mapping, indent=2))
+    return promoted
+
+
 def prune_deleted_tabs(
     sh: gspread.Spreadsheet, mapping: dict, dry_run: bool = False
 ) -> List[str]:

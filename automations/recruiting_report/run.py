@@ -219,6 +219,13 @@ def main() -> int:
         return ("has been closed" in msg or "target page" in msg
                 or "browser has been closed" in msg or "target closed" in msg)
 
+    # Tabs that graduated from `sales_only` to `confirmed` THIS run (step 2.5).
+    # Their recruiting history was never fetched — the tab already holds OPT data,
+    # so the "is it populated?" check below would see a full tab and fetch only
+    # this week, leaving every prior week blank forever. Tracked here so the fill
+    # loop backfills them instead.
+    promoted_tabs: set = set()
+
     try:
 
         # Steps 2-4 (office-list refresh, onboard, prune, categorize) are
@@ -234,6 +241,18 @@ def main() -> int:
                 log.info(refresh_offices_from_page(target_page))
             except Exception as e:
                 log.warning("office-list refresh skipped: %s", e)
+
+            # Step 2.5: a `sales_only` tab flagged `promote_when_visible` whose
+            # office has NOW appeared in AppStream graduates to `confirmed`, so
+            # its recruiting half starts filling without anyone editing the
+            # mapping by hand. Runs right after the live office-list refresh
+            # above — that's what makes "access granted today" detectable today.
+            for p in fill.promote_visible_sales_only(mapping, dry_run=args.dry_run):
+                promoted_tabs.add(p["sheet_tab"])
+                log.info("[promoted] %s — AppStream can now see office %s (%s); "
+                         "sales_only → confirmed. Backfilling its recruiting "
+                         "history this run.",
+                         p["sheet_tab"], p["office_id"], p["as_owner"])
 
             # Step 3: auto-onboard — any tab not yet mapped whose name matches an
             # AppStream office (directly or via the shared 'ICD Aliases' list) is
@@ -336,7 +355,19 @@ def main() -> int:
                 continue
 
             # Determine weeks to fetch (uses PRIMARY section's populated check)
-            if fill.is_office_tab_populated(ws):
+            if tab_name in promoted_tabs:
+                # Just graduated from sales_only: AppStream can see this office
+                # for the FIRST time, so no week of its recruiting has ever been
+                # fetched — backfill the whole visible history, not just `week`.
+                # Deliberately NOT the empty-tab branch below: this tab is not
+                # empty (its OPT block is already filled), and dropping a fresh
+                # template copy on it would wipe that.
+                recent = [s for s in template_sundays if s <= week][-args.backfill_weeks:]
+                weeks_to_fetch = sorted(set(recent + [week]))
+                log.info("  newly visible in AppStream → backfilling %d week(s) "
+                         "of recruiting (template left alone; the tab already "
+                         "has OPT data)", len(weeks_to_fetch))
+            elif fill.is_office_tab_populated(ws):
                 weeks_to_fetch = [week]
             else:
                 # Empty tab (freshly-added ICD) — drop in a full formatted copy
