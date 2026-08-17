@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -71,6 +72,15 @@ def download_view_csv(workbook: str, view: str, out_path: Path,
     s = session or _grab_session()
     url = f"{TABLEAU_BASE}/t/{TABLEAU_SITE}/views/{workbook}/{view}.csv"
     r = s.get(url, params=params or {}, allow_redirects=True, timeout=timeout)
+    # Access ledger (Megan 2026-08-17) — this HTTP path bypasses the patchright
+    # chokepoint, so it has to report itself or the census undercounts.
+    try:
+        from automations.shared import tableau_ledger
+        tableau_ledger.record(url, sheet=view, kind="http_csv",
+                              extra=json.dumps(params or {}, sort_keys=True),
+                              ok=(r.status_code == 200))
+    except Exception:
+        pass
     if r.status_code != 200:
         raise RuntimeError(
             f"Tableau CSV download failed for {workbook}/{view}: "

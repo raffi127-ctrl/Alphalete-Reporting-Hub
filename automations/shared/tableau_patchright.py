@@ -29,6 +29,7 @@ interactive/debug use only.
 
 from __future__ import annotations
 
+import atexit
 import datetime as _dt
 import hashlib
 import json
@@ -371,6 +372,10 @@ def tableau_session(headless: bool = False, verbose: bool = True,
         try:
             _ensure_tableau_authenticated(page, verbose=verbose,
                                           allow_form_login=allow_form_login)
+            # Every entry into this context manager runs _sso_to_tableau, i.e. it
+            # is ONE Tableau login. That is the number eStream is counting, so
+            # the ledger records it separately from data pulls (Megan 2026-08-17).
+            _ledger("login", "tableau_session", sheet=str(prof.name))
             yield page
         finally:
             ctx.close()
@@ -595,6 +600,106 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
         f"Profile: {PROFILE_DIR}")
 
 
+# --- Shared session (login reuse) --------------------------------------------
+# Megan 2026-08-17: eStream flagged how many times we sign in to Tableau. Every
+# entry into tableau_session() is one ownerville->Tableau SSO login, and
+# download_crosstab_patchright opens its OWN session per call unless the caller
+# passes page=. So a report doing 5 pulls signs in 5 times.
+#
+# With TABLEAU_SHARED_SESSION=1 the process keeps ONE authenticated context alive
+# and gives each pull a FRESH PAGE inside it. That collapses N logins to 1
+# without sharing viz state between pulls.
+#
+# Fresh page (not a shared page) is deliberate. fiber_activations documented a
+# real Tableau bug (2026-05-27): reusing one page across pulls of the
+# CaptainsBonus view makes the Weekending URL filter silently stop applying on
+# the 3rd+ call — it returned last-completed-week 3,072 instead of current-week
+# 221. WRONG NUMBERS, no error. A new page per pull rebuilds the viz from
+# scratch, which is much closer to a full session restart than the about:blank
+# that was tried and failed. It is NOT proven equivalent — that is why this is
+# DEFAULT OFF and flipped per report only after a same-run diff proves the
+# output is identical. See automations/harvest/proof_session.py.
+#
+# OFF (env unset) => byte-identical to today for every report.
+_SHARED_CTX = {"pw": None, "ctx": None, "lock_fd": None}
+
+
+def shared_session_enabled() -> bool:
+    return os.environ.get("TABLEAU_SHARED_SESSION", "").strip() in ("1", "on", "true")
+
+
+def _shared_context(verbose: bool = False):
+    """The one authenticated context for this process. Built on first use."""
+    if _SHARED_CTX["ctx"] is not None:
+        return _SHARED_CTX["ctx"]
+    prof = PROFILE_DIR
+    prof.mkdir(exist_ok=True, parents=True)
+    p = sync_playwright().start()
+    ctx = _launch_persistent(p, prof, headless=False,
+                             label="tableau_patchright(shared)", verbose=verbose)
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    _ensure_tableau_authenticated(page, verbose=verbose, allow_form_login=True)
+    _ledger("login", "tableau_session(shared)", sheet=str(prof.name))
+    _SHARED_CTX["pw"], _SHARED_CTX["ctx"] = p, ctx
+    atexit.register(close_shared_session)
+    return ctx
+
+
+def close_shared_session() -> None:
+    """Close the shared context. Safe to call twice; runs at process exit."""
+    ctx, pw = _SHARED_CTX.get("ctx"), _SHARED_CTX.get("pw")
+    _SHARED_CTX["ctx"] = _SHARED_CTX["pw"] = None
+    try:
+        if ctx is not None:
+            ctx.close()
+    except Exception:
+        pass
+    try:
+        if pw is not None:
+            pw.stop()
+    except Exception:
+        pass
+
+
+@contextmanager
+def shared_page(verbose: bool = False):
+    """A FRESH page inside the process's one authenticated context.
+
+    Falls back to a normal one-off tableau_session() if the shared context can't
+    be built, so enabling the flag can never leave a report with no session."""
+    try:
+        ctx = _shared_context(verbose=verbose)
+    except Exception as e:  # noqa: BLE001 — never let login reuse break a report
+        print(f"  ⚠ shared Tableau session unavailable ({type(e).__name__}: "
+              f"{str(e).splitlines()[0][:80]}) — falling back to a per-pull login",
+              flush=True)
+        with tableau_session(verbose=verbose) as pg:
+            yield pg
+        return
+    pg = ctx.new_page()
+    try:
+        yield pg
+    finally:
+        try:
+            pg.close()
+        except Exception:
+            pass
+
+
+# --- Access ledger -----------------------------------------------------------
+# Passive counter for the Tableau access-volume work (Megan 2026-08-17). Never
+# changes behaviour; import is lazy + swallowed so this file keeps working even
+# if the ledger module is missing on an out-of-date checkout.
+def _ledger(kind, view_url, sheet="", cache="miss", extra="", t0=None, ok=True):
+    try:
+        from automations.shared import tableau_ledger
+        tableau_ledger.record(
+            view_url, sheet=sheet, kind=kind, cache=cache, extra=extra, ok=ok,
+            elapsed_ms=int((time.time() - t0) * 1000) if t0 else None)
+    except Exception:
+        pass
+
+
 # --- Opt-in cross-run crosstab cache -----------------------------------------
 # The per-office metrics feeds each pull the SAME org-wide crosstabs (Order Log,
 # Canceled Orders, Disconnects, Scheduled-6+) and filter to their owner — so with
@@ -720,6 +825,8 @@ def download_crosstab_patchright(
                 out_path = Path(out_path)
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(hit, out_path)
+                _ledger("crosstab", view_url, crosstab_sheet, cache="hit",
+                        extra="" if cacheable else "pre_export")
                 return out_path
             except Exception:
                 pass            # copy failed → fall through to a live download
@@ -728,11 +835,19 @@ def download_crosstab_patchright(
     BACKOFF_S = 3
     last_err = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        t0 = time.time()
         try:
             if page is not None:
                 result = drive_crosstab_dialog(page, view_url, crosstab_sheet,
                                                out_path, verbose=verbose,
                                                pre_export=pre_export)
+            elif shared_session_enabled():
+                # ONE login for this process; a fresh page per pull keeps the
+                # viz state isolated the way a per-pull session did.
+                with shared_page(verbose=verbose) as pg:
+                    result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                                   out_path, verbose=verbose,
+                                                   pre_export=pre_export)
             else:
                 with tableau_session(verbose=verbose) as pg:
                     result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
@@ -740,9 +855,15 @@ def download_crosstab_patchright(
                                                    pre_export=pre_export)
             if cacheable:
                 _xtab_cache_store(view_url, crosstab_sheet, result)
+            _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
+                    extra="" if cacheable else "pre_export", t0=t0)
             return result
         except Exception as e:
             last_err = e
+            # A failed attempt still LOADED the view — Tableau counts it, so the
+            # ledger has to as well, or retries hide from the access census.
+            _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
+                    extra="" if cacheable else "pre_export", t0=t0, ok=False)
             if attempt < MAX_ATTEMPTS:
                 if verbose:
                     print(f"  ⚠ crosstab pull failed ({str(e).splitlines()[0][:90]})"
@@ -799,9 +920,15 @@ def scrape_view_data_patchright(
     """
     def _do(pg):
         ctx = pg.context
-        fields, records = _scrape_one_view_data(
-            pg, ctx, view_url, verbose=verbose,
-            activate_xy=activate_xy, scrape_kwargs=scrape_kwargs)
+        t0 = time.time()
+        try:
+            fields, records = _scrape_one_view_data(
+                pg, ctx, view_url, verbose=verbose,
+                activate_xy=activate_xy, scrape_kwargs=scrape_kwargs)
+        except Exception:
+            _ledger("viewdata", view_url, t0=t0, ok=False)
+            raise
+        _ledger("viewdata", view_url, t0=t0)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
         out_path.write_text("\n".join(lines), encoding="utf-8")

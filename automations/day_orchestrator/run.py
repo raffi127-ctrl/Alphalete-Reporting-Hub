@@ -930,8 +930,13 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
             # timeout can kill the WHOLE tree (see _kill_tree). subprocess.run(timeout=)
             # only kills the direct child and, worse, can itself block cleaning up a
             # wedged child — freezing the batch. So we Popen + wait + group-kill.
+            # HUB_REPORT_ID lets the Tableau access ledger blame each pull on
+            # the report that made it (Megan 2026-08-17). Inherited by every
+            # descendant; nothing reads it except the ledger.
+            child_env = dict(os.environ, HUB_REPORT_ID=str(r.report_id))
             proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT,
-                                    cwd=str(REPO_ROOT), start_new_session=True)
+                                    cwd=str(REPO_ROOT), start_new_session=True,
+                                    env=child_env)
             try:
                 rc = proc.wait(timeout=timeout_s)
             except subprocess.TimeoutExpired:

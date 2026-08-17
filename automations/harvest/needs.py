@@ -188,6 +188,28 @@ CHURN_CLUSTER_NEEDS: List[DataNeed] = dedupe_by_cache_key(
 )
 
 
+def _generated_needs() -> Dict[str, List[DataNeed]]:
+    """Ledger-derived needs for every OTHER tableau report (Megan 2026-08-17).
+
+    The hand-written REPORT_NEEDS above covers the churn cluster only. The rest
+    of the ~92 tableau reports are generated from what they actually pulled —
+    see automations/harvest/from_ledger.py. Absent until first generated, which
+    is why this is a soft import: no ledger yet just means the 3am harvest
+    covers the churn cluster and everything else live-scrapes as it does today.
+    """
+    try:
+        from automations.harvest.needs_generated import REPORT_NEEDS_GENERATED
+        return REPORT_NEEDS_GENERATED
+    except Exception:
+        return {}
+
+
+def needs_for_report(report_id: str) -> List[DataNeed]:
+    """Hand-written declarations win over generated ones — a curated entry
+    carries filters/org_wide/date_col the ledger can't infer."""
+    return REPORT_NEEDS.get(report_id) or _generated_needs().get(report_id, [])
+
+
 def scheduled_data_needs(target_date: dt.date, cfg=None) -> List[DataNeed]:
     """The morning harvest list = union of today's scheduled tableau reports'
     DataNeeds, de-duplicated by cache_key. Non-tableau reports declare nothing.
@@ -203,5 +225,14 @@ def scheduled_data_needs(target_date: dt.date, cfg=None) -> List[DataNeed]:
     for r in todays:
         if r.source_type != "tableau":
             continue
-        needs.extend(REPORT_NEEDS.get(r.report_id, []))
+        needs.extend(needs_for_report(r.report_id))
     return dedupe_by_cache_key(needs)
+
+
+def all_known_needs() -> List[DataNeed]:
+    """Every need we know about, scheduled today or not — what a 3am
+    harvest-everything pass pulls. Used by `harvest.run --all`."""
+    pool: List[DataNeed] = list(CHURN_CLUSTER_NEEDS)
+    for needs in _generated_needs().values():
+        pool.extend(needs)
+    return dedupe_by_cache_key(pool)

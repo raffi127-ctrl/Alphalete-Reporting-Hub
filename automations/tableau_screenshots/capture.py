@@ -308,6 +308,18 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
             print(f"   trimmed bottom to content end ({h}->{new_h}px)", flush=True)
 
 
+def _ledger_shot(spec: dict) -> None:
+    """Record a tracker view-load in the Tableau access ledger (Megan
+    2026-08-17). A screenshot loads the viz exactly like a crosstab does, so
+    it counts against the same access budget."""
+    try:
+        from automations.shared import tableau_ledger
+        tableau_ledger.record(spec.get("url", ""), sheet=str(spec.get("id", "")),
+                              kind="screenshot")
+    except Exception:
+        pass
+
+
 def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
                    verbose: bool, after_load=None) -> Path:
     try:
@@ -315,6 +327,7 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     except Exception:
         pass
     page.goto(spec["url"], wait_until="domcontentloaded")
+    _ledger_shot(spec)
 
     viz = page.frame_locator(_IFRAME)
     dl_btn = viz.locator(_DL_BTN)
