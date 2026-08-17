@@ -517,7 +517,11 @@
     {
       "sheet_tab": "Jesus Hawthorne",
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
+    },
+    {
+      "sheet_tab": "Michael Murphy",
+      "reason": "no AppStream office (sales-only, no recruiting) \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him. Tableau DOES list him as ICD owner 'MICHAEL MURPHY' (Wayne's Team) in ATT/INT/Metrics/Product Sales, so the OPT half fills. Tab created 2026-08-17 from Template Fiber and backfilled from WE 7/5"
     }
   ],
-  "sales_only_count": 1
+  "sales_only_count": 3
 }
