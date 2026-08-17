@@ -31,6 +31,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+# Make the ❌ / ⚠ / → characters in this module's output safe on the Windows
+# console (cp1252 default). Same guard as run.py / daily_focus.py. This module
+# normally runs on Lucy 2 (macOS, UTF-8 by default), which is why every print
+# here worked for months and then raised UnicodeEncodeError the first time it
+# was run from Windows — including cache_is_stale's own ❌ warning, so the
+# gate would crash instead of reporting the stale cache it had just caught.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 from . import fill
 from automations.shared import b2b_sales_summary as _B2BSS
 
