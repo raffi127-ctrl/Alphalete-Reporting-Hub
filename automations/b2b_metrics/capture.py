@@ -320,11 +320,20 @@ def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
 
 def _with_week(url: str, week_field: str, today: dt.date = None) -> str:
     """Append the week pin to `url`. safe="" because quote() leaves '/' alone by
-    default and '8/16/2026' must not go into the query string with raw slashes."""
+    default and '8/16/2026' must not go into the query string with raw slashes.
+
+    ':revert=all' leads. Tableau Server restores the SIGNED-IN USER'S last-viewed
+    state of a view, and Lucy 2 signs in as Carlos — so whatever week he last
+    left OutofBoundsReport on is what every capture inherits, and a remembered
+    selection outranks a URL filter. revert resets to the published state first,
+    which is the only parameter that undoes it (rep_sales_fill.view_url found
+    the same thing on PRODUCTSALESSUMMARY4WK). ':refresh=yes' then forces the
+    re-query rather than serving a cached render of the old week."""
     from urllib.parse import quote
     wv = week_value(report_week_ending(today))
     sep = "&" if "?" in url else "?"
-    return "{}{}{}={}".format(url, sep, quote(week_field), quote(wv, safe=""))
+    return "{}{}:revert=all&:refresh=yes&{}={}".format(
+        url, sep, quote(week_field), quote(wv, safe=""))
 
 
 def _tableau_filter_value(value: str) -> str:
