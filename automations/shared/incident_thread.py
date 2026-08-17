@@ -16,7 +16,9 @@ favor publicar dentro del mismo hilo cuando algo se resolvió".
 
 So an alert is no longer a message, it's an INCIDENT:
   • first occurrence  → one top-level post (the channel gains ONE item)
-  • same key again    → a reply in that post's thread ("Happened again — …")
+  • same key again    → a reply in that post's thread ("Happened again — …"),
+                        whether that's tomorrow or a re-run twenty minutes
+                        later; only a retry LOOP is throttled (REPEAT_COOLDOWN_S)
   • fixed             → a reply in the SAME thread + the parent edited to ✅,
                         then the incident is CLOSED, so the next occurrence
                         opens a fresh post rather than reviving a stale one.
@@ -29,8 +31,19 @@ above deduped per DAY but not per PRODUCER: a report that broke once still got a
 post from its drop alert, another from its post-watch, another from the
 orchestrator. Failure-class keys now resolve to a shared SUBJECT (see
 _FAMILY_PREFIXES / subject()), so the first witness opens the thread and the
-others reply into it under ":link: Same problem, reported by …". Findings and
+others reply into it under ":link: Also failed: …" — which is also how the domino
+case reads: one thread whose replies name each office that fell. Findings and
 "nothing new today" keep their own threads on purpose.
+
+CLOSED IS VISIBLE FROM THE CHANNEL (Eve 2026-08-17). Two people work these
+tickets off the channel list, so "which of these is still real?" has to be
+answerable without opening anything. A resolution now: replies in the thread,
+re-badges the parent's headline (🚨/❌ → ✅ · *RESOLVED* <date>) and puts a ✅
+REACTION on the parent — the reaction being the half that survives when Slack
+refuses the edit (chat.update only touches your own messages, and these posts
+come from three identities). And any CLEAN run closes it, not just the 4am loop:
+`resolve_report(report_id)` runs off hub_publish, so a manual re-run from the Hub
+at 2pm closes the thread the same way the orchestrator would have at 4am.
 
 CROSS-MACHINE (the reason the marker lives in the message text)
 --------------------------------------------------------------
@@ -65,6 +78,8 @@ CLI:
     python -m automations.shared.incident_thread --list
     python -m automations.shared.incident_thread --resolve failure-b2b_metrics \
         --note "fixed by hand"
+    python -m automations.shared.incident_thread --resolve-report b2b_metrics \
+        --note "fixed by hand"   # don't need to know which witness opened it
 """
 from __future__ import annotations
 
@@ -76,6 +91,24 @@ from typing import Dict, List, Optional, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+_builtin_print = print
+
+
+def print(*args, **kwargs):  # noqa: A001 — deliberate, module-local
+    """print() that survives a cp1252 console (CLAUDE.md: every report runs on
+    macOS AND Windows).
+
+    Every message in this module is a "⚠ the alert degraded" line inside a
+    best-effort path — and on Windows printing that ⚠ raises UnicodeEncodeError,
+    which turns a degraded alert into a CRASHED run. Shadowing print here (rather
+    than editing twenty call sites and hoping the next one remembers) makes that
+    impossible for anything written in this file, now or later."""
+    try:
+        _builtin_print(*args, **kwargs)
+    except UnicodeEncodeError:
+        _builtin_print(*[str(a).encode("ascii", "replace").decode("ascii")
+                         for a in args], **kwargs)
+
 CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
 # Same sidecar the orchestrator's notify.py writes when it resolves "#name" to a
 # numeric id (kept in sync by hand on purpose — importing notify here would make
@@ -84,7 +117,19 @@ CHANNEL_ID_CACHE = REPO_ROOT / "output" / ".corrections_channel_id"
 STATE_PATH = REPO_ROOT / "output" / "state" / "incident_threads.json"
 
 MAX_AGE_DAYS = 14                # older than this → close it and start fresh
-MAX_FOLLOWUPS = 12               # more replies than this → same
+# More replies than this → same. Raised from 12 (Eve 2026-08-17): "necesito que
+# queden dentro del mismo hilo". Once same-day recurrences land in-thread (see
+# REPEAT_COOLDOWN_S) a report that breaks every pass reaches a dozen replies in
+# an afternoon, and splitting its thread at that point is the opposite of what
+# this module is for. The 14-day rule still catches the genuinely unreadable ones.
+MAX_FOLLOWUPS = 40
+# How long a key stays quiet after it has already spoken in its thread. This is
+# the anti-flood, and it REPLACES the once-a-day markers each producer used to
+# keep: those made the whole point unreachable — you re-ran a broken report, it
+# failed again, and the channel said nothing at all until tomorrow. 45 minutes is
+# long enough that a 5-minute poller adds a handful of lines a day, short enough
+# that a re-run you kick off by hand always reports back.
+REPEAT_COOLDOWN_S = 45 * 60
 _HISTORY_PAGES = 3               # 3 × 200 messages of lookback for the scan
 _HISTORY_LIMIT = 200
 
@@ -96,6 +141,23 @@ _MARK_RE = re.compile(
     r"_incident · (?P<key>[^ ·]+) · (?P<state>open|resolved) (?P<date>\d{4}-\d{2}-\d{2})_")
 
 _ORDINAL = {1: "1st", 2: "2nd", 3: "3rd"}
+
+# What a RESOLVED parent looks like from the channel list (Eve 2026-08-17). The
+# resolution used to be visible only inside the thread plus a grey italic marker
+# at the bottom of the parent, so a fixed problem still read as a red 🚨 while
+# scrolling — and two people work these tickets off that list. Now the parent's
+# own emoji flips to ✅ AND the message gets a ✅ reaction, which is what shows in
+# the channel without opening anything.
+_ALERT_EMOJI = (":x:", ":rotating_light:", ":warning:", ":no_entry_sign:",
+                ":no_entry:", ":information_source:", ":question:",
+                "❌", "🚨", "⚠️", "⚠", "🚫", "⛔", "ℹ️")
+DONE_EMOJI = ":white_check_mark:"
+DONE_REACTION = "white_check_mark"
+# Somebody (or Claude) is ON it — Eve 2026-08-17. Two people pick these tickets
+# up off the channel list, so "already being worked" has to be visible there or
+# they both start on the same one. :pending: is the workspace's own emoji and is
+# already used by hand for exactly this; the ✅ replaces it when it's done.
+WORKING_REACTION = "pending"
 
 # One channel-history fetch per process, shared by every lookup (see docstring).
 _HISTORY_CACHE: Dict[str, list] = {}
@@ -255,6 +317,60 @@ def _ordinal(n: int) -> str:
     return _ORDINAL.get(n, f"{n}th")
 
 
+def _resolved_headline(text: str, day: dt.date) -> str:
+    """`text` with its FIRST line re-badged as done: the alert emoji becomes ✅ and
+    the line ends in "· *RESOLVED* <date>".
+
+    Only the headline changes — the error stays readable, because the channel is
+    also the record of what happened this morning. Idempotent: a parent that
+    already says RESOLVED is returned untouched, so a second resolve (a sibling
+    report recovering after the first) can't stack two stamps on one line."""
+    lines = (text or "").splitlines() or [""]
+    head = lines[0]
+    if "RESOLVED" in head.upper():
+        return text
+    for e in _ALERT_EMOJI:
+        if head.lstrip().startswith(e):
+            head = head.lstrip()[len(e):].lstrip()
+            break
+    if not head.startswith(DONE_EMOJI):
+        head = "{} {}".format(DONE_EMOJI, head)
+    lines[0] = "{} · *RESOLVED* {}".format(head.rstrip(), _human(day))
+    return "\n".join(lines)
+
+
+def _react(client, channel: str, ts: str, name: str, *, remove: bool = False) -> bool:
+    """Add (or remove) one reaction. Best-effort in both directions: a reaction
+    that's already there — or already gone — is success, and a missing
+    reactions:write scope must never turn a fixed problem into an error."""
+    try:
+        if remove:
+            client.reactions_remove(channel=channel, timestamp=ts, name=name)
+        else:
+            client.reactions_add(channel=channel, timestamp=ts, name=name)
+        return True
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "already_reacted" in msg or "no_reaction" in msg:
+            return True
+        print("  - incident reaction :{}: {} ({}: {})".format(
+            name, "removed" if remove else "refused", type(e).__name__,
+            msg[:60]))
+        return False
+
+
+def _react_done(client, channel: str, ts: str) -> None:
+    """✅ the parent post and clear the :pending: someone left on it.
+
+    This is the ONLY part of a resolution visible in the channel list, which is
+    where the two people working these tickets decide what is still open — Eve
+    2026-08-17: "que se reaccione al thread original con un checkmark". The
+    :pending: has to come OFF at the same moment, or a fixed problem still reads
+    as work in progress."""
+    _react(client, channel, ts, DONE_REACTION)
+    _react(client, channel, ts, WORKING_REACTION, remove=True)
+
+
 def _human(day: dt.date) -> str:
     # No %-d / %#d: this runs on macOS AND Windows (CLAUDE.md).
     return "{} {}".format(day.strftime("%a %b"), day.day)
@@ -333,7 +449,8 @@ def _days_open(opened: str, day: dt.date) -> int:
 # ------------------------------------------------------------------ lookup ----
 
 def find(key: str, *, channel: str = CHANNEL, client=None,
-         day: Optional[dt.date] = None, family: bool = True) -> Optional[dict]:
+         day: Optional[dt.date] = None, family: bool = True,
+         trust_index: bool = True) -> Optional[dict]:
     """The OPEN incident for `key`, or None. Index first (no API call), then a
     channel scan so an incident opened on another machine is still found.
 
@@ -342,13 +459,20 @@ def find(key: str, *, channel: str = CHANNEL, client=None,
     report all land in whichever of them alerted first. The returned dict carries
     `marker_key` (the key that thread's marker actually names, which may differ
     from `key`) and `via_family`; resolve() needs the former so closing a shared
-    thread can't rewrite its marker to the wrong key."""
+    thread can't rewrite its marker to the wrong key.
+
+    `trust_index=False` skips the local fast path and asks the CHANNEL. resolve()
+    uses it: a stale index still saying "open" for a thread another machine
+    already closed would otherwise drop a SECOND ✅ into a thread that has one —
+    the exact duplicate this module exists to prevent. It costs one history
+    fetch, on a path that only runs when something looked open anyway."""
     if not _valid(key):
         return None
     day = day or dt.date.today()
     idx = _load_index() or {}
     ent = idx.get(key)
-    if isinstance(ent, dict) and ent.get("ts") and not ent.get("resolved"):
+    if (trust_index and isinstance(ent, dict) and ent.get("ts")
+            and not ent.get("resolved")):
         return dict(ent, key=key, source="index",
                     marker_key=ent.get("marker_key") or key,
                     via_family=bool(ent.get("marker_key")
@@ -442,12 +566,42 @@ def _send(client, channel: str, lines: Sequence[str],
     return first
 
 
+def _spoke_recently(key: str, cooldown_s: int, day: dt.date) -> bool:
+    """Did THIS key already say something in its thread inside the cooldown?
+
+    The anti-flood for same-day recurrences (see REPEAT_COOLDOWN_S). Local, like
+    the rest of the index: two machines alerting about one outage are different
+    witnesses, and the family rules already put them in one thread — silencing a
+    witness because ANOTHER machine spoke is not what we want here.
+
+    A NEW DAY always speaks, whatever the clock says: "it's still broken this
+    morning" is the news, and a backfill or a post-midnight pass must not be
+    swallowed by a stamp from minutes ago."""
+    if cooldown_s <= 0:
+        return False
+    import time
+    ent = (_load_index() or {}).get(key)
+    if not isinstance(ent, dict) or ent.get("last") != day.isoformat():
+        return False
+    try:
+        return (time.time() - float(ent.get("last_alert") or 0)) < cooldown_s
+    except Exception:  # noqa: BLE001 — an unreadable stamp means "go ahead"
+        return False
+
+
 def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
               text: str, resolved: bool = False,
-              marker_key: Optional[str] = None) -> None:
+              marker_key: Optional[str] = None,
+              day: Optional[dt.date] = None) -> None:
+    import time
     idx = _load_index()
     idx[key] = {"ts": ts, "channel": channel, "opened": opened,
-                "last": dt.date.today().isoformat(), "count": count,
+                # The day the RUN is for, not the day the process runs (a
+                # backfill stamps its own day) — _spoke_recently reads it.
+                "last": (day or dt.date.today()).isoformat(),
+                # Epoch of the last thing we actually POSTED for this key — the
+                # date alone can't answer "did we already say this 5 minutes ago".
+                "last_alert": int(time.time()), "count": count,
                 "text": text, "resolved": resolved,
                 # Whose marker the PARENT carries. Differs from `key` when this
                 # key joined a sibling's thread; resolve() rewrites that marker,
@@ -459,11 +613,12 @@ def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
-                     stamp: Optional[str] = None,
+                     stamp: Optional[str] = None, label: str = "",
                      channel: str = CHANNEL, day: Optional[dt.date] = None,
                      dry_run: bool = False, client=None,
                      max_age_days: int = MAX_AGE_DAYS,
-                     max_followups: int = MAX_FOLLOWUPS) -> Optional[dict]:
+                     max_followups: int = MAX_FOLLOWUPS,
+                     cooldown_s: int = REPEAT_COOLDOWN_S) -> Optional[dict]:
     """Open a new incident post, or reply in the one that's already open.
 
       title     first line of the parent post
@@ -475,6 +630,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                 prepended here, so callers don't each invent their own wording.
       stamp     replaces that first line when the reply is NOT a recurrence —
                 e.g. a sibling report joining a shared incident key.
+      cooldown_s  stay quiet if this key already posted in its thread that
+                recently (REPEAT_COOLDOWN_S). Every recurrence belongs in the
+                thread — a re-run that fails again, an hour later, the next day —
+                but a job that runs every 5 minutes must not narrate each tick.
+      label     human name of what is failing ("BOX Order Log — Roshan"). Used
+                when this alert JOINS a sibling's thread, so the domino case
+                reads as a list of who fell instead of a list of internal ids.
 
     Returns {'ts', 'new', 'key', 'text', 'count'} — 'ts' is always the PARENT, so
     a caller can thread more under it and resolve() can find it later. None means
@@ -537,6 +699,17 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
             _mark_resolved_in_index(key)
             inc = None
 
+    if inc and _spoke_recently(key, cooldown_s, day):
+        # It already spoke minutes ago and nothing has changed — a retry loop,
+        # not news. Skip the reply, keep the incident. This is the ONLY thing
+        # standing between "every recurrence lands in the thread" and a thread
+        # nobody can scroll.
+        print("[incident] {}: repeat inside the {}min cooldown — not repeating "
+              "myself in thread {}".format(key, cooldown_s // 60, inc["ts"]))
+        return {"ts": inc["ts"], "new": False, "key": key, "skipped": True,
+                "text": inc.get("text") or parent_text,
+                "count": int(inc.get("count") or 0)}
+
     if inc:
         n = int(inc.get("count") or 0) + 1
         # n counts FOLLOW-UPS; the reader counts OCCURRENCES, and the parent post
@@ -552,10 +725,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         if inc.get("via_family"):
             # A SIBLING witness, not a recurrence: this is the same outage seen
             # from another angle (the run dropped / nothing posted / the wrapper
-            # exited non-zero), so "2nd time" would describe something that
-            # didn't happen. Say what it is and keep it in the one thread.
-            line = (":link: *Same problem, reported by* `{}` — {}".format(
-                key, _human(day)))
+            # exited non-zero) or the SAME break hitting another office, so "2nd
+            # time" would describe something that didn't happen. Naming the
+            # office/report is what makes the domino case readable — one thread
+            # whose replies list who fell, instead of one post per office
+            # (Eve 2026-08-17).
+            line = ":link: *Also failed:* {} — {} · same problem, one thread.".format(
+                label or "`{}`".format(key), _human(day))
         # A caller can own that first line instead. Not every reply is a
         # RECURRENCE: when several reports share one incident key (the three BOX
         # order logs do, so one stuck export is one thread — Eve 2026-08-14), the
@@ -581,7 +757,7 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
             _remember(key, ts=inc["ts"], channel=channel,
                       opened=opened or day.isoformat(), count=n,
                       text=inc.get("text") or parent_text,
-                      marker_key=inc.get("marker_key") or key)
+                      marker_key=inc.get("marker_key") or key, day=day)
             print("[incident] {}: {} in thread {}".format(
                 key,
                 "joined `{}`".format(inc.get("marker_key"))
@@ -605,24 +781,34 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
             print(f"  ⚠ incident detail reply failed ({type(e).__name__}: "
                   f"{str(e)[:80]})", flush=True)
     _remember(key, ts=ts, channel=channel, opened=day.isoformat(), count=0,
-              text=parent_text)
+              text=parent_text, day=day)
     _forget_history(channel)
     print(f"[incident] {key}: opened {ts}", flush=True)
     return {"ts": ts, "new": True, "key": key, "text": parent_text, "count": 0}
 
 
-def _mark_resolved_in_index(key: str) -> None:
+def _mark_resolved_in_index(key: str, *, ts: Optional[str] = None,
+                            channel: str = CHANNEL) -> None:
     """Close `key` — and every SIBLING pointing at the same thread.
 
     With families one parent can be several keys' incident. Closing only the key
     that happened to recover would leave its siblings' entries saying "open" with
     the ts of a thread that now reads ✅, so the next failure would reply into a
-    closed thread instead of opening a fresh post."""
+    closed thread instead of opening a fresh post.
+
+    `ts` writes the entry when this machine has never seen the incident: the
+    thread was opened on the mini and the clean run happened on Lucy 2, so there
+    is nothing local to flip. Without it this machine would keep finding the
+    thread "open" in the channel scan (the parent edit is refused across
+    identities) and answer a fixed problem with "Happened again"."""
     idx = _load_index()
     ent = idx.get(key)
     if not isinstance(ent, dict):
-        return
-    ts = ent.get("ts")
+        if not ts:
+            return
+        ent = idx[key] = {"ts": ts, "channel": channel, "count": 0,
+                          "opened": dt.date.today().isoformat()}
+    ts = ent.get("ts") or ts
     today = dt.date.today().isoformat()
     for k, e in idx.items():
         if isinstance(e, dict) and (k == key or (ts and e.get("ts") == ts)):
@@ -670,8 +856,17 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
         client = client or _client()
     except Exception:  # noqa: BLE001
         return False
-    inc = find(key, channel=channel, client=client, day=day)
+    # Ask the CHANNEL, not the local cache: another machine may have closed this
+    # thread already, and a second ✅ on it is exactly the duplicate we're here
+    # to stop.
+    inc = find(key, channel=channel, client=client, day=day, trust_index=False)
     if not inc or not inc.get("ts"):
+        # Nothing open there → whatever this machine still believes is out of
+        # date. Fix the belief, or it will try again on every clean run.
+        if key in open_keys():
+            _mark_resolved_in_index(key)
+            print(f"[incident] {key}: already closed in the channel — index "
+                  f"caught up, nothing posted")
         return False
     ts = inc["ts"]
     told = False
@@ -684,7 +879,7 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     new_parent = parent_text
     if new_parent is None:
         was = inc.get("text") or ""
-        new_parent = _MARK_RE.sub("", was).rstrip()
+        new_parent = _resolved_headline(_MARK_RE.sub("", was).rstrip(), day)
     # The marker keeps the PARENT's own key. On a shared thread the resolver is
     # often a sibling (box_order_log posting clean also clears the post-watch
     # miss), and stamping our key here would rename someone else's incident —
@@ -699,7 +894,11 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     except Exception as e:  # noqa: BLE001 — the thread reply already told people
         print(f"  ⚠ incident parent edit refused ({type(e).__name__}: "
               f"{str(e)[:60]}) — the in-thread note stands", flush=True)
-    _mark_resolved_in_index(key)
+    # The ✅ REACTION is the part that survives a refused edit: any identity can
+    # react on anyone's message, so a thread closed from the wrong machine still
+    # reads as done in the channel list.
+    _react_done(client, channel, ts)
+    _mark_resolved_in_index(key, ts=ts, channel=channel)
     _forget_history(channel)
     print(f"[incident] {key}: resolved in thread {ts}", flush=True)
     # `edited` counts: the parent already reads ✅ and carries the resolved
@@ -733,6 +932,155 @@ def resolve_if_open(key: str, *, what: str, detail: str = "",
         return False
 
 
+def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
+                 day: Optional[dt.date] = None, dry_run: bool = False,
+                 scan: bool = True, client=None) -> bool:
+    """":pending: — this one is being worked on right now."
+
+    Eve 2026-08-17: two people pull tickets out of this channel, so a problem
+    somebody already picked up (or that Claude is mid-fix on) has to say so in
+    the CHANNEL list, not inside a thread nobody opened. A reaction does that
+    without another message.
+
+    Takes either an incident key (`failure-b2b_metrics`) or a bare report id
+    (`b2b_metrics`) — whichever the caller happens to have. Silent no-op when
+    nothing is open for it: marking a problem that isn't on the board would be
+    worse than not marking it. Never raises. resolve() clears the :pending: when
+    the fix lands, so nothing has to remember to un-mark it.
+
+    `scan=False` answers off the LOCAL index only (no Slack read at all) — for
+    callers on a hot path, like every report start on the mini. It costs the case
+    where the thread was opened on another machine; a missed :pending: is a much
+    cheaper mistake than an API call per run."""
+    day = day or dt.date.today()
+    try:
+        keys = ([key_or_report] if any(key_or_report.startswith(p)
+                                       for p in _FAMILY_PREFIXES)
+                else keys_for(key_or_report))
+        if not scan:
+            idx = _load_index() or {}
+            live = [idx[k] for k in keys
+                    if isinstance(idx.get(k), dict) and idx[k].get("ts")
+                    and not idx[k].get("resolved")]
+            if not live:
+                return False
+            inc = live[0]
+            client = client or _client()
+        else:
+            client = client or _client()
+            inc = next((i for i in (find(k, channel=channel, client=client,
+                                         day=day)
+                                    for k in keys) if i), None)
+        if not inc or not inc.get("ts"):
+            print("[incident] nothing open for {} — not marking it worked on"
+                  .format(key_or_report))
+            return False
+        if dry_run:
+            print("[incident] DRY-RUN — would react :{}: on {}".format(
+                WORKING_REACTION, inc["ts"]))
+            return True
+        ok = _react(client, channel, inc["ts"], WORKING_REACTION)
+        if note:
+            try:
+                _send(client, channel, [":hourglass_flowing_sand: {}".format(note)],
+                      thread_ts=inc["ts"])
+            except Exception:  # noqa: BLE001 — the reaction is the point
+                pass
+        print("[incident] {}: marked as being worked on ({})".format(
+            key_or_report, inc["ts"]))
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print("  - couldn't mark {} as being worked on ({}: {})".format(
+            key_or_report, type(e).__name__, str(e)[:80]))
+        return False
+
+
+def keys_for(report_id: str) -> List[str]:
+    """Every failure-class key a report's alerts can be filed under — the
+    orchestrator's, the standalone watcher's and the drop alert's, in both the
+    underscore id and the dashed manifest id."""
+    out: List[str] = []
+    for rid in (report_id, _canon(report_id)):
+        for p in _FAMILY_PREFIXES:
+            k = p + rid
+            if k not in out:
+                out.append(k)
+    return out
+
+
+# How often a CLEAN run may ask the channel "is anything of mine open?" when this
+# machine's index knows of nothing. A success is the common case (a few hundred a
+# day across the machines) and an incident opened on ANOTHER machine is the rare
+# one, so this is throttled rather than run per success. A cooldown, not a
+# once-a-day flag: a report can break, get fixed, and break again inside one day,
+# and a day-long flag would leave that second thread open until tomorrow.
+_CLEAN_SCAN_DIR = REPO_ROOT / "output" / "state" / "incident_clean_scans"
+_CLEAN_SCAN_COOLDOWN = 4 * 3600
+
+
+def _clean_scan_due(report_id: str) -> bool:
+    """True when this machine may spend a channel read confirming that `report_id`
+    has nothing open. Stamps the attempt. Any file trouble answers True — an extra
+    API call is cheaper than an alert thread left open."""
+    import time
+    p = _CLEAN_SCAN_DIR / "{}.txt".format(_canon(report_id))
+    try:
+        if p.exists() and (time.time() - p.stat().st_mtime) < _CLEAN_SCAN_COOLDOWN:
+            return False
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(str(int(time.time())), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+def resolve_report(report_id: str, *, what: str = "", note: str = "",
+                   channel: str = CHANNEL, day: Optional[dt.date] = None,
+                   dry_run: bool = False, client=None) -> bool:
+    """"This report just ran CLEAN" → close whatever failure thread it left open.
+
+    WHY (Eve 2026-08-17): the only things that closed an incident were the 4am
+    orchestrator (for reports IN its loop) and the machine_digest watcher (for
+    standalone ones, hours later). A person who saw the alert, fixed the cause and
+    re-ran the report from the Hub at 2pm closed nothing — the thread sat open all
+    day and the other person working the channel spent their time re-diagnosing a
+    problem that was already fixed. Now ANY successful run closes it, from any
+    machine, whichever witness opened the thread (failure- / standalone- / drop-,
+    including a sibling's — see subject()).
+
+    Cost control: the local index is free, and the channel scan that finds a
+    thread opened on ANOTHER machine is throttled per report (_clean_scan_due).
+    Never raises — closing an alert must never break the run that earned it."""
+    day = day or dt.date.today()
+    label = what or "*{}*".format(report_id)
+    try:
+        keys = keys_for(report_id)
+        idx = _load_index() or {}
+        hit = next((k for k in keys
+                    if isinstance(idx.get(k), dict) and idx[k].get("ts")
+                    and not idx[k].get("resolved")), None)
+        if not hit:
+            # Nothing local: either there is no incident, or another machine owns
+            # it. A throttled scan decides which.
+            if not _clean_scan_due(report_id):
+                return False
+            found = find(keys[0], channel=channel, client=client, day=day)
+            if not found:
+                return False
+            hit = keys[0]
+        lines = ["{} {} — RESOLVED. It just ran clean.".format(DONE_EMOJI, label)]
+        if note:
+            lines.append(note)
+        lines.append("_Closed. If it happens again it opens a fresh post, not "
+                     "this thread._")
+        return resolve(key=hit, lines=lines, channel=channel, day=day,
+                       dry_run=dry_run, client=client)
+    except Exception as e:  # noqa: BLE001
+        print("  ⚠ couldn't close the incident for {} ({}: {})".format(
+            report_id, type(e).__name__, str(e)[:80]), flush=True)
+        return False
+
+
 def close(key: str) -> None:
     """Forget an incident WITHOUT posting (e.g. it aged out of relevance)."""
     _mark_resolved_in_index(key)
@@ -747,10 +1095,27 @@ def main(argv=None) -> int:
     ap.add_argument("--list", action="store_true", help="show open incidents")
     ap.add_argument("--resolve", metavar="KEY", help="close an incident and say "
                                                      "so in its thread")
+    ap.add_argument("--working", metavar="KEY_OR_REPORT",
+                    help="react :pending: on its post — somebody (or Claude) is "
+                         "on it, so the other person doesn't start too")
+    ap.add_argument("--resolve-report", metavar="REPORT_ID",
+                    help="close whatever failure thread a report left open "
+                         "(failure-/standalone-/drop-, its siblings included) — "
+                         "for when a MANUAL fix, not a re-run, cleared it")
     ap.add_argument("--note", default="", help="one line to add to --resolve")
     ap.add_argument("--channel", default=CHANNEL)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
+    if a.working:
+        ok = mark_working(a.working, note=a.note, channel=a.channel,
+                          dry_run=a.dry_run)
+        print("marked" if ok else "nothing open for that key/report")
+        return 0 if ok else 1
+    if a.resolve_report:
+        ok = resolve_report(a.resolve_report, note=a.note, channel=a.channel,
+                            dry_run=a.dry_run)
+        print("resolved" if ok else "no open incident for that report")
+        return 0 if ok else 1
     if a.resolve:
         lines = [":white_check_mark: *Resolved* — {}.".format(_human(dt.date.today()))]
         if a.note:

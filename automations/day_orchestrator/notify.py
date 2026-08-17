@@ -200,6 +200,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                else f"standalone-{report_id}")
         inc = _incident_post(cfg, key=key, title=title, body=parent,
                              details=reply, followup=[title] + parent,
+                             label=f"*{name}* on {lbl}",
                              dry_run=dry_run, tag=key)
         if inc:
             return True
@@ -333,6 +334,13 @@ def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
         from automations.shared import incident_thread as _inc
         if _inc.resolve(key=key, lines=thread_lines, channel=ch,
                         parent_text="\n".join(lines + struck), dry_run=dry_run):
+            return True
+        if key not in _inc.open_keys():
+            # Already closed — by this report's own clean run through
+            # hub_publish, or by a sibling witness. There is nothing left to
+            # announce, and the fallback edit below would strip the `_incident ·
+            # … · resolved_` marker every other machine scans for (the 2026-08-17
+            # b2b_metrics case, from the other direction).
             return True
     except Exception as e:  # noqa: BLE001 — fall back to the edit-only path
         print(f"[notify] incident resolve failed ({rs.report_id}): {e}", flush=True)
@@ -588,6 +596,7 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
 
     inc = _incident_post(cfg, key=f"failure-{rs.report_id}", title=title,
                          body=parent, details=reply, followup=followup,
+                         label=f"*{label}*",
                          day=_as_date(_d(ds)), dry_run=dry_run,
                          tag=f"failure-{rs.report_id}")
     if inc:
@@ -1126,7 +1135,7 @@ def _as_date(value):
 
 
 def _incident_post(cfg, *, key, title, body, details=None, followup=None,
-                   day=None, dry_run=False, tag=""):
+                   day=None, dry_run=False, tag="", label=""):
     """Post a problem as an INCIDENT: the first time it opens a top-level message,
     every repeat replies in that message's thread instead of adding another post
     (Eve 2026-08-14 — the channel had a new near-identical message per report per
@@ -1142,7 +1151,8 @@ def _incident_post(cfg, *, key, title, body, details=None, followup=None,
         from automations.shared import incident_thread as _inc
         return _inc.open_or_followup(key=key, title=title, body=body,
                                      details=details, followup=followup,
-                                     channel=ch, day=day, dry_run=dry_run)
+                                     label=label, channel=ch, day=day,
+                                     dry_run=dry_run)
     except Exception as e:  # noqa: BLE001 — fall back to a plain post
         print(f"[notify] incident post failed ({tag or key}): {e}", flush=True)
         return None
@@ -1218,7 +1228,7 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
 
 
 def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
-               incident=None):
+               incident=None, label=""):
     """Public one-shot alert into #claudecorrections-and-requests, for a REPORT
     module that hits a problem the orchestrator can't see from the outside — e.g.
     the country trackers holding a board because its Tableau extract is stale.
@@ -1233,7 +1243,11 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
     "country-extract-stale") and the SAME problem tomorrow replies under today's
     post instead of adding another one. Close it with
     incident_thread.resolve(key=…) when the condition clears. Omit it and the
-    behaviour is exactly as before — a fresh post every time."""
+    behaviour is exactly as before — a fresh post every time.
+
+    `label` is the human name of what's failing ("BOX Order Log — Roshan"): it's
+    what the reply says when this alert joins a thread another witness (or another
+    office of the same report) already opened."""
     if cfg is None:
         try:
             from automations.day_orchestrator import registry
@@ -1244,7 +1258,7 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
             return None
     if incident:
         inc = _incident_post(cfg, key=incident, title=title, body=body_lines,
-                             dry_run=dry_run, tag=tag)
+                             dry_run=dry_run, tag=tag, label=label)
         if inc:
             return inc.get("ts")
     return _post_corrections(cfg, title, body_lines, dry_run, tag=tag)

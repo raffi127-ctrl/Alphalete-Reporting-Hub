@@ -29,6 +29,7 @@ import argparse
 import datetime as dt
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -184,7 +185,11 @@ def _self_update(*, dry_run: bool) -> None:
                      "on the machine (commit or `git stash`) so tomorrow pulls "
                      "clean — a committed fix/HALT won't reach this runner until "
                      "then."],
-                    tag="self-update-blocked", dry_run=dry_run)
+                    tag="self-update-blocked", dry_run=dry_run,
+                    # A dirty tree stays dirty until someone touches that
+                    # machine, so this fired EVERY morning as a brand-new post.
+                    # One thread per machine, the mornings stack inside it.
+                    incident=f"self-update-blocked-{socket.gethostname()}")
             except Exception:  # noqa: BLE001 — an alert must never break the run
                 pass
             return

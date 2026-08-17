@@ -276,9 +276,25 @@ def publish_running(report_id: str, report_name: str):
             [run_id, dt.datetime.now().isoformat(timespec="seconds"), card,
              report_name, "Mini (auto)", socket.gethostname(), "", "started", ""],
             value_input_option="RAW")     # column shape matches dashboard.HUB_ACTIVITY_HEADERS
+        _mark_working(report_id)
         return run_id
     except Exception:
         return None
+
+
+def _mark_working(report_id: str) -> None:
+    """A report with an OPEN alert thread just started running again → react
+    :pending: on that thread's post (Eve 2026-08-17).
+
+    Re-running a broken report IS someone working the ticket — usually the fix
+    Claude was just asked for. Two people pull these tickets off the channel
+    list, and without this both can start on the same one. `scan=False` keeps it
+    free: local index only, so a report start never costs a Slack read."""
+    try:
+        from automations.shared import incident_thread as inc
+        inc.mark_working(report_id, scan=False)
+    except Exception:  # noqa: BLE001 — never raise into a starting run
+        pass
 
 
 def publish_heartbeat(run_id: str) -> bool:
@@ -353,12 +369,21 @@ def _find_open_row_for_card(ws, card: str):
     return hit
 
 
+# How long this producer stays quiet after alerting about one report. It used to
+# be "the rest of the day", which made a re-run's failure INVISIBLE: you fixed
+# something, ran it again, it failed again, and the channel said nothing until
+# tomorrow — the one thing Eve needs to see in the thread (2026-08-17). The reply
+# is threaded, so it costs the channel nothing; the cooldown only stops a
+# 5-minute job from narrating every tick. Matches incident_thread.REPEAT_COOLDOWN_S.
+_REALERT_AFTER_S = 45 * 60
+
+
 def _alert_failure(report_id: str, report_name: str) -> None:
-    """Post a ONE-per-day failure alert to #claudecorrections-and-requests when a
-    report closes 'failed' — so a silently-failing standalone agent (whose wrapper
+    """Post a failure alert to #claudecorrections-and-requests when a report
+    closes 'failed' — so a silently-failing standalone agent (whose wrapper
     doesn't alert on its own) gets seen, not just a red pill nobody's watching.
-    Deduped per report per day via a marker file: a 5/10-min job that keeps failing
-    must NOT spam the channel every tick. Best-effort — never raises into the run.
+    A repeat lands as a reply in the SAME thread (incident_thread), throttled by
+    _REALERT_AFTER_S. Best-effort — never raises into the run.
     The orchestrator opts out (alert_on_fail=False) — it sends its own richer
     failure summary with a paste-to-Claude block. (Megan 2026-08-02)
 
@@ -370,10 +395,10 @@ def _alert_failure(report_id: str, report_name: str) -> None:
     that's already there. failure- and standalone- share a subject, so which of
     them spoke first stops mattering."""
     try:
-        from pathlib import Path as _P
-        marker = (_P(__file__).resolve().parents[2] / "output" / "logs"
-                  / f".failalert-{report_id}-{dt.date.today().isoformat()}")
-        if marker.exists():
+        import time
+        marker = _fail_marker(report_id)
+        if (marker.exists()
+                and (time.time() - marker.stat().st_mtime) < _REALERT_AFTER_S):
             return
         from automations.day_orchestrator import notify
         notify.post_alert(
@@ -382,9 +407,43 @@ def _alert_failure(report_id: str, report_name: str) -> None:
              f"{socket.gethostname()}.",
              "Open its Hub card for the log, then re-run it."],
             tag=f"failalert-{report_id}",
-            incident=f"failure-{report_id}")
+            incident=f"failure-{report_id}", label=report_name)
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("")
+    except Exception:
+        pass
+
+
+def _fail_marker(report_id: str):
+    """The "already alerted for this report" stamp. No date in the name any more
+    — it is read as a COOLDOWN (see _alert_failure)."""
+    from pathlib import Path as _P
+    return (_P(__file__).resolve().parents[2] / "output" / "logs"
+            / f".failalert-{report_id}")
+
+
+def _clear_failure(report_id: str, report_name: str) -> None:
+    """A run finished CLEAN → close the alert thread it left open and say so
+    there, then clear the re-alert cooldown.
+
+    WHY (Eve 2026-08-17): nothing closed an incident except the 4am orchestrator
+    (for reports inside its loop) and the machine_digest watcher (standalone ones,
+    hours later). Someone who read the alert, fixed the cause and re-ran the
+    report from the Hub closed NOTHING — so the second person working the channel
+    kept re-diagnosing problems that were already fixed, which is the exact cost
+    Eve described. publish_done is the one place EVERY report's success lands, on
+    every machine, so it is where the ✅ belongs.
+
+    Clearing the cooldown matters too: after a fix, the NEXT break has to be able
+    to speak immediately rather than waiting out a timer earned by the old
+    problem — and since its thread was just closed, it correctly opens a fresh
+    post. Best-effort: never raises into a good run."""
+    try:
+        marker = _fail_marker(report_id)
+        from automations.shared import incident_thread as inc
+        inc.resolve_report(report_id, what=f"*{report_name or report_id}*")
+        if marker.exists():
+            marker.unlink()
     except Exception:
         pass
 
@@ -424,6 +483,13 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         # no-op). The orchestrator passes alert_on_fail=False (its own summary).
         if alert_on_fail and str(status).lower() == "failed":
             _alert_failure(report_id, report_name)
+        elif str(status).lower() == "success":
+            # …and a clean run CLOSES whatever thread the last failure opened —
+            # including a re-run someone kicked off by hand from the Hub, which
+            # is how most of these actually get fixed. Runs for the orchestrator
+            # too: it closes its own carry-overs at the end of the batch, and
+            # closing an already-closed incident is a free local no-op.
+            _clear_failure(report_id, report_name)
         return True
     except Exception:
         return False

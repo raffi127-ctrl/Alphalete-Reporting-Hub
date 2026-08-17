@@ -22,6 +22,8 @@ class FakeClient:
     def __init__(self):
         self.posts = []          # (thread_ts or None, text)
         self.updates = []        # (ts, text)
+        self.reactions = []      # (ts, emoji name)
+        self.history_calls = 0
         self._n = 0
 
     def chat_postMessage(self, *, channel, text, thread_ts=None, **_kw):
@@ -58,8 +60,21 @@ class FakeClient:
             return real(channel=channel, text=text, thread_ts=thread_ts, **kw)
         self.chat_postMessage = _maybe
 
+    def reactions_add(self, *, channel, timestamp, name):
+        if (timestamp, name) in self.reactions:
+            raise RuntimeError("already_reacted")
+        self.reactions.append((timestamp, name))
+        return {"ok": True}
+
+    def reactions_remove(self, *, channel, timestamp, name):
+        if (timestamp, name) not in self.reactions:
+            raise RuntimeError("no_reaction")
+        self.reactions.remove((timestamp, name))
+        return {"ok": True}
+
     def conversations_history(self, *, channel, limit=200, cursor=None):
         # Newest first, parents only — same shape as the real API.
+        self.history_calls += 1
         msgs = []
         for i, (thread_ts, text) in enumerate(self.posts, start=1):
             if thread_ts:
@@ -85,6 +100,9 @@ class IncidentThreadTest(unittest.TestCase):
         self._real_state = inc.STATE_PATH
         inc.STATE_PATH = Path(self.tmp.name) / "incident_threads.json"
         self.addCleanup(lambda: setattr(inc, "STATE_PATH", self._real_state))
+        self._real_scans = inc._CLEAN_SCAN_DIR
+        inc._CLEAN_SCAN_DIR = Path(self.tmp.name) / "clean_scans"
+        self.addCleanup(lambda: setattr(inc, "_CLEAN_SCAN_DIR", self._real_scans))
         inc._HISTORY_CACHE.clear()
         self.addCleanup(inc._HISTORY_CACHE.clear)
         self.c = FakeClient()
@@ -217,7 +235,7 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Same problem, reported by", self.c.replies[-1])
+        self.assertIn("Also failed:", self.c.replies[-1])
         self.assertIn("failure-box_order_log__watch", self.c.replies[-1])
         # …and it is NOT miscounted as a recurrence of the first witness.
         self.assertNotIn("Happened again", self.c.replies[-1])
@@ -275,7 +293,7 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Same problem, reported by", self.c.replies[-1])
+        self.assertIn("Also failed:", self.c.replies[-1])
         # Abel and per_office were registered days apart and need no list.
         for variant in ("standalone-box_order_log_abel",
                         "failure-box_order_log_per_office"):
@@ -321,6 +339,125 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertTrue(res["new"])
         self.assertEqual(self.c.posts, [])
         self.assertFalse(inc.STATE_PATH.exists())
+
+    # --- a repeat the SAME day still lands in the thread (Eve 2026-08-17) -----
+
+    def _age_last_alert(self, key, seconds):
+        """Pretend this key's last reply happened `seconds` ago."""
+        import json
+        idx = json.loads(inc.STATE_PATH.read_text(encoding="utf-8"))
+        idx[key]["last_alert"] = idx[key]["last_alert"] - seconds
+        inc.STATE_PATH.write_text(json.dumps(idx), encoding="utf-8")
+
+    def test_a_rerun_that_fails_again_the_same_day_replies_in_the_thread(self):
+        """The whole point: you re-run a broken report, it breaks again, and the
+        channel has to say so — in the SAME thread. Every producer used to sit on
+        a once-a-day marker, so that second failure told nobody until tomorrow."""
+        day = dt.date(2026, 8, 17)
+        first = self._open(day)
+        self._age_last_alert("failure-r", inc.REPEAT_COOLDOWN_S + 60)
+        again = self._open(day)          # same DAY, not the next one
+        self.assertFalse(again["new"])
+        self.assertEqual(again["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 1, "still one post")
+        self.assertIn("Happened again", self.c.replies[-1])
+        self.assertIn("2nd time", self.c.replies[-1])
+
+    def test_a_retry_loop_inside_the_cooldown_stays_quiet(self):
+        """…but a 5-minute job that keeps failing must not narrate every tick."""
+        day = dt.date(2026, 8, 17)
+        self._open(day)
+        replies = len(self.c.replies)
+        res = self._open(day)
+        self.assertTrue(res["skipped"])
+        self.assertEqual(len(self.c.replies), replies)
+        self.assertEqual(len(self.c.top_level), 1)
+
+    def test_the_cooldown_never_costs_a_NEW_problem_its_post(self):
+        """The cooldown is per key and only applies to a thread that's open — a
+        different report breaking in the same minute still gets its own post."""
+        day = dt.date(2026, 8, 17)
+        self._open(day)
+        inc._HISTORY_CACHE.clear()
+        other = inc.open_or_followup(key="failure-other", title="🚨 other",
+                                     body=["*Error:* boom"], channel="C1",
+                                     day=day, client=self.c)
+        self.assertTrue(other["new"])
+        self.assertEqual(len(self.c.top_level), 2)
+
+    # --- what a reader sees in the CHANNEL LIST (Eve 2026-08-17) --------------
+
+    def test_resolved_parent_says_so_in_its_headline_and_gets_a_check(self):
+        """A grey italic marker at the bottom is not an answer to "which of these
+        is still real?" — the headline flips to ✅ and the post gets the ✅
+        reaction, which is the part visible without opening anything."""
+        first = self._open(dt.date(2026, 8, 14))
+        inc.resolve(key="failure-r", lines=["done"], channel="C1",
+                    day=dt.date(2026, 8, 15), client=self.c)
+        head = self.c.updates[-1][1].splitlines()[0]
+        self.assertTrue(head.startswith(":white_check_mark:"), head)
+        self.assertIn("*RESOLVED* Sat Aug 15", head)
+        self.assertNotIn("🚨", head)
+        self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_the_check_lands_even_when_the_parent_edit_is_refused(self):
+        """Cross-machine: chat.update only touches your own messages, but ANY
+        identity can react — so the reaction is what carries the state."""
+        first = self._open(dt.date(2026, 8, 14))
+        self.c.refuse_updates()
+        inc.resolve(key="failure-r", lines=["done"], channel="C1",
+                    day=dt.date(2026, 8, 15), client=self.c)
+        self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_working_on_it_reacts_pending_and_the_fix_clears_it(self):
+        first = self._open(dt.date(2026, 8, 17))
+        self.assertTrue(inc.mark_working("r", channel="C1", client=self.c))
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+        inc.resolve(key="failure-r", lines=["done"], channel="C1",
+                    day=dt.date(2026, 8, 17), client=self.c)
+        self.assertNotIn((first["ts"], "pending"), self.c.reactions)
+        self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_working_on_nothing_open_is_a_no_op(self):
+        self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))
+        self.assertEqual(self.c.reactions, [])
+
+    def test_a_clean_run_closes_whichever_witness_opened_the_thread(self):
+        """resolve_report is what hub_publish calls on ANY successful run: the
+        person who fixed the cause and re-ran the report from the Hub shouldn't
+        have to know that the thread was opened by the drop alert."""
+        day = dt.date(2026, 8, 17)
+        self._open_key("drop-box-order-log", day)
+        self.assertTrue(inc.resolve_report("box_order_log", what="*BOX Order Log*",
+                                           channel="C1", day=day, client=self.c))
+        self.assertIn("RESOLVED", self.c.replies[-1])
+        self.assertEqual(inc.open_keys(), [])
+
+    def test_a_stale_index_does_not_put_a_second_check_on_a_closed_thread(self):
+        """This machine's index says open; the channel says it was closed
+        elsewhere. Believing the index would ✅ a thread that already reads ✅."""
+        day = dt.date(2026, 8, 17)
+        self._open(day)
+        # Another machine resolves it: the parent's marker now reads `resolved`.
+        text = self.c.top_level[0].replace("· open ", "· resolved ")
+        self.c.posts[0] = (None, text)
+        replies = len(self.c.replies)
+        self.assertFalse(inc.resolve(key="failure-r", lines=["done"],
+                                     channel="C1", day=day, client=self.c))
+        self.assertEqual(len(self.c.replies), replies, "no second ✅")
+        self.assertEqual(inc.open_keys(), [], "and the index catches up")
+
+    def test_a_clean_run_with_nothing_open_does_not_scan_every_time(self):
+        """The clean path is the common one — hundreds of runs a day — so it must
+        not cost a channel read per run."""
+        day = dt.date(2026, 8, 17)
+        self.assertFalse(inc.resolve_report("nothing_broken", channel="C1",
+                                            day=day, client=self.c))
+        calls = self.c.history_calls
+        self.assertFalse(inc.resolve_report("nothing_broken", channel="C1",
+                                            day=day, client=self.c))
+        self.assertEqual(self.c.history_calls, calls,
+                         "a second clean run inside the cooldown must not re-scan")
 
 
 if __name__ == "__main__":  # pragma: no cover

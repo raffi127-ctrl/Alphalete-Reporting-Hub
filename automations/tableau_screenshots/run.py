@@ -268,6 +268,16 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
             print(f"   • {bid}: NOT GATED — {why}", flush=True)
     if not held:
         print("  ✓ every gated extract is fresh", flush=True)
+        # Nothing held → close the hold thread if one is open, so the channel
+        # stops showing a stale extract as live work. Free when nothing is open.
+        try:
+            from automations.shared import incident_thread as _inc
+            _inc.resolve_if_open("tracker-freshness",
+                                 what="*Country Trackers*",
+                                 detail="Every gated extract is fresh again — "
+                                        "all boards posted.", dry_run=dry_run)
+        except Exception:  # noqa: BLE001 — closing must never sink a good run
+            pass
     fr.write_held(today, held)
     if held:
         pages_mod.mark_late(held.keys())
@@ -298,7 +308,11 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
     ]
     try:
         from automations.day_orchestrator import notify
-        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run)
+        # An extract that's late today is usually late tomorrow too, and this
+        # posted fresh every run. One thread; the repeats go inside it and it
+        # closes itself the first time the boards post clean.
+        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run,
+                          incident="tracker-freshness")
     except Exception as e:                            # noqa: BLE001
         print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
               flush=True)
@@ -348,7 +362,8 @@ def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
                     f"Lucy 2 raised {type(e).__name__}: {str(e)[:160]}.",
                     f"The leaders' groups did NOT get today's {tid} text. Re-queue "
                     f"by hand: `lucy text_tracker {tid} --machine \"Lucy 2\"`.",
-                ], tag="tracker-text-handoff", dry_run=False)
+                ], tag="tracker-text-handoff", dry_run=False,
+                    incident=f"tracker-text-{tid}")
             except Exception:                             # noqa: BLE001
                 pass
 

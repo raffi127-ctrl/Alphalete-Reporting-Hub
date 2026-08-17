@@ -267,10 +267,22 @@ def run(phase: str, target: dt.date | None = None) -> None:
         # Any office that did NOT sync (a genuine error OR a no-access gap) goes
         # to #claudecorrections-and-requests so the miss is seen even though the
         # pill is green. Best-effort — a Slack hiccup never fails the run.
-        if failed or no_access or ad_blank:
+        if not (failed or no_access or ad_blank):
+            # A clean sweep closes the office-gap thread — the fix for a
+            # no-access office is granting access, which happens outside any
+            # run, so nothing else would ever say "it's over" (Eve 2026-08-17).
+            try:
+                from automations.shared import incident_thread as _inc
+                _inc.resolve_if_open(
+                    "applicant-tracker-gaps",
+                    what="*Applicant Tracker*",
+                    detail="All {} offices synced on the {} run.".format(
+                        total, phase))
+            except Exception:  # noqa: BLE001 — never sink a good run
+                pass
+        else:
             try:
                 from automations.day_orchestrator import notify
-                from automations.day_orchestrator.registry import load_config
                 missed = len(failed) + len(no_access)
                 lines = ["🗂️ *Applicant Tracker — {} run: {} of {} office(s) "
                          "did not sync*".format(phase, missed, total)
@@ -289,9 +301,16 @@ def run(phase: str, target: dt.date | None = None) -> None:
                         "'Sent to Call List' detail table may have gained or "
                         "moved a column".format(len(ad_blank),
                                                 ", ".join(ad_blank)))
-                notify._post_corrections(load_config(), None, lines,
-                                         dry_run=False,
-                                         tag="applicant-tracker-gaps")
+                # ONE thread for the office gaps, not a post per run. This fired
+                # twice a day, every day, with the same office in it — six
+                # near-identical posts sat in the channel between 8/13 and 8/17.
+                # The run that still has gaps replies inside; a clean sweep
+                # closes it above (Eve 2026-08-17).
+                notify.post_alert(lines[0], lines[1:], dry_run=False,
+                                  tag="applicant-tracker-gaps",
+                                  incident="applicant-tracker-gaps",
+                                  label="*Applicant Tracker* ({} run)".format(
+                                      phase))
             except Exception as e:  # noqa: BLE001 — Slack must not fail the run
                 print("  (corrections post skipped: {})".format(e))
     print(f"=== {phase.upper()} phase done ===")

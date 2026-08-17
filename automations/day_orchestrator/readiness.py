@@ -288,7 +288,11 @@ class ReadinessCache:
                  "config gates on a probe whose code isn't on this machine yet. "
                  "Fix by deploying the handler, or reverting the source's probe "
                  "wiring."],
-                tag="readiness-unknown-probe")
+                tag="readiness-unknown-probe",
+                # Per-process dedup only silences the pass we're IN: a
+                # half-shipped probe is still misconfigured tomorrow, and it
+                # posted again every morning. One thread, repeats inside it.
+                incident=f"readiness-probe-{source_id}")
         except Exception as e:  # noqa: BLE001 — an alert must never sink the pass
             print(f"[readiness] unknown-probe alert skipped ({source_id}): {e}",
                   flush=True)

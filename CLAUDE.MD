@@ -56,6 +56,16 @@ fluff. I need clear visuals and concise communications.
 - **No hardcoded rows or columns.** Find rows by column-B label, find
   weeks by date header (`fill.find_sunday_columns`). Templates change —
   label/header lookup survives, indices don't.
+- **Cuando te pongas a trabajar una falla del canal, marcala.** Antes de
+  empezar a diagnosticar/arreglar algo que salió en
+  #claudecorrections-and-requests, corré
+  `python -m automations.shared.incident_thread --working <report_id>`
+  (acepta el report id o la clave `failure-…`). Deja el emoji `:pending:`
+  en el post, que es como la otra persona ve que ese ticket ya lo está
+  tomando alguien. El ✅ lo pone solo el código cuando el reporte vuelve
+  a correr limpio, y saca el `:pending:` en el mismo momento. Si lo
+  arreglaste a mano (sin re-corrida), cerralo vos:
+  `--resolve-report <report_id> --note "..."`.
 - **Cite the full source path** when telling me where a number comes
   from: workbook → view → worksheet → filter → row/col. I forget once
   I send the metric to you, so spell it out.

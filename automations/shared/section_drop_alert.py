@@ -27,8 +27,10 @@ day replies in that post's thread instead of adding another one, and the first
 clean run closes it with a ✅ in the same thread (`resolved`, called from
 run_manifest). See automations/shared/incident_thread.py.
 
-Dedup: one post per (report_id, date, failed-set). A morning re-run that drops
-the SAME section again won't re-spam; a different drop still alerts. Posted as
+Dedup: per (report_id, date, failed-set), on a 45-minute COOLDOWN — not once a
+day. A re-run that drops the same section again does report back, as a reply in
+the same thread; it just won't narrate a retry loop tick by tick, and a different
+drop still alerts immediately (Eve 2026-08-17). Posted as
 Lucy (the xoxp user token every Slack post here uses). Always English — the whole
 team reads this channel. [[reference_lucy_slack_tokens]] [[project_corrections_slack_channel]]
 """
@@ -44,9 +46,28 @@ MEGAN = "U04G5HJBGFN"         # Megan Hidalgo — no longer @-mentioned (2026-08
 _STATE_DIR = Path("output") / "section_drop_alerts"
 
 
+# A repeat of the SAME drop stays quiet this long, then reports again — in the
+# thread, not as a new post. It used to be silent for the whole day, which meant
+# a re-run that dropped the same section again told nobody (Eve 2026-08-17: "si
+# por una re-corrida volviera a fallar, que la reincidencia caiga dentro del
+# thread"). Matches incident_thread.REPEAT_COOLDOWN_S.
+_REALERT_AFTER_S = 45 * 60
+
+
 def _dedup_path(report_id: str, day: dt.date, failed: Sequence[str]) -> Path:
     key = hashlib.sha1(",".join(sorted(failed)).encode("utf-8")).hexdigest()[:10]
     return _STATE_DIR / f"{report_id}-{day.isoformat()}-{key}.txt"
+
+
+def _muted(path: Path) -> bool:
+    """True while this exact drop is inside its cooldown. A DIFFERENT set of
+    dropped sections has its own path, so it is never muted by this one."""
+    import time
+    try:
+        return (path.exists()
+                and (time.time() - path.stat().st_mtime) < _REALERT_AFTER_S)
+    except Exception:  # noqa: BLE001 — unreadable stamp = say it again
+        return False
 
 
 # What the report LOST, per kind — a fill that drops a day is not a thread that
@@ -389,11 +410,8 @@ def alert(*, report_id: str, failed: Sequence[str],
         return False
     day = day or dt.date.today()
     path = _dedup_path(report_id, day, failed)
-    try:
-        if path.exists():
-            return True
-    except Exception:
-        pass
+    if _muted(path):
+        return True
     parent_lines, detail = _compose_parts(report_id, failed, remediation,
                                           note, kind)
     from automations.shared import alert_thread
@@ -425,6 +443,7 @@ def alert(*, report_id: str, failed: Sequence[str],
                                            details=detail, channel=CHANNEL,
                                            stamp=(_KINDS.get(kind) or {}).get(
                                                "followup_stamp"),
+                                           label="*{}*".format(report_id),
                                            day=day, client=client)
         except Exception as e:  # noqa: BLE001
             print("  ⚠ incident thread unavailable ({}: {}) — posting "
