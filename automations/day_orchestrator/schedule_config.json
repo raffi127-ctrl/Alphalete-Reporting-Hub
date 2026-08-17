@@ -169,6 +169,30 @@
     }
   },
   "reports": {
+    "helen_residential": {
+      "on_scheduler": true,
+      "_note": "Helen Assefaw (tab 'Helen Assefaw (Vz)' on the ATT Program - Focus Report) is a RESIDENTIAL Verizon Wireless ICD — Edge Concepts, Falls Church VA, ownerville 13382, confirmed by her captain Starr Rodenhurst 2026-08-17. She is in NO AppStream office and in NO ATT-program Tableau view, so att_focus_raf/opt_phase can never write a number on her tab: those sources are D2D/B2B and she is residential. This report is the only thing that fills it, from THREE weekly emails to alphaletereporting — RANKED Residential Wireless tracker (anowrouzi@aptel.com, sales), Residential Rep Count (rarchey@thesmartcircle.com, headcount) and Headcount and Recruiting Totals (mdanesi3@gmail.com, funnel). Ordered with `after` and NOT `depends_on`: att_focus_raf touches none of her sources, so its failure must not skip her. ONLY the recruiting mail has landed by Monday — the rep count arrives Thursday night and the sales tracker runs 8-15 days behind its week and sometimes skips an edition. That is by design: the run scans a 75-day window and writes ONLY still-empty cells, so a late edition is picked up by the next Monday without disturbing anything already filled. Re-running is always safe. Not a Hub card.",
+      "display_name": "ATT Program — Helen Assefaw (Verizon residential)",
+      "source_type": "email",
+      "data_sources": [],
+      "command": [
+        "automations.helen_residential.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "att_focus_raf"
+      ],
+      "verify": null,
+      "timeout_minutes": 20
+    },
     "mobrium_list": {
       "on_scheduler": true,
       "_note": "Mobrium List (the review-request list) weekly upkeep, Fridays 10:00 CST. Removes reps who are gone and adds the week's new starts to the 'Mobrium List' tab of 'All in One Local Office - Raf' (the same workbook 'Terminated Reps' lives in). REMOVAL is decided by the 'Terminated Reps' tab plus this week's SALES BOARD, with two vetoes: a tracker note of FFP keeps them (Eve's rule), and so does a live OwnerVille roster entry when the termination is 7+ days old \u2014 that is a rehire (Tadana Manyangadze, terminated 5/29 and training new starts in August). The 7-day floor matters: OwnerVille lags a day or two behind a termination, so without it someone let go that morning reads as rehired (Karla Lopez, 2026-08-07). ADDITIONS come from the board's 'New Starts/Raf' box, and their Email AND Phone are read from OwnerVille's Sales Reps page (p=20) via its getRepList endpoint \u2014 the board's own email column drifts out of step with its names (on WE 8.9 'David Redmon' carried Carlo Ferrino's address), so it is used only for people OwnerVille has never heard of, and only when the address plausibly belongs to them. Anyone left without details is added anyway and named in the run output. New people are INSERTED in first-name order, not appended. Idempotent: a second pass the same day changes nothing. NEEDS A LIVE OWNERVILLE SESSION on the machine \u2014 it will not re-login unattended (Cloudflare), and it exits 1 rather than write rows with no phone numbers. base_args are '--real --i-mean-it' because this is the only report that DELETES rows a human maintains; the before-state is snapshotted to output/mobrium_list/ on every run, which is the only undo. depends_on terminated_reps so the day's terminations are already filed when this reads the tracker tab.",

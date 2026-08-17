@@ -527,9 +527,9 @@
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
     },
     {
-      "sheet_tab": "Helen Assefaw",
+      "sheet_tab": "Helen Assefaw (Vz)",
       "as_owner": "Helen Assefaw",
-      "reason": "VERIZON WIRELESS ICD \u2014 confirmed by her captain Starr Rodenhurst 2026-08-17. Tab converted that day from the Fiber OPT block to the Frontier/Verizon one (rows 25-48, mirrors 'Frontier Template' on the Alphalete Org sheet); recruiting rows 1-23 untouched. NO AppStream office (checked live 2026-08-17 against 237 offices), so recruiting stays blank until access lands. She is in NO ATT-program Tableau view either, so opt_phase has nothing for her \u2014 her source is the emailed Credico VZ+FTR 'Dual-Campaign Wireless Performance' workbook (vzreports@credicousa.com), where she had not appeared yet as of the 2026-08-14 edition.",
+      "reason": "Pesta\u00f1a renombrada 'Helen Assefaw' -> 'Helen Assefaw (Vz)' el 2026-08-17. VERIZON WIRELESS RESIDENCIAL (Edge Concepts, Falls Church VA, ownerville 13382), confirmado por su capit\u00e1n Starr Rodenhurst. Sin oficina en AppStream (chequeado en vivo contra las 237) y en NINGUNA vista Tableau del ATT program \u2014 no es permisos: esas vistas son D2D/B2B y ella es residencial, as\u00ed que opt_phase no puede llenarle nada NUNCA. La llena `automations.helen_residential.run` (lunes) desde tres mails semanales a alphaletereporting. Sigue ac\u00e1 para que la pesta\u00f1a quede categorizada (si no, run.py la pinta de azul) y para que `promote_when_visible` la promueva sola el d\u00eda que le den AppStream.",
       "promote_when_visible": true
     }
   ],
