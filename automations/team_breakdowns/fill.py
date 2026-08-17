@@ -218,11 +218,14 @@ def fill_for_tab(ws, we_sunday: dt.date,
                     formatted = "Unmatched Name - Check Spelling"
                     unmatched.append(name)
             all_updates.append((gspread.utils.rowcol_to_a1(r, date_col), formatted))
+        # A week where nobody in the section sold is a real ZERO, not a blank
+        # (Eve 2026-08-17). Left empty it reads as "the report didn't run" —
+        # Hasani Lynch's 8/16 total looked like a failure when all 8 of his reps
+        # simply had no sales that week.
         if tab in INT_TOTAL_TABS:
-            _units = sum(total_products.values())
-            total_str = str(_units) if _units else ""
+            total_str = str(sum(total_products.values()))
         else:
-            total_str = format_production(total_products)
+            total_str = format_production(total_products) or "0"
         all_updates.append((gspread.utils.rowcol_to_a1(sec["total_row"], date_col),
                             total_str))
         n_filled_sections += 1
