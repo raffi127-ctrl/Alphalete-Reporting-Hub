@@ -44,8 +44,42 @@ def _decode(s: str) -> str:
 def _filename(part) -> str:
     """Attachment filename, whitespace-normalized. Email header folding can
     inject newlines into a long filename ('Coel\\n Reif_….xlsx'), which breaks
-    dedup AND the on-disk filename — collapse any whitespace run to one space."""
+    dedup AND the on-disk filename — collapse any whitespace run to one space.
+
+    This is the name callers glob against, so it stays VERBATIM apart from the
+    whitespace fix — path-hostile characters are stripped later, by _safe_name,
+    only when building the file on disk."""
     return re.sub(r"\s+", " ", _decode(part.get_filename() or "")).strip()
+
+
+# Characters that can't appear in a Windows filename (and '/' can't on POSIX).
+_UNSAFE = re.compile(r'[\\/:*?"<>|]')
+
+
+def _safe_name(fn: str) -> str:
+    """`fn` made safe to write to disk. Senders DO put slashes in attachment
+    names — Credico's 'Bonus Incentive Tracker … - WE 7/5/2026.pdf' — and
+    `dest / fn` then reads those as directories and raises FileNotFoundError
+    mid-loop, so every OLDER email silently never downloads and the report
+    looks like it never arrived. Matching still uses the raw name."""
+    return _UNSAFE.sub("-", fn).strip() or "attachment"
+
+
+def _unique_path(dest: Path, name: str, used: set) -> Path:
+    """`dest/name`, suffixed if sanitizing collapsed two different attachment
+    names onto the same one (…WE 7/5/2026.pdf vs …WE 7-5-2026.pdf)."""
+    out = dest / name
+    if str(out) not in used:
+        used.add(str(out))
+        return out
+    stem, dot, ext = name.rpartition(".")
+    for n in range(2, 100):
+        cand = dest / (f"{stem} ({n}){dot}{ext}" if dot else f"{name} ({n})")
+        if str(cand) not in used:
+            used.add(str(cand))
+            return cand
+    used.add(str(out))
+    return out
 
 
 def _connect() -> imaplib.IMAP4_SSL:
@@ -86,6 +120,7 @@ def fetch_by_globs(
     dest.mkdir(parents=True, exist_ok=True)
     globs = list(filename_globs)
     found: Dict[str, Path] = {}
+    used: set = set()
     M = _connect()
     try:
         for i in reversed(_search(M, sender, subject, since_days)):   # newest first
@@ -103,11 +138,17 @@ def fetch_by_globs(
                     if g in found:
                         continue
                     if fnmatch.fnmatch(fn.lower(), g.lower()):
-                        out = dest / fn
-                        out.write_bytes(part.get_payload(decode=True))
+                        out = _unique_path(dest, _safe_name(fn), used)
+                        try:
+                            out.write_bytes(part.get_payload(decode=True))
+                        except OSError as e:   # one odd attachment must not
+                            if verbose:        # abort the whole sweep
+                                print(f"  ! {fn!r}: {type(e).__name__} {e}",
+                                      flush=True)
+                            continue
                         found[g] = out
                         if verbose:
-                            print(f"  ✓ {g}  ->  {fn}", flush=True)
+                            print(f"  ✓ {g}  ->  {out.name}", flush=True)
         return found
     finally:
         M.logout()
@@ -139,6 +180,7 @@ def fetch_all(
     dest.mkdir(parents=True, exist_ok=True)
     globs = list(filename_globs)
     seen: Dict[str, Path] = {}      # key -> path; newest-first, first wins
+    used: set = set()
     M = _connect()
     try:
         for i in reversed(_search(M, sender, subject, since_days)):   # newest first
@@ -160,11 +202,17 @@ def fetch_all(
                 if key in seen:
                     continue
                 if any(fnmatch.fnmatch(fn.lower(), g.lower()) for g in globs):
-                    out = dest / key
-                    out.write_bytes(part.get_payload(decode=True))
+                    out = _unique_path(dest, _safe_name(key), used)
+                    try:
+                        out.write_bytes(part.get_payload(decode=True))
+                    except OSError as e:    # never abort the sweep: everything
+                        if verbose:         # OLDER would silently go missing
+                            print(f"  ! {key!r}: {type(e).__name__} {e}",
+                                  flush=True)
+                        continue
                     seen[key] = out
                     if verbose:
-                        print(f"  ✓ {key}", flush=True)
+                        print(f"  ✓ {out.name}", flush=True)
         return list(seen.values())
     finally:
         M.logout()
