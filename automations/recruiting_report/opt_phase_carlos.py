@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -852,6 +853,65 @@ def apply_view_to_icd(view: ViewConfig, csv_path: Path, ws,
 # ---------------------------------------------------------------------------
 # Download helper — connects to debug Chrome, navigates view, downloads CSV
 # ---------------------------------------------------------------------------
+class _Skipped(Exception):
+    """Internal: this view isn't in --only-views, so it wasn't attempted (NOT a
+    failure). Raised inside the download-all try-blocks and swallowed."""
+
+
+def cache_is_stale(csv_path: Path, *, dry_run: bool = False,
+                   allow_stale: bool = False, label: str = "",
+                   view_key: str = "") -> bool:
+    """True when `csv_path` was NOT refreshed today — i.e. this run's download
+    of it failed and the file on disk is a PRIOR run's data.
+
+    Why every apply path needs this gate, not just Personal Production: the
+    --apply-view paths read their cached CSV unconditionally (--no-download
+    means "don't log in", and the crosstab path never downloads at all). So a
+    view whose --download-all leg failed still applied — writing LAST week's
+    numbers into THIS week's column across all 33 tabs and printing
+    "33 written" like nothing happened. On 2026-08-17 that's exactly what
+    happened to `cancel` (its viz toolbar never rendered): the batch download
+    reported the failure, the apply step reported success, and row 43 came out
+    identical to the prior week on all 33 tabs. The wrapper's own summary can't
+    see it — only the cache mtime can. Same reasoning as the PP gate (Megan
+    2026-06-08 "same every week → incorrect"), generalized.
+
+    Refusing to write leaves the cell as-is rather than presenting stale data
+    as complete; the caller returns non-zero so the step is FLAGGED and
+    re-runnable. --dry-run and --allow-stale-cache skip the gate."""
+    if dry_run or allow_stale:
+        return False
+    try:
+        cache_day = dt.date.fromtimestamp(csv_path.stat().st_mtime)
+    except OSError:
+        return False          # no file → the caller's own exists() check fires
+    if cache_day >= dt.date.today():
+        return False
+    what = label or csv_path.stem
+    key = view_key or csv_path.stem
+    print(f"❌ {what} cache is STALE (last refreshed "
+          f"{cache_day.isoformat()}, not today) — this run's download of "
+          f"{csv_path.name} failed, so filling from it would write that day's "
+          f"numbers into this week's column. SKIPPING the fill.\n"
+          f"   Fix: re-download it (one login) and re-apply:\n"
+          f"     opt_phase_carlos --download-all --only-views {key}\n"
+          f"     opt_phase_carlos --apply-view {key} --no-download\n"
+          f"   (or `--allow-stale-cache` if you deliberately want the cached "
+          f"numbers.)", flush=True)
+    return True
+
+
+def _sheet_name_matches(target: str, filename: str) -> bool:
+    """Does a downloaded crosstab's filename correspond to the worksheet we
+    asked for? Tableau names the export after the exported sheet, so this is a
+    cheap post-hoc proof that our thumbnail selection actually took. Tolerant
+    of Tableau's dedup suffixes ('… (2).csv') and punctuation/spacing drift."""
+    def _n(s: str) -> str:
+        s = re.sub(r"\.csv$", "", s or "", flags=re.I)
+        return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+    return _n(target) in _n(filename)
+
+
 def download_view_crosstab(view: ViewConfig, out_path: Path,
                            verbose: bool = True, week=None, page=None,
                            pre_download_hook=None) -> Path:
@@ -959,179 +1019,235 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
         if verbose:
             print("  → Download → Crosstab → (pick thumbnail) → CSV", flush=True)
 
-        with page.expect_download(timeout=180_000) as dl_info:
-            # Open Download → Crosstab, then make sure the TARGET worksheet is
-            # actually listed before proceeding. On the base B2BATTSalesMetrics
-            # dashboard 'Sales.Quality Metrics' is heavy and renders a few
-            # seconds after the toolbar — opening the dialog too early lists only
-            # the light sheets ('zzz Last Refresh') and the target thumbnail is
-            # missing (Megan 2026-06-08). So we CLOSE + wait + REOPEN (escalating
-            # wait) until it appears. force=True punches through Tableau's
-            # tab-glass overlay (the click-intercept that left PP stale before).
-            dl_btn = viz.locator(
-                '[data-tb-test-id="viz-viewer-toolbar-button-download"]')
-            xtab_item = viz.locator(
-                '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]')
-            thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
-            target = view.sheet_thumbnail_match
-            thumb_count = 0
-            # NEVER press Escape in these retries: on this canvas dashboard Escape
-            # CLEARS the applied 'Time Frame' quick filter, which silently widened
-            # the crosstab export from one week to every week (137 owners / ~7k
-            # rep rows, Megan 2026-06-08). Recover the flyout by re-clicking the
-            # toolbar Download button instead — but only when it isn't already
-            # open (a blind re-click would TOGGLE an open flyout shut).
-            for open_attempt in range(1, 8):
-                # Open the Download flyout → Crosstab. On this heavy view the
-                # toolbar's download button click intermittently doesn't open the
-                # flyout (a tab-glass overlay swallows it). Short timeout + retry
-                # the open rather than blocking on a flyout that won't show.
-                try:
-                    if not xtab_item.is_visible(timeout=1500):
-                        dl_btn.click(force=True, timeout=30_000)
-                        page.wait_for_timeout(1800)
-                    page.screenshot(path=str(debug_dir / "01_download_menu.png"), full_page=True)
-                    xtab_item.click(force=True, timeout=10_000)
-                    page.wait_for_timeout(2000)
-                except Exception as e:
-                    if verbose:
-                        print(f"  ↻ download flyout didn't open "
-                              f"(attempt {open_attempt}/7): {type(e).__name__}; "
-                              f"retrying…", flush=True)
-                    page.wait_for_timeout(3500 * open_attempt)
-                    continue
-                page.screenshot(path=str(debug_dir / "02_crosstab_modal.png"), full_page=True)
-                thumb_count = thumbs.count()
-                names = []
-                for i in range(thumb_count):
-                    try:
-                        names.append(thumbs.nth(i).inner_text(timeout=2000).strip())
-                    except Exception as e:
-                        names.append(f"<error: {e}>")
-                if verbose:
-                    print(f"  → modal shows {thumb_count} sheet thumbnail(s): "
-                          f"{names}", flush=True)
-                present = (not target) or any(target in n for n in names)
-                if present:
-                    break
-                if verbose:
-                    print(f"  ↻ target sheet '{target}' not rendered yet "
-                          f"(attempt {open_attempt}/7); waiting to reopen…",
-                          flush=True)
-                # Close the crosstab modal via its Cancel button (filter-safe;
-                # NOT Escape) so the next attempt can reopen it after the sheet
-                # finishes rendering.
-                try:
-                    viz.locator('[data-tb-test-id="export-crosstab-cancel-Button"]'
-                                ).click(force=True, timeout=4000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(6000 * open_attempt)
-            if thumb_count > 0:
-                # Tableau auto-selects the first thumbnail by default. If
-                # the user's target IS the first thumbnail, our "click to
-                # select" would toggle it OFF — leaving nothing selected
-                # and the Download button disabled. So: only click the
-                # target thumb if the modal's Download button is currently
-                # disabled OR our target name doesn't appear to be the
-                # currently-active selection.
-                #
-                # The simplest reliable proxy: check the Download button
-                # state. If already enabled, the auto-selection covers
-                # what we want — skip the click. If disabled, our target
-                # isn't selected, so click it.
-                final_btn_probe = viz.locator(
-                    '[data-tb-test-id="export-crosstab-export-Button"]'
-                )
-                try:
-                    already_enabled = final_btn_probe.is_enabled(timeout=1500)
-                except Exception:
-                    already_enabled = False
-
-                need_thumb_click = True
-                if already_enabled and not view.sheet_thumbnail_match:
-                    # No specific match requested + button already enabled =
-                    # auto-selection is fine; don't disturb it.
-                    need_thumb_click = False
-                elif already_enabled and view.sheet_thumbnail_match:
-                    # Specific match requested. If our match is the FIRST
-                    # thumbnail (which would be auto-selected), skip the
-                    # click; otherwise click it to switch selection.
-                    first_text = thumbs.nth(0).inner_text(timeout=2000).strip()
-                    if view.sheet_thumbnail_match in first_text:
-                        if verbose:
-                            print(f"  → target is the auto-selected first "
-                                  f"thumbnail; skipping click", flush=True)
-                        need_thumb_click = False
-
-                if need_thumb_click:
-                    if view.sheet_thumbnail_match:
-                        thumb = viz.locator(
-                            f'[data-tb-test-id^="sheet-thumbnail-"]'
-                            f':has-text("{view.sheet_thumbnail_match}")'
-                        ).first
-                    else:
-                        thumb = thumbs.first
-                    thumb.wait_for(state="visible", timeout=15_000)
-                    thumb.click(force=True)
-                    page.wait_for_timeout(1200)
-                    # Verify the Download button enabled within ~3s — if
-                    # not, the click didn't register a selection. Retry
-                    # with a more specific click on the thumbnail's
-                    # internal checkbox / image.
-                    try:
-                        ok = final_btn_probe.is_enabled(timeout=3000)
-                    except Exception:
-                        ok = False
-                    if not ok:
-                        if verbose:
-                            print("  ↻ first click didn't enable Download; "
-                                  "trying thumb's inner checkbox/image",
-                                  flush=True)
-                        # Click any clickable child (button, input, img)
-                        for inner_sel in ("input", "button", "img", "div"):
-                            try:
-                                thumb.locator(inner_sel).first.click(force=True, timeout=2000)
-                                page.wait_for_timeout(700)
-                                if final_btn_probe.is_enabled(timeout=2000):
-                                    if verbose:
-                                        print(f"  ↺ Download enabled after "
-                                              f"clicking inner {inner_sel}",
-                                              flush=True)
-                                    break
-                            except Exception:
-                                continue
-                page.screenshot(path=str(debug_dir / "03_after_thumb.png"), full_page=True)
-
-            # CSV radio
-            viz.locator(
-                '[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]'
-            ).click(force=True, timeout=60_000)
-            page.wait_for_timeout(500)
-            page.screenshot(path=str(debug_dir / "04_after_csv.png"), full_page=True)
-
-            # Final Download — log whether it's enabled before clicking
-            final_btn = viz.locator(
-                '[data-tb-test-id="export-crosstab-export-Button"]'
-            )
-            try:
-                is_enabled = final_btn.is_enabled(timeout=2000)
-            except Exception:
-                is_enabled = "?"
+        # Two selection passes. Tableau pre-selects a sheet for us, and the
+        # logic below SKIPS our own thumbnail click when the export button is
+        # already enabled and our target is the first thumbnail — assuming
+        # "auto-selected" == "first thumbnail". That assumption is not always
+        # true: on 2026-08-17 the ACTIVATIONRATES modal listed
+        # ['Activation Office', 'Activation Total', 'zzz Last Refresh'], the
+        # click was skipped, and Tableau exported 'Activation Total.csv' — a
+        # 590-byte office-total file with no ICD rows. The apply step then
+        # stamped 'No Data In Tableau' on all 33 tabs and reported success.
+        # So VERIFY the export against the sheet we asked for (Tableau names
+        # the file after the exported sheet) and, on a mismatch, redo the
+        # download with the thumbnail click FORCED before failing loudly.
+        # Silent wrong-sheet data is the one outcome we can't have.
+        for sel_attempt in (1, 2):
+            force_thumb_click = sel_attempt == 2
+            dl = _crosstab_download_once(
+                page, viz, view, debug_dir, verbose=verbose,
+                force_thumb_click=force_thumb_click)
+            got = dl.suggested_filename
             if verbose:
-                print(f"  → final Download button enabled? {is_enabled}",
-                      flush=True)
-            final_btn.click(timeout=20_000)
+                print(f"  → download fired: {got}", flush=True)
+            if (not view.sheet_thumbnail_match
+                    or _sheet_name_matches(view.sheet_thumbnail_match, got)):
+                break
+            print(f"  ⚠ WRONG SHEET: asked for "
+                  f"{view.sheet_thumbnail_match!r} but Tableau exported "
+                  f"{got!r}" + (" — retrying with a forced thumbnail click"
+                                if sel_attempt == 1 else ""), flush=True)
+            if sel_attempt == 2:
+                raise RuntimeError(
+                    f"Crosstab for view '{view.key}' exported the WRONG "
+                    f"worksheet: wanted {view.sheet_thumbnail_match!r}, got "
+                    f"{got!r} (twice, second time with a forced thumbnail "
+                    f"click). The sheet may have been renamed in the "
+                    f"2026-08-style workbook republish — re-check the "
+                    f"thumbnail list in {debug_dir}/02_crosstab_modal.png and "
+                    f"update sheet_thumbnail_match.")
 
-        dl = dl_info.value
-        if verbose:
-            print(f"  → download fired: {dl.suggested_filename}", flush=True)
         dl.save_as(str(out_path))
         if verbose:
             print(f"  ✓ saved {out_path} "
                   f"({out_path.stat().st_size:,} bytes)", flush=True)
 
     return out_path
+
+
+def _crosstab_download_once(page, viz, view: ViewConfig, debug_dir: Path, *,
+                            verbose: bool = True,
+                            force_thumb_click: bool = False):
+    """One open-modal → select-sheet → CSV → Download pass. Returns the
+    patchright Download (NOT yet saved) so the caller can verify WHICH sheet
+    Tableau actually exported before committing it to the cache.
+
+    `force_thumb_click` skips the "trust Tableau's auto-selection" shortcut and
+    always clicks our target thumbnail — the retry path when pass 1 exported
+    the wrong worksheet."""
+    with page.expect_download(timeout=180_000) as dl_info:
+        # Open Download → Crosstab, then make sure the TARGET worksheet is
+        # actually listed before proceeding. On the base B2BATTSalesMetrics
+        # dashboard 'Sales.Quality Metrics' is heavy and renders a few
+        # seconds after the toolbar — opening the dialog too early lists only
+        # the light sheets ('zzz Last Refresh') and the target thumbnail is
+        # missing (Megan 2026-06-08). So we CLOSE + wait + REOPEN (escalating
+        # wait) until it appears. force=True punches through Tableau's
+        # tab-glass overlay (the click-intercept that left PP stale before).
+        dl_btn = viz.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+        xtab_item = viz.locator(
+            '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]')
+        thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+        target = view.sheet_thumbnail_match
+        thumb_count = 0
+        # NEVER press Escape in these retries: on this canvas dashboard Escape
+        # CLEARS the applied 'Time Frame' quick filter, which silently widened
+        # the crosstab export from one week to every week (137 owners / ~7k
+        # rep rows, Megan 2026-06-08). Recover the flyout by re-clicking the
+        # toolbar Download button instead — but only when it isn't already
+        # open (a blind re-click would TOGGLE an open flyout shut).
+        for open_attempt in range(1, 8):
+            # Open the Download flyout → Crosstab. On this heavy view the
+            # toolbar's download button click intermittently doesn't open the
+            # flyout (a tab-glass overlay swallows it). Short timeout + retry
+            # the open rather than blocking on a flyout that won't show.
+            try:
+                if not xtab_item.is_visible(timeout=1500):
+                    dl_btn.click(force=True, timeout=30_000)
+                    page.wait_for_timeout(1800)
+                page.screenshot(path=str(debug_dir / "01_download_menu.png"), full_page=True)
+                xtab_item.click(force=True, timeout=10_000)
+                page.wait_for_timeout(2000)
+            except Exception as e:
+                if verbose:
+                    print(f"  ↻ download flyout didn't open "
+                          f"(attempt {open_attempt}/7): {type(e).__name__}; "
+                          f"retrying…", flush=True)
+                page.wait_for_timeout(3500 * open_attempt)
+                continue
+            page.screenshot(path=str(debug_dir / "02_crosstab_modal.png"), full_page=True)
+            thumb_count = thumbs.count()
+            names = []
+            for i in range(thumb_count):
+                try:
+                    names.append(thumbs.nth(i).inner_text(timeout=2000).strip())
+                except Exception as e:
+                    names.append(f"<error: {e}>")
+            if verbose:
+                print(f"  → modal shows {thumb_count} sheet thumbnail(s): "
+                      f"{names}", flush=True)
+            present = (not target) or any(target in n for n in names)
+            if present:
+                break
+            if verbose:
+                print(f"  ↻ target sheet '{target}' not rendered yet "
+                      f"(attempt {open_attempt}/7); waiting to reopen…",
+                      flush=True)
+            # Close the crosstab modal via its Cancel button (filter-safe;
+            # NOT Escape) so the next attempt can reopen it after the sheet
+            # finishes rendering.
+            try:
+                viz.locator('[data-tb-test-id="export-crosstab-cancel-Button"]'
+                            ).click(force=True, timeout=4000)
+            except Exception:
+                pass
+            page.wait_for_timeout(6000 * open_attempt)
+        if thumb_count > 0:
+            # Tableau auto-selects the first thumbnail by default. If
+            # the user's target IS the first thumbnail, our "click to
+            # select" would toggle it OFF — leaving nothing selected
+            # and the Download button disabled. So: only click the
+            # target thumb if the modal's Download button is currently
+            # disabled OR our target name doesn't appear to be the
+            # currently-active selection.
+            #
+            # The simplest reliable proxy: check the Download button
+            # state. If already enabled, the auto-selection covers
+            # what we want — skip the click. If disabled, our target
+            # isn't selected, so click it.
+            final_btn_probe = viz.locator(
+                '[data-tb-test-id="export-crosstab-export-Button"]'
+            )
+            try:
+                already_enabled = final_btn_probe.is_enabled(timeout=1500)
+            except Exception:
+                already_enabled = False
+
+            need_thumb_click = True
+            if force_thumb_click:
+                # Retry pass: pass 1's trusted auto-selection exported the
+                # wrong worksheet, so click our target no matter what. If
+                # the click TOGGLES the selection off (Download goes
+                # disabled) the inner-child fallback below re-selects it.
+                if verbose:
+                    print("  → forcing the thumbnail click (previous pass "
+                          "exported the wrong sheet)", flush=True)
+            elif already_enabled and not view.sheet_thumbnail_match:
+                # No specific match requested + button already enabled =
+                # auto-selection is fine; don't disturb it.
+                need_thumb_click = False
+            elif already_enabled and view.sheet_thumbnail_match:
+                # Specific match requested. If our match is the FIRST
+                # thumbnail (which would be auto-selected), skip the
+                # click; otherwise click it to switch selection.
+                first_text = thumbs.nth(0).inner_text(timeout=2000).strip()
+                if view.sheet_thumbnail_match in first_text:
+                    if verbose:
+                        print(f"  → target is the auto-selected first "
+                              f"thumbnail; skipping click", flush=True)
+                    need_thumb_click = False
+
+            if need_thumb_click:
+                if view.sheet_thumbnail_match:
+                    thumb = viz.locator(
+                        f'[data-tb-test-id^="sheet-thumbnail-"]'
+                        f':has-text("{view.sheet_thumbnail_match}")'
+                    ).first
+                else:
+                    thumb = thumbs.first
+                thumb.wait_for(state="visible", timeout=15_000)
+                thumb.click(force=True)
+                page.wait_for_timeout(1200)
+                # Verify the Download button enabled within ~3s — if
+                # not, the click didn't register a selection. Retry
+                # with a more specific click on the thumbnail's
+                # internal checkbox / image.
+                try:
+                    ok = final_btn_probe.is_enabled(timeout=3000)
+                except Exception:
+                    ok = False
+                if not ok:
+                    if verbose:
+                        print("  ↻ first click didn't enable Download; "
+                              "trying thumb's inner checkbox/image",
+                              flush=True)
+                    # Click any clickable child (button, input, img)
+                    for inner_sel in ("input", "button", "img", "div"):
+                        try:
+                            thumb.locator(inner_sel).first.click(force=True, timeout=2000)
+                            page.wait_for_timeout(700)
+                            if final_btn_probe.is_enabled(timeout=2000):
+                                if verbose:
+                                    print(f"  ↺ Download enabled after "
+                                          f"clicking inner {inner_sel}",
+                                          flush=True)
+                                break
+                        except Exception:
+                            continue
+            page.screenshot(path=str(debug_dir / "03_after_thumb.png"), full_page=True)
+
+        # CSV radio
+        viz.locator(
+            '[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]'
+        ).click(force=True, timeout=60_000)
+        page.wait_for_timeout(500)
+        page.screenshot(path=str(debug_dir / "04_after_csv.png"), full_page=True)
+
+        # Final Download — log whether it's enabled before clicking
+        final_btn = viz.locator(
+            '[data-tb-test-id="export-crosstab-export-Button"]'
+        )
+        try:
+            is_enabled = final_btn.is_enabled(timeout=2000)
+        except Exception:
+            is_enabled = "?"
+        if verbose:
+            print(f"  → final Download button enabled? {is_enabled}",
+                  flush=True)
+        final_btn.click(timeout=20_000)
+
+    return dl_info.value
 
 
 # ---------------------------------------------------------------------------
@@ -1177,6 +1293,17 @@ def main() -> int:
                          "cached CSV (paired with a prior --download-all). "
                          "Currently only dd does a live scrape; this makes it "
                          "read the cache instead.")
+    ap.add_argument("--only-views",
+                    help="On --download-all, download ONLY these view keys "
+                         "(comma-separated, e.g. 'cancel,activation') instead "
+                         "of all 7 — the targeted recovery after one view's "
+                         "download failed, still under one login.")
+    ap.add_argument("--allow-stale-cache", action="store_true",
+                    help="On --apply-view, write from a cache that was NOT "
+                         "refreshed today. Off by default: a cache older than "
+                         "today means this run's download failed, and filling "
+                         "from it silently writes LAST week's numbers into this "
+                         "week's column.")
     ap.add_argument("--week",
                     help="WE Sunday (YYYY-MM-DD) to target instead of the "
                          "current completed week. Use to BACKFILL a prior "
@@ -1197,10 +1324,25 @@ def main() -> int:
         from automations.recruiting_report.opt_phase import (
             scrape_view_data, PROGRAM_SUMMARY_XY)
         we = _current_we_sunday()
+        # --only-views narrows the batch to the views named (the targeted
+        # recovery after one view failed). Unknown keys are a hard error — a
+        # typo must not silently "succeed" by downloading nothing.
+        wanted = None
+        if args.only_views:
+            wanted = [k.strip() for k in args.only_views.split(",") if k.strip()]
+            unknown = [k for k in wanted if k not in {v.key for v in VIEWS}]
+            if unknown:
+                print(f"unknown view key(s) {unknown}; known: "
+                      f"{[v.key for v in VIEWS]}")
+                return 2
+        def _wanted(key: str) -> bool:
+            return wanted is None or key in wanted
         crosstab_views = [v for v in VIEWS
-                          if v.key not in ("dd", "personal_production")]
+                          if v.key not in ("dd", "personal_production")
+                          and _wanted(v.key)]
         ok, fails = [], []
-        print(f"Downloading ALL Carlos OPT views in ONE login "
+        scope = ("ALL" if wanted is None else ", ".join(wanted))
+        print(f"Downloading {scope} Carlos OPT view(s) in ONE login "
               f"(week ending {we})…", flush=True)
         with tableau_session(verbose=True) as page:
             for v in crosstab_views:
@@ -1212,8 +1354,32 @@ def main() -> int:
                     print(f"  ✗ {v.key}: {type(e).__name__}: {str(e)[:160]}",
                           flush=True)
                     fails.append(v.key)
+            # SECOND PASS for the crosstabs that missed — in the SAME session,
+            # so it costs no extra login (per-view logins are what trip
+            # Cloudflare). Most misses are a Tableau viz that just didn't
+            # render in time: on 2026-08-17 'cancel' timed out at 30s + 60s
+            # while the other 6 views loaded fine, and a failed download means
+            # its apply step silently fills LAST week's cache. One retry here
+            # is ~90s worst case against a whole week of stale numbers.
+            if fails:
+                retry_views = [v for v in crosstab_views if v.key in fails]
+                print(f"\n↻ retrying {len(retry_views)} failed crosstab "
+                      f"download(s) in the same session: "
+                      f"{[v.key for v in retry_views]}", flush=True)
+                for v in retry_views:
+                    out = DOWNLOAD_DIR / f"{v.key}.csv"
+                    try:
+                        download_view_crosstab(v, out, week=we, page=page)
+                        ok.append(v.key)
+                        fails.remove(v.key)
+                        print(f"  ✓ {v.key}: recovered on retry", flush=True)
+                    except Exception as e:
+                        print(f"  ✗ {v.key}: retry also failed: "
+                              f"{type(e).__name__}: {str(e)[:160]}", flush=True)
             dd_view = next(v for v in VIEWS if v.key == "dd")
             try:
+                if not _wanted("dd"):
+                    raise _Skipped
                 # DD is the multi-sheet PROGRAM SUMMARY / DOWNLINEVIEW dashboard
                 # (same view as the org Program Summary pull) — Download->Data is
                 # disabled until the downline worksheet is activated, so pass the
@@ -1231,6 +1397,8 @@ def main() -> int:
                 print(f"  → dd: scraped {len(records)} View Data row(s)",
                       flush=True)
                 ok.append("dd")
+            except _Skipped:
+                pass
             except Exception as e:
                 print(f"  ✗ dd: {type(e).__name__}: {str(e)[:160]}", flush=True)
                 fails.append("dd")
@@ -1238,6 +1406,8 @@ def main() -> int:
             # rep worksheet (full wide table; flyout opens on the base view).
             pp_view = next(v for v in VIEWS if v.key == "personal_production")
             try:
+                if not _wanted("personal_production"):
+                    raise _Skipped
                 pp_path = DOWNLOAD_DIR / "personal_production_crosstab.csv"
                 # SALES SUMMARY has no URL week param: the window goes in
                 # through its date boxes, and the Owner→Rep hierarchy has to be
@@ -1249,11 +1419,14 @@ def main() -> int:
                 print(f"  → personal_production: crosstab saved "
                       f"{pp_path.name}", flush=True)
                 ok.append("personal_production")
+            except _Skipped:
+                pass
             except Exception as e:
                 print(f"  ✗ personal_production: {type(e).__name__}: "
                       f"{str(e)[:160]}", flush=True)
                 fails.append("personal_production")
-        print(f"\nDownloaded {len(ok)}/{len(VIEWS)}: {ok}"
+        expected = len(VIEWS) if wanted is None else len(wanted)
+        print(f"\nDownloaded {len(ok)}/{expected}: {ok}"
               + (f"  | FAILED: {fails}" if fails else ""), flush=True)
         return 1 if fails else 0
 
@@ -1460,14 +1633,12 @@ def main() -> int:
         # apply, so a cache not refreshed TODAY means this week's scrape failed.
         # Refuse to write stale numbers — skip + flag, leave the cell as-is
         # (blank/last good) rather than presenting wrong data as complete.
-        import datetime as _dt
-        cache_day = _dt.date.fromtimestamp(csv_path.stat().st_mtime)
-        if not args.dry_run and cache_day < _dt.date.today():
-            print(f"❌ Personal Production cache is STALE (scraped "
-                  f"{cache_day.isoformat()}, not today) — the PP View-Data "
-                  f"scrape failed this run. SKIPPING the PP fill so stale "
-                  f"numbers aren't written. Fix the scrape, then re-run "
-                  f"`--download-all` + `--apply-view personal_production`.")
+        # Now shared by EVERY view via cache_is_stale (2026-08-17: `cancel`
+        # proved the other views had the same silent hole).
+        if cache_is_stale(csv_path, dry_run=args.dry_run,
+                          allow_stale=args.allow_stale_cache,
+                          label="Personal Production",
+                          view_key="personal_production"):
             return 1
         with open(csv_path, encoding="utf-16") as f:
             rows = list(_csv.reader(f, delimiter="	"))
@@ -1633,6 +1804,13 @@ def main() -> int:
         # week-pinned via 'Processed Week' so it targets THIS week, not the
         # frozen one — and --week backfills a prior column.
         if args.no_download and carlos_dd_path.exists():
+            # Same stale-cache gate as the crosstab views: --no-download means
+            # "a prior --download-all cached this", so a cache from before today
+            # means that leg failed and these are an older day's dollars.
+            if cache_is_stale(carlos_dd_path, dry_run=args.dry_run,
+                              allow_stale=args.allow_stale_cache,
+                              label="Direct Deposit", view_key="dd"):
+                return 1
             print(f"  → using cached dd View Data ({carlos_dd_path.name})")
         elif not args.dry_run or not carlos_dd_path.exists():
             dd_url = _dd_week_url(dd_view.url, we)
@@ -1722,6 +1900,13 @@ def main() -> int:
         csv_path = DOWNLOAD_DIR / f"{view.key}.csv"
         if not csv_path.exists():
             print(f"No cached CSV at {csv_path}. Run --test-view {view.key} first.")
+            return 1
+        # This path NEVER downloads — it always fills from the cache. So a cache
+        # that this run's --download-all didn't refresh holds a PRIOR week's
+        # numbers; writing it would look like a clean fill (see cache_is_stale).
+        if cache_is_stale(csv_path, dry_run=args.dry_run,
+                          allow_stale=args.allow_stale_cache,
+                          label=f"View '{view.key}'"):
             return 1
         sh = fill.open_sheet()
         icd_tabs = _carlos_icd_tabs()
