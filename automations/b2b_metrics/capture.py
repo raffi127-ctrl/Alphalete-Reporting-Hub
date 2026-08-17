@@ -667,8 +667,67 @@ def _week_variants(o: B2BOffice, view_key: str, today: dt.date = None) -> list:
     ]
 
 
+def _dump_view(page, url: str, log=print) -> None:
+    """Print the loaded view's text + every labelled control, so the week
+    control can be DRIVEN when it can't be URL-filtered.
+
+    Every line is prefixed with a grep tag (TXT| LBL| SEL|) because the remote
+    queue only shows a log's tail — the laptop pulls these back by tag with
+    `lucy logtail <log> TXT|`."""
+    from automations.b2b_quality.run import _IFRAME
+    page.goto("about:blank", wait_until="domcontentloaded", timeout=60_000)
+    page.goto(url, wait_until="domcontentloaded", timeout=120_000)
+    page.wait_for_timeout(35_000)
+    fr = page.frame_locator(_IFRAME)
+    try:
+        txt = fr.locator("body").inner_text(timeout=45_000) or ""
+    except Exception as e:  # noqa: BLE001
+        txt = ""
+        log("TXT| read failed {}".format(type(e).__name__))
+    for ln in txt.splitlines()[:120]:
+        s = ln.strip()
+        if s:
+            log("TXT| " + s[:160])
+    # Labelled controls — the quick filters live here when they exist.
+    for scope_name, scope in (("viz", fr), ("page", page)):
+        try:
+            els = scope.locator("[aria-label]")
+            n = min(els.count(), 250)
+        except Exception as e:  # noqa: BLE001
+            log("LBL| [{}] scope failed {}".format(scope_name, type(e).__name__))
+            continue
+        seen = set()
+        for i in range(n):
+            try:
+                lab = els.nth(i).get_attribute("aria-label") or ""
+            except Exception:  # noqa: BLE001
+                continue
+            if lab and lab not in seen:
+                seen.add(lab)
+                log("LBL| [{}] {}".format(scope_name, lab[:150]))
+    # Tableau's own filter/parameter widget classes, plus anything carrying the
+    # week text — one of these is the control to drive.
+    for sel in (".tabComboBoxNameContainer", ".tabComboBox", ".QuickFilterBox",
+                "[data-tb-test-id]", "[role='button']", "[role='combobox']"):
+        try:
+            loc = fr.locator(sel)
+            n = loc.count()
+            log("SEL| {} -> {}".format(sel, n))
+            for i in range(min(n, 40)):
+                try:
+                    t = (loc.nth(i).inner_text(timeout=5_000) or "").strip()
+                    tid = loc.nth(i).get_attribute("data-tb-test-id") or ""
+                except Exception:  # noqa: BLE001
+                    continue
+                if t or tid:
+                    log("SEL|   [{}] {!r} tid={!r}".format(
+                        i, t.replace("\n", " ")[:70], tid[:50]))
+        except Exception as e:  # noqa: BLE001
+            log("SEL| {} failed {}".format(sel, type(e).__name__))
+
+
 def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
-               today: dt.date = None, log=print) -> int:
+               today: dt.date = None, dump: bool = False, log=print) -> int:
     """Load `view_key` once per URL variant and report the week each one draws.
 
     Prints a one-line verdict LAST — the remote-control queue keeps only the
@@ -706,6 +765,9 @@ def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 tp._ensure_tableau_authenticated(page, verbose=False,
                                                  allow_form_login=True)
+                if dump:
+                    _dump_view(page, variants[0][1], log=log)
+                    variants = []
                 for label, url in variants:
                     try:
                         # about:blank between variants: these are hash URLs, so

@@ -495,6 +495,11 @@ def main(argv=None) -> int:
                     help="DIAGNOSTIC: load the week-pinned view once per URL "
                          "variant and report which one actually moves the week. "
                          "Captures nothing, posts nothing.")
+    ap.add_argument("--probe-dump", action="store_true",
+                    help="with --probe-week: skip the variants and DUMP the "
+                         "loaded view's text + labelled controls (tagged TXT| "
+                         "LBL| SEL| for logtail), to find the week control when "
+                         "no URL filter moves it.")
     ap.add_argument("--new-thread", action="store_true",
                     help="abandon today's stored thread and open a fresh one "
                          "(use when the parent was deleted or the sections "
@@ -550,6 +555,7 @@ def main(argv=None) -> int:
         # every office reads the same OutofBoundsReport.
         from automations.b2b_metrics import capture as _cap
         return _cap.probe_week(_off.get(args.office or "carlos"),
+                               dump=args.probe_dump,
                                today=(dt.date.fromisoformat(args.today)
                                       if args.today else None))
 
