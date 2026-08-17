@@ -128,8 +128,13 @@ def _b2b_pp_for(icd: str, by_rep: dict, fallback: str = "",
         # didn't sell this week, or their name is spelled differently in the
         # rep list. Say which, by naming any rep sharing their surname —
         # otherwise a spelling drift reads as a quiet, plausible zero.
+        # Compare surname to surname. A plain substring test reports
+        # 'tristan gehrt' as a near-miss for 'Valeria Tristan', where Tristan is
+        # that rep's FIRST name — a false lead that argues for an alias nobody
+        # needs. '-' for these ICDs is normal: they run a team and don't sell.
         surname = icd.lower().split()[-1] if icd.split() else ""
-        near = [k for k in by_rep if surname and surname in k][:4]
+        near = [k for k in by_rep
+                if surname and k.split() and k.split()[-1] == surname][:4]
         logfn(f"OPT B2B:   PP no self-row for {icd!r}"
               + (f" — but these reps share the surname: {near}. If one IS them,"
                  f" the spelling drifted; add it to the mapping's as_owner."
