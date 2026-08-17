@@ -2538,6 +2538,19 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         except Exception as e:
             logfn(f"OPT: Team Breakdowns failed: {type(e).__name__}: {e}")
 
+    # ----- DD boxes (the per-rep Due Diligence boxes on the ICD tabs) ----
+    # Same PRODUCT SALES crosstab for the weekly units; the cancel/churn views
+    # are its own four pulls. Until this existed the boxes were filled by hand
+    # and quietly fell behind. [[project_focus-report-dd-style-rep-boxes]]
+    if not dry_run and not skip_breakdowns:
+        try:
+            from automations.dd_boxes.run import run_dd_boxes
+            logfn("")
+            logfn("===== DD Boxes =====")
+            run_dd_boxes(we=we_sunday, logfn=logfn)
+        except Exception as e:
+            logfn(f"OPT: DD Boxes failed: {type(e).__name__}: {e}")
+
     return {"filled": filled, "skipped": skipped, "gaps": all_gaps}
 
 
