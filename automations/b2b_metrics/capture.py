@@ -479,40 +479,67 @@ def _select_week(page, want: dt.date, log=print) -> bool:
         log("   week dropdown already on {}".format(cur))
         return True
     log("   week dropdown is on {} — selecting {}".format(cur, targets[0]))
-    try:
-        boxes.nth(idx).click(timeout=20_000)
-    except Exception as e:  # noqa: BLE001
-        log("   ⚠ could not open the week dropdown ({})".format(type(e).__name__))
-        return False
-    page.wait_for_timeout(2_500)
-    # The open menu. Tableau spells the item a few ways depending on whether the
-    # filter is a plain list or a searchable one, so try each.
-    for sel in (".tabMenuItemName", ".tabComboBoxMenuItem", "[role='option']",
-                ".tabMenuItem"):
-        try:
-            items = fr.locator(sel)
-            n = min(items.count(), 250)
-        except Exception:  # noqa: BLE001
-            continue
-        for j in range(n):
+    # OPEN. A .tabComboBox is a composite: the value label, a name container and
+    # the arrow button. Which of them actually opens the menu differs by Tableau
+    # build, so try each, and stop as soon as menu items appear.
+    openers = [(".tabComboBox", idx), (".tabComboBoxButton", idx),
+               (".tabComboBoxName", idx)]
+    item_sels = (".tabMenuItemName", ".tabComboBoxMenuItem", "[role='option']",
+                 "[role='menuitem']", ".tabMenuItem", ".QFCheckbox",
+                 "[role='checkbox']")
+
+    def _menu_items():
+        """(selector, texts) for whichever selector has the open menu's items."""
+        for sel in item_sels:
             try:
-                txt = " ".join((items.nth(j).inner_text(timeout=4_000)
-                                or "").split()).lstrip("✓")
+                loc = fr.locator(sel)
+                n = min(loc.count(), 300)
             except Exception:  # noqa: BLE001
                 continue
-            if txt in targets:
+            if not n:
+                continue
+            texts = []
+            for j in range(n):
                 try:
-                    items.nth(j).click(timeout=15_000)
+                    texts.append(" ".join(
+                        (loc.nth(j).inner_text(timeout=3_000) or "").split()
+                    ).lstrip("✓").strip())
+                except Exception:  # noqa: BLE001
+                    texts.append("")
+            if any(t for t in texts):
+                return sel, loc, texts
+        return None, None, []
+
+    for osel, oidx in openers:
+        try:
+            fr.locator(osel).nth(oidx).click(timeout=15_000)
+        except Exception:  # noqa: BLE001
+            try:
+                fr.locator(osel).nth(oidx).focus()
+                page.keyboard.press("Enter")
+            except Exception:  # noqa: BLE001
+                continue
+        page.wait_for_timeout(3_000)
+        sel, loc, texts = _menu_items()
+        if not sel:
+            log("   [week] {} -> no menu items appeared".format(osel))
+            continue
+        log("   [week] {} opened {} ({} items): {}".format(
+            osel, sel, len(texts), " | ".join(t for t in texts[:20] if t)))
+        for j, t in enumerate(texts):
+            if t in targets:
+                try:
+                    loc.nth(j).click(timeout=15_000)
                 except Exception:  # noqa: BLE001
                     # Tableau's click-capture overlay eats a plain click on some
-                    # controls; the keyboard always works.
+                    # controls; only the keyboard gets through.
                     # [[reference_tableau_pinned_id_filters]]
                     try:
-                        items.nth(j).focus()
-                        page.keyboard.press("Enter")
+                        loc.nth(j).focus()
+                        page.keyboard.press("Space")
                     except Exception:  # noqa: BLE001
                         continue
-                log("   ✓ picked {} from {}".format(txt, sel))
+                log("   ✓ picked {} from {}".format(t, sel))
                 page.wait_for_timeout(12_000)     # let the viz requery
                 return True
     log("   ⚠ {} not offered by the week dropdown".format(targets[0]))
