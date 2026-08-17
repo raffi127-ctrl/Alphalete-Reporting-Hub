@@ -62,6 +62,11 @@ class WatchTarget:
                                    # that fires `wrapper`. Both are checked by
                                    # config_problem() so a retired agent reads as
                                    # MISCONFIGURED, never as a report failure.
+    wrapper_text: str = ""         # what config_problem() greps for in `wrapper`
+                                   # when the wrapper BUILDS the marker name from
+                                   # a shell variable, so the literal marker_stem
+                                   # never appears in the file. Default (empty) =
+                                   # grep for marker_stem, the common case.
 
     @property
     def watch_id(self) -> str:
@@ -72,6 +77,12 @@ class WatchTarget:
         """The dateless part of the marker filename, e.g. '.box-order-log-posted-'
         — what the wrapper's `touch` line must contain."""
         return Path(self.marker_glob.replace("{date}", "")).name
+
+    @property
+    def wrapper_needle(self) -> str:
+        """The string that must appear in `wrapper` for it to still be writing
+        this marker (see wrapper_text)."""
+        return self.wrapper_text or self.marker_stem
 
 
 def rerun_hint_for(watch_id: str) -> Optional[str]:
@@ -161,10 +172,41 @@ WATCH_TARGETS: List[WatchTarget] = [
         wrapper="deploy/pnl_office_fri.sh",
         agent="pnl-office-fri",
     ),
+    # --- the scheduler mini (Alphaletes-Mac-mini.local) --------------------------
+    # Its machine string is "Lucy 1", NOT "the mini". registry.this_machine() only
+    # ever returns what `.machine-profile` says, defaulting to "Lucy 1" (the
+    # original mini) — and that default IS this box: it polls the plain "Mini
+    # Control" tab, which _control_tab_for() hands out only to "Lucy 1", and
+    # `lucy rerun list_agents` there lists com.alphalete.box-order-log-owners,
+    # stf-field-check-11pm and org-board-slack side by side (2026-08-17).
+    # So machine="the mini" matched NO runner and stf_field_check has been
+    # un-watched since the day it was added (2026-07-28) — the same class of
+    # silence as the owner emails below, which had no target at all.
+    WatchTarget(
+        report_id="box_order_log_owners",
+        display_name="BOX Order Log per-owner emails (post watch)",
+        machine="Lucy 1",
+        deadline="09:30",   # 8:30 pass = two org-wide pulls back to back
+        marker_glob="output/logs/.box-order-log-owners-ran-{date}",
+        note="the 8:30 per-owner BOX Order Log pass left no ran-marker by 9:30 — "
+             "Abel and Roshan were not emailed and nothing else would have said "
+             "so. The marker is dropped whenever the 8:30 pass FINISHES (sent, "
+             "deferred or capped alike), so a no-show here means the pass never "
+             "completed: launchd didn't fire it, or the 7:00 run was still alive "
+             "and the wrapper's pgrep guard skipped the whole 8:30 pass. A capped "
+             "/ blocked pull is NOT this — that path alerts on its own",
+        rerun_hint="on the mini: bash deploy/box_order_log_owners.sh   "
+                   "(emails each owner once; already-sent owners are skipped)",
+        wrapper="deploy/box_order_log_owners.sh",
+        # The wrapper builds the marker per owner from $KEY, so the literal stem
+        # never appears in the file — grep for the touch line's fixed prefix.
+        wrapper_text=".box-order-log-owners-ran-",
+        agent="box-order-log-owners",
+    ),
     WatchTarget(
         report_id="stf_field_check",
         display_name="STF Field Check (post watch)",
-        machine="the mini",   # ownerville is single-session → runs on the scheduler mini, not a Lucy box
+        machine="Lucy 1",   # ownerville is single-session → runs on the scheduler mini, not a Lucy box
         deadline="07:00",   # last night's 23:00 run should have left its marker
         marker_glob="output/logs/.stf-field-check-done-{date}",
         prior_day=True,     # runs 23:00 → check YESTERDAY's marker this morning
@@ -226,7 +268,7 @@ def config_problem(w: WatchTarget) -> Optional[str]:
         # 3. The wrapper survives but no longer touches THIS marker (renamed or
         #    the touch line was dropped in a refactor).
         try:
-            if w.marker_stem not in wp.read_text(encoding="utf-8", errors="replace"):
+            if w.wrapper_needle not in wp.read_text(encoding="utf-8", errors="replace"):
                 return (f"{w.wrapper} no longer writes {w.marker_stem}<date> — the "
                         "marker name changed or the touch was dropped")
         except Exception:  # noqa: BLE001 — unreadable file: keep watching

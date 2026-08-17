@@ -84,4 +84,19 @@ for KEY in $OWNERS; do
     echo "[$(date)] box-order-log-owner $KEY finished exit=$ST" >> "$LOG_FILE"
 done
 
+# RAN-MARKER for post_watch (2026-08-17). Written on the LATE pass only, after the
+# owner loop, whatever each owner's outcome was — sent, deferred or capped alike.
+# It answers ONE question: did the 8:30 pass, the last chance to email anybody,
+# actually finish? A missing marker means it never did (launchd didn't fire, or
+# the pgrep guard above skipped it because the 7:00 run was still alive) — the
+# failure mode that used to be completely silent, since nothing about these
+# emails reaches the Hub or the orchestrator. Deliberately NOT written by the
+# 7:00 pass: a 7:00 marker would satisfy the watch and hide a dead 8:30. A
+# capped/blocked pull still gets its marker — that path alerts on its own and a
+# second alert for one failure is noise.
+if [ -z "$DRY" ] && [ "$(date +%H)" -ge 8 ]; then
+    touch "$LOG_DIR/.box-order-log-owners-ran-$(date +%Y-%m-%d)"
+    find "$LOG_DIR" -name ".box-order-log-owners-ran-*" -mtime +3 -delete 2>/dev/null
+fi
+
 exit 0
