@@ -119,6 +119,14 @@ def _process(web, user_id: str, icd: str, leader: str, names: list,
             cap += (f"\n:warning: Couldn't match: *{', '.join(misses)}* — reply in "
                     f"this thread with the correct spelling and I'll re-pull the "
                     f"whole team's numbers for you.")
+        # A source that came back without its per-rep breakout empties a whole
+        # column for EVERYONE. That used to be silent, so say it once, up front.
+        broken = sorted({g for p in people for g in p.gaps
+                         if "WITHOUT a 'Rep Name' column" in g})
+        if broken:
+            cap += ("\n:rotating_light: A source view is collapsed, so those "
+                    "columns are blank for every rep:\n" +
+                    "\n".join(f"• {g}" for g in broken))
         web.files_upload_v2(channel=chan, **_kw, file=str(res["png"]),
                             filename=f"{icd} Due Diligence.png", initial_comment=cap)
         # Remember this request so a thread reply (a corrected name) can re-pull

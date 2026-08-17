@@ -100,8 +100,18 @@ def product_source() -> tuple:
 
 
 def metrics_ni_source() -> tuple:
-    from automations.recruiting_report.opt_phase import METRICS_VIEW_URL, METRICS_SHEET
-    return (METRICS_NI_URL or METRICS_VIEW_URL, METRICS_NI_SHEET or METRICS_SHEET)
+    # MetricsINTfullyEXP (Eve 2026-08-17): the Internet twin of MetricsfullyEXP,
+    # expanded to individual Rep Name. The BASE Metrics view is collapsed to ICD
+    # (88 rows, no 'Rep Name'), so from ~WE 8.09 every rep's 0-30 / 30-60 New INT
+    # cancel came back blank — silently, because _slice_team swallows the miss.
+    # Expanding by hand is not automatable: the '+' on the header lives in a
+    # canvas inside the viz iframe, and the exporter re-navigates on every call.
+    # [[project_metrics-internet-needs-expanded-custom-view]]
+    from automations.recruiting_report.opt_phase import METRICS_SHEET
+    default = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "ATTTRACKER2_1-D2D/Metrics/"
+               "de2c904b-1438-4d76-bb14-8e5b2861d2ec/MetricsINTfullyEXP")
+    return (METRICS_NI_URL or default, METRICS_NI_SHEET or METRICS_SHEET)
 
 
 def metrics_wl_source() -> tuple:

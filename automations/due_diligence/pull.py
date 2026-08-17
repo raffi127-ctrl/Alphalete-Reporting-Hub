@@ -182,6 +182,23 @@ def _parse_metrics_rep(path: Path, rep_norm: str,
     return None
 
 
+def _has_rep_column(path: Path) -> bool:
+    """True when the crosstab is actually broken out by rep.
+
+    A source view can silently COLLAPSE to ICD level — the base Metrics view did
+    around WE 8.09 2026, dropping 'Rep Name' — and then `_parse_metrics_rep`
+    returns None for every rep alike. Read per-rep that looks identical to "this
+    rep had no sales", so a whole column of the report goes blank with nobody
+    told. Checking the header once separates "the view broke" (loud) from "this
+    rep isn't in it" (normal). [[project_metrics-internet-needs-expanded-custom-view]]
+    """
+    try:
+        rows = _read_utf16_tsv(Path(path))
+    except Exception:
+        return False
+    return bool(rows) and any(_norm(h) == "rep name" for h in rows[0])
+
+
 def _rep_churn(path: Path, rep_norm: str) -> Dict[str, str]:
     """Per-period churn % for the rep from an all-team churn crosstab."""
     from automations.new_internet_churn import pull as churn_pull
@@ -432,6 +449,16 @@ def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
     # sales in the window (e.g. wireless-only or newer reps) so they're findable.
     for pth in (paths["mni"], paths["mwl"], paths["cni"], paths["cwl"]):
         _add_rep_names(roster, pth)
+    # A collapsed source is a REPORT-WIDE failure, not a per-rep blank — check
+    # each one once, up front, so the gap is reported even when every rep misses.
+    src_broken = {}
+    for tag, pth, label in (("mni", paths["mni"], "NI cancel"),
+                            ("mwl", paths["mwl"], "wireless cancel"),
+                            ("cni", paths["cni"], "NI churn"),
+                            ("cwl", paths["cwl"], "wireless churn")):
+        src_broken[tag] = None if _has_rep_column(pth) else (
+            f"{label}: the source view came back WITHOUT a 'Rep Name' column "
+            f"(collapsed to ICD level) — no per-rep value exists for anyone")
     people, misses = [], []
     for name in names:
         key = _match_name(name, roster)
@@ -455,6 +482,16 @@ def _slice_team(names, icd, recent, wk_order, paths) -> tuple:
         dd.wireless.cancel_0_30 = mw.get("0-30", ""); dd.wireless.cancel_30_60 = mw.get("30-60", "")
         dd.new_int.churn = _rep_churn(paths["cni"], key)
         dd.wireless.churn = _rep_churn(paths["cwl"], key)
+        # Record what came back empty. Team mode used to swallow this entirely
+        # ('... or {}' with no gap), which is how the New INT cancel column
+        # stayed blank for weeks without a single warning.
+        for tag, got in (("mni", m), ("mwl", mw),
+                         ("cni", dd.new_int.churn), ("cwl", dd.wireless.churn)):
+            if got:
+                continue
+            dd.gaps.append(src_broken[tag] or
+                           f"{display} not found in the {tag} view — no sales in "
+                           f"the window, or a name mismatch")
         if _fs is not None:
             dd.start_date = _fs.start_date_for(key, _first)
         people.append(dd)
