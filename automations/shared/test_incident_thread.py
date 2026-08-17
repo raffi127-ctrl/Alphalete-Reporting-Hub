@@ -122,29 +122,47 @@ class IncidentThreadTest(unittest.TestCase):
                       self.c.top_level[0])
         self.assertEqual(self.c.replies, ["detail"])
 
-    def test_repeat_replies_in_thread_not_a_new_post(self):
-        first = self._open(dt.date(2026, 8, 14))
-        again = self._open(dt.date(2026, 8, 15))
+    def test_a_repeat_the_same_day_edits_one_line_and_posts_nothing(self):
+        """Eve 2026-08-17: "no quiero repitencias en el mismo día". A re-run that
+        fails again must not add a message to the channel OR to the thread — the
+        thread keeps ONE status line and it gets edited."""
+        day = dt.date(2026, 8, 14)
+        first = self._open(day)
+        replies = len(self.c.replies)
+        again = self._open(day)
         self.assertFalse(again["new"])
         self.assertEqual(again["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1, "a repeat must not add a post")
-        self.assertIn("Happened again", self.c.replies[-1])
-        # The parent post IS the first occurrence, so the first reply is the 2nd.
-        self.assertIn("2nd time", self.c.replies[-1])
-        self.assertIn("since Fri Aug 14", self.c.replies[-1])
-        # …and the third day counts up rather than repeating itself.
-        self._open(dt.date(2026, 8, 16))
-        self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("3rd time", self.c.replies[-1])
+        self.assertEqual(len(self.c.replies), replies + 1, "one status line")
+        self.assertIn("Failed again today", self.c.replies[-1])
+        self.assertIn("1 more run", self.c.replies[-1])
+        # A third failure edits that same line — still no new message.
+        self._open(day)
+        self.assertEqual(len(self.c.replies), replies + 1, "still one line")
+        self.assertIn("2 more run", self.c.updates[-1][1])
 
-    def test_repeat_found_with_no_local_index(self):
-        """Another machine opened it — the marker in the message is the state."""
+    def test_the_next_day_opens_its_own_post(self):
+        """Eve 2026-08-17: "si falla mañana que mañana se abra un nuevo hilo"."""
+        first = self._open(dt.date(2026, 8, 14))
+        tomorrow = self._open(dt.date(2026, 8, 15))
+        self.assertTrue(tomorrow["new"])
+        self.assertNotEqual(tomorrow["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 2)
+        # Yesterday's thread says where the story went, and its marker is closed
+        # so no machine keeps rolling it over.
+        self.assertIn("this thread ends here",
+                      "\n".join(self.c.replies).lower())
+        self.assertIn("· resolved 2026-08-15", self.c.updates[-1][1])
+
+    def test_yesterdays_thread_is_found_and_rolled_over_with_no_local_index(self):
+        """Another machine opened it — the marker in the message is the state,
+        so the rollover has to work off the channel scan alone."""
         self._open(dt.date(2026, 8, 14))
         inc.STATE_PATH.unlink()
         inc._HISTORY_CACHE.clear()
         again = self._open(dt.date(2026, 8, 15))
-        self.assertFalse(again["new"])
-        self.assertEqual(len(self.c.top_level), 1)
+        self.assertTrue(again["new"])
+        self.assertEqual(len(self.c.top_level), 2)
 
     def test_resolve_posts_in_thread_and_closes(self):
         first = self._open(dt.date(2026, 8, 14))
@@ -204,12 +222,12 @@ class IncidentThreadTest(unittest.TestCase):
                                      channel="C1", client=self.c))
         self.assertEqual(self.c.posts, [])
 
-    def test_thread_ages_out_into_a_fresh_post(self):
+    def test_an_old_thread_says_how_long_it_has_been_open(self):
         self._open(dt.date(2026, 8, 1))
         res = self._open(dt.date(2026, 9, 1))
         self.assertTrue(res["new"], "a month-old thread should start over")
         self.assertEqual(len(self.c.top_level), 2)
-        self.assertIn("Still not fixed after 31 day(s)", self.c.replies[-2])
+        self.assertIn("Still open after 31 day(s)", "\n".join(self.c.replies))
 
     def test_unsafe_key_is_refused_not_posted_wrong(self):
         self.assertIsNone(inc.open_or_followup(key="has space", title="t",
@@ -235,7 +253,7 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Also failed:", self.c.replies[-1])
+        self.assertIn("Also failed today:", self.c.replies[-1])
         self.assertIn("failure-box_order_log__watch", self.c.replies[-1])
         # …and it is NOT miscounted as a recurrence of the first witness.
         self.assertNotIn("Happened again", self.c.replies[-1])
@@ -293,7 +311,7 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Also failed:", self.c.replies[-1])
+        self.assertIn("Also failed today:", self.c.replies[-1])
         # Abel and per_office were registered days apart and need no list.
         for variant in ("standalone-box_order_log_abel",
                         "failure-box_order_log_per_office"):
@@ -323,15 +341,18 @@ class IncidentThreadTest(unittest.TestCase):
                              channel="C1", day=day, client=self.c)
         self.assertEqual(len(self.c.top_level), 1)
         self.assertIn("PASTE THIS TO CLAUDE", "\n".join(self.c.replies))
-        # A RECURRENCE of that same key still doesn't repeat them.
+        # A same-day repeat of that key doesn't repeat them — it only edits the
+        # status line. (Tomorrow is a NEW post and does carry them again, which
+        # is the point of a per-day thread: it stands on its own.)
         before = "\n".join(self.c.replies).count("PASTE THIS TO CLAUDE")
         inc._HISTORY_CACHE.clear()
         inc.open_or_followup(key="standalone-box_order_log_roshan", title="❌ failed",
                              body=["*Error:* status failed"],
                              details=["```PASTE THIS TO CLAUDE```"],
-                             channel="C1", day=dt.date(2026, 8, 18), client=self.c)
+                             channel="C1", day=day, client=self.c)
         self.assertEqual("\n".join(self.c.replies).count("PASTE THIS TO CLAUDE"),
                          before)
+        self.assertEqual(len(self.c.top_level), 1)
 
     def test_dry_run_touches_nothing(self):
         res = inc.open_or_followup(key="failure-r", title="t", body=["b"],
@@ -349,33 +370,9 @@ class IncidentThreadTest(unittest.TestCase):
         idx[key]["last_alert"] = idx[key]["last_alert"] - seconds
         inc.STATE_PATH.write_text(json.dumps(idx), encoding="utf-8")
 
-    def test_a_rerun_that_fails_again_the_same_day_replies_in_the_thread(self):
-        """The whole point: you re-run a broken report, it breaks again, and the
-        channel has to say so — in the SAME thread. Every producer used to sit on
-        a once-a-day marker, so that second failure told nobody until tomorrow."""
-        day = dt.date(2026, 8, 17)
-        first = self._open(day)
-        self._age_last_alert("failure-r", inc.REPEAT_COOLDOWN_S + 60)
-        again = self._open(day)          # same DAY, not the next one
-        self.assertFalse(again["new"])
-        self.assertEqual(again["ts"], first["ts"])
-        self.assertEqual(len(self.c.top_level), 1, "still one post")
-        self.assertIn("Happened again", self.c.replies[-1])
-        self.assertIn("2nd time", self.c.replies[-1])
-
-    def test_a_retry_loop_inside_the_cooldown_stays_quiet(self):
-        """…but a 5-minute job that keeps failing must not narrate every tick."""
-        day = dt.date(2026, 8, 17)
-        self._open(day)
-        replies = len(self.c.replies)
-        res = self._open(day)
-        self.assertTrue(res["skipped"])
-        self.assertEqual(len(self.c.replies), replies)
-        self.assertEqual(len(self.c.top_level), 1)
-
-    def test_the_cooldown_never_costs_a_NEW_problem_its_post(self):
-        """The cooldown is per key and only applies to a thread that's open — a
-        different report breaking in the same minute still gets its own post."""
+    def test_a_second_report_breaking_still_gets_its_own_post(self):
+        """Folding a repeat into one status line is per KEY: a DIFFERENT report
+        breaking in the same minute is news, and still gets its own post."""
         day = dt.date(2026, 8, 17)
         self._open(day)
         inc._HISTORY_CACHE.clear()

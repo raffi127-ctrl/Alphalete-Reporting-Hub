@@ -142,6 +142,11 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "nsf_screenshot_diag", "nsf_status",
+                    # Bookkeeping on an alert thread — a reaction and a line in
+                    # a thread. Bounded, idempotent, and the laptops hand these
+                    # here BECAUSE only the mini is Lucy, so they must not eat
+                    # the report budget.
+                    "incident_resolve", "incident_working",
                     "find_group"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
@@ -3204,6 +3209,42 @@ def _action_incident_resolve(args: str) -> tuple[bool, str]:
                   f"parent post resolved")
 
 
+def _action_incident_working(args: str) -> tuple[bool, str]:
+    """Mark an open incident thread as BEING WORKED ON — a :pending: reaction on
+    its post in #claudecorrections-and-requests.
+
+      incident_working <key|report_id> [note]
+
+    WHY FROM THE MINI (Eve 2026-08-17): every message and reaction in that
+    channel goes out as Lucy, and the mini is Lucy. A laptop reacting under a
+    person's own name is exactly the ambiguity this is meant to remove — two
+    people pick tickets off that channel, so ":pending: means someone is on it"
+    only works if it always comes from the same place.
+
+    The ✅ that closes the incident clears the :pending: on its own, so nothing
+    has to remember to un-mark it."""
+    raw = (args or "").strip()
+    if not raw:
+        return False, ("incident_working needs a key or report id (e.g. "
+                       "b2b_metrics)")
+    parts = raw.split(None, 1)
+    key = parts[0].strip()
+    note = parts[1].strip().replace("\\n", " ") if len(parts) > 1 else ""
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    try:
+        ok = inc.mark_working(key, note=note)
+    except Exception as e:  # noqa: BLE001
+        return False, f"mark_working failed ({type(e).__name__}: {str(e)[:100]})"
+    if not ok:
+        return False, (f"no OPEN incident for {key!r} — nothing to mark "
+                       f"(it may already be closed)")
+    return True, f"{key} marked :pending: — someone is on it"
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -4069,6 +4110,7 @@ ACTIONS = {
     "set_alphalete_app_password": _action_set_alphalete_app_password,
     "post_note": _action_post_note,
     "incident_resolve": _action_incident_resolve,
+    "incident_working": _action_incident_working,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,

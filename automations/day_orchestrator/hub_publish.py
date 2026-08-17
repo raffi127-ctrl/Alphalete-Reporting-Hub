@@ -374,7 +374,8 @@ def _find_open_row_for_card(ws, card: str):
 # something, ran it again, it failed again, and the channel said nothing until
 # tomorrow — the one thing Eve needs to see in the thread (2026-08-17). The reply
 # is threaded, so it costs the channel nothing; the cooldown only stops a
-# 5-minute job from narrating every tick. Matches incident_thread.REPEAT_COOLDOWN_S.
+# 5-minute job from calling in every tick (the thread itself already folds a
+# same-day repeat into one edited status line).
 _REALERT_AFTER_S = 45 * 60
 
 

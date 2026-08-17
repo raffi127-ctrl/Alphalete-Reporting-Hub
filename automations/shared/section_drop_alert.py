@@ -50,7 +50,9 @@ _STATE_DIR = Path("output") / "section_drop_alerts"
 # thread, not as a new post. It used to be silent for the whole day, which meant
 # a re-run that dropped the same section again told nobody (Eve 2026-08-17: "si
 # por una re-corrida volviera a fallar, que la reincidencia caiga dentro del
-# thread"). Matches incident_thread.REPEAT_COOLDOWN_S.
+# thread"). What it reports back is one EDITED status line in that thread, not a
+# new message — incident_thread folds a same-day repeat into it — so this only
+# bounds how often we call in, never how much the thread grows.
 _REALERT_AFTER_S = 45 * 60
 
 

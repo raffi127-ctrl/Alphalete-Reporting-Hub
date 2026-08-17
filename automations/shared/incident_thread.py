@@ -16,9 +16,10 @@ favor publicar dentro del mismo hilo cuando algo se resolvió".
 
 So an alert is no longer a message, it's an INCIDENT:
   • first occurrence  → one top-level post (the channel gains ONE item)
-  • same key again    → a reply in that post's thread ("Happened again — …"),
-                        whether that's tomorrow or a re-run twenty minutes
-                        later; only a retry LOOP is throttled (REPEAT_COOLDOWN_S)
+  • same key, same day → NO new message: one status line in that thread is
+                        edited in place ("Failed again today — 2 more runs")
+  • same key, NEXT day → yesterday's thread is rolled over and today opens its
+                        own post, so a day's channel reads as that day's problems
   • fixed             → a reply in the SAME thread + the parent edited to ✅,
                         then the incident is CLOSED, so the next occurrence
                         opens a fresh post rather than reviving a stale one.
@@ -69,10 +70,13 @@ FAILURE LADDER — every step is quieter than losing the alert:
   reply in the thread → post standalone → return None and let the caller do
   whatever it did before this module existed. Nothing here ever raises.
 
-AGING OUT: an incident that has been open longer than MAX_AGE_DAYS, or has
-collected more than MAX_FOLLOWUPS replies, is closed with a note and a fresh
-post opens. A thread nobody can scroll to the bottom of is the problem this
-module exists to prevent.
+ONE THREAD PER DAY (Eve 2026-08-17). A thread is not allowed to run for days:
+yesterday's is rolled over with a single line and today opens its own post, so
+the channel for a given day reads as that day's problems. And WITHIN a day a
+repeat never adds a message — one status line in the thread is edited in place
+("Failed again today — 2 more runs, last 15:42 · Also failed today: …"), so a
+retry loop can't turn a clean thread into a scroll. Every message and edit goes
+out as Lucy (see LUCY_USER_ID); a laptop hands the job to the mini instead.
 
 CLI:
     python -m automations.shared.incident_thread --list
@@ -116,20 +120,16 @@ CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
 CHANNEL_ID_CACHE = REPO_ROOT / "output" / ".corrections_channel_id"
 STATE_PATH = REPO_ROOT / "output" / "state" / "incident_threads.json"
 
-MAX_AGE_DAYS = 14                # older than this → close it and start fresh
-# More replies than this → same. Raised from 12 (Eve 2026-08-17): "necesito que
-# queden dentro del mismo hilo". Once same-day recurrences land in-thread (see
-# REPEAT_COOLDOWN_S) a report that breaks every pass reaches a dozen replies in
-# an afternoon, and splitting its thread at that point is the opposite of what
-# this module is for. The 14-day rule still catches the genuinely unreadable ones.
-MAX_FOLLOWUPS = 40
-# How long a key stays quiet after it has already spoken in its thread. This is
-# the anti-flood, and it REPLACES the once-a-day markers each producer used to
-# keep: those made the whole point unreachable — you re-ran a broken report, it
-# failed again, and the channel said nothing at all until tomorrow. 45 minutes is
-# long enough that a 5-minute poller adds a handful of lines a day, short enough
-# that a re-run you kick off by hand always reports back.
-REPEAT_COOLDOWN_S = 45 * 60
+# ONE THREAD PER PROBLEM PER DAY (Eve 2026-08-17): "si falla mañana que mañana se
+# abra un nuevo hilo". A thread that runs for days is unreadable in a different
+# way than a channel full of posts — you have to scroll a week of history to find
+# out where something stands. So a new day gets a NEW post, and yesterday's thread
+# is rolled over with one line pointing at it.
+MAX_AGE_DAYS = 0
+# More replies than this → roll over early. With the same-day repeats collapsed
+# into ONE edited status line (see _today_line) a thread can't really reach this
+# any more; it stays as the backstop.
+MAX_FOLLOWUPS = 12
 _HISTORY_PAGES = 3               # 3 × 200 messages of lookback for the scan
 _HISTORY_LIMIT = 200
 
@@ -139,8 +139,6 @@ _HISTORY_LIMIT = 200
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.:@/-]+$")
 _MARK_RE = re.compile(
     r"_incident · (?P<key>[^ ·]+) · (?P<state>open|resolved) (?P<date>\d{4}-\d{2}-\d{2})_")
-
-_ORDINAL = {1: "1st", 2: "2nd", 3: "3rd"}
 
 # What a RESOLVED parent looks like from the channel list (Eve 2026-08-17). The
 # resolution used to be visible only inside the thread plus a grey italic marker
@@ -158,6 +156,27 @@ DONE_REACTION = "white_check_mark"
 # they both start on the same one. :pending: is the workspace's own emoji and is
 # already used by hand for exactly this; the ✅ replaces it when it's done.
 WORKING_REACTION = "pending"
+
+# EVERY message and edit in this channel goes out as Lucy (Eve 2026-08-17: "todos
+# los cambios y mensajes tienen que salir al canal desde Lucy"). It is not only
+# cosmetic: chat.update and chat.delete only touch your OWN messages, so a
+# resolution posted from another identity can neither re-badge the parent nor
+# rewrite the marker — it leaves a half-closed thread every other machine still
+# reads as open. The mini and Lucy 2 hold that token; a laptop does not, and its
+# token is the person's own (Evelyn's, on the Windows box).
+LUCY_USER_ID = "U0BCG8F9B5Z"
+
+
+def whoami(client=None) -> str:
+    """The Slack user id this machine's token authenticates as ("" if unknown)."""
+    try:
+        return (client or _client()).auth_test().get("user_id") or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def is_lucy(client=None) -> bool:
+    return whoami(client) == LUCY_USER_ID
 
 # One channel-history fetch per process, shared by every lookup (see docstring).
 _HISTORY_CACHE: Dict[str, list] = {}
@@ -311,10 +330,6 @@ def subject(key: str) -> Optional[str]:
 def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
     return "_incident · {} · {} {}_".format(key, state,
                                             (day or dt.date.today()).isoformat())
-
-
-def _ordinal(n: int) -> str:
-    return _ORDINAL.get(n, f"{n}th")
 
 
 def _resolved_headline(text: str, day: dt.date) -> str:
@@ -566,48 +581,122 @@ def _send(client, channel: str, lines: Sequence[str],
     return first
 
 
-def _spoke_recently(key: str, cooldown_s: int, day: dt.date) -> bool:
-    """Did THIS key already say something in its thread inside the cooldown?
-
-    The anti-flood for same-day recurrences (see REPEAT_COOLDOWN_S). Local, like
-    the rest of the index: two machines alerting about one outage are different
-    witnesses, and the family rules already put them in one thread — silencing a
-    witness because ANOTHER machine spoke is not what we want here.
-
-    A NEW DAY always speaks, whatever the clock says: "it's still broken this
-    morning" is the news, and a backfill or a post-midnight pass must not be
-    swallowed by a stamp from minutes ago."""
-    if cooldown_s <= 0:
-        return False
-    import time
-    ent = (_load_index() or {}).get(key)
-    if not isinstance(ent, dict) or ent.get("last") != day.isoformat():
-        return False
-    try:
-        return (time.time() - float(ent.get("last_alert") or 0)) < cooldown_s
-    except Exception:  # noqa: BLE001 — an unreadable stamp means "go ahead"
-        return False
-
-
 def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
               text: str, resolved: bool = False,
               marker_key: Optional[str] = None,
-              day: Optional[dt.date] = None) -> None:
-    import time
+              day: Optional[dt.date] = None,
+              today: Optional[dict] = None) -> None:
     idx = _load_index()
     idx[key] = {"ts": ts, "channel": channel, "opened": opened,
                 # The day the RUN is for, not the day the process runs (a
-                # backfill stamps its own day) — _spoke_recently reads it.
+                # backfill stamps its own day).
                 "last": (day or dt.date.today()).isoformat(),
-                # Epoch of the last thing we actually POSTED for this key — the
-                # date alone can't answer "did we already say this 5 minutes ago".
-                "last_alert": int(time.time()), "count": count,
+                # Today's rolling status line: where it lives and what it says
+                # (see _bump_today). This is what keeps a re-run from adding a
+                # message instead of updating one.
+                "today": today or {},
+                "count": count,
                 "text": text, "resolved": resolved,
                 # Whose marker the PARENT carries. Differs from `key` when this
                 # key joined a sibling's thread; resolve() rewrites that marker,
                 # so getting it wrong would rename someone else's incident.
                 "marker_key": marker_key or key}
     _save_index(idx)
+
+
+def _roll_over(client, channel: str, inc: dict, key: str, age: int,
+               day: dt.date) -> None:
+    """Yesterday's thread ends here; today gets its own post.
+
+    Eve 2026-08-17: "si falla mañana que mañana se abra un nuevo hilo". One line
+    in the old thread so anyone reading it knows where the story continues, and
+    the parent's marker flips to `resolved` — otherwise every machine keeps
+    finding that old post and rolling it over again tomorrow. No ✅ reaction: it
+    is superseded, not fixed."""
+    try:
+        _post(client, channel,
+              ":arrows_counterclockwise: *Still open after {} day(s)* — this "
+              "thread ends here; today's occurrence has its own post in the "
+              "channel.".format(age), thread_ts=inc["ts"])
+    except Exception:  # noqa: BLE001
+        pass
+    was = _MARK_RE.sub("", inc.get("text") or "").rstrip()
+    if was:
+        try:
+            client.chat_update(channel=channel, ts=inc["ts"],
+                               text="{}\n\n{}".format(
+                                   was, marker(inc.get("marker_key") or key,
+                                               "resolved", day)))
+        except Exception:  # noqa: BLE001 — the local index still closes it
+            pass
+    _mark_resolved_in_index(key, ts=inc.get("ts"), channel=channel)
+    print("[incident] {}: rolled over ({} day(s) old) — today opens a fresh "
+          "post".format(key, age))
+
+
+def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str) -> dict:
+    """The running tally for TODAY's thread: how many extra runs failed and which
+    other reports/offices fell with it. Lives in the index because it is what the
+    single status line is rendered from."""
+    import time
+    ent = (_load_index() or {}).get(key) or {}
+    st = ent.get("today") if isinstance(ent.get("today"), dict) else {}
+    if st.get("date") != day.isoformat():
+        st = {"date": day.isoformat(), "repeats": 0, "also": [], "ts": None}
+    if sibling:
+        if label not in st.get("also", []):
+            st.setdefault("also", []).append(label)
+    else:
+        st["repeats"] = int(st.get("repeats") or 0) + 1
+    st["at"] = time.strftime("%H:%M")
+    return st
+
+
+def _today_line(st: dict, day: dt.date) -> str:
+    """Render the one status line. Short on purpose — it is the only thing this
+    module adds to a thread for the rest of the day."""
+    parts = []
+    n = int(st.get("repeats") or 0)
+    if n:
+        parts.append(":repeat: *Failed again today* — {} more run(s), last "
+                     "{}.".format(n, st.get("at") or ""))
+    also = st.get("also") or []
+    if also:
+        parts.append(":link: *Also failed today:* {}".format(", ".join(also)))
+    if not parts:
+        parts.append(":repeat: *Still failing today* — last {}.".format(
+            st.get("at") or ""))
+    parts.append("_One line per day, kept up to date — no new message per run._")
+    return "\n".join(parts)
+
+
+def _put_status(client, channel: str, key: str, inc: dict, st: dict,
+                day: dt.date) -> bool:
+    """Write today's status line: EDIT the one we already posted in this thread
+    today, or post it the first time. Editing is the whole point — a re-run that
+    fails again must not add a message (Eve 2026-08-17).
+
+    Mutates `st['ts']` so the caller stores where the line lives."""
+    text = _today_line(st, day)
+    ts = st.get("ts")
+    if ts:
+        try:
+            client.chat_update(channel=channel, ts=ts, text=text)
+            return True
+        except Exception as e:  # noqa: BLE001 — refused (another identity posted
+            # it, or it was deleted): fall through and post a fresh one.
+            print("  - incident status edit refused ({}: {})".format(
+                type(e).__name__, str(e)[:50]))
+    try:
+        new_ts = _post(client, channel, text, thread_ts=inc["ts"])
+    except Exception as e:  # noqa: BLE001
+        print("  - incident status post failed ({}: {})".format(
+            type(e).__name__, str(e)[:60]))
+        return False
+    if not new_ts:
+        return False
+    st["ts"] = new_ts
+    return True
 
 
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
@@ -617,23 +706,17 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      channel: str = CHANNEL, day: Optional[dt.date] = None,
                      dry_run: bool = False, client=None,
                      max_age_days: int = MAX_AGE_DAYS,
-                     max_followups: int = MAX_FOLLOWUPS,
-                     cooldown_s: int = REPEAT_COOLDOWN_S) -> Optional[dict]:
+                     max_followups: int = MAX_FOLLOWUPS) -> Optional[dict]:
     """Open a new incident post, or reply in the one that's already open.
 
       title     first line of the parent post
       body      the rest of the parent (the error, kept short — it's the channel)
       details   posted as a threaded reply ONLY when the incident is NEW (the
                 re-run command, the paste-to-Claude block: unchanged from before)
-      followup  what a RECURRENCE says in-thread; defaults to title + body. The
-                recurrence stamp ("Happened again — Thu Aug 14 · 3rd time") is
-                prepended here, so callers don't each invent their own wording.
-      stamp     replaces that first line when the reply is NOT a recurrence —
-                e.g. a sibling report joining a shared incident key.
-      cooldown_s  stay quiet if this key already posted in its thread that
-                recently (REPEAT_COOLDOWN_S). Every recurrence belongs in the
-                thread — a re-run that fails again, an hour later, the next day —
-                but a job that runs every 5 minutes must not narrate each tick.
+      followup  kept for callers that still pass it; a same-day repeat no longer
+                posts a message at all, it updates ONE status line (_today_line),
+                so this is only read when a caller opens a fresh post.
+      stamp     same — accepted, no longer needed for the repeat wording.
       label     human name of what is failing ("BOX Order Log — Roshan"). Used
                 when this alert JOINS a sibling's thread, so the domino case
                 reads as a list of who fell instead of a list of internal ids.
@@ -682,89 +765,43 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
 
     inc = find(key, channel=channel, client=client, day=day)
 
-    # Age out a thread nobody can follow any more — close it, then fall through
-    # to a fresh post so the channel gets a readable item again.
+    # A thread from a PREVIOUS day is rolled over: one line saying where it went,
+    # and today opens a fresh post (see MAX_AGE_DAYS).
     if inc:
         n = int(inc.get("count") or 0)
         age = _days_open(inc.get("opened") or day.isoformat(), day)
         if age > max_age_days or n >= max_followups:
-            try:
-                _post(client, channel,
-                      ":arrows_counterclockwise: *Still not fixed after {} day(s)"
-                      "* — closing this thread and opening a fresh one so it's "
-                      "readable. Same problem, new post.".format(age),
-                      thread_ts=inc["ts"])
-            except Exception:  # noqa: BLE001
-                pass
-            _mark_resolved_in_index(key)
+            _roll_over(client, channel, inc, key, age, day)
             inc = None
 
-    if inc and _spoke_recently(key, cooldown_s, day):
-        # It already spoke minutes ago and nothing has changed — a retry loop,
-        # not news. Skip the reply, keep the incident. This is the ONLY thing
-        # standing between "every recurrence lands in the thread" and a thread
-        # nobody can scroll.
-        print("[incident] {}: repeat inside the {}min cooldown — not repeating "
-              "myself in thread {}".format(key, cooldown_s // 60, inc["ts"]))
-        return {"ts": inc["ts"], "new": False, "key": key, "skipped": True,
-                "text": inc.get("text") or parent_text,
-                "count": int(inc.get("count") or 0)}
-
     if inc:
-        n = int(inc.get("count") or 0) + 1
-        # n counts FOLLOW-UPS; the reader counts OCCURRENCES, and the parent post
-        # is the first one — so the first reply is the 2nd time this happened.
-        line = ":repeat: *Happened again* — {} · {} time".format(
-            _human(day), _ordinal(n + 1))
-        opened = inc.get("opened")
-        if opened and opened != day.isoformat():
+        # SAME DAY, SAME PROBLEM → no new message. The thread keeps exactly ONE
+        # status line, edited in place (Eve 2026-08-17: "no quiero repitencias en
+        # el mismo día … tenemos desorden dentro de los hilos"). It counts the
+        # re-runs and names the other offices/reports that fell with it, so the
+        # domino case is one always-current line rather than a pile of replies.
+        opened = inc.get("opened") or day.isoformat()
+        st = _bump_today(key, day, sibling=bool(inc.get("via_family")),
+                         label=label or "`{}`".format(key))
+        ok = _put_status(client, channel, key, inc, st, day)
+        if ok and details and inc.get("via_family") and not _spoken_before(key):
+            # A sibling witness speaking for the FIRST time carries new material
+            # — its re-run command, its paste-to-Claude block — and the thin
+            # witness usually posts first. Those land once; they are not a repeat.
             try:
-                line += " since {}".format(_human(dt.date.fromisoformat(opened)))
+                _send(client, channel, details, thread_ts=inc["ts"])
             except Exception:  # noqa: BLE001
-                line += " since {}".format(opened)
-        if inc.get("via_family"):
-            # A SIBLING witness, not a recurrence: this is the same outage seen
-            # from another angle (the run dropped / nothing posted / the wrapper
-            # exited non-zero) or the SAME break hitting another office, so "2nd
-            # time" would describe something that didn't happen. Naming the
-            # office/report is what makes the domino case readable — one thread
-            # whose replies list who fell, instead of one post per office
-            # (Eve 2026-08-17).
-            line = ":link: *Also failed:* {} — {} · same problem, one thread.".format(
-                label or "`{}`".format(key), _human(day))
-        # A caller can own that first line instead. Not every reply is a
-        # RECURRENCE: when several reports share one incident key (the three BOX
-        # order logs do, so one stuck export is one thread — Eve 2026-08-14), the
-        # second reply is a different OFFICE in the same run, and "Happened again
-        # · 2nd time" describes something that didn't happen. The count and the
-        # date still live in the index; they just stop being asserted in words
-        # nobody can check.
-        lines = [stamp or line] + list(followup or ([title] + body))
-        if details and inc.get("via_family") and not _spoken_before(key):
-            # A RECURRENCE repeats details people already have, so they're
-            # dropped. A sibling witness speaking for the FIRST time carries new
-            # ones — its re-run command and its paste-to-Claude block — and the
-            # thin witness usually posts first: the Hub's "closed a run FAILED"
-            # beat the mini's full standalone alert by 4 minutes on 2026-08-17.
-            # Dropping them would trade a duplicate post for a lost fix recipe.
-            lines += [""] + list(details)
-        try:
-            _send(client, channel, lines, thread_ts=inc["ts"])
-        except Exception as e:  # noqa: BLE001 — fall back to a standalone post
-            print(f"  ⚠ incident follow-up failed ({type(e).__name__}: "
-                  f"{str(e)[:80]}) — posting standalone", flush=True)
-        else:
-            _remember(key, ts=inc["ts"], channel=channel,
-                      opened=opened or day.isoformat(), count=n,
-                      text=inc.get("text") or parent_text,
-                      marker_key=inc.get("marker_key") or key, day=day)
-            print("[incident] {}: {} in thread {}".format(
-                key,
-                "joined `{}`".format(inc.get("marker_key"))
-                if inc.get("via_family") else f"follow-up #{n}",
-                inc["ts"]), flush=True)
+                pass
+        if ok:
+            _remember(key, ts=inc["ts"], channel=channel, opened=opened,
+                      count=n + 1, text=inc.get("text") or parent_text,
+                      marker_key=inc.get("marker_key") or key, day=day,
+                      today=st)
+            print("[incident] {}: same-day repeat folded into the status line "
+                  "of thread {}".format(key, inc["ts"]))
             return {"ts": inc["ts"], "new": False, "key": key,
-                    "text": inc.get("text") or parent_text, "count": n}
+                    "text": inc.get("text") or parent_text, "count": n + 1}
+        print("  - incident status line failed — posting a fresh alert instead")
 
     try:
         ts = _post(client, channel, parent_text)
@@ -1106,6 +1143,32 @@ def main(argv=None) -> int:
     ap.add_argument("--channel", default=CHANNEL)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
+
+    # EVERYTHING this channel shows must come from Lucy (see LUCY_USER_ID). From
+    # a laptop the token is the person's own, so the post would land under their
+    # name AND the parent could never be re-badged. Rather than half-do it, hand
+    # the job to the mini, which is Lucy — the queue is serial, so it runs in
+    # order behind whatever else is pending.
+    if (a.working or a.resolve or a.resolve_report) and not (a.dry_run
+                                                             or is_lucy()):
+        act, arg = (("incident_working", a.working) if a.working else
+                    ("incident_resolve", a.resolve or a.resolve_report))
+        who = whoami() or "unknown"
+        try:
+            from automations.day_orchestrator import mini_control as mc
+            mc.enqueue(act, "{} {}".format(arg, a.note).strip(),
+                       by="incident_thread-cli", machine="Mini")
+        except Exception as e:  # noqa: BLE001
+            print("this machine posts as {}, not Lucy, and the hand-off to the "
+                  "mini failed ({}: {}). Run it on the mini: "
+                  "`lucy {} {}`".format(who, type(e).__name__, str(e)[:60],
+                                        act, arg))
+            return 1
+        print("queued on the MINI (`{} {}`) — this machine posts as {}, and "
+              "every message in that channel goes out as Lucy.".format(
+                  act, arg, who))
+        return 0
+
     if a.working:
         ok = mark_working(a.working, note=a.note, channel=a.channel,
                           dry_run=a.dry_run)
