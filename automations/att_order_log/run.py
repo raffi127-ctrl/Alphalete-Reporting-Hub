@@ -53,6 +53,61 @@ def _csv_url(today: dt.date) -> str:
                 start.isoformat(), today.isoformat())
 
 
+# The ORDERLOG export is ~120MB and times out often enough that ONE attempt is a
+# coin flip: 2026-08-13, 2026-08-14 and 2026-08-17 each lost exactly one B2B
+# Metrics section for Carlos to it. The retry is INSIDE the authed session (no
+# Chrome relaunch, no re-auth), so a second try costs only the download.
+#
+# WHY IT SHOWED UP AS A ONE-SECTION DROP (Eve 2026-08-17): b2b_metrics captures
+# #8 Order Log and #9 Activation Report Overview from the SAME pull, and
+# b2b_metrics.capture._order_lines caches only on SUCCESS. So a timeout killed #8
+# and then #9's call re-pulled and succeeded — the thread looked 8-of-9 complete
+# with no obvious reason. One retry here fixes both sections at once.
+_CSV_ATTEMPTS = 3
+_CSV_RETRY_WAIT = 20      # seconds between attempts
+# Hard ceiling on the whole fetch: we hold the CDP port lock the entire time
+# (cdp_pull.CDP_PORT is shared with every other Tableau report), and 3 × the 300s
+# request timeout would sit on it for 15 minutes and starve the morning batch. So
+# stop starting NEW attempts once we're past the budget.
+_CSV_TIME_BUDGET = 480
+
+
+def _fetch_csv(page, url: str, log=print) -> bytes:
+    """GET the ORDERLOG export, retried in the SAME authed session.
+
+    Raises the last error when every attempt failed, so the caller's behaviour on
+    a genuine outage is unchanged — this only rescues a transient timeout."""
+    import time
+
+    started = time.time()
+    last = None
+    for attempt in range(1, _CSV_ATTEMPTS + 1):
+        try:
+            r = page.context.request.get(url, timeout=300_000)
+            body = r.body() or b""
+            log("  [csv] attempt {}/{}: status={} bytes={:,}".format(
+                attempt, _CSV_ATTEMPTS, r.status, len(body)))
+            if r.status == 200 and len(body) >= 1000:
+                return body
+            last = RuntimeError(
+                "order-log export failed: status={} bytes={}".format(
+                    r.status, len(body)))
+        except Exception as e:  # noqa: BLE001 — retry, then re-raise the last one
+            last = e
+            log("  [csv] attempt {}/{} FAILED ({}: {})".format(
+                attempt, _CSV_ATTEMPTS, type(e).__name__,
+                (str(e).splitlines() or [""])[0][:140]))
+        if attempt >= _CSV_ATTEMPTS:
+            break
+        if time.time() - started > _CSV_TIME_BUDGET:
+            log("  [csv] {:.0f}s spent — not starting attempt {} (holding the "
+                "CDP lock any longer starves the rest of the batch)".format(
+                    time.time() - started, attempt + 1))
+            break
+        time.sleep(_CSV_RETRY_WAIT)
+    raise last
+
+
 def _pull(today: dt.date, dest: Path, log=print) -> Path:
     """Download the order-log crosstab through Carlos's real-Chrome session."""
     import time
@@ -76,13 +131,7 @@ def _pull(today: dt.date, dest: Path, log=print) -> Path:
                 tp._ensure_tableau_authenticated(page, verbose=False,
                                                  allow_form_login=True)
                 log("  [cdp] auth OK")
-                r = page.context.request.get(_csv_url(today), timeout=300_000)
-                body = r.body() or b""
-                log("  [csv] status={} bytes={:,}".format(r.status, len(body)))
-                if r.status != 200 or len(body) < 1000:
-                    raise RuntimeError(
-                        "order-log export failed: status={} bytes={}".format(
-                            r.status, len(body)))
+                body = _fetch_csv(page, _csv_url(today), log=log)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(body)
                 return dest
