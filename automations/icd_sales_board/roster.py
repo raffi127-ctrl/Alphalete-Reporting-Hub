@@ -52,7 +52,24 @@ class Rep:
     level: str = "Level 1"
     team: str = ""              # car-ride leader / team name
     status: str = "Active"
+    terminated_on: str = ""     # ISO. Set when status becomes Terminated.
     notes: str = ""
+
+    @property
+    def is_terminated(self) -> bool:
+        return self.status == "Terminated"
+
+    def gone_by(self, day: dt.date) -> bool:
+        """Were they already gone on this date?
+
+        False when the termination date is unknown — better to show a normal
+        row than to grey out days someone may well have worked."""
+        if not self.is_terminated or not self.terminated_on:
+            return False
+        try:
+            return day >= dt.date.fromisoformat(self.terminated_on)
+        except ValueError:
+            return False
 
     def week_number(self, on: dt.date | None = None) -> int | None:
         """Which week of employment they're in, 1-based. None if no start date.
@@ -152,11 +169,19 @@ def set_attrs(office_key: str, attrs: dict) -> int:
         if not key:
             continue
         rep = existing.get(key) or Rep(name=(name or "").strip())
-        for field_name in ("team", "level"):
+        for field_name in ("team", "level", "status"):
             new = (vals.get(field_name) or "").strip()
             if new and new != getattr(rep, field_name):
                 setattr(rep, field_name, new)
                 changed += 1
+        # Stamp the termination date the first time they are marked gone, and
+        # clear it if they are put back on — otherwise an un-terminated rep
+        # keeps a date and their days stay greyed out.
+        if rep.is_terminated and not rep.terminated_on:
+            rep.terminated_on = (vals.get("terminated_on")
+                                 or dt.date.today().isoformat())
+        elif not rep.is_terminated:
+            rep.terminated_on = ""
         existing[key] = rep
     save(office_key, sorted(existing.values(), key=lambda r: r.name.lower()))
     return changed

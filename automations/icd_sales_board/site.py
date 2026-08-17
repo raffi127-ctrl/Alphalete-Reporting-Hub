@@ -597,6 +597,9 @@ def _totals_row(rows: list) -> list:
             decimals = any("." in str(r.get(col, "")) for r in rows)
             out[col] = f"{total:.2f}" if decimals else f"{int(total)}"
         else:
+            # Nothing to total — leave it blank. Writing "None" into text
+            # columns like Tenure just adds a word to read; the dropdown
+            # columns render their own empty placeholder either way.
             out[col] = ""
     out[list(rows[0])[0]] = TOTALS_LABEL
     return [out]
@@ -651,21 +654,33 @@ def _autofit(rows: list, base: dict | None = None) -> dict:
     return cfg
 
 
-def _style_totals(df):
-    """Tint the last row so TOTALS reads as a rule under the board.
+def _style_board(df, gone_rows: set):
+    """Tint the TOTALS row, and grey the rows of reps already terminated.
 
     Streamlit applies Styler output to NON-EDITABLE columns only, so the
-    numbers pick the tint up and the three dropdown columns (Team, Leadership,
-    Roll Call) stay plain — those are empty on the totals line anyway. Colour is
-    semi-transparent so it works on a light or dark theme instead of assuming
-    one."""
+    numbers pick these up and the dropdown columns stay plain. Colours are
+    semi-transparent so they work on a light or dark theme.
+
+    GREY IS COSMETIC ONLY. A terminated rep whose row still carries production
+    keeps showing it — Tableau reporting a sale after someone was marked gone
+    is exactly the case you need to SEE, not the case to hide. Never turn this
+    into a filter."""
     last = len(df) - 1
 
     def row_style(row):
-        if row.name != last:
-            return [""] * len(row)
-        return ["background-color: rgba(255, 193, 7, 0.28); "
-                "font-weight: 700"] * len(row)
+        if row.name == last:
+            return ["background-color: rgba(255, 193, 7, 0.28); "
+                    "font-weight: 700"] * len(row)
+        if row.name in gone_rows:
+            return ["background-color: rgba(120, 120, 120, 0.16); "
+                    "color: #6B7280"] * len(row)
+        # Zebra striping. Sixty-odd rows across a dozen columns is a lot of
+        # sideways tracking, and a faint band per row keeps your eye on the
+        # right person. Very low alpha so it never competes with the totals
+        # tint or the greyed-out rows above.
+        if row.name % 2 == 1:
+            return ["background-color: rgba(0, 0, 0, 0.035)"] * len(row)
+        return [""] * len(row)
 
     return df.style.apply(row_style, axis=1)
 
@@ -733,6 +748,7 @@ def sales_board(week, office_key: str, scope: str = "Week",
         # Team and Leadership are the owner's to set, so a saved override wins
         # over whatever the board currently says.
         ov = overrides.get(name.strip().lower())
+        row["Status"] = (ov.status if ov and ov.status else "Active")
         row["Tenure"] = a.get("field status", "")
         row["Team"] = (ov.team if ov and ov.team else a.get("team", ""))
         row["Leadership"] = (ov.level if ov and ov.level
@@ -768,7 +784,8 @@ def sales_board(week, office_key: str, scope: str = "Week",
     # EDITABLE: Team, Leadership, and (on a day) Roll Call. Everything else is
     # locked — a hand-edited sales number is exactly how a board starts
     # disagreeing with Tableau.
-    editable = {"Team", "Leadership"} | ({"Roll Call"} if day_view else set())
+    editable = ({"Team", "Leadership", "Status"}
+                | ({"Roll Call"} if day_view else set()))
     cfg = {c: st.column_config.Column(disabled=True)
            for c in rows[0] if c not in editable}
 
@@ -788,6 +805,12 @@ def sales_board(week, office_key: str, scope: str = "Week",
                                                    required=False)
     cfg["Leadership"] = st.column_config.SelectboxColumn(options=[""] + levels,
                                                          required=False)
+    cfg["Status"] = st.column_config.SelectboxColumn(
+        options=R.STATUSES, required=False,
+        help="Terminate a rep here — their days from that date on grey out, "
+             "though any production Tableau reports still shows. Set them "
+             "back to Active to reinstate; the grey and the termination date "
+             "clear.")
     if day_view:
         cfg["Roll Call"] = st.column_config.SelectboxColumn(
             options=A.OPTIONS, required=False,
@@ -799,8 +822,20 @@ def sales_board(week, office_key: str, scope: str = "Week",
     n_reps = len(rows)
     grid_rows = rows + _totals_row(rows)
 
+    # Grey the days a terminated rep was no longer there for. On the week view
+    # nothing is greyed: a week total spans days before AND after they left, so
+    # dimming it would misrepresent work they actually did.
+    gone_rows = set()
+    if day_view:
+        day_on = _day_date(week, scope)
+        if day_on:
+            for i, r in enumerate(rows):
+                ov = overrides.get((r.get("Rep") or "").strip().lower())
+                if ov and ov.gone_by(day_on):
+                    gone_rows.add(i)
+
     edited = st.data_editor(
-        _style_totals(pd.DataFrame(grid_rows)),
+        _style_board(pd.DataFrame(grid_rows), gone_rows),
         use_container_width=True, hide_index=True,
         num_rows="fixed", column_config=_autofit(grid_rows, cfg),
         height=_grid_height(len(grid_rows)),
@@ -845,7 +880,8 @@ def sales_board(week, office_key: str, scope: str = "Week",
                      key=f"save_{office_key}_{scope}"):
             R.set_attrs(office_key,
                         {r["Rep"]: {"team": r.get("Team") or "",
-                                    "level": r.get("Leadership") or ""}
+                                    "level": r.get("Leadership") or "",
+                                    "status": r.get("Status") or ""}
                          for r in edited})
             msg = "Saved team and leadership."
             if day_view:
@@ -992,27 +1028,6 @@ def week_lines(df, dates: list, metrics: list):
         .properties(height=280))
 
 
-def week_line(df, ycol: str, dates: list):
-    """A weekly line whose x-axis ticks are THE WEEKS, not Vega's own picks.
-
-    Left to itself the chart spaces ticks evenly and labels them by whatever
-    day they land on — 'Mon 13', 'Tue 21', 'Wed 29' — which are not week
-    endings and read as nonsense on a weekly chart. Pinning `values` to the
-    real dates puts one tick per point. Format is %m/%d, never %-m/%-d, which
-    is Mac-only."""
-    import altair as alt
-    return (
-        alt.Chart(df.reset_index())
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("Week:T", title=None,
-                    axis=alt.Axis(values=dates, format="%m/%d", labelAngle=0)),
-            y=alt.Y(f"{ycol}:Q", title=ycol),
-            tooltip=[alt.Tooltip("Week:T", format="%m/%d/%y"),
-                     alt.Tooltip(f"{ycol}:Q")])
-        .properties(height=260))
-
-
 VITAL_METRICS = ["Reps in the field", "Got on the board", "% selling",
                  "Rolled a zero", "Avg total units", "Avg new int"]
 
@@ -1133,6 +1148,92 @@ def trend(week, tabs=(), team: str = ALL_TEAMS,
                f"{series[-1]['Week'].strftime('%m/%d')}"
                + (" · units and vitals are on separate scales"
                   if units_picked and vitals_picked else ""))
+
+
+def _rep_streak(r: dict, days: list, anchor_idx: int) -> int:
+    """How many days in a row this rep has rolled a literal zero.
+
+    A ZERO is a numeric 0. 'X' (didn't work), 'T' (terminated) and blank are NOT
+    zeros — you cannot roll a zero on a day you were never out there — so those
+    days are stepped over without counting and without ending the run. Any
+    positive number ends it. Same rule sales_boards/zeros.py uses for Carlos."""
+    streak = 0
+    for i in range(anchor_idx, -1, -1):
+        cell = ((r.get("daily") or {}).get(days[i], {})
+                .get("values", {}).get("Apps", "") or "").strip()
+        if not cell or cell.upper() in _NOT_NUMERIC:
+            continue
+        try:
+            v = float(cell.replace(",", ""))
+        except ValueError:
+            continue
+        if v > 0:
+            break
+        streak += 1
+    return streak
+
+
+def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS,
+                 campaign: str = "") -> None:
+    """Escalating 'zeros in a row' levels, like the Slack post.
+
+    Each level is CUMULATIVE — the 2-day list is everyone on 2 or more — which
+    is what makes it escalate: the list gets shorter and the problem gets more
+    serious as you go down."""
+    filtered = (bool(team) and team != ALL_TEAMS) or bool(campaign)
+    slice_name = campaign or team
+    days = week.day_names
+    if not days:
+        return
+
+    # Anchor on the most recent COMPLETED day; today is still in progress and a
+    # zero at 9am means nothing.
+    today = dt.date.today()
+    anchor_idx = -1
+    for i, d in enumerate(days):
+        dd = _day_date(week, d)
+        if dd and dd < today:
+            anchor_idx = i
+    if anchor_idx < 0:
+        st.subheader("Zero streaks")
+        st.caption("No completed day on this week yet.")
+        return
+
+    rows = []
+    for r in week.reps:
+        if not rep_matches(r, overrides,
+                           "" if team == ALL_TEAMS else team, campaign):
+            continue
+        n = _rep_streak(r, days, anchor_idx)
+        if n <= 0:
+            continue
+        rows.append({
+            "Rep": r["name"],
+            "Days": n,
+            "Current Week": r.get("values", {}).get("Total Apps", ""),
+            "Last Wk": (r.get("last_values") or {}).get("APPS", ""),
+            "Team": rep_team(r, overrides),
+            "Campaign": rep_campaign(r),
+        })
+
+    st.subheader("Zero streaks"
+                 + (f" · {slice_name}" if filtered else ""))
+    if not rows:
+        st.success("Nobody is on a zero streak.")
+        return
+    st.caption(f"Through {days[anchor_idx]}. A zero is a literal 0 — a day "
+               "marked X, T or left blank is not counted against anyone.")
+
+    longest = max(r["Days"] for r in rows)
+    for lvl in range(1, longest + 1):
+        at_or_above = sorted((r for r in rows if r["Days"] >= lvl),
+                             key=lambda r: (-r["Days"], r["Rep"]))
+        label = f"{lvl} Day" if lvl == 1 else f"{lvl} Days"
+        with st.expander(f"{label} — {len(at_or_above)} reps",
+                         expanded=(lvl == longest)):
+            st.dataframe(at_or_above, use_container_width=True,
+                         hide_index=True,
+                         height=_grid_height(len(at_or_above)))
 
 
 def recruiting(profile) -> None:
