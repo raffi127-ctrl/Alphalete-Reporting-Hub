@@ -91,7 +91,16 @@ def main() -> int:
     #
     # opt_nds fills the Org's ten '<rep> - NDS' tabs; --sheet-id + --tab point
     # that same engine at his one plain-named tab on Carlos's sheet.
-    env = {**os.environ, "CAPTAINSHIP": "Carlos"}
+    # ORDER MATTERS. fill.SPREADSHEET_ID is resolved AT IMPORT TIME from
+    # os.environ["CAPTAINSHIP"] (fill.py:60,119), so a dict that only reaches
+    # the SUBPROCESS cannot affect it. Setting it on the subprocess env alone
+    # left _fill.SPREADSHEET_ID on the DEFAULT captainship ("Raf" ->
+    # 1w_KWAml…), so opt_nds went looking for Noah's tab on the wrong
+    # spreadsheet and the first real dry-run came back
+    # "✗ tab not found: Noah Dubale" (2026-08-17) — a wrong-sheet bug wearing a
+    # missing-tab costume. Set it on THIS process, before the import.
+    os.environ["CAPTAINSHIP"] = "Carlos"
+    env = {**os.environ}
     from automations.recruiting_report import fill as _fill   # CAPTAINSHIP-aware
     cmd = [sys.executable, "-u", "-m", "automations.alphalete_org_report.opt_nds",
            "--sheet-id", _fill.SPREADSHEET_ID, "--tab", NOAH_TAB]
