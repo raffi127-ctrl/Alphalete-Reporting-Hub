@@ -360,7 +360,15 @@ def _alert_failure(report_id: str, report_name: str) -> None:
     Deduped per report per day via a marker file: a 5/10-min job that keeps failing
     must NOT spam the channel every tick. Best-effort — never raises into the run.
     The orchestrator opts out (alert_on_fail=False) — it sends its own richer
-    failure summary with a paste-to-Claude block. (Megan 2026-08-02)"""
+    failure summary with a paste-to-Claude block. (Megan 2026-08-02)
+
+    Goes through incident_thread (Eve 2026-08-17): this is the THINNEST witness of
+    a broken report — three lines and "open its Hub card" — and it fires first, so
+    as a bare post it put a 4th near-identical BOX Order Log message in the channel
+    ahead of the mini's full standalone alert 4 minutes later. As an incident it
+    opens the thread only if nobody else has, and otherwise replies inside the one
+    that's already there. failure- and standalone- share a subject, so which of
+    them spoke first stops mattering."""
     try:
         from pathlib import Path as _P
         marker = (_P(__file__).resolve().parents[2] / "output" / "logs"
@@ -373,7 +381,8 @@ def _alert_failure(report_id: str, report_name: str) -> None:
             [f"`{report_id}` closed a run with status **FAILED** on "
              f"{socket.gethostname()}.",
              "Open its Hub card for the log, then re-run it."],
-            tag=f"failalert-{report_id}")
+            tag=f"failalert-{report_id}",
+            incident=f"failure-{report_id}")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("")
     except Exception:

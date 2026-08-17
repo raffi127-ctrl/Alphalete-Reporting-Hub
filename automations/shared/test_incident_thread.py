@@ -264,6 +264,57 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertTrue(after["new"])
         self.assertEqual(len(self.c.top_level), 2)
 
+    def test_owner_variant_joins_the_base_reports_thread(self):
+        """The other half of 2026-08-17: box_order_log_roshan is the SAME pull and
+        the same module as box_order_log aimed at another owner, and the stale-ID
+        export broke both. The drop alert already filed Roshan's miss as
+        `drop-box-order-log`; the mini's standalone failure opened its own post."""
+        day = dt.date(2026, 8, 17)
+        first = self._open_key("drop-box-order-log", day)
+        second = self._open_key("standalone-box_order_log_roshan", day)
+        self.assertFalse(second["new"])
+        self.assertEqual(second["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 1)
+        self.assertIn("Same problem, reported by", self.c.replies[-1])
+        # Abel and per_office were registered days apart and need no list.
+        for variant in ("standalone-box_order_log_abel",
+                        "failure-box_order_log_per_office"):
+            self.assertEqual(inc.subject(variant), inc.subject("drop-box-order-log"),
+                             variant)
+
+    def test_a_shared_prefix_alone_is_not_a_family(self):
+        """country_sales_board_email extends country_sales_board's id but runs a
+        DIFFERENT module (board_emails) — the board filling short and its email
+        failing are two problems, so a prefix alone must not merge them."""
+        self.assertNotEqual(inc.subject("failure-country_sales_board_email"),
+                            inc.subject("failure-country_sales_board"))
+
+    def test_a_sibling_witness_keeps_its_paste_to_claude_block(self):
+        """The thin witness posts first (the Hub's "closed a run FAILED" beat the
+        mini's full alert by 4 minutes), so the rich sibling joins its thread. Its
+        details are new information, not a repeat — they must land."""
+        day = dt.date(2026, 8, 17)
+        inc._HISTORY_CACHE.clear()
+        inc.open_or_followup(key="failure-box_order_log_roshan", title="❌ failed",
+                             body=["*Error:* status failed"], details=["thin"],
+                             channel="C1", day=day, client=self.c)
+        inc._HISTORY_CACHE.clear()
+        inc.open_or_followup(key="standalone-box_order_log_roshan", title="❌ failed",
+                             body=["*Error:* status failed"],
+                             details=["```PASTE THIS TO CLAUDE```"],
+                             channel="C1", day=day, client=self.c)
+        self.assertEqual(len(self.c.top_level), 1)
+        self.assertIn("PASTE THIS TO CLAUDE", "\n".join(self.c.replies))
+        # A RECURRENCE of that same key still doesn't repeat them.
+        before = "\n".join(self.c.replies).count("PASTE THIS TO CLAUDE")
+        inc._HISTORY_CACHE.clear()
+        inc.open_or_followup(key="standalone-box_order_log_roshan", title="❌ failed",
+                             body=["*Error:* status failed"],
+                             details=["```PASTE THIS TO CLAUDE```"],
+                             channel="C1", day=dt.date(2026, 8, 18), client=self.c)
+        self.assertEqual("\n".join(self.c.replies).count("PASTE THIS TO CLAUDE"),
+                         before)
+
     def test_dry_run_touches_nothing(self):
         res = inc.open_or_followup(key="failure-r", title="t", body=["b"],
                                    channel="C1", dry_run=True, client=self.c)

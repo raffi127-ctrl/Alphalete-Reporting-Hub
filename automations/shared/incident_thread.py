@@ -115,13 +115,23 @@ _HISTORY_CACHE: Dict[str, list] = {}
 # por el mismo problema porque impide ir resolviendo de a uno."
 #
 # So a failure-class key resolves to a SUBJECT, and the first witness to alert
-# opens the thread; the rest reply in it. Two things map onto one subject:
+# opens the thread; the rest reply in it. Three things map onto one subject:
 #   • normalisation — `_`/`-` are the same word, and post_watch's `__watch`
 #     pseudo-report is the report it watches, not a separate one.
 #   • schedule_config's `verify.report_id` — the DECLARED link between an
 #     orchestrator report id and the manifest/section id its drop alerts use
 #     (carlos_focus -> carlos-1on1s-run). Read, never guessed, so a renamed
 #     manifest id can't silently split a thread back in two.
+#   • VARIANTS of one report — box_order_log_roshan / _abel / _per_office are the
+#     same pull and the same module as box_order_log, aimed at another owner, and
+#     on 2026-08-17 the stale-ID export broke all of them at once: the drop alert
+#     already filed Roshan's and Abel's misses as `drop-box-order-log` replies
+#     (run_owner.py passes the BASE id on purpose) while the mini's standalone
+#     failure opened `standalone-box_order_log_roshan` as its own post. Same
+#     event, two shapes. A variant is recognised from what schedule_config
+#     already declares — an id that EXTENDS another registered report id AND runs
+#     the same command package — so abel, per_office and every future owner join
+#     without a list to maintain (see _variants).
 #
 # Deliberately NOT grouped: `finding-` (the report RAN — the conversation is
 # about the numbers, not the outage) and `nonew-` (a benign "nothing today").
@@ -142,9 +152,49 @@ def _canon(rid: str) -> str:
     return rid.strip().lower().replace("_", "-")
 
 
+def _pkg(report) -> str:
+    """The module PACKAGE a report runs ("automations.box_order_log"), from its
+    declared command. Empty when there's no command to read."""
+    if not isinstance(report, dict):
+        return ""
+    cmd = (report.get("command") or [""])
+    return ".".join(str(cmd[0] if cmd else "").split(".")[:2])
+
+
+def _variants(reports: dict) -> Dict[str, str]:
+    """{variant report id -> the base report it is a variant OF}, canon form.
+
+    A variant is declared by two facts already in schedule_config agreeing: its
+    id EXTENDS another registered report's id (`box_order_log_roshan` extends
+    `box_order_log`) and it runs the same command package
+    (`automations.box_order_log`). Both, never one — plenty of ids share a prefix
+    by coincidence, and plenty of unrelated reports share a package. The LONGEST
+    matching base wins, so a variant of a variant lands on its nearest parent.
+
+    This is what keeps the rule from needing a hand-kept list: Abel was added the
+    day after Roshan, per_office a week later, and each one joins its base's
+    thread the moment it appears in the config."""
+    ids = {_canon(rid): rid for rid in reports}
+    out: Dict[str, str] = {}
+    for c, rid in ids.items():
+        pkg = _pkg(reports[rid])
+        if not pkg:
+            continue
+        best = ""
+        for other in ids:
+            if other == c or not c.startswith(other + "-"):
+                continue
+            if len(other) > len(best) and _pkg(reports[ids[other]]) == pkg:
+                best = other
+        if best:
+            out[c] = best
+    return out
+
+
 def _alias_map() -> Dict[str, str]:
-    """{manifest/section id -> orchestrator report id}, from schedule_config's
-    `verify` blocks. Best-effort: an unreadable config costs us the alias half of
+    """{some report id -> the id whose thread it belongs in}, from schedule_config:
+    manifest/section ids via the `verify` blocks, plus per-owner/per-step VARIANTS
+    via _variants. Best-effort: an unreadable config costs us the declared half of
     the grouping (normalisation still works), never an alert."""
     global _ALIAS_CACHE
     if _ALIAS_CACHE is not None:
@@ -152,20 +202,39 @@ def _alias_map() -> Dict[str, str]:
     out: Dict[str, str] = {}
     try:
         cfg = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
-        for rid, r in (cfg.get("reports") or {}).items():
+        reports = cfg.get("reports") or {}
+        for rid, r in reports.items():
             v = r.get("verify") if isinstance(r, dict) else None
             mid = (v or {}).get("report_id") if isinstance(v, dict) else None
             if mid and _canon(mid) != _canon(rid):
                 out[_canon(mid)] = _canon(rid)
+        # A verify alias is the more specific statement, so it wins a collision.
+        for variant, base in _variants(reports).items():
+            out.setdefault(variant, base)
     except Exception:  # noqa: BLE001 — no config = no aliases, never a crash
         pass
     _ALIAS_CACHE = out
     return out
 
 
+def _root(rid: str) -> str:
+    """Follow the alias chain to the id that owns the thread — a variant can point
+    at a base that is itself a manifest alias. Cycle-safe: a config that ever
+    aliased A->B->A must degrade to a thread, not to a hung run."""
+    aliases = _alias_map()
+    seen = {rid}
+    while True:
+        nxt = aliases.get(rid)
+        if not nxt or nxt in seen:
+            return rid
+        seen.add(nxt)
+        rid = nxt
+
+
 def subject(key: str) -> Optional[str]:
     """What a failure-class incident is ABOUT — the shared identity that lets the
-    drop / watch / failure alerts for one report find each other's thread.
+    drop / watch / failure alerts for one report (and its per-owner variants) find
+    each other's thread.
 
     None means "this key stands alone" (finding-, nonew-, or any key that isn't
     failure-class), which keeps the old one-thread-per-key behaviour."""
@@ -174,8 +243,7 @@ def subject(key: str) -> Optional[str]:
             rid = key[len(p):]
             if rid.endswith(_WATCH_SUFFIX):
                 rid = rid[:-len(_WATCH_SUFFIX)]
-            rid = _canon(rid)
-            return _alias_map().get(rid, rid) or None
+            return _root(_canon(rid)) or None
     return None
 
 def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
@@ -323,6 +391,14 @@ def find(key: str, *, channel: str = CHANNEL, client=None,
                 if other != key and subject(other) == subj:
                     return _as_inc(*hit, via_family=True)
     return None
+
+
+def _spoken_before(key: str) -> bool:
+    """Has THIS key already said its piece (in any thread, open or closed)? Read
+    off the local index, so the worst a lost index can cause is one repeated
+    detail block in a thread — never a missing one."""
+    ent = (_load_index() or {}).get(key)
+    return isinstance(ent, dict) and bool(ent.get("ts"))
 
 
 def open_keys() -> List[str]:
@@ -488,6 +564,14 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         # date still live in the index; they just stop being asserted in words
         # nobody can check.
         lines = [stamp or line] + list(followup or ([title] + body))
+        if details and inc.get("via_family") and not _spoken_before(key):
+            # A RECURRENCE repeats details people already have, so they're
+            # dropped. A sibling witness speaking for the FIRST time carries new
+            # ones — its re-run command and its paste-to-Claude block — and the
+            # thin witness usually posts first: the Hub's "closed a run FAILED"
+            # beat the mini's full standalone alert by 4 minutes on 2026-08-17.
+            # Dropping them would trade a duplicate post for a lost fix recipe.
+            lines += [""] + list(details)
         try:
             _send(client, channel, lines, thread_ts=inc["ts"])
         except Exception as e:  # noqa: BLE001 — fall back to a standalone post
