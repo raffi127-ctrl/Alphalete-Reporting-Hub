@@ -4873,14 +4873,16 @@
     },
     "att_cancels": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
+      "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). The MODULE is dry-run by default; base_args carries --sheet so a Hub run actually fills the tab. It did NOT until 2026-08-17: base_args was empty, so every run pulled Tableau and threw the result away while the card said 'B2B Ongoing Cancels -> Sheet' — the tab has never been written by an automated run. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
       "display_name": "B2B Ongoing Cancels (Carlos) -> Sheet",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.att_order_log.cancels_run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--sheet"
+      ],
       "cadence": {
         "weekdays": []
       },
