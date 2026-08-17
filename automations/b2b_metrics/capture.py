@@ -439,6 +439,86 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
         return False
 
 
+def _select_week(page, want: dt.date, log=print) -> bool:
+    """Drive the dashboard's week dropdown to `want`. Returns True if it moved.
+
+    WHY NOT THE URL. On OutofBoundsReport the `?Sale Date Week Ending
+    (mon-sun)=` parameter is inert — proved 2026-08-17 against the live view
+    with seven variants (plain, :revert=all, :refresh=yes, ISO, the caption
+    without its suffix, week-only, and the .csv endpoint): every one still drew
+    8/23/2026. The Owner Name slice on the SAME url applies fine, so it is this
+    one field, whose datasource name evidently differs from the caption the
+    dashboard prints. The dropdown itself is right there on the dashboard —
+    Tableau renders it as a .tabComboBox — so we click it the way the person who
+    files this report by hand does.
+
+    Found positionally by CONTENT, not index: the box whose current value looks
+    like a date. The dashboard has four quick filters ((All), the owner, the
+    week, (All)) and their order is a layout detail that can change.
+    """
+    import re
+
+    from automations.b2b_quality.run import _IFRAME
+    fr = page.frame_locator(_IFRAME)
+    targets = week_value_variants(want)
+
+    boxes = fr.locator(".tabComboBox")
+    idx, cur = None, ""
+    for i in range(min(boxes.count(), 12)):
+        try:
+            t = " ".join((boxes.nth(i).inner_text(timeout=8_000) or "").split())
+        except Exception:  # noqa: BLE001
+            continue
+        if re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", t):
+            idx, cur = i, t
+            break
+    if idx is None:
+        log("   ⚠ week dropdown not found on the dashboard")
+        return False
+    if cur in targets:
+        log("   week dropdown already on {}".format(cur))
+        return True
+    log("   week dropdown is on {} — selecting {}".format(cur, targets[0]))
+    try:
+        boxes.nth(idx).click(timeout=20_000)
+    except Exception as e:  # noqa: BLE001
+        log("   ⚠ could not open the week dropdown ({})".format(type(e).__name__))
+        return False
+    page.wait_for_timeout(2_500)
+    # The open menu. Tableau spells the item a few ways depending on whether the
+    # filter is a plain list or a searchable one, so try each.
+    for sel in (".tabMenuItemName", ".tabComboBoxMenuItem", "[role='option']",
+                ".tabMenuItem"):
+        try:
+            items = fr.locator(sel)
+            n = min(items.count(), 250)
+        except Exception:  # noqa: BLE001
+            continue
+        for j in range(n):
+            try:
+                txt = " ".join((items.nth(j).inner_text(timeout=4_000)
+                                or "").split()).lstrip("✓")
+            except Exception:  # noqa: BLE001
+                continue
+            if txt in targets:
+                try:
+                    items.nth(j).click(timeout=15_000)
+                except Exception:  # noqa: BLE001
+                    # Tableau's click-capture overlay eats a plain click on some
+                    # controls; the keyboard always works.
+                    # [[reference_tableau_pinned_id_filters]]
+                    try:
+                        items.nth(j).focus()
+                        page.keyboard.press("Enter")
+                    except Exception:  # noqa: BLE001
+                        continue
+                log("   ✓ picked {} from {}".format(txt, sel))
+                page.wait_for_timeout(12_000)     # let the viz requery
+                return True
+    log("   ⚠ {} not offered by the week dropdown".format(targets[0]))
+    return False
+
+
 def _read_viz_text(page, log=print) -> str:
     """The rendered viz's own text (iframe body), or "" if it can't be read.
 
@@ -542,9 +622,12 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
     probe = {"text": ""}
 
     def after_load(page):
-        # Read what the viz rendered BEFORE the Download→Image runs. Only for
-        # week-pinned views — everything else pays nothing for this.
+        # Week-pinned views: drive the dashboard's week dropdown, THEN read what
+        # it drew. The URL carries the pin too (harmless, and it is the right
+        # thing to send if the field is ever renamed to match its caption), but
+        # the dropdown is what actually moves this view.
         if meta.get("week_filter"):
+            _select_week(page, report_week_ending(today), log=log)
             probe["text"] = _read_viz_text(page, log=log)
         # Activation carries no saved sort; click its measure sort glyph high->low
         # before the shot. Churn's saved view sorts itself. Offices whose saved
