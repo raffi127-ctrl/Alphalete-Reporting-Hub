@@ -1,5 +1,5 @@
 #!/bin/bash
-# TUE-SUN: put the Org Sales Board's REVIEW LINK in #revision-emails on a CLOCK,
+# EVERY DAY: put the Org Sales Board's REVIEW LINK in #revision-emails on a CLOCK,
 # on the always-on Mac mini via launchd (com.alphalete.org-board-review-post).
 #
 # WHY THIS LEFT THE ORCHESTRATOR (Eve 2026-08-13). org_sales_board_email sat at
@@ -31,9 +31,19 @@
 # approvers three extra times. A day-marker file makes the later slots true
 # no-ops; they only fire when the earlier ones did not get a link up.
 #
-# MONDAY IS EXCLUDED (no Weekday 1 in the plist): Monday's board and its review
-# post run from board_catchup.sh at 14:30, once last week's Sunday has landed in
-# the sources. Same reason org_sales_board_email's cadence excluded Monday.
+# MONDAY IS IN, since 2026-08-17 (Eve: "que salga temprano como todos los días y
+# luego haga un refresh por la tarde"). It used to be excluded here (no Weekday 1)
+# and posted from board_catchup.sh at 14:30, waiting for last week's Sunday to
+# land in the day-behind sources. That wait bought a complete picture at the cost
+# of a seven-hour-late link, one different habit a week for the approvers, on the
+# day the board IS the whole closed week. Now the link is at 07:00 like every
+# other day and board_catchup.sh's Monday branch became a SILENT refresh: it
+# re-fills Retail JE (~13:53) / SARA Retail NL+Internet (~14:00) / BOX / Frontier
+# into the board before Tuesday's rollover freezes the week, and posts nowhere.
+# So Monday's emailed picture can undercount Sunday in those sections while the
+# BOARD itself is correct by ~14:45 — Eve's call, made knowing that. The link
+# never gets re-posted or the PDF re-cut in the afternoon: one link a day.
+# (week.py:_ref lags Monday, so both runs write the week that just closed.)
 #
 # SENDS NOTHING. It posts a link and tags the approvers;
 # com.alphalete.org-board-email-review mails the report within 15 min of a

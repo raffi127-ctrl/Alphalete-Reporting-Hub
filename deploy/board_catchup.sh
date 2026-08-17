@@ -9,8 +9,20 @@
 # ~1:53pm, SARA/retail ~2pm (2026-07-05/06). This job runs AFTER they publish and
 # re-pulls the CURRENT reporting week, so yesterday's late numbers land the SAME
 # day instead of waiting for the next morning's run. On MONDAY it also grabs the
-# just-closed SUNDAY before the Monday-night MANUAL rollover freezes the week —
-# which is what makes Monday's board show a complete M–Sun week.
+# just-closed SUNDAY before TUESDAY's rollover freezes the week — which is what
+# makes the closed M–Sun week complete on the board.
+#
+# IT POSTS NOTHING, ANY DAY, SINCE 2026-08-17 (Eve: "que salga temprano como
+# todos los días y luego haga un refresh por la tarde, sin postear a ningún
+# lado"). Monday's branch used to also post the board's review link here at
+# 14:30, because Monday was excluded from the morning review-post agent. Monday
+# is now in that agent's plist at 07:00 like every other day, so this run is a
+# PURE DATA REFRESH — the last chance to get the closed week right before
+# Tuesday's roll. It does NOT re-post the link, re-cut the approved PDF, or
+# re-send anything: the approvers get ONE link a day and nothing moves under
+# them after they've read it. Consequence, accepted: Monday's 07:00 picture can
+# show Sunday missing for the day-behind sections while the BOARD is correct by
+# ~14:45.
 #
 #   * Retail NL + Retail Internet (SARA) — DATE-PINNED (Min/Max Date), so any run
 #     reliably returns the reporting week's days incl. a genuine-0 late day.
@@ -55,47 +67,27 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/board-catchup-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Board catch-up starting (extra args: ${*:-none})" > "$LOG_FILE"
 
-# Tell the Hub a step of MONDAY's run finished. Monday's board email never
-# touches the orchestrator (it runs from here, in the afternoon, once Sunday has
-# landed — the captainship drafts used to as well, until 2026-08-10), and the
-# orchestrator is what normally
-# writes these rows — so without this Monday leaves no trace on the Hub and the
-# cards' phase pills can never leave orange, on the one day of the week they are
-# least allowed to look unfinished. Card ids, not orchestrator report_ids.
-# Best-effort and never fatal: the Hub is display, the send is the job.
-#   hub_row <card id> <display name>
-hub_row () {
+# Say so when MONDAY's refresh didn't land. This is the LAST run before Tuesday's
+# rollover freezes the closed week, so a silent failure here means the week gets
+# frozen with Sunday missing and nobody finds out until someone reads a wrong
+# board next week. Tue-Sun a bad catch-up costs one day and the next morning's
+# fill re-pulls it anyway; Monday it is permanent, so Monday is the day that
+# alerts. (Eve 2026-08-10 asked for exactly this visibility when the Monday
+# review post could fail invisibly; the post moved to 07:00, the need did not.)
+#
+# ALERT ONLY — deliberately NOT a 'failed' Hub row. The board's card already went
+# GREEN this morning off a fill that really did succeed, and painting it red at
+# 14:30 would say "the board didn't run" when what happened is "the late sections
+# didn't refresh". Same reason a dead source pings instead of failing the card.
+#   catchup_alert <card id> <display name> <what failed>
+catchup_alert () {
   [ "$#" -ge 2 ] || return 0
   # Only on a real run: `bash board_catchup.sh --dry-run` passes args through and
-  # must not claim on the Hub that anything ran.
-  [ "$CATCHUP_DRY" = "0" ] || return 0
-  "$VENV_PY" -u -c "from automations.shared import hub_activity as H; \
-H.log_completed('$1', '$2', user='board-catchup')" >> "$LOG_FILE" 2>&1 \
-    || echo "[$(date)] (Hub row for $1 did not land — pill only)" >> "$LOG_FILE"
-}
-
-# The other half of hub_row: say so when a MONDAY step DIDN'T post. Until now the
-# Hub rows were written on the success path only, so a Monday whose review post
-# failed looked EXACTLY like a Monday still waiting for 14:30 — no row, no pill,
-# no alert — and the only way to find out was to notice the empty channel hours
-# later (Eve, 2026-08-10). Tue-Sun this is free: those runs go through the
-# orchestrator, which fails loudly on its own. Monday has no orchestrator, so
-# the alert has to come from here.
-# Writes the 'failed' row (so the card goes red and machine_digest sees it) AND
-# posts to the corrections channel with the paste-to-Claude block, the same way
-# a standalone LaunchAgent report reports a bad run.
-#   hub_fail <card id> <display name> <what failed>
-hub_fail () {
-  [ "$#" -ge 2 ] || return 0
+  # must not claim anything ran, or fire an alert about a test.
   [ "$CATCHUP_DRY" = "0" ] || return 0
   "$VENV_PY" -u -c "
 import sys
 card, name, what = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    from automations.shared import hub_activity as H
-    H.log_completed(card, name, status='failed', user='board-catchup')
-except Exception as e:
-    print('hub row failed:', e)
 try:
     import datetime as dt
     from automations.day_orchestrator import registry as _reg, notify
@@ -105,7 +97,7 @@ try:
         day=dt.date.today().isoformat(), machine_label='Lucy 1')
 except Exception as e:
     print('alert failed:', e)
-" "$1" "$2" "${3:-did not post}" >> "$LOG_FILE" 2>&1 \
+" "$1" "$2" "${3:-did not refresh}" >> "$LOG_FILE" 2>&1 \
     || echo "[$(date)] (failure alert for $1 did not land — check this log)" >> "$LOG_FILE"
 }
 if [ "$#" -eq 0 ]; then CATCHUP_DRY=0; else CATCHUP_DRY=1; fi
@@ -113,23 +105,27 @@ if [ "$#" -eq 0 ]; then CATCHUP_DRY=0; else CATCHUP_DRY=1; fi
 # Fill ONLY the late-posting sections on the copy tab (comma-separated; run.py
 # splits on ','). No --with-captainships. Any extra arg (e.g. --dry-run) wins.
 if [ "$(date +%u)" = "1" ]; then
-  # MONDAY: last week's Sunday lands in the sources through the day, so the morning
-  # board is incomplete and the morning email is SKIPPED (org_sales_board_email
-  # cadence excludes Monday). THIS run is Monday's real board — do a FULL fill (incl
-  # captainships, so a late captainship Sunday is caught too) and SEND the email.
-  # (Megan 2026-07-13: move Monday's board + email to the afternoon when Sunday's in.)
-  echo "[$(date)] MONDAY: full board fill + email (afternoon — Sunday has landed)" >> "$LOG_FILE"
+  # MONDAY: last week's Sunday lands in the sources through the day, so the 07:00
+  # board is incomplete in the day-behind sections. THIS run is what makes the
+  # closed week correct, and it is the LAST one before Tuesday's rollover freezes
+  # it (week.py:_ref lags Monday, so this fill still writes the week that closed).
+  #
+  # FULL fill, WITH captainships — not the --sections subset the other six days
+  # use: a late captainship Sunday has to be caught too, and Monday is the only
+  # day where "we'll get it tomorrow morning" is false.
+  #
+  # POSTS NOTHING (Eve 2026-08-17). The review link went up at 07:00 from
+  # com.alphalete.org-board-review-post like every other day; re-posting it or
+  # re-cutting its PDF here would move the document under approvers who may have
+  # already read or ✅'d it. Data only.
+  echo "[$(date)] MONDAY: full board fill, silent (afternoon — Sunday has landed)" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships --skip-compare "$@" >> "$LOG_FILE" 2>&1
   ST=$?
-  # All Campaigns fill BEFORE the email (Eve 2026-08-06). The email carries the
-  # All Units board as a SECOND SECTION, rendered LIVE off that tab at post time
-  # (screenshot_email.capture_all_units). The morning orchestrator already filled
-  # it — but off the MORNING board, i.e. before the full fill above landed
-  # Sunday. Post the email without redoing it and Monday's All Units blocks show
-  # a week missing its last day, on the one day the board is least finished.
-  # This is the Monday twin of the order-9 -> 10.5 fix in schedule_config.json;
-  # Monday never comes through the orchestrator, so the config change alone would
-  # have left exactly one day a week still broken.
+  # All Campaigns AFTER the fill. That tab is computed off the board, so the
+  # Sunday numbers the fill above just landed have to be carried into it or it
+  # goes into Tuesday's roll a day short. It used to run here to keep the
+  # afternoon email's All Units section fresh (Eve 2026-08-06); the email left,
+  # the tab still needs it — and this is still the last pass before the roll.
   # Deliberately NOT --enable-rollover: this branch is Monday-only and the roll is
   # a Tuesday job — no roll should ever fire from here.
   # Non-fatal to $ST on purpose: a stale All Units section must not report the
@@ -139,25 +135,25 @@ if [ "$(date +%u)" = "1" ]; then
   if [ "$#" -eq 0 ]; then ACB_ARGS="--apply"; else ACB_ARGS=""; fi
   echo "[$(date)] MONDAY: re-filling the All Campaigns board (${ACB_ARGS:-dry-run})" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.all_campaigns_board.run $ACB_ARGS >> "$LOG_FILE" 2>&1 || \
-    echo "[$(date)] MONDAY: All Campaigns fill failed — the email's All Units section may be stale" >> "$LOG_FILE"
+    echo "[$(date)] MONDAY: All Campaigns fill failed — that tab may go into Tuesday's roll without Sunday" >> "$LOG_FILE"
 
-  # Board email: stopped 2026-07-28 (Megan, handed to Eve), BACK ON 2026-07-29 (Eve)
-  # alongside the Tue-Sun morning path — but it does NOT send from here. Monday's
-  # email goes through the same review gate as every other day: this posts the
-  # preview to #revision-emails, and the com.alphalete.org-board-email-review
-  # agent (every 15 min to 8pm) mails it once an approver checkmarks it. Monday
-  # is the day the board is least finished, so it is the last day that should
-  # mail itself unattended. Recipients stay the proving list (Rafael + Megan).
-  echo "[$(date)] MONDAY: posting the board email for review (fill exit $ST)" >> "$LOG_FILE"
-  if "$VENV_PY" -u -m automations.org_sales_board.review_gate --post >> "$LOG_FILE" 2>&1; then
-    # Same row the orchestrator writes Tue-Sun when its --post entry finishes, so
-    # Monday's card reads identically: posted → 🟣 awaiting the ✅ → green when
-    # the gate records the approval.
-    hub_row "sales-board-screenshot-email" "Org. Sales Board Email"
-  else
-    echo "[$(date)] MONDAY: board email review post FAILED — alerting" >> "$LOG_FILE"
-    hub_fail "sales-board-screenshot-email" "Org. Sales Board Email" \
-             "the Monday review post to #revision-emails failed — no link went up"
+  # NO REVIEW POST HERE ANY MORE (Eve 2026-08-17). Monday's link goes up at 07:00
+  # with every other day's, from com.alphalete.org-board-review-post. What used to
+  # live here — `review_gate --post` at 14:30 — was Monday's whole reason for
+  # existing as a special case, and it is gone: this branch is now data only.
+  #
+  # AND NOT A `review_gate --refresh` EITHER, on purpose. Refreshing would re-cut
+  # the PDF in place behind the morning link (the CLAUDE.md "mismo link" rule) so
+  # the afternoon's Sunday numbers would appear in the document the approvers
+  # already have open. Tempting, and wrong by default: by 14:30 that PDF has
+  # usually been ✅'d and MAILED, and the email carries its own captured images —
+  # so the reviewed PDF and the sent email would stop matching, and a ✅ would sit
+  # on a document nobody approved. If Eve ever wants Monday's PDF corrected, it
+  # has to come with the mail-again decision, not silently from here.
+  if [ "$ST" -ne 0 ]; then
+    echo "[$(date)] MONDAY: full fill exited $ST — alerting (the closed week rolls tomorrow)" >> "$LOG_FILE"
+    catchup_alert "org-sales-board" "Alphalete Org Sales Board" \
+      "Monday's 14:30 refresh exited $ST — last week's Sunday may be missing from the day-behind sections (Retail JE / SARA / BOX / Frontier) and TUESDAY'S ROLLOVER will freeze it that way. Re-run: lucy rerun org_sales_board"
   fi
   # NO CAPTAINSHIP DRAFTS HERE ANY MORE (Eve 2026-08-10). They used to be built
   # and posted from this branch, because Monday was excluded from both

@@ -22,10 +22,24 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- TUE-SUN (launchd Weekday: 0/7=Sun, 1=Mon, 2=Tue…), machine LOCAL time —
-         the mini is Central. MONDAY IS DELIBERATELY ABSENT: Monday's board and
-         its review post run from board_catchup.sh at 14:30, once last week's
-         Sunday has landed in the sources.
+    <!-- EVERY DAY (launchd Weekday: 0/7=Sun, 1=Mon, 2=Tue…), machine LOCAL time —
+         the mini is Central.
+
+         MONDAY ADDED 2026-08-17 (Eve): "que salga temprano como todos los días y
+         luego haga un refresh por la tarde". Monday used to be excluded here and
+         handled by board_catchup.sh at 14:30, so the link landed seven hours
+         after every other day's — one day a week the approvers had to remember a
+         different habit, and the one day the board is the whole closed week.
+         THE TRADE, ACCEPTED: Monday's 07:00 picture shows last week with SUNDAY
+         MISSING for the two day-behind sections — Retail JE (publishes ~13:53)
+         and SARA/Retail NL+Internet (~14:00); Frontier reads the emailed Credico
+         PDF. board_catchup.sh at 14:30 still re-fills those into the board, but
+         SILENTLY now — it posts nothing and does not touch the link or the PDF,
+         it just gets the numbers right before Tuesday's rollover freezes the
+         week (week.py:_ref lags Monday, so Monday's fill still writes the closed
+         week). So: the emailed picture can undercount Sunday, the BOARD is
+         correct by ~14:45. If Raf ever needs Monday's picture complete, the fix
+         is to move the LINK back to the afternoon, not to re-add a second post.
 
          07:00 is the real slot. Eve's ask (2026-08-13): "que corra el llenado y
          se envie el link de revision todos los dias a las 7am para aprobar y que
@@ -40,6 +54,7 @@
          09:00 is the LAST slot and the only one that raises a failure alert. -->
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
@@ -47,6 +62,7 @@
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
 
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
@@ -54,6 +70,7 @@
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
 
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
@@ -61,6 +78,7 @@
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
 
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
