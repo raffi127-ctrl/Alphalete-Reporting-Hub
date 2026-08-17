@@ -23,9 +23,15 @@ THE THREE PEOPLE BLOCKS (found by label, never by row number):
        name AS A STRING — which is why this block is copied from a neighbour
        row and then has that literal swapped, rather than rebuilt by hand.
 
-All three blocks are RANKED BY PRODUCTION (org_sales_board.sort re-ranks them),
-so a new person is appended at the BOTTOM of each — which is where someone
-starting at 0 belongs, and the next sort moves them on their numbers.
+All three blocks are RANKED BY PRODUCTION (sort_board re-ranks them at the end
+of the same fill), so a new person goes in at the BOTTOM of each — which is
+where someone starting at 0 belongs, and the next sort moves them on their
+numbers.
+
+INSERTED AT THE LAST DATA ROW, NOT PAST IT (Eve 2026-08-17). One row lower would
+be outside the block, and Sheets only grows a range when the inserted row falls
+inside it — so appending past the end left every aggregate one row short on
+every person added. See _insert_position.
 
 FROZEN HISTORY IS NEVER COPIED. A new row's past-week cells are left blank on
 purpose: inheriting the neighbour's history would invent sales that never
@@ -136,15 +142,30 @@ def agg_target_label() -> str:
 
 
 def _insert_position(rows: List[int]) -> int:
-    """The 1-indexed row to INSERT AT: the BOTTOM of the block.
+    """The 1-indexed row to INSERT AT: the block's LAST DATA ROW, so the new row
+    lands INSIDE the block and every aggregate over it grows by itself.
 
-    Not alphabetical. These blocks are RANKED BY PRODUCTION — the board looked
-    alphabetical in a snapshot taken between sorts, and inserting on that
-    assumption put a 0-sales rep at rank 4 on the live board (2026-07-31).
-    org_sales_board.sort re-ranks the blocks anyway, so the only position that
-    is right in both worlds is last: a rep who starts at 0 belongs at the
-    bottom, and the next sort moves them to wherever their numbers say."""
-    return (rows[-1] + 1) if rows else 0
+    WHY NOT ONE ROW LOWER (Eve 2026-08-17). This used to return `rows[-1] + 1`
+    — one past the last rep, i.e. OUTSIDE the block. Google Sheets only
+    re-points a range when the inserted row falls WITHIN it, so appending past
+    the end left every `=SUM(C18:C56)` / `=SUMIF($B$62:$B$100,…)` spanning one
+    row short, silently, on every single person added. That is the whole reason
+    ranges_repair.py exists, and it is how the 39th rep ended up outside the
+    delta box's own totals row (4020 vs 4050, 2026-08-17). Inserting AT
+    `rows[-1]` pushes the last rep down one and the range grows to match — the
+    board stays correct without a repair pass having to notice.
+
+    STILL THE BOTTOM, which is the point of the 2026-07-31 rule this replaces:
+    these blocks are RANKED BY PRODUCTION, not alphabetical, and inserting on
+    the alphabetical assumption once put a 0-sales rep at rank 4 of the live
+    board. A new rep now lands SECOND-to-last instead of last — one position
+    different, still the bottom, and sort_board (added 2026-08-13, after that
+    rule was written) re-ranks all three blocks at the end of the same fill, so
+    they end up on their numbers either way.
+
+    ranges_repair stays as the net: it catches a hand-typed row, a paste, or a
+    range that was already short before this."""
+    return rows[-1] if rows else 0
 
 
 def plan(copy_grid, tgt_grid, today, *, raw_aliases=None, logfn=print) -> RosterPlan:
@@ -226,9 +247,12 @@ def add_one(ws, name: str, *, logfn=print) -> dict:
     # SUMIFs name the person as a literal string, so it is copied then patched)
     grid = ws.get_all_values()
     rank = find_ranking_block(grid)
-    src = rank["data_rows"][-1]
-    at = src + 1
+    at = _insert_position(rank["data_rows"])
     _insert_row(ws, at)
+    # `at` is now an EMPTY row and the rep who was there has been pushed to
+    # at + 1 — so the row to copy formulas from is BELOW, not at rows[-1].
+    # (It was rows[-1] while the insert landed past the end of the block.)
+    src = at + 1
     time.sleep(1)
     _copy_row_formulas(ws, src, at, 1, 40)      # B.. across the whole block
     time.sleep(1)
@@ -257,8 +281,8 @@ def add_one(ws, name: str, *, logfn=print) -> dict:
     daily = fs.find_daily_section(grid, agg_target_label())
     rows = sorted(daily.icd_rows.values())
     at = _insert_position(rows)
-    src = rows[-1]
     _insert_row(ws, at)
+    src = at + 1            # the rep pushed down by the insert — see block 3
     time.sleep(1)
     _copy_row_formulas(ws, src, at, 0, daily.running_total_col)
     time.sleep(1)
@@ -283,8 +307,8 @@ def add_one(ws, name: str, *, logfn=print) -> dict:
     grid = ws.get_all_values()
     wk = rj.find_leaderboard_block(grid)
     at = _insert_position(wk["data_rows"])
-    src = wk["data_rows"][-1]
     _insert_row(ws, at)
+    src = at + 1            # the rep pushed down by the insert — see block 3
     time.sleep(1)
     _copy_row_formulas(ws, src, at, 0, wk["last_col"])
     time.sleep(1)
