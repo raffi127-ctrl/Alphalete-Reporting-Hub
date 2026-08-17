@@ -821,21 +821,30 @@ def sales_board(week, office_key: str, scope: str = "Week",
         if lv and lv not in levels:
             levels.append(lv)
 
-    cfg["Team"] = st.column_config.SelectboxColumn(
-        options=[BLANK_OPTION] + teams, required=False)
-    cfg["Leadership"] = st.column_config.SelectboxColumn(
-        options=[BLANK_OPTION] + levels, required=False)
-    cfg["Status"] = st.column_config.SelectboxColumn(
-        options=[BLANK_OPTION] + list(R.STATUSES), required=False,
-        help="Terminate a rep here — their days from that date on grey out, "
-             "though any production Tableau reports still shows. Set them "
-             "back to Active to reinstate; the grey and the termination date "
-             "clear.")
-    if day_view:
-        cfg["Roll Call"] = st.column_config.SelectboxColumn(
-            options=[BLANK_OPTION] + [o for o in A.OPTIONS if o],
-            required=False,
-            help=" · ".join(f"{k} = {v}" for k, v in A.MEANINGS.items()))
+    # Only attach the dropdown configs in EDIT mode. Left on in read mode they
+    # keep those columns editable, and Streamlit then refuses to paint the
+    # stripes onto them — which is exactly why Team and Leadership stayed white
+    # while Rep and Tenure striped.
+    if not edit_mode:
+        cfg = {c: st.column_config.Column(disabled=True, width=None)
+               for c in rows[0]}
+    else:
+        cfg["Team"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + teams, required=False)
+        cfg["Leadership"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + levels, required=False)
+        cfg["Status"] = st.column_config.SelectboxColumn(
+            options=[BLANK_OPTION] + list(R.STATUSES), required=False,
+            help="Terminate a rep here — their days from that date on grey "
+                 "out, though any production Tableau reports still shows. Set "
+                 "them back to Active to reinstate; the grey and the "
+                 "termination date clear.")
+        if day_view:
+            cfg["Roll Call"] = st.column_config.SelectboxColumn(
+                options=[BLANK_OPTION] + [o for o in A.OPTIONS if o],
+                required=False,
+                help=" · ".join(f"{k} = {v}"
+                                for k, v in A.MEANINGS.items()))
 
     # TOTALS is the last row OF the grid, not a table beneath it — a separate
     # table has its own horizontal scroll, so the moment you scrolled the board
@@ -862,8 +871,10 @@ def sales_board(week, office_key: str, scope: str = "Week",
                 if ov and ov.gone_by(day_on):
                     gone_rows.add(i)
 
+    grid_df = pd.DataFrame(grid_rows).astype("string").fillna("")
+
     edited = st.data_editor(
-        _style_board(pd.DataFrame(grid_rows), gone_rows),
+        _style_board(grid_df, gone_rows),
         use_container_width=True, hide_index=True,
         num_rows="fixed", column_config=_autofit(grid_rows, cfg),
         height=_grid_height(len(grid_rows)),
