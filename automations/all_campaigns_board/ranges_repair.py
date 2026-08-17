@@ -62,7 +62,7 @@ def _a1(c: int) -> str:
 
 
 def block_bounds(grid: List[List[str]]) -> Dict[str, Tuple[int, int]]:
-    """{'day': (first,last), 'leaderboard': (first,last)} — 1-based data rows."""
+    """{'day': …, 'leaderboard': …, 'delta': …} — 1-based first/last data rows."""
     out: Dict[str, Tuple[int, int]] = {}
     anchor = fs.find_daily_section(grid, "All Units")
     rows = sorted(anchor.icd_rows.values())
@@ -71,6 +71,24 @@ def block_bounds(grid: List[List[str]]) -> Dict[str, Tuple[int, int]]:
     lb = acr.find_leaderboard_block(grid)
     if lb["data_rows"]:
         out["leaderboard"] = (lb["data_rows"][0], lb["data_rows"][-1])
+    # THE DELTA BOX IS A BLOCK TOO (Eve 2026-08-17). It was missing here, and
+    # that left exactly one family of short ranges un-widened: its OWN totals
+    # row. The box's per-rep cells key on the DAY block ('=SUMIF($B$62:$B$100,
+    # "Jairo Ruiz", $C$62:$C$100)'), so they were already covered by 'day' and
+    # looked fine — but the totals row aggregates the box over ITSELF
+    # ('=sum(F115:F152)'), anchored at the box's own first data row, which
+    # belonged to no known block and so matched no rule.
+    #
+    # What that cost, measured on the live tab 2026-08-17: the leaderboard and
+    # the day block both totalled 4050 while the delta chart's totals row read
+    # 4020 — the 39th rep (Alex Nicholas, 30 units) summed into every other
+    # total but not his own box's. Two blocks agreeing and a third disagreeing
+    # is the worst shape for this: it reads like a real discrepancy in the data.
+    # Same failure the module was written for, one block over.
+    tables = acr.find_delta_tables(grid)
+    if tables and tables[0]["data_rows"]:
+        rows = tables[0]["data_rows"]
+        out["delta"] = (rows[0], rows[-1])
     return out
 
 

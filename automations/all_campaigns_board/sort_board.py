@@ -1,4 +1,4 @@
-"""All Campaigns Org Sales Board — re-rank the two per-rep tables after the fill.
+"""All Campaigns Org Sales Board — re-rank the three per-rep tables after the fill.
 
 The same defect, and the same fix, as the Country Sales Board got on 2026-08-12
 (`country_sales_board/sort_board.py`). This tab ships two rep-by-rep tables that
@@ -19,11 +19,15 @@ LIVE, so what is on this tab is what the approvers and the org see.
     'RUNNING WEEK TOTALS'
   * the WEEKLY leaderboard ('AT&T FIBER TEAM' + WE-date columns, header row ~16)
     by col C, the live week
+  * the DELTA BOX ('All Units - All Campaigns', header row ~114) by col C,
+    'Total this week' — added 2026-08-17 (Eve), the third table and the one the
+    email's 4th block renders
 
-Those two keys are the SAME number — the leaderboard's col C is a
-`=SUMIF($B$62:$B$99, B18, $J$62:$J$99)` over the day block's col J — so both
-tables come out in the SAME order, which is the point: a rep sits at the same
-rank wherever you look at them.
+All three keys are the SAME number — the leaderboard's col C is a
+`=SUMIF($B$62:$B$99, B18, $J$62:$J$99)` over the day block's col J, and the
+delta box's col C is `=F115+I115+…` over its own per-day `=SUMIF`s of that same
+col — so all three tables come out in the SAME order, which is the point: a rep
+sits at the same rank wherever you look at them.
 
 WHY NOT REUSE org_sales_board.sort. That module rewrites col A with literal
 ranks. On the ORG tab that is right; here col A is a CHAIN (`A19 = =A18+1`,
@@ -128,6 +132,38 @@ def plan_sorts(grid: List[List[str]], sheet_id: int,
             lb_rows[0], lb_rows[-1], LEADER_WEEK_COL,
             _widest_col(grid, lb_rows, lb["last_col"]),
             f"leaderboard ({len(lb_rows)} reps, rows {lb_rows[0]}-{lb_rows[-1]}, "
+            f"key col {LEADER_WEEK_COL})"))
+
+    # --- the DELTA BOX: by 'Total this week' (col C), descending (Eve 2026-08-17) ---
+    # The third rep table on this tab, and the one the email's 4th block shows.
+    # It was never sorted: its rows sit in whatever order roster.sync added
+    # people, so the chart read 361, 334, 301, 256, 135, 151, 197 … — 5th place
+    # below 7th, right next to two blocks that ARE ranked. Same key as the other
+    # two (col C), so all three tables come out in the same order and a rep sits
+    # at the same rank wherever you look at them.
+    #
+    # Safe to sortRange for the same reason the other two are, plus one specific
+    # to this box: its per-rep cells are '=SUMIF($B$62:$B$100,"Jairo Ruiz",…)',
+    # keyed on a LITERAL NAME, so the formula travels with its own rep. The
+    # row-local arithmetic ('=F115+I115+…', '=iferror((C115-D115)/D115,0)') is
+    # re-pointed by sortRange to the row it lands on, and the frozen 'Last week'
+    # values are plain numbers that move with the row. Nothing in the box refers
+    # to another rep's row, which is what would make a sort unsafe.
+    #
+    # The TOTALS row is excluded by construction: find_delta_tables stops at the
+    # first row with no name in col B, and that is exactly what the totals row
+    # looks like ([[project_org-board-leaderboard-totals-row]]).
+    tables = acr.find_delta_tables(grid)
+    if tables and tables[0]["data_rows"]:
+        d_rows = tables[0]["data_rows"]
+        # Floor = the LAST triplet's Delta column (this_col + 2), so a rep's
+        # Sunday numbers can never be sheared off their name. Measured each run,
+        # never a constant — a rollover that re-shapes the triplets is followed.
+        floor = max(tables[0]["this_cols"], default=LEADER_WEEK_COL) + 2
+        reqs.append(block(
+            d_rows[0], d_rows[-1], LEADER_WEEK_COL,
+            _widest_col(grid, d_rows, floor),
+            f"delta box ({len(d_rows)} reps, rows {d_rows[0]}-{d_rows[-1]}, "
             f"key col {LEADER_WEEK_COL})"))
     return reqs
 
