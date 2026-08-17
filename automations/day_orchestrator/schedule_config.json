@@ -738,6 +738,40 @@
       },
       "timeout_minutes": 20
     },
+    "tableau_ledger_summary": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY census of the Tableau access ledger (Megan 2026-08-17) - the login count we owe eStream. on_scheduler:false = never in the 4am batch. Run by hand: `lucy rerun tableau_ledger_summary` (last 7 days) or `lucy rerun tableau_ledger_summary --days 1`. Reads output/logs/tableau-access/<date>.jsonl, which `lucy logtail` CANNOT reach on its own (logtail globs output/logs non-recursively, so it never sees the subdirectory) - that is the whole reason this target exists. Touches NO browser, NO Tableau, NO Sheet, NO Slack: it only reads local files, so source_type local (never spend a login to count logins). The Sheet result cell holds ~470 chars and shows the TAIL, so summarize() ends with a TL;DR line carrying logins/day + the worst reports; page the rest with `lucy logtail tableau_ledger_summary <grep>` (e.g. 'LOGINS BY REPORT').",
+      "display_name": "Tableau Ledger Summary (read-only)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.shared.tableau_ledger"
+      ],
+      "base_args": [
+        "--summary",
+        "--days",
+        "7"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "00:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 5
+    },
     "session_proof_fiber": {
       "on_scheduler": false,
       "_off_scheduler_note": "Lever A gate (Megan 2026-08-17). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator, so it CANNOT affect the morning run. Run only by hand: `lucy rerun session_proof_fiber`. Runs automations.harvest.proof_session --report fiber_activations: pulls all 11 fiber crosstabs THREE times - A legacy (one login per pull), B shared (TABLEAU_SHARED_SESSION=1, one login total), A' legacy again - and hashes each. A==A' and B==A => PROVEN, safe to flip fiber_activations to a shared login (12 logins/day -> 1). A!=A' => the extract moved mid-test, INCONCLUSIVE, rerun when quiet. A==A' and B!=A => FAILED, do not flip: that is the Weekending-filter bug documented at fiber_activations/pull.py:254 (3rd+ call silently returned last-completed-week 3,072 instead of current-week 221). Downloads only - writes NO Sheet, posts NO Slack. Result -> output/logs/orch-<date>-session_proof_fiber.log (`lucy logtail session_proof_fiber`). source_type tableau so the rerun runs chrome_guard first. NOTE: the poller is single-threaded and this takes ~25-40 min, which blocks the lucy queue behind it.",

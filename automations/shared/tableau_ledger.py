@@ -224,6 +224,23 @@ def summarize(days: int = 1, end: Optional[_dt.date] = None) -> str:
     if fails:
         lines.append(f"FAILED/RETRIED pulls: {len(fails)} "
                      f"(each retry is another access Tableau counts)")
+
+    # TL;DR last, on purpose. `lucy rerun tableau_ledger_summary` shows the TAIL
+    # of the output in a ~470-char Sheet cell, so the headline number has to be
+    # at the BOTTOM to survive the truncation. Page the rest with
+    # `lucy logtail tableau_ledger_summary <grep>`.
+    lines.append("")
+    top = ""
+    if logins:
+        by_rep_login = {}
+        for r in logins:
+            k = r.get("report", "unknown")
+            by_rep_login[k] = by_rep_login.get(k, 0) + 1
+        top = "  |  worst: " + ", ".join(
+            f"{rep} {n}" for rep, n in
+            sorted(by_rep_login.items(), key=lambda kv: -kv[1])[:4])
+    lines.append(f"TL;DR — LOGINS {len(logins)} over {days}d "
+                 f"= {len(logins) / max(days, 1):.0f}/day{top}")
     return "\n".join(lines)
 
 
