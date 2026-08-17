@@ -601,9 +601,14 @@ def _probe_churn_crosstab(page, rec, key, spec) -> None:
 # could never have shown a cancel view — the absence proved nothing. Worth
 # remembering: "I did not see it" is not "it does not exist" when the place you
 # looked could not have contained it.
+#
+# GUID refreshed 2026-08-17: the 2026-08-16 republish of B2BCancelRates dropped
+# the custom view (the base view survived), so Eve re-saved it under the same
+# name. Old, dead GUID: 3e58bc13-abea-4563-9481-360d0b9759ed. Keep in step with
+# cancels.VIEW_URL — this probe exists to diagnose that pull.
 CANCEL_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER-B2B/B2BCancelRates/3e58bc13-abea-4563-9481-360d0b9759ed/"
+    "ATTTRACKER-B2B/B2BCancelRates/95e17de2-3a93-48d7-9cd6-dcbc343901c8/"
     "CarlosLOExpCancels?:iid=1"
 )
 # The D2D module's worksheet name, tried first. If B2B names it differently the

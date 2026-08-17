@@ -30,15 +30,19 @@ from typing import Dict, List, Optional, Sequence
 
 # A custom view hanging off the SAME viz the OPT phase reads
 # (opt_phase_carlos.VIEWS['cancel'] → .../ATTTRACKER-B2B/B2BCancelRates?:iid=2).
-# That viz stopped rendering 2026-08-16 and took this pull down with it; it came
-# back 2026-08-17. Custom views normally survive a republish, so the GUID below
-# is kept as-is. If a run dies with "Viz toolbar never rendered" while the BASE
-# view loads fine, the custom view did NOT survive — re-save CarlosLOExpCancels
-# in Tableau (as Rafael) and paste the new GUID here. Do NOT swap this to the
-# base URL: the base view is per-owner, this parser needs the rep-expanded slice.
+# That viz stopped rendering 2026-08-16 and took this pull down with it. The
+# BASE view came back 2026-08-17 — verified the same day: a cancel-only dry run
+# of carlos_focus downloaded it in ~2 min, exit 0. This custom view did NOT come
+# back: the run right before it, on the GUID below, still died waiting for the
+# Download button. So the republish dropped CarlosLOExpCancels.
+# Eve re-saved it under the SAME name the same day; the GUID below is the new
+# one (the dead one was 3e58bc13-abea-4563-9481-360d0b9759ed).
+# Do NOT swap this to the base URL to "unblock" a future outage: the base view is
+# per-owner, and this parser needs the rep-expanded slice — it would just raise
+# on the missing 'Rep' column, or worse, write owner rows as if they were reps.
 VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER-B2B/B2BCancelRates/3e58bc13-abea-4563-9481-360d0b9759ed/"
+    "ATTTRACKER-B2B/B2BCancelRates/95e17de2-3a93-48d7-9cd6-dcbc343901c8/"
     "CarlosLOExpCancels?:iid=1"
 )
 CROSSTAB_SHEET = "Cancel Rates Sheet"      # the dialog's real name; the other
