@@ -109,7 +109,8 @@ def _parse_b2b_pp(path, logfn=print) -> dict:
     return by_rep
 
 
-def _b2b_pp_for(icd: str, by_rep: dict, fallback: str = "") -> str:
+def _b2b_pp_for(icd: str, by_rep: dict, fallback: str = "",
+                logfn=print) -> str:
     """The ICD's OWN personal production: the rep row where REP == ICD name
     (with as_owner + first/last fallbacks). '-' when no self-row (the ICD runs
     a team but didn't personally sell), matching the manual-entry convention."""
@@ -122,6 +123,18 @@ def _b2b_pp_for(icd: str, by_rep: dict, fallback: str = "") -> str:
         if len(parts) >= 2:
             rec = next((v for k, v in by_rep.items()
                         if k.startswith(parts[0]) and k.endswith(parts[-1])), None)
+    if rec is None and by_rep:
+        # '-' has TWO meanings and they need different fixes: the ICD really
+        # didn't sell this week, or their name is spelled differently in the
+        # rep list. Say which, by naming any rep sharing their surname —
+        # otherwise a spelling drift reads as a quiet, plausible zero.
+        surname = icd.lower().split()[-1] if icd.split() else ""
+        near = [k for k in by_rep if surname and surname in k][:4]
+        logfn(f"OPT B2B:   PP no self-row for {icd!r}"
+              + (f" — but these reps share the surname: {near}. If one IS them,"
+                 f" the spelling drifted; add it to the mapping's as_owner."
+                 if near else " (no rep shares their surname — they simply "
+                              "didn't sell this week)"))
     return B2BSS.format_pp(rec)
 
 
@@ -269,7 +282,7 @@ def values_for_b2b_icd(icd: str, tab: str, parsed: dict, logfn=print) -> dict:
     dd_v = match_dd_owner(parsed["dd"], icd)
     if dd_v is not None:
         values[DD_ROW] = f"${dd_v:,.2f}"
-    values[PP_ROW] = _b2b_pp_for(icd, parsed["pp"], fb)
+    values[PP_ROW] = _b2b_pp_for(icd, parsed["pp"], fb, logfn)
     return cb.apply_computed(values)
 
 
