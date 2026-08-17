@@ -98,6 +98,9 @@ def _day_date(week, day: str):
 
 
 ALL_TEAMS = "All teams"
+# Columns rendered as dropdowns — these are the ones that show a grey
+# "None" when a cell is empty.
+DROPDOWN_COLS = {"Team", "Leadership", "Status", "Roll Call"}
 
 
 CAMPAIGN_SUFFIX = " (campaign)"
@@ -564,6 +567,11 @@ def _fit_len(col: str, rows: list) -> int:
 ROW_PX = 35          # one grid row
 HEADER_PX = 40
 TOTALS_LABEL = "TOTALS"
+# A dropdown cell left empty renders Streamlit's grey "None" placeholder, which
+# on the totals row reads like a value. A single space IS a legal option, so the
+# cell shows nothing. set_attrs strips whitespace, so if this ever landed on a
+# real rep it would resolve to "no change" rather than a team called " ".
+BLANK_OPTION = " "
 
 
 def _grid_height(n_rows: int) -> int:
@@ -597,10 +605,9 @@ def _totals_row(rows: list) -> list:
             decimals = any("." in str(r.get(col, "")) for r in rows)
             out[col] = f"{total:.2f}" if decimals else f"{int(total)}"
         else:
-            # Nothing to total — leave it blank. Writing "None" into text
-            # columns like Tenure just adds a word to read; the dropdown
-            # columns render their own empty placeholder either way.
-            out[col] = ""
+            # Nothing to total. Text columns can just be empty; dropdown
+            # columns need the blank OPTION or they show a grey "None".
+            out[col] = BLANK_OPTION if col in DROPDOWN_COLS else ""
     out[list(rows[0])[0]] = TOTALS_LABEL
     return [out]
 
@@ -679,7 +686,7 @@ def _style_board(df, gone_rows: set):
         # right person. Very low alpha so it never competes with the totals
         # tint or the greyed-out rows above.
         if row.name % 2 == 1:
-            return ["background-color: rgba(0, 0, 0, 0.035)"] * len(row)
+            return ["background-color: rgba(0, 0, 0, 0.055)"] * len(row)
         return [""] * len(row)
 
     return df.style.apply(row_style, axis=1)
@@ -781,11 +788,24 @@ def sales_board(week, office_key: str, scope: str = "Week",
                     cols[1] if len(cols) > 1 else cols[0])
     rows = _sort_rows(rows, apps_col)
 
-    # EDITABLE: Team, Leadership, and (on a day) Roll Call. Everything else is
-    # locked — a hand-edited sales number is exactly how a board starts
-    # disagreeing with Tableau.
-    editable = ({"Team", "Leadership", "Status"}
-                | ({"Roll Call"} if day_view else set()))
+    # Streamlit paints Styler output onto NON-EDITABLE columns only, so with
+    # dropdowns live the zebra stripes stop dead at the Status column. Reading
+    # and editing want opposite things, so they get a switch: off (the default)
+    # the whole grid is locked and stripes end to end; on, the four owner
+    # fields open up and the stripes give way under them.
+    # Locked while there are unsaved edits: switching it off would rebuild the
+    # grid read-only and drop them without a word.
+    pending = bool(st.session_state.get("board_dirty")
+                   or st.session_state.get("goal_dirty"))
+    edit_mode = st.toggle(
+        "Edit rows", value=False, key=f"edit_{office_key}_{scope}",
+        disabled=pending and not st.session_state.get(
+            f"edit_{office_key}_{scope}"),
+        help="Turn on to change Status, Team, Leadership or Roll Call.")
+
+    editable = (({"Team", "Leadership", "Status"}
+                 | ({"Roll Call"} if day_view else set()))
+                if edit_mode else set())
     cfg = {c: st.column_config.Column(disabled=True)
            for c in rows[0] if c not in editable}
 
@@ -801,24 +821,32 @@ def sales_board(week, office_key: str, scope: str = "Week",
         if lv and lv not in levels:
             levels.append(lv)
 
-    cfg["Team"] = st.column_config.SelectboxColumn(options=[""] + teams,
-                                                   required=False)
-    cfg["Leadership"] = st.column_config.SelectboxColumn(options=[""] + levels,
-                                                         required=False)
+    cfg["Team"] = st.column_config.SelectboxColumn(
+        options=[BLANK_OPTION] + teams, required=False)
+    cfg["Leadership"] = st.column_config.SelectboxColumn(
+        options=[BLANK_OPTION] + levels, required=False)
     cfg["Status"] = st.column_config.SelectboxColumn(
-        options=R.STATUSES, required=False,
+        options=[BLANK_OPTION] + list(R.STATUSES), required=False,
         help="Terminate a rep here — their days from that date on grey out, "
              "though any production Tableau reports still shows. Set them "
              "back to Active to reinstate; the grey and the termination date "
              "clear.")
     if day_view:
         cfg["Roll Call"] = st.column_config.SelectboxColumn(
-            options=A.OPTIONS, required=False,
+            options=[BLANK_OPTION] + [o for o in A.OPTIONS if o],
+            required=False,
             help=" · ".join(f"{k} = {v}" for k, v in A.MEANINGS.items()))
 
     # TOTALS is the last row OF the grid, not a table beneath it — a separate
     # table has its own horizontal scroll, so the moment you scrolled the board
     # sideways the totals stopped lining up with their columns.
+    # Same for rep rows: a rep with no team set would otherwise show the grey
+    # "None" placeholder in that cell.
+    for r in rows:
+        for c in DROPDOWN_COLS:
+            if c in r and not str(r.get(c) or "").strip():
+                r[c] = BLANK_OPTION
+
     n_reps = len(rows)
     grid_rows = rows + _totals_row(rows)
 
@@ -865,6 +893,9 @@ def sales_board(week, office_key: str, scope: str = "Week",
     if st.session_state.get("board_dirty") or st.session_state.get("goal_dirty"):
         st.warning("You have unsaved changes — save them, or discard, before "
                    "moving to another week, team or page.", icon="✏️")
+
+    if not edit_mode:
+        return
 
     c_save, c_discard, c_add = st.columns([1, 1, 2])
     with c_discard:
