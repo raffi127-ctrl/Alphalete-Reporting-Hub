@@ -1146,19 +1146,28 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         # Rep' column (Megan confirmed via screenshot 2026-05-24).
         if rep_summary_total.get("New/Port per Rep"):
             values["National AVG for sales"] = rep_summary_total["New/Port per Rep"]
-    if "churn_30" in crow:
-        values["0-30 Day Churn"] = crow["churn_30"]
-    if "churn_60" in crow:
-        values["60 Day Churn"] = crow["churn_60"]
-    # 90 Day Churn: Tableau leaves this empty for newer ICDs whose
-    # customers haven't aged 90 days yet (e.g. Maxamed). Write 'N/A' so
-    # the cell reads as a known gap, not a missed pull.
-    values["90 Day Churn"] = crow.get("churn_90") or "N/A"
+    # Churn / Activation / Cancel are ROLLING-WINDOW views: CHURNRATES,
+    # ACTIVATIONRATES and NDSWeeklyMetricsRep have no date control, so they
+    # always return TODAY's window no matter which week we're filling. On a
+    # past-week backfill that means writing this week's churn into an older
+    # column — a number that looks finalized and isn't. For a past week these
+    # simply DO NOT EXIST, so they stay blank on purpose.
+    # (Caught 2026-08-17 backfilling Noah Dubale WE 8/9: churn came out
+    # 4.8 / 9.9 / 14.1% — byte-identical to WE 8/16, because it WAS WE 8/16.)
+    if not backfill:
+        if "churn_30" in crow:
+            values["0-30 Day Churn"] = crow["churn_30"]
+        if "churn_60" in crow:
+            values["60 Day Churn"] = crow["churn_60"]
+        # 90 Day Churn: Tableau leaves this empty for newer ICDs whose
+        # customers haven't aged 90 days yet (e.g. Maxamed). Write 'N/A' so
+        # the cell reads as a known gap, not a missed pull.
+        values["90 Day Churn"] = crow.get("churn_90") or "N/A"
 
     # HTTP-sourced per-rep metrics
-    if activation and activation.get(owner_norm):
+    if activation and activation.get(owner_norm) and not backfill:
         values["Activation % by Week"] = activation[owner_norm]
-    if cancel and cancel.get(owner_norm) is not None:
+    if cancel and cancel.get(owner_norm) is not None and not backfill:
         # Tableau exports the cancel rate as a decimal fraction
         # (e.g. 0.004975 = 0.50%). Convert to a percent string for display.
         raw = (cancel[owner_norm] or "").strip()
@@ -1321,7 +1330,8 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
 def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                 skip_download: bool = False, backfill: bool = False,
                 logfn=print, sheet_id: Optional[str] = None,
-                extra_tabs: Optional[List[str]] = None) -> dict:
+                extra_tabs: Optional[List[str]] = None,
+                week: Optional[dt.date] = None) -> dict:
     """Download all NDS Tableau views, parse, and fill each NDS tab on
     Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}.
 
@@ -1346,7 +1356,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     metrics + Rep Breakdown chart (their dashboards have no date control,
     so a past week can't be reconstructed — those cells are left blank)."""
     download_errors: List[str] = []
-    date_params = _target_week_date_range()
+    date_params = _target_week_date_range(week)
     # Views whose dashboards honor Min/Max Date URL params (pin to the
     # target week). NDSDailyTracker is NOT here — it ignores the params.
     SARA_BYDAY_FNAME = "opt_nds_sara_plus_byday.csv"
@@ -1524,7 +1534,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     hidden = {s["properties"]["title"] for s in resp.json().get("sheets", [])
               if s["properties"].get("hidden")}
 
-    week_col_label = _current_target_week_col_label()
+    week_col_label = _current_target_week_col_label(week)
     logfn(f"OPT NDS: target week column = {week_col_label!r}")
 
     # Shared ICD alias list — lets DD resolve nickname/spelling variants
@@ -1598,7 +1608,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         # has no date control, so it's skipped on a past-week backfill.
         if not backfill:
             chart_lines = fill_rep_breakdown_chart(
-                ws, match, rep_breakdown, _current_target_week_end(),
+                ws, match, rep_breakdown, _current_target_week_end(week),
                 dry_run=dry_run, logfn=logfn,
             )
             for ln in chart_lines:
@@ -1630,17 +1640,32 @@ if __name__ == "__main__":
     ap.add_argument("--sheet-id",
                     help="Fill NDS tabs on THIS spreadsheet instead of the "
                          "Alphalete Org one. Pair with --tab.")
+    ap.add_argument("--week", metavar="YYYY-MM-DD",
+                    help="Fill THIS week-ending Sunday instead of the current "
+                         "one. Implies --backfill: only the SARA views honour "
+                         "Min/Max Date, so the NDSDailyTracker metrics "
+                         "(Active Selling Heads, Scorecard Ranking) and the "
+                         "Rep Breakdown chart are skipped — they have no date "
+                         "control and cannot be rebuilt for a past week.")
     ap.add_argument("--tab", action="append", dest="tabs", metavar="TITLE",
                     help="Also fill this exact tab title, even though it does "
                          "not end in ' - NDS' (repeatable). For an NDS ICD "
                          "sitting on another captainship's sheet, e.g. "
                          "'Noah Dubale' on Carlos 1on1s.")
     args = ap.parse_args()
+    _week = None
+    if args.week:
+        _week = dt.date.fromisoformat(args.week)
+        if _week.weekday() != 6:
+            raise SystemExit(f"--week {args.week} is not a Sunday; the sheet's "
+                             f"week columns are WE Sundays.")
+        args.backfill = True     # a past week can only be done the backfill way
     result = run_nds_opt(dry_run=args.dry_run, only_rep=args.only,
                          skip_download=args.skip_download,
                          backfill=args.backfill,
                          sheet_id=args.sheet_id,
-                         extra_tabs=args.tabs)
+                         extra_tabs=args.tabs,
+                         week=_week)
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Download errors: {len(result['errors'])}")
