@@ -74,7 +74,30 @@ from automations.shared.tableau_patchright import (
     tableau_session,
     download_crosstab_patchright,
     requests_session_from_page,
+    scrape_view_data_patchright,
 )
+
+# Per-OFFICE Sara Plus totals — the owner-dimensioned half of the same
+# SARAPLUSSALESSUMMARY dashboard NDS already pulls.
+#
+# WHY (Eve 2026-08-17): 'Next Up %' and 'Extra/Premium %' were coming off
+# `parse_sara_plus_total`, which reads worksheet 'Sara Plus Sales Summary' — a
+# SINGLE row with no owner dimension. So every NDS tab got the same org-wide
+# number: all twelve read 'Next Up % 16.00%' and 'Extra/Premium % 125.33%'. The
+# figures were computed correctly, they just weren't the ICD's own — an owner
+# opening their tab reads the whole organization's rate as if it were theirs.
+# The spec has always said per office (resources/opt-section/
+# alphalete-org-campaign-sources.md:93-94), and opt_retail already does it that
+# way against this very dashboard.
+#
+# The owner-level numbers live on worksheet 'Sara Plus Sales Summary (2)', which
+# the Crosstab dialog CANNOT reach — its thumbnail click silently no-ops even
+# under patchright (opt_retail:118). So this is a View Data scrape, with the
+# same activate_xy Retail and org_sales_board/sara_pull use on this workbook:
+# it is a multi-worksheet dashboard, and Download → Data stays disabled until a
+# worksheet is active.
+NDS_SARA_PLUS_OFFICE_FILENAME = "opt_nds_sara_plus_office.csv"
+NDS_SARA_ACTIVATE_XY = (0.5, 0.5)
 
 
 def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
@@ -1064,6 +1087,9 @@ def fill_rep_breakdown_chart(ws: gspread.Worksheet, owner_norm: str,
 def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  tt: Dict[str, Dict[str, str]],
                  rep_summary_total: Dict[str, str],
+                 # Org-wide Sara Plus totals. No longer feeds Next Up % /
+                 # Extra/Premium % — those are per-office now (`sara_office`).
+                 # Kept so the positional call sites don't shift.
                  sara_totals: Dict[str, str],
                  churn: Dict[str, Dict[str, str]],
                  week_col_label: str,
@@ -1080,6 +1106,11 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  abp: Optional[Dict[str, str]] = None,
                  aliases_map: Optional[Dict[str, List[str]]] = None,
                  backfill: bool = False,
+                 # {owner_norm: {'Next Up','New/Port Lines','Premium/Elite',
+                 # 'Extra'}} from worksheet 'Sara Plus Sales Summary (2)'.
+                 # Absent/owner-missing => those two rows stay BLANK; they are
+                 # never backfilled from the org-wide totals.
+                 sara_office: Optional[Dict[str, Dict[str, int]]] = None,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
     Skips metrics whose source data isn't available.
@@ -1215,14 +1246,40 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
             return float(str(s).replace(",", "").strip())
         except (ValueError, AttributeError):
             return None
-    next_up = _num(sara_totals.get("Next Up"))
-    new_port = _num(sara_totals.get("New/Port Lines"))
-    premium = _num(sara_totals.get("Premium/Elite"))
-    extra = _num(sara_totals.get("Extra"))
-    # Next Up % = Next Up / New/Port Lines (office total, shared)
+    # THIS ICD's own office row, not the organization's. `sara_office` is
+    # keyed by normalized owner (parse_sara_plus_office_totals); fall back to
+    # the alias-aware lookup the other metrics use so a Tableau spelling drift
+    # doesn't silently blank the row.
+    office_row = None
+    if sara_office:
+        office_row = sara_office.get(owner_norm)
+        if office_row is None:
+            for cand in (aliases_map or {}).get(owner_norm, []):
+                office_row = sara_office.get(_norm_owner(cand))
+                if office_row is not None:
+                    break
+    if office_row is None:
+        # Deliberately NOT falling back to the org-wide totals. Writing the
+        # whole organization's rate into one owner's cell is the exact bug
+        # this replaced (Eve 2026-08-17): it looks like their number, reads
+        # plausibly, and is wrong. A blank row is honest and visible.
+        if sara_office:
+            log.append(f"  [miss] {ws.title}: {owner_norm!r} not in the "
+                       f"per-office Sara Plus table — Next Up % / "
+                       f"Extra/Premium % left blank rather than filled with "
+                       f"the org-wide number")
+        office_row = {}
+    next_up = _num(office_row.get("Next Up"))
+    new_port = _num(office_row.get("New/Port Lines"))
+    premium = _num(office_row.get("Premium/Elite"))
+    extra = _num(office_row.get("Extra"))
+    # Next Up % = this office's Next Up / its New/Port Lines
     if next_up is not None and new_port and new_port > 0:
         values["Next Up %"] = f"{next_up / new_port:.2%}"
-    # Extra/Premium % = (Premium/Elite + Extra) / New/Port Lines (shared)
+    # Extra/Premium % = (this office's Premium/Elite + Extra) / its New/Port
+    # Lines. An ATTACH RATE over two separate products, so it can legitimately
+    # exceed 100% — Retail's per-office figures do too (Boaktear 105.56%).
+    # Don't "fix" a >100% here; it isn't a share of a whole.
     if premium is not None and extra is not None and new_port and new_port > 0:
         values["Extra/Premium %"] = f"{(premium + extra) / new_port:.2%}"
 
@@ -1374,6 +1431,28 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                         logfn(f"OPT NDS: ✗ patchright {msg}")
                         if not _fallback_existing(fname):
                             download_errors.append(msg)
+
+                # Per-OFFICE Sara Plus ('Sara Plus Sales Summary (2)').
+                # View Data, not Crosstab: the (2) thumbnail can't be clicked
+                # in the Crosstab dialog (see the constants at the top). Same
+                # dashboard + date window as the totals pull above.
+                sara_office_out = OUTPUT_DIR / NDS_SARA_PLUS_OFFICE_FILENAME
+                try:
+                    logfn(f"OPT NDS: patchright View Data → "
+                          f"{NDS_SARA_PLUS_OFFICE_FILENAME}…")
+                    scrape_view_data_patchright(
+                        (f"https://us-east-1.online.tableau.com/#/site/sci/"
+                         f"views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=1"
+                         f"&Min%20Date={date_params['Min Date']}"
+                         f"&Max%20Date={date_params['Max Date']}"),
+                        sara_office_out, verbose=False, page=page,
+                        activate_xy=NDS_SARA_ACTIVATE_XY)
+                except Exception as e:  # noqa: BLE001
+                    msg = (f"{NDS_SARA_PLUS_OFFICE_FILENAME}: "
+                           f"{type(e).__name__}: {str(e)[:120]}")
+                    logfn(f"OPT NDS: ✗ patchright {msg}")
+                    if not _fallback_existing(NDS_SARA_PLUS_OFFICE_FILENAME):
+                        download_errors.append(msg)
         except Exception as e:
             logfn(f"OPT NDS: patchright session failed: "
                   f"{type(e).__name__}: {str(e)[:160]}")
@@ -1386,6 +1465,19 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     tt = parse_tt_detail(OUTPUT_DIR / "opt_nds_tt_detail.csv")
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
+    # Per-office Sara Plus. Reuses opt_retail's parser rather than a second
+    # copy — it is the same worksheet, same columns, same forward-fill quirk
+    # (Tableau blanks the owner cell on continuation rows).
+    try:
+        from automations.alphalete_org_report.opt_retail import (
+            parse_sara_plus_office_totals as _parse_sara_office)
+        sara_office = _parse_sara_office(
+            OUTPUT_DIR / NDS_SARA_PLUS_OFFICE_FILENAME)
+    except Exception as e:  # noqa: BLE001 — a bad parse must not kill the fill
+        logfn(f"OPT NDS: ✗ per-office Sara Plus parse: "
+              f"{type(e).__name__}: {str(e)[:120]}")
+        sara_office = {}
+    logfn(f"OPT NDS: per-office Sara Plus: {len(sara_office)} owner(s)")
     personal_production = parse_personal_production(
         OUTPUT_DIR / "opt_nds_personal_production.csv")
     rep_breakdown = parse_rep_breakdown_per_owner(
@@ -1493,7 +1585,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              direct_deposit=direct_deposit,
                              abp=abp,
                              aliases_map=nds_aliases,
-                             backfill=backfill)
+                             backfill=backfill,
+                             sara_office=sara_office)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
         if lines and lines[0].startswith(("[OK]", "[DRY-RUN]")):
