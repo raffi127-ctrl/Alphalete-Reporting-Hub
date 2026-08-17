@@ -205,9 +205,15 @@ METRICS: list[Metric] = [
            notes="Install-scheduling metric — internet only."),
     Metric("cancels", "🚫 Canceled Orders", (WIRELESS, INTERNET),
            source="org-wide 'A.Order Log' crosstab"),
-    Metric("disconnects", "❎ Disconnected New Internets", (INTERNET,),
+    Metric("disconnects", "❎ Disconnected Orders", (INTERNET, WIRELESS),
            source="org-wide 'A.Order Log' crosstab",
-           notes="New-internet only by definition."),
+           nds_source="NDS-SN (RES-ATT-OOF) order log",
+           notes="Reads whatever Tableau reports for the office (Megan "
+                 "2026-08-17: source it straight from Tableau so there's no "
+                 "discrepancy). A wireless office DOES have disconnects — "
+                 "they just live in the NDS-SN workbook, not the D2D one, "
+                 "which is why Isaiah posts this board and an internet-only "
+                 "reading of it would wrongly drop him."),
     Metric("ongoing_cancel", "🔁 Ongoing Cancel", (INTERNET,),
            source="CancelRatesRunningSumRaf / InternetCancelRatesDoD / AllExpanded",
            url=_T + ("CancelRatesRunningSumRaf/InternetCancelRatesDoD/"

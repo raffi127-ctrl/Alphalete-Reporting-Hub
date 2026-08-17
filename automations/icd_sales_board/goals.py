@@ -37,6 +37,33 @@ def get(office_key: str, team: str, fallback: str = "") -> str:
     return str(load(office_key).get(team, fallback) or fallback)
 
 
+# Recruiting-funnel goals live in the same per-office store under a namespaced
+# key. Every office sets its own — a 25-rep office and a 200-rep office do not
+# share a target, and one org-wide number would be wrong for nearly everyone
+# (Megan 2026-08-17).
+_STAGE_PREFIX = "funnel:"
+
+
+def stage_goal(office_key: str, stage_key: str, fallback=None):
+    """This office's goal for a funnel stage, as a fraction, or None.
+
+    None means nobody has set one — the display must then show the actual with
+    NO goal line rather than invent a target."""
+    raw = load(office_key).get(_STAGE_PREFIX + stage_key)
+    if raw in (None, ""):
+        return fallback
+    try:
+        v = float(str(raw).replace("%", "").strip())
+    except ValueError:
+        return fallback
+    return v / 100 if v > 1 else v
+
+
+def set_stage_goal(office_key: str, stage_key: str, pct) -> None:
+    """Store a funnel goal as a PERCENT ('50' or '50%'). Blank clears it."""
+    set_goal(office_key, _STAGE_PREFIX + stage_key, pct)
+
+
 def set_goal(office_key: str, team: str, goal) -> None:
     """Save one team's goal. A blank clears the override so the board's own
     number shows again, rather than pinning a zero nobody chose."""

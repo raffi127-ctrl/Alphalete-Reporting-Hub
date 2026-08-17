@@ -126,12 +126,18 @@ cannot, and should say so rather than render empty.
 
 ## Open decisions
 
-1. **Raf: production only, or attendance too?** Asked in-thread, unanswered.
-   Decides whether an owner page is one board or several.
+1. ~~Raf: production only, or attendance too?~~ **DECIDED 2026-08-17: attendance
+   is in.** Roll Call per day plus the Line Up statuses are part of the build,
+   not a maybe.
 2. **Raf: the funnel goal numbers** from the conference talk. Without them the
    recruiting section can show actuals but not whether anyone is on target.
-3. **Eve: does Isaiah get a Disconnects board?** He posts one; Drew, on the same
-   wireless-only campaign, does not.
+3. ~~Eve: does Isaiah get a Disconnects board?~~ **DECIDED 2026-08-17: read it
+   straight from Tableau**, so there is nothing to reconcile. A wireless office
+   does have disconnects — they live in the NDS-SN workbook, not the D2D one.
+   NOTE this now flips the open question onto **Drew**: his hand-kept
+   SECTION_OVERRIDES omits `disconnects` while Isaiah's includes it, for two
+   offices on the same campaign. `run.py --check` flags it. Left alone because
+   that config decides what actually posts to his Slack channel at 4am.
 4. **Eve: which removals count** as "apps removed" — disqualified, withdrawn,
    duplicate, aged-out. They mean different things.
 5. **`active reps` — roster or producers?** On the trackers "Rep Count" means
