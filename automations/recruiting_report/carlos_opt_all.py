@@ -94,6 +94,24 @@ def _retry_args(failed: list[str]) -> list[str]:
     return ["--no-recruiting", "--views", ",".join(keys)]
 
 
+def _still_outstanding(prior: list[str], ran: list[str]) -> list[str]:
+    """Which of a PRIOR run's failed steps did this (partial) run not cover?
+
+    Exact name matching isn't enough for the download step: its label carries
+    the view list ("Download OPT views cancel,activation (one login)"), so a
+    later `--views cancel` rerun would never match the stored string and the
+    report would read INCOMPLETE forever, even with every view filled. A
+    download step that PASSED here covers a prior download failure as long as
+    no per-view failure is still outstanding — the download only matters
+    through the views it feeds."""
+    def _is_dl(name: str) -> bool:
+        return name.startswith("Download")
+    views_left = [f for f in prior if not _is_dl(f) and f not in ran]
+    dl_ok = any(_is_dl(name) for name in ran)
+    dl_left = [f for f in prior if _is_dl(f) and not (dl_ok and not views_left)]
+    return views_left + dl_left
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--week", help="WE Sunday (YYYY-MM-DD) for the recruiting pull.")
@@ -212,7 +230,7 @@ def main() -> int:
                 # still outstanding. So carry forward any prior failure this run
                 # didn't cover, and only mark clean when it covered them all.
                 prior = (_rm.read_manifest(MANIFEST_ID) or {}).get("failed") or []
-                left = [f for f in prior if f not in ran]
+                left = _still_outstanding(prior, ran)
                 if left:
                     _rm.write_manifest(
                         MANIFEST_ID, failed=left, retry_args=_retry_args(left),
