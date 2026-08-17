@@ -1540,3 +1540,19 @@ if __name__ == "__main__":
             print(f"  ✗ {_e}")
         print("Every metric fed by those source(s) is BLANK for this week.")
         _sys.exit(1)
+    # Nothing missing and nothing errored: close whatever
+    # `drop-alphalete_org_retail` incident a previous bad run left open in
+    # #claudecorrections (run_manifest.write_manifest → section_drop_alert.
+    # resolved on a clean manifest). Same gap as opt_b2b — this step only ever
+    # wrote a manifest on FAILURE, and the opt_all wrapper writes its own
+    # 'alphalete-org-run' id, so a successful re-run left the alert thread open
+    # forever (Eve 2026-08-17). Runs LAST so it can never mask a real failure —
+    # and guarded on `not missing`, because a missing source already wrote a
+    # FAILURE manifest above and mark_clean would overwrite it.
+    if not missing and not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.mark_clean("alphalete_org_retail", kind="source")
+        except Exception as e:  # noqa: BLE001 — closing never breaks a good run
+            print(f"  ⚠ couldn't record the clean-run manifest "
+                  f"({type(e).__name__}: {str(e)[:120]})")

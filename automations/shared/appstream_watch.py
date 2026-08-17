@@ -118,11 +118,18 @@ def session_status(state_path=None, what: str = "AppStream") -> dict:
     latest = max(rqst_exps)
     hours = (latest - now) / 3600
     exp = dt.datetime.fromtimestamp(latest)
+    # Built by hand: %-d / %-I are glibc/BSD-only and raise ValueError on
+    # Windows, so EVERY session_status() call from a Windows box crashed instead
+    # of answering — including the ones you make while diagnosing a dead source
+    # (Eve 2026-08-17). Cross-platform rule, same as opt_frontier._week_label.
+    when = "{} {} {}:{:02d}{}".format(
+        exp.strftime("%b"), exp.day, (exp.hour % 12) or 12, exp.minute,
+        "AM" if exp.hour < 12 else "PM")
     if latest <= now:
         return {"ok": False, "rqst_expiry": exp, "hours_left": hours, "what": what,
-                "reason": f"{what} rqst token EXPIRED {-hours:.1f}h ago (at {exp:%b %-d %-I:%M%p})"}
+                "reason": f"{what} rqst token EXPIRED {-hours:.1f}h ago (at {when})"}
     return {"ok": True, "rqst_expiry": exp, "hours_left": hours, "what": what,
-            "reason": f"{what} rqst token valid {hours:.1f}h more (until {exp:%b %-d %-I:%M%p})"}
+            "reason": f"{what} rqst token valid {hours:.1f}h more (until {when})"}
 
 
 def _next_4am(now: dt.datetime | None = None) -> dt.datetime:

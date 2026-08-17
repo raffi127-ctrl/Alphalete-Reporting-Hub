@@ -387,3 +387,22 @@ if __name__ == "__main__":
         except Exception as e:  # noqa: BLE001 — alerting never breaks the run
             print(f"  ⚠ couldn't record the missing-source manifest "
                   f"({type(e).__name__}: {str(e)[:120]})")
+    elif not args.dry_run:
+        # ...and the mirror image: EVERY source came through, so close whatever
+        # `drop-alphalete_org_b2b` incident the last bad run left open in
+        # #claudecorrections (run_manifest.write_manifest calls
+        # section_drop_alert.resolved on a clean manifest).
+        #
+        # Without this the incident could never close itself. This step only
+        # ever wrote a manifest on FAILURE, and the wrapper (opt_all) writes its
+        # own 'alphalete-org-run' id, not this one — so the alert said "re-run
+        # `alphalete_org_b2b` — the fill is idempotent" and then the successful
+        # re-run left the thread sitting open anyway, which is how you end up
+        # re-diagnosing something that was fixed days ago (Eve 2026-08-17,
+        # closing drop-alphalete_org_b2b for the 'cancel' view).
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.mark_clean("alphalete_org_b2b", kind="source")
+        except Exception as e:  # noqa: BLE001 — closing never breaks a good run
+            print(f"  ⚠ couldn't record the clean-run manifest "
+                  f"({type(e).__name__}: {str(e)[:120]})")
