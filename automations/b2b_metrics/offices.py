@@ -72,6 +72,14 @@ THREAD_TITLE = "B2B Metrics"      # header first line + thread_state needle
 OWNER_FIELD = "Owner Name"          # default when a view doesn't name one
 OWNER_OFFICE_FIELD = "Owner & Office"
 
+# The ATT workbooks' week dropdown. THE SUFFIX IS PART OF THE CAPTION — Tableau
+# matches URL filters on the field's caption and silently DROPS an unrecognised
+# parameter, so "Sale Date Week Ending" without "(mon-sun)" is an inert no-op
+# that leaves the view on its own default week (rep_sales_fill.run.WEEK_FIELD
+# learned this the expensive way, 2026-08-14). Views that carry this filter name
+# it in VIEW_META["week_filter"]; capture computes the value.
+WEEK_FIELD = "Sale Date Week Ending (mon-sun)"
+
 # ---------------------------------------------------------------------------
 # SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
 # slice by owner — no per-office clones. Order of the 6 keys matches the thread.
@@ -127,7 +135,18 @@ VIEW_META: dict = {
     # No data_cols -> no last-colored-row crop: keep the WHOLE ranking table
     # (the DNQ reps at the bottom aren't highlighted and would be trimmed).
     "order_tiered_bonus": {"filter_field": OWNER_FIELD},
-    "out_of_bounds":   {"filter_field": OWNER_FIELD},
+    # WEEK-PINNED (Megan 2026-08-17). OutofBoundsReport opens on the CURRENT
+    # Mon-Sun week, so every Monday it filtered to a week that had not started
+    # selling yet — 2026-08-17 it asked for week ending 8/23 while the extract
+    # only reached 8/16, and posted a header with no rows. Carlos posted the
+    # section himself. Pin the week that holds the last COMPLETED sales day
+    # (capture.report_week_ending) instead of trusting the view's default; the
+    # capture then VERIFIES the pinned week actually rendered before the image
+    # is allowed to post. Same class of bug as owner_showdown's Monday empty
+    # week and box_order_log's stale window.
+    # Per-view on purpose ([[reference_tableau_url_filters]] #3): the churn and
+    # activation views are day-bucket cohorts and a week pin would wreck them.
+    "out_of_bounds":   {"filter_field": OWNER_FIELD, "week_filter": WEEK_FIELD},
 }
 
 

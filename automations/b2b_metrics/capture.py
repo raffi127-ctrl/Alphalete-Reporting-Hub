@@ -27,6 +27,64 @@ from automations.b2b_metrics.offices import B2BOffice, OWNER_FIELD, VIEW_META
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+class WeekFilterNotApplied(Exception):
+    """A week-pinned view rendered a week OTHER than the one we asked for.
+
+    Tableau drops an unmatched URL filter in SILENCE and serves its own default
+    window, so a wrong-week image looks exactly like a right-week one — except
+    on the day the default week has no sales yet, when it looks like a clean
+    'nothing to report'. That is precisely how Out of Bounds posted an empty
+    confidential report on 2026-08-17. Raising here makes the runner SKIP the
+    section and record it as missed (which alerts), instead of posting a blank
+    whose week nobody can vouch for."""
+
+
+# --- week pinning -----------------------------------------------------------
+def week_ending(day: dt.date) -> dt.date:
+    """The Sunday that closes `day`'s Mon-Sun week — the value the ATT views'
+    'Sale Date Week Ending (mon-sun)' dropdown shows for that week."""
+    return day + dt.timedelta(days=6 - day.weekday())
+
+
+def report_week_ending(today: dt.date = None) -> dt.date:
+    """The week these daily posts should show: the one holding the last
+    COMPLETED sales day (yesterday).
+
+    Not simply "this week" — on a Monday the current Mon-Sun week contains only
+    today, same-day B2B orders don't finalize until business hours (the same
+    premise _require_fresh_gate below is built on), and the extract reaches
+    yesterday at best. Asking for that week returns a header with no rows.
+
+    Not simply "last week" either — that would freeze the section a week behind
+    for the other six days, when the current week has real, finalized days in it.
+
+      Mon 8/17 -> yesterday Sun 8/16 -> week ending 8/16  (the completed week)
+      Tue 8/18 -> yesterday Mon 8/17 -> week ending 8/23  (current week, has Mon)
+      Sun 8/23 -> yesterday Sat 8/22 -> week ending 8/23
+    """
+    today = today or dt.date.today()
+    return week_ending(today - dt.timedelta(days=1))
+
+
+def week_value(sunday: dt.date) -> str:
+    """The week as the dropdown spells it: M/D/YYYY, no leading zeros.
+
+    This filter is a DISCRETE dropdown, not a date range. ISO ('2026-08-16')
+    does not just get ignored on these ATT views — it leaves the viz unrendered
+    (proved on Lucy 2, 2026-08-14, rep_sales_fill.week_value). Built by hand
+    rather than strftime('%-m/%-d/%Y'): that flag is glibc-only and every report
+    here has to run on macOS and Windows both."""
+    return "{}/{}/{}".format(sunday.month, sunday.day, sunday.year)
+
+
+def week_value_variants(sunday: dt.date) -> tuple:
+    """Every spelling the rendered header might use for `sunday`, for the
+    post-capture verification. Tableau draws the caption from the dimension's
+    own format, which zero-pads on some workbooks and not others."""
+    return (week_value(sunday),
+            "{:02d}/{:02d}/{}".format(sunday.month, sunday.day, sunday.year))
+
 # Order-date column in the raw ORDERLOG crosstab — the same one the freshness
 # probe (att_order_log.freshness.DATE_COL) and sheet.py key on. Used by the
 # --require-fresh gate below to read how far the extract reaches.
@@ -220,7 +278,7 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
 
 
 # --- #1 / #2 / #3-5 / #8 : Tableau Download->Image, owner-sliced ------------
-def _sliced_url(o: B2BOffice, view_key: str) -> str:
+def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
     """The URL to capture. A per-office OVERRIDE view is a saved view already
     filtered to the owner — captured as-is, no slice appended. Otherwise it's the
     shared team view with ?<field>=<value> appended (drops :iid, a tab index),
@@ -234,14 +292,39 @@ def _sliced_url(o: B2BOffice, view_key: str) -> str:
     CarlosEXP view carries the per-rep EXPANDED layout, but both panels still scope
     to his office via ?Owner Name=<owner> exactly like the shared team view did.
     Re-slicing a view that already bakes the same owner filter is harmless (same
-    value), so this is safe whether or not the saved view carries the filter."""
+    value), so this is safe whether or not the saved view carries the filter.
+
+    WEEK PIN: a view that names a `week_filter` in VIEW_META (Out of Bounds) also
+    gets `&<week field>=<M/D/YYYY>` for the week holding the last completed sales
+    day. Without it the view opens on ITS default week, which on a Monday is a
+    week with no sales in it yet."""
+    meta = VIEW_META.get(view_key, {})
+    week_field = meta.get("week_filter")
     if o.is_override(view_key) and view_key not in o.slice_overrides:
-        return o.view_url(view_key)
+        url = o.view_url(view_key)
+        # An override view is captured as-is — but the week pin is about WHICH
+        # week, not which owner, so a saved view still needs it (its saved week
+        # is whatever was on screen the day it was saved).
+        if week_field:
+            url = _with_week(url, week_field, today)
+        return url
     from urllib.parse import quote
-    field = VIEW_META.get(view_key, {}).get("filter_field", OWNER_FIELD)
+    field = meta.get("filter_field", OWNER_FIELD)
     value = _tableau_filter_value(o.slice_value(field))
     base = o.view_url(view_key).split("?")[0]
-    return "{}?{}={}".format(base, quote(field), quote(value, safe="\\"))
+    url = "{}?{}={}".format(base, quote(field), quote(value, safe="\\"))
+    if week_field:
+        url = _with_week(url, week_field, today)
+    return url
+
+
+def _with_week(url: str, week_field: str, today: dt.date = None) -> str:
+    """Append the week pin to `url`. safe="" because quote() leaves '/' alone by
+    default and '8/16/2026' must not go into the query string with raw slashes."""
+    from urllib.parse import quote
+    wv = week_value(report_week_ending(today))
+    sep = "&" if "?" in url else "?"
+    return "{}{}{}={}".format(url, sep, quote(week_field), quote(wv, safe=""))
 
 
 def _tableau_filter_value(value: str) -> str:
@@ -356,7 +439,80 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
         return False
 
 
-def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
+def _read_viz_text(page, log=print) -> str:
+    """The rendered viz's own text (iframe body), or "" if it can't be read.
+
+    Used to VERIFY a week-pinned view actually moved to the week we asked for —
+    the header the image draws ("Sale Date Week Ending (mon-sun) 8/16/2026") is
+    real DOM, so this reads the same string the screenshot shows. Best-effort by
+    design: a read failure must not sink a capture that is otherwise fine, so the
+    caller treats "" as 'could not verify' and says so out loud."""
+    from automations.b2b_quality.run import _IFRAME
+    try:
+        return page.frame_locator(_IFRAME).locator("body").inner_text(
+            timeout=30_000) or ""
+    except Exception as e:  # noqa: BLE001
+        log("   ⚠ could not read the viz text ({})".format(type(e).__name__))
+        return ""
+
+
+def _verify_week(view_key: str, text: str, want: dt.date, log=print) -> None:
+    """Refuse a week-pinned capture whose rendered header names another week.
+
+    An unreadable viz ("" text) is NOT treated as a failure — the image itself
+    may well be right, and failing every capture on a flaky inner_text would
+    trade a rare wrong post for a daily missing one. It IS logged, so a run that
+    never verifies is visible rather than assumed good."""
+    if not text:
+        log("   ⚠ [{}] week pin UNVERIFIED (viz text unreadable) — posting the "
+            "image; check the week in the header".format(view_key))
+        return
+    if any(v in text for v in week_value_variants(want)):
+        log("   ✓ [{}] week pin verified — showing week ending {}".format(
+            view_key, week_value(want)))
+        return
+    # Name the week it DID render, so the log says what happened rather than
+    # just that something did.
+    import re
+    shown = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", text)
+    raise WeekFilterNotApplied(
+        "{}: asked for week ending {} but the view rendered {} — the URL week "
+        "filter did not apply (Tableau drops an unmatched field caption in "
+        "silence). Skipping rather than posting a report of an unknown week."
+        .format(view_key, week_value(want),
+                ", ".join(sorted(set(shown))[:4]) or "no dated header"))
+
+
+def _row_summary(text: str, owner: str = "", limit: int = 12) -> list:
+    """The viz's non-chrome text lines — what the section actually SHOWS. Used
+    only for logging, so a human reading the run log can tell an empty week from
+    a full one without opening the PNG.
+
+    The header chrome (captions, the owner the view is sliced to, the week, the
+    server-update stamp) is dropped: on a BLANK render those lines are ALL that
+    is left, and counting them as content would report an empty week as two
+    rows of data."""
+    import re
+    skip = ("sale date week ending", "owner name", "last server update",
+            "data source sales date range", "out of bounds", "view:")
+    own = " ".join((owner or "").split()).lower()
+    out = []
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if not s or any(s.lower().startswith(k) for k in skip):
+            continue
+        if own and " ".join(s.split()).lower() == own:
+            continue                       # the slice value, not a row
+        if re.fullmatch(r"[\d/\-. ]+", s):
+            continue                       # a bare date/number echo of a filter
+        out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
+                  today: dt.date = None) -> Path:
     """Capture one Tableau view for this office (owner-sliced, or a per-office
     override view captured as-is). LUCY 2 — Carlos's login carries the views.
 
@@ -378,11 +534,18 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
     from automations.b2b_quality.run import apply_sort, _IFRAME
 
     meta = VIEW_META.get(view_key, {})
-    url = _sliced_url(o, view_key)
+    url = _sliced_url(o, view_key, today)
     out = out_dir / "{}.png".format(view_key)
     spec = {"id": view_key, "title": view_key, "url": url}
+    # Filled by after_load on the attempt that produced the saved image, so the
+    # week check below reads the SAME render the PNG came from.
+    probe = {"text": ""}
 
     def after_load(page):
+        # Read what the viz rendered BEFORE the Download→Image runs. Only for
+        # week-pinned views — everything else pays nothing for this.
+        if meta.get("week_filter"):
+            probe["text"] = _read_viz_text(page, log=log)
         # Activation carries no saved sort; click its measure sort glyph high->low
         # before the shot. Churn's saved view sorts itself. Offices whose saved
         # view is ALREADY sorted (o.baked_sort_views, e.g. Atef's AtefEXP) must
@@ -444,6 +607,23 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
                 _crop_to_last_colored_row(
                     out, leading=(meta.get("crop_mode") == "leading"),
                     verbose=True)
+            if meta.get("week_filter"):
+                # Raises WeekFilterNotApplied -> the runner skips + flags the
+                # section, so a blank of an unknown week never reaches Slack.
+                _verify_week(view_key, probe["text"],
+                             report_week_ending(today), log=log)
+                rows = _row_summary(probe["text"], owner=o.owner)
+                if rows:
+                    log("   [{}] shows {} line(s): {}".format(
+                        view_key, len(rows), " | ".join(rows[:6])))
+                elif probe["text"]:
+                    # Verified week + nothing in it = a genuinely clean week.
+                    # Carlos's Loom: "if it shows nothing, we still want the
+                    # screenshot" — so this posts, but the log says WHY it's
+                    # empty instead of leaving a blank to be guessed at.
+                    log("   [{}] EMPTY for week ending {} — no rows in the "
+                        "verified week (a clean week, not a failed pull)".format(
+                            view_key, week_value(report_week_ending(today))))
             return out
         finally:
             try:

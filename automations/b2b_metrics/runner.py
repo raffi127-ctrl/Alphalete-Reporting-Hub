@@ -34,7 +34,7 @@ import traceback
 from pathlib import Path
 
 from automations.b2b_metrics import offices as _off
-from automations.b2b_metrics.capture import OrderLogNotFresh
+from automations.b2b_metrics.capture import OrderLogNotFresh, WeekFilterNotApplied
 from automations.b2b_metrics.offices import B2BOffice, THREAD_TITLE
 
 try:
@@ -345,6 +345,15 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             log("  [{}] DEFERRED — {}".format(item["id"], nf))
             captured[item["id"]] = None
             deferred.append(item["id"])
+        except WeekFilterNotApplied as wf:
+            # A REAL miss, not a deferral: the view rendered a week we didn't ask
+            # for, so the image can't be trusted. One line, no traceback — the
+            # message already says everything. It stays out of `deferred`, so
+            # _alert_after_for pages immediately instead of waiting on the floor
+            # pass. post_when_blank does NOT rescue this: it exists for a
+            # verified-empty week, not an unverifiable one.
+            log("  [{}] SKIPPED (wrong week): {}".format(item["id"], wf))
+            captured[item["id"]] = None
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:
