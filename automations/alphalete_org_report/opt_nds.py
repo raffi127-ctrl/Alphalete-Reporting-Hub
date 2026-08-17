@@ -98,6 +98,13 @@ from automations.shared.tableau_patchright import (
 # worksheet is active.
 NDS_SARA_PLUS_OFFICE_FILENAME = "opt_nds_sara_plus_office.csv"
 NDS_SARA_ACTIVATE_XY = (0.5, 0.5)
+# View Data scrapes this table by scrolling it; these are the settings Retail
+# uses on this same dashboard (opt_retail._VIEWDATA_SCRAPE_KWARGS). The first
+# attempt here omitted them and the parse came back '0 owner(s)' — the scrape
+# raised nothing, it just didn't collect the owner rows. Mirror Retail exactly
+# rather than re-tune: it is the same workbook and the same table.
+NDS_SARA_SCRAPE_KWARGS = dict(jump_every=None, scroll_step=0.35,
+                              scroll_wait_ms=1800, stale_max=30)
 
 
 def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
@@ -1456,7 +1463,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                          f"&Min%20Date={date_params['Min Date']}"
                          f"&Max%20Date={date_params['Max Date']}"),
                         sara_office_out, verbose=False, page=page,
-                        activate_xy=NDS_SARA_ACTIVATE_XY)
+                        activate_xy=NDS_SARA_ACTIVATE_XY,
+                        scrape_kwargs=NDS_SARA_SCRAPE_KWARGS)
                 except Exception as e:  # noqa: BLE001
                     msg = (f"{NDS_SARA_PLUS_OFFICE_FILENAME}: "
                            f"{type(e).__name__}: {str(e)[:120]}")
@@ -1488,6 +1496,16 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
               f"{type(e).__name__}: {str(e)[:120]}")
         sara_office = {}
     logfn(f"OPT NDS: per-office Sara Plus: {len(sara_office)} owner(s)")
+    if not sara_office and not skip_download:
+        # Zero owners means the scrape landed somewhere without an
+        # 'Owner & Office' column — it raises nothing, so without this the only
+        # trace is one log line and every tab quietly loses Next Up % +
+        # Extra/Premium %. That is the silent-source failure mode this file has
+        # been bitten by twice (SARA Plus 2026-08-10, cancel 2026-08-16), so it
+        # goes in download_errors and the run reports it.
+        download_errors.append(
+            f"{NDS_SARA_PLUS_OFFICE_FILENAME}: parsed 0 owners — Next Up % "
+            f"and Extra/Premium % are BLANK on every NDS tab this run")
     personal_production = parse_personal_production(
         OUTPUT_DIR / "opt_nds_personal_production.csv")
     rep_breakdown = parse_rep_breakdown_per_owner(
