@@ -28,6 +28,24 @@ from automations.b2b_metrics.offices import B2BOffice, OWNER_FIELD, VIEW_META
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+class BlankRender(Exception):
+    """A section rendered with no content — refuse it and let it alert.
+
+    WHY (Megan 2026-08-17, on the blank Out of Bounds): "I also should have been
+    alerted." A section that comes back empty used to be indistinguishable from
+    one that came back fine — the image posted, the run exited 0, the Hub card
+    went green. For a CONFIDENTIAL report an empty post is worse than a gap: it
+    reads as "nothing to report this week" when the truth was "we asked the wrong
+    question". Raising puts the section in the run's `missed` list, which
+    write_manifest already turns into a loud 🚨 in
+    #claudecorrections-and-requests via shared.section_drop_alert.
+
+    This OVERRIDES the old post_when_blank behaviour (Carlos's Loom: "if it shows
+    nothing, we still want the screenshot"). His ask was for a week we had
+    verified as genuinely empty; it was never for a blank nobody had checked.
+    A verified-empty week still posts — see tableau_image."""
+
+
 class WeekFilterNotApplied(Exception):
     """A week-pinned view rendered a week OTHER than the one we asked for.
 
@@ -41,49 +59,14 @@ class WeekFilterNotApplied(Exception):
 
 
 # --- week pinning -----------------------------------------------------------
-def week_ending(day: dt.date) -> dt.date:
-    """The Sunday that closes `day`'s Mon-Sun week — the value the ATT views'
-    'Sale Date Week Ending (mon-sun)' dropdown shows for that week."""
-    return day + dt.timedelta(days=6 - day.weekday())
-
-
-def report_week_ending(today: dt.date = None) -> dt.date:
-    """The week these daily posts should show: the one holding the last
-    COMPLETED sales day (yesterday).
-
-    Not simply "this week" — on a Monday the current Mon-Sun week contains only
-    today, same-day B2B orders don't finalize until business hours (the same
-    premise _require_fresh_gate below is built on), and the extract reaches
-    yesterday at best. Asking for that week returns a header with no rows.
-
-    Not simply "last week" either — that would freeze the section a week behind
-    for the other six days, when the current week has real, finalized days in it.
-
-      Mon 8/17 -> yesterday Sun 8/16 -> week ending 8/16  (the completed week)
-      Tue 8/18 -> yesterday Mon 8/17 -> week ending 8/23  (current week, has Mon)
-      Sun 8/23 -> yesterday Sat 8/22 -> week ending 8/23
-    """
-    today = today or dt.date.today()
-    return week_ending(today - dt.timedelta(days=1))
-
-
-def week_value(sunday: dt.date) -> str:
-    """The week as the dropdown spells it: M/D/YYYY, no leading zeros.
-
-    This filter is a DISCRETE dropdown, not a date range. ISO ('2026-08-16')
-    does not just get ignored on these ATT views — it leaves the viz unrendered
-    (proved on Lucy 2, 2026-08-14, rep_sales_fill.week_value). Built by hand
-    rather than strftime('%-m/%-d/%Y'): that flag is glibc-only and every report
-    here has to run on macOS and Windows both."""
-    return "{}/{}/{}".format(sunday.month, sunday.day, sunday.year)
-
-
-def week_value_variants(sunday: dt.date) -> tuple:
-    """Every spelling the rendered header might use for `sunday`, for the
-    post-capture verification. Tableau draws the caption from the dimension's
-    own format, which zero-pads on some workbooks and not others."""
-    return (week_value(sunday),
-            "{:02d}/{:02d}/{}".format(sunday.month, sunday.day, sunday.year))
+# The week rule lives in automations/shared/report_week.py so every week-scoped
+# report answers "which week?" the same way — the Monday rollover is what put a
+# blank confidential Out of Bounds in Carlos's thread on 2026-08-17. Re-exported
+# here because this module's callers already import them from it.
+from automations.shared.report_week import (          # noqa: E402
+    completed_week_ending as report_week_ending,
+    week_ending, week_value, week_value_variants,
+)
 
 # Order-date column in the raw ORDERLOG crosstab — the same one the freshness
 # probe (att_order_log.freshness.DATE_COL) and sheet.py key on. Used by the
@@ -716,6 +699,56 @@ def _row_summary(text: str, owner: str = "", limit: int = 12) -> list:
     return out
 
 
+def image_is_blank(png: Path, max_extent: float = 0.15) -> bool:
+    """True when the PNG is a HEADER AND NOTHING ELSE.
+
+    Measured by VERTICAL EXTENT — how far down the export the last row of
+    content reaches — not by how much ink there is. A blank Tableau board is not
+    an empty file: it still draws the title, the filter captions and the
+    'Data Source Sales Date Range' footer across the top, so an ink-quantity
+    test can't tell it from a small table. Where the content STOPS separates
+    them cleanly (measured on the 2026-08-17 shapes):
+
+        header only          last content at  11% of the height
+        6-row Out of Bounds  last content at  80%
+        25-row churn table   last content at  97%
+
+    Conservative on purpose. 15% is well below any real table, because wrongly
+    calling a good board blank would DROP a section that was fine — the more
+    expensive mistake of the two. Where a caller has the rendered DOM text (the
+    week-pinned views do), that is the authoritative emptiness signal and this is
+    only the backstop.
+
+    Best-effort: any doubt returns False."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        im = Image.open(png).convert("RGB")
+        W, H = im.size
+        if W < 20 or H < 20:
+            return True
+        px = im.load()
+        # Background = the corner colour (Tableau exports on white/near-white).
+        bg = px[2, 2]
+
+        def differs(p):
+            return (abs(p[0] - bg[0]) + abs(p[1] - bg[1])
+                    + abs(p[2] - bg[2])) > 40
+
+        last = 0
+        for y in range(0, H, 2):
+            run = sum(1 for x in range(0, W, 4) if differs(px[x, y]))
+            if run > max(3, W // 200):
+                last = y
+        if not last:
+            return True                      # nothing on the page at all
+        return (last / float(H)) < max_extent
+    except Exception:  # noqa: BLE001 — a guard must never lose the image
+        return False
+
+
 def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                   today: dt.date = None) -> Path:
     """Capture one Tableau view for this office (owner-sliced, or a per-office
@@ -824,23 +857,42 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                 _crop_to_last_colored_row(
                     out, leading=(meta.get("crop_mode") == "leading"),
                     verbose=True)
+            verified_week, dom_rows = False, None
             if meta.get("week_filter"):
                 # Raises WeekFilterNotApplied -> the runner skips + flags the
                 # section, so a blank of an unknown week never reaches Slack.
                 _verify_week(view_key, probe["text"],
                              report_week_ending(today), log=log)
+                verified_week = True
                 rows = _row_summary(probe["text"], owner=o.owner)
+                if probe["text"]:
+                    dom_rows = len(rows)     # authoritative emptiness signal
                 if rows:
                     log("   [{}] shows {} line(s): {}".format(
                         view_key, len(rows), " | ".join(rows[:6])))
                 elif probe["text"]:
-                    # Verified week + nothing in it = a genuinely clean week.
-                    # Carlos's Loom: "if it shows nothing, we still want the
-                    # screenshot" — so this posts, but the log says WHY it's
-                    # empty instead of leaving a blank to be guessed at.
                     log("   [{}] EMPTY for week ending {} — no rows in the "
                         "verified week (a clean week, not a failed pull)".format(
                             view_key, week_value(report_week_ending(today))))
+            # BLANK GUARD — every Tableau section, not just the week-pinned one.
+            # An empty render is now heard about (write_manifest -> the 🚨 in
+            # #claudecorrections-and-requests) instead of posting as a
+            # confident-looking screenshot of nothing.
+            blank = (dom_rows == 0) if dom_rows is not None \
+                else image_is_blank(out)
+            if blank:
+                if verified_week:
+                    # We KNOW which week this is and it is genuinely empty. Post
+                    # it — that is Carlos's ask — but still say so out loud.
+                    log("   ⚠ [{}] renders BLANK for the verified week ending "
+                        "{} — posting (genuinely empty), flagged".format(
+                            view_key, week_value(report_week_ending(today))))
+                else:
+                    raise BlankRender(
+                        "{}: rendered BLANK (no content in the exported image) "
+                        "— not posting an empty report. Check the view's own "
+                        "filters; on a Monday the usual cause is a week that "
+                        "hasn't started selling yet.".format(view_key))
             return out
         finally:
             try:

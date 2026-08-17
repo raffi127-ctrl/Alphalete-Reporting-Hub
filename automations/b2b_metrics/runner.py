@@ -21,8 +21,17 @@ then their posting is retired so the thread doesn't double up. Until then this
 opens NOTHING new — dry-run captures to output/ only.
 
 CONTINUE-ON-FAILURE: one item that fails to capture is logged and skipped; the
-rest still post. A blank Out-of-Bounds is NOT a failure — it posts (Carlos's
-Loom: "if it shows nothing, we still want the screenshot").
+rest still post.
+
+BLANK RENDERS ALERT (2026-08-17). A section that comes back with no content is
+now a reportable MISS, not something we post: it lands in the run manifest's
+failed[] and so fires the loud 🚨 in #claudecorrections-and-requests, the same
+path a dropped section already used. This narrows Carlos's old "if it shows
+nothing, we still want the screenshot" (post_when_blank) to what he actually
+meant — an empty week we have VERIFIED is empty still posts; an empty render
+nobody has checked does not. The morning that made the difference matter: Out of
+Bounds posted a header-only confidential report scoped to a week that hadn't
+started yet, and nothing alerted.
 """
 from __future__ import annotations
 
@@ -34,7 +43,8 @@ import traceback
 from pathlib import Path
 
 from automations.b2b_metrics import offices as _off
-from automations.b2b_metrics.capture import OrderLogNotFresh, WeekFilterNotApplied
+from automations.b2b_metrics.capture import (
+    BlankRender, OrderLogNotFresh, WeekFilterNotApplied)
 from automations.b2b_metrics.offices import B2BOffice, THREAD_TITLE
 
 try:
@@ -353,6 +363,14 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             # pass. post_when_blank does NOT rescue this: it exists for a
             # verified-empty week, not an unverifiable one.
             log("  [{}] SKIPPED (wrong week): {}".format(item["id"], wf))
+            captured[item["id"]] = None
+        except BlankRender as br:
+            # An EMPTY render is a reportable miss now, not a thing we post.
+            # It lands in `missed` -> _write_manifest -> the loud 🚨 in
+            # #claudecorrections-and-requests (Megan 2026-08-17: "I also should
+            # have been alerted"). Deliberately NOT in `deferred`, so the alert
+            # fires straight away rather than waiting on the floor pass.
+            log("  [{}] SKIPPED (blank render): {}".format(item["id"], br))
             captured[item["id"]] = None
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
