@@ -115,13 +115,16 @@ def metrics_ni_source() -> tuple:
 
 
 def metrics_wl_source() -> tuple:
-    # MetricsfullyEXP (Megan 2026-07-28): the ONLY wireless metrics view broken
-    # out to individual Rep Name — the office/AP-WIRELESSMETRICS one stops at the
-    # sub-owner level, so it can't give per-rep wireless cancel. Verified against
-    # the VA's manual pull (Baraquiel/Emilio/Iliya exact).
+    # MetricsWIRfullyEXP (Eve 2026-08-17): the wireless twin of
+    # MetricsINTfullyEXP, so the two per-rep sources are a matched pair kept in
+    # one place. Replaces MetricsfullyEXP (e89dd6ab…, Megan 2026-07-28) — both
+    # were verified byte-for-byte the same day: same 1149 rows, same headers,
+    # identical 0-30/30-60 for every rep checked. Either works; the pair is
+    # easier to keep straight. The office/AP-WIRELESSMETRICS view still can't be
+    # used here — it stops at the sub-owner level, with no per-rep breakout.
     default = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                "ATTTRACKER2_1-D2D/Metrics/"
-               "e89dd6ab-9c67-464e-b414-3012723ba607/MetricsfullyEXP?:iid=1")
+               "cc10a5de-cda2-4a27-9e80-bb5f8234d550/MetricsWIRfullyEXP")
     return (METRICS_WL_URL or default,
             METRICS_WL_SHEET or "Metrics Call Last week data (Wireless)")
 
