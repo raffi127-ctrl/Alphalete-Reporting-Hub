@@ -80,6 +80,15 @@ OWNER_OFFICE_FIELD = "Owner & Office"
 # it in VIEW_META["week_filter"]; capture computes the value.
 WEEK_FIELD = "Sale Date Week Ending (mon-sun)"
 
+# …EXCEPT on OutofBoundsReport, where the dashboard PRINTS that caption but the
+# field behind the dropdown is named differently. Read off the live filter
+# checkbox ids on Lucy 2, 2026-08-17:
+#   id='FI_sqlproxy.0pea…,none:Sale Date Week Ending (copy)_1603…:ok25…_147'
+# So the URL has to say "(copy)". Sending the printed caption is a silent no-op
+# — which is the whole reason the 8/17 post went out blank on the current week.
+# Per-view, because it is a per-workbook accident, not a house convention.
+WEEK_FIELD_OOB = "Sale Date Week Ending (copy)"
+
 # ---------------------------------------------------------------------------
 # SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
 # slice by owner — no per-office clones. Order of the 6 keys matches the thread.
@@ -146,7 +155,8 @@ VIEW_META: dict = {
     # week and box_order_log's stale window.
     # Per-view on purpose ([[reference_tableau_url_filters]] #3): the churn and
     # activation views are day-bucket cohorts and a week pin would wreck them.
-    "out_of_bounds":   {"filter_field": OWNER_FIELD, "week_filter": WEEK_FIELD},
+    "out_of_bounds":   {"filter_field": OWNER_FIELD,
+                        "week_filter": WEEK_FIELD_OOB},
 }
 
 

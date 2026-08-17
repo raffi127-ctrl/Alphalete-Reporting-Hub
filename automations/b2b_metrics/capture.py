@@ -743,8 +743,17 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
         # thing to send if the field is ever renamed to match its caption), but
         # the dropdown is what actually moves this view.
         if meta.get("week_filter"):
-            _select_week(page, report_week_ending(today), log=log)
+            want = report_week_ending(today)
             probe["text"] = _read_viz_text(page, log=log)
+            # The URL pin is the fast path and now names the field Tableau
+            # actually knows. Only if it didn't land do we fall back to driving
+            # the dashboard's dropdown — which costs a couple of minutes and is
+            # the brittle path, so it stays a backstop, not the plan.
+            if probe["text"] and not any(v in probe["text"]
+                                         for v in week_value_variants(want)):
+                log("   week pin didn't land from the URL — trying the dropdown")
+                if _select_week(page, want, log=log):
+                    probe["text"] = _read_viz_text(page, log=log)
         # Activation carries no saved sort; click its measure sort glyph high->low
         # before the shot. Churn's saved view sorts itself. Offices whose saved
         # view is ALREADY sorted (o.baked_sort_views, e.g. Atef's AtefEXP) must
