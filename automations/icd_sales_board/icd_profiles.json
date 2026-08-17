@@ -1,0 +1,193 @@
+{
+  "source_tab": "Alphalete ORG Sales Board",
+  "sections": {
+    "Retail NL": [
+      "Ana Griffin",
+      "Amjad Malhas",
+      "Akib Chowdhury",
+      "Ronald Dawson"
+    ],
+    "Retail Internet": [
+      "Amjad Malhas",
+      "Ana Griffin",
+      "Akib Chowdhury",
+      "Ronald Dawson"
+    ],
+    "ATT Fiber Team": [
+      "Rafael Hidalgo",
+      "Aya Al-Khafaji",
+      "Kash Rai",
+      "Cody Cannon",
+      "Cyrus Wade",
+      "Jacob Dover",
+      "Rashad Reed",
+      "Haytham Nagi",
+      "Muhammad Haque",
+      "Salik Mallick"
+    ],
+    "ATT NDS Team": [
+      "Jairo Ruiz",
+      "Colten Wright",
+      "Drew Tepper",
+      "Khalil Mansour",
+      "Joseph Delgado",
+      "George Delgado",
+      "Maxamad Aden",
+      "Isaiah Revelle",
+      "Jose Velasquez",
+      "Frank Matos",
+      "Selena Powers"
+    ],
+    "B2B": [
+      "Atef Choudhury",
+      "Eveliz Wright",
+      "Carlos Hidalgo",
+      "Lizette Ruiz",
+      "Valeria Tristan",
+      "Kevin Driggs"
+    ],
+    "BOX": [
+      "Roshan Amin Ahmad",
+      "Ryan Mcspadden",
+      "Carlos Hidalgo",
+      "Benjamin Burden"
+    ],
+    "Retail JE": [
+      "Paola Rodriguez",
+      "Cinthya Reyes",
+      "Aiysha Mariano",
+      "Brandon Stallkamp",
+      "David Martinez"
+    ],
+    "Frontier": [
+      "Abel Draper"
+    ]
+  },
+  "per_icd": {
+    "Abel Draper": [
+      "Frontier"
+    ],
+    "Aiysha Mariano": [
+      "Retail JE"
+    ],
+    "Akib Chowdhury": [
+      "Retail NL",
+      "Retail Internet"
+    ],
+    "Amjad Malhas": [
+      "Retail NL",
+      "Retail Internet"
+    ],
+    "Ana Griffin": [
+      "Retail NL",
+      "Retail Internet"
+    ],
+    "Atef Choudhury": [
+      "B2B"
+    ],
+    "Aya Al-Khafaji": [
+      "ATT Fiber Team"
+    ],
+    "Benjamin Burden": [
+      "BOX"
+    ],
+    "Brandon Stallkamp": [
+      "Retail JE"
+    ],
+    "Carlos Hidalgo": [
+      "B2B",
+      "BOX"
+    ],
+    "Cinthya Reyes": [
+      "Retail JE"
+    ],
+    "Cody Cannon": [
+      "ATT Fiber Team"
+    ],
+    "Colten Wright": [
+      "ATT NDS Team"
+    ],
+    "Cyrus Wade": [
+      "ATT Fiber Team"
+    ],
+    "David Martinez": [
+      "Retail JE"
+    ],
+    "Drew Tepper": [
+      "ATT NDS Team"
+    ],
+    "Eveliz Wright": [
+      "B2B"
+    ],
+    "Frank Matos": [
+      "ATT NDS Team"
+    ],
+    "George Delgado": [
+      "ATT NDS Team"
+    ],
+    "Haytham Nagi": [
+      "ATT Fiber Team"
+    ],
+    "Isaiah Revelle": [
+      "ATT NDS Team"
+    ],
+    "Jacob Dover": [
+      "ATT Fiber Team"
+    ],
+    "Jairo Ruiz": [
+      "ATT NDS Team"
+    ],
+    "Jose Velasquez": [
+      "ATT NDS Team"
+    ],
+    "Joseph Delgado": [
+      "ATT NDS Team"
+    ],
+    "Kash Rai": [
+      "ATT Fiber Team"
+    ],
+    "Kevin Driggs": [
+      "B2B"
+    ],
+    "Khalil Mansour": [
+      "ATT NDS Team"
+    ],
+    "Lizette Ruiz": [
+      "B2B"
+    ],
+    "Maxamad Aden": [
+      "ATT NDS Team"
+    ],
+    "Muhammad Haque": [
+      "ATT Fiber Team"
+    ],
+    "Paola Rodriguez": [
+      "Retail JE"
+    ],
+    "Rafael Hidalgo": [
+      "ATT Fiber Team"
+    ],
+    "Rashad Reed": [
+      "ATT Fiber Team"
+    ],
+    "Ronald Dawson": [
+      "Retail NL",
+      "Retail Internet"
+    ],
+    "Roshan Amin Ahmad": [
+      "BOX"
+    ],
+    "Ryan Mcspadden": [
+      "BOX"
+    ],
+    "Salik Mallick": [
+      "ATT Fiber Team"
+    ],
+    "Selena Powers": [
+      "ATT NDS Team"
+    ],
+    "Valeria Tristan": [
+      "B2B"
+    ]
+  }
+}
