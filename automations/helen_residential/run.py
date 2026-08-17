@@ -110,13 +110,15 @@ def main(argv=None) -> int:
     print(f"[helen] window {args.days}d, workdir {workdir}", flush=True)
 
     # ---- gather -----------------------------------------------------------
-    try:
-        tr_files = email_ingest.fetch_all(
-            S.TRACKER_SENDER, S.TRACKER_GLOBS, workdir,
-            since_days=args.days, verbose=False, unique_by_message=True)
-    except Exception as e:                                  # noqa: BLE001
-        print(f"[helen] tracker fetch failed ({type(e).__name__}: {e})")
-        tr_files = []
+    tr_files = []
+    for sender in S.TRACKER_SENDERS:
+        try:
+            tr_files += email_ingest.fetch_all(
+                sender, S.TRACKER_GLOBS, workdir,
+                since_days=args.days, verbose=False, unique_by_message=True)
+        except Exception as e:                              # noqa: BLE001
+            print(f"[helen] tracker fetch failed for {sender} "
+                  f"({type(e).__name__}: {e})")
     try:
         rc_files = email_ingest.fetch_all(
             S.REPCOUNT_SENDER, S.REPCOUNT_GLOBS, workdir,

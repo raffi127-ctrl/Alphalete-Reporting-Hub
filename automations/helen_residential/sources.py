@@ -28,7 +28,13 @@ from typing import Dict, List, Optional
 OWNER = "Helen Assefaw"
 _OWNER_L = OWNER.lower()
 
-TRACKER_SENDER = "anowrouzi@aptel.com"
+# The SAME weekly tracker goes out from TWO addresses and they cover DIFFERENT
+# periods: the gmail one ran WE 12.27.2025 -> 3.28.2026, the aptel one picks up
+# at WE 6.6.2026. Fetching only aptel silently lost every week before June —
+# found 2026-08-17 by searching the inbox for the company instead of the person
+# ("edge concepts"), which surfaced a sender the name search never did.
+TRACKER_SENDERS = ["anowrouzi@aptel.com", "anowrouzi580@gmail.com"]
+TRACKER_SENDER = TRACKER_SENDERS[0]          # kept for callers/back-compat
 TRACKER_GLOBS = ["RANKED Residential Telecom Tracker*.pdf"]
 REPCOUNT_SENDER = "rarchey@thesmartcircle.com"
 REPCOUNT_GLOBS = ["Residential Rep Count*.xlsx"]
@@ -75,23 +81,37 @@ def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
         m = _TRACKER_WEEK.search(f.name)
         if not m:
             continue
-        try:
-            sat = dt.date(year_hint, int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            continue
-        # The filename carries the email date as a prefix; use it to pick the
-        # right year when a January edition is fetched in a December window.
-        pref = re.match(r"(\d{4})-\d{2}-\d{2}_", f.name)
+        mo, day = int(m.group(1)), int(m.group(2))
+        # The FILENAME carries only "W.E. 12.21" — no year. Take it from the
+        # email's own send date (fetch_all prefixes it) and pick the year that
+        # puts the week BEFORE the send. Anchoring on "same calendar year as
+        # the send" instead put the 12.21/12.28 editions mailed on 2026-01-02
+        # into DECEMBER 2026 — a future column — while the same numbers were
+        # also landing correctly in 2025 from a neighbouring edition.
+        pref = re.match(r"(\d{4})-(\d{2})-(\d{2})_", f.name)
+        sat = None
         if pref:
-            sent_year = int(pref.group(1))
-            for cand in (sent_year, sent_year - 1):
+            sent = dt.date(*(int(x) for x in pref.groups()))
+            for cand in (sent.year, sent.year - 1):
                 try:
-                    c = dt.date(cand, int(m.group(1)), int(m.group(2)))
+                    c = dt.date(cand, mo, day)
                 except ValueError:
                     continue
-                if 0 <= (dt.date(sent_year, 12, 31) - c).days < 400:
+                # the tracker runs 8-15 days behind its week; never ahead
+                if 0 <= (sent - c).days <= 60:
                     sat = c
                     break
+        if sat is None:
+            for cand in (year_hint, year_hint - 1):
+                try:
+                    c = dt.date(cand, mo, day)
+                except ValueError:
+                    continue
+                if c <= dt.date.today():
+                    sat = c
+                    break
+        if sat is None:
+            continue
         try:
             with pdfplumber.open(f) as pdf:
                 txt = "\n".join(p.extract_text() or "" for p in pdf.pages)
