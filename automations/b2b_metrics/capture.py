@@ -488,9 +488,32 @@ def _select_week(page, want: dt.date, log=print) -> bool:
                  "[role='menuitem']", ".tabMenuItem", ".QFCheckbox",
                  "[role='checkbox']")
 
+    # The week filter's own DOM token, so the checkbox list we toggle is THIS
+    # dropdown's and not another quick filter's.
+    #
+    # WHY (2026-08-17): a frame-wide [role='checkbox'] search found a 117-item
+    # date list, focus+Space flipped it, 8/23 genuinely unchecked — and the week
+    # dropdown still read '8/23/2026' on every attempt. The dashboard carries
+    # four quick filters and the list being toggled belonged to one of the
+    # others. Tableau embeds the field name in each checkbox's id (the same
+    # property box_order_log.window._all_item keys on), so scope by that.
+    token = ""
+    try:
+        raw = boxes.nth(idx).get_attribute("id") or ""
+        log("   [week] dropdown id={!r}".format(raw[:120]))
+        # ids look like FI_federated.0brn…,none:<field>:nk98096…_<value>
+        bits = [b for b in raw.split(":") if b and not b.startswith("FI_")]
+        if bits:
+            token = bits[0].strip().lstrip("﻿")
+            log("   [week] scoping menu to id token {!r}".format(token))
+    except Exception:  # noqa: BLE001
+        pass
+
     def _menu_items():
         """(selector, texts) for whichever selector has the open menu's items."""
-        for sel in item_sels:
+        sels = ([('[role="checkbox"][id*="{}"]'.format(token))] if token
+                else []) + list(item_sels)
+        for sel in sels:
             try:
                 loc = fr.locator(sel)
                 n = min(loc.count(), 300)
@@ -498,6 +521,8 @@ def _select_week(page, want: dt.date, log=print) -> bool:
                 continue
             if not n:
                 continue
+            if sel is not sels[0]:
+                log("   [week] falling back to {} (token scope empty)".format(sel))
             texts = []
             for j in range(n):
                 try:
@@ -526,6 +551,14 @@ def _select_week(page, want: dt.date, log=print) -> bool:
             continue
         log("   [week] {} opened {} ({} items): {}".format(
             osel, sel, len(texts), " | ".join(t for t in texts[:20] if t)))
+        # Ground truth for the next run if this one still misses: the ids the
+        # items actually carry.
+        for j in range(min(3, len(texts))):
+            try:
+                log("   [week] item[{}] {!r} id={!r}".format(
+                    j, texts[j], (loc.nth(j).get_attribute("id") or "")[:120]))
+            except Exception:  # noqa: BLE001
+                pass
         pick = next((j for j, t in enumerate(texts) if t in targets), None)
         if pick is None:
             continue
