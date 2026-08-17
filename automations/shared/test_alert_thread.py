@@ -117,6 +117,54 @@ class SectionDropTests(unittest.TestCase):
         self.assertIn("*Missing:* ABP", "\n".join(parent))
 
 
+class PhaseCollapseIsNotAThread(unittest.TestCase):
+    """2026-08-17: daily_rep_breakdown's Phase-2 drop went out under the
+    'section' fallback — "it did NOT post … The thread is live but incomplete …
+    re-run only the missing section". That report posts no thread and has no
+    section to re-run on its own; it fills Sheet tabs, and the only fix is the
+    whole report (Phase 2 resumes from its checkpoint)."""
+
+    ITEMS = ["Phase 2 — ownerville scrape"]
+    NOTE = "ownerville scrape (Phase 2) failed."
+
+    def _parts(self, remediation=None):
+        return sda._compose_parts("daily-rep-breakdown", self.ITEMS,
+                                  remediation, self.NOTE, "phase")
+
+    def test_it_never_claims_a_thread_or_a_post(self):
+        text = "\n".join(sum(self._parts(), [])).lower()
+        for phrase in ("did not post", "thread is live", "re-post",
+                       "don't re-post the whole thread"):
+            self.assertNotIn(phrase, text,
+                             "a Sheet fill has no thread to send the reader "
+                             "looking for (%r)" % phrase)
+
+    def test_it_names_the_phase_and_says_the_run_stopped(self):
+        parent = "\n".join(self._parts()[0])
+        self.assertIn("stopped at 1 phase this run", parent)
+        self.assertIn("did NOT finish", parent)
+        self.assertIn("Phase 2 — ownerville scrape", parent)
+
+    def test_the_default_fix_is_the_whole_report(self):
+        text = "\n".join(sum(self._parts(), []))
+        self.assertIn("WHOLE", text)
+        self.assertIn("checkpoint", text)
+
+    def test_the_manifest_remediation_still_wins(self):
+        """daily.py ships its own fix (sign into ownerville, then Run Again) —
+        the kind's default is only the fallback."""
+        parent, detail = self._parts({"fix": "Make sure Report Chrome is "
+                                             "running and signed in."})
+        self.assertIn("*Fix:* Make sure Report Chrome is running and signed in.",
+                      "\n".join(parent + detail))
+
+    def test_phase_no_longer_falls_back_silently(self):
+        self.assertIn("phase", sda._KINDS)
+        self.assertNotIn("phase", sda._FILL_SHAPED,
+                         "a kind with its own wording must not also be listed "
+                         "as a 'section' fallback that's fine as-is")
+
+
 class UnfilledIcdIsLowKey(unittest.TestCase):
     """Megan 2026-08-15: "the alert on Melik just needs to say his is the only
     one not filled so we know that's not a big deal / fail." One ICD without a

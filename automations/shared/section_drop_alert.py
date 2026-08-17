@@ -111,6 +111,28 @@ _KINDS = {
                "again, the Tableau view itself is the problem, not the run.",
         "tail": "The tabs filled, but every metric fed by that source is empty.",
     },
+    # A multi-PHASE run that collapsed at one of its phases — daily_rep_breakdown
+    # today (Phase 2 ownerville scrape / Phase 3 Tableau pull, focus_office_att/
+    # daily.py::_daily_manifest_fail). That report has no Slack thread at all: it
+    # fills ~28 Sheet tabs. Under the 'section' fallback its Phase-2 drop went out
+    # on 2026-08-17 as "it did NOT post … The thread is live but incomplete …
+    # re-run only the missing section — don't re-post the whole thread", which is
+    # wrong three times over: there is no post, there is no thread to be live, and
+    # a phase carries NO scoped retry (daily.py takes no CLI args) so the only
+    # real fix is re-running the WHOLE report — which is cheap, because Phase 2
+    # resumes from its own checkpoint and doesn't re-scrape finished owners. Same
+    # lesson as 'day' / 'source' / 'finding' above: a fill is not a thread.
+    "phase": {
+        "what": "phase",
+        "headline": "🚨 *{report_id}* stopped at {n} {what}{s} this run — {tail}",
+        "tail_headline": "the run did NOT finish.",
+        "label": "Stopped at",
+        "fix": "re-run `{report_id}` WHOLE — it resumes from its own "
+               "checkpoint, so the work that already finished isn't redone. "
+               "There's no way to re-run just the {what} on its own.",
+        "tail": "No post and no thread are involved — the Sheet simply wasn't "
+                "updated past that {what}.",
+    },
     # A CAPPED Tableau pull: the export's newest sale sits days short of today, so
     # the counts understate reality and the report REFUSED to send rather than
     # ship wrong numbers (window.should_block_send). Added 2026-08-12 after
@@ -231,7 +253,9 @@ _KINDS = {
 # isn't listed in _KINDS is a kind nobody has worded yet: say so in the log
 # rather than shipping it as "it did NOT post" (that silent aliasing is exactly
 # how 'finding' went out wrong for a week).
-_FILL_SHAPED = {"part", "step", "phase", "report", "tracker", "week", "tab",
+# ('phase' used to be listed here as reading-fine-under-'section'. It didn't —
+# see the 'phase' entry above — so it now owns its own wording.)
+_FILL_SHAPED = {"part", "step", "report", "tracker", "week", "tab",
                 "owner", "ICD", "captainship", "recruiter", "team", "title"}
 
 

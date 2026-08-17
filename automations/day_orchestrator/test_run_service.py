@@ -277,5 +277,82 @@ class BackstopNothingToDoTest(unittest.TestCase):
         self.assertFalse(state.ReportState(**raw).nothing_to_do)
 
 
+class ManifestIdTest(unittest.TestCase):
+    """The auto-retry gate must find the manifest by the report's CARD id.
+
+    2026-08-17: daily_rep_breakdown dropped Phase 2 and went straight to a manual
+    alert — no retry logged — even though the whole-phase auto-retry (2026-08-10)
+    was written for exactly that case. Cause: the manifest is filed under the
+    verify block's `report_id` ('daily-rep-breakdown'), the gate looked it up
+    under the scheduler key ('daily_rep_breakdown'), and 23 of the 40
+    manifest-verified reports have ids that differ that way — so for all of them
+    BOTH auto-retries silently found nothing to do."""
+
+    CARD = "daily-rep-breakdown"
+    KEY = "daily_rep_breakdown"
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from automations.shared import run_manifest as rm
+        self._rm, self._real_dir = rm, rm.MANIFEST_DIR
+        self._tmp = tempfile.TemporaryDirectory()
+        rm.MANIFEST_DIR = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._rm.MANIFEST_DIR = self._real_dir
+        self._tmp.cleanup()
+
+    def _report(self, card_id):
+        r = _Report(self.KEY)
+        r.verify = {"type": "manifest", "report_id": card_id}
+        return r
+
+    def _incomplete(self):
+        rs = state.ReportState(report_id=self.KEY)
+        rs.status = state.INCOMPLETE
+        return rs
+
+    def _write_phase_fail(self, report_id):
+        self._rm.write_manifest(report_id, failed=["Phase 2 — ownerville scrape"],
+                                retry_args=[], kind="phase", ok=False,
+                                run_ts=dt.datetime(2026, 8, 17, 4, 0))
+
+    def test_phase_drop_under_a_hyphenated_card_id_is_retryable(self):
+        self._write_phase_fail(self.CARD)
+        self.assertTrue(R._retryable_incomplete(self._incomplete(),
+                                                self._report(self.CARD)))
+
+    def test_the_scheduler_key_alone_no_longer_decides(self):
+        """The regression itself: manifest filed under the card id, gate asked
+        for the scheduler key, answer was 'nothing to retry'."""
+        self._write_phase_fail(self.CARD)
+        self.assertIsNone(self._rm.retry_whole_spec(self.KEY))
+        self.assertEqual(R._manifest_id(self._incomplete(),
+                                        self._report(self.CARD)), self.CARD)
+
+    def test_a_matching_id_still_works(self):
+        """The 17 reports whose two ids agree must behave exactly as before."""
+        self._write_phase_fail(self.KEY)
+        r = self._report(self.KEY)
+        self.assertTrue(R._retryable_incomplete(self._incomplete(), r))
+
+    def test_no_verify_report_id_falls_back_to_the_key(self):
+        r = _Report(self.KEY)
+        r.verify = {"type": "manifest"}
+        self.assertEqual(R._manifest_id(self._incomplete(), r), self.KEY)
+
+    def test_a_clean_manifest_is_not_retryable(self):
+        self._rm.mark_clean(self.CARD, kind="phase")
+        self.assertFalse(R._retryable_incomplete(self._incomplete(),
+                                                 self._report(self.CARD)))
+
+    def test_the_cap_still_holds(self):
+        self._write_phase_fail(self.CARD)
+        rs = self._incomplete()
+        rs.auto_retries = R.MAX_AUTO_RETRIES
+        self.assertFalse(R._retryable_incomplete(rs, self._report(self.CARD)))
+
+
 if __name__ == "__main__":
     unittest.main()

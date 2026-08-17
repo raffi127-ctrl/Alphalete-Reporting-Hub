@@ -1107,6 +1107,17 @@ PHASE2_TIMEOUT_S = 60 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner 
 # impersonation overhead, incl. the heavy master owner) runs ~48 min and got
 # killed at owner 26 (Eve 2026-06-18). The checkpoint resumes a kill, but bump
 # the cap so a normal full run completes without tripping it + filing a glitch.
+# MONDAY IS A DIFFERENT JOB. On the shift day Phase 2 scrapes a WHOLE WEEK
+# (--week-start, to finish last week now that Sunday has landed) instead of one
+# day (--daily-window), so it costs ~2.5 min/owner instead of ~1.5. 26 owners
+# don't fit in 60: on 2026-08-17 it was killed at owner 23 of 26, and it reads as
+# a dropped ownerville session when the session was FINE — owner 23 impersonated
+# cleanly seconds before the kill. 2026-08-10 (also a Monday, also a Phase-2
+# drop) is very likely the same thing. The cap exists to stop a HUNG owner, not to
+# stop Monday from finishing, so the shift day gets its own budget: 85 min covers
+# the measured ~68 min with room, and 85 + Phase 3's 35 stays inside the card's
+# registry timeout (raised to 170 to match).
+PHASE2_SHIFT_TIMEOUT_S = 85 * 60
 PHASE3_TIMEOUT_S = 35 * 60  # was 20 — heavy days (big fills + Tableau retries) ran over (Megan 2026-06-07)
 
 # Daily Rep BD report pull custom view (Phase 3 Tableau source) — surfaced as
@@ -1535,14 +1546,18 @@ def main() -> int:
             phase2_args = ["--week-start", last_monday.isoformat()]
         else:                                      # Tue-Sun (+ Mon re-run): incremental
             phase2_args = ["--daily-window"]
+        # A whole week costs far more per owner than one day — see
+        # PHASE2_SHIFT_TIMEOUT_S. Budget the phase for the job it's actually doing.
+        phase2_timeout_s = (PHASE2_SHIFT_TIMEOUT_S if shift_pending
+                            else PHASE2_TIMEOUT_S)
         rc2 = _run_phase("automations.focus_office_att.run_all_owners",
-                         phase2_args, log, timeout_s=PHASE2_TIMEOUT_S)
+                         phase2_args, log, timeout_s=phase2_timeout_s)
         if rc2 == PHASE_TIMEOUT_EXIT:
-            say(f"  Phase 2 TIMED OUT after {PHASE2_TIMEOUT_S // 60} min — "
+            say(f"  Phase 2 TIMED OUT after {phase2_timeout_s // 60} min — "
                 f"likely one owner hung the scrape.")
             _notify_failure(
                 "Focus Office scrape (Phase 2) timed out.",
-                f"The ownerville scrape ran past {PHASE2_TIMEOUT_S // 60} min "
+                f"The ownerville scrape ran past {phase2_timeout_s // 60} min "
                 "and was stopped — usually one owner's page hung. Progress is "
                 "checkpointed, so click Run Again to resume where it left off.",
                 str(log_path))

@@ -1015,7 +1015,8 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
             pass
         elif rs.status == state.INCOMPLETE and not _retryable_incomplete(
                 rs, todays_by_id.get(rs.report_id)):
-            if _alert_on_hold(rs.report_id):
+            # By MANIFEST id, not the scheduler key — see _manifest_id.
+            if _alert_on_hold(_manifest_id(rs, todays_by_id.get(rs.report_id))):
                 continue
         elif rs.status in (state.MISSED_NOT_READY, state.BLOCKED_SESSION):
             # "Didn't run" — marked terminal at the noon backstop. Since the daily
@@ -1180,6 +1181,21 @@ def _send_checkpoint(cfg, ds, channel, dry_run):
         _log(f"checkpoint send failed: {e}")
 
 
+def _manifest_id(rs, r) -> str:
+    """The id the report's MANIFEST is filed under — which is NOT always the
+    orchestrator's report_id. A report's `verify.report_id` is its Hub CARD id,
+    and most cards are hyphenated ('daily-rep-breakdown') while the scheduler key
+    is snake_case ('daily_rep_breakdown'). reconcile._verify_manifest has always
+    read `verify.report_id`; the auto-retry gate below read `rs.report_id`, so for
+    the 23 of 40 manifest-verified reports whose two ids differ it looked for
+    output/manifests/<snake>.json, found nothing, and concluded there was nothing
+    to retry — meaning NEITHER auto-retry (the 2026-07-16 scoped part-retry nor
+    the 2026-08-10 whole-phase one) ever actually fired for them. Found 2026-08-17
+    from daily_rep_breakdown's Phase-2 drop going straight to a manual alert with
+    no retry logged, on a day the whole-phase retry was supposed to cover it."""
+    return (getattr(r, "verify", None) or {}).get("report_id") or rs.report_id
+
+
 def _retryable_incomplete(rs, r) -> bool:
     """True when this INCOMPLETE report can be re-run under the cap: either JUST
     its failed parts (manifest offers retry_args) OR — for a WHOLE-PHASE drop that
@@ -1193,8 +1209,8 @@ def _retryable_incomplete(rs, r) -> bool:
         return False
     try:
         from automations.shared import run_manifest as _rm
-        return bool(_rm.retry_spec(rs.report_id)
-                    or _rm.retry_whole_spec(rs.report_id))
+        mid = _manifest_id(rs, r)
+        return bool(_rm.retry_spec(mid) or _rm.retry_whole_spec(mid))
     except Exception:  # noqa: BLE001 — never let this gate crash the loop
         return False
 
@@ -1250,7 +1266,8 @@ def _retry_incomplete_parts(ds, todays, target, *, dry_run, simulate):
         r = by_id.get(rs.report_id)
         if not _retryable_incomplete(rs, r):
             continue
-        spec = _rm.retry_spec(rs.report_id) or _rm.retry_whole_spec(rs.report_id)
+        mid = _manifest_id(rs, r)          # card id, not the scheduler key
+        spec = _rm.retry_spec(mid) or _rm.retry_whole_spec(mid)
         if not spec:
             continue
         failed_before = list(spec.get("failed") or [])
