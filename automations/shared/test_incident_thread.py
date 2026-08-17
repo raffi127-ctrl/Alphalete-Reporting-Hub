@@ -46,6 +46,18 @@ class FakeClient:
             raise RuntimeError("cant_update_message")
         self.chat_update = _boom
 
+    def refuse_replies(self):
+        """The other half: the PARENT edit works but Slack rejects threaded
+        posts (what happened to b2b_metrics on 2026-08-17 — its detail chunk
+        went missing in the same second)."""
+        real = self.chat_postMessage
+
+        def _maybe(*, channel, text, thread_ts=None, **kw):
+            if thread_ts:
+                raise RuntimeError("ratelimited")
+            return real(channel=channel, text=text, thread_ts=thread_ts, **kw)
+        self.chat_postMessage = _maybe
+
     def conversations_history(self, *, channel, limit=200, cursor=None):
         # Newest first, parents only — same shape as the real API.
         msgs = []
@@ -142,6 +154,32 @@ class IncidentThreadTest(unittest.TestCase):
         after = self._open(dt.date(2026, 8, 20))
         self.assertTrue(after["new"])
         self.assertEqual(len(self.c.top_level), 2)
+
+    def test_resolve_counts_when_only_the_parent_edit_lands(self):
+        """The 2026-08-17 b2b_metrics case: Slack refuses the in-thread reply but
+        the parent edit succeeds. resolve() must report SUCCESS — it returned the
+        reply's fate before, and notify.resolve_failure_alert read that as
+        'resolve failed' and overwrote the parent with its own marker-less ✅,
+        erasing the line every other machine scans for."""
+        first = self._open(dt.date(2026, 8, 14))
+        self.c.refuse_replies()
+        self.assertTrue(inc.resolve(key="failure-r", lines=["✅ done"],
+                                    channel="C1", day=dt.date(2026, 8, 15),
+                                    client=self.c))
+        self.assertEqual(self.c.updates[-1][0], first["ts"])
+        self.assertIn("_incident · failure-r · resolved 2026-08-15_",
+                      self.c.updates[-1][1])
+        self.assertNotIn("failure-r", inc.open_keys())
+
+    def test_resolve_is_false_when_nothing_landed_at_all(self):
+        """Both halves refused → the caller's own fallback edit is the only thing
+        left, so it must still be told the resolve didn't take."""
+        self._open(dt.date(2026, 8, 14))
+        self.c.refuse_replies()
+        self.c.refuse_updates()
+        self.assertFalse(inc.resolve(key="failure-r", lines=["✅ done"],
+                                     channel="C1", day=dt.date(2026, 8, 15),
+                                     client=self.c))
 
     def test_resolve_with_nothing_open_is_a_no_op(self):
         self.assertFalse(inc.resolve(key="failure-nope", lines=["x"],

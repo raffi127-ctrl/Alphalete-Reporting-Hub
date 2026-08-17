@@ -427,7 +427,17 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
 
     Closing matters as much as posting: once resolved, the NEXT occurrence opens
     a fresh top-level post instead of reviving a thread everyone stopped reading.
-    Returns True when the thread was told. Never raises."""
+
+    Returns True when the incident was CLOSED — the thread was told, or the reply
+    failed but the parent now shows ✅ plus the `resolved` marker. It used to
+    return whether the REPLY landed, which cost b2b_metrics its marker on
+    2026-08-17: Slack refused the reply (its sibling detail chunk went missing in
+    the same second), so this returned False even though the parent edit had just
+    succeeded, and notify.resolve_failure_alert took that as "resolve failed" and
+    chat_update'd its own marker-less ✅ text straight over it. Two edits, and the
+    second one erased the line every other machine uses to find the thread. False
+    now means nothing landed at all, which is the only case a caller should
+    re-edit. Never raises."""
     if not _valid(key):
         return False
     day = day or dt.date.today()
@@ -457,15 +467,20 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
         new_parent = _MARK_RE.sub("", was).rstrip()
     new_parent = "{}\n\n{}".format(new_parent.rstrip(),
                                   marker(key, "resolved", day))
+    edited = False
     try:
         client.chat_update(channel=channel, ts=ts, text=new_parent)
+        edited = True
     except Exception as e:  # noqa: BLE001 — the thread reply already told people
         print(f"  ⚠ incident parent edit refused ({type(e).__name__}: "
               f"{str(e)[:60]}) — the in-thread note stands", flush=True)
     _mark_resolved_in_index(key)
     _forget_history(channel)
     print(f"[incident] {key}: resolved in thread {ts}", flush=True)
-    return told
+    # `edited` counts: the parent already reads ✅ and carries the resolved
+    # marker, so a caller's own "resolve failed" fallback edit would only strip
+    # that marker back off (see the docstring).
+    return told or edited
 
 
 def resolve_if_open(key: str, *, what: str, detail: str = "",
