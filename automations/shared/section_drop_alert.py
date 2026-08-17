@@ -111,21 +111,35 @@ _KINDS = {
                "again, the Tableau view itself is the problem, not the run.",
         "tail": "The tabs filled, but every metric fed by that source is empty.",
     },
-    # A CAPPED Tableau pull: the Contract ID / Account Id quick filters on the
-    # BOX view re-pinned to a stale ID snapshot, so the export froze days behind
-    # and the counts understate reality. The report REFUSED to send rather than
+    # A CAPPED Tableau pull: the export's newest sale sits days short of today, so
+    # the counts understate reality and the report REFUSED to send rather than
     # ship wrong numbers (window.should_block_send). Added 2026-08-12 after
     # Roshan's "accepted sales are wrong" — a bad viz load skipped the filter
     # release and the pull capped at 8/4. Nothing was delivered, so this alert
     # is the only trace: without it a suppressed run is silent.
+    #
+    # DON'T ASSERT A CAUSE HERE (Eve 2026-08-14, again 2026-08-17). This text used
+    # to say "it capped to a stale ID list … the Contract ID / Account Id filters
+    # likely re-pinned", which is a GUESS printed as a finding, and it was wrong
+    # both times it mattered: the ID controls have been absent from the view since
+    # 8/13 ("not on this view — nothing to release"), so there is nothing on our
+    # side to re-pin. Reading it as a diagnosis sent Eve hunting our filters while
+    # the real answer was SCI's extract sitting still. The per-owner lines already
+    # carry the honest numbers (run_owner picks pull-vs-stored-mark or
+    # export-vs-today); the shared headline only has to say what happened and
+    # where to look.
     "capped": {
         "what": "Tableau pull",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
-        "tail_headline": "it capped to a stale ID list, so nothing was sent.",
+        "tail_headline": "the export stopped short of today, so nothing was sent.",
         "label": "Missing",
-        "fix": "re-run `{report_id}` once a clean pull lands — the Contract ID "
-               "/ Account Id filters likely re-pinned (see box_order_log/"
-               "window.py). The fill/merge is idempotent.",
+        "fix": "find out WHERE it stopped before assuming why: `lucy logtail "
+               "box-order-log-owner-<key> newest` prints the newest sale per "
+               "owner. EVERY owner cutting on the SAME day = SCI's extract is "
+               "behind and there's no knob on our side (report it to Smart "
+               "Circle). ONE owner behind what its Sheet already holds = our "
+               "pull came back short — re-run `{report_id}`, the fill/merge is "
+               "idempotent.",
         "tail": "No email/post went out — a gap beats numbers that undercount.",
         # The three BOX order logs share one incident key on purpose, so a reply
         # in this thread is usually a DIFFERENT OFFICE in the same run, not the
