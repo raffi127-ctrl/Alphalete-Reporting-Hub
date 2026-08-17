@@ -922,17 +922,27 @@ def _week_variants(o: B2BOffice, view_key: str, today: dt.date = None) -> list:
     iso = quote(we.isoformat(), safe="")
     wf = quote(WEEK_FIELD)
     wf_short = quote("Sale Date Week Ending")
+    # The names the live filter DOM actually reports (probe-filters, 2026-08-17):
+    #   owner -> 'Account.OwnerName'
+    #   week  -> 'Sale Date Week Ending (copy)_1603000001376837642'
+    # The bare '(copy)' and the printed '(mon-sun)' caption are both already
+    # proven inert, so what is left to test is the SUFFIXED field name, and
+    # whether this workbook wants field NAMES rather than captions at all (which
+    # is what the owner filter answers).
+    wf_full = quote("Sale Date Week Ending (copy)_1603000001376837642")
+    owner_field_name = "{}={}".format(
+        quote("Account.OwnerName"),
+        quote(_tableau_filter_value(o.slice_value(OWNER_FIELD)), safe="\\"))
     return [
         ("control (owner only)", "{}?{}".format(base, owner)),
-        ("mdy", "{}?{}&{}={}".format(base, owner, wf, mdy)),
-        ("mdy + :revert=all", "{}?:revert=all&{}&{}={}".format(
-            base, owner, wf, mdy)),
-        ("mdy + :refresh=yes", "{}?:refresh=yes&{}&{}={}".format(
-            base, owner, wf, mdy)),
-        ("iso", "{}?{}&{}={}".format(base, owner, wf, iso)),
-        ("caption without (mon-sun)", "{}?{}&{}={}".format(
-            base, owner, wf_short, mdy)),
-        ("week only, no owner", "{}?{}={}".format(base, wf, mdy)),
+        ("suffixed field name", "{}?{}&{}={}".format(base, owner, wf_full, mdy)),
+        ("suffixed + :revert=all", "{}?:revert=all&{}&{}={}".format(
+            base, owner, wf_full, mdy)),
+        ("suffixed, no owner", "{}?{}={}".format(base, wf_full, mdy)),
+        ("field-name owner + suffixed week", "{}?{}&{}={}".format(
+            base, owner_field_name, wf_full, mdy)),
+        ("mdy bare (copy)", "{}?{}&{}={}".format(base, owner, wf, mdy)),
+        ("iso suffixed", "{}?{}&{}={}".format(base, owner, wf_full, iso)),
     ]
 
 
