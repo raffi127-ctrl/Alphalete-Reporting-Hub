@@ -18,7 +18,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
-from automations.shared.tableau_patchright import download_crosstab_patchright
+from automations.shared.tableau_patchright import (
+    close_shared_session, download_crosstab_patchright, shared_page,
+    tableau_session,
+)
 
 # Captain's Bonus DEFAULT view. The old AUTOMATIONPULL-NICHURNVIEW custom
 # view corrupted (stuck not rendering / falling back to a single-ICD filter,
@@ -251,20 +254,32 @@ def pull_all(today, scratch_dir: Optional[Path] = None, verbose: bool = False) -
     if verbose:
         print(f"  captainships detected: {teams}", flush=True)
 
-    # One fresh patchright session per Crosstab download. Slower (~30s each)
-    # but reliable: sharing one session across multiple downloads triggers a
-    # Tableau state bug where the Weekending URL filter silently stops applying
-    # on the 3rd+ call (verified 2026-05-27 with Raf: first 2 calls return
-    # correct current-week 221, 3rd returns last-completed-week 3,072).
-    # about:blank between calls didn't help — full session restart does.
+    # LOGIN BUDGET (Megan 2026-08-17) — eStream flagged how often we sign in to
+    # Tableau, and this report was the worst offender at 12 logins a day.
+    #
+    # These 9 CaptainsBonus pulls now share ONE login, each on its own fresh
+    # page (shared_page). PROVEN on the mini 2026-08-17: all 9 came back
+    # byte-identical to the one-login-per-pull behaviour, with a legacy/shared/
+    # legacy A-B-A' control confirming the extract hadn't moved
+    # (output/logs/rerun-2026-08-17-170016-session_proof_fiber.log; rerun with
+    # `lucy rerun session_proof_fiber`).
+    #
+    # The 2026-05-27 Weekending-filter bug this block used to guard against is
+    # REAL but narrower than it looked: it strikes repeat pulls of the SAME
+    # worksheet that differ only by URL query-param filters. These 9 differ by
+    # WORKSHEET NAME, so they are in the safe class. The two PSS pulls below are
+    # NOT — see the comment there.
     for team in teams:
         sheet = f"CB Activations ({team})"
         out = scratch_dir / f"cb_act_{team.lower().replace(' ', '_')}.csv"
-        download_crosstab_patchright(url, sheet, out, verbose=verbose)
+        with shared_page(verbose=verbose) as pg:
+            download_crosstab_patchright(url, sheet, out, verbose=verbose, page=pg)
         result.teams[team] = _extract_team_activations(out, team)
 
     out = scratch_dir / "cb_apprchurn_raf.csv"
-    download_crosstab_patchright(url, "CB Appr + Churn (Raf)", out, verbose=verbose)
+    with shared_page(verbose=verbose) as pg:
+        download_crosstab_patchright(url, "CB Appr + Churn (Raf)", out,
+                                     verbose=verbose, page=pg)
     result.raf_60d_churn, result.raf_rolling_4w = _extract_appr_churn(out)
 
     # --- PRODUCT SALES SUMMARY 4WK (I + Y columns) ---
@@ -277,13 +292,29 @@ def pull_all(today, scratch_dir: Optional[Path] = None, verbose: bool = False) -
     # Raf pull: include all product types + Raf's Team.
     pss_raf_url = pss_base + PSS_PT_ALL + PSS_RAF_TEAM_PARAM
 
+    # THESE TWO KEEP THEIR OWN LOGINS — do not "optimize" them into the shared
+    # session above. Both hit the SAME worksheet and differ ONLY by URL
+    # query-param filters, which is exactly the case that leaks: in the
+    # 2026-08-17 proof the second pull under a shared login inherited the
+    # first's Product Type filter and came back 52,186 B instead of its real
+    # size. Wrong number, no error. A fresh page did NOT fix it — the state
+    # lives in the browser context, so they need genuinely separate sessions.
+    #
+    # Explicit tableau_session() rather than page=None so the split holds no
+    # matter what TABLEAU_SHARED_SESSION is set to in the environment.
+    close_shared_session()          # drop the CaptainsBonus context first
+
     out = scratch_dir / "pss_country.csv"
-    download_crosstab_patchright(pss_country_url, PSS_WORKSHEET, out, verbose=verbose)
+    with tableau_session(verbose=verbose) as pg:
+        download_crosstab_patchright(pss_country_url, PSS_WORKSHEET, out,
+                                     verbose=verbose, page=pg)
     # Filter applied at source — read Sales Total directly.
     result.country_eow_sales = _extract_pss_sales_total(out, exclude_upgrade=False)
 
     out = scratch_dir / "pss_raf.csv"
-    download_crosstab_patchright(pss_raf_url, PSS_WORKSHEET, out, verbose=verbose)
+    with tableau_session(verbose=verbose) as pg:
+        download_crosstab_patchright(pss_raf_url, PSS_WORKSHEET, out,
+                                     verbose=verbose, page=pg)
     result.raf_eow_sales = _extract_pss_sales_total(out, exclude_upgrade=False)
 
     return result
