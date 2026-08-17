@@ -3510,7 +3510,8 @@
         "carlos_focus"
       ],
       "verify": null,
-      "timeout_minutes": 30
+      "_timeout_note": "45, raised from 30 on 2026-08-17. Filling ONE tab does not mean a short run: this executes the WHOLE run_nds_opt download (every NDS crosstab + the HTTP views + the per-office Sara Plus View Data scrape) and only then writes a single tab, so its wall-clock is the Org NDS step's, not a fraction of it. At 30 a probe run on the mini was killed mid-download and posted a FAILED alert for a report that was fine. Siblings doing the same shape of Tableau pull (alphalete_org_b2b / _retail) sit at 40; this one is 40 + the extra View Data scrape.",
+      "timeout_minutes": 45
     },
     "alphalete_org_b2b": {
       "on_scheduler": true,
