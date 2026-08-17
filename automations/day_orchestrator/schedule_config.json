@@ -3489,7 +3489,7 @@
     },
     "carlos_noah_nds": {
       "on_scheduler": true,
-      "_note": "Noah Dubale (office 23356) is on the Carlos 1on1s roster but SELLS NDS — confirmed by Carlos 2026-08-17, after an earlier read that he had moved to B2B was corrected. Carlos's OPT engine pulls all six views from ATTTRACKER-B2B, so Noah's whole OPT block came back empty while his recruiting half filled fine. This entry runs the NDS/ATT opt_phase against his ONE tab (automations.recruiting_report.carlos_noah_nds sets CAPTAINSHIP=Carlos, which schedule_config cannot do, then calls opt_phase --only 'Noah Dubale'). on_scheduler:true ONLY so registry.load_config keeps it for `lucy rerun`; cadence.weekdays [] means the 4am orchestrator never auto-runs it. machine 'Lucy 2' to match carlos_focus — Carlos's sheet and session live there. source_type tableau so the Chrome-collision guard runs first; data_sources [] so a manual run is never held by a readiness gate. ALWAYS `--dry-run` it first: a clean exit does not prove Noah is present in the NDS crosstabs, only that the run finished. Not a Hub card.",
+      "_note": "Noah Dubale (office 23356) is on the Carlos 1on1s roster but SELLS NDS — confirmed by Carlos 2026-08-17, after an earlier read that he had moved to B2B was corrected. Carlos's OPT engine pulls all six views from ATTTRACKER-B2B, so Noah's whole OPT block came back empty while his recruiting half filled fine. This entry runs the NDS/ATT opt_phase against his ONE tab (automations.recruiting_report.carlos_noah_nds sets CAPTAINSHIP=Carlos, which schedule_config cannot do, then calls opt_phase --only 'Noah Dubale'). machine 'Lucy 2' to match carlos_focus — Carlos's sheet and session live there. source_type tableau so the Chrome-collision guard runs first; data_sources [] so a manual run is never held by a readiness gate. Not a Hub card. NOTE for a manual run: a clean exit does not prove Noah is present in the NDS crosstabs, only that the run finished. RUNS AUTOMATICALLY WITH CARLOS'S REPORT (Eve 2026-08-17: 'tiene que estar en la sheet de carlos y correr cuando corra su reporte') — it was rerun-only (weekdays []) when first added, deliberately, to keep the one NDS exception on a B2B report visible. Eve overrode that: same weekday [0] as carlos_focus, ordered behind it with `after`. `after` and NOT `depends_on` ON PURPOSE — depends_on strands the dependent when the dep FAILS, and carlos_focus fails routinely on a dead Tableau view (B2BCancelRates, 3x on 2026-08-16/17); Noah's NDS pull has nothing to do with those B2B views, so a B2B failure must not skip him. It still stays OUT of carlos_opt_all's step list for the original visibility reason — see the module docstring.",
       "display_name": "Carlos 1on1s — Noah Dubale NDS OPT only",
       "machine": "Lucy 2",
       "source_type": "tableau",
@@ -3499,11 +3499,16 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
+      "after": [
+        "carlos_focus"
+      ],
       "verify": null,
       "timeout_minutes": 30
     },
