@@ -30,6 +30,8 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
+from . import day_marker
+
 # The org-wide BoxOrderLog view — same workbook/worksheet as Carlos's, but
 # WITHOUT his `CarlosOrderLog` custom-view segment, so the pull carries every
 # owner's rows and we filter in code (the reliable technique — see
@@ -133,6 +135,12 @@ def main(argv: Optional[list] = None) -> int:
     ap.add_argument("--test-to", metavar="ADDR",
                     help="send for real but ONLY to this address (proving send "
                          "for review — implies --email; the owner is NOT mailed)")
+    ap.add_argument("--resend", action="store_true",
+                    help="email even if this owner already got today's log. The "
+                         "day's per-owner marker normally makes a second --email "
+                         "a no-op, whatever launched it (wrapper, `lucy rerun`, "
+                         "Hub card) — use this only when the first email was "
+                         "wrong and they really do need a second one.")
     ap.add_argument("--require-fresh", action="store_true",
                     help="EARLY pass only: if this owner's newest sale hasn't "
                          "reached yesterday, exit 3 (no email) so the later "
@@ -166,6 +174,21 @@ def main(argv: Optional[list] = None) -> int:
         print("✗ unknown owner {!r}. Known: {}".format(
             args.owner, ", ".join(sorted(owners_mod.OWNERS))), file=sys.stderr)
         return 2
+
+    # ONE EMAIL PER OWNER PER DAY (2026-08-17). deploy/box_order_log_owners.sh
+    # has always checked this marker before adding --email, but nothing else
+    # did: `lucy rerun box_order_log_roshan --email` and a Hub-card click went
+    # straight to her inbox. On 8/17 the noon pass emailed Abel and Roshan
+    # cleanly and a 16:35 re-run sent both an identical second copy, because it
+    # never looked. Checked BEFORE the pull — an owner who's already had today's
+    # log doesn't need a 6,000-row Tableau export to find that out. --test-to is
+    # exempt: a proving send to one reviewer isn't the owner's delivery.
+    if args.email and not args.test_to and not args.resend and \
+            day_marker.already_done(day_marker.owner_stem(cfg.key), today):
+        print("  " + day_marker.skip_message(
+            "{}'s BOX Order Log".format(cfg.display),
+            day_marker.owner_stem(cfg.key), today), flush=True)
+        return 0
 
     from . import clean, xlsx, payout, png, window
 
@@ -405,6 +428,13 @@ def main(argv: Optional[list] = None) -> int:
         print("✗ email failed: {}".format(exc), file=sys.stderr)
         traceback.print_exc()
         return 1
+
+    # Claim the day as soon as the owner's copy is actually away, so the NEXT
+    # --email from any entry point no-ops. The wrapper touches this same file on
+    # exit 0; whichever gets there first satisfies both. --test-to doesn't claim
+    # it — the owner still hasn't been mailed.
+    if args.email and not args.test_to:
+        day_marker.mark_done(day_marker.owner_stem(cfg.key), today)
 
     if not send_for_real and verbose:
         print("\n  Dry-run: nothing emailed. Re-run with --email to send to {}."

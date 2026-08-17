@@ -22,6 +22,8 @@ import traceback
 from pathlib import Path
 from typing import Optional
 
+from . import day_marker
+
 # Python 3.9 on the mini / Lucy 2 — keep annotations deferred and avoid
 # runtime-evaluated `X | Y`. (order_log.py:31 records the outage this caused.)
 
@@ -191,6 +193,12 @@ def main(argv: Optional[list] = None) -> int:
                     help="also build the PDF")
     ap.add_argument("--post", action="store_true",
                     help="actually post to Slack (default: build only)")
+    ap.add_argument("--resend", action="store_true",
+                    help="post even if today's thread already went out. The "
+                         "day's posted-marker normally makes a second --post a "
+                         "no-op, whatever launched it (wrapper, `lucy rerun`, "
+                         "Hub card) — use this only when the first post was "
+                         "wrong and the channel really does need a second one.")
     ap.add_argument("--require-fresh", action="store_true",
                     help="EARLY pass only: if the pulled extract hasn't reached "
                          "the latest completed day, skip the post (exit 3, no "
@@ -449,6 +457,22 @@ def main(argv: Optional[list] = None) -> int:
             print("    re-run with --post")
         return 0
 
+    # ONE THREAD A DAY (2026-08-17). deploy/box_order_log.sh has always checked
+    # this marker before adding --post, but nothing else did: `lucy rerun
+    # box_order_log --post` and a Hub-card click both went straight to the
+    # channel. On 8/17 the noon pass posted cleanly and a 16:54 re-run posted an
+    # identical second thread to BOTH channels because it never looked. The check
+    # belongs next to the post, where every caller has to pass it. --dm is exempt
+    # (that's a preview to one person, not the channel feed).
+    if args.post and not args.dm and not args.resend and \
+            day_marker.already_done(day_marker.POST_STEM, today):
+        print("\n  " + day_marker.skip_message(
+            "the BOX Order Log thread", day_marker.POST_STEM, today), flush=True)
+        # A deliberate no-op is a completed pass: tell the Hub it ran, same rule
+        # the 7:00 deferral follows, so the card doesn't sit amber for the day.
+        _report_to_hub(started_at, verbose)
+        return 0
+
     # HARD GATE (2026-08-12): don't POST a clearly-capped pull. The filter
     # release is best-effort and can miss on a bad viz load, capping the export
     # to a stale ID snapshot; posting it puts numbers that understate reality in
@@ -559,6 +583,11 @@ def main(argv: Optional[list] = None) -> int:
         except Exception:
             pass
     print("\n✅ Posted to {}".format(where))
+    # Claim the day the moment a thread is live, so the NEXT --post from any
+    # entry point no-ops. The wrapper touches this same file on exit 0; whichever
+    # gets there first satisfies both. Not for --dm (a preview isn't the feed).
+    if not args.dm:
+        day_marker.mark_done(day_marker.POST_STEM, today)
     # Two ways the tier board can leave the thread short of the truth: it wasn't
     # captured at all, or it was captured clipped (reps cut off the bottom).
     # Both look FINE in the channel — the log and payout are right there — so
