@@ -82,6 +82,10 @@ def _pull_all(pairs: List[Tuple[str, str]], dest: Path, *, shared: bool,
 def _pairs_for_report(report_id: str) -> List[Tuple[str, str]]:
     from automations.harvest.needs import needs_for_report
     needs = needs_for_report(report_id)
+    if not needs and report_id in ("fiber_activations", "captainship_activations"):
+        # Heavy import (pulls the browser stack), so only on demand.
+        from automations.harvest.needs_fiber import fiber_needs
+        needs = fiber_needs()
     if not needs:
         raise SystemExit(
             f"No declared needs for {report_id!r}. Either pass --url/--sheet "

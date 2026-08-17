@@ -738,6 +738,39 @@
       },
       "timeout_minutes": 20
     },
+    "session_proof_fiber": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Lever A gate (Megan 2026-08-17). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator, so it CANNOT affect the morning run. Run only by hand: `lucy rerun session_proof_fiber`. Runs automations.harvest.proof_session --report fiber_activations: pulls all 11 fiber crosstabs THREE times - A legacy (one login per pull), B shared (TABLEAU_SHARED_SESSION=1, one login total), A' legacy again - and hashes each. A==A' and B==A => PROVEN, safe to flip fiber_activations to a shared login (12 logins/day -> 1). A!=A' => the extract moved mid-test, INCONCLUSIVE, rerun when quiet. A==A' and B!=A => FAILED, do not flip: that is the Weekending-filter bug documented at fiber_activations/pull.py:254 (3rd+ call silently returned last-completed-week 3,072 instead of current-week 221). Downloads only - writes NO Sheet, posts NO Slack. Result -> output/logs/orch-<date>-session_proof_fiber.log (`lucy logtail session_proof_fiber`). source_type tableau so the rerun runs chrome_guard first. NOTE: the poller is single-threaded and this takes ~25-40 min, which blocks the lucy queue behind it.",
+      "display_name": "Session Proof - Fiber (Lever A gate)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.proof_session"
+      ],
+      "base_args": [
+        "--report",
+        "fiber_activations"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "00:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 60
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
