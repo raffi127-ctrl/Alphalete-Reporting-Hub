@@ -199,6 +199,71 @@ class IncidentThreadTest(unittest.TestCase):
                                                client=self.c))
         self.assertEqual(self.c.posts, [])
 
+    # --- families: one outage, several witnesses, ONE thread ------------------
+
+    def _open_key(self, key, day, *, title=None, body=("*Error:* boom",)):
+        inc._HISTORY_CACHE.clear()
+        return inc.open_or_followup(key=key, title=title or f"🚨 *{key}* — broke",
+                                    body=list(body), channel="C1", day=day,
+                                    client=self.c)
+
+    def test_watch_miss_replies_in_the_drop_thread(self):
+        """The 2026-08-17 case: box_order_log dropped its pull so nothing posted,
+        and 13 minutes later the post-watch reported no post. One outage, two
+        witnesses — the channel must gain ONE item, not two."""
+        day = dt.date(2026, 8, 17)
+        first = self._open_key("drop-box-order-log", day)
+        second = self._open_key("failure-box_order_log__watch", day)
+        self.assertFalse(second["new"])
+        self.assertEqual(second["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 1)
+        self.assertIn("Same problem, reported by", self.c.replies[-1])
+        self.assertIn("failure-box_order_log__watch", self.c.replies[-1])
+        # …and it is NOT miscounted as a recurrence of the first witness.
+        self.assertNotIn("Happened again", self.c.replies[-1])
+
+    def test_family_uses_the_declared_manifest_alias(self):
+        """carlos_focus's drop alerts are filed under its manifest id
+        (`carlos-1on1s-run`, from schedule_config's verify block), which no amount
+        of string normalising would match — the config is what links them."""
+        self.assertEqual(inc.subject("failure-carlos_focus"),
+                         inc.subject("drop-carlos-1on1s-run"))
+
+    def test_normalisation_and_watch_suffix(self):
+        for a, b in (("failure-tableau_screenshots", "drop-tableau-screenshots"),
+                     ("failure-box_order_log__watch", "drop-box-order-log"),
+                     ("standalone-att_cancels", "failure-att_cancels")):
+            self.assertEqual(inc.subject(a), inc.subject(b), f"{a} vs {b}")
+
+    def test_findings_and_nonew_keep_their_own_thread(self):
+        """A finding is about the NUMBERS of a report that ran; a nonew is
+        benign. Neither belongs inside an outage thread."""
+        self.assertIsNone(inc.subject("finding-b2b_metrics"))
+        self.assertIsNone(inc.subject("nonew-applicant_push"))
+        day = dt.date(2026, 8, 17)
+        self._open_key("failure-b2b_metrics", day)
+        res = self._open_key("finding-b2b_metrics", day)
+        self.assertTrue(res["new"])
+        self.assertEqual(len(self.c.top_level), 2)
+
+    def test_resolving_a_shared_thread_keeps_the_parents_own_marker(self):
+        """The sibling that recovers closes the thread — but the marker must keep
+        naming the key that OPENED it, or every other machine loses the thread."""
+        day = dt.date(2026, 8, 17)
+        self._open_key("drop-box-order-log", day)
+        self._open_key("failure-box_order_log__watch", day)
+        ok = inc.resolve(key="failure-box_order_log__watch", lines=["✅ posted"],
+                         channel="C1", day=dt.date(2026, 8, 18), client=self.c)
+        self.assertTrue(ok)
+        self.assertIn("_incident · drop-box-order-log · resolved 2026-08-18_",
+                      self.c.updates[-1][1])
+        # Both witnesses are closed, so tomorrow's failure opens a FRESH post
+        # rather than replying into a thread that already reads ✅.
+        self.assertEqual(inc.open_keys(), [])
+        after = self._open_key("drop-box-order-log", dt.date(2026, 8, 19))
+        self.assertTrue(after["new"])
+        self.assertEqual(len(self.c.top_level), 2)
+
     def test_dry_run_touches_nothing(self):
         res = inc.open_or_followup(key="failure-r", title="t", body=["b"],
                                    channel="C1", dry_run=True, client=self.c)

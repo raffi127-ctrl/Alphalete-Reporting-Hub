@@ -24,6 +24,14 @@ So an alert is no longer a message, it's an INCIDENT:
 A threaded reply doesn't bump the channel for people who aren't following it, so
 a problem on day 9 costs the channel nothing while still being on the record.
 
+ONE OUTAGE, ONE THREAD — even with several witnesses (Eve 2026-08-17). The rule
+above deduped per DAY but not per PRODUCER: a report that broke once still got a
+post from its drop alert, another from its post-watch, another from the
+orchestrator. Failure-class keys now resolve to a shared SUBJECT (see
+_FAMILY_PREFIXES / subject()), so the first witness opens the thread and the
+others reply into it under ":link: Same problem, reported by …". Findings and
+"nothing new today" keep their own threads on purpose.
+
 CROSS-MACHINE (the reason the marker lives in the message text)
 --------------------------------------------------------------
 These alerts are posted from Lucy 1, Lucy 2 and the mini. A local state file
@@ -93,7 +101,82 @@ _ORDINAL = {1: "1st", 2: "2nd", 3: "3rd"}
 _HISTORY_CACHE: Dict[str, list] = {}
 
 
+# --- FAMILIES: one broken report, one thread (Eve 2026-08-17) ------------------
+# The thread-per-problem rule fixed "one post per DAY"; it did not fix "one post
+# per PRODUCER". Three different modules describe the same broken report from
+# three angles and each opened its own top-level post:
+#
+#   drop-box-order-log            the run dropped its Tableau pull, so it never posted
+#   failure-box_order_log__watch  post_watch: no post landed by 8:45
+#   failure-box_order_log         the orchestrator's own "didn't finish"
+#
+# Those are one event with three witnesses. Eve 2026-08-17: "no son sobre el
+# mismo problema? … es muy redundante y confuso tener mil mensajes en el canal
+# por el mismo problema porque impide ir resolviendo de a uno."
+#
+# So a failure-class key resolves to a SUBJECT, and the first witness to alert
+# opens the thread; the rest reply in it. Two things map onto one subject:
+#   • normalisation — `_`/`-` are the same word, and post_watch's `__watch`
+#     pseudo-report is the report it watches, not a separate one.
+#   • schedule_config's `verify.report_id` — the DECLARED link between an
+#     orchestrator report id and the manifest/section id its drop alerts use
+#     (carlos_focus -> carlos-1on1s-run). Read, never guessed, so a renamed
+#     manifest id can't silently split a thread back in two.
+#
+# Deliberately NOT grouped: `finding-` (the report RAN — the conversation is
+# about the numbers, not the outage) and `nonew-` (a benign "nothing today").
+# Merging those would hide a real question inside a failure thread.
+_FAMILY_PREFIXES = ("failure-", "drop-", "standalone-")
+# post_watch.WATCH_SUFFIX. Duplicated rather than imported: this module must stay
+# importable from anywhere (shared/ does not depend on day_orchestrator/), the
+# same reason CHANNEL_ID_CACHE is kept in sync by hand.
+_WATCH_SUFFIX = "__watch"
+
+_CONFIG_PATH = REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
+_ALIAS_CACHE: Optional[Dict[str, str]] = None
+
+
 # ------------------------------------------------------------------ helpers ---
+
+def _canon(rid: str) -> str:
+    return rid.strip().lower().replace("_", "-")
+
+
+def _alias_map() -> Dict[str, str]:
+    """{manifest/section id -> orchestrator report id}, from schedule_config's
+    `verify` blocks. Best-effort: an unreadable config costs us the alias half of
+    the grouping (normalisation still works), never an alert."""
+    global _ALIAS_CACHE
+    if _ALIAS_CACHE is not None:
+        return _ALIAS_CACHE
+    out: Dict[str, str] = {}
+    try:
+        cfg = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+        for rid, r in (cfg.get("reports") or {}).items():
+            v = r.get("verify") if isinstance(r, dict) else None
+            mid = (v or {}).get("report_id") if isinstance(v, dict) else None
+            if mid and _canon(mid) != _canon(rid):
+                out[_canon(mid)] = _canon(rid)
+    except Exception:  # noqa: BLE001 — no config = no aliases, never a crash
+        pass
+    _ALIAS_CACHE = out
+    return out
+
+
+def subject(key: str) -> Optional[str]:
+    """What a failure-class incident is ABOUT — the shared identity that lets the
+    drop / watch / failure alerts for one report find each other's thread.
+
+    None means "this key stands alone" (finding-, nonew-, or any key that isn't
+    failure-class), which keeps the old one-thread-per-key behaviour."""
+    for p in _FAMILY_PREFIXES:
+        if key.startswith(p):
+            rid = key[len(p):]
+            if rid.endswith(_WATCH_SUFFIX):
+                rid = rid[:-len(_WATCH_SUFFIX)]
+            rid = _canon(rid)
+            return _alias_map().get(rid, rid) or None
+    return None
 
 def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
     return "_incident · {} · {} {}_".format(key, state,
@@ -182,37 +265,63 @@ def _days_open(opened: str, day: dt.date) -> int:
 # ------------------------------------------------------------------ lookup ----
 
 def find(key: str, *, channel: str = CHANNEL, client=None,
-         day: Optional[dt.date] = None) -> Optional[dict]:
+         day: Optional[dt.date] = None, family: bool = True) -> Optional[dict]:
     """The OPEN incident for `key`, or None. Index first (no API call), then a
-    channel scan so an incident opened on another machine is still found."""
+    channel scan so an incident opened on another machine is still found.
+
+    `family` also accepts a SIBLING witness's open thread (see _FAMILY_PREFIXES)
+    — the drop alert, the post-watch miss and the orchestrator failure for one
+    report all land in whichever of them alerted first. The returned dict carries
+    `marker_key` (the key that thread's marker actually names, which may differ
+    from `key`) and `via_family`; resolve() needs the former so closing a shared
+    thread can't rewrite its marker to the wrong key."""
     if not _valid(key):
         return None
     day = day or dt.date.today()
-    ent = (_load_index() or {}).get(key)
+    idx = _load_index() or {}
+    ent = idx.get(key)
     if isinstance(ent, dict) and ent.get("ts") and not ent.get("resolved"):
-        return dict(ent, key=key, source="index")
+        return dict(ent, key=key, source="index",
+                    marker_key=ent.get("marker_key") or key,
+                    via_family=bool(ent.get("marker_key")
+                                    and ent.get("marker_key") != key))
     # A parent we CLOSED but couldn't edit still carries an "open" marker —
     # chat.update only works on your own messages, and these posts come from
-    # three identities. Remember the ts so the scan below doesn't re-open the
-    # thread we just resolved.
-    closed_ts = (ent.get("ts") if isinstance(ent, dict) and ent.get("resolved")
-                 else None)
-    want = "_incident · {} · open ".format(key)
+    # three identities. Remember those ts so the scan below doesn't re-open a
+    # thread we just resolved. Every resolved entry counts, not only this key's:
+    # with families, the entry that closed a shared thread is usually a SIBLING's.
+    closed_ts = {e.get("ts") for e in idx.values()
+                 if isinstance(e, dict) and e.get("resolved") and e.get("ts")}
     try:
         client = client or _client()
     except Exception as e:  # noqa: BLE001 — no Slack client = caller posts fresh
         print(f"  ⚠ incident lookup: no Slack client ({type(e).__name__}: "
               f"{str(e)[:60]})", flush=True)
         return None
+
+    def _as_inc(msg, mark, *, via_family: bool) -> dict:
+        return {"key": key, "marker_key": mark.group("key"), "ts": msg.get("ts"),
+                "opened": mark.group("date"), "text": msg.get("text") or "",
+                "count": int(msg.get("reply_count") or 0), "channel": channel,
+                "resolved": False, "source": "channel", "via_family": via_family}
+
+    # History is newest-first, so the first hit per key is the live thread.
+    open_by_key: Dict[str, tuple] = {}
     for msg in _history(client, channel):
-        text = msg.get("text") or ""
-        if want not in text or msg.get("ts") == closed_ts:
+        m = _MARK_RE.search(msg.get("text") or "")
+        if not m or m.group("state") != "open" or msg.get("ts") in closed_ts:
             continue
-        m = _MARK_RE.search(text)
-        opened = m.group("date") if m else day.isoformat()
-        return {"key": key, "ts": msg.get("ts"), "opened": opened,
-                "count": int(msg.get("reply_count") or 0), "text": text,
-                "channel": channel, "resolved": False, "source": "channel"}
+        open_by_key.setdefault(m.group("key"), (msg, m))
+
+    hit = open_by_key.get(key)
+    if hit:
+        return _as_inc(*hit, via_family=False)
+    if family:
+        subj = subject(key)
+        if subj:
+            for other, hit in open_by_key.items():
+                if other != key and subject(other) == subj:
+                    return _as_inc(*hit, via_family=True)
     return None
 
 
@@ -258,11 +367,16 @@ def _send(client, channel: str, lines: Sequence[str],
 
 
 def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
-              text: str, resolved: bool = False) -> None:
+              text: str, resolved: bool = False,
+              marker_key: Optional[str] = None) -> None:
     idx = _load_index()
     idx[key] = {"ts": ts, "channel": channel, "opened": opened,
                 "last": dt.date.today().isoformat(), "count": count,
-                "text": text, "resolved": resolved}
+                "text": text, "resolved": resolved,
+                # Whose marker the PARENT carries. Differs from `key` when this
+                # key joined a sibling's thread; resolve() rewrites that marker,
+                # so getting it wrong would rename someone else's incident.
+                "marker_key": marker_key or key}
     _save_index(idx)
 
 
@@ -359,6 +473,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                 line += " since {}".format(_human(dt.date.fromisoformat(opened)))
             except Exception:  # noqa: BLE001
                 line += " since {}".format(opened)
+        if inc.get("via_family"):
+            # A SIBLING witness, not a recurrence: this is the same outage seen
+            # from another angle (the run dropped / nothing posted / the wrapper
+            # exited non-zero), so "2nd time" would describe something that
+            # didn't happen. Say what it is and keep it in the one thread.
+            line = (":link: *Same problem, reported by* `{}` — {}".format(
+                key, _human(day)))
         # A caller can own that first line instead. Not every reply is a
         # RECURRENCE: when several reports share one incident key (the three BOX
         # order logs do, so one stuck export is one thread — Eve 2026-08-14), the
@@ -375,9 +496,13 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         else:
             _remember(key, ts=inc["ts"], channel=channel,
                       opened=opened or day.isoformat(), count=n,
-                      text=inc.get("text") or parent_text)
-            print(f"[incident] {key}: follow-up #{n} in thread {inc['ts']}",
-                  flush=True)
+                      text=inc.get("text") or parent_text,
+                      marker_key=inc.get("marker_key") or key)
+            print("[incident] {}: {} in thread {}".format(
+                key,
+                "joined `{}`".format(inc.get("marker_key"))
+                if inc.get("via_family") else f"follow-up #{n}",
+                inc["ts"]), flush=True)
             return {"ts": inc["ts"], "new": False, "key": key,
                     "text": inc.get("text") or parent_text, "count": n}
 
@@ -403,12 +528,23 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
 
 
 def _mark_resolved_in_index(key: str) -> None:
+    """Close `key` — and every SIBLING pointing at the same thread.
+
+    With families one parent can be several keys' incident. Closing only the key
+    that happened to recover would leave its siblings' entries saying "open" with
+    the ts of a thread that now reads ✅, so the next failure would reply into a
+    closed thread instead of opening a fresh post."""
     idx = _load_index()
     ent = idx.get(key)
-    if isinstance(ent, dict):
-        ent["resolved"] = True
-        ent["last"] = dt.date.today().isoformat()
-        _save_index(idx)
+    if not isinstance(ent, dict):
+        return
+    ts = ent.get("ts")
+    today = dt.date.today().isoformat()
+    for k, e in idx.items():
+        if isinstance(e, dict) and (k == key or (ts and e.get("ts") == ts)):
+            e["resolved"] = True
+            e["last"] = today
+    _save_index(idx)
 
 
 # ------------------------------------------------------------------ resolve ---
@@ -465,8 +601,13 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     if new_parent is None:
         was = inc.get("text") or ""
         new_parent = _MARK_RE.sub("", was).rstrip()
+    # The marker keeps the PARENT's own key. On a shared thread the resolver is
+    # often a sibling (box_order_log posting clean also clears the post-watch
+    # miss), and stamping our key here would rename someone else's incident —
+    # that line is what every other machine scans for.
     new_parent = "{}\n\n{}".format(new_parent.rstrip(),
-                                  marker(key, "resolved", day))
+                                  marker(inc.get("marker_key") or key,
+                                         "resolved", day))
     edited = False
     try:
         client.chat_update(channel=channel, ts=ts, text=new_parent)
