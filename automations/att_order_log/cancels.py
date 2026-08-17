@@ -28,6 +28,14 @@ import datetime as dt
 import re
 from typing import Dict, List, Optional, Sequence
 
+# A custom view hanging off the SAME viz the OPT phase reads
+# (opt_phase_carlos.VIEWS['cancel'] → .../ATTTRACKER-B2B/B2BCancelRates?:iid=2).
+# That viz stopped rendering 2026-08-16 and took this pull down with it; it came
+# back 2026-08-17. Custom views normally survive a republish, so the GUID below
+# is kept as-is. If a run dies with "Viz toolbar never rendered" while the BASE
+# view loads fine, the custom view did NOT survive — re-save CarlosLOExpCancels
+# in Tableau (as Rafael) and paste the new GUID here. Do NOT swap this to the
+# base URL: the base view is per-owner, this parser needs the rep-expanded slice.
 VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/B2BCancelRates/3e58bc13-abea-4563-9481-360d0b9759ed/"

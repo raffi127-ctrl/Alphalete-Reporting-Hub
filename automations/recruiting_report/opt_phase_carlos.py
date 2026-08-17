@@ -190,7 +190,11 @@ VIEWS: List[ViewConfig] = [
     ),
     ViewConfig(
         key="cancel",
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates",
+        # Repointed 2026-08-17 (Eve). The viz died 2026-08-16 — the toolbar
+        # never rendered, so all 7 OPT views downloaded except this one and the
+        # '0-30 Day Cancel Rate' row went blank across the Carlos + org B2B
+        # tabs. SmartCircle republished it; this is the URL Eve verified loads.
+        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates?:iid=2",
         percent_format="0%",   # whole-number percent
         sheet_thumbnail_match="Cancel Rates Sheet",
         # Owner & Office cell looks like 'AARON CORSO\n [cor consulting agency, inc.]';

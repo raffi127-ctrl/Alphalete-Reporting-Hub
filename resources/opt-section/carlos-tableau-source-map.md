@@ -66,7 +66,7 @@ Sheet: https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUK
 | Workbook / view                                   | Used for rows | URL |
 |---------------------------------------------------|---------------|-----|
 | `ATTTRACKER-B2B / D2D1-PAGERV3`                   | 29, 33-37, 40, 41 | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/D2D1-PAGERV3 |
-| `ATTTRACKER-B2B / B2BCancelRates`                 | 43            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates |
+| `ATTTRACKER-B2B / B2BCancelRates`                 | 43            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates?:iid=2 (repointed 2026-08-17 after SmartCircle republished the view) |
 | `ATTTRACKER-B2B / ACTIVATIONRATES`                | 44            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/ACTIVATIONRATES |
 | `ATTTRACKER-B2B / CHURNRATES`                     | 45-49         | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES |
 | `ATTTRACKER-B2B / MARKETPERFORMANCEZIPLEVEL`      | 50            | https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL |
