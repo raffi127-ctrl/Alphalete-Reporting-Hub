@@ -266,10 +266,9 @@ def capped_pull_warning(newest: Optional[dt.date],
     if behind <= tolerance_days:
         return ""
     return ("⚠ CAPPED PULL: newest sale is {} — {} days behind {}; the counts "
-            "below UNDERSTATE reality. Read the per-owner 'newest' lines to see "
-            "whether the SOURCE stopped (every owner on the same day) or OUR "
-            "pull came back short (one owner behind its Sheet)."
-            .format(newest, behind, today))
+            "below UNDERSTATE reality. First thing to check is Contract ID / "
+            "Account Id on the view — they must read '(All)', not 'Multiple "
+            "values'.".format(newest, behind, today))
 
 
 # The send/post gate is deliberately LOOSER than the warning above: a warning is
@@ -304,18 +303,16 @@ def should_block_send(newest: Optional[dt.date],
     behind = (today - newest).days
     if behind < min_days_behind:
         return ""
-    # No cause asserted on purpose (Eve 2026-08-14, again 2026-08-17): this line
-    # used to blame the Contract ID / Account Id filters, and both times it
-    # mattered the real answer was SCI's extract standing still — those controls
-    # have been absent from the view since 8/13, so there was nothing of ours to
-    # re-pin. The per-owner "newest … per owner" block that run_owner prints right
-    # above is what actually tells the two apart.
+    # The dates can't name the cause (Eve 2026-08-17): a Contract ID include list
+    # frozen on day X starves every owner from day X on, which reads exactly like
+    # the feed dying. So send the reader to the filter, not to an inference.
     return ("CAPPED PULL: newest sale is {} — {} days behind {} — refusing to "
-            "send numbers that would understate reality. Compare the per-owner "
-            "'newest' lines above: all owners on the SAME day = the source "
-            "extract is behind (nothing to fix on our side); one owner short of "
-            "its Sheet = our pull. Re-run once a clean pull lands (newest "
-            "within {} days).".format(newest, behind, today, min_days_behind - 1))
+            "send numbers that would understate reality. Check Contract ID / "
+            "Account Id on the view: they must read '(All)'. 'Multiple values' "
+            "= re-pinned to a stale ID snapshot, and no newer sale can enter "
+            "whatever dates we type (probe: run_owner --probe-filters). Re-run "
+            "once a clean pull lands (newest within {} days).".format(
+                newest, behind, today, min_days_behind - 1))
 
 
 def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):

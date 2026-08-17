@@ -118,28 +118,33 @@ _KINDS = {
     # release and the pull capped at 8/4. Nothing was delivered, so this alert
     # is the only trace: without it a suppressed run is silent.
     #
-    # DON'T ASSERT A CAUSE HERE (Eve 2026-08-14, again 2026-08-17). This text used
-    # to say "it capped to a stale ID list … the Contract ID / Account Id filters
-    # likely re-pinned", which is a GUESS printed as a finding, and it was wrong
-    # both times it mattered: the ID controls have been absent from the view since
-    # 8/13 ("not on this view — nothing to release"), so there is nothing on our
-    # side to re-pin. Reading it as a diagnosis sent Eve hunting our filters while
-    # the real answer was SCI's extract sitting still. The per-owner lines already
-    # carry the honest numbers (run_owner picks pull-vs-stored-mark or
-    # export-vs-today); the shared headline only has to say what happened and
-    # where to look.
+    # POINT AT THE ONE CHECK THAT SETTLES IT (Eve 2026-08-17). The dates alone
+    # CANNOT tell a re-pinned filter from a stalled source: a Contract ID include
+    # list frozen on day X starves every owner from day X onward, which looks
+    # exactly like the feed stopping. I claimed the opposite here for a few hours
+    # ("all owners on the same day = the source") and it was flatly wrong — Eve
+    # opened the view and found Contract ID reading "Multiple values" while sales
+    # from 8/14 were sitting right there.
+    #
+    # And "the control isn't on the view" is not proof either: on 8/13 our probe
+    # found zero nodes carrying the field name and we concluded SCI had deleted
+    # the filter, when it had only changed to a dropdown that renders its items
+    # lazily. Hidden ≠ absent. So the only honest instruction is: go LOOK at the
+    # filter.
     "capped": {
         "what": "Tableau pull",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
         "tail_headline": "the export stopped short of today, so nothing was sent.",
         "label": "Missing",
-        "fix": "find out WHERE it stopped before assuming why: `lucy logtail "
-               "box-order-log-owner-<key> newest` prints the newest sale per "
-               "owner. EVERY owner cutting on the SAME day = SCI's extract is "
-               "behind and there's no knob on our side (report it to Smart "
-               "Circle). ONE owner behind what its Sheet already holds = our "
-               "pull came back short — re-run `{report_id}`, the fill/merge is "
-               "idempotent.",
+        "fix": "check the *Contract ID* and *Account Id* filters on the view "
+               "FIRST — they must read `(All)`. `Multiple values` means they're "
+               "re-pinned to a stale ID snapshot, and then no sale newer than "
+               "that snapshot enters the export no matter what date window we "
+               "type; that is the usual cause and it looks identical to a dead "
+               "feed from the dates alone. Probe it with `lucy rerun "
+               "box_order_log_roshan --probe-filters`. Only if they really do "
+               "read `(All)` is the source itself behind. Re-run `{report_id}` "
+               "once a clean pull lands — the fill/merge is idempotent.",
         "tail": "No email/post went out — a gap beats numbers that undercount.",
         # The three BOX order logs share one incident key on purpose, so a reply
         # in this thread is usually a DIFFERENT OFFICE in the same run, not the
