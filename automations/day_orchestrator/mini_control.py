@@ -95,6 +95,17 @@ import sys
 import time
 from pathlib import Path
 
+# The → / ✓ / ⚠ characters this module prints are not encodable in the Windows
+# console's cp1252 default, and `enqueue` prints one AFTER it has already
+# appended the row. So `--enqueue update` from Windows queued the job and THEN
+# died with UnicodeEncodeError — the traceback said the deploy failed when it
+# had actually worked, which is the worst possible way to be wrong about a
+# deploy (Eve 2026-08-17). Same guard as opt_phase_carlos / run.py.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 import gspread
 
 from automations.recruiting_report import fill as _fill
