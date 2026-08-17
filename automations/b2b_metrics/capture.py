@@ -526,22 +526,51 @@ def _select_week(page, want: dt.date, log=print) -> bool:
             continue
         log("   [week] {} opened {} ({} items): {}".format(
             osel, sel, len(texts), " | ".join(t for t in texts[:20] if t)))
+        pick = next((j for j, t in enumerate(texts) if t in targets), None)
+        if pick is None:
+            continue
+        # This is a MULTI-SELECT checkbox list (it carries an "(All)" item), so
+        # picking a week is two moves: check the one we want, then uncheck the
+        # week it was on. Check FIRST — Tableau re-selects everything if the
+        # last checked value is cleared.
+        #
+        # And the toggle is KEYBOARD ONLY. .click() (force or not) is swallowed
+        # by Tableau's click-capture overlay and leaves aria-checked untouched —
+        # which is why the previous pass reported "picked" and still rendered
+        # 8/23. Same finding, same fix as box_order_log.window
+        # .release_pinned_filters. [[reference_tableau_pinned_id_filters]]
+        def _set(j: int, want: bool) -> bool:
+            el = loc.nth(j)
+            try:
+                if (el.get_attribute("aria-checked") == "true") == want:
+                    return True
+                el.focus()
+                page.keyboard.press(" ")
+                page.wait_for_timeout(6_000)
+                return (el.get_attribute("aria-checked") == "true") == want
+            except Exception:  # noqa: BLE001
+                return False
+
+        if not _set(pick, True):
+            log("   ⚠ {} would not check".format(targets[0]))
+            continue
+        import re as _re
         for j, t in enumerate(texts):
-            if t in targets:
-                try:
-                    loc.nth(j).click(timeout=15_000)
-                except Exception:  # noqa: BLE001
-                    # Tableau's click-capture overlay eats a plain click on some
-                    # controls; only the keyboard gets through.
-                    # [[reference_tableau_pinned_id_filters]]
-                    try:
-                        loc.nth(j).focus()
-                        page.keyboard.press("Space")
-                    except Exception:  # noqa: BLE001
-                        continue
-                log("   ✓ picked {} from {}".format(t, sel))
-                page.wait_for_timeout(12_000)     # let the viz requery
-                return True
+            if j == pick or not _re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", t):
+                continue
+            try:
+                if loc.nth(j).get_attribute("aria-checked") == "true":
+                    _set(j, False)
+                    log("   [week] unchecked {}".format(t))
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            page.keyboard.press("Escape")       # close the overlay before the shot
+        except Exception:  # noqa: BLE001
+            pass
+        log("   ✓ picked {} from {}".format(targets[0], sel))
+        page.wait_for_timeout(15_000)           # let the viz requery
+        return True
     log("   ⚠ {} not offered by the week dropdown".format(targets[0]))
     return False
 
