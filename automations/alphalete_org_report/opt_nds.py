@@ -48,10 +48,22 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import re
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import gspread
+
+# This module's log lines carry ← / ✓ / ⚠. On the Windows console (cp1252) that
+# raises UnicodeEncodeError from inside logfn — the run dies while REPORTING a
+# fill it already computed, so the result is lost and the exit code lies. Hit
+# 2026-08-17 running Noah's NDS fill from Windows. It normally runs on Lucy 2
+# (macOS, UTF-8), which is why it went unnoticed. Same guard as run.py /
+# daily_focus.py / opt_phase_carlos.py.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 from automations.shared import sheet_flags as _sheet_flags
 
