@@ -47,6 +47,31 @@ things make that fiddly and are load-bearing here:
 Releasing the filters FIRST and setting the dates second is deliberate: the
 saved range is narrow (7/20–7/21), so the expensive all-contracts requery runs
 against a small window before we widen it.
+
+THE CONTROL IS A DROPDOWN NOW (2026-08-17)
+------------------------------------------
+"SCI removed the filters" (below, 2026-08-13) was wrong, and it cost days. On
+8/17 Eve opened the view by hand and saw `Contract ID` reading **"Multiple
+values"** — the filter is still there, it just renders as a COLLAPSED dropdown
+instead of an expanded checkbox list, and a collapsed dropdown has no items in
+the DOM at all until you open it. That is why the probe counted zero nodes
+carrying the field name: it was looking for the items, and the items don't exist
+yet. Hidden ≠ removed.
+
+So the release now has two paths, tried in order:
+
+  1. EXPANDED list — `_all_item`, the original path, one locator and done.
+  2. COLLAPSED dropdown — find the field's combo box, open it, tick `(All)`
+     inside the menu it renders, close it. Same keyboard trick as path 1: the
+     menu item ignores mouse clicks and only flips on Space.
+
+Finding the combo is the fiddly half, because the collapsed control carries the
+VALUE ("Multiple values"), not the field name — the name lives in a separate
+title element. We try, in order: an `id`/`aria-label` that names the field, then
+the title text walked up to the nearest ancestor holding a combo box. When none
+of them match, the log prints every combo it DID see with its title and value,
+so the next run tells us what the DOM looks like instead of just "not found" —
+the same lesson as `describe_filters`.
 """
 from __future__ import annotations
 
@@ -89,6 +114,203 @@ def _all_item(viz, field: str):
     """
     return viz.locator(
         '[role="checkbox"][id*="{}"][id$="_(All)"]'.format(field)).first
+
+
+# --- collapsed dropdown ("Multiple values") -----------------------------------
+# A quick filter shown as a dropdown renders NOTHING of its item list until it is
+# opened, so every selector that looks for the items comes back empty and reads
+# exactly like "the filter was removed". These are the pieces of the open/tick
+# dance; see the module docstring for how 2026-08-13 got this wrong.
+
+# Which part of a .tabComboBox opens the menu differs by Tableau build (label /
+# name container / arrow button), so we try each — same finding as the b2b_metrics
+# week dropdown, 2026-08-17.
+_COMBO = ".tabComboBox"
+_COMBO_OPENERS = (".tabComboBox", ".tabComboBoxButton", ".tabComboBoxName")
+# The item list, spelled a few ways depending on whether the filter is a plain
+# list or a searchable one.
+_MENU_ITEMS = (".QFCheckbox", '[role="checkbox"]', ".tabMenuItemName",
+               ".tabComboBoxMenuItem", '[role="option"]', '[role="menuitem"]',
+               ".tabMenuItem")
+# NOT a title source: `.tabComboBoxNameContainer` holds the VALUE ('(All)',
+# '(Multiple values)'), which is why describe_filters' "quick-filter titles" line
+# printed six values and no field name. The name comes from _combo_label.
+
+
+def _text(loc, timeout_ms: int = 4_000) -> str:
+    """Squashed inner_text, or '' — never raises. Tableau prefixes a checked item
+    with a ✓ glyph, which is state, not name."""
+    try:
+        return " ".join((loc.inner_text(timeout=timeout_ms) or "").split()
+                        ).lstrip("✓").strip()
+    except Exception:                                       # noqa: BLE001
+        return ""
+
+
+def _is_all(text: str) -> bool:
+    """Does this menu item name the '(All)' entry? Tableau writes '(All)'; some
+    builds and locales drop the parens."""
+    return text.strip().strip("()").casefold() == "all"
+
+
+def _combo_label(viz, combo) -> str:
+    """The FIELD name behind a collapsed dropdown, e.g. 'Filter Contract ID
+    Inclusive (All)'.
+
+    Probed against the live view 2026-08-17: the combo's own text is the VALUE
+    ('(All)', '(Multiple values)') and nothing about it names the field, but
+    Tableau points `aria-labelledby` at a label node that does. The grandparent's
+    text carries the same sentence and is the fallback for a build that drops the
+    attribute — those two are the only places the name appears at all.
+    """
+    try:
+        lab = combo.get_attribute("aria-labelledby")
+    except Exception:                                       # noqa: BLE001
+        lab = None
+    if lab:
+        # An id, not a class: match it exactly rather than through CSS escaping
+        # (Tableau's ids carry dots and colons).
+        got = _text(viz.locator('[id="{}"]'.format(lab)).first, timeout_ms=2_000)
+        if got:
+            return got
+    return _text(combo.locator("xpath=../.."), timeout_ms=2_000)
+
+
+def _field_combo(viz, field: str):
+    """(locator, how) for `field`'s collapsed dropdown, or (None, reason).
+
+    Two ways in, cheapest first. An ATTRIBUTE naming the field is unambiguous
+    when it's there (older builds put it in the id). Otherwise we read each
+    dropdown's label — see _combo_label — which is what the live view actually
+    offers.
+    """
+    for sel in ('{}[id*="{}"]'.format(_COMBO, field),
+                '[aria-label*="{}"]{}'.format(field, _COMBO),
+                '{}[aria-label*="{}"]'.format(_COMBO, field)):
+        try:
+            loc = viz.locator(sel).first
+            if loc.count():
+                return loc, "attribute"
+        except Exception:                                   # noqa: BLE001
+            continue
+    try:
+        combos = viz.locator(_COMBO)
+        for i in range(min(combos.count(), 25)):
+            combo = combos.nth(i)
+            if field.casefold() in _combo_label(viz, combo).casefold():
+                return combo, "label"
+    except Exception:                                       # noqa: BLE001
+        pass
+    return None, "no combo box carries or is labelled {!r}".format(field)
+
+
+def _describe_combos(viz, limit: int = 12) -> str:
+    """Every dropdown on the view as 'title=value', for the log. A release that
+    can't find its field must say what it DID see, or the next run is another
+    round of guessing."""
+    out = []
+    try:
+        combos = viz.locator(_COMBO)
+        for i in range(min(combos.count(), limit)):
+            combo = combos.nth(i)
+            out.append("{}={!r}".format(
+                _combo_label(viz, combo) or "?", _text(combo)))
+    except Exception as exc:                                # noqa: BLE001
+        return "<combo probe failed: {!r}>".format(exc)
+    return " | ".join(out) or "(no dropdowns)"
+
+
+def _release_dropdown(page, viz, field: str, verbose: bool,
+                      settle_ms: int = 15_000) -> str:
+    """Open `field`'s dropdown and tick '(All)'.
+
+    Returns one of:
+      'released' — it now reads (All), the export is uncapped for this field
+      'stuck'    — the dropdown IS on the view but wouldn't go to (All): a real
+                   problem, worth the retry pass
+      'absent'   — no dropdown for this field, so this isn't the control shape
+                   in play and the caller should keep looking
+
+    Fail-soft like everything else here: any step that doesn't work logs what it
+    saw, and the caller's send gate still refuses to ship a capped pull."""
+    combo, how = _field_combo(viz, field)
+    if combo is None:
+        if verbose:
+            print("  -> BOX filter {!r}: no dropdown either ({}). Saw: {}".format(
+                field, how, _describe_combos(viz)), flush=True)
+        return "absent"
+    before = _text(combo)
+    if _is_all(before):
+        if verbose:
+            print("  -> BOX filter {!r} dropdown already reads '(All)'".format(
+                field), flush=True)
+        return "released"
+    if verbose:
+        print("  -> BOX filter {!r} is a collapsed dropdown reading {!r} "
+              "(found by {}) — opening it".format(field, before, how),
+              flush=True)
+    for opener in _COMBO_OPENERS:
+        try:
+            target = (combo if opener == _COMBO
+                      else combo.locator(opener).first)
+            if not target.count():
+                continue
+            try:
+                target.click(timeout=15_000)
+            except Exception:                               # noqa: BLE001
+                target.focus()
+                page.keyboard.press("Enter")
+        except Exception:                                   # noqa: BLE001
+            continue
+        page.wait_for_timeout(2_500)
+        for sel in _MENU_ITEMS:
+            try:
+                items = viz.locator(sel)
+                n = min(items.count(), 300)
+            except Exception:                               # noqa: BLE001
+                continue
+            for j in range(n):
+                item = items.nth(j)
+                if not _is_all(_text(item, timeout_ms=2_000)):
+                    continue
+                # Mouse clicks are swallowed by Tableau's click-capture overlay
+                # on these items — verified 2026-08-07 against all four click
+                # paths. Focus + Space is the only thing that flips them.
+                try:
+                    item.focus()
+                    page.keyboard.press(" ")
+                except Exception as exc:                    # noqa: BLE001
+                    if verbose:
+                        print("  ⚠ BOX filter {!r}: (All) found via {} but "
+                              "wouldn't take the keypress ({!r})".format(
+                                  field, sel, exc), flush=True)
+                    continue
+                # Un-pinning re-queries against every contract; give it room.
+                page.wait_for_timeout(settle_ms)
+                try:
+                    page.keyboard.press("Escape")           # close the menu
+                except Exception:                           # noqa: BLE001
+                    pass
+                now = _text(combo)
+                ok = _is_all(now) or item.get_attribute("aria-checked") == "true"
+                if verbose:
+                    print("  -> BOX filter {!r} {} — dropdown now reads "
+                          "{!r}".format(field,
+                                        "released to (All)" if ok
+                                        else "did NOT flip", now), flush=True)
+                return "released" if ok else "stuck"
+        if verbose:
+            print("  -> BOX filter {!r}: {} opened no (All) item".format(
+                field, opener), flush=True)
+    try:
+        page.keyboard.press("Escape")
+    except Exception:                                       # noqa: BLE001
+        pass
+    if verbose:
+        print("  ⚠ BOX filter {!r}: dropdown found but no '(All)' item in it — "
+              "export stays capped to the saved ID list".format(field),
+              flush=True)
+    return "stuck"
 
 
 def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
@@ -141,11 +363,22 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
             except Exception:
                 pass
             if box.count() == 0:
-                # Absent (All) has two very different meanings. If NOTHING on the
-                # view carries the field name, the filter isn't on this view at
-                # all — nothing to release, nothing wrong, don't retry. If the
-                # field IS there but its (All) isn't, that's the 8/12 race and
-                # worth another pass.
+                # No expanded (All). Before concluding anything, try the
+                # COLLAPSED dropdown: it renders no items at all until opened,
+                # which is what made 2026-08-13 read this as "SCI deleted the
+                # control" when the filter was alive and capping the export.
+                shape = _release_dropdown(page, viz, field, verbose)
+                if shape == "released":
+                    continue
+                if shape == "stuck":
+                    # The control IS there and we couldn't get it to (All) —
+                    # a real cap, and worth the second pass.
+                    still_pending.append(field)
+                    continue
+                # Still nothing. If NOTHING on the view carries the field name,
+                # the filter really isn't here — nothing to release, don't retry.
+                # If the field IS there but its (All) isn't, that's the 8/12
+                # hydration race and worth another pass.
                 present = viz.locator('[id*="{}"]'.format(field)).count()
                 if not present:
                     if verbose:
@@ -241,6 +474,16 @@ def describe_filters(page, viz, limit: int = 25) -> str:
     for field in PINNED_ID_FILTERS:
         _try("nodes with {!r} in id".format(field),
              (lambda f=field: viz.locator('[id*="{}"]'.format(f)).count()))
+
+    # The 8/13 blind spot: a COLLAPSED dropdown has no items and no field name in
+    # any id, so every probe above reads zero and the filter looks deleted. Its
+    # value ("Multiple values") is right here and says otherwise.
+    _try("dropdowns (title=value)", lambda: _describe_combos(viz))
+    for field in PINNED_ID_FILTERS:
+        _try("dropdown for {!r}".format(field),
+             (lambda f=field: "{} ({})".format(
+                 _text(_field_combo(viz, f)[0]) if _field_combo(viz, f)[0]
+                 else "(not found)", _field_combo(viz, f)[1])))
 
     lines.append("--- end filter probe ---")
     return "\n".join(lines)
