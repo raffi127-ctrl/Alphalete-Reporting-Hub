@@ -1,20 +1,13 @@
 {
-  "confirmed_count": 33,
+  "confirmed_count": 27,
   "needs_review_count": 0,
-  "skip_count": 1,
+  "skip_count": 8,
   "confirmed": [
     {
       "sheet_tab": "Carlos Hidalgo",
       "office_id": "11580",
       "as_owner": "CARLOS HIDALGO",
       "as_company": "ALPHALETE SPECIALIZED MARKETING, INC.-TX",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Adrian Sarabia",
-      "office_id": "22895",
-      "as_owner": "Adrian Sarabia",
-      "as_company": "PAYD Enterprise, Inc.",
       "confidence": 1.0
     },
     {
@@ -74,13 +67,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Max Powell",
-      "office_id": "22273",
-      "as_owner": "Max Powell",
-      "as_company": "Venatic, Inc.",
-      "confidence": 1.0
-    },
-    {
       "sheet_tab": "Harman Shamo",
       "office_id": "23256",
       "as_owner": "Harman Shamo",
@@ -95,25 +81,11 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Jacob Dunlavy",
-      "office_id": "23010",
-      "as_owner": "Jacob Dunlavy",
-      "as_company": "Ignite Solutions, Inc.",
-      "confidence": 1.0
-    },
-    {
       "sheet_tab": "Jesse Knight",
       "office_id": "23152",
       "as_owner": "Jesse Knight",
       "as_company": "Vanguard Consulting Group, Inc",
       "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Hannah Burgos (Jessica Vihtelic)",
-      "office_id": "15240",
-      "as_owner": "Jessica Vihtelic",
-      "as_company": "99 EXPOSURE, INC.",
-      "confidence": 0.67
     },
     {
       "sheet_tab": "Atef Choudhury",
@@ -172,20 +144,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Kevin Driggs",
-      "office_id": "22249",
-      "as_owner": "Kevin Driggs",
-      "as_company": "Nova Management Group, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Ryan Kabbes",
-      "office_id": "22335",
-      "as_owner": "Ryan Kabbes",
-      "as_company": "Romulus, Inc.",
-      "confidence": 1.0
-    },
-    {
       "sheet_tab": "Kinsey Guenther",
       "office_id": "11906",
       "as_owner": "Kinsey Guenther",
@@ -228,12 +186,11 @@
       "confidence": 0.81
     },
     {
-      "sheet_tab": "Kevin Baham",
-      "office_id": "16744",
-      "as_owner": "Kevin\u00a0 Baham",
-      "as_company": "Ludach Inc",
-      "confidence": 1.0,
-      "auto_onboarded": true
+      "sheet_tab": "Noah Dubale",
+      "office_id": "23356",
+      "as_owner": "Noah Dubale",
+      "as_company": "Oracle Acquisitions, Inc",
+      "confidence": 1.0
     }
   ],
   "needs_review": [],
@@ -241,6 +198,50 @@
     {
       "sheet_tab": "B2B Template",
       "reason": "admin tab (filtered before sync)"
+    },
+    {
+      "sheet_tab": "Adrian Sarabia",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "22895"
+    },
+    {
+      "sheet_tab": "Max Powell",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "22273"
+    },
+    {
+      "sheet_tab": "Jacob Dunlavy",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "23010"
+    },
+    {
+      "sheet_tab": "Hannah Burgos (Jessica Vihtelic)",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "15240"
+    },
+    {
+      "sheet_tab": "Kevin Driggs",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "22249"
+    },
+    {
+      "sheet_tab": "Ryan Kabbes",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "22335"
+    },
+    {
+      "sheet_tab": "Kevin Baham",
+      "reason": "off Carlos's B2B 1on1s roster (Eve, 2026-08-17) \u2014 tab hidden in the Sheet too",
+      "was_office_id": "16744"
     }
-  ]
+  ],
+  "sales_only": [
+    {
+      "sheet_tab": "Amos White Jr",
+      "as_owner": "Amos White Jr.",
+      "as_company": "Eagles Peak Enterprises, Inc.",
+      "reason": "no AppStream office \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him and rows 2-23 stay blank. Tableau DOES list him as 'AMOS WHITE JR. [eagles peak enterprises, inc.]' in d2d1 / cancel / activation / churn / personal_production, so the OPT half fills. Added to Carlos's roster 2026-08-17 (Eve); visibility request to eStream/Smart Circle is open \u2014 move to 'confirmed' with the real office_id once granted. NOTE: as_owner keeps the trailing period, that's how Tableau spells it"
+    }
+  ],
+  "sales_only_count": 1
 }

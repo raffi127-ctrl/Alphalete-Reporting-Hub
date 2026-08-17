@@ -2114,7 +2114,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📊",
         "color": "#A78BFA",
         "category": "🎯 Recruiting",
-        "description": "Pulls B2B funnel + OPT metrics from ApplicantStream + Tableau, fills Carlos's 32-ICD focus-report Sheet.",
+        "description": "Pulls B2B funnel + OPT metrics from ApplicantStream + Tableau, fills Carlos's 27-ICD focus-report Sheet.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Recruiting pull (APPS / Total Applies / Retention / "
@@ -2149,7 +2149,7 @@ AUTOMATED_REPORTS = [
         # Tableau) — no pre-flight clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Carlos report run complete — Recruiting pull + 6 Tableau OPT views + Personal Production all filled across 32 ICD tabs.",
+            "message_success": "✅ Carlos report run complete — Recruiting pull + 6 Tableau OPT views + Personal Production all filled across 27 ICD tabs.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         # CAPTAINSHIP=Carlos switches the shared recruiting_report module

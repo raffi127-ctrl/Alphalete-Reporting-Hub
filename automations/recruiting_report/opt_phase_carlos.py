@@ -521,9 +521,24 @@ def _to_number(s: str):
 # Sheet writer — writes a per-ICD column-A:?? batch for the OPT-block rows
 # ---------------------------------------------------------------------------
 def _carlos_icd_tabs() -> list[str]:
-    """Return Carlos's confirmed ICD tab names from office-mapping-carlos.json."""
+    """Return the ICD tab names this OPT phase fills, from
+    office-mapping-carlos.json.
+
+    Two buckets, because the two halves of the report have different
+    prerequisites:
+      - `confirmed`  — has an AppStream office, so recruiting fills too.
+      - `sales_only` — NOT visible in AppStream under Raf's login (no
+        office_id to map), but Tableau DOES list them as an ICD owner, so
+        this OPT half fills while the recruiting half stays blank. Amos
+        White Jr, 2026-08-17: Tableau has him as 'AMOS WHITE JR. [eagles
+        peak enterprises, inc.]' in every view here, but he's in none of
+        the 233 AppStream offices. Without this bucket his whole tab sat
+        empty waiting on a visibility request. Same convention as Jesus
+        Hawthorne / Michael Murphy in Raf's office-mapping.json.
+    Tabs in `skip` are excluded from both."""
     mapping = fill.load_mapping()
-    return [c["sheet_tab"] for c in mapping["confirmed"]]
+    return ([c["sheet_tab"] for c in mapping["confirmed"]]
+            + [s["sheet_tab"] for s in mapping.get("sales_only", [])])
 
 
 def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
@@ -782,11 +797,18 @@ def write_icd_values(ws, icd_values: dict[int, object],
 
 def _as_owner_by_tab() -> dict[str, str]:
     """Reverse-index of {sheet_tab: as_owner} from the captainship's
-    confirmed mapping. Lets the Tableau lookup fall back to the AppStream
-    owner name when the sheet tab uses a nickname/short form."""
+    mapping. Lets the Tableau lookup fall back to the AppStream owner name
+    when the sheet tab uses a nickname/short form.
+
+    Covers `sales_only` too — those entries have no AppStream office, so
+    their `as_owner` is the name TABLEAU uses, which is exactly the
+    fallback this lookup needs (e.g. tab 'Amos White Jr' → Tableau's
+    'Amos White Jr.', trailing period and all — `values_for_icd` matches
+    case-insensitively but does NOT strip punctuation)."""
     mapping = fill.load_mapping()
-    return {c["sheet_tab"]: c.get("as_owner", "")
-            for c in mapping["confirmed"]}
+    return {e["sheet_tab"]: e.get("as_owner", "")
+            for e in (mapping["confirmed"]
+                      + list(mapping.get("sales_only", [])))}
 
 
 def apply_view_to_icd(view: ViewConfig, csv_path: Path, ws,
