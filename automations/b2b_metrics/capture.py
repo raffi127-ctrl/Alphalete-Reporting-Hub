@@ -564,12 +564,39 @@ def _select_week(page, want: dt.date, log=print) -> bool:
                     log("   [week] unchecked {}".format(t))
             except Exception:  # noqa: BLE001
                 pass
+        # APPLY. A multi-value quick filter can be set to "Apply" mode, where
+        # toggling a checkbox stages the change and nothing requeries until the
+        # apply control is pressed — which is exactly what the first keyboard
+        # pass looked like: 8/23 unchecked in the DOM, the view still drawing
+        # 8/23. Press it if it's there; harmless when it isn't.
+        for asel in (".tabApplyButton", ".ApplyButton",
+                     "[role='button'][aria-label*='Apply']"):
+            try:
+                btn = fr.locator(asel).first
+                if btn.count():
+                    btn.focus()
+                    page.keyboard.press("Enter")
+                    log("   [week] pressed apply ({})".format(asel))
+                    page.wait_for_timeout(8_000)
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        # Close by clicking the dashboard itself, NOT Escape: on a staged filter
+        # Escape can discard the pending selection instead of committing it.
         try:
-            page.keyboard.press("Escape")       # close the overlay before the shot
+            page.mouse.click(8, 8)
         except Exception:  # noqa: BLE001
             pass
-        log("   ✓ picked {} from {}".format(targets[0], sel))
-        page.wait_for_timeout(15_000)           # let the viz requery
+        page.wait_for_timeout(20_000)           # let the viz requery
+        # The control's OWN value is the honest read of whether it moved —
+        # independent of the caption the dashboard prints.
+        try:
+            now = " ".join((boxes.nth(idx).inner_text(timeout=10_000)
+                            or "").split())
+        except Exception:  # noqa: BLE001
+            now = "?"
+        log("   ✓ picked {} from {} — dropdown now reads {!r}".format(
+            targets[0], sel, now))
         return True
     log("   ⚠ {} not offered by the week dropdown".format(targets[0]))
     return False
