@@ -100,6 +100,34 @@ def _day_date(week, day: str):
 ALL_TEAMS = "All teams"
 
 
+CAMPAIGN_SUFFIX = " (campaign)"
+
+
+def rep_campaign(r: dict) -> str:
+    return (r.get("attrs", {}).get("campaign") or "").strip()
+
+
+def resolve_sel(sel: str):
+    """('team', 'campaign') from the one selector.
+
+    Campaign and team are both 'a slice of the office', so they belong in one
+    control — two selectors would let you pick a contradictory pair (Ceaseless
+    AND Energy) and then wonder why the board is empty."""
+    if not sel or sel == ALL_TEAMS:
+        return "", ""
+    if sel.endswith(CAMPAIGN_SUFFIX):
+        return "", sel[:-len(CAMPAIGN_SUFFIX)]
+    return sel, ""
+
+
+def rep_matches(r: dict, overrides: dict, team: str, campaign: str) -> bool:
+    if team and rep_team(r, overrides) != team:
+        return False
+    if campaign and not rep_campaign(r).lower().startswith(campaign.lower()):
+        return False
+    return True
+
+
 def rep_team(r: dict, overrides: dict) -> str:
     """A rep's team — the owner's saved value if they set one, else the board's."""
     ov = overrides.get((r.get("name") or "").strip().lower())
@@ -123,11 +151,8 @@ def _calc_vitals(week, scope: str, overrides: dict, team: str = "",
         tenure = (attrs.get("field status") or "").strip().lower()
         if tenure in {"1st week", "rt", "roadtrip"}:
             continue
-        if campaign:
-            rep_camp = (attrs.get("campaign") or "").strip().lower()
-            if not rep_camp.startswith(campaign.strip().lower()):
-                continue
-        if team and team != ALL_TEAMS and rep_team(r, overrides) != team:
+        if not rep_matches(r, overrides,
+                           "" if team == ALL_TEAMS else team, campaign):
             continue
 
         if scope == "Week":
@@ -198,7 +223,7 @@ def _delta(now, before):
 
 
 def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
-               team: str = ALL_TEAMS, tabs=()) -> None:
+               team: str = ALL_TEAMS, tabs=(), campaign: str = "") -> None:
     """The four numbers on top. Stupid simple: four numbers, one glance.
 
     They follow the day selector AND the team filter — pick Wednesday and
@@ -206,10 +231,10 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
     happened yet shows nothing at all, because a future day full of zeros reads
     as 'everybody blanked' when nobody has gone out."""
     overrides = overrides or {}
-    filtered = team and team != ALL_TEAMS
+    filtered = (team and team != ALL_TEAMS) or bool(campaign)
     day_view = week is not None and scope != "Week"
     note = (f"{scope if day_view else 'Week to date'}"
-            + (f" · {team}" if filtered else ""))
+            + (f" · {campaign or team}" if filtered else ""))
 
     if day_view:
         d = _day_date(week, scope)
@@ -231,12 +256,13 @@ def vitals_row(week, reps, scope: str = "Week", overrides: dict | None = None,
     prev = prev_week_board(tuple(tabs), week.tab) if week is not None else None
 
     if week is not None and (day_view or filtered):
-        v = _calc_vitals(week, scope, overrides, team=team)
+        v = _calc_vitals(week, scope, overrides, team=team,
+                         campaign=campaign)
         # Compare against the SAME slice last week — same day, same team — so
         # the pill answers "better or worse than last week?" and not "different
         # from some other cut of the data".
-        pv = (_calc_vitals(prev, scope, overrides, team=team) if prev
-              else {})
+        pv = (_calc_vitals(prev, scope, overrides, team=team,
+                           campaign=campaign) if prev else {})
         pct_now = _num(v["pct"]) if v["pct"] != "—" else None
         pct_prev = _num(pv.get("pct")) if pv.get("pct", "—") != "—" else None
         _render_vitals(v["in_field"], v["on_board"], v["pct"], v["zero"],
@@ -311,13 +337,14 @@ def prev_week_teams(tabs: tuple, current_tab: str) -> dict:
 
 
 def production_panel(week, scope: str, overrides: dict, team: str,
-                     office_key: str, tabs=()) -> None:
+                     office_key: str, tabs=(), campaign: str = "") -> None:
     """What the selection has actually PUT UP, plus the team averages.
 
     The four vitals above say how many people sold; this says how much. Both
     follow the team filter, so picking Ceaseless gives Ceaseless's units and
     Ceaseless's averages against Ceaseless's goal."""
-    filtered = bool(team) and team != ALL_TEAMS
+    filtered = (bool(team) and team != ALL_TEAMS) or bool(campaign)
+    slice_name = campaign or team
     day_view = scope != "Week"
     if day_view:
         d = _day_date(week, scope)
@@ -330,7 +357,8 @@ def production_panel(week, scope: str, overrides: dict, team: str,
                    ["Apps", "Int", "NL", "EN"]
     sums = {k: 0.0 for k in measure_keys}
     for r in week.reps:
-        if filtered and rep_team(r, overrides) != team:
+        if not rep_matches(r, overrides,
+                           "" if team == ALL_TEAMS else team, campaign):
             continue
         src = (r.get("values", {}) if not day_view
                else (r.get("daily") or {}).get(scope, {}).get("values", {}))
@@ -359,7 +387,9 @@ def production_panel(week, scope: str, overrides: dict, team: str,
         for k in measure_keys:
             tot = 0.0
             for r in prev_board.reps:
-                if filtered and rep_team(r, overrides) != team:
+                if not rep_matches(r, overrides,
+                                   "" if team == ALL_TEAMS else team,
+                                   campaign):
                     continue
                 for d in day_set:
                     cell = ((r.get("daily") or {}).get(d, {})
@@ -372,7 +402,7 @@ def production_panel(week, scope: str, overrides: dict, team: str,
 
     label = scope if day_view else "week to date"
     st.markdown(f"**Production · {label}"
-                + (f" · {team}" if filtered else "") + "**")
+                + (f" · {slice_name}" if filtered else "") + "**")
     cols = st.columns(len(measure_keys))
     for col, k in zip(cols, measure_keys):
         shown = f"{sums[k]:.0f}" if sums[k] == int(sums[k]) else f"{sums[k]:.2f}"
@@ -381,12 +411,16 @@ def production_panel(week, scope: str, overrides: dict, team: str,
         # did 46 last week; "-46 (LW 51)" cannot be misread.
         pill = (f"{d:+.0f} (LW {prev_sums.get(k, 0):.0f})"
                 if d is not None else None)
+        meaning = MEASURE_MEANINGS.get(k, MEASURE_MEANINGS.get(k.upper(), ""))
+        note_bits = [meaning] if meaning else []
+        if prev_sums:
+            note_bits.append(
+                f"Last week over the same {len(day_set)} "
+                f"day{'s' if len(day_set) != 1 else ''}: "
+                f"{prev_sums.get(k, 0):.0f}")
         col.metric("Total Units" if k in ("Total Apps", "Apps") else k, shown,
                    delta=pill,
-                   help=(f"Last week over the same "
-                         f"{len(day_set)} day{'s' if len(day_set) != 1 else ''}"
-                         f": {prev_sums.get(k, 0):.0f}")
-                   if prev_sums else None)
+                   help=" · ".join(note_bits) or None)
 
     # Averages get their own row: side by side with the sums, "Total Units" and
     # "Total units avg" sat next to each other reading almost the same, and the
@@ -395,7 +429,8 @@ def production_panel(week, scope: str, overrides: dict, team: str,
 
     # Averages come from the board's own Teams block — its numbers, not a
     # recomputation that could quietly disagree with the sheet.
-    who_row = team if filtered else B.TEAM_TOTALS_KEY
+    who_row = (team if (team and team != ALL_TEAMS)
+               else B.TEAM_TOTALS_KEY)
     row = (week.teams or {}).get(who_row, {})
     goal = row.get("goal", "")
 
@@ -426,7 +461,7 @@ def production_panel(week, scope: str, overrides: dict, team: str,
     avg_metric(cols[1], "Average new int", "new_int_avg", "lw_new_int_avg")
     # The goal is the owner's to set, so it's an input, not a caption. Blank
     # clears the override and the board's own number shows again.
-    who = team if filtered else "OFFICE"
+    who = slice_name if filtered else "OFFICE"
     saved = G.get(office_key, who, goal)
     gc, pc = st.columns([1, 3])
     with gc:
@@ -636,7 +671,7 @@ def _style_totals(df):
 
 
 def sales_board(week, office_key: str, scope: str = "Week",
-                team: str = ALL_TEAMS) -> None:
+                team: str = ALL_TEAMS, campaign: str = "") -> None:
     """ONE row per person — production and who they are, together.
 
     Deliberately not a separate 'roster' section: the same rep listed twice is
@@ -707,11 +742,15 @@ def sales_board(week, office_key: str, scope: str = "Week",
             row["1st Day of Sales"] = first_day or a.get("start date", "")
         rows.append(row)
 
-    if team and team != ALL_TEAMS:
-        rows = [r for r in rows if (r.get("Team") or "").strip() == team]
+    if (team and team != ALL_TEAMS) or campaign:
+        keep = {r["name"] for r in week.reps
+                if rep_matches(r, overrides,
+                               "" if team == ALL_TEAMS else team, campaign)}
+        rows = [r for r in rows if r.get("Rep") in keep]
 
     if not rows:
-        st.info(f"No reps on {team}." if team and team != ALL_TEAMS
+        st.info(f"No reps on {campaign or team}."
+                if campaign or (team and team != ALL_TEAMS)
                 else "No rep rows on this week's tab yet.")
         return
 
@@ -841,56 +880,6 @@ def sales_board(week, office_key: str, scope: str = "Week",
                    "the harvest map could not be read.")
 
 
-def campaign_breakdown(week, scope: str = "Week",
-                       overrides: dict | None = None,
-                       team: str = ALL_TEAMS) -> None:
-    """FIBER / ENERGY are CAMPAIGNS, not teams — the board splits this
-    block by its Campaign column, while Team means Ceaseless, Se7en Sins,
-    Hashiras. Calling it 'team' collided with the Team column two sections
-    up and made the same word mean two things on one page."""
-    groups = {g: d for g, d in week.summary.items() if g != "ALL"}
-    if not groups:
-        return
-
-    # Follows the day selector, same as the vitals. On Week it reads the
-    # board's own summary block, which counts column D — the RUNNING WEEK
-    # total — so it is week-to-date, not today:
-    #   =COUNTIFS(D4:D79,">0", CG…,"<>1st Week", CG…,"<>RT")
-    filtered = bool(team) and team != ALL_TEAMS
-    suffix = f" · {team}" if filtered else ""
-
-    if scope == "Week" and not filtered:
-        st.subheader("By Campaign · week to date")
-        st.caption("Counts reps whose week total is above zero. First-week "
-                   "reps and roadtrips are left out.")
-        cols = st.columns(len(groups))
-        for col, (name, d) in zip(cols, groups.items()):
-            with col:
-                st.markdown(f"**{name}**")
-                for k, v in d.items():
-                    st.write(f"{k.split('/')[0].strip()}: **{v}**")
-        return
-
-    st.subheader(f"By Campaign · "
-                 f"{scope if scope != 'Week' else 'week to date'}"
-                 f"{suffix}")
-    d = _day_date(week, scope) if scope != "Week" else None
-    if d and d > dt.date.today():
-        st.caption(f"{scope} hasn't happened yet.")
-        return
-    st.caption(f"{scope} only. First-week reps and roadtrips left out.")
-    cols = st.columns(len(groups))
-    for col, name in zip(cols, groups):
-        v = _calc_vitals(week, scope, overrides or {}, team=team,
-                         campaign=name)
-        with col:
-            st.markdown(f"**{name}**")
-            st.write(f"Total Reps in the Field: **{v['in_field']}**")
-            st.write(f"Reps that got on the Board: **{v['on_board']}**")
-            st.write(f"Reps that rolled a Zero: **{v['zero']}**")
-            st.write(f"% of Reps on the Board: **{v['pct']}**")
-
-
 def _week_start(label: str):
     """The Monday a 'WE 8/17- 8/23' header starts on.
 
@@ -907,6 +896,71 @@ def _week_start(label: str):
     if d > today + dt.timedelta(days=14):
         d = d.replace(year=today.year - 1)
     return d
+
+
+# One fixed colour per metric, taken from the BOARD'S OWN header fills (read
+# off Raf's sheet 2026-08-17). Two reasons not to invent a palette: the field
+# already reads these columns by colour, and Altair otherwise assigns colours
+# from the alphabetical order of whatever is selected — so INT would be one
+# colour in a selection and another the next, which teaches you nothing.
+#
+# The board's fills are very dark (they carry white header text), so each line
+# uses a lifted version of the same hue: same colour identity, readable at line
+# weight on a white chart.
+METRIC_COLORS = {
+    "Total Apps": "#3D3D3D", "Total Units": "#3D3D3D", "Apps": "#3D3D3D",
+    "INT": "#A62626", "Int": "#A62626",           # board #660000
+    "INT UP": "#B4691A", "Int Up": "#B4691A",      # board #783F04
+    "DTV": "#4B2E9E",                              # board #20124D
+    "NL": "#14639E",                               # board #073763
+    "EN": "#3F7D1F",                               # board #274E13
+    "Cx": "#BF9000", "CX": "#BF9000",              # board #BF9000
+}
+_FALLBACK_COLOR = "#79706E"
+
+# What the columns MEAN (Raf, 2026-08-17). Worth carrying in code: 'NL' reading
+# as wireless and 'Cx' as a customer count are not guessable from the header.
+MEASURE_MEANINGS = {
+    "INT": "Internet",
+    "INT UP": "Internet upgrade",
+    "DTV": "DTV",
+    "NL": "New Line (wireless)",
+    "EN": "Energy",
+    "Cx": "Customer — one per sale, whatever the unit (1 INT = 1 Cx)",
+    "Total Apps": "All units for the week",
+}
+
+# Cx IS NOT PULLED FROM TABLEAU (Raf, 2026-08-17: "we haven't figured out where
+# to pull it from … could be pulled off of tableau, just not sure how"). So on
+# the new sheet it has to be an OWNER-ENTERED column like Roll Call, not an
+# automation-owned one — otherwise each run would wipe what someone typed.
+MANUAL_MEASURES = {"Cx", "CX"}
+
+
+def metric_color(name: str) -> str:
+    if name in VITAL_COLORS:
+        return VITAL_COLORS[name]
+    return METRIC_COLORS.get(name, METRIC_COLORS.get(str(name).upper(),
+                                                     _FALLBACK_COLOR))
+
+
+def color_multiselect_pills(picked: list) -> None:
+    """Tint the multiselect's pills to match their lines.
+
+    Streamlit has no per-option colour, and CSS cannot match on label text —
+    but the pills render in the order of `picked`, so nth-of-type maps onto the
+    selection deterministically and re-emits on every rerun."""
+    if not picked:
+        return
+    rules = []
+    for i, name in enumerate(picked, start=1):
+        c = metric_color(name)
+        rules.append(
+            f'[data-testid="stMultiSelect"] span[data-baseweb="tag"]:'
+            f'nth-of-type({i}) {{ background-color: {c} !important; '
+            f'border-color: {c} !important; }}')
+    st.markdown("<style>" + "".join(rules) + "</style>",
+                unsafe_allow_html=True)
 
 
 def week_lines(df, dates: list, metrics: list):
@@ -926,8 +980,13 @@ def week_lines(df, dates: list, metrics: list):
             x=alt.X("Week:T", title=None,
                     axis=alt.Axis(values=dates, format="%m/%d", labelAngle=0)),
             y=alt.Y("Value:Q", title=None),
-            color=alt.Color("Metric:N", title=None,
-                            legend=alt.Legend(orient="top")),
+            # Fixed domain/range keeps a metric's colour stable across
+            # selections. Legend is OFF: the coloured pills above are the key,
+            # and two keys saying the same thing is clutter.
+            color=alt.Color("Metric:N", title=None, legend=None,
+                            scale=alt.Scale(
+                                domain=list(metrics),
+                                range=[metric_color(m) for m in metrics])),
             tooltip=[alt.Tooltip("Week:T", format="%m/%d/%y"), "Metric:N",
                      "Value:Q"])
         .properties(height=280))
@@ -954,170 +1013,126 @@ def week_line(df, ycol: str, dates: list):
         .properties(height=260))
 
 
-@st.cache_data(ttl=900, show_spinner="Reading each week for this team…")
-def team_history(tabs: tuple, team: str, n: int) -> list:
-    """[(date, units)] for ONE team, newest first.
+VITAL_METRICS = ["Reps in the field", "Got on the board", "% selling",
+                 "Rolled a zero", "Avg total units", "Avg new int"]
 
-    The board's history rows at the bottom are office-wide only, so a team's
-    line has to come from each week tab's own Teams block. That costs one sheet
-    read per week — cached, and capped by the slider — which is why the default
-    span is shorter here than for the office."""
+# The vitals are counts and percentages; the units are volumes in the hundreds.
+# On one axis the vitals flatten to a line along the bottom, so they get their
+# own colours and, when mixed, a second chart rather than a shared scale.
+VITAL_COLORS = {
+    "Reps in the field": "#4C6EF5", "Got on the board": "#2F9E44",
+    "% selling": "#0CA678", "Rolled a zero": "#E03131",
+    "Avg total units": "#7048E8", "Avg new int": "#F76707",
+}
+
+
+@st.cache_data(ttl=900, show_spinner="Reading each week…")
+def week_series(tabs: tuple, n: int, team: str,
+                campaign: str = "") -> list:
+    """Per week: the unit measures, the four vitals, and the two averages.
+
+    One read per tab, parsed twice (board + Teams block). The office history
+    rows at the bottom of a board only carry unit measures, so vitals and
+    averages can only come from each week's own tab — which is why this is
+    capped by the slider and cached."""
     from automations.recruiting_report.fill import open_by_key
+    filtered = bool(team) and team != ALL_TEAMS
     sh = open_by_key(RAF_SHEET)
     dated = dict(B.week_tab_dates(list(tabs)))
     out = []
     for tab in list(tabs)[:n]:
         try:
-            row = B.parse_teams(sh.worksheet(tab).get_all_values()).get(team)
+            grid = sh.worksheet(tab).get_all_values()
+            wk = B.parse_week(grid, tab)
         except Exception:
             continue
-        if not row or not row.get("units"):
+        d = dated.get(tab)
+        if not d:
             continue
-        try:
-            out.append((dated.get(tab), float(str(row["units"]).replace(",", ""))))
-        except ValueError:
-            continue
-    return [(d, v) for d, v in out if d]
+        row = {"Week": d}
+
+        teams = wk.teams or {}
+        trow = teams.get(team if filtered else B.TEAM_TOTALS_KEY, {})
+        if filtered:
+            for m, v in (trow.get("measures") or {}).items():
+                row[m] = _num(v)
+            v = _calc_vitals(wk, "Week", {}, team=team,
+                             campaign=campaign)
+            row["Reps in the field"] = v["in_field"]
+            row["Got on the board"] = v["on_board"]
+            row["% selling"] = _num(v["pct"]) if v["pct"] != "—" else None
+            row["Rolled a zero"] = v["zero"]
+        elif campaign:
+            v = _calc_vitals(wk, "Week", {}, campaign=campaign)
+            for m in wk.measures:
+                tot = 0.0
+                for r in wk.reps:
+                    if not rep_matches(r, {}, "", campaign):
+                        continue
+                    tot += _num(r.get("values", {}).get(m))
+                row[m] = tot
+            row["Reps in the field"] = v["in_field"]
+            row["Got on the board"] = v["on_board"]
+            row["% selling"] = _num(v["pct"]) if v["pct"] != "—" else None
+            row["Rolled a zero"] = v["zero"]
+            sv = {}
+        else:
+            for m in wk.measures:
+                row[m] = _num(wk.totals.get(m))
+            sv = _summary_vitals(wk)
+            row["Reps in the field"] = sv.get("in_field")
+            row["Got on the board"] = sv.get("on_board")
+            row["% selling"] = sv.get("pct")
+            row["Rolled a zero"] = sv.get("zero")
+        row["Avg total units"] = _num(trow.get("units_avg"))
+        row["Avg new int"] = _num(trow.get("new_int_avg"))
+        out.append(row)
+    return sorted(out, key=lambda r: r["Week"])
 
 
-def trend(week, tabs=(), team: str = ALL_TEAMS) -> None:
-    filtered = bool(team) and team != ALL_TEAMS
+def trend(week, tabs=(), team: str = ALL_TEAMS,
+          campaign: str = "") -> None:
+    filtered = (bool(team) and team != ALL_TEAMS) or bool(campaign)
+    st.subheader("Week over week"
+                 + (f" · {campaign or team}" if filtered else ""))
 
-    if filtered:
-        st.subheader(f"Week over week · {team}")
-        n = st.slider("Weeks to show", 4, min(16, max(4, len(tabs))), 8,
-                      key="trend_n_team")
-        pts = team_history(tuple(tabs), team, n)
-        if not pts:
-            st.caption(f"No weekly history found for {team}.")
-            return
-        pts = sorted(pts, key=lambda x: x[0])
-        names = [m for m in pts[0][1] if m] or ["Total Units"]
-        picked = st.multiselect("Metrics", names,
-                                default=[n for n in names[:1]],
-                                key="trend_m_team")
-        if not picked:
-            st.caption("Pick at least one metric.")
-            return
-        df = pd.DataFrame([dict({"Week": d},
-                                **{m: _num(vals.get(m)) for m in picked})
-                           for d, vals in pts]).set_index("Week")
-        st.altair_chart(week_lines(df, [d for d, _ in pts], picked),
-                        use_container_width=True)
-        st.caption("Per week, from each week's Teams block.")
-        return
-
-    if not week.history:
-        return
-    st.subheader("Week over week")
-    n = st.slider("Weeks to show", 4, min(52, len(week.history)), 12,
+    n = st.slider("Weeks to show", 4, min(16, max(4, len(tabs))), 8,
                   key="trend_n")
-    picked = st.multiselect("Metrics", week.measures,
-                            default=week.measures[:1], key="trend_m")
+    series = week_series(tuple(tabs), n, team, campaign)
+    if not series:
+        st.caption("No weekly history available.")
+        return
+
+    unit_names = [k for k in series[-1]
+                  if k not in ("Week",) and k not in VITAL_METRICS]
+    options = unit_names + [m for m in VITAL_METRICS if m in series[-1]]
+    default = [unit_names[0]] if unit_names else options[:1]
+    picked = st.multiselect("Metrics", options,
+                            default=st.session_state.get("trend_m", default),
+                            key="trend_m")
+    color_multiselect_pills(picked)
     if not picked:
         st.caption("Pick at least one metric.")
         return
 
-    # Index by a real DATE, not the week label. The labels carry no year, and a
-    # categorical axis is sorted alphabetically by the chart — which puts 6/15
-    # before 6/8 and makes the line jump around. The history rows are contiguous
-    # weeks newest-first, so walking back 7 days per row from the board's own
-    # week gives exact dates without guessing a year.
-    anchor = _week_start(week.week_label) or dt.date.today()
-    rows = []
-    for i, (lbl, vals) in enumerate(week.history[:n]):
-        row = {"Week": anchor - dt.timedelta(weeks=i + 1), "label": lbl}
-        for m in picked:
-            j = week.measures.index(m)
-            row[m] = _num(vals[j]) if j < len(vals) else 0.0
-        rows.append(row)
-    rows.reverse()
-    df = pd.DataFrame(rows).set_index("Week")
-    st.altair_chart(week_lines(df, [r["Week"] for r in rows], picked),
-                    use_container_width=True)
-    st.caption(f"{rows[0]['label']} → {rows[-1]['label']}")
+    df = pd.DataFrame(series).set_index("Week")
+    dates = [r["Week"] for r in series]
 
-
-def _rep_streak(r: dict, days: list, anchor_idx: int) -> int:
-    """How many days in a row this rep has rolled a literal zero.
-
-    A ZERO is a numeric 0. 'X' (didn't work), 'T' (terminated) and blank are NOT
-    zeros — you cannot roll a zero on a day you were never out there — so those
-    days are stepped over without counting and without ending the run. Any
-    positive number ends it. Same rule sales_boards/zeros.py uses for Carlos."""
-    streak = 0
-    for i in range(anchor_idx, -1, -1):
-        cell = ((r.get("daily") or {}).get(days[i], {})
-                .get("values", {}).get("Apps", "") or "").strip()
-        if not cell or cell.upper() in _NOT_NUMERIC:
-            continue
-        try:
-            v = float(cell.replace(",", ""))
-        except ValueError:
-            continue
-        if v > 0:
-            break
-        streak += 1
-    return streak
-
-
-def zero_streaks(week, overrides: dict, team: str = ALL_TEAMS) -> None:
-    """Escalating 'zeros in a row' levels, like the Slack post.
-
-    Each level is CUMULATIVE — the 2-day list is everyone on 2 or more — which
-    is what makes it escalate: the list gets shorter and the problem gets more
-    serious as you go down."""
-    filtered = bool(team) and team != ALL_TEAMS
-    days = week.day_names
-    if not days:
-        return
-
-    # Anchor on the most recent COMPLETED day; today is still in progress and a
-    # zero at 9am means nothing.
-    today = dt.date.today()
-    anchor_idx = -1
-    for i, d in enumerate(days):
-        dd = _day_date(week, d)
-        if dd and dd < today:
-            anchor_idx = i
-    if anchor_idx < 0:
-        st.subheader("Zero streaks")
-        st.caption("No completed day on this week yet.")
-        return
-
-    rows = []
-    for r in week.reps:
-        if filtered and rep_team(r, overrides) != team:
-            continue
-        n = _rep_streak(r, days, anchor_idx)
-        if n <= 0:
-            continue
-        rows.append({
-            "Rep": r["name"],
-            "Days": n,
-            "Current Week": r.get("values", {}).get("Total Apps", ""),
-            "Last Wk": (r.get("last_values") or {}).get("APPS", ""),
-            "Team": rep_team(r, overrides),
-            "Campaign": r.get("attrs", {}).get("campaign", ""),
-        })
-
-    st.subheader("Zero streaks" + (f" · {team}" if filtered else ""))
-    if not rows:
-        st.success("Nobody is on a zero streak.")
-        return
-    st.caption(f"Through {days[anchor_idx]}. A zero is a literal 0 — a day "
-               "marked X, T or left blank is not counted against anyone.")
-
-    longest = max(r["Days"] for r in rows)
-    for lvl in range(1, longest + 1):
-        at_or_above = sorted((r for r in rows if r["Days"] >= lvl),
-                             key=lambda r: (-r["Days"], r["Rep"]))
-        label = f"{lvl} Day" if lvl == 1 else f"{lvl} Days"
-        with st.expander(f"{label} — {len(at_or_above)} reps",
-                         expanded=(lvl == longest)):
-            st.dataframe(at_or_above, use_container_width=True,
-                         hide_index=True,
-                         height=_grid_height(len(at_or_above)))
+    # Units and vitals live on different scales — 300 units against 9% selling
+    # would flatten the percentage to the axis — so they are drawn as separate
+    # charts when both are picked, instead of one misleading one.
+    units_picked = [m for m in picked if m in unit_names]
+    vitals_picked = [m for m in picked if m in VITAL_METRICS]
+    if units_picked:
+        st.altair_chart(week_lines(df, dates, units_picked),
+                        use_container_width=True)
+    if vitals_picked:
+        st.altair_chart(week_lines(df, dates, vitals_picked),
+                        use_container_width=True)
+    st.caption(f"{series[0]['Week'].strftime('%m/%d')} → "
+               f"{series[-1]['Week'].strftime('%m/%d')}"
+               + (" · units and vitals are on separate scales"
+                  if units_picked and vitals_picked else ""))
 
 
 def recruiting(profile) -> None:
@@ -1216,21 +1231,27 @@ def main() -> None:
     overrides = {r.name.strip().lower(): r for r in R.load(key)}
     team_names = sorted({rep_team(r, overrides) for r in week.reps
                          if rep_team(r, overrides)})
-    team = st.selectbox("Team", [ALL_TEAMS] + team_names, key="team",
-                        disabled=locked)
+    camp_names = sorted({rep_campaign(r) for r in week.reps
+                         if rep_campaign(r)})
+    # Campaigns and teams are both "a slice of this office", so they share one
+    # control instead of a filter plus a standalone By Campaign section.
+    sel = st.selectbox(
+        "Team or campaign",
+        [ALL_TEAMS] + [c + CAMPAIGN_SUFFIX for c in camp_names] + team_names,
+        key="team", disabled=locked)
+    team, campaign = resolve_sel(sel)
+    team = team or ALL_TEAMS
 
     vitals_row(week, R.load(key), scope, overrides, team,
-               data['tabs'])
+               data['tabs'], campaign)
     production_panel(week, scope, overrides, team, key,
-                     data['tabs'])
+                     data['tabs'], campaign)
     st.divider()
-    sales_board(week, key, scope, team)
+    sales_board(week, key, scope, team, campaign)
     st.divider()
-    campaign_breakdown(week, scope, overrides, team)
+    zero_streaks(week, overrides, team, campaign)
     st.divider()
-    zero_streaks(week, overrides, team)
-    st.divider()
-    trend(week, data['tabs'], team)
+    trend(week, data['tabs'], team, campaign)
 
 
 main()
