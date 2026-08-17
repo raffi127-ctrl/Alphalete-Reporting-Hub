@@ -1496,6 +1496,23 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
               f"{type(e).__name__}: {str(e)[:120]}")
         sara_office = {}
     logfn(f"OPT NDS: per-office Sara Plus: {len(sara_office)} owner(s)")
+    if not sara_office:
+        # SAY WHAT WE ACTUALLY GOT. parse_sara_plus_office_totals returns {}
+        # when the export has no 'Owner & Office' + 'Rep' columns — i.e. the
+        # View Data scrape landed on a different worksheet of this
+        # multi-worksheet dashboard (most likely the single-row totals table).
+        # Without the header there is no way to tell that apart from "the view
+        # is empty", and two dry-runs were spent guessing. Never truncate it:
+        # the column list IS the diagnosis. Same lesson as opt_b2b's
+        # _download_by_substring logging the full worksheet list.
+        try:
+            _rows = _read_tab_csv(OUTPUT_DIR / NDS_SARA_PLUS_OFFICE_FILENAME)
+            logfn(f"OPT NDS:   {NDS_SARA_PLUS_OFFICE_FILENAME}: "
+                  f"{len(_rows)} row(s); columns = "
+                  f"{[(h or '').strip() for h in (_rows[0] if _rows else [])]}")
+        except Exception as _e:  # noqa: BLE001
+            logfn(f"OPT NDS:   couldn't read {NDS_SARA_PLUS_OFFICE_FILENAME} "
+                  f"to report its columns ({type(_e).__name__}: {str(_e)[:80]})")
     if not sara_office and not skip_download:
         # Zero owners means the scrape landed somewhere without an
         # 'Owner & Office' column — it raises nothing, so without this the only
