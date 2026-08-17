@@ -633,6 +633,130 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
             cdp_pull._kill_ours()
 
 
+# --- week-pin probe ---------------------------------------------------------
+# The pin did NOT take on the first live run (2026-08-17): the view still drew
+# week ending 8/23 with the filter in the URL. Guessing one candidate per run
+# costs ~6 minutes of queue each time, so this tries every candidate in ONE
+# Chrome session and prints which one moves the week — the same reasoning
+# rep_sales_fill.probe_filters was written on.
+def _week_variants(o: B2BOffice, view_key: str, today: dt.date = None) -> list:
+    from urllib.parse import quote
+    from automations.b2b_metrics.offices import WEEK_FIELD
+    meta = VIEW_META.get(view_key, {})
+    base = o.view_url(view_key).split("?")[0]
+    owner = "{}={}".format(
+        quote(meta.get("filter_field", OWNER_FIELD)),
+        quote(_tableau_filter_value(o.slice_value(
+            meta.get("filter_field", OWNER_FIELD))), safe="\\"))
+    we = report_week_ending(today)
+    mdy = quote(week_value(we), safe="")
+    iso = quote(we.isoformat(), safe="")
+    wf = quote(WEEK_FIELD)
+    wf_short = quote("Sale Date Week Ending")
+    return [
+        ("control (owner only)", "{}?{}".format(base, owner)),
+        ("mdy", "{}?{}&{}={}".format(base, owner, wf, mdy)),
+        ("mdy + :revert=all", "{}?:revert=all&{}&{}={}".format(
+            base, owner, wf, mdy)),
+        ("mdy + :refresh=yes", "{}?:refresh=yes&{}&{}={}".format(
+            base, owner, wf, mdy)),
+        ("iso", "{}?{}&{}={}".format(base, owner, wf, iso)),
+        ("caption without (mon-sun)", "{}?{}&{}={}".format(
+            base, owner, wf_short, mdy)),
+        ("week only, no owner", "{}?{}={}".format(base, wf, mdy)),
+    ]
+
+
+def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
+               today: dt.date = None, log=print) -> int:
+    """Load `view_key` once per URL variant and report the week each one draws.
+
+    Prints a one-line verdict LAST — the remote-control queue keeps only the
+    tail of a log in its result cell, so a long listing is invisible from the
+    laptop."""
+    import re
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
+    from automations.b2b_quality.run import _IFRAME
+
+    want = report_week_ending(today)
+    variants = _week_variants(o, view_key, today)
+    results = []
+    with cdp_pull._cdp_lock(label="b2b probe-week {}".format(o.key), log=log):
+        cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        try:
+            with sync_playwright() as p:
+                browser = None
+                for attempt in range(10):
+                    time.sleep(5)
+                    try:
+                        browser = p.chromium.connect_over_cdp(
+                            "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                        break
+                    except Exception:  # noqa: BLE001
+                        if attempt == 9:
+                            raise
+                ctx = (browser.contexts[0] if browser.contexts
+                       else browser.new_context())
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                for label, url in variants:
+                    try:
+                        # about:blank between variants: these are hash URLs, so
+                        # the SPA can treat a query-only change as no navigation
+                        # at all and quietly re-show the previous render.
+                        page.goto("about:blank", wait_until="domcontentloaded",
+                                  timeout=60_000)
+                        page.goto(url, wait_until="domcontentloaded",
+                                  timeout=120_000)
+                        page.wait_for_timeout(30_000)
+                        txt = page.frame_locator(_IFRAME).locator(
+                            "body").inner_text(timeout=45_000) or ""
+                    except Exception as e:  # noqa: BLE001
+                        log("  [{}] ERROR {}".format(label, type(e).__name__))
+                        results.append((label, "error"))
+                        continue
+                    dates = sorted(set(re.findall(
+                        r"\b\d{1,2}/\d{1,2}/\d{4}\b", txt)))
+                    hit = any(v in txt for v in week_value_variants(want))
+                    rows = _row_summary(txt, owner=o.owner, limit=4)
+                    log("  [{}] week(s) drawn: {}  -> {}  rows={}".format(
+                        label, ", ".join(dates[:4]) or "none",
+                        "MATCH" if hit else "no", rows))
+                    results.append((label, "MATCH" if hit else
+                                    (dates[0] if dates else "blank")))
+                # The real captions, so a wrong guess is named rather than
+                # guessed again next run.
+                try:
+                    fr = page.frame_locator(_IFRAME)
+                    els = fr.locator("[aria-label]")
+                    labs = []
+                    for i in range(min(els.count(), 200)):
+                        lab = els.nth(i).get_attribute("aria-label") or ""
+                        if "week" in lab.lower() and lab not in labs:
+                            labs.append(lab[:90])
+                    log("  captions with 'week': {}".format(
+                        " | ".join(labs) or "none found"))
+                except Exception as e:  # noqa: BLE001
+                    log("  caption read failed ({})".format(type(e).__name__))
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
+    log("PROBE want={} -> {}".format(
+        week_value(want),
+        " | ".join("{}={}".format(a, b) for a, b in results)))
+    return 0
+
+
 def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     """#2 Activation Rate — RECREATED full-height board (every rep), not Tableau's
     scroll-clipped Download→Image.

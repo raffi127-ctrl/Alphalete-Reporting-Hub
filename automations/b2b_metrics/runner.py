@@ -491,6 +491,10 @@ def main(argv=None) -> int:
                          "shows the full captured image)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
+    ap.add_argument("--probe-week", action="store_true",
+                    help="DIAGNOSTIC: load the week-pinned view once per URL "
+                         "variant and report which one actually moves the week. "
+                         "Captures nothing, posts nothing.")
     ap.add_argument("--new-thread", action="store_true",
                     help="abandon today's stored thread and open a fresh one "
                          "(use when the parent was deleted or the sections "
@@ -540,6 +544,15 @@ def main(argv=None) -> int:
         return 1 if problems else 0
 
     _off.assert_valid()
+
+    if args.probe_week:
+        # One office only — the probe is about the VIEW, not the roster, and
+        # every office reads the same OutofBoundsReport.
+        from automations.b2b_metrics import capture as _cap
+        return _cap.probe_week(_off.get(args.office or "carlos"),
+                               today=(dt.date.fromisoformat(args.today)
+                                      if args.today else None))
+
     if not args.office and not args.all_offices:
         print("items (in order):")
         for i in ITEMS:
