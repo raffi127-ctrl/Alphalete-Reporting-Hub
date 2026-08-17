@@ -1112,11 +1112,15 @@ PHASE2_TIMEOUT_S = 60 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner 
 # day (--daily-window), so it costs ~2.5 min/owner instead of ~1.5. 26 owners
 # don't fit in 60: on 2026-08-17 it was killed at owner 23 of 26, and it reads as
 # a dropped ownerville session when the session was FINE — owner 23 impersonated
-# cleanly seconds before the kill. 2026-08-10 (also a Monday, also a Phase-2
-# drop) is very likely the same thing. The cap exists to stop a HUNG owner, not to
+# cleanly seconds before the kill. 2026-08-10 logged the same "Phase 2 TIMED OUT
+# after 60 min" — same failure, same weekday, a week apart, and each time the
+# alert sent someone to check a session that was working. The cap exists to stop
+# a HUNG owner (Eve's run sat at 62 min before someone stopped it), not to
 # stop Monday from finishing, so the shift day gets its own budget: 85 min covers
 # the measured ~68 min with room, and 85 + Phase 3's 35 stays inside the card's
-# registry timeout (raised to 170 to match).
+# registry timeout (raised to 170 to match). When it DOES trip, the checkpoint is
+# real and a re-run is cheap: 8/17's picked up at the last 3 owners and finished
+# everything — sweep, Phase 3, Monday freeze — in 53 min, not a fresh 130.
 PHASE2_SHIFT_TIMEOUT_S = 85 * 60
 PHASE3_TIMEOUT_S = 35 * 60  # was 20 — heavy days (big fills + Tableau retries) ran over (Megan 2026-06-07)
 
