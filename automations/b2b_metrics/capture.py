@@ -726,6 +726,105 @@ def _dump_view(page, url: str, log=print) -> None:
             log("SEL| {} failed {}".format(sel, type(e).__name__))
 
 
+def _csv_view_url(view_key: str, owner: str, we: dt.date = None,
+                  refresh: bool = True) -> str:
+    """The DIRECT .csv endpoint for a view, owner-sliced and optionally
+    week-pinned.
+
+    This is the path att_order_log._csv_url already uses for ORDERLOG, and it is
+    a different animal from the `#/site/…` viewer URL: it renders server-side
+    from the query string, so it can't inherit the signed-in user's remembered
+    view state — which is exactly what makes it the honest test of whether a
+    filter applies at all."""
+    from urllib.parse import quote
+    from automations.b2b_metrics.offices import WEEK_FIELD
+    base = ("https://us-east-1.online.tableau.com/t/sci/views/"
+            "ATTTRACKER-B2B/{}.csv").format(view_key_to_view(view_key))
+    parts = []
+    if refresh:
+        parts.append(":refresh=yes")
+    if owner:
+        parts.append("{}={}".format(quote(OWNER_FIELD),
+                                    quote(_tableau_filter_value(owner), safe="\\")))
+    if we is not None:
+        parts.append("{}={}".format(quote(WEEK_FIELD),
+                                    quote(week_value(we), safe="")))
+    return base + ("?" + "&".join(parts) if parts else "")
+
+
+def view_key_to_view(view_key: str) -> str:
+    """The Tableau view NAME behind a registry key (the last path segment of the
+    team URL, minus any saved-view GUID)."""
+    from automations.b2b_metrics.offices import TEAM
+    return TEAM[view_key].split("?")[0].rstrip("/").split("/")[-1]
+
+
+def probe_csv(o: B2BOffice, view_key: str = "out_of_bounds",
+              today: dt.date = None, log=print) -> int:
+    """Fetch the view's .csv for the target week, the week the viewer insists on,
+    and no week at all — then diff them.
+
+    THE CHEAP REGRESSION TEST this codebase already trusts (rep_sales_fill): ask
+    for two far-apart periods and compare. Identical output means the filter is
+    inert; different output means it applies and we can build the section from
+    the data instead of fighting the viewer's remembered week."""
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
+
+    want = report_week_ending(today)
+    cases = [("no week", None), ("want {}".format(week_value(want)), want),
+             ("next {}".format(week_value(want + dt.timedelta(days=7))),
+              want + dt.timedelta(days=7)),
+             ("prior {}".format(week_value(want - dt.timedelta(days=7))),
+              want - dt.timedelta(days=7))]
+    with cdp_pull._cdp_lock(label="b2b probe-csv {}".format(o.key), log=log):
+        cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = (browser.contexts[0] if browser.contexts
+                       else browser.new_context())
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                summary = []
+                for label, we in cases:
+                    url = _csv_view_url(view_key, o.owner, we)
+                    log("CSV| --- {} ---".format(label))
+                    log("CSV| {}".format(url))
+                    try:
+                        r = page.context.request.get(url, timeout=300_000)
+                        body = (r.body() or b"").decode("utf-8-sig",
+                                                        errors="replace")
+                        status = r.status
+                    except Exception as e:  # noqa: BLE001
+                        log("CSV| ERROR {}".format(type(e).__name__))
+                        summary.append("{}=error".format(label))
+                        continue
+                    lines = [l for l in body.splitlines() if l.strip()]
+                    log("CSV| status={} bytes={} lines={}".format(
+                        status, len(body), len(lines)))
+                    for l in lines[:12]:
+                        log("CSV|   " + l[:200])
+                    summary.append("{}={} row(s)".format(
+                        label, max(0, len(lines) - 1)))
+                log("PROBECSV " + " | ".join(summary))
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
+    return 0
+
+
 def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
                today: dt.date = None, dump: bool = False, log=print) -> int:
     """Load `view_key` once per URL variant and report the week each one draws.

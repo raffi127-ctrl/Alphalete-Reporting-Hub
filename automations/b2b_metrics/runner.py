@@ -500,6 +500,12 @@ def main(argv=None) -> int:
                          "loaded view's text + labelled controls (tagged TXT| "
                          "LBL| SEL| for logtail), to find the week control when "
                          "no URL filter moves it.")
+    ap.add_argument("--probe-csv", action="store_true",
+                    help="DIAGNOSTIC: fetch the view's DIRECT .csv for the "
+                         "target week, the next week and the prior one, and "
+                         "print the rows. Proves whether the week filter "
+                         "applies on the data path (it can't inherit the "
+                         "signed-in user's remembered view state).")
     ap.add_argument("--new-thread", action="store_true",
                     help="abandon today's stored thread and open a fresh one "
                          "(use when the parent was deleted or the sections "
@@ -549,6 +555,12 @@ def main(argv=None) -> int:
         return 1 if problems else 0
 
     _off.assert_valid()
+
+    if args.probe_csv:
+        from automations.b2b_metrics import capture as _cap
+        return _cap.probe_csv(_off.get(args.office or "carlos"),
+                              today=(dt.date.fromisoformat(args.today)
+                                     if args.today else None))
 
     if args.probe_week:
         # One office only — the probe is about the VIEW, not the roster, and
