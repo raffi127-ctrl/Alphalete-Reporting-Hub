@@ -1251,9 +1251,25 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
 
 def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                 skip_download: bool = False, backfill: bool = False,
-                logfn=print) -> dict:
+                logfn=print, sheet_id: Optional[str] = None,
+                extra_tabs: Optional[List[str]] = None) -> dict:
     """Download all NDS Tableau views, parse, and fill each NDS tab on
     Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}.
+
+    `sheet_id` + `extra_tabs` let this same engine fill an NDS tab that lives
+    on a DIFFERENT sheet and is not named `<rep> - NDS`. That exists for Noah
+    Dubale, who sits on the *Carlos 1on1s* roster but sells NDS: his tab is
+    plain 'Noah Dubale' on Carlos's sheet. Tabs named in `extra_tabs` skip the
+    ` - NDS` suffix rule AND the hidden/`x`-prefix filters (they were asked for
+    by name, so honour that); their rep name is the tab title as-is.
+
+    Why the NDS engine and not `opt_phase`: `opt_phase` is RAF's pipeline, and
+    its views are scoped to Raf's 'AUTOMATION PULL ICD' — the NDS reps are not
+    in it. Verified 2026-08-17: Noah Dubale appears in NONE of opt_phase's 18
+    downloaded crosstabs (ICD Summary ATT/INT, Metrics, Churn, Program Summary,
+    Personal Production) but DOES appear in this module's
+    `opt_nds_personal_production.csv`, with all 17 of his reps. Pointing
+    opt_phase at his tab would have written nothing and exited 0.
 
     `backfill=True`: a past-week run (e.g. catching up WE 5/17 after the
     dashboards rolled to the current week). Pins the SARA views to the
@@ -1394,7 +1410,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
     # Step 3: open sheet + walk NDS-suffixed tabs
     client = rfill._client()
-    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
+    sh = rfill.open_by_key(sheet_id or ALPHALETE_ORG_SHEET_ID, client)
     # Skip hidden tabs (same convention as recruiting + financial)
     resp = sh.client.request(
         "get",
@@ -1417,11 +1433,20 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
     filled: List[str] = []
     skipped: List[str] = []
+    wanted = {t.strip() for t in (extra_tabs or []) if t and t.strip()}
+    seen_wanted: set = set()
     for ws in rfill._retry(sh.worksheets):
         title = ws.title
-        if not title.endswith(" - NDS") or title in hidden or title.startswith("x"):
+        if title in wanted:
+            # Asked for by name: no ' - NDS' suffix to strip, and the
+            # hidden / 'x'-prefix filters don't apply.
+            seen_wanted.add(title)
+            rep_name = title.strip()
+        elif (not title.endswith(" - NDS") or title in hidden
+                or title.startswith("x")):
             continue
-        rep_name = title[: -len(" - NDS")].strip()
+        else:
+            rep_name = title[: -len(" - NDS")].strip()
         owner_norm = _norm_owner(rep_name)
         if only_rep and only_rep.lower() not in rep_name.lower():
             continue
@@ -1474,6 +1499,15 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             for ln in chart_lines:
                 logfn(f"OPT NDS: {ln}")
 
+    # An --tab that matched nothing must SAY so. Silently filling 0 tabs and
+    # exiting 0 is the failure mode this whole report keeps getting bitten by.
+    missing_wanted = sorted(wanted - seen_wanted)
+    if missing_wanted:
+        for t in missing_wanted:
+            logfn(f"OPT NDS: ⚠ asked for tab {t!r} but the sheet has no such "
+                  f"tab — nothing written for it")
+        download_errors.extend(f"tab not found: {t}" for t in missing_wanted)
+
     return {"filled": filled, "skipped": skipped, "errors": download_errors}
 
 
@@ -1488,10 +1522,20 @@ if __name__ == "__main__":
                     help="Past-week catch-up: pin SARA to the target week, "
                          "skip the no-date-control metrics (NDSDailyTracker "
                          "+ Rep Breakdown chart).")
+    ap.add_argument("--sheet-id",
+                    help="Fill NDS tabs on THIS spreadsheet instead of the "
+                         "Alphalete Org one. Pair with --tab.")
+    ap.add_argument("--tab", action="append", dest="tabs", metavar="TITLE",
+                    help="Also fill this exact tab title, even though it does "
+                         "not end in ' - NDS' (repeatable). For an NDS ICD "
+                         "sitting on another captainship's sheet, e.g. "
+                         "'Noah Dubale' on Carlos 1on1s.")
     args = ap.parse_args()
     result = run_nds_opt(dry_run=args.dry_run, only_rep=args.only,
                          skip_download=args.skip_download,
-                         backfill=args.backfill)
+                         backfill=args.backfill,
+                         sheet_id=args.sheet_id,
+                         extra_tabs=args.tabs)
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Download errors: {len(result['errors'])}")
