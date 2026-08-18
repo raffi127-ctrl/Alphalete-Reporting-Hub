@@ -127,6 +127,26 @@ def prune_old(target_date: dt.date, retention_days: int,
     return pruned
 
 
+def _isolation_groups(needs: List[DataNeed]) -> List[List[DataNeed]]:
+    """Split needs so no two that share a crosstab_sheet land in the same group.
+
+    Group N holds the Nth need for each worksheet: worksheets seen once all sit
+    in group 1 (one login for the common case), and only a worksheet pulled
+    twice forces a second group. That is exactly the boundary the session proofs
+    established — different worksheet = safe to share, same worksheet with
+    different URL params = leaks."""
+    by_sheet: Dict[str, int] = {}
+    groups: List[List[DataNeed]] = []
+    for n in needs:
+        sheet = (n.crosstab_sheet or "").strip().lower()
+        idx = by_sheet.get(sheet, 0)
+        by_sheet[sheet] = idx + 1
+        while len(groups) <= idx:
+            groups.append([])
+        groups[idx].append(n)
+    return [g for g in groups if g]
+
+
 def harvest(target_date: dt.date,
             needs: List[DataNeed],
             *,
@@ -162,40 +182,57 @@ def harvest(target_date: dt.date,
     entries: List[HarvestEntry] = []
     deferred: List[DataNeed] = []
 
+    # ISOLATION (Megan 2026-08-18). This loop used to hand the SAME page to every
+    # need. That is WEAKER than the fresh-page-per-pull shared session that
+    # FAILED on fiber's two PSS pulls (2026-08-17): the second inherited the
+    # first's Product Type filter and returned 52,186 B instead of its real size
+    # — wrong number, no error.
+    #
+    # Safe so far only by luck of contents: the churn cluster is all saved views
+    # differing by GUID/worksheet, and the order-log need is alone on its
+    # worksheet. Adding any second param-filtered need on a worksheet already in
+    # the list would silently corrupt it. So group first, and never let two needs
+    # that share a worksheet ride the same context.
+    groups = _isolation_groups(unique)
+    if len(groups) > 1:
+        logfn(f"  ({len(groups)} isolation group(s) — needs sharing a worksheet "
+              f"are pulled on separate logins)")
+
     try:
-        with _session_factory(verbose=False) as page:
-            for need in unique:
-                key = cache_key(need)
-                out = day_dir / f"{key}.tsv"
-                label = need.label or key
-                if probe:
-                    verdict = tracker.ready(need, page, download=_download)
-                    if not verdict.ready:
-                        logfn(f"  [defer] {label}: {verdict.reason}")
-                        deferred.append(need)
+        for group in groups:
+            with _session_factory(verbose=False) as page:
+                for need in group:
+                    key = cache_key(need)
+                    out = day_dir / f"{key}.tsv"
+                    label = need.label or key
+                    if probe:
+                        verdict = tracker.ready(need, page, download=_download)
+                        if not verdict.ready:
+                            logfn(f"  [defer] {label}: {verdict.reason}")
+                            deferred.append(need)
+                            continue
+                    logfn(f"  -> pull {label}  [{key}]")
+                    try:
+                        _download(need.view_url, need.crosstab_sheet, out,
+                                  verbose=False, page=page, pre_export=hook_for(need))
+                    except Exception as e:  # noqa: BLE001
+                        logfn(f"     x FAILED: {type(e).__name__}: {e}")
+                        entries.append(HarvestEntry(
+                            cache_key=key, view_url=need.view_url,
+                            crosstab_sheet=need.crosstab_sheet, filters=dict(need.filters),
+                            pull_mode=need.pull_mode, path=out, pull_ts=_now_iso(),
+                            target_date=target_date.isoformat(), row_count=0,
+                            sha256="", error=f"{type(e).__name__}: {e}"))
                         continue
-                logfn(f"  -> pull {label}  [{key}]")
-                try:
-                    _download(need.view_url, need.crosstab_sheet, out,
-                              verbose=False, page=page, pre_export=hook_for(need))
-                except Exception as e:  # noqa: BLE001
-                    logfn(f"     x FAILED: {type(e).__name__}: {e}")
+                    rc = _row_count(out)
+                    sha = _sha256(out)
+                    logfn(f"     ok  rows={rc}  sha={sha[:12]}…  ({out.stat().st_size} B)")
                     entries.append(HarvestEntry(
                         cache_key=key, view_url=need.view_url,
                         crosstab_sheet=need.crosstab_sheet, filters=dict(need.filters),
                         pull_mode=need.pull_mode, path=out, pull_ts=_now_iso(),
-                        target_date=target_date.isoformat(), row_count=0,
-                        sha256="", error=f"{type(e).__name__}: {e}"))
-                    continue
-                rc = _row_count(out)
-                sha = _sha256(out)
-                logfn(f"     ok  rows={rc}  sha={sha[:12]}…  ({out.stat().st_size} B)")
-                entries.append(HarvestEntry(
-                    cache_key=key, view_url=need.view_url,
-                    crosstab_sheet=need.crosstab_sheet, filters=dict(need.filters),
-                    pull_mode=need.pull_mode, path=out, pull_ts=_now_iso(),
-                    target_date=target_date.isoformat(), row_count=rc, sha256=sha,
-                    ready_probe=tracker.last_probe(need)))
+                        target_date=target_date.isoformat(), row_count=rc, sha256=sha,
+                        ready_probe=tracker.last_probe(need)))
     finally:
         _write_manifest(day_dir, target_date, entries)
         writing.unlink(missing_ok=True)
