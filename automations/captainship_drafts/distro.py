@@ -57,6 +57,10 @@ GROUPS: dict = {
     "carlos": "Carlos' Captain Team",
     "eveliz": "Eveliz's Captainship",
     "luis":   "Luis' Captainship",
+    # Atef's captainship split off Carlos' on 2026-08-18. The group is the
+    # source of truth, so whoever Eve adds in Contacts (Dhey Patel is still
+    # missing at the time of writing) lands on the next send with no code edit.
+    "atef":   "Atef's Captainship",
     "khalil": "Khalil's Captainship",
     "colten": "Colten's Captainship",
     "jairo":  "Jairo's Captainship",

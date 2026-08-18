@@ -364,14 +364,19 @@ RECIPIENTS: dict = {
         # group from this list, put him straight back. Same story as Jeremiah
         # Minor below. Note this group is SHARED (distro.GROUPS): being on it
         # also mailed him the Org Sales Board email and the Override Bulletin.
-        "atefchoudhury349@gmail.com", "CarlosHidalgo349@gmail.com",
+        #
+        # Re-synced to the group 2026-08-18, when Atef's captainship split off:
+        # OUT atefchoudhury349@ and sabrinaalicea2021@ (they went with Atef) and
+        # smgroupjoe@ (Joe Eckhart, off the captainship); IN jackieleroyatt@.
+        # The group had already been edited — this is the backup catching up, and
+        # a stale backup is exactly what hid the Khalil typo.
+        "CarlosHidalgo349@gmail.com",
         "wgary.att@gmail.com",
         "georgehipolito2@gmail.com", "jamisgaray18@gmail.com",
-        "smgroupjoe@yahoo.com", "joeyrmz2002@gmail.com",
+        "jackieleroyatt@gmail.com", "joeyrmz2002@gmail.com",
         "justinryanwood.93@gmail.com", "kevdriggs25@gmail.com",
         "kinseyguenther@gmail.com", "maudmiller4@gmail.com",
         "raffi127@gmail.com", "ryankabbes@gmail.com",
-        "sabrinaalicea2021@gmail.com",
     ],
     "eveliz": [
         "themillenders@gmail.com", "evelizroca.ssm@gmail.com",
@@ -386,6 +391,14 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com", "maxpowell145@gmail.com",
         "mihir.vadlamani@gmail.com", "raffi127@gmail.com",
         "rob.diamondbiz@gmail.com",
+    ],
+    # FALLBACK ONLY — the live list is the "Atef's Captainship" Contacts group
+    # (distro.GROUPS). Snapshot of that group on 2026-08-18, the day his
+    # captainship split off Carlos'. Dhey Patel is not in it yet.
+    "atef": [
+        "atefchoudhury349@gmail.com", "CarlosHidalgo349@gmail.com",
+        "maudmiller4@gmail.com", "raffi127@gmail.com",
+        "sabrinaalicea2021@gmail.com",
     ],
     "khalil": [
         "agonzalezz25@outlook.com", "CarlosHidalgo349@gmail.com",
@@ -478,6 +491,13 @@ CAPTAINS: List[Captain] = [
     ]),
     Captain("luis", "Luis", "b2b", title_bg="#B5ADFB", to=_to("luis"), churn=[
         ChurnSource(_own.open_ws_b2b_luis, _ni_render, "New Internet Churn"),
+    ]),
+    # Split off Carlos' captainship 2026-08-18 (Atef + Sabrina Alicea + Dhey
+    # Patel). His churn tab fills off the ALL-TEAMS view until Tableau adds him
+    # to the captain dropdown — see owners_metrics_churn.pull
+    # .make_b2b_captainship_parser. Nothing here changes when that happens.
+    Captain("atef", "Atef", "b2b", title_bg="#00695C", to=_to("atef"), churn=[
+        ChurnSource(_own.open_ws_b2b_atef, _ni_render, "New Internet Churn"),
     ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
