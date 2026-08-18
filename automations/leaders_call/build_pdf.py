@@ -73,40 +73,12 @@ MAX_PER_COL = max(1, int(USABLE_H // MIN_RH))
 PER_SLIDE = 2 * MAX_PER_COL                      # reps per slide before splitting (18)
 
 
-_ROMAN = {"II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"}
-
-
-def _recase_word(w):
-    """Capitalize the first letter of each alpha run (after space/hyphen/apostrophe/
-    paren/period) and lowercase the rest: 'adairus'→'Adairus', "o'brien"→"O'Brien"."""
-    out, cap_next = [], True
-    for ch in w:
-        if ch.isalpha():
-            out.append(ch.upper() if cap_next else ch.lower())
-            cap_next = False
-        else:
-            out.append(ch)
-            cap_next = True
-    return "".join(out)
-
-
-def titlecase_name(s):
-    """Fix punctuation/capitalization on people's names from messy sources
-    (all-lowercase 'basit', ALL-CAPS 'AMJAD MALHAS'), WITHOUT clobbering names that
-    are intentionally mixed-case (McClain, LeRoy, DePaz) or suffixes (II, III)."""
-    words = str(s).split()
-    res = []
-    for w in words:
-        letters = [c for c in w if c.isalpha()]
-        if not letters:
-            res.append(w)
-        elif w.upper().strip(".") in _ROMAN:          # keep roman-numeral suffixes upper
-            res.append(w.upper())
-        elif all(c.isupper() for c in letters) or all(c.islower() for c in letters):
-            res.append(_recase_word(w))               # single-case → recase it
-        else:
-            res.append(w)                             # intentional mixed case → leave
-    return " ".join(res)
+# This deck's name-fixer is now the shared one — same code, one copy, so a
+# report that starts using it can't drift from what the Leader's Call does.
+# Re-exported under its original name because callers here (and the memory note
+# that points at it) know it as leaders_call.build_pdf.titlecase_name.
+from automations.shared.name_case import (          # noqa: E402  (kept by name)
+    _ROMAN, _recase_word, titlecase_name)
 
 
 def clean_owner(owner):

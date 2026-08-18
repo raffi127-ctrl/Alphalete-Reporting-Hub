@@ -39,6 +39,8 @@ import io
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
+from automations.shared.name_case import titlecase_name
+
 # THE JUNK FILTER IS `Draft`, NOT `Complete Sales = 0`.
 #
 # The Loom says "anything that's a zero can get filtered out", and that was the
@@ -333,7 +335,20 @@ def read_rows(path: Path) -> List[Dict[str, str]]:
     for r in rows[1:]:
         if not any(v.strip() for v in r):
             continue
-        out.append(dict(zip(header, r)))
+        row = dict(zip(header, r))
+        # Fix the rep's capitalization HERE, at the read, so every surface gets
+        # it: the workbook (summary, rep tabs and their tab titles, pending),
+        # the Sales Board push, the payout image, the per-office runs. Carlos's
+        # reps type their own names into the contract, so the view hands us
+        # "Cinthya reyes" and "CARLOS HIDALGO" next to properly-cased names.
+        # Doing it at the source also merges what used to be two rep groups
+        # when the same person appeared under two spellings of the same name.
+        # The Sheet merge key is the contract/account id (sheet._norm_id), not
+        # the name, so recasing can't duplicate a row that's already up there.
+        rep = row.get("Rep Name")
+        if rep:
+            row["Rep Name"] = titlecase_name(rep)
+        out.append(row)
     return out
 
 
