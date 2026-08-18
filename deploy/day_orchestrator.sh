@@ -42,6 +42,14 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
+# One Tableau login for every readiness probe in a pass, instead of one per
+# probe (Megan 2026-08-18). PROVEN on the mini the same day via
+# `lucy rerun session_proof_probes` — A/B/A' hash diff, all 3 downloading probes
+# (dd_week, box_daily, captainship_bonus_raf) byte-identical under one shared
+# login. The access ledger had day_orchestrator at 16 logins/day spent purely on
+# asking "is the data there yet"; this is the fix. Unset to roll back instantly.
+export PROBE_SHARED_SESSION=1
+
 EXTRA_ARGS="$*"
 LOG_FILE="$LOG_DIR/day-orchestrator-$(date +%Y-%m-%d-%H%M%S).log"
 
