@@ -30,6 +30,7 @@ LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
 
 HEADER_BG = "434343"
 WEEK_BG = "2563EB"
+REP_BG = "EDEDED"         # the per-rep bands inside the Pending Orders tab
 
 COLUMNS = (
     "Sale Date", "Business Name", "Contract ID", "Status", "Contr. Sub-status",
@@ -362,32 +363,61 @@ def build(sales: Sequence, out_path: Path, *,
                     else "Submit a bill or ETF document")
         return clean.STATUS_MEANING.get(s.status, "")
 
-    # Oldest first — this is a chase list, so the stalest deal is the one that
-    # most needs a call. Secondary sort keeps a rep's rows together on ties.
-    pend.sort(key=lambda s: (s.sale_date or dt.date.max,
-                             _fmt(s.fields.get("Rep Name"))))
     P_COLS = ("Rep Name", "Sale Date", "Days Waiting", "Business Name",
               "Contract ID", "Status", "Next step")
-    psh = wb.create_sheet(_safe_title("Pending Orders", used))
-    psh.cell(row=1, column=1, value="Pending orders — not yet accepted").font = \
-        _font(bold=True)
-    psh.cell(row=2, column=1,
-             value="Every deal still in flight (cancelled and rejected are "
-                   "excluded). {} as of {}.".format(
-                       "{} pending".format(len(pend)) if pend else "none pending",
-                       today.strftime("%m/%d/%Y"))).font = _font(italic=True)
-    _write_header(psh, 4, P_COLS)
-    r = 5
+
+    # Two sections, each grouped by rep (Carlos, 2026-08-18: "all the yellow
+    # ones in their own section... the first section can be all the orders that
+    # aren't in yellow, organized by sales rep").
+    #
+    # "Yellow" is whatever color_for() actually paints yellow, NOT a status
+    # name: that's Submitted to Supplier, plus a Verification sale whose
+    # HISTORY shows it was already submitted (an un-submitted Verification is
+    # orange). Splitting on the paint is also the who-has-the-ball split —
+    # section 1 is every deal with something still to do on our end, section 2
+    # is the ones sitting with the supplier.
+    ours, waiting = [], []
     for s in pend:
+        if clean.color_for(s.status, s.history) == clean.YELLOW:
+            waiting.append(s)
+        else:
+            ours.append(s)
+
+    def _by_rep(rows):
+        """[(rep, sales)] — reps A-Z, oldest deal first inside each rep.
+
+        Oldest first because this is a chase list: within a rep's block the
+        stalest deal is the one that most needs a call.
+        """
+        groups: Dict[str, List] = {}
+        for s in rows:
+            rep = _fmt(s.fields.get("Rep Name")) or "(no rep)"
+            groups.setdefault(rep, []).append(s)
+        for rep in groups:
+            groups[rep].sort(key=lambda s: (s.sale_date or dt.date.max,
+                                            _fmt(s.fields.get("Business Name"))))
+        return [(rep, groups[rep]) for rep in sorted(groups)]
+
+    def _plural(n):
+        return "" if n == 1 else "s"
+
+    def _rep_band(sh, row, text):
+        cell = sh.cell(row=row, column=1, value=text)
+        cell.font = _font(bold=True)
+        cell.fill = PatternFill("solid", fgColor=REP_BG)
+        cell.alignment, cell.border = LEFT, _border()
+        sh.merge_cells(start_row=row, start_column=1, end_row=row,
+                       end_column=len(P_COLS))
+
+    def _pending_row(sh, row, s):
         waited = (today - s.sale_date).days if s.sale_date else ""
-        note = _next_step(s)
         vals = [_fmt(s.fields.get("Rep Name")), s.sale_date or "", waited,
                 _fmt(s.fields.get("Business Name")),
-                _fmt(s.fields.get("Contract ID")), s.status, note]
+                _fmt(s.fields.get("Contract ID")), s.status, _next_step(s)]
         fill_hex = clean.color_for(s.status, s.history)
         fill = PatternFill("solid", fgColor=fill_hex) if fill_hex else None
         for c, v in enumerate(vals, start=1):
-            cell = psh.cell(row=r, column=c, value=v)
+            cell = sh.cell(row=row, column=c, value=v)
             cell.font = _font()
             cell.alignment = LEFT if c in (1, 4, 7) else CENTER
             cell.border = _border()
@@ -395,14 +425,53 @@ def build(sales: Sequence, out_path: Path, *,
                 cell.fill = fill
             if c == 2:
                 cell.number_format = "mm/dd/yyyy"
-        r += 1
+
+    def _pending_section(sh, row, title, rows, empty_note):
+        _banner(sh, row, title, len(P_COLS))
+        row += 1
+        _write_header(sh, row, P_COLS)
+        row += 1
+        if not rows:
+            sh.cell(row=row, column=1, value=empty_note).font = _font(italic=True)
+            return row + 2
+        for rep, rep_rows in _by_rep(rows):
+            _rep_band(sh, row, "{}  •  {} order{}".format(
+                rep, len(rep_rows), _plural(len(rep_rows))))
+            row += 1
+            for s in rep_rows:
+                _pending_row(sh, row, s)
+                row += 1
+            row += 1                      # a blank line between reps
+        return row + 1
+
+    psh = wb.create_sheet(_safe_title("Pending Orders", used))
+    psh.cell(row=1, column=1, value="Pending orders — not yet accepted").font = \
+        _font(bold=True)
+    psh.cell(row=2, column=1,
+             value="Every deal still in flight (cancelled and rejected are "
+                   "excluded). {} as of {}. Two sections, each by sales rep: "
+                   "what we still have to work first, then the yellow ones "
+                   "sitting with the supplier.".format(
+                       "{} pending".format(len(pend)) if pend else "none pending",
+                       today.strftime("%m/%d/%Y"))).font = _font(italic=True)
     if not pend:
-        psh.cell(row=5, column=1, value="Nothing pending — every deal is "
+        psh.cell(row=4, column=1, value="Nothing pending — every deal is "
                  "accepted or closed.").font = _font(italic=True)
+    else:
+        r = _pending_section(
+            psh, 4,
+            "OURS TO WORK  •  {} order{}  —  something still to do on our "
+            "end".format(len(ours), _plural(len(ours))),
+            ours, "Nothing here — every open deal is with the supplier.")
+        _pending_section(
+            psh, r,
+            "WAITING ON THE SUPPLIER  •  {} order{}  —  the yellow ones, "
+            "nothing for us to do".format(len(waiting), _plural(len(waiting))),
+            waiting, "Nothing here — no deal is sitting with the supplier.")
     widths = [22, 12, 13, 30, 12, 22, 40]
     for c, w in enumerate(widths, start=1):
         psh.column_dimensions[get_column_letter(c)].width = w
-    psh.freeze_panes = "A5"
+    psh.freeze_panes = "A6"
 
     # ---- one tab per rep -------------------------------------------------
     by_rep: Dict[str, List] = {}
