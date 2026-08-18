@@ -444,6 +444,18 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
 CONFIRMED_CLEAN = ("released", "already_all")
 
 
+def _strict_filters() -> bool:
+    """Should an unconfirmable filter ABORT the pull rather than just alert?
+
+    ON by default since 2026-08-18. The escape hatch exists for one real case:
+    if SCI genuinely removes a filter for good, every BOX pull would fail until
+    someone edits PINNED_ID_FILTERS — set the env to keep the reports running
+    while that edit is made and reviewed. It is not meant to live on."""
+    import os
+    return (os.environ.get("ALPHALETE_BOX_ALLOW_UNCONFIRMED") or ""
+            ).strip().lower() not in ("1", "true", "yes")
+
+
 def confirm_release(verdicts: dict, view_label: str = "BOX BoxOrderLog",
                     today: Optional[dt.date] = None, verbose: bool = True) -> bool:
     """Alert LOUDLY unless every filter is CONFIRMED clean. Returns True if it is.
@@ -652,9 +664,29 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
         # said out loud once a day instead of scrolling past in a log. This is
         # the hook every BOX pull goes through — Carlos's post, both owner
         # emails and per_office — so one call covers the whole family.
-        confirm_release(release_pinned_filters(page, viz, verbose=verbose),
-                        view_label="BOX B2BBOXEnergyTracker/BoxOrderLog",
-                        verbose=verbose)
+        ok = confirm_release(release_pinned_filters(page, viz, verbose=verbose),
+                             view_label="BOX B2BBOXEnergyTracker/BoxOrderLog",
+                             verbose=verbose)
+        if not ok and _strict_filters():
+            # DON'T BUILD NUMBERS WE CAN'T VOUCH FOR (Megan 2026-08-18: "we
+            # shouldn't be using a pinned filter so that this doesn't happen").
+            # We don't own SCI's workbook and can't stop its saved view from
+            # re-pinning — it has re-pinned three times now (8/7, 8/12, 8/17) —
+            # but we CAN refuse to produce an export from a view we couldn't
+            # confirm is unpinned. Alerting was step one; this is the guarantee.
+            #
+            # Raising here is deliberate: download_crosstab_patchright re-runs
+            # this hook on each of its 3 attempts, so a slow panel or a DOM
+            # flake gets three genuine chances before anything fails. Only a
+            # filter that is really unconfirmable three times running stops the
+            # pull — and a failed pull is a loud, visible failure, which is
+            # strictly better than a silent export that undercounts by a third.
+            raise RuntimeError(
+                "BOX pull aborted: could not confirm the view's Contract ID / "
+                "Account Id filters are (All), so this export may be capped to "
+                "a stale ID list. Refusing to build numbers from it. Set "
+                "ALPHALETE_BOX_ALLOW_UNCONFIRMED=1 to pull anyway (and see the "
+                "alert in #claudecorrections-and-requests).")
         if verbose:
             print("-> Forcing BOX date range: {} → {}".format(
                 _fmt(start), _fmt(end)), flush=True)

@@ -340,6 +340,144 @@ def alert_unconfirmed_filter(source_key: str, view_label: str,
 
 
 # --------------------------------------------------------------------------
+# the dateless case: a feed that stopped CHANGING
+# --------------------------------------------------------------------------
+# 88% of this repo's exports (246 of 279, measured 2026-08-17) carry no
+# row-level event date at all — they're aggregate crosstabs: churn rates, rep
+# counts, "This Week" rollups, Monday..Sunday pivots. The date gate above can't
+# judge those, which left the majority of our Tableau surface with no staleness
+# cover whatsoever. A frozen feed behind one of them looks exactly like a quiet
+# week (Megan 2026-08-18: "fix it").
+#
+# So for those we watch a different signal: the export's CONTENT. Fingerprint
+# each pull; if a source returns byte-identical numbers several days running,
+# the feed behind it has stopped moving.
+#
+# THE FALSE-ALARM PROBLEM, AND THE SELF-CALIBRATION THAT SOLVES IT
+# Plenty of views are legitimately static — a roster, an office mapping, a
+# weekly board read on a Wednesday. "Unchanged for 3 days" would cry wolf about
+# every one of them, daily, and this alert would be muted inside a week.
+#
+# So a source has to EARN the right to be judged: we only call it frozen if its
+# own history shows it changing at least twice before. A roster that never moves
+# never establishes a cadence and is never alerted on — we simply have no
+# evidence it should be moving. A daily feed proves it moves, then stops, and
+# that stop is exactly what we want to hear about. No per-source config, no
+# allow-list to maintain: each source teaches us its own normal.
+
+FINGERPRINT_DAYS = 14          # history kept per source
+FROZEN_AFTER_DAYS = 3          # identical this many days running -> suspicious
+_MIN_DISTINCT_TO_JUDGE = 2     # ...but only if it has ever changed
+
+
+def _fingerprint(path) -> Optional[str]:
+    """A stable digest of the export's DATA (header excluded — a column rename
+    isn't new data, and a stable header is what makes runs comparable)."""
+    import hashlib
+    try:
+        header, rows = _rows(path)
+        if not header and not rows:
+            return None
+        h = hashlib.sha1()
+        h.update(str(len(rows)).encode())
+        for r in rows:
+            h.update("\x1f".join(r).encode("utf-8", "replace"))
+            h.update(b"\x1e")
+        return h.hexdigest()[:16]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _history_path(source_key: str) -> Path:
+    return STATE_DIR / "history-{}.json".format(_slug(source_key))
+
+
+def check_unchanged(path, source_key: str, view_label: str,
+                    today: dt.date, report: str = "",
+                    frozen_after: int = FROZEN_AFTER_DAYS) -> Dict[str, object]:
+    """Track this source's content day over day; alert when a feed that USED to
+    move stops. The dateless half of the freshness story — see the block comment.
+
+    Returns {'verdict': 'moving'|'frozen'|'learning', 'days_same', 'alerted'}.
+    'learning' = not enough history, or this source has never been seen to
+    change, so we decline to judge it."""
+    out = {"verdict": "learning", "days_same": 0, "alerted": False}
+    try:
+        fp = _fingerprint(path)
+        if not fp:
+            return out
+        p = _history_path(source_key)
+        try:
+            hist = json.loads(p.read_text("utf-8"))
+        except Exception:  # noqa: BLE001
+            hist = {}
+        entries = {k: v for k, v in (hist.get("days") or {}).items()}
+        entries[today.isoformat()] = fp
+        # keep the window bounded
+        for k in sorted(entries)[:-FINGERPRINT_DAYS]:
+            entries.pop(k, None)
+        hist["days"] = entries
+        hist["view"] = view_label
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(hist, indent=1), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
+        days = sorted(entries)
+        # how many CONSECUTIVE most-recent days share today's fingerprint
+        same = 0
+        for d in reversed(days):
+            if entries[d] == fp:
+                same += 1
+            else:
+                break
+        out["days_same"] = same
+        if len(set(entries.values())) < _MIN_DISTINCT_TO_JUDGE:
+            return out              # never seen it change: not ours to judge
+        if same < frozen_after:
+            out["verdict"] = "moving"
+            return out
+        out["verdict"] = "frozen"
+        print("  ⚠ FROZEN FEED: {} — byte-identical for {} day(s) running, "
+              "and this source normally changes. The numbers behind it have "
+              "stopped moving.".format(view_label, same), flush=True)
+        out["alerted"] = alert_frozen(source_key, view_label, same, today,
+                                      report or _current_report())
+        return out
+    except Exception:  # noqa: BLE001
+        return out
+
+
+def alert_frozen(source_key: str, view_label: str, days_same: int,
+                 today: dt.date, report: str = "") -> bool:
+    """One daily alert for a source whose contents stopped changing."""
+    try:
+        key = "{} frozen".format(source_key)
+        state = _load_state(key, today)
+        reports = list(state.get("reports") or [])
+        if report and report not in reports:
+            reports.append(report)
+        if state.get("alerted"):
+            _save_state(key, today, dict(state, reports=reports))
+            return False
+        line = ("{} — returned IDENTICAL data {} days running. This source "
+                "normally changes day to day, so the feed behind it has "
+                "stopped refreshing; anything built on it is repeating "
+                "{}-day-old numbers.".format(view_label, days_same, days_same - 1))
+        if reports:
+            line += " · hit by: {}".format(", ".join(sorted(reports)))
+        from automations.shared import section_drop_alert as sda
+        sda.alert(report_id="tableau-stale-{}".format(_slug(source_key)),
+                  failed=[line], kind="capped", day=today)
+        _save_state(key, today, {"alerted": True, "reports": reports,
+                                 "view": view_label, "kind": "frozen"})
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+# --------------------------------------------------------------------------
 # the gate every pull goes through
 # --------------------------------------------------------------------------
 
@@ -369,12 +507,24 @@ def check_export(path,
         if not p.exists() or p.stat().st_size == 0:
             out["column"] = "missing or empty export"
             return out
+        label = _view_label(view_url, sheet)
         newest, col = newest_date(p, today=today)
         out["newest"], out["column"] = newest, col
         if newest is None:
+            # No event date to judge — fall back to watching whether the CONTENT
+            # still moves. This is the 88% of our exports (aggregate crosstabs)
+            # that had no staleness cover at all until 2026-08-18.
+            unchanged = check_unchanged(p, source_key=label, view_label=label,
+                                        today=today,
+                                        report=report or _current_report())
+            out["verdict"] = {"frozen": "stale"}.get(
+                unchanged["verdict"], "unknown")
+            out["days_same"] = unchanged["days_same"]
+            out["alerted"] = unchanged["alerted"]
             if verbose:
-                print("  [freshness] {} — not judged ({})".format(
-                    _view_label(view_url, sheet), col), flush=True)
+                print("  [freshness] {} — no date column; content {} ({} day(s) "
+                      "identical)".format(label, unchanged["verdict"],
+                                          unchanged["days_same"]), flush=True)
             return out
         out["behind"] = (today - newest).days
         if newest >= needs:
