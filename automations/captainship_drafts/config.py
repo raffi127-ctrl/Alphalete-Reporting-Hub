@@ -353,6 +353,12 @@ RECIPIENTS: dict = {
         # Jeremiah Minor removed 2026-07-30 — Eve took him out of the
         # "Sahil's Captainship" group on purpose; the fallback must not
         # put him back.
+        #
+        # andre082702@ added 2026-08-18: it was already in the group and had been
+        # receiving the report; only this backup was behind. Synced FROM the
+        # group, which is the safe direction — it can't revive anyone removed on
+        # purpose (see Jeremiah above).
+        "andre082702@gmail.com",
         "ttran.brian@gmail.com", "dylanjtwaddle@gmail.com",
         "marcellusbutlerjr@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
