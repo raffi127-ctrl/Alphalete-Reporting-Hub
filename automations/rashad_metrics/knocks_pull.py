@@ -86,7 +86,6 @@ def pull_office_knocks(office_name: Optional[str] = None,
     """
     office_name = office_name or DEFAULT_OFFICE
     target = target or knocks._yesterday()
-    mdy = target.strftime("%m/%d/%Y")
 
     # Resolve any spelling drift to the canonical name up front, so logs +
     # the office-row search start from the canonical spelling. The search
@@ -97,70 +96,84 @@ def pull_office_knocks(office_name: Optional[str] = None,
         print(f"-> Office '{office_name}' resolves to canonical '{canonical}'",
               flush=True)
 
-    gap_rows: list = []   # Time-Tracker-sourced rows for a gaps-only (NDS) office
     with ownerville_session(verbose=verbose) as page:
-        # Bound every op so a stuck page can't hang the run (same guard
-        # run_all_owners uses).
-        page.set_default_timeout(60_000)
-        page.set_default_navigation_timeout(60_000)
+        return pull_office_on_page(page, canonical, aliases_raw, target,
+                                   verbose=verbose)
 
-        # Clear any lingering impersonation from a prior interrupted run so
-        # the ?p=901 navigation below isn't bounced back to ?p=2. Always
-        # safe — returns False if not currently impersonating.
-        if _exit_impersonation(page) and verbose:
-            print("  ✓ Cleared lingering impersonation from prior session",
-                  flush=True)
 
-        # --- IMPERSONATE the target office --------------------------------
-        if not _navigate_to_office_access(page):
-            raise RuntimeError(
-                "Couldn't reach the ownerville Office Access page (?p=901) to "
-                f"impersonate {canonical!r}.")
-        # _find_owner_and_impersonate returns the FRESH rqst for the
-        # impersonated session (the server hands back a new token), so we
-        # don't need to re-capture it separately.
-        rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
-        if not rqst:
-            raise RuntimeError(
-                f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
+def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
+                        *, verbose: bool = True) -> tuple[dt.date, list[dict]]:
+    """The scrape itself, on an ALREADY-OPEN ownerville page: impersonate
+    `canonical`, pull Disposition + Time Tracker for `target`, exit
+    impersonation. Exactly the work pull_office_knocks always did — pulled out
+    into its own function ONLY so several offices can share one session (see
+    pull_offices_knocks). pull_office_knocks still wraps it in a session of its
+    own, so nothing changes for the single-office callers.
+    """
+    mdy = target.strftime("%m/%d/%Y")
+    gap_rows: list = []   # Time-Tracker-sourced rows for a gaps-only (NDS) office
+    # Bound every op so a stuck page can't hang the run (same guard
+    # run_all_owners uses).
+    page.set_default_timeout(60_000)
+    page.set_default_navigation_timeout(60_000)
+
+    # Clear any lingering impersonation from a prior interrupted run so
+    # the ?p=901 navigation below isn't bounced back to ?p=2. Always
+    # safe — returns False if not currently impersonating.
+    if _exit_impersonation(page) and verbose:
+        print("  ✓ Cleared lingering impersonation from prior session",
+              flush=True)
+
+    # --- IMPERSONATE the target office --------------------------------
+    if not _navigate_to_office_access(page):
+        raise RuntimeError(
+            "Couldn't reach the ownerville Office Access page (?p=901) to "
+            f"impersonate {canonical!r}.")
+    # _find_owner_and_impersonate returns the FRESH rqst for the
+    # impersonated session (the server hands back a new token), so we
+    # don't need to re-capture it separately.
+    rqst, reason = _find_owner_and_impersonate(page, canonical, aliases_raw)
+    if not rqst:
+        raise RuntimeError(
+            f"Couldn't impersonate {canonical!r} in ownerville: {reason}")
+    if verbose:
+        print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
+              flush=True)
+
+    try:
+        # Defensive: prefer the live page's rqst if the post-impersonate
+        # navigation landed on a URL with a newer token. page_rqst falls
+        # back to the value we already have.
+        rqst = page_rqst(page) or rqst
+
+        # --- SCRAPE (identical to pull_disposition_day) ---------------
         if verbose:
-            print(f"  ✓ Impersonated {canonical!r}; rqst={rqst[:8]}…",
+            print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
                   flush=True)
-
-        try:
-            # Defensive: prefer the live page's rqst if the post-impersonate
-            # navigation landed on a URL with a newer token. page_rqst falls
-            # back to the value we already have.
-            rqst = page_rqst(page) or rqst
-
-            # --- SCRAPE (identical to pull_disposition_day) ---------------
+        knocks._navigate(page, rqst, mdy)
+        idx = knocks._header_index(page)
+        rows = knocks._scrape_rows(page, idx)
+        tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
+        if verbose:
+            print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",
+                  flush=True)
+        # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
+        # rows and there's nothing to hang the gaps on. Build Time-Gaps rows
+        # straight from the Time Tracker (name + knock times live in its JSON)
+        # while the session is still open. Only the Time Gaps board renders;
+        # knocks_run skips Total Knocks when there's no knock data.
+        if not rows:
+            gap_rows = knocks._scrape_time_tracker_rows(
+                page, rqst, mdy, verbose=verbose)
+    finally:
+        # ALWAYS exit impersonation before the session closes so the
+        # next run / other reports start from master, not a stuck
+        # impersonated state.
+        if _exit_impersonation(page):
             if verbose:
-                print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
-                      flush=True)
-            knocks._navigate(page, rqst, mdy)
-            idx = knocks._header_index(page)
-            rows = knocks._scrape_rows(page, idx)
-            tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
-            if verbose:
-                print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",
-                      flush=True)
-            # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
-            # rows and there's nothing to hang the gaps on. Build Time-Gaps rows
-            # straight from the Time Tracker (name + knock times live in its JSON)
-            # while the session is still open. Only the Time Gaps board renders;
-            # knocks_run skips Total Knocks when there's no knock data.
-            if not rows:
-                gap_rows = knocks._scrape_time_tracker_rows(
-                    page, rqst, mdy, verbose=verbose)
-        finally:
-            # ALWAYS exit impersonation before the session closes so the
-            # next run / other reports start from master, not a stuck
-            # impersonated state.
-            if _exit_impersonation(page):
-                if verbose:
-                    print("  ✓ Exited impersonation", flush=True)
-            elif verbose:
-                print("  ⚠ Exit-impersonation call didn't succeed", flush=True)
+                print("  ✓ Exited impersonation", flush=True)
+        elif verbose:
+            print("  ⚠ Exit-impersonation call didn't succeed", flush=True)
 
     # Gaps-only (NDS/wireless) office: no disposition rows — return the
     # Time-Tracker rows so ONLY the Time Gaps board renders.
@@ -181,6 +194,44 @@ def pull_office_knocks(office_name: Optional[str] = None,
         print(f"-> Merged gaps onto {matched}/{len(rows)} disposition rep(s)",
               flush=True)
     return target, rows
+
+
+def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
+                        verbose: bool = True):
+    """Scrape SEVERAL offices inside ONE ownerville session.
+
+    Why one session: each `ownerville_session` launches real Chrome on a shared
+    user-data-dir, and the next launch can be adopted by the one before it if
+    that Chrome hasn't fully exited ("Opening in existing browser session" —
+    the profile race that cost other_office_knocks its second office on
+    2026-08-18, even with the built-in 4x8s retry). One login, one browser,
+    offices in turn — and it's faster, because the login is paid once.
+    Impersonation is exited between offices exactly as the single-office path
+    does, so each office starts from master.
+
+    Returns (target, [(office_name, rows, error_or_None), ...]) in the order
+    given. One office raising does NOT abort the rest — its error rides in the
+    tuple so the caller can report it per office.
+    """
+    target = target or knocks._yesterday()
+    aliases_raw = load_aliases()
+    out: list = []
+    with ownerville_session(verbose=verbose) as page:
+        for name in office_names:
+            canonical = alias_to_canonical(name, aliases_raw)
+            if verbose and canonical != name:
+                print(f"-> Office '{name}' resolves to canonical '{canonical}'",
+                      flush=True)
+            try:
+                _, rows = pull_office_on_page(page, canonical, aliases_raw,
+                                              target, verbose=verbose)
+                out.append((name, rows, None))
+            except Exception as e:  # noqa: BLE001 — one office must not kill the rest
+                if verbose:
+                    print(f"  ✗ {name}: {type(e).__name__}: {str(e)[:120]}",
+                          flush=True)
+                out.append((name, [], e))
+    return target, out
 
 
 def _print_preview(office_name: str, target: dt.date, rows: list[dict]) -> None:

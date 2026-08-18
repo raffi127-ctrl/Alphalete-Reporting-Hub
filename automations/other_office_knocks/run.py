@@ -16,9 +16,11 @@ Replies — TWO images per office, grouped by office, Time Gaps first
 
 Nothing here is new machinery — every piece is the one Raf's / Rashad's knocks
 already use:
-  * pull   = rashad_metrics.knocks_pull.pull_office_knocks (impersonates the
-             office inside ONE ownerville session, scrapes Disposition by Rep +
-             Time Tracker gaps, exits impersonation).
+  * pull   = rashad_metrics.knocks_pull.pull_offices_knocks — ONE ownerville
+             session for BOTH offices (impersonate, scrape Disposition by Rep +
+             Time Tracker gaps, exit impersonation, next office). A session per
+             office lost the Chrome-profile race: the second launch got adopted
+             by the first Chrome before it exited and the office dropped.
   * render = total_knocks.render.render_time_gaps / render_total_knocks
              (rows=…) — straight from the in-memory rows, so NO Sheet is read
              or written for these offices. Every title carries the office name,
@@ -56,7 +58,7 @@ try:
 except Exception:
     pass
 
-from automations.rashad_metrics.knocks_pull import pull_office_knocks
+from automations.rashad_metrics.knocks_pull import pull_offices_knocks
 from automations.total_knocks import render as _render
 from automations.total_knocks.pull import COL_TOTAL_KNOCKS, central_today
 
@@ -154,14 +156,26 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     print(f"[other_knocks] {len(offices)} office(s): {', '.join(offices)} "
           f"— {'DRY-RUN' if dry_run else 'LIVE'}", flush=True)
 
-    # 1. Pull + render each office first, so the thread is only created once
-    #    there is something to hang in it. `rendered` is ALREADY in post order:
-    #    office by office, Time Gaps before Total Knocks.
+    # 1. Pull every office in ONE ownerville session, then render. `rendered`
+    #    is ALREADY in post order: office by office, Time Gaps before Total
+    #    Knocks. A per-office error rides in the tuple — it never aborts the
+    #    others.
     rendered: list[tuple[str, str, Path | None, dt.date]] = []
     failed: list[str] = []
-    for office in offices:
+    try:
+        day, pulled = pull_offices_knocks(offices, target)
+    except Exception as e:  # noqa: BLE001 — the session itself never opened
+        print(f"[other_knocks] ❌ ownerville session failed: "
+              f"{type(e).__name__}: {e}", flush=True)
+        # Every office is missing, and the manifest has to say so — otherwise a
+        # dead session reads as 'nothing to report' and the card stays green.
+        if not dry_run:
+            _write_manifest(offices, list(offices))
+        return 1
+    for office, rows, err in pulled:
         try:
-            day, rows = pull_office_knocks(office, target)
+            if err is not None:
+                raise err
             print(f"[other_knocks] {office} — data date {day.isoformat()} — "
                   f"{len(rows)} rep(s).", flush=True)
             if not rows:
