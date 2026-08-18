@@ -389,6 +389,30 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     return parent, detail
 
 
+def _channel_line(report_id: str, failed, kind: str):
+    """The one-line channel post: NAME what didn't land, don't count it.
+
+    Megan 2026-08-18, looking at "*tableau-screenshots* — dropped 1 section this
+    run": "alerts like this should just state what channel they didn't post in
+    for the short explanation in the header — this one would just say precision
+    management." The count is the least useful fact on the line; the reader's
+    next question is always WHICH one, and for these kinds `failed` already
+    holds the answer (a channel, an office, an ICD, a Tableau source).
+
+    None → the caller falls back to alert_thread.headline's normal trimming:
+    a bulleted kind's items are full sentences (never a label), and a list too
+    long for one short line goes back to being a count."""
+    spec = _KINDS.get(kind) or {}
+    if spec.get("bullets"):
+        return None
+    items = ", ".join(failed)
+    from automations.shared import alert_thread
+    items = alert_thread.strip_emoji(items)
+    if not items or len(items) > alert_thread.REASON_CHARS:
+        return None
+    return "*{}* — {}".format(report_id, items)
+
+
 def _incident_key(report_id: str, kind: str) -> str:
     """Which incident thread this alert belongs to.
 
@@ -451,6 +475,7 @@ def alert(*, report_id: str, failed: Sequence[str],
     parent_lines, detail = _compose_parts(report_id, failed, remediation,
                                           note, kind)
     from automations.shared import alert_thread
+    channel_line = _channel_line(report_id, failed, kind)
     parent = "\n".join(parent_lines)
     replies = alert_thread.chunk(detail) if detail else []
     if dry_run:
@@ -476,6 +501,7 @@ def alert(*, report_id: str, failed: Sequence[str],
             posted = _inc.open_or_followup(key=_incident_key(report_id, kind),
                                            title=parent_lines[0],
                                            body=parent_lines[1:],
+                                           channel_line=channel_line,
                                            details=detail, channel=CHANNEL,
                                            stamp=(_KINDS.get(kind) or {}).get(
                                                "followup_stamp"),
@@ -488,7 +514,8 @@ def alert(*, report_id: str, failed: Sequence[str],
             # Same shape as the incident path even when it's unavailable: one
             # emoji-free line in the channel, the whole alert in the thread
             # (Megan 2026-08-18).
-            head = alert_thread.headline(parent_lines[0], parent_lines[1:])
+            head = channel_line or alert_thread.headline(parent_lines[0],
+                                                         parent_lines[1:])
             resp = client.chat_postMessage(channel=CHANNEL, text=head)
             ts = resp.get("ts")
             body = [] if alert_thread.same_story(head, parent_lines) \

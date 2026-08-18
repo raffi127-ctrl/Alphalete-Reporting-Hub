@@ -437,6 +437,24 @@ def _react_done(client, channel: str, ts: str) -> None:
     _react(client, channel, ts, WORKING_REACTION, remove=True)
 
 
+def _parent_still_open(client, channel: str, ts: str) -> Optional[bool]:
+    """Fetch JUST this parent and read its marker: True = open, False = resolved,
+    None = couldn't tell. One targeted history call — nowhere near the 3-page
+    scan, and only used where a stale belief would put a WRONG reaction on a
+    closed thread."""
+    try:
+        r = client.conversations_history(channel=channel, latest=ts, oldest=ts,
+                                         inclusive=True, limit=1)
+        for m in r.get("messages") or []:
+            if m.get("ts") == ts:
+                mk = _MARK_RE.search(m.get("text") or "")
+                if mk:
+                    return mk.group("state") == "open"
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _human(day: dt.date) -> str:
     # No %-d / %#d: this runs on macOS AND Windows (CLAUDE.md).
     return "{} {}".format(day.strftime("%a %b"), day.day)
@@ -751,6 +769,7 @@ def _put_status(client, channel: str, key: str, inc: dict, st: dict,
 
 
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
+                     channel_line: Optional[str] = None,
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
                      stamp: Optional[str] = None, label: str = "",
@@ -760,8 +779,14 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      max_followups: int = MAX_FOLLOWUPS) -> Optional[dict]:
     """Open a new incident post, or reply in the one that's already open.
 
-      title     first line of the parent post
-      body      the rest of the parent (the error, kept short — it's the channel)
+      title     first line of the full alert (goes to the THREAD; the channel
+                line is derived from it unless channel_line says otherwise)
+      channel_line  the exact one-liner for the channel, when the caller knows a
+                better short WHY than the title's first clause — e.g. a drop
+                alert naming the channel that didn't post ("*tableau-screenshots*
+                — precision management") instead of counting sections. Emoji are
+                stripped; length is the caller's contract.
+      body      the rest of the full alert (also goes to the thread)
       details   posted as a threaded reply ONLY when the incident is NEW (the
                 re-run command, the paste-to-Claude block: unchanged from before)
       followup  kept for callers that still pass it; a same-day repeat no longer
@@ -794,7 +819,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
     # The marker is appended AFTER on purpose: it has to stay on the PARENT or
     # no other machine can find the thread.
     from automations.shared import alert_thread
-    head = alert_thread.headline(title, body)
+    head = (alert_thread.strip_emoji(channel_line) if channel_line
+            else alert_thread.headline(title, body))
     parent_text = "\n".join([head, "", marker(key, "open", day)])
     full = [l for l in ([title] + body) if str(l).strip()]
     if alert_thread.same_story(head, full):
@@ -1075,6 +1101,27 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
                                     for k in keys) if i), None)
         if not inc or not inc.get("ts"):
             print("[incident] nothing open for {} — not marking it worked on"
+                  .format(key_or_report))
+            return False
+        # THE INDEX CAN LIE ACROSS MACHINES (Megan 2026-08-18: the Applicant
+        # Push post wore :pending: AND the ✅ at once — "it should only ever
+        # have 1 or the other"). The index is a per-machine file: a resolve on
+        # the mini never updates Lucy 2's copy, so a re-run starting on Lucy 2
+        # still believed the incident was open. Ask the PARENT itself before
+        # reacting — one targeted fetch, not a scan — and when it says
+        # resolved, fix the local belief instead of decorating a closed thread.
+        state = _parent_still_open(client, channel, inc["ts"])
+        if state is False:
+            _mark_resolved_in_index(key_or_report if key_or_report in
+                                    (_load_index() or {}) else keys[0],
+                                    ts=inc["ts"], channel=channel)
+            print("[incident] {}: already resolved in the channel — index "
+                  "caught up, no :pending: added".format(key_or_report))
+            return False
+        if state is None and not scan:
+            # Can't read the parent and the only source was the local file: a
+            # missed :pending: is a much cheaper mistake than a wrong one.
+            print("[incident] {}: can't confirm it's still open — not marking"
                   .format(key_or_report))
             return False
         if dry_run:

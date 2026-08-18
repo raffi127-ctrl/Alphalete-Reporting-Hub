@@ -114,6 +114,7 @@ def run(*, day: Optional[dt.date] = None, channel: str = CHANNEL,
     for m in msgs:
         ts, text = m["ts"], m.get("text") or ""
         who = m.get("user") or m.get("bot_id") or "?"
+        _clear_stray_pending(client, channel, m, me, apply=apply)
         new = rewrite(text)
         if not new:
             skipped += 1
@@ -166,3 +167,25 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _clear_stray_pending(client, channel: str, m: dict, me: str, *,
+                         apply: bool) -> None:
+    """A RESOLVED parent must not still wear :pending: (Megan 2026-08-18: "it
+    should only ever have 1 or the other"). The live fix is in
+    incident_thread.mark_working; this clears the ones already standing. Only MY
+    own reaction can come off — Slack has no removing someone else's."""
+    mk = _MARK_RE.search(m.get("text") or "")
+    if not mk or mk.group("state") != "resolved":
+        return
+    for rx in m.get("reactions") or []:
+        if rx.get("name") == "pending" and me in (rx.get("users") or []):
+            print("   stray :pending: on resolved {} — {}".format(
+                m["ts"], "removing" if apply else "would remove (dry run)"))
+            if apply:
+                try:
+                    client.reactions_remove(channel=channel, timestamp=m["ts"],
+                                            name="pending")
+                except Exception as e:  # noqa: BLE001
+                    print("   ⚠ couldn't remove ({}: {})".format(
+                        type(e).__name__, str(e)[:60]))

@@ -125,6 +125,13 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             title = f":information_source: *{name}* — no new emails today on {lbl}"
             err = ("no new background-check emails came in, so there was nothing "
                    "to sync" + (f" · {when}" if when else ""))
+        elif kind == "WAITING":
+            # An approval-gated send phase: nothing is broken, the day's review
+            # post just hasn't been ✅'d yet (Megan 2026-08-18).
+            title = f"*{name}* — waiting for approval to send email"
+            err = ("this phase runs itself the moment the day's review post "
+                   "gets its approval checkmark — nothing to fix"
+                   + (f" · {when}" if when else ""))
         elif kind == "INCOMPLETE":
             title = f":warning: *{name}* — ran partial on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
@@ -169,6 +176,16 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                 f"quiet day, not a miss.",
                 "_If you were expecting results in and don't see them, reply "
                 "here and we'll check._",
+            ]
+        elif kind == "WAITING":
+            # Benign FYI — the gate is doing its job. No paste-to-Claude.
+            reply = [
+                "The emails go out on their own as soon as the day's review "
+                "post gets its approval checkmark — until then, holding is the "
+                "correct behavior, not a miss.",
+                "_If the approval WAS already given and this is still here an "
+                "hour later, reply in this thread — then the checker itself "
+                "needs a look._",
             ]
         else:
             claude = (

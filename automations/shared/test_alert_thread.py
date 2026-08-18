@@ -313,5 +313,25 @@ class HeadlineTests(unittest.TestCase):
                                        ["🚨 *r* — broke", "*Error:* boom"]))
 
 
+class ChannelLineTests(unittest.TestCase):
+    """Drop alerts NAME what didn't land instead of counting it (Megan
+    2026-08-18: "*tableau-screenshots* — dropped 1 section this run" should
+    "just say precision management")."""
+
+    def test_names_the_missing_channel(self):
+        self.assertEqual(
+            sda._channel_line("tableau-screenshots",
+                              ["precision management"], "section"),
+            "*tableau-screenshots* — precision management")
+
+    def test_a_long_list_falls_back_to_the_count(self):
+        self.assertIsNone(sda._channel_line(
+            "r", ["a very long channel name %d" % i for i in range(6)],
+            "section"))
+
+    def test_finding_items_are_sentences_never_a_label(self):
+        self.assertIsNone(sda._channel_line("r", ["short"], "finding"))
+
+
 if __name__ == "__main__":
     unittest.main()

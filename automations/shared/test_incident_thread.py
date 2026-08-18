@@ -73,15 +73,27 @@ class FakeClient:
         self.reactions.remove((timestamp, name))
         return {"ok": True}
 
-    def conversations_history(self, *, channel, limit=200, cursor=None):
-        # Newest first, parents only — same shape as the real API.
+    def conversations_history(self, *, channel, limit=200, cursor=None,
+                              latest=None, oldest=None, inclusive=False):
+        # Newest first, parents only — same shape as the real API. latest/oldest
+        # + inclusive narrows to the window, which is how _parent_still_open
+        # fetches exactly one message.
         self.history_calls += 1
         msgs = []
         for i, (thread_ts, text) in enumerate(self.posts, start=1):
             if thread_ts:
                 continue
-            replies = sum(1 for t, _ in self.posts if t == f"{i}.0000")
-            msgs.append({"ts": f"{i}.0000", "text": text, "reply_count": replies})
+            ts = f"{i}.0000"
+            if latest is not None and (float(ts) > float(latest)
+                                       or (not inclusive
+                                           and float(ts) == float(latest))):
+                continue
+            if oldest is not None and (float(ts) < float(oldest)
+                                       or (not inclusive
+                                           and float(ts) == float(oldest))):
+                continue
+            replies = sum(1 for t, _ in self.posts if t == ts)
+            msgs.append({"ts": ts, "text": text, "reply_count": replies})
         return {"messages": list(reversed(msgs))}
 
     # helpers
@@ -477,6 +489,26 @@ class IncidentThreadTest(unittest.TestCase):
                     day=dt.date(2026, 8, 17), client=self.c)
         self.assertNotIn((first["ts"], "pending"), self.c.reactions)
         self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_a_stale_index_cannot_put_pending_on_a_resolved_thread(self):
+        """Megan 2026-08-18: the Applicant Push post wore :pending: AND ✅ at
+        once — "it should only ever have 1 or the other". The index is a
+        per-machine file: resolve on the mini, re-run on Lucy 2, and Lucy 2's
+        copy still said open. mark_working now asks the PARENT before reacting
+        and fixes the stale belief instead."""
+        first = self._open(dt.date(2026, 8, 14))
+        inc.resolve(key="failure-r", lines=["done"], channel="C1",
+                    day=dt.date(2026, 8, 14), client=self.c)
+        idx = inc._load_index()
+        idx["failure-r"]["resolved"] = False        # the OTHER machine's belief
+        inc._save_index(idx)
+        n_reacts = len(self.c.reactions)
+        self.assertFalse(inc.mark_working("failure-r", channel="C1",
+                                          client=self.c, scan=False))
+        self.assertEqual(len(self.c.reactions), n_reacts,
+                         "no reaction may land on a resolved thread")
+        self.assertTrue((inc._load_index()["failure-r"]).get("resolved"),
+                        "the stale local belief is corrected")
 
     def test_working_on_nothing_open_is_a_no_op(self):
         self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))

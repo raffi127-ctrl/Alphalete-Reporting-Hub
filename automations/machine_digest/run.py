@@ -597,6 +597,16 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         if cid == "bg_check_sync" and _bg_check_has_new_emails() is False:
             kind = "NO_NEW"
             status = "no new emails"
+        # An APPROVAL PHASE with no run isn't a stall — it runs the moment a
+        # human ✅'s the day's review post, and until then "didn't run today on
+        # the mini" points people at a machine that is doing exactly what it
+        # should (Megan 2026-08-18: "shouldn't this one just say 'waiting for
+        # approval to send email'?"). Every gate publishes its release row as
+        # "<card>-approved" (review_gate.py / dashboard approval_phase), so the
+        # suffix IS the declaration — no list to maintain.
+        elif cid.endswith("-approved"):
+            kind = "WAITING"
+            status = "waiting for approval"
         try:
             notify.send_standalone_alert(
                 cfg, name=info["name"], report_id=cid, kind=kind,
