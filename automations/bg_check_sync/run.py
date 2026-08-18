@@ -220,27 +220,22 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     return {"week": week, "roster": len(roster), "changes": len(changes)}
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--week", help="start-week date header (default: top block)")
-    ap.add_argument("--events", help="JSON list of {sender,subject,body,date} (skip IMAP)")
-    ap.add_argument("--since-days", type=int, default=30)
-    ap.add_argument("--dry-run", action="store_true", help="no sheet writes")
-    ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
-    ap.add_argument("--repost", action="store_true",
-                    help="force a fresh repost of the thread (the Friday bump)")
-    args = ap.parse_args(argv)
+def _publish(hub_run_id, status: str) -> None:
+    """Close this run's Hub Activity row. Best-effort — a Hub hiccup must never
+    be what breaks (or masks) the report."""
+    if hub_run_id is None:
+        return
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("bg_check_sync", "BG Check Sync",
+                                 status=status, run_id=hub_run_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[hub] publish_done skipped: {e}")
 
-    # Tell the Hub we're running (yellow pill -> green on success). Never let a
-    # Hub-publish hiccup break the actual report.
-    hub_run_id = None
-    if not args.dry_run:
-        try:
-            from automations.day_orchestrator import hub_publish
-            hub_run_id = hub_publish.publish_running("bg_check_sync", "BG Check Sync")
-        except Exception as e:  # noqa: BLE001
-            print(f"[hub] publish_running skipped: {e}")
 
+def _run(args) -> None:
+    """The actual sync. Split out of main() so main() can own the Hub row's
+    open/close on BOTH the success and the crash path."""
     sh = fill.open_by_key(SPREADSHEET_ID)
     now = dt.datetime.now()
     rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
@@ -282,13 +277,44 @@ def main(argv=None) -> int:
                      repost=repost, now=now, do_slack=do_slack,
                      rolling_vals=rolling_vals)
 
-    if hub_run_id is not None:
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--week", help="start-week date header (default: top block)")
+    ap.add_argument("--events", help="JSON list of {sender,subject,body,date} (skip IMAP)")
+    ap.add_argument("--since-days", type=int, default=30)
+    ap.add_argument("--dry-run", action="store_true", help="no sheet writes")
+    ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
+    ap.add_argument("--repost", action="store_true",
+                    help="force a fresh repost of the thread (the Friday bump)")
+    args = ap.parse_args(argv)
+
+    # Tell the Hub we're running (yellow pill -> green on success). Never let a
+    # Hub-publish hiccup break the actual report.
+    hub_run_id = None
+    if not args.dry_run:
         try:
             from automations.day_orchestrator import hub_publish
-            hub_publish.publish_done("bg_check_sync", "BG Check Sync",
-                                     status="success", run_id=hub_run_id)
+            hub_run_id = hub_publish.publish_running("bg_check_sync", "BG Check Sync")
         except Exception as e:  # noqa: BLE001
-            print(f"[hub] publish_done skipped: {e}")
+            print(f"[hub] publish_running skipped: {e}")
+
+    # A CRASH has to close the Hub row too. Without this the run dies mid-way,
+    # publish_done never fires, and the row sits at 'started' forever — the card
+    # stays amber at 1/2 and NOTHING alerts, because a stuck row is
+    # indistinguishable from a still-running one. That's how the 2026-08-17 4pm
+    # pass (killed by a transient `imaplib.abort: FETCH => System Error`) went
+    # unnoticed until Megan asked why the tile wasn't green. status="failed"
+    # also opens the incident in #claudecorrections-and-requests via
+    # hub_publish._alert_failure, and the next clean run closes it.
+    try:
+        _run(args)
+    except Exception as e:  # noqa: BLE001 — report to the Hub, then re-raise
+        _publish(hub_run_id, "failed")
+        print(f"[hub] marked FAILED on the Hub: {type(e).__name__}: {e}")
+        raise
+
+    _publish(hub_run_id, "success")
 
     # Heartbeat for the watchdog — a real run only (not --dry-run). If this
     # stops updating, watchdog.py DMs Raf that the scheduler stalled.

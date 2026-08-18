@@ -92,6 +92,38 @@ def _connect() -> imaplib.IMAP4_SSL:
     return M
 
 
+# Gmail drops the odd FETCH mid-scan (`imaplib.abort: command: FETCH => System
+# Error`). It's transient and per-message, but imaplib kills the whole
+# connection, so an un-retried loop loses the ENTIRE run over one bad response —
+# that's what killed the 2026-08-17 4pm pass. Reconnect and retry the message.
+# Safe to reconnect mid-scan: these are sequence numbers on a READONLY All Mail,
+# and new arrivals only append, so the ids already in flight don't renumber.
+FETCH_ATTEMPTS = 3
+
+
+def _fetch_one(M, mid, attempts: int = FETCH_ATTEMPTS):
+    """FETCH one message, reconnecting on a transient IMAP abort. Returns
+    (connection, payload) — the connection may be a NEW one, so callers must
+    keep the returned handle. payload is None if the message stays unreadable."""
+    for attempt in range(1, attempts + 1):
+        try:
+            typ, msg_data = M.fetch(mid, "(RFC822)")
+            return M, (msg_data[0][1] if msg_data and msg_data[0] else None)
+        except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError) as e:
+            if attempt == attempts:
+                print(f"[email_source] msg {mid!r} unreadable after {attempts} "
+                      f"tries ({type(e).__name__}: {str(e)[:80]}) — skipping")
+                return M, None
+            print(f"[email_source] {type(e).__name__} on msg {mid!r} "
+                  f"(try {attempt}/{attempts}) — reconnecting")
+            try:
+                M.logout()
+            except Exception:  # noqa: BLE001 — the socket is already gone
+                pass
+            M = _connect()
+    return M, None
+
+
 def fetch_events(since_days: int = 30, verbose: bool = True) -> List[BGEvent]:
     """Fetch + parse every fadv background-check email in the window. Returns the
     BGEvents that classify to a real per-candidate status (bulk-invite / auth-code
@@ -102,11 +134,13 @@ def fetch_events(since_days: int = 30, verbose: bool = True) -> List[BGEvent]:
         typ, data = M.search(None, f'(FROM "{FADV_SENDER}" SINCE {since})')
         ids = (data[0] or b"").split()
         events: List[BGEvent] = []
+        skipped = 0
         for mid in ids:
-            typ, msg_data = M.fetch(mid, "(RFC822)")
-            if not msg_data or not msg_data[0]:
+            M, raw = _fetch_one(M, mid)
+            if raw is None:
+                skipped += 1
                 continue
-            msg = email.message_from_bytes(msg_data[0][1])
+            msg = email.message_from_bytes(raw)
             sender = _decode(msg.get("From", ""))
             subject = _decode(msg.get("Subject", ""))
             date = msg.get("Date", "")
@@ -117,7 +151,8 @@ def fetch_events(since_days: int = 30, verbose: bool = True) -> List[BGEvent]:
                 events.append(ev)
         if verbose:
             print(f"[email_source] {ACCOUNT}: {len(ids)} fadv emails since {since}, "
-                  f"{len(events)} status events parsed")
+                  f"{len(events)} status events parsed"
+                  + (f", {skipped} unreadable" if skipped else ""))
         return events
     finally:
         try:

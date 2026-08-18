@@ -28,6 +28,16 @@ STALE_HOURS = 6.0              # main runs are 11:30 + 16:00, so >6h stale = a m
 COOLDOWN_HOURS = 6.0           # don't re-ping more than once per this window
 DAY_START, DAY_END = 8, 21     # only alert 8am–9pm Central (mini local time)
 
+# The scheduled passes, and the hour by which each must have landed. A flat
+# "is the heartbeat <6h old" test CANNOT see a lost afternoon pass: at the 17:00
+# check a clean 11:30 run is only 5.5h old, so it reads "ok", and by the next
+# check (12:45 tomorrow) that day's 11:30 run has already refreshed the
+# heartbeat. The 2026-08-17 4pm crash sat in exactly that blind spot — it only
+# surfaced when Megan noticed the tile wasn't green. So on the afternoon check
+# we require a heartbeat from AFTER the 16:00 pass, not merely a recent one.
+PASSES = [(11, 30), (16, 0)]
+GRACE_MINUTES = 45             # a pass has this long to finish before it's "missed"
+
 
 def _age_hours(path: Path):
     """Hours since the ISO timestamp in `path`, or None if missing/unreadable."""
@@ -41,6 +51,28 @@ def _age_hours(path: Path):
     return (ref - ts).total_seconds() / 3600.0
 
 
+def _missed_pass(now: dt.datetime) -> str | None:
+    """Name of the most recent scheduled pass that should have finished by now
+    but left no heartbeat behind, or None if every due pass has landed."""
+    if not HEARTBEAT.exists():
+        return None            # the flat staleness test already covers "never ran"
+    try:
+        beat = dt.datetime.fromisoformat(HEARTBEAT.read_text().strip())
+    except Exception:  # noqa: BLE001
+        return None
+    for hh, mm in reversed(PASSES):
+        due = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if now < due + dt.timedelta(minutes=GRACE_MINUTES):
+            continue           # not due yet (or still inside its grace window)
+        if beat < due:
+            # Built by hand, not strftime: %-I is glibc-only and these have to
+            # read the same on the mini and on Windows.
+            hour12 = due.hour % 12 or 12
+            return f"{hour12}:{due.minute:02d}{'am' if due.hour < 12 else 'pm'}"
+        return None            # newest due pass landed — earlier ones are moot
+    return None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="print, never DM")
@@ -52,15 +84,23 @@ def main(argv=None) -> int:
         return 0
 
     age = _age_hours(HEARTBEAT)
-    if age is not None and age <= STALE_HOURS:
+    missed = _missed_pass(now)
+
+    if age is not None and age <= STALE_HOURS and missed is None:
         print(f"[watchdog] ok — bg_check_sync last ran {age:.1f}h ago")
         return 0
 
     last = "never (no heartbeat found)" if age is None else f"{age:.1f}h ago"
-    msg = (":warning: *BG Check Sync looks stalled* — last successful run was "
-           f"{last}. It may have fallen off the mini scheduler, so the OBCL "
-           "isn't auto-updating. Fix: `lucy status`, then "
-           "`lucy install_bg_check_sync` to reinstall.")
+    if missed:
+        headline = (f":warning: *BG Check Sync missed its {missed} pass today* — "
+                    f"last successful run was {last}.")
+    else:
+        headline = (":warning: *BG Check Sync looks stalled* — last successful "
+                    f"run was {last}.")
+    msg = (f"{headline} The OBCL isn't auto-updating. Fix: `lucy logtail "
+           "bg-check-sync` to see why it died, then `lucy rerun "
+           "bg_check_sync_post` to catch up (or `lucy install_bg_check_sync` "
+           "if it fell off the scheduler).")
 
     if args.dry_run:
         print(f"[watchdog] STALE ({last}) — would DM Raf:\n{msg}")
