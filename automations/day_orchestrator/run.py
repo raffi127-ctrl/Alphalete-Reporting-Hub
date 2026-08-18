@@ -320,9 +320,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         while True:
             pass_no += 1
             _log(f"--- pass {pass_no} ---")
-            _run_pass(cfg, ds, todays, cache, target,
-                      dry_run=dry_run, simulate=args.simulate, stale_after=stale_after,
-                      channel=channel, email_dry=email_dry)
+            # ONE Tableau login for every readiness probe in the pass, instead
+            # of one per probe (Megan 2026-08-18 — the access ledger measured 16
+            # logins/day spent just asking "is the data there yet"). No-op unless
+            # PROBE_SHARED_SESSION=1. The context is always closed on the way out
+            # so it never holds the Chrome profile while reports run.
+            with cache.probe_pass():
+                _run_pass(cfg, ds, todays, cache, target,
+                          dry_run=dry_run, simulate=args.simulate,
+                          stale_after=stale_after,
+                          channel=channel, email_dry=email_dry)
             # Reflect what's still in-progress vs finished as yellow/closed pills on
             # the shared Hub, every pass, so the batch never looks idle while working.
             _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)

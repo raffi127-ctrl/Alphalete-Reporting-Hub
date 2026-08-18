@@ -17,7 +17,9 @@ dead session (design §8).
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,6 +100,46 @@ class ReadinessCache:
         if r.ready:
             self._ready[source_id] = r               # cache only READY (monotonic)
         return r
+
+    @contextlib.contextmanager
+    def probe_pass(self):
+        """ONE Tableau login for every probe inside this block (Megan 2026-08-18).
+
+        Each probe calls download_crosstab_patchright deep inside a helper module
+        (raf_captainship_bonus.tableau_pull, org_sales_board.section_pull, ...)
+        with no `page`, so today each one opens its OWN ownerville->Tableau SSO
+        login. The ledger measured 16 a day spent this way — buying no data at
+        all, just asking "is it there yet". Flipping the env for the duration
+        makes them share one context (fresh page each) without threading a page
+        through every helper's signature.
+
+        Deliberately NOT a frequency cut: the fallback hours suggest ~187 probes
+        a day worst case but only 16 actually happen, so data lands well before
+        those floors and probing less often would delay real reports. Cheaper
+        probes, not fewer.
+
+        DEFAULT OFF until proven, same gate every report split went through --
+        probes that pull the SAME worksheet differing only by URL params would
+        leak filter state into each other. (The captainship_bonus pair looks like
+        that shape but cannot collide: raf runs on Lucy 1, carlos on Lucy 2.)
+        Enable with PROBE_SHARED_SESSION=1."""
+        if os.environ.get("PROBE_SHARED_SESSION", "").strip() not in ("1", "on", "true"):
+            yield
+            return
+        prev = os.environ.get("TABLEAU_SHARED_SESSION")
+        os.environ["TABLEAU_SHARED_SESSION"] = "1"
+        try:
+            yield
+        finally:
+            try:
+                from automations.shared.tableau_patchright import close_shared_session
+                close_shared_session()      # never hold the profile across passes
+            except Exception:               # noqa: BLE001 — teardown is best-effort
+                pass
+            if prev is None:
+                os.environ.pop("TABLEAU_SHARED_SESSION", None)
+            else:
+                os.environ["TABLEAU_SHARED_SESSION"] = prev
 
     def report_ready(self, rpt: registry.Report) -> Readiness:
         """A report is ready when ALL its data sources are ready. AppStream/API
@@ -626,8 +668,13 @@ class ReadinessCache:
     def _probe_tableau_date_coverage(self, source_id: str, probe: dict) -> Readiness:
         """Lightweight: pull the source view's crosstab and confirm the target
         day's rows are present (max date >= target) with a row-count floor.
-        Reuses the report stack's own patchright crosstab download — no fresh
-        login (warm session), retried internally by the helper."""
+        Reuses the report stack's own patchright crosstab download.
+
+        NOTE: this used to claim "no fresh login (warm session)". That was wrong
+        — download_crosstab_patchright with no `page` opens its OWN
+        tableau_session(), i.e. a fresh SSO login every probe. The access ledger
+        proved it (day_orchestrator: 16 logins on 2026-08-18). See
+        ReadinessCache.probe_pass for the shared-login fix."""
         view_url = probe.get("view_url")
         crosstab_sheet = probe.get("crosstab_sheet")
         date_col = probe.get("date_col")
