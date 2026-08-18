@@ -67,13 +67,22 @@ USER_DATA_DIR = os.environ.get("USER_DATA_DIR", str(_PKG_DIR / ".browser_profile
 # The master list used by /update-second-round-status, /export-2r-retention,
 # and /export-call-list. (Note: the call-list page in the source doc listed
 # 22151 where the others list 21151 / 22815 -- double-check which is correct.)
+#
+# PAUSED — 14229 (Boaktear "Akib" Chowdhury, Motiv8 Management Inc). His
+# recruiting is on hold (Megan 2026-08-18), and the rcaptain login can no longer
+# see his office in the picker, so every run flagged him: "NOT VISIBLE to this
+# login", twice a day, every day. Removed from the list rather than left to
+# fail — an OfficeNotAvailable that nobody is going to act on is just noise that
+# trains everyone to ignore the gap report. TO BRING HIM BACK: put "14229" back
+# on the line below (and confirm rcaptain has access again, or it flags anew).
 OFFICE_IDS = [
     "11280", "11901", "11580", "19833", "23467", "22815", "22820",
     "21151", "22524", "22177", "19717", "21328", "23066", "22992",
-    "23607", "23411", "14229",
+    "23607", "23411",
 ]
 
-# /confirm-first-day used a slightly shorter list (no 14229) in the source doc.
+# /confirm-first-day used a slightly shorter list (no 14229) in the source doc —
+# so this list is now identical to OFFICE_IDS above.
 OFFICE_IDS_FIRST_DAY = [
     "11280", "11901", "11580", "19833", "23467", "22815", "22820",
     "21151", "22524", "22177", "19717", "21328", "23066", "22992",

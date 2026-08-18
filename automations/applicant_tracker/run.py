@@ -39,7 +39,7 @@ MORNING phase (reads YESTERDAY): appends the Call List (owner A, B-H) and update
 second-round status on the 2R tab (Offered H, Follow-up I, BOB/Notes J).
 EVENING phase (reads TODAY): appends Total Second Interviews to 2R (owner AT,
 AU-BC) and marks first-day-training show-up in 2R col R.
-SOURCE: ApplicantStream Retention Details detail pages, per office (17 offices).
+SOURCE: ApplicantStream Retention Details detail pages, per office (16 offices).
 PRE-FLIGHT: (1) service-account key present + sheet shared with it;
 (2) one-time headed browser login saved; (3) ApplicantStream login current in
 the sheet's README tab (B1/B2). First-Day is DRY until verified on a real
