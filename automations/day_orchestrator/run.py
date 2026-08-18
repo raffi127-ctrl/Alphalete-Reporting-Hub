@@ -330,6 +330,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                           dry_run=dry_run, simulate=args.simulate,
                           stale_after=stale_after,
                           channel=channel, email_dry=email_dry)
+            # WAVE HARVEST (Megan 2026-08-18) — after the pass, prime every view
+            # whose source the gate has now proved ready, ONCE, so the reports
+            # that want it read a file instead of signing in again. Runs at the
+            # END so it primes for the NEXT pass rather than racing this one, and
+            # it never probes (it reads the sticky ready set), so a wave with
+            # nothing new to do opens no session at all.
+            # DEFAULT OFF (HARVEST_WAVE=1). Writes only the cache — no Sheet, no
+            # Slack — and reports ignore it entirely unless their own env sets
+            # HARVEST_MODE=on, so priming is inert until a report is cut over.
+            if not args.simulate:
+                try:
+                    from automations.harvest import wave
+                    wave.harvest_wave(cache, todays, target, logfn=_log)
+                except Exception as e:  # noqa: BLE001 — a prime must never fail the batch
+                    _log(f"  [wave] skipped ({type(e).__name__}: {e})")
             # Reflect what's still in-progress vs finished as yellow/closed pills on
             # the shared Hub, every pass, so the batch never looks idle while working.
             _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)

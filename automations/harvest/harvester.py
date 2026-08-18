@@ -128,19 +128,30 @@ def prune_old(target_date: dt.date, retention_days: int,
 
 
 def _isolation_groups(needs: List[DataNeed]) -> List[List[DataNeed]]:
-    """Split needs so no two that share a crosstab_sheet land in the same group.
+    """Split needs so no login ever pulls the same VIEW+worksheet twice.
 
-    Group N holds the Nth need for each worksheet: worksheets seen once all sit
-    in group 1 (one login for the common case), and only a worksheet pulled
-    twice forces a second group. That is exactly the boundary the session proofs
-    established — different worksheet = safe to share, same worksheet with
-    different URL params = leaks."""
-    by_sheet: Dict[str, int] = {}
+    The key is (url path before '?', crosstab_sheet) — NOT the worksheet alone.
+    That distinction is the whole point:
+
+      * fiber's two PSS pulls share a path AND a sheet and differ only in query
+        params. Under one login the second inherited the first's filter and
+        returned the wrong size (2026-08-17). They must be split.
+      * the 19 churn needs are distinct SAVED VIEWS (different GUIDs in the
+        path) that merely share the worksheet NAME 'ICD Churn'. They were proved
+        cell-for-cell correct under ONE session (2026-07-12). Keying on the
+        worksheet alone would have split them into 16 logins — a regression that
+        contradicts an existing proof.
+
+    Group N holds the Nth need per key, so the common case (every view pulled
+    once) stays a single login and only a genuine param-variant forces another.
+    """
+    seen: Dict[tuple, int] = {}
     groups: List[List[DataNeed]] = []
     for n in needs:
-        sheet = (n.crosstab_sheet or "").strip().lower()
-        idx = by_sheet.get(sheet, 0)
-        by_sheet[sheet] = idx + 1
+        path = (n.view_url or "").split("?", 1)[0].strip().lower()
+        key = (path, (n.crosstab_sheet or "").strip().lower())
+        idx = seen.get(key, 0)
+        seen[key] = idx + 1
         while len(groups) <= idx:
             groups.append([])
         groups[idx].append(n)

@@ -101,6 +101,12 @@ class ReadinessCache:
             self._ready[source_id] = r               # cache only READY (monotonic)
         return r
 
+    def known_ready_sources(self):
+        """The sources this run has ALREADY proved ready — the sticky set, with
+        NO probing. The wave harvest reads this so it can prime a view the moment
+        the gate flips without spending a single extra Tableau hit."""
+        return set(self._ready)
+
     @contextlib.contextmanager
     def probe_pass(self):
         """ONE Tableau login for every probe inside this block (Megan 2026-08-18).
