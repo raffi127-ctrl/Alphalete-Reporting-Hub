@@ -358,7 +358,15 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # One log per rerun, timestamped so repeated reruns of the same report don't
     # clobber each other (logtail's newest-match-wins then picks the latest).
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    ok, result = _run_cmd(cmd, timeout_s, log_name=f"rerun-{stamp}-{report_id}.log")
+    # HUB_REPORT_ID means "a runner above you owns this run" — the Tableau access
+    # ledger blames the pull on it, and a report that logs its OWN Hub pill skips
+    # doing so (we publish it above and below). The orchestrator has always set
+    # it; the rerun path didn't, so a rerun of a self-logging report wrote two
+    # rows for one run — enough to fill a daily_runs>1 pill on a single phase
+    # (Megan 2026-08-18). [[reference_phase_pill_id_match]]
+    ok, result = _run_cmd(cmd, timeout_s,
+                          log_name=f"rerun-{stamp}-{report_id}.log",
+                          env={"HUB_REPORT_ID": str(report_id)})
 
     # Close the pill: flip the SAME running row (via run_id) to success/failed so
     # it never hangs yellow. Mirrors the orchestrator, which marks DONE *and*

@@ -424,12 +424,23 @@ def _finish(phase: str, total: int, *, failed: list, no_access: list,
     # run is the exception: it didn't complete, so it isn't a green run.
     if sheets.DRY_RUN:
         return
-    try:
-        from automations.shared import hub_activity
-        hub_activity.log_completed(CARD_ID, CARD_NAME,
-                                   status="failed" if wedged else "success")
-    except Exception:
-        pass
+    # ONE row per phase. Under the orchestrator the runner publishes this run's
+    # pill itself (hub_publish maps applicant_sync_morning -> this card), so
+    # logging here too would write TWO rows for the morning — enough to fill a
+    # daily_runs:2 pill green on its own and hide a missed 8pm evening. The
+    # evening phase is a standalone LaunchAgent with no runner above it, so it
+    # still logs itself. HUB_REPORT_ID is set by day_orchestrator._run_report on
+    # every child. [[reference_phase_pill_id_match]]
+    if os.environ.get("HUB_REPORT_ID"):
+        print("  (Hub pill left to the orchestrator — HUB_REPORT_ID={})".format(
+            os.environ["HUB_REPORT_ID"]), flush=True)
+    else:
+        try:
+            from automations.shared import hub_activity
+            hub_activity.log_completed(CARD_ID, CARD_NAME,
+                                       status="failed" if wedged else "success")
+        except Exception:
+            pass
     # Any office that did NOT sync (a genuine error OR a no-access gap) goes
     # to #claudecorrections-and-requests so the miss is seen even though the
     # pill is green. Best-effort — a Slack hiccup never fails the run.

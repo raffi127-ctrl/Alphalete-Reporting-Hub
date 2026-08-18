@@ -235,6 +235,16 @@ _HUB_CARD = {
     # applicant_push: the unified batch + OAT-leftovers push (office 11580) that
     # supersedes resume_pushing + oat_processing on one warm CDP session.
     "applicant_push": "applicant-push",
+    # applicant_sync_morning: the 4am phase of the SAME card as the 8pm evening
+    # phase ("Applicant Tracker Sync", daily_runs 2 — orange after morning,
+    # green after evening). Unmapped, resolve_card auto-created a SECOND library
+    # card off its display_name, so the Hub carried two cards for one report:
+    # the auto one going red on a failed 4am, and the real one staying white
+    # because only the module's own log_completed feeds it (Megan 2026-08-18).
+    # Pairs with run.py skipping its log_completed under the orchestrator —
+    # without that the morning would write BOTH rows and turn a 2-run pill green
+    # on its own, hiding a missed 8pm. [[reference_phase_pill_id_match]]
+    "applicant_sync_morning": "applicant-tracker-sync",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
