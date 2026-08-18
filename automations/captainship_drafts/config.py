@@ -373,10 +373,12 @@ RECIPIENTS: dict = {
         "CarlosHidalgo349@gmail.com",
         "wgary.att@gmail.com",
         "georgehipolito2@gmail.com", "jamisgaray18@gmail.com",
-        "jackieleroyatt@gmail.com", "joeyrmz2002@gmail.com",
-        "justinryanwood.93@gmail.com", "kevdriggs25@gmail.com",
-        "kinseyguenther@gmail.com", "maudmiller4@gmail.com",
+        "jackieleroyatt@gmail.com", "jeffcstarr@gmail.com",
+        "joeyrmz2002@gmail.com", "justinryanwood.93@gmail.com",
+        "kevdriggs25@gmail.com", "kinseyguenther@gmail.com",
+        "maudmiller4@gmail.com", "murphjjm@gmail.com",
         "raffi127@gmail.com", "ryankabbes@gmail.com",
+        "vincentsmith24.att@gmail.com",
     ],
     "eveliz": [
         "themillenders@gmail.com", "evelizroca.ssm@gmail.com",
@@ -394,11 +396,12 @@ RECIPIENTS: dict = {
     ],
     # FALLBACK ONLY — the live list is the "Atef's Captainship" Contacts group
     # (distro.GROUPS). Snapshot of that group on 2026-08-18, the day his
-    # captainship split off Carlos'. Dhey Patel is not in it yet.
+    # captainship split off Carlos' — Dhey Patel included, added by Eve that
+    # same afternoon and picked up with no code change, which is the point.
     "atef": [
         "atefchoudhury349@gmail.com", "CarlosHidalgo349@gmail.com",
-        "maudmiller4@gmail.com", "raffi127@gmail.com",
-        "sabrinaalicea2021@gmail.com",
+        "maudmiller4@gmail.com", "pateldhyeyb@gmail.com",
+        "raffi127@gmail.com", "sabrinaalicea2021@gmail.com",
     ],
     "khalil": [
         "agonzalezz25@outlook.com", "CarlosHidalgo349@gmail.com",
