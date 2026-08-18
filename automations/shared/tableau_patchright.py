@@ -690,6 +690,29 @@ def shared_page(verbose: bool = False):
 # Passive counter for the Tableau access-volume work (Megan 2026-08-17). Never
 # changes behaviour; import is lazy + swallowed so this file keeps working even
 # if the ledger module is missing on an out-of-date checkout.
+def _freshness(path, view_url, sheet="", verbose=False):
+    """Judge a downloaded export's data date and alert loudly if it's stale.
+
+    Hung off the SHARED download (2026-08-17) so every Tableau-pulling report
+    inherits it — ~120 modules, ~156 call sites, none of which had to change.
+    A report can still call tableau_freshness.check_export itself with a stricter
+    `needs`/`max_days_behind`; this is the floor, not the ceiling.
+
+    Opt out for one process with ALPHALETE_SKIP_FRESHNESS=1 — for probes and
+    backfills that deliberately pull an old window and would otherwise report
+    themselves as stale. Never raises: a report whose data is fine must not fail
+    because the freshness check tripped."""
+    try:
+        import os
+        if (os.environ.get("ALPHALETE_SKIP_FRESHNESS") or "").strip() in ("1", "true", "yes"):
+            return
+        from automations.shared import tableau_freshness
+        tableau_freshness.check_export(path, view_url=view_url, sheet=sheet,
+                                       verbose=verbose)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _ledger(kind, view_url, sheet="", cache="miss", extra="", t0=None, ok=True):
     try:
         from automations.shared import tableau_ledger
@@ -827,6 +850,12 @@ def download_crosstab_patchright(
                 shutil.copyfile(hit, out_path)
                 _ledger("crosstab", view_url, crosstab_sheet, cache="hit",
                         extra="" if cacheable else "pre_export")
+                # Judge cache HITS too. The per-office metrics feeds pull one
+                # org-wide view once and serve it to ~20 offices from cache, so
+                # checking only the miss would mean a stale source is heard for
+                # office #1 and silent for the other nineteen — and on a day the
+                # first office is skipped, silent for every one of them.
+                _freshness(out_path, view_url, crosstab_sheet, verbose)
                 return out_path
             except Exception:
                 pass            # copy failed → fall through to a live download
@@ -857,6 +886,7 @@ def download_crosstab_patchright(
                 _xtab_cache_store(view_url, crosstab_sheet, result)
             _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
                     extra="" if cacheable else "pre_export", t0=t0)
+            _freshness(result, view_url, crosstab_sheet, verbose)
             return result
         except Exception as e:
             last_err = e
@@ -934,6 +964,10 @@ def scrape_view_data_patchright(
         out_path.write_text("\n".join(lines), encoding="utf-8")
         if verbose:
             print(f"saved View Data: {out_path} ({len(records)} rows)", flush=True)
+        # Same freshness gate as the crosstab path — the View Data fallback is a
+        # different Tableau mechanism but the same data, and a report that falls
+        # back to it (SARA, Money Lost) must not lose its staleness cover.
+        _freshness(out_path, view_url, "view-data", verbose)
         return out_path
 
     if page is not None:

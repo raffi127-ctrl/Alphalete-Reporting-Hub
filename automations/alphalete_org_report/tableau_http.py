@@ -91,6 +91,15 @@ def download_view_csv(workbook: str, view: str, out_path: Path,
             f"Tableau CSV download returned unexpected content-type "
             f"{ct!r} for {workbook}/{view}")
     out_path.write_bytes(r.content)
+    # Freshness gate (2026-08-17). This HTTP path bypasses the patchright
+    # chokepoint where the shared check lives, exactly as it bypassed the access
+    # ledger above — so a view pulled this way would have been the one blind spot
+    # in "every stale pull is heard". opt_je / opt_nds ride this.
+    try:
+        from automations.shared import tableau_freshness
+        tableau_freshness.check_export(out_path, view_url=url, sheet=view)
+    except Exception:
+        pass
     return out_path
 
 

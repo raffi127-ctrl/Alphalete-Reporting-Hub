@@ -315,8 +315,17 @@ def _release_dropdown(page, viz, field: str, verbose: bool,
 
 def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
                            verbose: bool = True,
-                           hydrate_timeout_ms: int = 20_000) -> None:
+                           hydrate_timeout_ms: int = 20_000) -> dict:
     """Check '(All)' on each pinned categorical filter that isn't already on.
+
+    Returns {field: verdict}, verdict being one of:
+      'released'   — we ticked (All) and read it back as checked. CONFIRMED clean.
+      'already_all'— it was already (All) when we looked.      CONFIRMED clean.
+      'stuck'      — the control is on the view and would NOT go to (All).
+      'absent'     — nothing carrying the field name is in the DOM.
+      'error'      — the attempt raised.
+    Only the first two are positive confirmation. The rest are reported loudly by
+    confirm_release() — see there for why 'absent' is not treated as good news.
 
     Fail-SOFT on purpose: a filter we can't reach must not kill the whole
     report (Carlos's daily Slack post rides this same hook). The runners
@@ -346,6 +355,7 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
     won't flip is still a real problem and still warns. The release stays wired
     up: if SCI ever re-adds the filters, it starts working again on its own.
     """
+    verdicts = {f: "error" for f in fields}
     unresolved = list(fields)
     for attempt in range(2):
         if not unresolved:
@@ -369,8 +379,10 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
                 # control" when the filter was alive and capping the export.
                 shape = _release_dropdown(page, viz, field, verbose)
                 if shape == "released":
+                    verdicts[field] = "released"
                     continue
                 if shape == "stuck":
+                    verdicts[field] = "stuck"
                     # The control IS there and we couldn't get it to (All) —
                     # a real cap, and worth the second pass.
                     still_pending.append(field)
@@ -384,18 +396,21 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
                     if verbose:
                         print("  -> BOX filter {!r} not on this view — nothing "
                               "to release".format(field), flush=True)
+                    verdicts[field] = "absent"
                     continue
                 if verbose:
                     print("  ⚠ BOX filter {!r}: {} node(s) but no (All) item "
                           "after {}s — the pull may be capped".format(
                               field, present, hydrate_timeout_ms // 1000),
                           flush=True)
+                verdicts[field] = "stuck"
                 still_pending.append(field)
                 continue
             if box.get_attribute("aria-checked") == "true":
                 if verbose:
                     print("  -> BOX filter {!r} already (All)".format(field),
                           flush=True)
+                verdicts[field] = "already_all"
                 continue
             # Mouse clicks are swallowed by Tableau's click-capture overlay
             # here — even force=True. The keyboard is the only thing that
@@ -408,17 +423,81 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
             if verbose:
                 print("  -> BOX filter {!r} released to (All) "
                       "(aria-checked={!r})".format(field, state), flush=True)
+            verdicts[field] = "released" if state == "true" else "stuck"
             if state != "true":
                 still_pending.append(field)
                 if verbose:
                     print("  ⚠ {!r} did NOT flip — export will be capped to "
                           "the view's saved ID list".format(field), flush=True)
           except Exception as exc:                          # noqa: BLE001
+            verdicts[field] = "error"
             still_pending.append(field)
             if verbose:
                 print("  ⚠ BOX filter {!r} release failed ({!r}) — "
                       "continuing".format(field, exc), flush=True)
         unresolved = still_pending
+    return verdicts
+
+
+# Verdicts that are POSITIVE proof the filter isn't capping the export. Anything
+# else — including "absent" — is an absence of evidence, not evidence of absence.
+CONFIRMED_CLEAN = ("released", "already_all")
+
+
+def confirm_release(verdicts: dict, view_label: str = "BOX BoxOrderLog",
+                    today: Optional[dt.date] = None, verbose: bool = True) -> bool:
+    """Alert LOUDLY unless every filter is CONFIRMED clean. Returns True if it is.
+
+    WHY 'absent' IS NOT GOOD NEWS (Megan 2026-08-17, after this cost three days
+    of wrong numbers): on 8/13 the release found nothing carrying "Contract ID"
+    and we concluded SCI had deleted the control, so the code was changed to say
+    "not on this view — nothing to release" and move on quietly. That reading was
+    wrong. The filter was alive the whole time, rendered as a COLLAPSED dropdown
+    that puts no items in the DOM until it's opened — and it was pinned, capping
+    every export at 8/13 while Abel, Roshan and Carlos were sent numbers built on
+    it for three days. "I couldn't find the control" and "the control isn't there"
+    produced identical, silent output, and the silence is what did the damage.
+
+    So absence now speaks. If the dropdown path ALSO can't find it, we cannot
+    confirm the view is unpinned, and that uncertainty is said out loud once a
+    day rather than assumed away. If SCI genuinely does remove a filter for good,
+    the fix is to drop that field from PINNED_ID_FILTERS — a deliberate, reviewed
+    edit — not to let the code quietly assume it.
+
+    One alert per (view, day) via tableau_freshness's dedupe, so a genuinely
+    missing control is a single line a morning, not one per pull."""
+    today = today or dt.date.today()
+    bad = {f: v for f, v in (verdicts or {}).items() if v not in CONFIRMED_CLEAN}
+    if not bad:
+        if verbose:
+            print("  -> BOX filters CONFIRMED unpinned: {}".format(
+                ", ".join("{}={}".format(f, v) for f, v in sorted(
+                    (verdicts or {}).items()))), flush=True)
+        return True
+
+    _WHY = {
+        "absent": "could NOT be found on the view — neither an expanded (All) "
+                  "nor a collapsed dropdown. Either SCI removed it or the panel "
+                  "never rendered; we cannot tell, so we cannot certify the "
+                  "export is uncapped",
+        "stuck": "IS on the view and would NOT go to (All) — the export is "
+                 "capped to the view's saved ID list",
+        "error": "raised while being released — the view state is unknown",
+    }
+    lines = ["{!r} {}".format(f, _WHY.get(v, v)) for f, v in sorted(bad.items())]
+    print("  ⚠ UNCONFIRMED BOX filter release: {}".format(" · ".join(lines)),
+          file=__import__("sys").stderr, flush=True)
+    try:
+        from automations.shared import tableau_freshness as tfresh
+        # Reuse the freshness alert's per-source-per-day dedupe and its
+        # incident thread, so a pinned filter and the stale data it causes land
+        # in the SAME conversation instead of two unrelated posts.
+        tfresh.alert_unconfirmed_filter(
+            source_key="{} filters".format(view_label), view_label=view_label,
+            problems=lines, today=today, report=tfresh._current_report())
+    except Exception:                                       # noqa: BLE001
+        pass
+    return False
 
 
 def describe_filters(page, viz, limit: int = 25) -> str:
@@ -568,7 +647,14 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
         # Release the pinned Contract ID / Account Id lists FIRST: the saved
         # date range is narrow, so the expensive all-contracts requery runs
         # against a small window before we widen it below.
-        release_pinned_filters(page, viz, verbose=verbose)
+        # CONFIRM, don't assume. The release is best-effort by design, but its
+        # verdict is now checked: anything short of "we saw (All) checked" is
+        # said out loud once a day instead of scrolling past in a log. This is
+        # the hook every BOX pull goes through — Carlos's post, both owner
+        # emails and per_office — so one call covers the whole family.
+        confirm_release(release_pinned_filters(page, viz, verbose=verbose),
+                        view_label="BOX B2BBOXEnergyTracker/BoxOrderLog",
+                        verbose=verbose)
         if verbose:
             print("-> Forcing BOX date range: {} → {}".format(
                 _fmt(start), _fmt(end)), flush=True)
