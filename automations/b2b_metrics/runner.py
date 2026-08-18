@@ -70,20 +70,20 @@ POST_SETTLE_SEC = 4
 # (Activation report) is intentionally ABSENT until Carlos maps it. Order IS
 # Carlos's order (offices.py docstring).
 def _tableau_shot(view_key: str):
-    def cap(o: B2BOffice, out_dir: Path, log):
+    def cap(o: B2BOffice, out_dir: Path, log, today=None):
         from automations.b2b_metrics import capture
-        return capture.tableau_image(o, view_key, out_dir, log=log)
+        return capture.tableau_image(o, view_key, out_dir, log=log, today=today)
     return cap
 
 
 def _sheet_shot(which: str):
-    def cap(o: B2BOffice, out_dir: Path, log):
+    def cap(o: B2BOffice, out_dir: Path, log, today=None):
         from automations.b2b_metrics import capture
         return capture.churn_tab_image(o, which, out_dir, log=log)
     return cap
 
 
-def _activation_board(o: B2BOffice, out_dir: Path, log):
+def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     """#2 Activation Rate — recreated full-height board (every rep) instead of
     Tableau's scroll-clipped Download→Image. Applies to EVERY office that posts
     the section; falls back to Download→Image inside capture on failure."""
@@ -91,12 +91,12 @@ def _activation_board(o: B2BOffice, out_dir: Path, log):
     return capture.activation_board_image(o, out_dir, log=log)
 
 
-def _order_log(o: B2BOffice, out_dir: Path, log):
+def _order_log(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.b2b_metrics import capture
     return capture.order_log_workbook(o, out_dir, log=log)
 
 
-def _payout(o: B2BOffice, out_dir: Path, log):
+def _payout(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.b2b_metrics import capture
     return capture.payout_image(o, out_dir, log=log)
 
@@ -344,7 +344,11 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     deferred = []       # sections held back on ORDERLOG freshness (not failures)
     for item in items:
         try:
-            path = item["capture"](o, out_dir, log)
+            # `today` reaches the capture so --today moves the WEEK too, not
+            # just the thread it posts into. Without it a backfill run pinned
+            # whatever week the wall clock said and quietly rendered a
+            # different week than the thread it was landing in.
+            path = item["capture"](o, out_dir, log, today)
             captured[item["id"]] = path
             log("  [{}] {}".format(item["id"],
                                    path.name if path else "no artifact"))
