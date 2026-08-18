@@ -68,3 +68,41 @@ def fiber_needs(target: Optional[dt.date] = None) -> List[DataNeed]:
         label="fiber — PSS Raf",
     ))
     return needs
+
+
+def captain_needs(target: Optional[dt.date] = None) -> List[DataNeed]:
+    """The 13 CaptainsBonus pulls in captain_pull.pull_run that are CANDIDATES
+    for a shared login — 8 `CB Activations (<team>)` + 5 `CB Appr + Churn
+    (<captain team>)`. They all differ from each other by WORKSHEET, which is
+    the class fiber's 2026-08-17 proof found safe.
+
+    DELIBERATELY EXCLUDES the 6 PSS pulls (1 country + 5 per-captain). Those hit
+    the SAME worksheet and differ only by URL query-param filters — the class
+    that leaks — so they keep their own logins no matter what the proof says.
+    Testing them here would burn 18 extra pulls to re-confirm a known failure.
+
+    Interleaving matters, so the 5 appr/churn needs come after the 8 activations
+    in the same order pull_run issues them.
+    """
+    from automations.fiber_activations import pull as P
+    from automations.fiber_activations import captains as C
+
+    today = target or dt.date.today()
+    cb_url = P.build_cb_url(today)
+
+    needs = []
+    for team in P.TEAMS:
+        needs.append(DataNeed(
+            workbook="ATTTRACKER2_1-D2D/CaptainsBonus",
+            view_url=cb_url,
+            crosstab_sheet="CB Activations ({})".format(team),
+            label="captains - CB Activations ({})".format(team),
+        ))
+    for cap in C.CAPTAINS:
+        needs.append(DataNeed(
+            workbook="ATTTRACKER2_1-D2D/CaptainsBonus",
+            view_url=cb_url,
+            crosstab_sheet="CB Appr + Churn ({})".format(cap.team),
+            label="captains - CB Appr + Churn ({})".format(cap.team),
+        ))
+    return needs

@@ -772,6 +772,39 @@
       },
       "timeout_minutes": 5
     },
+    "session_proof_captainship": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Lever A gate for captainship_activations (Megan 2026-08-17), same shape as session_proof_fiber. on_scheduler:false = never in the 4am batch. Run by hand: `lucy rerun session_proof_captainship`. Tests ONLY the 13 CaptainsBonus pulls captain_pull.pull_run could share (8 'CB Activations (<team>)' + 5 'CB Appr + Churn (<captain>)'), in issue order - they differ by WORKSHEET, the class fiber proved safe. The 6 PSS pulls (1 country + 5 per-captain) are deliberately NOT tested: they hit the same worksheet and differ only by URL query params, the class fiber proved LEAKS, so they keep their own logins regardless and testing them would burn 18 extra pulls to re-confirm a known failure. A==A' and B==A => PROVEN, split captain_pull 20 logins -> 8. Downloads only - no Sheet, no Slack. Result -> output/logs/rerun-<ts>-session_proof_captainship.log (`lucy logtail session_proof_captainship`). NOTE ~30-45 min and the lucy queue is single-threaded, so everything behind it waits.",
+      "display_name": "Session Proof - Captainship (Lever A gate)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.proof_session"
+      ],
+      "base_args": [
+        "--report",
+        "captainship_activations"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "00:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 70
+    },
     "session_proof_fiber": {
       "on_scheduler": false,
       "_off_scheduler_note": "Lever A gate (Megan 2026-08-17). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator, so it CANNOT affect the morning run. Run only by hand: `lucy rerun session_proof_fiber`. Runs automations.harvest.proof_session --report fiber_activations: pulls all 11 fiber crosstabs THREE times - A legacy (one login per pull), B shared (TABLEAU_SHARED_SESSION=1, one login total), A' legacy again - and hashes each. A==A' and B==A => PROVEN, safe to flip fiber_activations to a shared login (12 logins/day -> 1). A!=A' => the extract moved mid-test, INCONCLUSIVE, rerun when quiet. A==A' and B!=A => FAILED, do not flip: that is the Weekending-filter bug documented at fiber_activations/pull.py:254 (3rd+ call silently returned last-completed-week 3,072 instead of current-week 221). Downloads only - writes NO Sheet, posts NO Slack. Result -> output/logs/orch-<date>-session_proof_fiber.log (`lucy logtail session_proof_fiber`). source_type tableau so the rerun runs chrome_guard first. NOTE: the poller is single-threaded and this takes ~25-40 min, which blocks the lucy queue behind it.",
