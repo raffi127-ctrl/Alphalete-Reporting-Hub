@@ -755,10 +755,31 @@ def _load_overrides() -> dict:
     return merged
 
 
+def _load_base_overrides() -> dict:
+    """Just the COMMITTED base map (no local layer)."""
+    try:
+        return {str(k).lower().strip(): str(v)
+                for k, v in json.loads(BASE_OVERRIDES_PATH.read_text()).items()}
+    except Exception:
+        return {}
+
+
 def _save_overrides(overrides: dict) -> None:
+    """Write the LOCAL (gitignored) override file, keeping only entries that
+    actually differ from the committed base map.
+
+    Callers hand us a MERGED dict (the Hub's 'Map new ICDs' picker does
+    _load_overrides() → edit → _save_overrides()). Writing that merge verbatim
+    copied the whole base map into the local file, and since local wins, the
+    copy then shadowed the base forever — a later correction committed to the
+    base would never take effect on that machine. Pruning the identical entries
+    keeps the local file to genuine per-machine additions only."""
+    base = _load_base_overrides()
+    local_only = {k: v for k, v in overrides.items()
+                  if base.get(str(k).lower().strip()) != str(v)}
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     OVERRIDES_PATH.write_text(json.dumps(
-        {k: v for k, v in sorted(overrides.items())}, indent=2,
+        {k: v for k, v in sorted(local_only.items())}, indent=2,
     ))
 
 
@@ -788,6 +809,38 @@ def _load_office_directory() -> dict:
     return _OFFICE_DIRECTORY_CACHE
 
 
+def _resolve_office_id_with_source(name: str) -> Tuple[Optional[str], str]:
+    """Like _resolve_office_id, but also says WHERE the id came from.
+
+    Source is one of "overrides" (base or local mapping file), "hardcoded"
+    (ICD_NAME_TO_OFFICE_ID), "directory" (all-offices.json owner match), or
+    "none". The caller uses it to auto-pin a directory-only resolution — see
+    _pin_office_id — because the directory is machine-local and gitignored, so
+    an ICD that resolves ONLY there silently vanishes on any box whose scrape
+    hasn't caught up (Fernando Munoz / office 22604, 2026-08-18)."""
+    key = name.lower().strip()
+    overrides = _load_overrides()
+    if key in overrides:
+        v = overrides[key]
+        return (None if v == SKIP_SENTINEL else v), "overrides"
+    hard = ICD_NAME_TO_OFFICE_ID.get(key)
+    if hard:
+        return hard, "hardcoded"
+    # Directory fallback: auto-resolve an exact, unambiguous owner match. If a
+    # name maps to >1 office (e.g. a captain with two offices), DON'T guess —
+    # leave it for a manual pick so we never write the wrong office's data.
+    dir_hits = _load_office_directory().get(key, [])
+    _log = logging.getLogger("daily-focus")
+    if len(dir_hits) == 1:
+        _log.info("[%s] auto-resolved to office %s from all-offices.json",
+                  name, dir_hits[0])
+        return dir_hits[0], "directory"
+    if len(dir_hits) > 1:
+        _log.warning("[%s] %d offices share this name in all-offices.json (%s) — "
+                     "needs a manual pick; skipping for now", name, len(dir_hits), dir_hits)
+    return None, "none"
+
+
 def _resolve_office_id(name: str) -> Optional[str]:
     """Return the office id for an ICD name, or None if unmapped/skipped.
 
@@ -798,27 +851,38 @@ def _resolve_office_id(name: str) -> Optional[str]:
     genuinely new or ambiguous names fall through to the prompt (Megan 2026-06-27:
     "you should have auto done that on the report run"). SKIP returns None so the
     caller skips the row without logging a 'no mapping' warning."""
+    return _resolve_office_id_with_source(name)[0]
+
+
+def _pin_office_id(name: str, office_id: str) -> bool:
+    """Persist a directory-resolved ICD→office id into the LOCAL mapping file.
+
+    Called only after the office actually pulled clean, so we never pin a guess.
+    Writes to OVERRIDES_PATH (output/, gitignored) — NOT the committed base
+    file: a run that dirtied a tracked file would block the mini's
+    `git pull --ff-only` and silently strand every later deploy. The base file
+    stays a deliberate, committed decision; main() prints the exact line to add
+    so promoting it is a copy-paste.
+
+    Returns True if this call added the pin (False if it was already there)."""
     key = name.lower().strip()
     overrides = _load_overrides()
-    if key in overrides:
-        v = overrides[key]
-        return None if v == SKIP_SENTINEL else v
-    hard = ICD_NAME_TO_OFFICE_ID.get(key)
-    if hard:
-        return hard
-    # Directory fallback: auto-resolve an exact, unambiguous owner match. If a
-    # name maps to >1 office (e.g. a captain with two offices), DON'T guess —
-    # leave it for a manual pick so we never write the wrong office's data.
-    dir_hits = _load_office_directory().get(key, [])
-    _log = logging.getLogger("daily-focus")
-    if len(dir_hits) == 1:
-        _log.info("[%s] auto-resolved to office %s from all-offices.json",
-                  name, dir_hits[0])
-        return dir_hits[0]
-    if len(dir_hits) > 1:
-        _log.warning("[%s] %d offices share this name in all-offices.json (%s) — "
-                     "needs a manual pick; skipping for now", name, len(dir_hits), dir_hits)
-    return None
+    if overrides.get(key) == str(office_id):
+        return False
+    try:
+        local = {}
+        if OVERRIDES_PATH.exists():
+            local = {str(k).lower().strip(): str(v)
+                     for k, v in json.loads(OVERRIDES_PATH.read_text()).items()}
+        if local.get(key) == str(office_id):
+            return False
+        local[key] = str(office_id)
+        _save_overrides(local)
+        return True
+    except Exception as e:  # noqa: BLE001 — pinning is a nicety, never fail a run
+        logging.getLogger("daily-focus").warning(
+            "couldn't pin %s -> %s locally: %s", name, office_id, e)
+        return False
 
 
 def _is_skipped(name: str) -> bool:
@@ -827,6 +891,48 @@ def _is_skipped(name: str) -> bool:
     lowercased, so one entry covers every capitalization on the tabs (the tabs
     carry both 'Melik El Jaiez' and 'MELIK EL JAIEZ')."""
     return _load_overrides().get(name.lower().strip()) == SKIP_SENTINEL
+
+
+def _promote_pins(log: logging.Logger) -> int:
+    """Merge every local-only ICD→office mapping into the COMMITTED base map.
+
+    Closes the loop that let Fernando Munoz get flagged (2026-08-18): mappings
+    made on one machine — by the Hub's 'Map new ICDs' picker, or auto-pinned by
+    a run — lived only in the gitignored output/ file, so no other box ever saw
+    them. This promotes them in one command; commit the base file afterwards and
+    every machine has them. The local file is left holding only what is still
+    genuinely local (nothing, after a full promote)."""
+    base = _load_base_overrides()
+    try:
+        local = {str(k).lower().strip(): str(v)
+                 for k, v in json.loads(OVERRIDES_PATH.read_text()).items()}
+    except Exception:
+        local = {}
+
+    new = {k: v for k, v in local.items() if k not in base}
+    changed = {k: v for k, v in local.items() if k in base and base[k] != v}
+
+    if not new and not changed:
+        log.info("nothing to promote — the local mapping file adds nothing the "
+                 "committed base map doesn't already have.")
+        return 0
+
+    for k, v in new.items():
+        log.info("  + %-28s %s   (new)", k, v)
+    for k, v in changed.items():
+        log.info("  ~ %-28s %s   (was %s)", k, v, base[k])
+
+    base.update(local)
+    BASE_OVERRIDES_PATH.write_text(
+        json.dumps({k: base[k] for k in sorted(base)}, indent=2) + "\n")
+    # Re-save the local file — _save_overrides prunes anything now identical to
+    # the base, so the promoted entries drop out and local stays honest.
+    _save_overrides(local)
+
+    log.info("promoted %d new + %d changed mapping(s) into %s — commit it so "
+             "the mini and every other machine pick them up.",
+             len(new), len(changed), BASE_OVERRIDES_PATH.name)
+    return 0
 
 
 def _state_file() -> Path:
@@ -940,6 +1046,9 @@ def run_captainship(captainship: str, args, week_start: dt.date,
     denied_this_run: List[str] = []          # AppStream refused this account
     fetch_errors_this_run: List[str] = []    # transient Playwright/timeout
     unmapped_this_run: List[str] = []        # no office_id mapping — dropped silently before
+    # (name, office_id) pairs pinned to the local mapping file this run because
+    # they had been resolving only through the machine-local all-offices.json.
+    auto_pinned_this_run: List[Tuple[str, str]] = []
 
     col3 = fill._retry(ws.col_values, 3)
 
@@ -1001,7 +1110,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                 log.debug("[%s] marked __SKIP__ in the ICD mappings — "
                           "off the report on purpose", icd)
                 continue
-            office_id = _resolve_office_id(icd)
+            office_id, office_src = _resolve_office_id_with_source(icd)
             if not office_id:
                 log.warning("[%s] no office_id mapping — confirm it from the dashboard's "
                             "'Map new ICDs' prompt and re-run; skip for now", icd)
@@ -1081,6 +1190,18 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                 fetch_errors_this_run.append(icd)
                 inaccessible_this_run.append(icd)
                 continue
+
+            # The office pulled clean, so this name→office id is now PROVEN.
+            # If it only resolved through all-offices.json (machine-local and
+            # gitignored), pin it to the local mapping file right now so the ICD
+            # can never silently vanish when that scrape is regenerated or when
+            # the report moves to another box. Reported at the end of the run so
+            # the pin gets promoted into the committed base file.
+            if office_src == "directory" and not args.dry_run:
+                if _pin_office_id(icd, office_id):
+                    log.info("  pinned %s -> office %s locally (was resolving "
+                             "only via all-offices.json)", icd, office_id)
+                    auto_pinned_this_run.append((icd, office_id))
 
             # Office is accessible for current week — clear + fill current.
             # Last week's cells are NOT cleared yet: we only clear them once
@@ -1204,12 +1325,18 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         log.info("%s: %d ICD(s) skipped — no office_id mapping: %s",
                  captainship, len(unmapped_this_run), ", ".join(unmapped_this_run))
 
+    if auto_pinned_this_run:
+        log.info("%s: %d ICD(s) auto-pinned to the local mapping file after a "
+                 "clean pull: %s", captainship, len(auto_pinned_this_run),
+                 ", ".join(f"{n} -> {o}" for n, o in auto_pinned_this_run))
+
     log.info("done")
     return 0, {
         "inaccessible": inaccessible_this_run,
         "denied":       denied_this_run,
         "fetch_errors": fetch_errors_this_run,
         "unmapped":     unmapped_this_run,
+        "auto_pinned":  auto_pinned_this_run,
         "tab":          ws.title,
         "icds":         icds,   # col-V names processed (full list on a non-only run)
     }
@@ -1227,6 +1354,12 @@ def main() -> int:
                     help="Only re-run the ICDs the last run flagged as not "
                          "pulled (rcaptain had no AppStream access yet). Run "
                          "this once that access has been granted.")
+    ap.add_argument("--promote-pins", action="store_true",
+                    help="Move every local-only ICD→office mapping into the "
+                         "COMMITTED base map, then exit. Run this on the "
+                         "laptop and commit — it's how a mapping made on one "
+                         "machine (the Hub's 'Map new ICDs' picker, or a run's "
+                         "auto-pin) reaches the mini and everyone else.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
@@ -1246,6 +1379,9 @@ def main() -> int:
     today = dt.date.today()
     log = _setup_logging(today)
 
+    if args.promote_pins:
+        return _promote_pins(log)
+
     # Default: AS picker = most recent Sunday on or before today (current week's start)
     if args.week_start:
         week_start = dt.date.fromisoformat(args.week_start)
@@ -1262,6 +1398,7 @@ def main() -> int:
     denied: List[str] = []
     fetch_errors: List[str] = []
     unmapped: List[str] = []
+    auto_pinned: List[Tuple[str, str]] = []
     icds_by_tab: dict = {}   # tab title -> col-V names, for the terminated check
     results_by_cs: dict = {}  # captainship name -> its run result (for screenshot DMs)
     # Shared across all captainships so a duplicated office (an ICD on more than
@@ -1276,6 +1413,7 @@ def main() -> int:
         denied        += cs_result.get("denied", [])
         fetch_errors  += cs_result.get("fetch_errors", [])
         unmapped      += cs_result.get("unmapped", [])
+        auto_pinned   += cs_result.get("auto_pinned", [])
         tab = cs_result.get("tab")
         if tab:
             icds_by_tab.setdefault(tab, []).extend(cs_result.get("icds", []))
@@ -1326,8 +1464,19 @@ def main() -> int:
             uniq = sorted(set(skipped) | set(unmapped))
             if uniq:
                 bits = []
-                if set(skipped):
-                    bits.append(f"{len(set(skipped))} not pulled (no AppStream access)")
+                # Split the two causes: AppStream genuinely refusing the office
+                # needs an access request, a transient pull error just needs a
+                # retry. Lumping both under "no AppStream access" sent people
+                # chasing access grants for what was a timeout (Megan 2026-08-18).
+                _den = set(denied)
+                _tra = set(fetch_errors) - _den
+                if _den:
+                    bits.append(f"{len(_den)} refused by AppStream (needs access)")
+                if _tra:
+                    bits.append(f"{len(_tra)} transient pull error (retry)")
+                _other = set(skipped) - _den - _tra
+                if _other:
+                    bits.append(f"{len(_other)} not pulled")
                 if set(unmapped):
                     bits.append(f"{len(set(unmapped))} unmapped "
                                 f"(need an office id via 'Map new ICDs')")
@@ -1358,9 +1507,21 @@ def main() -> int:
                 from automations.day_orchestrator.registry import load_config
                 _lines = ["☀️ *Daily Recruiting Focus — {} ICD(s) not pulled "
                           "today*".format(len(_gap))]
-                if set(skipped):
-                    _lines.append("• No AppStream access ({}): {}".format(
-                        len(set(skipped)), ", ".join(sorted(set(skipped)))))
+                # Same split as the manifest note: only a real AppStream refusal
+                # gets the "no access" wording, so nobody goes off requesting
+                # access for what a retry fixes.
+                _den = set(denied)
+                _tra = set(fetch_errors) - _den
+                _other = set(skipped) - _den - _tra
+                if _den:
+                    _lines.append("• AppStream refused these — needs access ({}): {}".format(
+                        len(_den), ", ".join(sorted(_den))))
+                if _tra:
+                    _lines.append("• Transient pull error — a retry usually fixes it ({}): {}".format(
+                        len(_tra), ", ".join(sorted(_tra))))
+                if _other:
+                    _lines.append("• Not pulled ({}): {}".format(
+                        len(_other), ", ".join(sorted(_other))))
                 if set(unmapped):
                     _lines.append("• Unmapped — needs an office id ({}): {}".format(
                         len(set(unmapped)), ", ".join(sorted(set(unmapped)))))
@@ -1368,6 +1529,20 @@ def main() -> int:
                                          dry_run=False, tag="daily-focus-skips")
             except Exception as e:  # noqa: BLE001 — Slack must not fail the run
                 log.warning("corrections post (skips) failed: %s", e)
+
+    # Any ICD pinned this run was resolving only through the machine-local
+    # all-offices.json — it is now safe on THIS box, but every other machine
+    # still depends on its own scrape. Print the exact JSON lines so promoting
+    # them into the committed base map is a copy-paste. Deliberately not written
+    # to the base file by the run itself: dirtying a tracked file would block the
+    # mini's `git pull --ff-only` and strand every later deploy.
+    if auto_pinned:
+        uniq_pins = sorted({(n.lower().strip(), o) for n, o in auto_pinned})
+        log.info("")
+        log.info("=== %d ICD(s) auto-pinned locally — promote these into %s ===",
+                 len(uniq_pins), BASE_OVERRIDES_PATH.name)
+        for n, o in uniq_pins:
+            log.info('  "%s": "%s",', n, o)
 
     # Canonical success sentinel the Hub scans for to classify the run
     # (dashboard.py: '=== done ===' in the log => success, BEFORE the
