@@ -809,11 +809,71 @@ def _load_office_directory() -> dict:
     return _OFFICE_DIRECTORY_CACHE
 
 
-def _resolve_office_id_with_source(name: str) -> Tuple[Optional[str], str]:
+_ALIAS_TABLE_CACHE: Optional[dict] = None
+ALIAS_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "output" / ".icd_aliases_cache.json"
+
+
+def _alias_table() -> dict:
+    """The shared 'ICD Aliases' table, loaded once per process.
+
+    Canonical source is the Sheet (see focus_office_att.aliases) — that's the
+    house rule: a name-spelling mismatch is fixed THERE, not with a per-report
+    mapping entry. Mirrored to a local cache file so a Sheet outage at 4am can't
+    un-resolve an ICD that was resolving yesterday; a live read refreshes it."""
+    global _ALIAS_TABLE_CACHE
+    if _ALIAS_TABLE_CACHE is not None:
+        return _ALIAS_TABLE_CACHE
+    log = logging.getLogger("daily-focus")
+    try:
+        from automations.focus_office_att import aliases as _al
+        table = _al.load_aliases()
+        if table:
+            try:
+                ALIAS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                ALIAS_CACHE_PATH.write_text(json.dumps(table, indent=2))
+            except Exception:  # noqa: BLE001 — cache write is a nicety
+                pass
+            _ALIAS_TABLE_CACHE = table
+            return table
+        raise RuntimeError("alias sheet returned no rows")
+    except Exception as e:  # noqa: BLE001 — never let a Sheet hiccup break a run
+        try:
+            _ALIAS_TABLE_CACHE = json.loads(ALIAS_CACHE_PATH.read_text())
+            log.warning("ICD Aliases sheet unavailable (%s) — using the cached "
+                        "copy from %s", e, ALIAS_CACHE_PATH.name)
+        except Exception:
+            log.warning("ICD Aliases sheet unavailable (%s) and no local cache "
+                        "— alias spellings won't resolve this run", e)
+            _ALIAS_TABLE_CACHE = {}
+    return _ALIAS_TABLE_CACHE
+
+
+def _alias_spellings(name: str) -> List[str]:
+    """Other spellings of this person from the ICD Aliases sheet, in both
+    directions (sheet spelling → canonical, and canonical → its aliases).
+    Excludes the input itself. Empty list when the name isn't in the table."""
+    table = _alias_table()
+    if not table:
+        return []
+    try:
+        from automations.focus_office_att import aliases as _al
+        canonical = _al.alias_to_canonical(name, table)
+        out = [c for c in _al.get_search_candidates(canonical, table)
+               if _al._norm_name(c) != _al._norm_name(name)]
+        if _al._norm_name(canonical) != _al._norm_name(name) and canonical not in out:
+            out.insert(0, canonical)
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _resolve_office_id_with_source(name: str,
+                                   _via_alias: bool = False) -> Tuple[Optional[str], str]:
     """Like _resolve_office_id, but also says WHERE the id came from.
 
     Source is one of "overrides" (base or local mapping file), "hardcoded"
-    (ICD_NAME_TO_OFFICE_ID), "directory" (all-offices.json owner match), or
+    (ICD_NAME_TO_OFFICE_ID), "directory" (all-offices.json owner match),
+    "alias" (matched under another spelling from the ICD Aliases sheet), or
     "none". The caller uses it to auto-pin a directory-only resolution — see
     _pin_office_id — because the directory is machine-local and gitignored, so
     an ICD that resolves ONLY there silently vanishes on any box whose scrape
@@ -838,6 +898,18 @@ def _resolve_office_id_with_source(name: str) -> Tuple[Optional[str], str]:
     if len(dir_hits) > 1:
         _log.warning("[%s] %d offices share this name in all-offices.json (%s) — "
                      "needs a manual pick; skipping for now", name, len(dir_hits), dir_hits)
+    # Last resort: the ICD Aliases sheet. A tab may spell someone differently
+    # from AppStream ("Kim Rodriguez" on Raf's tab vs owner "Kimberly
+    # Rodriguez"), and per the house rule that mismatch belongs in the shared
+    # alias sheet, NOT in this file. Retry the other spellings through the same
+    # three layers. _via_alias stops a chain of aliases from recursing.
+    if not _via_alias:
+        for alt in _alias_spellings(name):
+            alt_id, _ = _resolve_office_id_with_source(alt, _via_alias=True)
+            if alt_id:
+                _log.info("[%s] resolved to office %s via the ICD Aliases sheet "
+                          "(as %r)", name, alt_id, alt)
+                return alt_id, "alias"
     return None, "none"
 
 
