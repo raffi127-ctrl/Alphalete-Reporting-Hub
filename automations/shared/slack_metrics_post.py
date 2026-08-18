@@ -309,29 +309,87 @@ def ensure_metrics_thread(today: dt.date | None = None,
             "thread_ts": resp.get("ts"), "header_text": header_text}
 
 
+def find_named_thread_ts(client, title: str, today: dt.date,
+                         *, channel_id: str | None = None) -> str:
+    """Find TODAY's parent post for a NAMED thread (one that is NOT the daily
+    'Metrics for:' thread) — e.g. 'Knocks for other offices'.
+
+    Match is on the dated header line this module posts itself:
+        '<title> — <Month> <ordinal> <year>'
+    read as a plain substring, so the bold '*…*' wrapper doesn't break it.
+    Raises SlackPostError when today's header isn't in the channel yet, so the
+    caller can post it (ensure_named_thread does exactly that).
+    """
+    channel_id = channel_id or CHANNEL_ID
+    marker = f"{title} — {today.strftime('%B')} {_ordinal(today.day)} {today.year}"
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    resp = client.conversations_history(channel=channel_id, oldest=str(oldest),
+                                        limit=200)
+    for msg in resp.get("messages", []):
+        if marker in (msg.get("text", "") or ""):
+            return msg.get("thread_ts") or msg.get("ts")
+    raise SlackPostError(f"No '{marker}' header posted today.")
+
+
+def ensure_named_thread(title: str, today: dt.date | None = None,
+                        *, lines: list | None = None, dry_run: bool = False,
+                        channel_id: str | None = None) -> dict:
+    """Make sure today's parent post for a NAMED thread exists, and return its
+    ts — the same 'post it if it isn't there' contract as
+    ensure_metrics_thread, but for a thread that runs ALONGSIDE the Metrics
+    one instead of inside it (Eve 2026-08-18: 'Knocks for other offices').
+
+    `lines`: optional checklist body under the dated first line (e.g. one
+    ':door: Owner Name' per office), so the thread says up front what should
+    land in it.
+    """
+    today = today or dt.date.today()
+    first = (f"*{title} — {today.strftime('%B')} {_ordinal(today.day)} "
+             f"{today.year}*")
+    header_text = "\n".join([first, "", *lines]) if lines else first
+    if dry_run:
+        return {"dry_run": True, "header_text": header_text,
+                "to_channel": channel_id or CHANNEL_ID}
+    client = _client()
+    try:
+        ts = find_named_thread_ts(client, title, today, channel_id=channel_id)
+        return {"ok": True, "existed": True, "thread_ts": ts}
+    except SlackPostError:
+        pass  # not posted yet — post it ourselves
+    resp = client.chat_postMessage(channel=channel_id or CHANNEL_ID,
+                                   text=header_text)
+    return {"ok": resp.get("ok"), "existed": False,
+            "thread_ts": resp.get("ts"), "header_text": header_text}
+
+
 def post_reply_text_only(
     text: str,
     *,
     react_emoji: str | None = None,
     today: dt.date | None = None,
     dry_run: bool = False,
+    thread_ts: str | None = None,
+    channel_id: str | None = None,
 ) -> dict:
     """Reply in today's Metrics thread with just a text message (no file
     attachment). Used by reports where 'nothing new' = a one-liner instead
     of an empty-state image. Still adds the parent-thread reaction so the
     metric is marked done on the header."""
     today = today or dt.date.today()
+    channel_id = channel_id or CHANNEL_ID
     if dry_run:
         return {"dry_run": True, "would_post_text": text,
-                "to_channel": CHANNEL_ID, "react_emoji": react_emoji}
+                "to_channel": channel_id, "react_emoji": react_emoji}
     client = _client()
-    thread_ts = find_metrics_thread_ts(client, today)
-    resp = client.chat_postMessage(channel=CHANNEL_ID, thread_ts=thread_ts,
+    # thread_ts given => post into THAT thread (e.g. a named thread from
+    # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
+    thread_ts = thread_ts or find_metrics_thread_ts(client, today)
+    resp = client.chat_postMessage(channel=channel_id, thread_ts=thread_ts,
                                     text=text)
     out = {"ok": resp.get("ok"), "thread_ts": thread_ts, "ts": resp.get("ts")}
     if react_emoji:
         try:
-            r = client.reactions_add(channel=CHANNEL_ID, timestamp=thread_ts,
+            r = client.reactions_add(channel=channel_id, timestamp=thread_ts,
                                      name=react_emoji)
             out["reaction_ok"] = r.get("ok")
         except Exception as e:
@@ -347,6 +405,8 @@ def post_reply_with_image(
     today: dt.date | None = None,
     dry_run: bool = False,
     file_name: str | None = None,
+    thread_ts: str | None = None,
+    channel_id: str | None = None,
 ) -> dict:
     """Reply in today's Metrics thread with an image attachment + optional
     reaction emoji on the parent.
@@ -355,18 +415,21 @@ def post_reply_with_image(
     'negative_squared_cross_mark'.
     """
     today = today or dt.date.today()
+    channel_id = channel_id or CHANNEL_ID
     if dry_run:
         return {
             "dry_run": True,
             "would_post_image": str(image_path),
-            "to_channel": CHANNEL_ID,
+            "to_channel": channel_id,
             "comment": comment,
             "react_emoji": react_emoji,
         }
     client = _client()
-    thread_ts = find_metrics_thread_ts(client, today)
+    # thread_ts given => post into THAT thread (e.g. a named thread from
+    # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
+    thread_ts = thread_ts or find_metrics_thread_ts(client, today)
     upload_resp = client.files_upload_v2(
-        channel=CHANNEL_ID,
+        channel=channel_id,
         thread_ts=thread_ts,
         file=str(image_path),
         filename=file_name or f"{comment} {today.month}.{today.day}.png",
@@ -380,7 +443,7 @@ def post_reply_with_image(
     if react_emoji:
         try:
             r = client.reactions_add(
-                channel=CHANNEL_ID, timestamp=thread_ts, name=react_emoji
+                channel=channel_id, timestamp=thread_ts, name=react_emoji
             )
             out["reaction_ok"] = r.get("ok")
         except Exception as e:

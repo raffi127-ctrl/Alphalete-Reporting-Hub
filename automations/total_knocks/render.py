@@ -201,7 +201,8 @@ def _title_date(target: dt.date) -> str:
 def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sheet_id: str = SHEET_ID,
                         out_dir: Path = OUT_DIR_DEFAULT,
-                        rows: list[dict] | None = None) -> Path:
+                        rows: list[dict] | None = None,
+                        title_suffix: str = "") -> Path:
     """PNG 1 — columns A–N, in tab order (First Knock asc), amber theme.
 
     `rows` (optional): in-memory records keyed by SHEET_COLUMNS. When given,
@@ -209,6 +210,11 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     First Knock asc) instead of reading the Sheet, so callers can render a
     fresh pull without writing a production tab. Default (None) preserves the
     exact Sheet-reading behaviour.
+
+    `title_suffix` (optional): office name added to the title —
+    'TOTAL KNOCKS — SAHIL MULTANI — August 17, 2026'. Needed when SEVERAL
+    offices' images land in the SAME Slack thread, so an image read on its own
+    still says whose office it is. Default ('') keeps the original title.
     """
     if rows is not None:
         from automations.total_knocks.fill import _sorted_rows
@@ -220,7 +226,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     n = min(TOTAL_KNOCKS_NCOL, len(header))
     header = header[:n]
     rows = [r[:n] for r in rows]
-    return _draw(header, rows, f"TOTAL KNOCKS — {_title_date(target)}",
+    _office = f"{title_suffix.upper()} — " if title_suffix else ""
+    return _draw(header, rows, f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png")
 
 

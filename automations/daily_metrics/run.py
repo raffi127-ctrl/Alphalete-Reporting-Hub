@@ -13,6 +13,9 @@ they produce the 10 metrics posted to that thread every morning:
     🌐 New Internet Churn + 📊 Wireless    (churn)
     💳 New Internet ABP %                  (new_internet_abp)
 
+Plus, in a SEPARATE #alphalete-sales thread that runs alongside that one:
+    🚪 Knocks for other offices           (other_office_knocks)
+
 Design:
   * Each module is launched the SAME way the Hub launches it on its own —
     as a subprocess `python -u -m <module> <args>`. That keeps behaviour
@@ -76,6 +79,12 @@ METRICS = [
      # default METRICS_CHANNEL_ID). Live by default, like the others.
      "automations.office_metrics.metrics_shot",
      ["--owner", "Rafael Hidalgo", "--live"]),
+    ("other_office_knocks", "🚪 Knocks for other offices (Sahil, Chan)",
+     # Runs ALONGSIDE the metrics, not inside them: its own
+     # 'Knocks for other offices' thread in #alphalete-sales, one Total Knocks
+     # image per office (Eve 2026-08-18). Last so a slow double ownerville
+     # impersonation can't delay the 12 metrics above.
+     "automations.other_office_knocks.run", ["--live"]),
 ]
 
 
