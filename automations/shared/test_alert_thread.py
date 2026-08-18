@@ -270,6 +270,21 @@ class HeadlineTests(unittest.TestCase):
                         ["*Error:* 13 findings this run", "more"]),
             "*vantura_board_audit* — 13 findings this run")
 
+    def test_a_fully_bolded_headline_is_split_at_its_own_dash(self):
+        """Some producers bold the WHOLE line. Without this the name swallows
+        the reason and the body's first bullet gets promoted in its place —
+        "*Daily Recruiting Focus — 1 ICD(s) not pulled today* — • No AppStream"."""
+        self.assertEqual(
+            at.headline(":sunny: *Daily Recruiting Focus — 1 ICD(s) not pulled "
+                        "today*", ["• No AppStream access (1): Fernando Munoz"]),
+            "*Daily Recruiting Focus* — 1 ICD(s) not pulled today")
+        # …but a name that legitimately carries a dash keeps it when the reason
+        # is already outside the bold.
+        self.assertEqual(
+            at.headline("*BOX Order Log — Roshan* — didn't finish",
+                        ["*Error:* boom"]),
+            "*BOX Order Log — Roshan* — didn't finish")
+
     def test_a_scope_prefix_is_dropped_before_the_verb_is(self):
         """Cutting this to five words gives "morning run: 1 of 12 office(s)…" —
         short, and it no longer says what went wrong. Shedding the scope keeps

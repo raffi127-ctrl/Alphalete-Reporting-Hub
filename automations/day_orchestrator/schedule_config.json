@@ -1592,6 +1592,27 @@
       "verify": null,
       "timeout_minutes": 15
     },
+    "reformat_incident_alerts": {
+      "on_scheduler": true,
+      "_note": "MANUAL catch-up for posts made BEFORE the 2026-08-18 one-line format (`lucy rerun reformat_incident_alerts`). Copies each parent's original text into its thread, then trims the channel line to '*What broke* \u2014 why'. RUN ON THE MINI: chat.update only touches your own messages and these go out as Lucy. Keeps the '_incident \u00b7 \u2026_' marker and any RESOLVED stamp. weekdays [] = manual only.",
+      "display_name": "Re-format today's #claudecorrections alerts",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.shared.incident_reformat"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
+    },
     "install_new_start_checklist_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_checklist_agent` installs com.alphalete.new-start-followup-sun (Sun 13:00 CST). Posts the numbered checklist Raf used to build by hand. weekdays [] = manual only.",

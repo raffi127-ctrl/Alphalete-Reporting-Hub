@@ -291,6 +291,15 @@ def headline(title: str, body: Sequence[str] = ()) -> str:
                 name, rest = t[:i].strip(), t[i + len(sep):].strip()
                 break
     reason = rest.lstrip(" -–—:·").strip()
+    if len(reason) < 3 and name:
+        # The WHOLE headline was bolded — "*Daily Recruiting Focus — 1 ICD(s)
+        # not pulled today*" — so the name swallowed the reason and the body's
+        # first bullet would have been promoted in its place. Split the bold.
+        for sep in (" — ", " – ", " - "):
+            i = name.find(sep)
+            if i > 0:
+                name, reason = name[:i].strip(), name[i + len(sep):].strip()
+                break
     if len(reason) < 3:                            # the title was just a name
         reason = _reason_from(body)
     reason = _trim(_clause(re.sub(r"[*_`]", "", reason).strip()))
