@@ -99,6 +99,12 @@ _NOT_A_REPORT = frozenset({
     "weather_6am", "texas_de_brazil_745", "new_start_followup_sat",
     "override_bulletin_send_fri", "brand_audit_noon", "car_rides_cleanup",
     "harvest_prime",
+    # Tableau access-budget tooling (Megan 2026-08-17). All three are hand-run
+    # DIAGNOSTICS with on_scheduler:false — they answer "is a shared login safe
+    # for this report" and "how many times did we sign in". They self-registered
+    # the first time they ran and showed up as scheduled-looking Hub cards, which
+    # they are not. Nothing to run from the Hub; they run via `lucy rerun <id>`.
+    "session_proof_fiber", "session_proof_captainship", "tableau_ledger_summary",
 })
 
 
@@ -422,6 +428,13 @@ _INFRA_AGENTS = {
     # wrapper is deliberately card-less. Without this it registered a duplicate
     # ('Frontier Sunday 6Pm') that confused the two — deleted 2026-08-02.
     "frontier-sunday-6pm",
+    # deploy/com.alphalete.harvest-3am.plist is COMMITTED but deliberately NOT
+    # installed on any machine yet (Megan 2026-08-17: build it, prove it, then
+    # flip). sync_launchd_system scans deploy/*.plist, not what launchd actually
+    # loaded, so it carded a 3 AM job that does not exist anywhere and the card
+    # sat grey "didn't run" — correctly, but misleadingly. Card it when it is
+    # actually installed, not when the file lands in the repo.
+    "harvest-3am",
 }
 # Wrapper module segments that are PREP steps (run before the real report), so a
 # naive first-`-m` grab would resolve the wrong module (e.g. stf's chrome_guard).
