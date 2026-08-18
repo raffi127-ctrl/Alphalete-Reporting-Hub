@@ -248,6 +248,31 @@
       "was_office_id": "16744"
     }
   ],
-  "sales_only": [],
-  "sales_only_count": 0
+  "sales_only": [
+    {
+      "sheet_tab": "Jackie Leroy",
+      "as_owner": "Jackie LeRoy",
+      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
+      "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Jeff Starr",
+      "as_owner": "Jeffrey Starr",
+      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
+      "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Vincent Smith",
+      "as_owner": "Vincent Smith",
+      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
+      "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Dhyey Patel",
+      "as_owner": "Dhyey Patel",
+      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
+      "promote_when_visible": true
+    }
+  ],
+  "sales_only_count": 4
 }

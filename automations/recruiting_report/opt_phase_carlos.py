@@ -557,6 +557,26 @@ def _carlos_icd_tabs() -> list[str]:
             + [s["sheet_tab"] for s in mapping.get("sales_only", [])])
 
 
+def _narrow_icd_tabs(icd_tabs: list[str], only: Optional[str]) -> list[str]:
+    """Narrow the tab list to a comma-separated `--only-icds` selection.
+
+    Used to fill a NEWLY-ADDED ICD tab (Jackie Leroy / Jeff Starr / Vincent
+    Smith, 2026-08-18) without re-writing this week's column on the other 28
+    tabs that already filled cleanly. Names match the sheet tab title
+    case-insensitively; an unknown name is a hard error so a typo can't
+    silently "succeed" by selecting nothing."""
+    if not only:
+        return icd_tabs
+    wanted = [n.strip() for n in only.split(",") if n.strip()]
+    by_lower = {t.lower(): t for t in icd_tabs}
+    unknown = [n for n in wanted if n.lower() not in by_lower]
+    if unknown:
+        raise SystemExit(
+            f"--only-icds: {unknown} not in the Carlos ICD tab list "
+            f"(office-mapping-carlos.json confirmed + sales_only)")
+    return [by_lower[n.lower()] for n in wanted]
+
+
 def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
                    view: ViewConfig,
                    fallback_names: Optional[list[str]] = None) -> dict:
@@ -1313,6 +1333,12 @@ def main() -> int:
                          "(comma-separated, e.g. 'cancel,activation') instead "
                          "of all 7 — the targeted recovery after one view's "
                          "download failed, still under one login.")
+    ap.add_argument("--only-icds",
+                    help="Restrict --apply-view / --cleanup-drift to these "
+                         "sheet tabs (comma-separated, e.g. 'Jackie Leroy,"
+                         "Jeff Starr'). Use when a newly-added ICD needs its "
+                         "column filled without re-writing the tabs that "
+                         "already filled cleanly this week.")
     ap.add_argument("--allow-stale-cache", action="store_true",
                     help="On --apply-view, write from a cache that was NOT "
                          "refreshed today. Off by default: a cache older than "
@@ -1534,7 +1560,7 @@ def main() -> int:
         # the actual-row value, it's left alone (manual entry).
         from automations.focus_office_att.daily import _q
         sh = fill.open_sheet()
-        icd_tabs = _carlos_icd_tabs()
+        icd_tabs = _narrow_icd_tabs(_carlos_icd_tabs(), args.only_icds)
         we = _current_we_sunday()
         print(f"Cleanup-drift pass on {len(icd_tabs)} ICD tab(s); "
               f"target WE {we.isoformat()}; dry_run={args.dry_run}")
@@ -1702,7 +1728,7 @@ def main() -> int:
         print(f"  → parsed {len(by_rep)} per-rep rows from {csv_path.name}")
 
         sh = fill.open_sheet()
-        icd_tabs = _carlos_icd_tabs()
+        icd_tabs = _narrow_icd_tabs(_carlos_icd_tabs(), args.only_icds)
         as_owner_map = _as_owner_by_tab()
         we = _current_we_sunday()
         print(f"Applying view 'personal_production' to {len(icd_tabs)} ICD tab(s); "
@@ -1807,7 +1833,7 @@ def main() -> int:
         # dd.csv don't get mis-parsed as UTF-8 View Data.
         carlos_dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
         sh = fill.open_sheet()
-        icd_tabs = _carlos_icd_tabs()
+        icd_tabs = _narrow_icd_tabs(_carlos_icd_tabs(), args.only_icds)
         as_owner_map = _as_owner_by_tab()
         we = week_override or _current_we_sunday()
         print(f"Applying view 'dd' to {len(icd_tabs)} ICD tab(s); "
@@ -1924,7 +1950,7 @@ def main() -> int:
                           label=f"View '{view.key}'"):
             return 1
         sh = fill.open_sheet()
-        icd_tabs = _carlos_icd_tabs()
+        icd_tabs = _narrow_icd_tabs(_carlos_icd_tabs(), args.only_icds)
         as_owner_map = _as_owner_by_tab()
         we = _current_we_sunday()
         print(f"Applying view '{view.key}' to {len(icd_tabs)} ICD tab(s); "
