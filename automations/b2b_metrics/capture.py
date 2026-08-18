@@ -704,6 +704,39 @@ def viz_reports_no_data(page, log=print) -> bool:
         return False
 
 
+def read_table_rows(page, limit: int = 20, log=print) -> list:
+    """The TABLE's own text lines — the section's actual rows.
+
+    Reading the iframe body was never going to work for this: inner_text leads
+    with the Tableau toolbar, then the workbook's sheet-tab strip (B2B 1-PAGERV3,
+    ORDER LOG, …), so the first screenful of "rows" is furniture from two
+    different chrome layers and the data is somewhere below it. The text table
+    carries its own accessibility label, so address that element instead and the
+    text that comes back is the table and nothing else.
+
+    Best-effort: [] on any read failure, which callers treat as "unknown", never
+    as "empty"."""
+    from automations.b2b_quality.run import _IFRAME
+    try:
+        loc = page.frame_locator(_IFRAME).locator(
+            '[aria-label*="Text Table chart"]')
+        if not loc.count():
+            return []
+        txt = loc.first.inner_text(timeout=30_000) or ""
+    except Exception as e:  # noqa: BLE001
+        log("   ⚠ could not read the table text ({})".format(type(e).__name__))
+        return []
+    out = []
+    for ln in txt.splitlines():
+        s = " ".join(ln.split())
+        if not s or s.lower() in _VIZ_CHROME:
+            continue
+        out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _row_summary(text: str, owner: str = "", limit: int = 12) -> list:
     """The viz's non-chrome text lines — what the section actually SHOWS. Used
     only for logging, so a human reading the run log can tell an empty week from
@@ -812,7 +845,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
     spec = {"id": view_key, "title": view_key, "url": url}
     # Filled by after_load on the attempt that produced the saved image, so the
     # week check below reads the SAME render the PNG came from.
-    probe = {"text": "", "nodata": False}
+    probe = {"text": "", "nodata": False, "rows": []}
 
     def after_load(page):
         # Week-pinned views: drive the dashboard's week dropdown, THEN read what
@@ -822,6 +855,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
         # Tableau's OWN emptiness verdict, for every view — the blank guard's
         # primary signal (see viz_reports_no_data).
         probe["nodata"] = viz_reports_no_data(page, log=log)
+        probe["rows"] = read_table_rows(page, log=log)
         if meta.get("week_filter"):
             want = report_week_ending(today)
             probe["text"] = _read_viz_text(page, log=log)
@@ -902,7 +936,8 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                 _verify_week(view_key, probe["text"],
                              report_week_ending(today), log=log)
                 verified_week = True
-                rows = _row_summary(probe["text"], owner=o.owner)
+                rows = probe["rows"] or _row_summary(probe["text"],
+                                                     owner=o.owner)
                 if probe["text"]:
                     dom_rows = len(rows)     # authoritative emptiness signal
                 if rows:
