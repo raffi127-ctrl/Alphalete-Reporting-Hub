@@ -72,9 +72,27 @@ def rewrite(text: str) -> Optional[str]:
     if m:                                   # keep "· *RESOLVED* Tue Aug 18"
         stamp = " · *RESOLVED* {}".format(m.group("rest").strip()).rstrip()
         body[0] = body[0][:m.start()].rstrip()
-    head = at.headline(body[0], body[1:]) + stamp
+    head = _waiting_head(text) or at.headline(body[0], body[1:])
+    head += stamp
     new = "\n\n".join([head] + (["\n".join(marks)] if marks else []))
     return None if new.strip() == (text or "").strip() else new
+
+
+def _waiting_head(text: str) -> Optional[str]:
+    """An approval-gated phase's parent gets the WAITING wording, not just the
+    trim: "didn't run today on the mini" points at a machine that is doing its
+    job (Megan 2026-08-18 — and same day, drop the name's "— approved" suffix:
+    it says approved in the same breath as waiting). Recognised the same way
+    machine_digest now does, by the -approved suffix on the incident key."""
+    mk = _MARK_RE.search(text or "")
+    if not mk or not mk.group("key").endswith("-approved"):
+        return None
+    m = re.search(r"\*([^*]+)\*", text or "")
+    if not m:
+        return None
+    shown = re.sub(r"\s*[—–-]+\s*approved\s*$", "", m.group(1).strip(),
+                   flags=re.IGNORECASE).strip() or m.group(1).strip()
+    return "*{}* — waiting for approval to send email".format(shown)
 
 
 def _already_in_thread(client, channel: str, ts: str, body: List[str]) -> bool:
@@ -144,6 +162,7 @@ def run(*, day: Optional[dt.date] = None, channel: str = CHANNEL,
                     text="_The original alert, kept here — the channel line "
                          "above is now the short version:_\n\n" + text)
             client.chat_update(channel=channel, ts=ts, text=new)
+            _dress_waiting(client, channel, m, new)
             changed += 1
         except Exception as e:  # noqa: BLE001 — one refusal must not stop the pass
             print("   ⚠ edit refused ({}: {})".format(type(e).__name__,
@@ -163,10 +182,6 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     day = dt.date.fromisoformat(a.date) if a.date else None
     return run(day=day, channel=a.channel, apply=a.apply)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 
 def _clear_stray_pending(client, channel: str, m: dict, me: str, *,
@@ -189,3 +204,38 @@ def _clear_stray_pending(client, channel: str, m: dict, me: str, *,
                 except Exception as e:  # noqa: BLE001
                     print("   ⚠ couldn't remove ({}: {})".format(
                         type(e).__name__, str(e)[:60]))
+
+
+def _dress_waiting(client, channel: str, m: dict, new_text: str) -> None:
+    """A still-open WAITING parent also gets its state layer: the purple circle
+    (the Hub's approval color) and the approver ping in the thread — the same
+    two things a fresh WAITING alert now posts with. Best-effort, and the ping
+    lands at most once: a thread that already mentions an approver is left be."""
+    if "waiting for approval" not in new_text or "RESOLVED" in new_text:
+        return
+    ts = m["ts"]
+    try:
+        client.reactions_add(channel=channel, timestamp=ts,
+                             name="large_purple_circle")
+    except Exception:  # noqa: BLE001 — already there, or no scope
+        pass
+    try:
+        from automations.day_orchestrator.notify import _approver_mentions
+        who = _approver_mentions()
+        reps = client.conversations_replies(channel=channel, ts=ts, limit=50)
+        if any(who.split()[0] in (r.get("text") or "")
+               for r in (reps.get("messages") or [])[1:]):
+            return
+        client.chat_postMessage(
+            channel=channel, thread_ts=ts, unfurl_links=False,
+            unfurl_media=False,
+            text="{} — this send is waiting on your approval checkmark on "
+                 "today's review post. The emails go out on their own as soon "
+                 "as it's approved.".format(who))
+    except Exception as e:  # noqa: BLE001
+        print("   ⚠ waiting dress-up incomplete ({}: {})".format(
+            type(e).__name__, str(e)[:60]))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
