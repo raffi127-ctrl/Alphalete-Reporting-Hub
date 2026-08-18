@@ -32,29 +32,63 @@ def _open_alias_tab():
     return sh.worksheet(ALIAS_TAB)
 
 
+# Local mirror of the last successful Sheet read. Every report that bridges a
+# name through the alias table loads it at run time, so a Sheet hiccup at 4am
+# used to silently return {} — and every alias-bridged ICD un-resolved for that
+# run (the weekly report even carries a "[alias] sheet failed to load" gap
+# banner for exactly this). Falling back to yesterday's table is always better
+# than an empty one: aliases change rarely, and a stale row merely resolves a
+# name the way it resolved yesterday. Gitignored (output/), per-machine.
+CACHE_PATH = (_fill.MAPPING_PATH.parent.parent.parent
+              / "output" / ".icd_aliases_cache.json")
+
+
 def load_aliases() -> dict[str, list[str]]:
     """Read the alias Sheet and return {canonical_sheet_tab: [aliases]}.
 
     Skips header row + empty rows. Multiple alias rows pointing to the same
     canonical get grouped under one key.
-    """
+
+    Resilient: a successful read is mirrored to CACHE_PATH; when the Sheet is
+    unreachable (or returns nothing), the mirror is returned instead so an
+    outage can't un-resolve a name that resolved yesterday. Only a first-ever
+    run with no mirror still returns {}. NOT memoized in-process on purpose —
+    the Hub is long-running and a new alias row must show up without a restart;
+    per-run callers that want one read per process memoize on their side
+    (daily_focus._alias_table)."""
     out: dict[str, list[str]] = {}
     try:
         ws = _open_alias_tab()
+        rows = ws.get("A2:B500")
+        for row in rows:
+            if len(row) < 2:
+                continue
+            alias = (row[0] or "").strip()
+            canonical = (row[1] or "").strip()
+            if not alias or not canonical:
+                continue
+            out.setdefault(canonical, [])
+            if alias not in out[canonical]:
+                out[canonical].append(alias)
+        if not out:
+            raise RuntimeError("alias sheet returned no usable rows")
     except Exception as e:
-        print(f"⚠ Couldn't open '{ALIAS_TAB}' tab: {e}")
-        return out
-    rows = ws.get("A2:B500")
-    for row in rows:
-        if len(row) < 2:
-            continue
-        alias = (row[0] or "").strip()
-        canonical = (row[1] or "").strip()
-        if not alias or not canonical:
-            continue
-        out.setdefault(canonical, [])
-        if alias not in out[canonical]:
-            out[canonical].append(alias)
+        try:
+            import json as _json
+            cached = _json.loads(CACHE_PATH.read_text())
+            print(f"⚠ '{ALIAS_TAB}' tab unreachable ({e}) — using the local "
+                  f"mirror from the last good read ({len(cached)} groups)")
+            return cached
+        except Exception:
+            print(f"⚠ Couldn't open '{ALIAS_TAB}' tab and no local mirror "
+                  f"exists: {e}")
+            return {}
+    try:
+        import json as _json
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CACHE_PATH.write_text(_json.dumps(out, indent=2))
+    except Exception:  # noqa: BLE001 — the mirror is a nicety, never fail a read
+        pass
     return out
 
 

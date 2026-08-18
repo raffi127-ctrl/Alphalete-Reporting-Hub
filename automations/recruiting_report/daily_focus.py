@@ -810,7 +810,6 @@ def _load_office_directory() -> dict:
 
 
 _ALIAS_TABLE_CACHE: Optional[dict] = None
-ALIAS_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "output" / ".icd_aliases_cache.json"
 
 
 def _alias_table() -> dict:
@@ -818,32 +817,19 @@ def _alias_table() -> dict:
 
     Canonical source is the Sheet (see focus_office_att.aliases) — that's the
     house rule: a name-spelling mismatch is fixed THERE, not with a per-report
-    mapping entry. Mirrored to a local cache file so a Sheet outage at 4am can't
-    un-resolve an ICD that was resolving yesterday; a live read refreshes it."""
+    mapping entry. Sheet-outage resilience (fall back to the local mirror of
+    the last good read) lives inside aliases.load_aliases() itself, so the
+    weekly report and the Hub get it too; this wrapper only memoizes the one
+    read per run."""
     global _ALIAS_TABLE_CACHE
-    if _ALIAS_TABLE_CACHE is not None:
-        return _ALIAS_TABLE_CACHE
-    log = logging.getLogger("daily-focus")
-    try:
-        from automations.focus_office_att import aliases as _al
-        table = _al.load_aliases()
-        if table:
-            try:
-                ALIAS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-                ALIAS_CACHE_PATH.write_text(json.dumps(table, indent=2))
-            except Exception:  # noqa: BLE001 — cache write is a nicety
-                pass
-            _ALIAS_TABLE_CACHE = table
-            return table
-        raise RuntimeError("alias sheet returned no rows")
-    except Exception as e:  # noqa: BLE001 — never let a Sheet hiccup break a run
+    if _ALIAS_TABLE_CACHE is None:
         try:
-            _ALIAS_TABLE_CACHE = json.loads(ALIAS_CACHE_PATH.read_text())
-            log.warning("ICD Aliases sheet unavailable (%s) — using the cached "
-                        "copy from %s", e, ALIAS_CACHE_PATH.name)
-        except Exception:
-            log.warning("ICD Aliases sheet unavailable (%s) and no local cache "
-                        "— alias spellings won't resolve this run", e)
+            from automations.focus_office_att import aliases as _al
+            _ALIAS_TABLE_CACHE = _al.load_aliases()
+        except Exception as e:  # noqa: BLE001 — never let aliases break a run
+            logging.getLogger("daily-focus").warning(
+                "ICD Aliases unavailable (%s) — alias spellings won't resolve "
+                "this run", e)
             _ALIAS_TABLE_CACHE = {}
     return _ALIAS_TABLE_CACHE
 
