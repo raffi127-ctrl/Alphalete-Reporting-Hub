@@ -70,8 +70,38 @@ echo "[$(date)] Applicant Push starting (extra args: ${*:-none})" >> "$LOG_FILE"
 # --dry-run is given so a dry probe stays dry, but it stays leftovers-only either way.
 ARGS="--live --oat-only"
 [ "$DRYRUN" -eq 1 ] && ARGS="--oat-only"
-"$VENV_PY" -u -m automations.applicant_push.run $ARGS "$@" >> "$LOG_FILE" 2>&1
-ST=$?
+# ---- WEDGE GUARD / hard time cap (2026-08-18) --------------------------------
+# launchd keeps ONE instance per label, so a walk that HANGS doesn't just lose its
+# own tick — it swallows every tick after it, forever, and the report goes silent
+# with the agent still "loaded". That's exactly what happened 8/17: one walk wedged
+# mid-resume-read and nothing ran for 28 hours (no log file was even created the
+# next day, which is the only visible symptom). A normal walk is 4-8 min, so cap it
+# well above that and kill anything past the cap: the run dies, launchd's label is
+# freed, and the NEXT tick works. Killing python skips its teardown, so the CDP
+# Chrome is pkilled here by its own profile marker (rp_cdp_profile — never the
+# session holder's or Tableau's profile) or it would hold the profile lock.
+MAX_RUN_S=${APPLICANT_PUSH_MAX_RUN_S:-1200}
+
+"$VENV_PY" -u -m automations.applicant_push.run $ARGS "$@" >> "$LOG_FILE" 2>&1 &
+_RUN_PID=$!
+_waited=0
+while kill -0 "$_RUN_PID" 2>/dev/null && [ "$_waited" -lt "$MAX_RUN_S" ]; do
+  sleep 5
+  _waited=$((_waited + 5))
+done
+if kill -0 "$_RUN_PID" 2>/dev/null; then
+  echo "[$(date)] WEDGE GUARD: walk still running after ${MAX_RUN_S}s — killing it so the next tick can run" >> "$LOG_FILE"
+  kill -TERM "$_RUN_PID" 2>/dev/null
+  sleep 20
+  kill -KILL "$_RUN_PID" 2>/dev/null
+  wait "$_RUN_PID" 2>/dev/null
+  pkill -f rp_cdp_profile >/dev/null 2>&1
+  ST=124
+else
+  wait "$_RUN_PID"
+  ST=$?
+fi
+# ------------------------------------------------------------------------------
 
 echo "[$(date)] Applicant Push finished exit=$ST" >> "$LOG_FILE"
 
