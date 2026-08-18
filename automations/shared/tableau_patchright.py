@@ -862,34 +862,18 @@ def download_crosstab_patchright(
 
     MAX_ATTEMPTS = 3
     BACKOFF_S = 3
-    last_err = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    last_err = [None]
+
+    def _try(pg, attempt):
+        """One attempt on `pg`. Returns the path, or None after recording the
+        failure so the caller can decide whether to retry."""
         t0 = time.time()
         try:
-            if page is not None:
-                result = drive_crosstab_dialog(page, view_url, crosstab_sheet,
-                                               out_path, verbose=verbose,
-                                               pre_export=pre_export)
-            elif shared_session_enabled():
-                # ONE login for this process; a fresh page per pull keeps the
-                # viz state isolated the way a per-pull session did.
-                with shared_page(verbose=verbose) as pg:
-                    result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
-                                                   out_path, verbose=verbose,
-                                                   pre_export=pre_export)
-            else:
-                with tableau_session(verbose=verbose) as pg:
-                    result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
-                                                   out_path, verbose=verbose,
-                                                   pre_export=pre_export)
-            if cacheable:
-                _xtab_cache_store(view_url, crosstab_sheet, result)
-            _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
-                    extra="" if cacheable else "pre_export", t0=t0)
-            _freshness(result, view_url, crosstab_sheet, verbose)
-            return result
-        except Exception as e:
-            last_err = e
+            result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                           out_path, verbose=verbose,
+                                           pre_export=pre_export)
+        except Exception as e:  # noqa: BLE001 — retried below, re-raised at the end
+            last_err[0] = e
             # A failed attempt still LOADED the view — Tableau counts it, so the
             # ledger has to as well, or retries hide from the access census.
             _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
@@ -900,7 +884,72 @@ def download_crosstab_patchright(
                           f" — retry {attempt}/{MAX_ATTEMPTS - 1} after {BACKOFF_S}s…",
                           flush=True)
                 time.sleep(BACKOFF_S)
-    raise last_err
+            return None
+        if cacheable:
+            _xtab_cache_store(view_url, crosstab_sheet, result)
+        _ledger("crosstab", view_url, crosstab_sheet, cache="miss",
+                extra="" if cacheable else "pre_export", t0=t0)
+        _freshness(result, view_url, crosstab_sheet, verbose)
+        return result
+
+    if page is not None:
+        # Caller owns the browser: retry on their page, no login either way.
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            r = _try(page, attempt)
+            if r is not None:
+                return r
+        raise last_err[0]
+
+    if shared_session_enabled():
+        # ONE login for this process; a fresh page per attempt keeps the viz
+        # state isolated the way a per-attempt session did.
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            with shared_page(verbose=verbose) as pg:
+                r = _try(pg, attempt)
+            if r is not None:
+                return r
+        raise last_err[0]
+
+    # LEGACY PATH — LOGIN BUDGET (Megan 2026-08-18). This used to open a NEW
+    # tableau_session per ATTEMPT, so one flaky view cost up to 3 logins. The
+    # access ledger measured 17 failed/retried pulls in a day, each an extra
+    # sign-in that bought nothing. Now the retry ladder rides ONE login with a
+    # fresh PAGE per attempt — which is what actually clears the flake, since the
+    # dominant failure is a transient load/render and drive_crosstab_dialog
+    # re-navigates (about:blank -> goto) on every call anyway.
+    #
+    # The LAST attempt still gets a genuinely fresh login. That is the escape
+    # hatch for the one failure a page reload cannot fix: a session that has
+    # itself gone stale/unauthenticated, where only a re-auth helps.
+    #
+    # INERT ON THE HAPPY PATH: attempt 1 succeeding costs one login and one page,
+    # exactly as before. Nothing changes unless a pull actually fails.
+    try:
+        with tableau_session(verbose=verbose) as pg0:
+            for attempt in range(1, MAX_ATTEMPTS):        # attempts 1..MAX-1
+                pg = pg0 if attempt == 1 else pg0.context.new_page()
+                try:
+                    r = _try(pg, attempt)
+                finally:
+                    if pg is not pg0:
+                        try:
+                            pg.close()
+                        except Exception:                 # noqa: BLE001
+                            pass
+                if r is not None:
+                    return r
+    except Exception as e:  # noqa: BLE001 — a dead session falls through to re-auth
+        if last_err[0] is None:
+            last_err[0] = e
+        if verbose:
+            print(f"  ⚠ retry session unusable ({str(e).splitlines()[0][:80]}) "
+                  f"— final attempt on a fresh login…", flush=True)
+
+    with tableau_session(verbose=verbose) as pg:           # final: fresh login
+        r = _try(pg, MAX_ATTEMPTS)
+    if r is not None:
+        return r
+    raise last_err[0]
 
 
 def requests_session_from_page(page: Page):
