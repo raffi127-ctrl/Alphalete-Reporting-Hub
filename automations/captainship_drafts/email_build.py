@@ -66,6 +66,24 @@ def _pending(what: str, why: str = "") -> str:
             f'(re-run after fixing the source) —{reason}</div>')
 
 
+def _not_available(what: str) -> str:
+    """For a section whose SOURCE DOES NOT EXIST YET — a known, accepted state,
+    not a failure.
+
+    Deliberately does NOT carry PENDING_MARK, so run.py --send-reviewed will
+    mail the report instead of holding it. That distinction is the whole point:
+    'the capture broke, go fix it' must block a send, but 'nobody has built this
+    source yet' must not hold a captain's report hostage indefinitely.
+
+    Atef's captainship (2026-08-18) is the case that needed it: his §2 comes off
+    a Tableau team filter that only SmartCircle can create, so his report could
+    not be mailed at all while the note read like a fixable error
+    [[project_atef-captainship-waiting-on-smartcircle]]."""
+    return (f'<div style="font-size:12px;color:#555;background:#f4f4f4;'
+            f'border:1px solid #ddd;border-radius:4px;padding:8px 10px;'
+            f'margin:4px 0 10px">{what}: Not available yet.</div>')
+
+
 def _slug_slot(s: str) -> str:
     """Content-ID / filename safe: lowercase alnum + single dashes."""
     out = "".join(c if c.isalnum() else "-" for c in s.lower())
@@ -118,6 +136,17 @@ class _Images:
                 f'style="display:block;max-width:100%;border:1px solid #ddd"/>')
 
 
+def _teamstats_configured(captain) -> bool:
+    """Is a §2 source wired for this captain at all? Asked of tableau_shot
+    itself, so the two can never drift apart."""
+    try:
+        from automations.captainship_drafts import tableau_shot
+        return tableau_shot._spec_for(captain.key, captain.flavor) is not None
+    except Exception:  # noqa: BLE001 — an import/lookup problem is NOT proof
+        return True     # that the source is unconfigured; fall back to pending
+
+
+
 def _section_html(captain: Captain, heading: str, kind: str, n: int,
                   bundle: dict, imgs: _Images) -> str:
     head = (f'<div style="font-size:16px;font-weight:bold;margin:18px 0 6px">'
@@ -154,9 +183,15 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
                                err.get("cancel_tableau", "")))
     elif kind == "teamstats_tableau":
         ts = bundle.get("teamstats_tableau")
-        body += (imgs.img(ts, slot="team-stats") if ts
-                 else _pending("Team Stats Breakout Tableau shot",
-                               err.get("teamstats_tableau", "")))
+        if ts:
+            body += imgs.img(ts, slot="team-stats")
+        elif not _teamstats_configured(captain):
+            # No source wired for this captain yet — say so plainly and let the
+            # rest of the report go out. See _not_available.
+            body += _not_available("Captain Team Stats Breakout")
+        else:
+            body += _pending("Team Stats Breakout Tableau shot",
+                             err.get("teamstats_tableau", ""))
     elif kind.startswith("box:"):
         # One-column-per-day metrics box (cancel / activation / ABP / 6-days).
         slot = kind.split(":", 1)[1]
