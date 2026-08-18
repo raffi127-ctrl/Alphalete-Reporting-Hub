@@ -110,6 +110,22 @@ _KINDS = {
                "don't re-post the whole thread.",
         "tail": "The thread is live but incomplete.",
     },
+    # One OFFICE's post missing from a thread that carries several offices
+    # (other_office_knocks: one Total Knocks image per office in a shared
+    # thread). 'section' is nearly right — the thread IS live but incomplete —
+    # but "dropped 1 section" doesn't say WHAT is missing, and the fix here is
+    # office-scoped: re-running the whole report re-posts the office that
+    # already landed, because there's no already-posted guard. Added
+    # 2026-08-18.
+    "office": {
+        "what": "office",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "that office is MISSING from the thread.",
+        "label": "Missing",
+        "fix": "re-run only the missing {what}{s} for `{report_id}` — a whole "
+               "re-run RE-POSTS the {what}{s} that already landed.",
+        "tail": "The thread is live, but it's short one office.",
+    },
     "day": {
         "what": "day of sales",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",

@@ -33,8 +33,11 @@ CLI:
   --office X   run ONE office (repeatable) instead of the configured list
   date         optional YYYY-MM-DD positional (default: yesterday, Central)
 
-Runs every morning as the last step of automations.daily_metrics.run
-(slug 'other_office_knocks'), so it goes out with the rest of the metrics.
+Its OWN scheduler entry + Hub card ('other_office_knocks', order 6.1) — it goes
+out with the morning metrics (immediately after daily_metrics) but is a report
+in its own right: every LIVE run writes output/manifests/other_office_knocks.json,
+so a dropped office turns the Hub card red and fires the failure alert instead of
+disappearing inside the Daily Metrics summary.
 """
 from __future__ import annotations
 
@@ -71,8 +74,71 @@ POST_LABEL = "🚪 Total Knocks"
 OUT_DIR = Path("output") / "other_office_knocks"
 
 
+REPORT_ID = "other_office_knocks"      # manifest / Hub-card / orchestrator id
+
+
 def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+
+
+def _retry_args(offices: list[str]) -> list[str]:
+    """The exact CLI that re-runs ONLY the offices that dropped — what the Hub's
+    'Retry failed only' button and the orchestrator's auto-retry run. A blind
+    full re-run would RE-POST the offices that already landed (there's no
+    already-posted guard), so scoping matters."""
+    out = ["--live"]
+    for o in offices:
+        out += ["--office", o]
+    return out
+
+
+def _write_manifest(offices: list[str], failed: list[str]) -> None:
+    """Record the run for the Hub + the failure alert. Best-effort: a manifest
+    problem must never fail a run whose images already posted.
+
+    A SCOPED re-run (`--office X`, what the retry button fires) speaks only for
+    the offices it ran: its result is MERGED into today's manifest so fixing one
+    office clears just that office, and doesn't declare the whole report clean
+    while the other one is still missing from the thread.
+    """
+    try:
+        from automations.shared import run_manifest as _rm
+        ok_offices = [o for o in offices if o not in failed]
+        if set(offices) != set(OFFICES):        # scoped re-run → merge
+            prior = _rm.read_manifest(REPORT_ID) or {}
+            # Only TODAY's manifest may carry over; yesterday's misses are not
+            # this run's business.
+            if str(prior.get("run_ts") or "").startswith(
+                    dt.date.today().isoformat()):
+                failed = [o for o in prior.get("failed", [])
+                          if o not in offices] + failed
+                ok_offices = [o for o in prior.get("succeeded", [])
+                              if o not in offices] + ok_offices
+            offices = [o for o in OFFICES if o in set(failed) | set(ok_offices)]
+        rem = None
+        if failed:
+            rem = _rm.make_remediation(
+                reason=f"{len(failed)} office(s) missing from today's "
+                       f"'{THREAD_TITLE}' thread in #alphalete-sales: "
+                       f"{', '.join(failed)}.",
+                fix="Re-run ONLY the missing office(s) — the others already "
+                    "posted, so don't re-run the whole report: "
+                    f"lucy rerun {REPORT_ID} "
+                    + " ".join(_retry_args(failed)),
+                message=f"The '{THREAD_TITLE}' thread is missing "
+                        f"{', '.join(failed)}. Usual cause: the ownerville "
+                        "impersonation couldn't reach that office (session "
+                        "expired, or the office was renamed — then add the new "
+                        "spelling to the ICD Aliases tab).")
+        _rm.write_manifest(
+            REPORT_ID, kind="office", failed=failed, succeeded=ok_offices,
+            retry_args=(_retry_args(failed) if failed else []),
+            note=(f"{len(ok_offices)}/{len(offices)} office(s) posted to the "
+                  f"'{THREAD_TITLE}' thread"
+                  + (f"; ⚠ MISSING: {', '.join(failed)}" if failed else "")),
+            remediation=rem)
+    except Exception:  # noqa: BLE001 — manifest write must never fail the run
+        pass
 
 
 def run(target: dt.date | None = None, *, offices: list[str] | None = None,
@@ -130,6 +196,7 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     if not rendered:
         print("[other_knocks] ❌ Nothing to post — every office failed.",
               flush=True)
+        _write_manifest(offices, failed)
         return 1
 
     # 2. The day's own thread (posted only if it isn't there yet).
@@ -141,6 +208,9 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     if not thread_ts:
         print(f"[other_knocks] ❌ Couldn't open the '{THREAD_TITLE}' thread: "
               f"{head}", flush=True)
+        # Nothing posted at all — every office counts as missing, so the Hub
+        # card goes red instead of reading green off an empty thread.
+        _write_manifest(offices, [o for o in offices if o not in failed] + failed)
         return 1
     print(f"[other_knocks] Thread {'found' if head.get('existed') else 'posted'}"
           f" ({thread_ts}).", flush=True)
@@ -164,6 +234,7 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
                   flush=True)
             failed.append(office)
 
+    _write_manifest(offices, failed)
     print(f"[other_knocks] {'⚠' if failed else '✅'} Finished"
           + (f" — failed: {', '.join(failed)}" if failed else ""), flush=True)
     return 1 if failed else 0

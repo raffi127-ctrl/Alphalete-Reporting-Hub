@@ -1802,6 +1802,43 @@
       "verify": null,
       "timeout_minutes": 30
     },
+    "other_office_knocks": {
+      "order": 6.1,
+      "on_scheduler": true,
+      "display_name": "Knocks for Other Offices (Sahil, Chan)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "_sources_note": "Source is OWNERVILLE (Disposition by Rep + Time Tracker, one impersonated session per office), not AppStream. source_type is set to 'appstream' for its BEHAVIOUR, which is the one this report needs: no readiness probe (yesterday's ownerville data is complete at any hour, and a 'tableau'/'local' type would gate it on a warm Tableau session it never touches — a pointless HOLD that reads as FAILED), plus the stray-Chrome guard every browser report wants. Runs right after daily_metrics (order 6) so the knocks go out with the morning metrics, but posts to its OWN 'Knocks for other offices' thread and verifies on its OWN manifest — an office that drops turns THIS card red instead of hiding inside the Daily Metrics summary.",
+      "command": [
+        "automations.other_office_knocks.run"
+      ],
+      "base_args": [
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls both offices + posts one Total Knocks image each into today's thread in #alphalete-sales. Without --live the module only renders to output/ (dry-run is the default, so a bare re-run can never post by accident). A scoped re-run of one office is `--live --office \"Chan Park\"` — the manifest's retry_args build exactly that, because a full re-run RE-POSTS the office that already landed.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "daily_metrics"
+      ],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "other_office_knocks"
+      }
+    },
     "daily_metrics": {
       "order": 6,
       "on_scheduler": true,

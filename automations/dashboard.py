@@ -3293,6 +3293,73 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "other-office-knocks",
+        "name": "Knocks for Other Offices",
+        "creator": "Eve",
+        "emoji": "🚪",
+        "color": "#C1651B",
+        "category": "📊 Metrics",
+        "description": "Posts the SAME Total Knocks image the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. One image per office, same layout and columns as Raf's.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Opens ownerville as each office in turn (impersonation), scrapes "
+            "'Disposition by Rep' + Time Tracker for yesterday, and draws the "
+            "same table Raf's Telemapper Knocks image uses — same columns, "
+            "same amber header, sorted by First Knock.\n\n"
+            "WHERE IT POSTS\n"
+            "#alphalete-sales, in its OWN dated thread:\n"
+            "'Knocks for other offices — <Month> <day> <year>'\n"
+            "• 🚪 Total Knocks — Sahil Multani\n"
+            "• 🚪 Total Knocks — Chan Park\n\n"
+            "It never replies into the Metrics thread — that one stays exactly "
+            "as it is. The office name is in each image's title too, so a "
+            "screenshot forwarded on its own still says whose office it is.\n\n"
+            "NO SHEET IS TOUCHED\n"
+            "The images are drawn straight from the fresh pull, so no tab is "
+            "read or written for these offices.\n\n"
+            "IF AN OFFICE HAS NO KNOCKS\n"
+            "It posts 'No data available' for that office instead of skipping "
+            "it, so an empty day is visible rather than silent.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily in the 4am batch, immediately after the Daily Metrics "
+            "report — so it goes out with the morning metrics — but it is "
+            "its own report: if an office drops, THIS card goes red and the "
+            "failure alert names the office, instead of it getting lost inside "
+            "the metrics summary."
+        ),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "4 AM flow (right after Daily Metrics)",
+            # ~4 min per office: ownerville login + impersonate + two scrapes.
+            "estimated_minutes": 9,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Knocks posted for Sahil Multani and Chan Park in today's 'Knocks for other offices' thread in #alphalete-sales.",
+            "message_failed": "❌ An office didn't post. The log names which one — usually ownerville couldn't reach that office (session expired, or the office was renamed, which the ICD Aliases tab fixes). Use 'Post Today's Knocks' again: it re-runs ONLY the office that's missing.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Knocks",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls both offices and posts one image each into today's 'Knocks for other offices' thread. If today's run already left an office missing, this re-runs ONLY that office — it won't re-post the one that already landed.",
+                "module": "automations.other_office_knocks.run",
+                "args_fn": lambda: _office_run_args(["--live"],
+                                                    "other_office_knocks"),
+            },
+            {
+                "label": "Preview (no post)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Pulls both offices and saves the images to output/other_office_knocks/ so you can look at them. Posts nothing to Slack.",
+                "module": "automations.other_office_knocks.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "energy-crossref",
         "name": "Energy Cross-reference (webform check)",
         "creator": "Eve",
