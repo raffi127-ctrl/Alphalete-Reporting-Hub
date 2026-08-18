@@ -145,12 +145,30 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         col_w.append(min(MAX_COL_W, max(MIN_COL_W, w + 2 * CELL_PAD_X)))
 
     table_w = sum(col_w)
+
+    # FIT THE TITLE. The banner is only as wide as the table, and the text was
+    # drawn at a fixed 26px with no wrap — so a title longer than the table was
+    # silently CLIPPED at the image edge. Harmless while every title was
+    # 'TIME GAPS — August 17, 2026'; the moment an office name went in
+    # ('TIME GAPS — SAHIL MULTANI — …', 6 narrow columns) the year fell off.
+    # Shrink to the largest size that fits (floor 14, still clearly readable);
+    # only if even 14 overflows does the canvas widen to hold it, so every
+    # existing image whose title already fit is byte-identical.
+    title_size = 26
+    for size in (26, 24, 22, 20, 18, 16, 14):
+        f_title = _font(size, bold=True)
+        title_size = size
+        if _text_w(probe, title, f_title) + 2 * CELL_PAD_X <= table_w:
+            break
+    banner_w = max(table_w,
+                   _text_w(probe, title, f_title) + 2 * CELL_PAD_X)
+
     img_h = PAD + TITLE_H + HEADER_H + ROW_H * len(rows) + PAD
-    img = Image.new("RGB", (table_w + 2 * PAD, img_h), (255, 255, 255))
+    img = Image.new("RGB", (banner_w + 2 * PAD, img_h), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
-    d.rectangle([PAD, PAD, PAD + table_w, PAD + TITLE_H], fill=theme["title_bg"])
-    d.text((PAD + CELL_PAD_X, PAD + (TITLE_H - 26) // 2), title,
+    d.rectangle([PAD, PAD, PAD + banner_w, PAD + TITLE_H], fill=theme["title_bg"])
+    d.text((PAD + CELL_PAD_X, PAD + (TITLE_H - title_size) // 2), title,
            font=f_title, fill=TITLE_FG)
 
     y, x = PAD + TITLE_H, PAD
@@ -249,7 +267,8 @@ def _fmt_hm(v: str) -> str:
 def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
                      sheet_id: str = SHEET_ID,
                      out_dir: Path = OUT_DIR_DEFAULT,
-                     rows: list[dict] | None = None) -> Path:
+                     rows: list[dict] | None = None,
+                     title_suffix: str = "") -> Path:
     """PNG 2 — ID, Rep, First/Last Knock, Gaps, Total Gaps (min), sorted by
     Total Gaps (min) desc, teal theme. Total Gaps is shown as 'Xh Ym' (like
     Ownerville); the Sheet column itself stays in plain minutes.
@@ -258,6 +277,10 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
     render straight from them instead of reading the Sheet (this function does
     its own Total-Gaps-desc sort, so no pre-sort is needed). Default (None)
     preserves the exact Sheet-reading behaviour.
+
+    `title_suffix` (optional): office name added to the title, same as
+    render_total_knocks — needed when several offices' images land in the SAME
+    Slack thread. Default ('') keeps the original title.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -281,8 +304,9 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
     sub.sort(key=lambda r: _gap_min(r[tg_pos]), reverse=True)
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
+    _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(TIME_GAPS_COLUMNS), sub,
-                 f"TIME GAPS — {_title_date(target)}",
+                 f"TIME GAPS — {_office}{_title_date(target)}",
                  THEME_TEAL, out_dir / f"time_gaps_{target.isoformat()}.png")
 
 

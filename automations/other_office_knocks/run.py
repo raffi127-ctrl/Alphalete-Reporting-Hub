@@ -7,8 +7,11 @@ Thread (posted by this module, once a day):
       :door: Sahil Multani
       :door: Chan Park
 
-Replies — ONE image per office, in list order:
+Replies — TWO images per office, grouped by office, Time Gaps first
+(Eve 2026-08-18: "Time Gaps + Knocks Sahil, Time Gaps + Knocks Chan"):
+    🕐 Time Gaps   — Sahil Multani — Aug 17
     🚪 Total Knocks — Sahil Multani — Aug 17
+    🕐 Time Gaps   — Chan Park — Aug 17
     🚪 Total Knocks — Chan Park — Aug 17
 
 Nothing here is new machinery — every piece is the one Raf's / Rashad's knocks
@@ -16,10 +19,10 @@ already use:
   * pull   = rashad_metrics.knocks_pull.pull_office_knocks (impersonates the
              office inside ONE ownerville session, scrapes Disposition by Rep +
              Time Tracker gaps, exits impersonation).
-  * render = total_knocks.render.render_total_knocks(rows=…) — straight from
-             the in-memory rows, so NO Sheet is read or written for these
-             offices. Only the title carries the office name, because both
-             images land in the SAME thread.
+  * render = total_knocks.render.render_time_gaps / render_total_knocks
+             (rows=…) — straight from the in-memory rows, so NO Sheet is read
+             or written for these offices. Every title carries the office name,
+             because all four images land in the SAME thread.
   * post   = shared.slack_metrics_post.ensure_named_thread +
              post_reply_with_image(thread_ts=…).
 
@@ -67,9 +70,12 @@ DEFAULT_OFFICES = ["Sahil Multani", "Chan Park"]
 OFFICES = [o.strip() for o in os.environ.get("OTHER_OFFICE_KNOCKS", "").split(",")
            if o.strip()] or DEFAULT_OFFICES
 
-# Same emoji + Title Case label Raf's total_knocks.run uses, with the office
-# name appended (both offices share one thread, so the label has to say whose).
-POST_LABEL = "🚪 Total Knocks"
+# The same two emoji + Title Case labels Raf's total_knocks.run posts, with the
+# office name appended (every office shares ONE thread, so the label has to say
+# whose). ORDER MATTERS: Time Gaps first, then Total Knocks, and both of an
+# office's images before the next office's (Eve 2026-08-18).
+POST_TIME_GAPS = "🕐 Time Gaps"
+POST_TOTAL_KNOCKS = "🚪 Total Knocks"
 
 OUT_DIR = Path("output") / "other_office_knocks"
 
@@ -149,8 +155,9 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
           f"— {'DRY-RUN' if dry_run else 'LIVE'}", flush=True)
 
     # 1. Pull + render each office first, so the thread is only created once
-    #    there is something to hang in it.
-    rendered: list[tuple[str, Path | None, dt.date]] = []
+    #    there is something to hang in it. `rendered` is ALREADY in post order:
+    #    office by office, Time Gaps before Total Knocks.
+    rendered: list[tuple[str, str, Path | None, dt.date]] = []
     failed: list[str] = []
     for office in offices:
         try:
@@ -158,25 +165,32 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
             print(f"[other_knocks] {office} — data date {day.isoformat()} — "
                   f"{len(rows)} rep(s).", flush=True)
             if not rows:
-                # Visible absence, not a silent gap — same rule as Raf's run.
-                rendered.append((office, None, day))
+                # Visible absence, not a silent gap — same rule as Raf's run:
+                # BOTH metrics say so, so neither reads as quietly skipped.
+                rendered.append((office, POST_TIME_GAPS, None, day))
+                rendered.append((office, POST_TOTAL_KNOCKS, None, day))
                 continue
-            if COL_TOTAL_KNOCKS not in rows[0]:
-                # Gaps-only (wireless/NDS) office: no Disposition rows to draw,
-                # so a Total Knocks image would be all blanks. Say so instead.
-                print(f"[other_knocks] ⚠ {office} has no Disposition data "
-                      f"(gaps-only office) — posting the no-data line.",
-                      flush=True)
-                rendered.append((office, None, day))
-                continue
-            # Per-office out dir: render_total_knocks names the file by DATE
-            # only, so two offices in one run would overwrite each other.
+            # Per-office out dir: the renderers name their files by DATE only,
+            # so two offices in one run would overwrite each other.
             out_dir = OUT_DIR / _slug(office)
             out_dir.mkdir(parents=True, exist_ok=True)
-            img = _render.render_total_knocks(day, out_dir=out_dir, rows=rows,
+            img_tg = _render.render_time_gaps(day, out_dir=out_dir, rows=rows,
                                               title_suffix=office)
-            print(f"[other_knocks] Rendered {office} -> {img}", flush=True)
-            rendered.append((office, img, day))
+            rendered.append((office, POST_TIME_GAPS, img_tg, day))
+            if COL_TOTAL_KNOCKS in rows[0]:
+                img_tk = _render.render_total_knocks(day, out_dir=out_dir,
+                                                     rows=rows,
+                                                     title_suffix=office)
+                rendered.append((office, POST_TOTAL_KNOCKS, img_tk, day))
+                print(f"[other_knocks] Rendered {office} -> {img_tg} ; {img_tk}",
+                      flush=True)
+            else:
+                # Gaps-only (wireless/NDS) office: no Disposition rows, so a
+                # Total Knocks image would be all blanks. Time Gaps still draws
+                # on its own (it comes from the Time Tracker).
+                print(f"[other_knocks] ⚠ {office} has no Disposition data "
+                      f"(gaps-only office) — Time Gaps only.", flush=True)
+                rendered.append((office, POST_TOTAL_KNOCKS, None, day))
         except Exception as e:   # noqa: BLE001 — one office must not kill the rest
             print(f"[other_knocks] ❌ {office} failed: "
                   f"{type(e).__name__}: {e}", flush=True)
@@ -185,9 +199,10 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     if dry_run:
         print("[other_knocks] --dry-run — rendered only, NO Slack post.",
               flush=True)
-        for office, img, day in rendered:
+        for office, label, img, day in rendered:
             what = str(img) if img else "'No data available' line"
-            print(f"[other_knocks]   would post {office}: {what}", flush=True)
+            print(f"[other_knocks]   would post {label} — {office}: {what}",
+                  flush=True)
         print(f"[other_knocks] {'⚠' if failed else '✅'} Finished (dry-run)"
               + (f" — failed: {', '.join(failed)}" if failed else ""),
               flush=True)
@@ -203,7 +218,8 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     from automations.shared import slack_metrics_post as smp
     head = smp.ensure_named_thread(
         THREAD_TITLE, slack_today,
-        lines=[f":door: {o}" for o in offices])
+        lines=[f":clock1: Time Gaps + :door: Total Knocks — {o}"
+               for o in offices])
     thread_ts = head.get("thread_ts")
     if not thread_ts:
         print(f"[other_knocks] ❌ Couldn't open the '{THREAD_TITLE}' thread: "
@@ -215,9 +231,9 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     print(f"[other_knocks] Thread {'found' if head.get('existed') else 'posted'}"
           f" ({thread_ts}).", flush=True)
 
-    # 3. One reply per office, in list order.
-    for office, img, day in rendered:
-        comment = f"{POST_LABEL} — {office} — {day.strftime('%b')} {day.day}"
+    # 3. Replies in `rendered` order: per office, Time Gaps then Total Knocks.
+    for office, label, img, day in rendered:
+        comment = f"{label} — {office} — {day.strftime('%b')} {day.day}"
         if img is None:
             resp = smp.post_reply_text_only(f"{comment} — No data available",
                                             today=slack_today,
@@ -226,13 +242,16 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
             resp = smp.post_reply_with_image(
                 Path(img), comment=comment, today=slack_today,
                 thread_ts=thread_ts,
-                file_name=f"total_knocks_{_slug(office)}_{day.isoformat()}.png")
+                file_name=f"{Path(img).stem}_{_slug(office)}.png")
         if resp.get("ok"):
-            print(f"[other_knocks] ✅ Posted {office}.", flush=True)
+            print(f"[other_knocks] ✅ Posted {label} — {office}.", flush=True)
         else:
-            print(f"[other_knocks] ⚠ Slack response for {office}: {resp}",
-                  flush=True)
-            failed.append(office)
+            print(f"[other_knocks] ⚠ Slack response for {label} — {office}: "
+                  f"{resp}", flush=True)
+            # An office is only 'posted' when BOTH its images land — a half-
+            # posted office is a miss, and its retry re-runs that office.
+            if office not in failed:
+                failed.append(office)
 
     _write_manifest(offices, failed)
     print(f"[other_knocks] {'⚠' if failed else '✅'} Finished"

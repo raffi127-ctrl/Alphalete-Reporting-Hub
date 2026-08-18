@@ -3299,17 +3299,20 @@ AUTOMATED_REPORTS = [
         "emoji": "🚪",
         "color": "#C1651B",
         "category": "📊 Metrics",
-        "description": "Posts the SAME Total Knocks image the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. One image per office, same layout and columns as Raf's.",
+        "description": "Posts the SAME Time Gaps + Total Knocks images the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. Two images per office, same layout and columns as Raf's.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Opens ownerville as each office in turn (impersonation), scrapes "
             "'Disposition by Rep' + Time Tracker for yesterday, and draws the "
-            "same table Raf's Telemapper Knocks image uses — same columns, "
-            "same amber header, sorted by First Knock.\n\n"
+            "same two tables Raf's Time Gaps + Telemapper Knocks images use — "
+            "same columns, same themes, same sorting.\n\n"
             "WHERE IT POSTS\n"
-            "#alphalete-sales, in its OWN dated thread:\n"
+            "#alphalete-sales, in its OWN dated thread, grouped by office with "
+            "Time Gaps first:\n"
             "'Knocks for other offices — <Month> <day> <year>'\n"
+            "• 🕐 Time Gaps — Sahil Multani\n"
             "• 🚪 Total Knocks — Sahil Multani\n"
+            "• 🕐 Time Gaps — Chan Park\n"
             "• 🚪 Total Knocks — Chan Park\n\n"
             "It never replies into the Metrics thread — that one stays exactly "
             "as it is. The office name is in each image's title too, so a "
