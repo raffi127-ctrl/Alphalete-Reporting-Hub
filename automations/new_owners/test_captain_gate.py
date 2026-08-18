@@ -185,3 +185,27 @@ class TestResolveDoesNotReply(unittest.TestCase):
 if __name__ == "__main__":
     sys.exit(0 if unittest.main(exit=False, verbosity=2).result.wasSuccessful()
              else 1)
+
+
+class ExcludedReps(unittest.TestCase):
+    """A rep pinned out of a captainship is never offered for that captainship.
+
+    2026-08-18: Atef Choudhury left Carlos' captainship for his own, taking
+    Sabrina Alicea, and Joe Eckhart came off it — but Tableau has no Atef captain
+    filter yet, so the captain-team pull still reads all three as Carlos' team
+    and the gate asked Evelyn to put them back the same morning.
+    """
+
+    def test_pinned_rep_is_not_proposed_for_that_captain(self):
+        self.assertTrue(captain_gate._excluded("Carlos", "Atef Choudhury"))
+        self.assertTrue(captain_gate._excluded("Carlos", "Sabrina Alicea"))
+        # both spellings of Joe: the board writes 'Joseph', people say 'Joe'
+        self.assertTrue(captain_gate._excluded("Carlos", "Joe Eckhart"))
+        self.assertTrue(captain_gate._excluded("Carlos", "Joseph Eckhart"))
+
+    def test_the_same_name_is_fine_under_another_captain(self):
+        """The pin is per-captain — Atef belongs in ATEF's boxes."""
+        self.assertFalse(captain_gate._excluded("Atef", "Atef Choudhury"))
+
+    def test_a_real_new_rep_still_gets_through(self):
+        self.assertFalse(captain_gate._excluded("Carlos", "Jackie Leroy"))

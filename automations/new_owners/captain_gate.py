@@ -38,6 +38,37 @@ from automations.org_sales_board.review_gate import (
 )
 
 PENDING = "awaiting ✅"
+
+# Reps Tableau still files under a captain they have LEFT. The captain filter is
+# this gate's only source of truth, so until someone re-files them in Tableau it
+# offers the same person to Evelyn every day, and one absent-minded ✅ puts them
+# straight back into a captainship they are not in any more.
+#
+# Keyed by captain, because the SAME name is legitimate elsewhere: Atef belongs
+# in ATEF's boxes, just not in Carlos'.
+#
+# 2026-08-18 (Eve): Atef Choudhury took Sabrina Alicea and Dhey Patel out of
+# Carlos' captainship into his own, and Joe Eckhart came off it. Tableau has no
+# Atef captain filter yet, so all three still read as Carlos' team. Drop these
+# entries once Tableau is corrected — a name here that no longer shows under
+# that captain is harmless, just dead weight.
+#
+# The sibling mechanism (the VA-board self-heal) has its own list:
+# org_sales_board.roster_sync.EXCLUDE.
+EXCLUDE: Dict[str, tuple] = {
+    "Carlos": ("Atef Choudhury", "Sabrina Alicea",
+               "Joe Eckhart", "Joseph Eckhart"),
+}
+
+
+def _excluded(captain: str, name: str) -> bool:
+    """Is this rep pinned OUT of this captainship, whatever Tableau says?"""
+    def _k(s):
+        return " ".join(str(s or "").lower().split())
+    for capt, names in EXCLUDE.items():
+        if _k(capt) == _k(captain):
+            return _k(name) in {_k(n) for n in names}
+    return False
 ADDED = "added ✅"
 
 
@@ -86,6 +117,13 @@ def propose(names: List[str], *, captain: str, source: str,
 
     fresh = [n for n in names
              if not bank.already_logged(seen, bank.KIND_CAPTAINSHIP, n, capt)]
+    # Filtered HERE, not in the callers: this is the one door every report goes
+    # through, so a new report can't reintroduce a rep Eve already ruled out.
+    pinned = [n for n in fresh if _excluded(capt, n)]
+    for n in pinned:
+        logfn(f"  – {n} ({capt}): pinned out of this captainship — not proposing "
+              f"(captain_gate.EXCLUDE)")
+    fresh = [n for n in fresh if n not in pinned]
     if not fresh:
         return []
 
