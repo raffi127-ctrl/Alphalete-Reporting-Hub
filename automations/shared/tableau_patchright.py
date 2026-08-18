@@ -1057,16 +1057,27 @@ def appstream_session(headless: bool = False, verbose: bool = True,
 @contextmanager
 def ownerville_session(headless: bool = False,
                       verbose: bool = True,
-                      allow_form_login: bool = False) -> Iterator[Page]:
+                      allow_form_login: bool = False,
+                      profile_dir=None) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
     storage_state as tableau_session; the caller navigates to the ownerville
     URLs it needs. allow_form_login=True re-enables the legacy form-drive
-    (interactive/debug ONLY)."""
-    PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    (interactive/debug ONLY).
+
+    profile_dir (default None = the shared PROFILE_DIR): give a job its OWN
+    profile so it never queues behind — or collide with — another run on the
+    shared one. Exactly the escape hatch tableau_session already has (Megan
+    2026-08-03, Owner Showdown preview); added here 2026-08-18 because
+    other_office_knocks kept dying on "Opening in existing browser session"
+    while another session held the shared profile. Login still comes from the
+    shared ownerville storage_state, so a fresh profile authenticates the
+    same way."""
+    prof = Path(profile_dir) if profile_dir else PROFILE_DIR
+    prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
+        ctx = _launch_persistent(p, prof, headless=headless,
                                  label="ownerville_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:

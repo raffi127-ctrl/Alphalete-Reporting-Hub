@@ -197,7 +197,7 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
 
 
 def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
-                        verbose: bool = True):
+                        verbose: bool = True, profile_dir=None):
     """Scrape SEVERAL offices inside ONE ownerville session.
 
     Why one session: each `ownerville_session` launches real Chrome on a shared
@@ -209,6 +209,10 @@ def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
     Impersonation is exited between offices exactly as the single-office path
     does, so each office starts from master.
 
+    `profile_dir`: run on a Chrome profile of your own instead of the shared
+    one, so a run that overlaps another browser report doesn't lose the launch
+    race (the shared profile is first-come, first-served).
+
     Returns (target, [(office_name, rows, error_or_None), ...]) in the order
     given. One office raising does NOT abort the rest — its error rides in the
     tuple so the caller can report it per office.
@@ -216,7 +220,7 @@ def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
     target = target or knocks._yesterday()
     aliases_raw = load_aliases()
     out: list = []
-    with ownerville_session(verbose=verbose) as page:
+    with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
         for name in office_names:
             canonical = alias_to_canonical(name, aliases_raw)
             if verbose and canonical != name:

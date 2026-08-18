@@ -81,6 +81,16 @@ POST_TOTAL_KNOCKS = "🚪 Total Knocks"
 
 OUT_DIR = Path("output") / "other_office_knocks"
 
+# OUR OWN Chrome profile. The shared one (automations/uploaded/.browser_profile)
+# is first-come, first-served: whoever launches while another run holds it gets
+# "Opening in existing browser session" and loses the office. This report runs
+# inside the morning batch alongside other browser reports, so it gets its own
+# — the same escape hatch the Owner Showdown preview uses. The ownerville login
+# comes from the shared storage_state, not the profile, so a separate profile
+# authenticates identically.
+PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
+               / ".browser_profile_other_knocks")
+
 
 REPORT_ID = "other_office_knocks"      # manifest / Hub-card / orchestrator id
 
@@ -163,7 +173,8 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     rendered: list[tuple[str, str, Path | None, dt.date]] = []
     failed: list[str] = []
     try:
-        day, pulled = pull_offices_knocks(offices, target)
+        day, pulled = pull_offices_knocks(offices, target,
+                                          profile_dir=PROFILE_DIR)
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         print(f"[other_knocks] ❌ ownerville session failed: "
               f"{type(e).__name__}: {e}", flush=True)
