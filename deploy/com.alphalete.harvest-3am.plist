@@ -22,17 +22,20 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 3:00am every day, LOCAL time (mini is CST) — one hour ahead of the 4:00
-         day orchestrator so the cache is warm before any report runs.
+    <!-- 2:30am every day, LOCAL time (mini is CST). NOT 3:00: that slot already
+         has due-diligence-harvest (Jiraiya's cache) AND appstream-morning, and
+         ownerville allows ONE session per account — three jobs at 3:00 would
+         fight over the same login. 2:30 clears them and still finishes before
+         the 4:00 orchestrator.
          NOTE: launchd caches the schedule from BOOT time and ignores a rewritten
          plist on a plain reload; after changing this Hour, bootout + bootstrap
          (automations.day_orchestrator.install_agent does it correctly). -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>3</integer>
+        <integer>2</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>30</integer>
     </dict>
 
     <key>StandardOutPath</key>

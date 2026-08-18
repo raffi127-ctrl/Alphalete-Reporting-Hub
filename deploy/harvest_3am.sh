@@ -43,9 +43,17 @@ EXTRA_ARGS="$*"
 LOG_FILE="$LOG_DIR/harvest-3am-$(date +%Y-%m-%d).log"
 
 echo "[$(date)] 3am harvest starting (args: ${EXTRA_ARGS:-none})" >> "$LOG_FILE"
-# --until 03:50: Tableau is often still publishing at 3am, so the readiness probe
-# defers views that aren't in yet. Re-probe just those until 10 min before the
-# 4:00 orchestrator; whatever still isn't ready falls back to a live scrape.
+# --until 03:50: at 2:30 MOST Tableau views are not published yet. The orchestrator's
+# own probes say so — att_orderlog waits to 05:30, the trackers to 06:30, box to
+# 08:00, dd_detail to 09:30, captainship_bonus to 10:00. So the readiness probe
+# will defer a lot here, and deferred needs simply are not harvested: their reports
+# live-scrape at 4am exactly as they do today. Nothing breaks, but nothing is saved
+# for those either. Re-probe the deferred ones every 10 min until 03:50.
+#
+# DO NOT read a small harvest here as a failure - it is the honest answer to running
+# before the data exists. The fix is NOT an earlier start; it is harvesting each view
+# WHEN IT BECOMES READY, which needs the harvest to ride the orchestrator's readiness
+# gate through the morning instead of being one fixed pre-dawn job.
 "$VENV_PY" -m automations.harvest.run --all --until 03:50 $EXTRA_ARGS >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] 3am harvest finished exit=$ST" >> "$LOG_FILE"
