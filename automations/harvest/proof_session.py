@@ -92,6 +92,9 @@ def _pairs_for_report(report_id: str) -> List[Tuple[str, str]]:
         # re-confirm the failure fiber already demonstrated.
         from automations.harvest.needs_fiber import captain_needs
         needs = captain_needs()
+    if not needs and report_id == "readiness_probes":
+        from automations.harvest.needs_probes import probe_needs
+        needs = probe_needs()
     if not needs:
         raise SystemExit(
             f"No declared needs for {report_id!r}. Either pass --url/--sheet "

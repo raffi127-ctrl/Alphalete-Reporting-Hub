@@ -104,7 +104,8 @@ _NOT_A_REPORT = frozenset({
     # for this report" and "how many times did we sign in". They self-registered
     # the first time they ran and showed up as scheduled-looking Hub cards, which
     # they are not. Nothing to run from the Hub; they run via `lucy rerun <id>`.
-    "session_proof_fiber", "session_proof_captainship", "tableau_ledger_summary",
+    "session_proof_fiber", "session_proof_captainship", "session_proof_probes",
+    "tableau_ledger_summary",
 })
 
 
