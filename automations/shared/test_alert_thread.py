@@ -8,6 +8,11 @@ message and filled the whole screen. What must stay true:
   (c) a ``` block (paste-to-Claude / log tail) never stays in the channel, and a
       block split across two replies is closed + re-opened so both still render
 
+And the 2026-08-18 half (Megan): the CHANNEL line is one short, EMOJI-FREE
+sentence — "three to five words of why it failed, and the rest in the response to
+the thread" — because she works these tickets by reaction (:pending: taken, ✅
+done) and text emoji drown those out. `headline()` is what every producer calls.
+
 Run:  python -m automations.shared.test_alert_thread   (3.9-safe)
 """
 from __future__ import annotations
@@ -227,6 +232,70 @@ class UnfilledIcdIsLowKey(unittest.TestCase):
             "office_metrics", ["ABP"], None, "", "section")
         self.assertEqual(detail, [])
         self.assertIn("dropped 1 section this run", "\n".join(parent))
+
+
+class HeadlineTests(unittest.TestCase):
+    """The channel line: short, plain, and never the whole alert."""
+
+    REAL = [
+        # (title, body, expected channel line)
+        (":x: *Alphalete Org Sales Board* — ran, but 1 didn't fill",
+         ["*Error:* Didn't fill: section: BOX — 1 part(s) missing this run.",
+          "🕐 2 new captainship rep(s) waiting for a ✅ in #revision-emails"],
+         "*Alphalete Org Sales Board* — ran, but 1 didn't fill"),
+        (":no_entry_sign: *Applicant Push* — didn't run today on Lucy 2",
+         ["*Error:* no run recorded today (did not run today) · usually ~7:00"],
+         "*Applicant Push* — didn't run today on Lucy 2"),
+        # section_drop_alert's wording: the name is bold, the why follows it
+        # with no dash, and the elaboration after " — " belongs in the thread.
+        ("🚨 *tableau-stale-w-v-uuid-order-log* dropped 1 Tableau pull this run "
+         "— the export stopped short of today, so nothing was sent.",
+         ["*Missing:* W/V/uuid → Order Log — newest data is 2026-08-16"],
+         "*tableau-stale-w-v-uuid-order-log* — dropped 1 Tableau pull this run"),
+    ]
+
+    def test_real_alerts_become_one_plain_line(self):
+        for title, body, want in self.REAL:
+            self.assertEqual(at.headline(title, body), want)
+
+    def test_no_emoji_survives_either_spelling(self):
+        for title, body, _ in self.REAL:
+            head = at.headline(title, body)
+            self.assertEqual(head, at.strip_emoji(head))
+            self.assertNotIn(":", head.replace("*", "")[:1] or "x")
+
+    def test_a_title_with_only_a_name_takes_its_why_from_the_error_line(self):
+        self.assertEqual(
+            at.headline(":warning: *vantura_board_audit*",
+                        ["*Error:* 13 findings this run", "more"]),
+            "*vantura_board_audit* — 13 findings this run")
+
+    def test_a_scope_prefix_is_dropped_before_the_verb_is(self):
+        """Cutting this to five words gives "morning run: 1 of 12 office(s)…" —
+        short, and it no longer says what went wrong. Shedding the scope keeps
+        the whole sentence instead."""
+        self.assertEqual(
+            at.headline("📋 *Applicant Tracker* — morning run: 1 of 12 "
+                        "office(s) did not sync", []),
+            "*Applicant Tracker* — 1 of 12 office(s) did not sync")
+
+    def test_a_long_reason_is_cut_on_a_word_and_marked(self):
+        head = at.headline("*Vantura Board Audit* — the roll call says active "
+                           "but the sales board has been empty for nine days",
+                           [])
+        self.assertTrue(head.endswith("…"), head)
+        self.assertLess(len(head), 80, head)
+        self.assertTrue(head.startswith("*Vantura Board Audit* — the roll call"))
+
+    def test_ordinary_colons_are_not_shortcodes(self):
+        self.assertEqual(at.strip_emoji("usually starts ~7:00 · Error: boom :x:"),
+                         "usually starts ~7:00 · Error: boom")
+
+    def test_a_one_line_ping_is_not_echoed_under_itself(self):
+        line = ":lock: *ownerville session went stale* — Mon Aug 17"
+        self.assertTrue(at.same_story(at.headline(line, []), [line]))
+        self.assertFalse(at.same_story("*r* — broke",
+                                       ["🚨 *r* — broke", "*Error:* boom"]))
 
 
 if __name__ == "__main__":

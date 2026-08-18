@@ -317,7 +317,18 @@ def alert_corrections(text, incident=None):
                 print("⚠ incident thread unavailable ({}: {})".format(
                     type(e).__name__, str(e)[:80]))
         if not posted:
-            smp._client().chat_postMessage(channel=CORRECTIONS_CHANNEL, text=text)
+            # Channel gets the one-liner even on this fallback path; the full
+            # alert follows in the thread (Megan 2026-08-18).
+            from automations.shared import alert_thread as _at
+            lines = text.split("\n")
+            head = _at.headline(lines[0], lines[1:])
+            resp = smp._client().chat_postMessage(channel=CORRECTIONS_CHANNEL,
+                                                  text=head)
+            if not _at.same_story(head, lines):
+                for msg in _at.chunk(lines):
+                    smp._client().chat_postMessage(
+                        channel=CORRECTIONS_CHANNEL, text=msg,
+                        thread_ts=resp.get("ts"))
         print("posted data-gap alert to {}".format(CORRECTIONS_CHANNEL))
         return True
     except Exception as e:  # noqa: BLE001

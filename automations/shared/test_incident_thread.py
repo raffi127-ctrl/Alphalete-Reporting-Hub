@@ -13,6 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from automations.shared import alert_thread as at
 from automations.shared import incident_thread as inc
 
 
@@ -120,7 +121,40 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertEqual(len(self.c.top_level), 1)
         self.assertIn("_incident · failure-r · open 2026-08-14_",
                       self.c.top_level[0])
-        self.assertEqual(self.c.replies, ["detail"])
+        self.assertIn("detail", "\n".join(self.c.replies))
+
+    # --- what the CHANNEL shows vs what the THREAD shows (Megan 2026-08-18) ---
+
+    def test_the_channel_line_is_short_and_emoji_free(self):
+        """"Too hard to read … an emoji in the alert gets confusing and all
+        bogged up." The parent is one plain line — what broke, a few words on
+        why — so the ✅ / :pending: REACTIONS are the only emoji on it."""
+        self._open(dt.date(2026, 8, 14),
+                   title="🚨 :rotating_light: *Alphalete Org Sales Board* — ran, "
+                         "but 1 didn't fill",
+                   body=["*Error:* Didn't fill: section: BOX — 1 part(s) missing.",
+                         "🕐 2 new captainship rep(s) waiting for a ✅"])
+        head = self.c.top_level[0].splitlines()[0]
+        self.assertEqual(head, "*Alphalete Org Sales Board* — ran, but 1 didn't fill")
+        # No emoji anywhere in the channel message, marker line included.
+        self.assertEqual(self.c.top_level[0],
+                         at.strip_emoji(self.c.top_level[0]))
+        # …and the parent is the headline + the marker, nothing else.
+        self.assertEqual(len([l for l in self.c.top_level[0].splitlines()
+                              if l.strip()]), 2)
+
+    def test_nothing_is_lost_it_moves_into_the_thread(self):
+        """The error and the extra facts still arrive — in the reply, which is
+        where the whole story lives now."""
+        self._open(dt.date(2026, 8, 14),
+                   title="🚨 *r* — broke",
+                   body=["*Error:* Didn't fill: section: BOX",
+                         "🕐 2 rep(s) waiting"],
+                   details=["*To re-run it:* `lucy r`"])
+        thread = "\n".join(self.c.replies)
+        for kept in ("Didn't fill: section: BOX", "2 rep(s) waiting",
+                     "To re-run it"):
+            self.assertIn(kept, thread)
 
     def test_a_repeat_the_same_day_edits_one_line_and_posts_nothing(self):
         """Eve 2026-08-17: "no quiero repitencias en el mismo día". A re-run that
@@ -253,10 +287,11 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Also failed today:", self.c.replies[-1])
-        self.assertIn("failure-box_order_log__watch", self.c.replies[-1])
+        thread = "\n".join(self.c.replies)
+        self.assertIn("Also failed today:", thread)
+        self.assertIn("failure-box_order_log__watch", thread)
         # …and it is NOT miscounted as a recurrence of the first witness.
-        self.assertNotIn("Happened again", self.c.replies[-1])
+        self.assertNotIn("Happened again", thread)
 
     def test_family_uses_the_declared_manifest_alias(self):
         """carlos_focus's drop alerts are filed under its manifest id
@@ -337,7 +372,7 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(second["new"])
         self.assertEqual(second["ts"], first["ts"])
         self.assertEqual(len(self.c.top_level), 1)
-        self.assertIn("Also failed today:", self.c.replies[-1])
+        self.assertIn("Also failed today:", "\n".join(self.c.replies))
         # Abel and per_office were registered days apart and need no list.
         for variant in ("standalone-box_order_log_abel",
                         "failure-box_order_log_per_office"):
@@ -412,15 +447,17 @@ class IncidentThreadTest(unittest.TestCase):
 
     def test_resolved_parent_says_so_in_its_headline_and_gets_a_check(self):
         """A grey italic marker at the bottom is not an answer to "which of these
-        is still real?" — the headline flips to ✅ and the post gets the ✅
-        reaction, which is the part visible without opening anything."""
+        is still real?" — the headline gains the WORD RESOLVED and the post gets
+        the ✅ reaction, which is the part visible without opening anything.
+
+        No ✅ in the text (Megan 2026-08-18): the reaction is the emoji layer, and
+        it only stands out if the message itself has none."""
         first = self._open(dt.date(2026, 8, 14))
         inc.resolve(key="failure-r", lines=["done"], channel="C1",
                     day=dt.date(2026, 8, 15), client=self.c)
         head = self.c.updates[-1][1].splitlines()[0]
-        self.assertTrue(head.startswith(":white_check_mark:"), head)
         self.assertIn("*RESOLVED* Sat Aug 15", head)
-        self.assertNotIn("🚨", head)
+        self.assertEqual(head, at.strip_emoji(head), head)
         self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
 
     def test_the_check_lands_even_when_the_parent_edit_is_refused(self):

@@ -61,10 +61,31 @@ to a lost alert. Channel history is fetched at most ONCE per process and reused
 for every lookup, so a sweep over 50 reports is still one API call.
 
 LENGTH is delegated to `alert_thread` (the other half of this channel's cure,
-2026-08-13): the parent keeps the headline and the first short facts, the rest —
-always including any ``` block — goes in the thread, and every message is chunked
-under Slack's 4000-char cap rather than truncated. An incident post must never
-reintroduce the wall of text that made this channel unreadable in the first place.
+2026-08-13): every message is chunked under Slack's 4000-char cap rather than
+truncated. An incident post must never reintroduce the wall of text that made
+this channel unreadable in the first place.
+
+THE CHANNEL GETS ONE PLAIN LINE (Megan 2026-08-18)
+--------------------------------------------------
+The parent used to keep the headline plus ~420 chars of facts, emoji included.
+That broke the channel a second way: Megan triages these tickets by REACTION —
+:pending: on what someone has taken, ✅ on what is done — and "when an emoji is
+in the actual alert that you send, it gets confusing and all bogged up … that
+way I can just see the emojis that we're using as reactions." Three sentences
+per alert was still a wall, too, once fifteen reports ran in a morning.
+
+So the parent is now exactly:
+
+    *Alphalete Org Sales Board* — ran, but 1 didn't fill
+    _incident · failure-org_sales_board · open 2026-08-18_
+
+and NOTHING else. No emoji in any message this module posts to the channel; the
+full headline, the error, the missing list, the re-run command and the
+paste-to-Claude block all move into the thread — ahead of the details, so the
+first reply is the whole story. Nothing is dropped, it moves. A resolution
+re-badges that same line with "· *RESOLVED* <date>" and adds the ✅ REACTION;
+the word does the work in the text, the emoji does it in the reaction layer.
+`alert_thread.headline` owns the wording.
 
 FAILURE LADDER — every step is quieter than losing the alert:
   reply in the thread → post standalone → return None and let the caller do
@@ -142,14 +163,15 @@ _MARK_RE = re.compile(
 
 # What a RESOLVED parent looks like from the channel list (Eve 2026-08-17). The
 # resolution used to be visible only inside the thread plus a grey italic marker
-# at the bottom of the parent, so a fixed problem still read as a red 🚨 while
-# scrolling — and two people work these tickets off that list. Now the parent's
-# own emoji flips to ✅ AND the message gets a ✅ reaction, which is what shows in
-# the channel without opening anything.
-_ALERT_EMOJI = (":x:", ":rotating_light:", ":warning:", ":no_entry_sign:",
-                ":no_entry:", ":information_source:", ":question:",
-                "❌", "🚨", "⚠️", "⚠", "🚫", "⛔", "ℹ️")
-DONE_EMOJI = ":white_check_mark:"
+# at the bottom of the parent, so a fixed problem still read as an open one while
+# scrolling — and two people work these tickets off that list. The parent's
+# headline gains the word RESOLVED AND the message gets a ✅ reaction, which is
+# what shows in the channel without opening anything.
+#
+# The REACTION is the only emoji on these posts now (Megan 2026-08-18): the alert
+# text itself is emoji-free, so ✅ and :pending: stand out at a glance instead of
+# competing with a 🚨 / 🕐 / 📋 in every message.
+DONE_EMOJI = ":white_check_mark:"       # thread replies only, never the parent
 DONE_REACTION = "white_check_mark"
 # Somebody (or Claude) is ON it — Eve 2026-08-17. Two people pick these tickets
 # up off the channel list, so "already being worked" has to be visible there or
@@ -361,23 +383,24 @@ def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
 
 
 def _resolved_headline(text: str, day: dt.date) -> str:
-    """`text` with its FIRST line re-badged as done: the alert emoji becomes ✅ and
-    the line ends in "· *RESOLVED* <date>".
+    """`text` with its FIRST line stamped done: "… · RESOLVED <date>".
 
-    Only the headline changes — the error stays readable, because the channel is
+    NO EMOJI IN THE TEXT (Megan 2026-08-18). This used to prepend ✅. The ✅ that
+    matters is the REACTION — that is what Megan scans the channel by, together
+    with :pending: for "someone is on it", and an alert whose own text is full of
+    emoji makes those reactions impossible to pick out. The word RESOLVED carries
+    the same meaning in the text and leaves the emoji layer to the humans.
+
+    Only the headline changes — the rest stays readable, because the channel is
     also the record of what happened this morning. Idempotent: a parent that
     already says RESOLVED is returned untouched, so a second resolve (a sibling
     report recovering after the first) can't stack two stamps on one line."""
+    from automations.shared import alert_thread
     lines = (text or "").splitlines() or [""]
     head = lines[0]
     if "RESOLVED" in head.upper():
         return text
-    for e in _ALERT_EMOJI:
-        if head.lstrip().startswith(e):
-            head = head.lstrip()[len(e):].lstrip()
-            break
-    if not head.startswith(DONE_EMOJI):
-        head = "{} {}".format(DONE_EMOJI, head)
+    head = alert_thread.strip_emoji(head)
     lines[0] = "{} · *RESOLVED* {}".format(head.rstrip(), _human(day))
     return "\n".join(lines)
 
@@ -759,17 +782,24 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
     body = list(body or [])
     details = list(details or [])
 
-    # LENGTH: the parent keeps the headline + the first short facts, anything
-    # longer (and any ``` block) moves into the thread — the same rule
-    # notify._post_corrections applies, so an incident post can't reintroduce
-    # the wall-of-text this channel was just cured of. The marker is appended
-    # AFTER the split on purpose: it has to stay on the PARENT or no other
-    # machine can find the thread.
+    # ONE PLAIN LINE IN THE CHANNEL (Megan 2026-08-18). The parent used to keep
+    # the headline plus ~420 chars of facts, emoji and all. Two problems, one
+    # cure: the emoji in the TEXT drowned out the ✅ / :pending: REACTIONS she
+    # triages by, and three sentences per alert is still a wall when fifteen
+    # reports run. So the channel gets `*What broke* — a few words on why` and
+    # nothing else; the full headline and the whole body move into the thread,
+    # ahead of the details. Nothing is dropped, it moves. See
+    # alert_thread.headline for the wording rules.
+    #
+    # The marker is appended AFTER on purpose: it has to stay on the PARENT or
+    # no other machine can find the thread.
     from automations.shared import alert_thread
-    head, overflow = alert_thread.split_for_thread([title] + body)
-    parent_text = "\n".join(head + ["", marker(key, "open", day)])
-    if overflow:
-        details = list(overflow) + ([""] if details else []) + details
+    head = alert_thread.headline(title, body)
+    parent_text = "\n".join([head, "", marker(key, "open", day)])
+    full = [l for l in ([title] + body) if str(l).strip()]
+    if alert_thread.same_story(head, full):
+        full = []               # a one-line ping: don't echo it under itself
+    details = full + ([""] if full and details else []) + details
 
     if dry_run:
         ent = (_load_index() or {}).get(key) or {}
@@ -941,10 +971,17 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     except Exception as e:  # noqa: BLE001
         print(f"  ⚠ incident resolve reply failed ({type(e).__name__}: "
               f"{str(e)[:80]})", flush=True)
-    new_parent = parent_text
+    # THE PARENT KEEPS ITS OWN HEADLINE (Megan 2026-08-18). It is re-badged, not
+    # rewritten: the channel line still says what broke and why, now ending in
+    # "· *RESOLVED* <date>". A caller's `parent_text` is only the fallback for a
+    # parent we somehow can't read — notify used to hand over a whole replacement
+    # block (a ✅ line plus the old alert struck through), which put emoji and
+    # four struck-through lines back into the channel this is here to keep clean.
+    # What the fix WAS goes in the thread reply (`lines`), where it belongs.
+    was = _MARK_RE.sub("", inc.get("text") or "").rstrip()
+    new_parent = _resolved_headline(was, day) if was else parent_text
     if new_parent is None:
-        was = inc.get("text") or ""
-        new_parent = _resolved_headline(_MARK_RE.sub("", was).rstrip(), day)
+        new_parent = _resolved_headline("", day)
     # The marker keeps the PARENT's own key. On a shared thread the resolver is
     # often a sibling (box_order_log posting clean also clears the post-watch
     # miss), and stamping our key here would rename someone else's incident —

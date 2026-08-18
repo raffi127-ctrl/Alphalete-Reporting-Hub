@@ -316,7 +316,9 @@ def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
     # writes a fresh one, and a struck-through marker is unparseable afterwards.
     was = "\n".join(l for l in was.splitlines()
                     if not l.startswith("_incident · ")).strip()
-    lines = [f":white_check_mark: *{label}* — RESOLVED {hhmm}. Nothing to do."]
+    # No emoji in the channel's own text (Megan 2026-08-18) — the ✅ that marks a
+    # closed ticket is the REACTION incident_thread puts on the parent.
+    lines = [f"*{label}* — RESOLVED {hhmm}. Nothing to do."]
     if rs.missing:
         lines.append(f"*Landed since:* {', '.join(rs.missing)}")
     if rs.last_reason:
@@ -329,11 +331,14 @@ def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
     key = (post or {}).get("key") or f"failure-{rs.report_id}"
     thread_lines = list(lines) + [
         "_Closing this one out — if it happens again it'll open a fresh post._"]
-    struck = ["", "~" + was.replace("\n", "~\n~") + "~"] if was else []
     try:
         from automations.shared import incident_thread as _inc
+        # No parent_text: incident_thread re-badges the parent's OWN one-line
+        # headline with "· *RESOLVED* <date>" and reacts ✅. Handing it a
+        # replacement block is what used to put the whole alert — struck through,
+        # emoji and all — back into the channel.
         if _inc.resolve(key=key, lines=thread_lines, channel=ch,
-                        parent_text="\n".join(lines + struck), dry_run=dry_run):
+                        dry_run=dry_run):
             return True
         if key not in _inc.open_keys():
             # Already closed — by this report's own clean run through
@@ -1195,11 +1200,11 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
 
     LENGTH IS HANDLED HERE so no caller has to think about it (Megan 2026-08-13:
     "this error is too long in the slack channel — it should be in the reply on
-    the thread"). A new top-level post keeps its headline + the first short lines
-    and pushes the rest — always including any ``` block, i.e. paste-to-Claude and
-    log tails — into threaded replies. Anything over Slack's per-message limit is
-    chunked across replies, never truncated: the whole alert still arrives, it
-    just stops owning the channel."""
+    the thread"; 2026-08-18: "three to five words of why it failed, and the rest
+    in the response to the thread"). A new top-level post is ONE emoji-free line
+    — what broke and a few words on why — and everything else goes to threaded
+    replies, chunked under Slack's per-message limit rather than truncated: the
+    whole alert still arrives, it just stops owning the channel."""
     ch = _corrections_channel(cfg)
     if not ch:
         return None
@@ -1214,8 +1219,14 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
             first = first or ts
         return first
 
-    parent_lines, detail = alert_thread.split_for_thread(lines)
-    ts = _post_one(ch, "\n".join(parent_lines), dry_run, tag=tag)
+    # ONE PLAIN LINE IN THE CHANNEL (Megan 2026-08-18) — the same rule
+    # incident_thread applies, so an alert reads the same however it got posted:
+    # `*What broke* — a few words on why`, no emoji, and the whole text (headline
+    # included) in the thread. The emoji people SEE on these posts are the ✅ and
+    # :pending: reactions they triage with; text emoji drown those out.
+    head = alert_thread.headline(lines[0], lines[1:])
+    detail = [] if alert_thread.same_story(head, lines) else list(lines)
+    ts = _post_one(ch, head, dry_run, tag=tag)
     if ts and detail:
         for msg in alert_thread.chunk(detail):
             _post_one(ch, msg, dry_run, tag=f"{tag}-detail", thread_ts=ts)

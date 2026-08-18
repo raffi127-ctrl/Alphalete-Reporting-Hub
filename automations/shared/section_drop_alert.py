@@ -485,8 +485,16 @@ def alert(*, report_id: str, failed: Sequence[str],
             print("  ⚠ incident thread unavailable ({}: {}) — posting "
                   "standalone".format(type(e).__name__, str(e)[:80]))
         if not posted:
-            resp = client.chat_postMessage(channel=CHANNEL, text=parent)
+            # Same shape as the incident path even when it's unavailable: one
+            # emoji-free line in the channel, the whole alert in the thread
+            # (Megan 2026-08-18).
+            head = alert_thread.headline(parent_lines[0], parent_lines[1:])
+            resp = client.chat_postMessage(channel=CHANNEL, text=head)
             ts = resp.get("ts")
+            body = [] if alert_thread.same_story(head, parent_lines) \
+                else list(parent_lines)
+            replies = alert_thread.chunk(body + ([""] if body and detail else [])
+                                         + list(detail))
             # Detail goes UNDER the parent. If the parent's ts came back empty we
             # still post the detail (as its own message) — a lost finding is worse
             # than an unthreaded one.

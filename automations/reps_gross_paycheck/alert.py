@@ -113,7 +113,16 @@ def notify(target: dt.date, source: dt.date, cells: int, real: int,
             print(f"  ⚠ incident thread unavailable ({type(e).__name__}: "
                   f"{str(e)[:80]}) — posting standalone")
         if not posted:
-            smp._client().chat_postMessage(channel=CHANNEL, text=text)
+            # Channel gets the one-liner even on this fallback path; the full
+            # alert follows in the thread (Megan 2026-08-18).
+            from automations.shared import alert_thread as _at
+            lines = text.split("\n")
+            head = _at.headline(lines[0], lines[1:])
+            resp = smp._client().chat_postMessage(channel=CHANNEL, text=head)
+            if not _at.same_story(head, lines):
+                for msg in _at.chunk(lines):
+                    smp._client().chat_postMessage(
+                        channel=CHANNEL, text=msg, thread_ts=resp.get("ts"))
     except Exception as e:                              # noqa: BLE001
         # A failed alert must not also fail the report — the refusal to write
         # is the real protection; this is the notification on top of it.

@@ -23,6 +23,7 @@ Two pure text helpers, no Slack calls — the posting stays with each caller:
 """
 from __future__ import annotations
 
+import re
 from typing import List, Sequence, Tuple
 
 # Slack hard-caps a message at 4000 chars. Stay well under: the API counts the
@@ -147,3 +148,164 @@ def chunk(lines: Sequence[str], limit: int = CHUNK_LIMIT,
         n = len(msgs)
         msgs = ["_(%d/%d)_\n%s" % (i + 1, n, m) for i, m in enumerate(msgs)]
     return msgs
+
+
+# --------------------------------------------------------------- headline ---
+# NO EMOJI IN THE CHANNEL, AND ONE SHORT LINE (Megan 2026-08-18)
+#
+# The channel had become unreadable a second way. The parent posts carried their
+# own emoji — 🚨 / ✅ / 🕐 / 📋 / ❌ — and Megan works these tickets by REACTION:
+# :pending: on what someone has taken, ✅ on what's done. When the message text
+# is full of emoji too, the reactions stop standing out and the list has to be
+# read word by word instead of scanned. Her words: "when an emoji is in the
+# actual alert that you send, it gets confusing and all bogged up … that way I
+# can just see the emojis that we're using as reactions."
+#
+# And the parent was still too long: split_for_thread's ~420-char budget let 3-4
+# full sentences stay up top. So the channel line is now exactly one thing —
+# WHAT broke and a few words on WHY — and everything else (the full headline,
+# the error, the missing list, the re-run, the paste-to-Claude block) lives in
+# the thread. Nothing is dropped; it moves.
+#
+#   before   🚨 *Alphalete Org Sales Board* — ran, but 1 didn't fill
+#            *Error:* Didn't fill: section: BOX — 1 part(s) missing this run.
+#            🕐 2 new captainship rep(s) waiting for a ✅ in #revision-emails: …
+#   after    *Alphalete Org Sales Board* — ran, but 1 didn't fill
+#
+# Bold stays: it is not an emoji, and it is what makes the report name findable
+# when twenty of these are stacked in the channel.
+
+# Emoji, both spellings Slack accepts. The shortcode half must only fire at a
+# word boundary — `~7:00` and `Error: boom` are not emoji and must survive.
+_EMOJI_CHARS = re.compile(
+    "["
+    "\U0001F000-\U0001FAFF"     # pictographs, transport, symbols, faces
+    "\u2600-\u27BF"             # ✅ ⚠ ❌ ⛔ ☑ ✉ ...
+    "\u2B00-\u2BFF"             # ⬛ ⭐ ...
+    "\u2122\u2139\u3030\u303D"
+    "\uFE0E\uFE0F\u20E3\u200D"  # variation selectors, keycap, ZWJ joiner
+    "]+")
+_EMOJI_CODE = re.compile(r"(?:(?<=\s)|(?<=^)):[a-z0-9][a-z0-9_+'-]*:(?=\s|$|[.,;!?])")
+
+# How much of a reason may stay in the channel. Megan asked for "a three to five
+# word breakdown of why it failed"; the CHAR cap is what actually holds the line
+# short (eight one-syllable words are not the problem, one 90-char sentence is),
+# and the word cap stops a run-on of tiny words sneaking under it. The caps are
+# deliberately a little looser than "five words" — cutting "1 of 12 office(s) did
+# not sync" down to five loses the verb, and a reason that no longer says what
+# went wrong costs more than the four characters it saved.
+REASON_CHARS = 52
+REASON_WORDS = 8
+# Where a reason ENDS. The first of these closes the clause: what follows is
+# elaboration, and elaboration belongs in the thread.
+_CLAUSE = (" — ", " – ", " · ", "; ", ". ", " (")
+
+
+def strip_emoji(text: str) -> str:
+    """`text` with every emoji removed — unicode ones and `:shortcodes:` alike.
+
+    Leaves ordinary punctuation alone (a `:` inside `Error:` or `7:00` is not a
+    shortcode), and collapses the double spaces the removal leaves behind."""
+    s = _EMOJI_CODE.sub("", str(text))
+    s = _EMOJI_CHARS.sub("", s)
+    return re.sub(r"[ \t]{2,}", " ", s).strip()
+
+
+def _clause(reason: str) -> str:
+    """The FIRST clause of `reason` — everything up to the first ' — ', ' · ',
+    '. ', etc. "Didn't fill: section: BOX — 1 part(s) missing this run." is
+    "Didn't fill: section: BOX"."""
+    cut = len(reason)
+    for sep in _CLAUSE:
+        i = reason.find(sep)
+        if 0 < i < cut:
+            cut = i
+    return reason[:cut].strip()
+
+
+def _drop_scope(reason: str, max_chars: int, max_words: int) -> str:
+    """Shed a short SCOPE prefix if that's what makes the reason fit whole.
+
+    "morning run: 1 of 12 office(s) did not sync" cut to the caps loses the verb
+    — "morning run: 1 of 12 office(s)…" — while dropping the two-word scope keeps
+    the entire sentence. Only tried when the reason overflows, so a clause that
+    already fits ("Didn't fill: section: BOX") is never taken apart."""
+    if _fits(reason, max_chars, max_words) or ": " not in reason:
+        return reason
+    prefix, rest = reason.split(": ", 1)
+    if len(prefix.split()) <= 3 and _fits(rest, max_chars, max_words):
+        return rest.strip()
+    return reason
+
+
+def _fits(s: str, max_chars: int, max_words: int) -> bool:
+    return len(s) <= max_chars and len(s.split()) <= max_words
+
+
+def _trim(reason: str, max_chars: int = REASON_CHARS,
+          max_words: int = REASON_WORDS) -> str:
+    """Cut `reason` to the caps, on a WORD boundary, marking the cut with '…' so
+    nobody reads a chopped line as the whole story (the rest is in the thread)."""
+    reason = _drop_scope(reason, max_chars, max_words)
+    words = reason.split()
+    cut = " ".join(words[:max_words])
+    short = len(cut) < len(reason)
+    while len(cut) > max_chars and " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+        short = True
+    cut = cut.rstrip(" ,;:-–—")
+    if len(cut) > max_chars:                 # one very long word — hard cut
+        cut, short = cut[:max_chars], True
+    return (cut + "…") if short and cut else cut
+
+
+def _reason_from(body: Sequence[str]) -> str:
+    """The best one-line WHY out of an alert body: the `*Error:*` line if there
+    is one (every orchestrator failure has it), otherwise the first real line."""
+    plain = [strip_emoji(l) for l in body]
+    for l in plain:
+        m = re.match(r"^[*_]*Error:?[*_]*\s*[:\-–—]?\s*(.+)$", l.strip(), re.I)
+        if m:
+            return m.group(1)
+    for l in plain:
+        if l.strip():
+            return l.strip()
+    return ""
+
+
+def headline(title: str, body: Sequence[str] = ()) -> str:
+    """The ONE line the channel gets: `*What broke* — a few words on why`.
+
+    No emoji, no second sentence, no list — see the note above. The full text is
+    never lost: incident_thread posts it as the first reply in the thread.
+    """
+    t = strip_emoji(title).strip()
+    name, rest = "", t
+    m = re.match(r"^\*([^*]+)\*\s*(.*)$", t)      # `*Report Name* — why`
+    if m:
+        name, rest = m.group(1).strip(), m.group(2).strip()
+    else:
+        for sep in (" — ", " – ", " - "):
+            i = t.find(sep)
+            if i > 0:
+                name, rest = t[:i].strip(), t[i + len(sep):].strip()
+                break
+    reason = rest.lstrip(" -–—:·").strip()
+    if len(reason) < 3:                            # the title was just a name
+        reason = _reason_from(body)
+    reason = _trim(_clause(re.sub(r"[*_`]", "", reason).strip()))
+    if not name:
+        return _trim(_clause(re.sub(r"[*_`]", "", t)), max_chars=90,
+                     max_words=12) or t[:90]
+    return "*{}* — {}".format(name, reason) if reason else "*{}*".format(name)
+
+
+def same_story(head: str, lines: Sequence[str]) -> bool:
+    """True when `head` already IS the whole alert — a one-line ping whose text
+    the headline kept verbatim. Threading a copy of it under itself is noise."""
+    body = [strip_emoji(l) for l in lines]
+    body = [l for l in body if l.strip()]
+    if len(body) != 1:
+        return False
+    return re.sub(r"[*_`\s]+", " ", strip_emoji(head)).strip() == \
+        re.sub(r"[*_`\s]+", " ", body[0]).strip()
