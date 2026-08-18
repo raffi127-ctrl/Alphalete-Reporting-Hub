@@ -52,7 +52,8 @@ fluff. I need clear visuals and concise communications.
   from this session; other Claude sessions may have work-in-progress in
   the same repo, so never `git add .` blindly. When I say commit, write
   a lowercase title + bullet body, end with
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
+  `Co-Authored-By: Claude <noreply@anthropic.com>` — sin nombre de modelo, así
+  no caduca cuando sale uno nuevo (Eve, 2026-08-18).
 - **No hardcoded rows or columns.** Find rows by column-B label, find
   weeks by date header (`fill.find_sunday_columns`). Templates change —
   label/header lookup survives, indices don't.
