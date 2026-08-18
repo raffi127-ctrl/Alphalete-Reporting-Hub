@@ -673,6 +673,37 @@ def _verify_week(view_key: str, text: str, want: dt.date, log=print) -> None:
                 ", ".join(sorted(set(shown))[:4]) or "no dated header"))
 
 
+# The viz's own furniture. inner_text on the iframe body starts with the Tableau
+# toolbar and the workbook's sheet-tab strip, so an EMPTY board still reads back
+# a dozen "lines" — which would tell a row-counting blank check that a report
+# with nothing in it is full. Everything here is chrome, never data.
+_VIZ_CHROME = {
+    "undo", "redo", "revert", "refresh", "pause", "replay animation",
+    "replay speed options", "accelerate", "view: original", "save custom view",
+    "data guide", "watch", "download", "full screen", "share", "comment",
+    "alert", "subscribe", "edit", "loading...", "(all)",
+}
+
+
+def viz_reports_no_data(page, log=print) -> bool:
+    """True when TABLEAU ITSELF says the sheet is empty.
+
+    The accessibility label on an empty text table ends with "No data to
+    visualize with current filters." — which is the ground truth we spent a day
+    inferring from pixels and row counts on 2026-08-17. Read it directly: it is
+    unambiguous, it costs nothing, and it can't be fooled by the toolbar the way
+    counting text lines can.
+
+    Best-effort: an unreadable frame returns False so a flaky read never drops a
+    section that was fine."""
+    from automations.b2b_quality.run import _IFRAME
+    try:
+        return page.frame_locator(_IFRAME).locator(
+            '[aria-label*="No data to visualize"]').count() > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _row_summary(text: str, owner: str = "", limit: int = 12) -> list:
     """The viz's non-chrome text lines — what the section actually SHOWS. Used
     only for logging, so a human reading the run log can tell an empty week from
@@ -693,6 +724,8 @@ def _row_summary(text: str, owner: str = "", limit: int = 12) -> list:
             continue
         if own and " ".join(s.split()).lower() == own:
             continue                       # the slice value, not a row
+        if " ".join(s.split()).lower() in _VIZ_CHROME:
+            continue                       # toolbar button, not a row
         if re.fullmatch(r"[\d/\-. ]+", s):
             continue                       # a bare date/number echo of a filter
         out.append(s)
@@ -779,13 +812,16 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
     spec = {"id": view_key, "title": view_key, "url": url}
     # Filled by after_load on the attempt that produced the saved image, so the
     # week check below reads the SAME render the PNG came from.
-    probe = {"text": ""}
+    probe = {"text": "", "nodata": False}
 
     def after_load(page):
         # Week-pinned views: drive the dashboard's week dropdown, THEN read what
         # it drew. The URL carries the pin too (harmless, and it is the right
         # thing to send if the field is ever renamed to match its caption), but
         # the dropdown is what actually moves this view.
+        # Tableau's OWN emptiness verdict, for every view — the blank guard's
+        # primary signal (see viz_reports_no_data).
+        probe["nodata"] = viz_reports_no_data(page, log=log)
         if meta.get("week_filter"):
             want = report_week_ending(today)
             probe["text"] = _read_viz_text(page, log=log)
@@ -880,8 +916,13 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
             # An empty render is now heard about (write_manifest -> the 🚨 in
             # #claudecorrections-and-requests) instead of posting as a
             # confident-looking screenshot of nothing.
-            blank = (dom_rows == 0) if dom_rows is not None \
-                else image_is_blank(out)
+            # Blank if Tableau says so, if the rendered rows are gone, or if
+            # the exported image is a header and nothing else. Any one of the
+            # three is enough — the cost of missing a blank (a confidential
+            # report of nothing, posted) is worse than the cost of a false one
+            # (a section skipped and flagged, which someone then re-runs).
+            blank = (probe["nodata"] or image_is_blank(out)
+                     or (dom_rows == 0 if dom_rows is not None else False))
             if blank:
                 if verified_week:
                     # We KNOW which week this is and it is genuinely empty. Post
