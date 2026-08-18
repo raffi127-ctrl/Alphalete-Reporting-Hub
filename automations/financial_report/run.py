@@ -85,7 +85,16 @@ def _name_bridge() -> dict:
         try:
             data = json.loads(
                 (rfill.MAPPING_PATH.parent / fname).read_text(encoding="utf-8"))
-            for c in data.get("confirmed", []):
+            # `sales_only` too, not just `confirmed` (Eve 2026-08-18). An ICD
+            # with no AppStream office yet still has an `as_owner` — the name
+            # TABLEAU uses — and that is exactly the legal spelling the
+            # financial files carry. Reading only `confirmed` meant the tab
+            # 'Jeff Starr' (mapping as_owner 'Jeffrey Starr') got no bridge
+            # entry, and the subset-surname fallback can't rescue it either:
+            # 'jeff' and 'jeffrey' are different words to it. Same class of
+            # miss as 'Atef Choudhry' above, one bucket over.
+            for c in (list(data.get("confirmed", []))
+                      + list(data.get("sales_only", []))):
                 ao, tab = c.get("as_owner"), c.get("sheet_tab")
                 if ao and tab:
                     # Key on the FULL tab title and on the title minus its
