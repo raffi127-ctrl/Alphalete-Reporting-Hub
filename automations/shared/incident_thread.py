@@ -178,6 +178,11 @@ DONE_REACTION = "white_check_mark"
 # they both start on the same one. :pending: is the workspace's own emoji and is
 # already used by hand for exactly this; the ✅ replaces it when it's done.
 WORKING_REACTION = "pending"
+# An approval-gated phase that is WAITING on its human checkmark — purple, the
+# same color the Hub's approval pill shows for that state (Megan 2026-08-18).
+# Set by the caller via open_or_followup(reaction=…); resolve() clears it along
+# with :pending:, so a closed post only ever wears the ✅.
+WAITING_REACTION = "large_purple_circle"
 
 # EVERY message and edit in this channel goes out as Lucy (Eve 2026-08-17: "todos
 # los cambios y mensajes tienen que salir al canal desde Lucy"). It is not only
@@ -435,6 +440,7 @@ def _react_done(client, channel: str, ts: str) -> None:
     as work in progress."""
     _react(client, channel, ts, DONE_REACTION)
     _react(client, channel, ts, WORKING_REACTION, remove=True)
+    _react(client, channel, ts, WAITING_REACTION, remove=True)
 
 
 def _parent_still_open(client, channel: str, ts: str) -> Optional[bool]:
@@ -770,6 +776,7 @@ def _put_status(client, channel: str, key: str, inc: dict, st: dict,
 
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      channel_line: Optional[str] = None,
+                     reaction: Optional[str] = None,
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
                      stamp: Optional[str] = None, label: str = "",
@@ -901,6 +908,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         except Exception as e:  # noqa: BLE001 — parent landed; detail is a bonus
             print(f"  ⚠ incident detail reply failed ({type(e).__name__}: "
                   f"{str(e)[:80]})", flush=True)
+    if reaction:
+        _react(client, channel, ts, reaction)
     _remember(key, ts=ts, channel=channel, opened=day.isoformat(), count=0,
               text=parent_text, day=day)
     _forget_history(channel)

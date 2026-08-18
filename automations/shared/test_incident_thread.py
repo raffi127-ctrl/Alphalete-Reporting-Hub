@@ -510,6 +510,26 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertTrue((inc._load_index()["failure-r"]).get("resolved"),
                         "the stale local belief is corrected")
 
+    def test_a_waiting_alert_wears_purple_and_the_fix_swaps_it_for_the_check(self):
+        """Approval-gated phases react :large_purple_circle: — the Hub's own
+        approval color (Megan 2026-08-18) — and a resolved post only ever wears
+        the ✅: purple comes off with :pending: in the same moment."""
+        res = inc.open_or_followup(key="standalone-captainship-drafts-approved",
+                                   title="*Captainship Reports* — waiting for "
+                                         "approval to send email",
+                                   body=["*Error:* the day's post hasn't been "
+                                         "approved yet"],
+                                   reaction=inc.WAITING_REACTION,
+                                   channel="C1", day=dt.date(2026, 8, 14),
+                                   client=self.c)
+        self.assertIn((res["ts"], "large_purple_circle"), self.c.reactions)
+        inc._HISTORY_CACHE.clear()
+        inc.resolve(key="standalone-captainship-drafts-approved",
+                    lines=["approved and sent"], channel="C1",
+                    day=dt.date(2026, 8, 14), client=self.c)
+        self.assertIn((res["ts"], "white_check_mark"), self.c.reactions)
+        self.assertNotIn((res["ts"], "large_purple_circle"), self.c.reactions)
+
     def test_working_on_nothing_open_is_a_no_op(self):
         self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))
         self.assertEqual(self.c.reactions, [])

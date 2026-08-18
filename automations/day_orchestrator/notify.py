@@ -12,6 +12,7 @@ inspection, and Slack is printed.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import smtplib
 import ssl
 import tempfile
@@ -128,7 +129,15 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         elif kind == "WAITING":
             # An approval-gated send phase: nothing is broken, the day's review
             # post just hasn't been ✅'d yet (Megan 2026-08-18).
-            title = f"*{name}* — waiting for approval to send email"
+            #
+            # The phase is REGISTERED as "Captainship Reports — approved" (it is
+            # the row the gate writes once approval lands), but a title reading
+            # "— approved* — waiting for approval" says it was approved in the
+            # same breath as saying it wasn't (Megan, same day). The gate's name
+            # suffix comes off; the waiting clause is the whole story.
+            shown = re.sub(r"\s*[—–-]+\s*approved\s*$", "", name,
+                           flags=re.IGNORECASE).strip() or name
+            title = f"*{shown}* — waiting for approval to send email"
             err = ("this phase runs itself the moment the day's review post "
                    "gets its approval checkmark — nothing to fix"
                    + (f" · {when}" if when else ""))
@@ -179,10 +188,17 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             ]
         elif kind == "WAITING":
             # Benign FYI — the gate is doing its job. No paste-to-Claude.
+            # The APPROVER gets pinged (Megan 2026-08-18: "should also @eve
+            # since she's the only one in the approval channel as of now") —
+            # in the THREAD, so the channel line stays one plain line while the
+            # mention still lights up her sidebar. The list comes from
+            # review_gate.APPROVERS, the same dict that decides whose ✅ opens
+            # the gate — one place to change when that ever stops being Eve.
             reply = [
-                "The emails go out on their own as soon as the day's review "
-                "post gets its approval checkmark — until then, holding is the "
-                "correct behavior, not a miss.",
+                f"{_approver_mentions()} — this send is waiting on your "
+                "approval checkmark on today's review post.",
+                "The emails go out on their own as soon as it's approved — "
+                "until then, holding is the correct behavior, not a miss.",
                 "_If the approval WAS already given and this is still here an "
                 "hour later, reply in this thread — then the checker itself "
                 "needs a look._",
@@ -215,9 +231,15 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         # genuine miss (Eve 2026-08-14).
         key = (f"nonew-{report_id}" if kind == "NO_NEW"
                else f"standalone-{report_id}")
+        # WAITING wears the purple circle — the same color the Hub's approval
+        # pill uses (Megan 2026-08-18) — so the channel list reads at a glance:
+        # purple = waiting on a human checkmark, :pending: = someone is on it,
+        # ✅ = done. As a REACTION, never in the text.
         inc = _incident_post(cfg, key=key, title=title, body=parent,
                              details=reply, followup=[title] + parent,
                              label=f"*{name}* on {lbl}",
+                             reaction=("large_purple_circle"
+                                       if kind == "WAITING" else None),
                              dry_run=dry_run, tag=key)
         if inc:
             return True
@@ -1156,8 +1178,23 @@ def _as_date(value):
         return None
 
 
+def _approver_mentions() -> str:
+    """Real <@id> mentions for whoever's checkmark opens the approval gates.
+
+    Canonical list = captainship_drafts.review_gate.APPROVERS — the dict whose
+    ✅ actually releases the send, so pinging and permission can't drift apart.
+    Best-effort import with Eve pinned as the fallback: as of 2026-08-18 she is
+    the only approver in the channel (Megan), and a WAITING alert that pings
+    nobody just sits there."""
+    try:
+        from automations.captainship_drafts.review_gate import _mentions
+        return _mentions() or "<@U088E2KJEV8>"
+    except Exception:  # noqa: BLE001
+        return "<@U088E2KJEV8>"
+
+
 def _incident_post(cfg, *, key, title, body, details=None, followup=None,
-                   day=None, dry_run=False, tag="", label=""):
+                   day=None, dry_run=False, tag="", label="", reaction=None):
     """Post a problem as an INCIDENT: the first time it opens a top-level message,
     every repeat replies in that message's thread instead of adding another post
     (Eve 2026-08-14 — the channel had a new near-identical message per report per
@@ -1174,7 +1211,7 @@ def _incident_post(cfg, *, key, title, body, details=None, followup=None,
         return _inc.open_or_followup(key=key, title=title, body=body,
                                      details=details, followup=followup,
                                      label=label, channel=ch, day=day,
-                                     dry_run=dry_run)
+                                     reaction=reaction, dry_run=dry_run)
     except Exception as e:  # noqa: BLE001 — fall back to a plain post
         print(f"[notify] incident post failed ({tag or key}): {e}", flush=True)
         return None
