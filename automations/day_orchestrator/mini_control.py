@@ -3191,13 +3191,26 @@ def _action_incident_resolve(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't import incident_thread "
                        f"({type(e).__name__}: {str(e)[:90]})")
-    lines = [f":white_check_mark: *{key}* — RESOLVED."]
-    if note:
-        lines.append(note)
-    lines.append("_Closed by hand from `lucy incident_resolve`. If it happens "
-                 "again it opens a fresh post, not this thread._")
+    # A REPORT ID is as valid here as an incident key. mark_working already took
+    # both; this took only the key, so `incident_thread --resolve-report <id>`
+    # handed off from a laptop arrived as a bare id and died on "no OPEN
+    # incident for 'vantura-board-audit'" — the id is right, it just isn't the
+    # key (`drop-vantura-board-audit`), and the laptop can't translate it: the
+    # index that maps id → key lives on the machine that opened the thread.
+    # Same rule as mark_working: family prefix = a key, anything else = a report
+    # id, which resolve_report() expands across failure-/drop-/standalone-.
+    # (2026-08-18)
+    is_key = any(key.startswith(p) for p in inc._KEY_PREFIXES)
     try:
-        told = inc.resolve(key=key, lines=lines)
+        if is_key:
+            lines = [f":white_check_mark: *{key}* — RESOLVED."]
+            if note:
+                lines.append(note)
+            lines.append("_Closed by hand from `lucy incident_resolve`. If it "
+                         "happens again it opens a fresh post, not this thread._")
+            told = inc.resolve(key=key, lines=lines)
+        else:
+            told = inc.resolve_report(key, note=note)
     except Exception as e:  # noqa: BLE001 — resolve() swallows its own, but the
         # import-time client build can still raise (no token on this machine).
         return False, (f"resolve failed ({type(e).__name__}: {str(e)[:100]})")

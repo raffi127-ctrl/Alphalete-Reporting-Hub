@@ -218,6 +218,15 @@ _HISTORY_CACHE: Dict[str, list] = {}
 # about the numbers, not the outage) and `nonew-` (a benign "nothing today").
 # Merging those would hide a real question inside a failure thread.
 _FAMILY_PREFIXES = ("failure-", "drop-", "standalone-")
+# Findings are their OWN family, not members of the outage one: an audit that
+# found something is not an outage and must not land inside an outage thread
+# (test_findings_and_nonew_keep_their_own_thread). But they still have to find
+# EACH OTHER — see subject().
+_FINDING_PREFIXES = ("finding-",)
+# "does this string name a thread, or a report?" Every caller that asks needs
+# BOTH families, or a finding- key gets mistaken for a report id and expanded
+# into nonsense like 'failure-finding-vantura_board_audit'.
+_KEY_PREFIXES = _FAMILY_PREFIXES + _FINDING_PREFIXES
 # post_watch.WATCH_SUFFIX. Duplicated rather than imported: this module must stay
 # importable from anywhere (shared/ does not depend on day_orchestrator/), the
 # same reason CHANNEL_ID_CACHE is kept in sync by hand.
@@ -317,14 +326,33 @@ def subject(key: str) -> Optional[str]:
     drop / watch / failure alerts for one report (and its per-owner variants) find
     each other's thread.
 
-    None means "this key stands alone" (finding-, nonew-, or any key that isn't
-    failure-class), which keeps the old one-thread-per-key behaviour."""
+    Two SEPARATE namespaces, and they never meet: an outage key answers with the
+    bare report root, a finding key with "finding:<root>". So the drop / watch /
+    failure witnesses of one outage share a thread, the finding witnesses of one
+    audit share a DIFFERENT thread, and an audit finding is never filed inside an
+    outage post.
+
+    That second namespace is what 2026-08-18 was missing. The vantura board audit
+    announced the same two Stations findings TWICE the same morning: run_manifest
+    fired section_drop_alert (key `drop-vantura-board-audit`, the dashed manifest
+    id) and the orchestrator then fired notify._post_findings_corrections (key
+    `finding-vantura_board_audit`, the underscore registry id). Neither could see
+    the other — the first was outage-class, the second answered None here — so
+    the channel got two posts for one problem, which is exactly what the incident
+    families were built to stop.
+
+    None still means "this key stands alone" (nonew-, or any key in neither
+    family), which keeps the old one-thread-per-key behaviour."""
     for p in _FAMILY_PREFIXES:
         if key.startswith(p):
             rid = key[len(p):]
             if rid.endswith(_WATCH_SUFFIX):
                 rid = rid[:-len(_WATCH_SUFFIX)]
             return _root(_canon(rid)) or None
+    for p in _FINDING_PREFIXES:
+        if key.startswith(p):
+            root = _root(_canon(key[len(p):]))
+            return "finding:" + root if root else None
     return None
 
 def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
@@ -992,7 +1020,7 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
     day = day or dt.date.today()
     try:
         keys = ([key_or_report] if any(key_or_report.startswith(p)
-                                       for p in _FAMILY_PREFIXES)
+                                       for p in _KEY_PREFIXES)
                 else keys_for(key_or_report))
         if not scan:
             idx = _load_index() or {}
@@ -1033,12 +1061,18 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
 
 
 def keys_for(report_id: str) -> List[str]:
-    """Every failure-class key a report's alerts can be filed under — the
-    orchestrator's, the standalone watcher's and the drop alert's, in both the
-    underscore id and the dashed manifest id."""
+    """Every key a report's alerts can be filed under — the orchestrator's, the
+    standalone watcher's, the drop alert's AND the finding one, in both the
+    underscore id and the dashed manifest id.
+
+    finding- belongs here even though it is a separate FAMILY (see subject()):
+    the two questions are different. "Which thread does this witness join?" must
+    keep findings out of outage threads; "this report just ran clean, what did it
+    leave open?" wants every one of them, and a finding thread is precisely what a
+    clean run is supposed to close (2026-08-18)."""
     out: List[str] = []
     for rid in (report_id, _canon(report_id)):
-        for p in _FAMILY_PREFIXES:
+        for p in _KEY_PREFIXES:
             k = p + rid
             if k not in out:
                 out.append(k)
@@ -1156,8 +1190,17 @@ def main(argv=None) -> int:
         who = whoami() or "unknown"
         try:
             from automations.day_orchestrator import mini_control as mc
+            # machine=DEFAULT_MACHINE ("Lucy 1"), i.e. the 'Mini Control' tab the
+            # mini's poller actually drains. This used to say machine="Mini",
+            # which _control_tab_for() turns into a SEPARATE tab
+            # ('Mini Control - Mini') that no runner polls: every incident
+            # hand-off from a laptop sat there 'queued' forever — 10 rows
+            # between 2026-07-29 and 2026-08-18, so no :pending: and no ✅ ever
+            # appeared while the CLI printed "queued on the MINI". NOT
+            # machine=None either: that reads the LOCAL .machine-profile, which
+            # would route Lucy 2's hand-off to Lucy 2's own tab. (2026-08-18)
             mc.enqueue(act, "{} {}".format(arg, a.note).strip(),
-                       by="incident_thread-cli", machine="Mini")
+                       by="incident_thread-cli", machine=mc.DEFAULT_MACHINE)
         except Exception as e:  # noqa: BLE001
             print("this machine posts as {}, not Lucy, and the hand-off to the "
                   "mini failed ({}: {}). Run it on the mini: "

@@ -274,13 +274,39 @@ class IncidentThreadTest(unittest.TestCase):
     def test_findings_and_nonew_keep_their_own_thread(self):
         """A finding is about the NUMBERS of a report that ran; a nonew is
         benign. Neither belongs inside an outage thread."""
-        self.assertIsNone(inc.subject("finding-b2b_metrics"))
+        self.assertNotEqual(inc.subject("finding-b2b_metrics"),
+                            inc.subject("failure-b2b_metrics"))
         self.assertIsNone(inc.subject("nonew-applicant_push"))
         day = dt.date(2026, 8, 17)
         self._open_key("failure-b2b_metrics", day)
         res = self._open_key("finding-b2b_metrics", day)
         self.assertTrue(res["new"])
         self.assertEqual(len(self.c.top_level), 2)
+
+    def test_two_finding_witnesses_share_one_thread(self):
+        """2026-08-18: vantura_board_audit posted the same two Stations findings
+        TWICE in one morning — run_manifest's section_drop_alert under the dashed
+        manifest id, then the orchestrator's finding post under the underscore
+        registry id. Two layers, one problem, one thread."""
+        day = dt.date(2026, 8, 18)
+        first = self._open_key("finding-vantura-board-audit", day)
+        second = self._open_key("finding-vantura_board_audit", day)
+        self.assertFalse(second["new"])
+        self.assertEqual(second["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 1)
+        # …and it still isn't an outage: a real failure of the same report opens
+        # its own post rather than replying under the findings.
+        third = self._open_key("failure-vantura_board_audit", day)
+        self.assertTrue(third["new"])
+        self.assertEqual(len(self.c.top_level), 2)
+
+    def test_a_clean_run_closes_the_finding_thread(self):
+        """resolve_report() is "this just ran clean" — and a finding thread is
+        exactly what a clean run should close. keys_for() has to reach it."""
+        self.assertIn("finding-vantura_board_audit",
+                      inc.keys_for("vantura_board_audit"))
+        self.assertIn("finding-vantura-board-audit",
+                      inc.keys_for("vantura_board_audit"))
 
     def test_resolving_a_shared_thread_keeps_the_parents_own_marker(self):
         """The sibling that recovers closes the thread — but the marker must keep

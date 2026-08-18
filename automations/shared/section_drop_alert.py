@@ -373,6 +373,20 @@ def _compose_parts(report_id: str, failed: Sequence[str],
     return parent, detail
 
 
+def _incident_key(report_id: str, kind: str) -> str:
+    """Which incident thread this alert belongs to.
+
+    A `finding` is NOT a drop: nothing failed, an audit merely found something.
+    Filing it under `drop-` gave it an outage-family key, and the orchestrator's
+    own finding post (`finding-<id>`) could never see it — on 2026-08-18 the
+    vantura board audit posted the same two Stations findings twice in one
+    morning, once from each layer. Same prefix + subject()'s finding namespace =
+    one thread, whichever layer gets there first, and whichever id spelling it
+    uses (this side has the dashed manifest id, notify.py the underscore
+    registry one; subject() canonicalises both)."""
+    return "{}-{}".format("finding" if kind == "finding" else "drop", report_id)
+
+
 def resolved(report_id: str, *, dry_run: bool = False) -> bool:
     """This report just ran CLEAN — say so in its open alert thread and close it.
 
@@ -382,8 +396,12 @@ def resolved(report_id: str, *, dry_run: bool = False) -> bool:
     is no open incident: it reads a local index, not Slack. Never raises."""
     try:
         from automations.shared import incident_thread as _inc
-        key = "drop-{}".format(report_id)
-        if key not in _inc.open_keys():
+        open_now = _inc.open_keys()
+        # Whichever family this report's alert landed in — see _incident_key().
+        key = next((k for k in (_incident_key(report_id, "finding"),
+                                "drop-{}".format(report_id)) if k in open_now),
+                   None)
+        if key is None:
             return False
         return _inc.resolve(
             key=key,
@@ -439,7 +457,7 @@ def alert(*, report_id: str, failed: Sequence[str],
         posted = None
         try:
             from automations.shared import incident_thread as _inc
-            posted = _inc.open_or_followup(key="drop-{}".format(report_id),
+            posted = _inc.open_or_followup(key=_incident_key(report_id, kind),
                                            title=parent_lines[0],
                                            body=parent_lines[1:],
                                            details=detail, channel=CHANNEL,
