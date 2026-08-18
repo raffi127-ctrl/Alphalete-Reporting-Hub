@@ -168,6 +168,15 @@ REPORTS = [
     ("luis", "Luis Salazar (B2B)",
      pull.fetch_b2b_luis, fill.open_ws_b2b_luis,
      "owners_b2b_luis.csv", pull.parse_b2b, pull.B2B_PERIODS),
+    # Atef has no captain view in Tableau yet (he is not in the dropdown), so he
+    # rides the ALL-TEAMS pull narrowed to his three. Same file as the moved-rep
+    # backfill, so it costs no extra download when both run.
+    ("atef", "Atef Choudhury (B2B)",
+     pull.fetch_b2b_allteams, fill.open_ws_b2b_atef,
+     "owners_b2b_allteams.csv",
+     pull.make_b2b_captainship_parser(
+         ("Atef Choudhury", "Sabrina Alicea", "Dhey Patel")),
+     pull.B2B_PERIODS),
     # ----- NDS (Phase 3) -----
     ("khalil", "Khalil Mansour (NDS)",
      pull.fetch_nds_khalil, fill.open_ws_nds_khalil,
@@ -413,7 +422,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
 ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
-    "b2b":      ["carlos", "eveliz", "luis"],
+    "b2b":      ["carlos", "eveliz", "luis", "atef"],
     "nds":      ["khalil", "colten", "jairo"],
 }
 

@@ -83,6 +83,12 @@ def open_ws_wl_sahil():
 TAB_B2B_CARLOS = "Churn - Carlos Hidalgo (B2B)"
 TAB_B2B_EVELIZ = "Churn - Eveliz Wright (B2B)"
 TAB_B2B_LUIS   = "Churn - Luis Salazar (B2B)"   # renamed to match the others 2026-05-30
+# Atef's captainship split off Carlos' on 2026-08-18 (Atef + Sabrina Alicea +
+# Dhey Patel). The tab was created as a copy of Carlos' and then cut down to
+# those three. It fills off the ALL-TEAMS view for now — see
+# pull.make_b2b_captainship_parser: Atef is not in the Tableau captain dropdown
+# yet, so there is no per-captain view to point at.
+TAB_B2B_ATEF   = "Churn - Atef Choudhury (B2B)"
 
 
 def open_ws_b2b_carlos():
@@ -95,6 +101,10 @@ def open_ws_b2b_eveliz():
 
 def open_ws_b2b_luis():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_LUIS)
+
+
+def open_ws_b2b_atef():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_ATEF)
 
 
 # ----- NDS tabs (Phase 3) --------------------------------------------

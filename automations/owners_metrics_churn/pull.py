@@ -515,6 +515,56 @@ def parse_b2b(csv_path: Path) -> dict:
     return {"office_total": office_total, "reps": reps}
 
 
+def make_b2b_captainship_parser(roster):
+    """parse_b2b narrowed to ONE captainship's roster, off the all-teams view.
+
+    Why this exists (2026-08-18, Eve): Atef Choudhury got his own captainship,
+    but he is not in the Tableau captain dropdown yet, so `CHURNRATES` has no
+    `AtefCaptainship` custom view to point a per-captain pull at. His reps are
+    "sueltos" — spread through the org-wide view. ALLTEAMCHURN already lists
+    every B2B owner (it is the proven moved-rep backfill source), so read that
+    and keep only his three.
+
+    'Grand Total' from that file is the whole B2B org, which would print as his
+    "Captainship Avg" — the one number on the tab nobody would catch as wrong.
+    So office_total is RECOMPUTED from the roster's own disconnects over their
+    own activations, which is what a captainship average is.
+
+    Swap this for a plain per-captain fetch the day his view exists; the tab and
+    everything downstream stay as they are.
+    """
+    want = {_ni_shared._norm_name(n) if hasattr(_ni_shared, "_norm_name")
+            else " ".join(str(n).lower().split()) for n in roster}
+
+    def _key(n):
+        return " ".join(str(n or "").lower().split())
+
+    def _parse(csv_path: Path) -> dict:
+        parsed = parse_b2b(csv_path)
+        reps = {n: d for n, d in parsed["reps"].items() if _key(n) in want}
+        office: dict = {}
+        for period in B2B_PERIODS:
+            num = denom = 0
+            seen = False
+            for d in reps.values():
+                slot = d.get(period) or {}
+                if slot.get("num") is None and slot.get("denom") is None:
+                    continue
+                seen = True
+                num += slot.get("num") or 0
+                denom += slot.get("denom") or 0
+            if not seen:
+                continue
+            office[period] = {
+                "num": num, "denom": denom,
+                "pct": ("%.2f%%" % (100.0 * num / denom)) if denom else "0.00%",
+            }
+        return {"office_total": office, "reps": reps}
+
+    _parse.__name__ = "parse_b2b_captainship"
+    return _parse
+
+
 # ----- NDS (Phase 3) -------------------------------------------------
 # Different Tableau workbook (NDS-SNRES-ATT-OOFWorkbook/CHURNRATES)
 # AND a different worksheet name in the Crosstab dialog

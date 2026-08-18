@@ -289,7 +289,7 @@ TYPES = {
 TYPE_HINTS = {
     "RAF": "fiber", "WAYNE": "fiber", "STARR": "fiber",
     "CHAN": "fiber", "TONY": "fiber", "SAHIL": "fiber",
-    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b",
+    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b", "ATEF": "b2b",
     "KHALIL": "nds", "COLTEN": "nds", "JAIRO": "nds",
 }
 # Program tried first for a captainship with no hint. Fiber is the most common

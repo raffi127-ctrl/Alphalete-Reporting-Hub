@@ -33,6 +33,9 @@ from automations.alphalete_org_report.tableau_http import _norm_owner
 
 SECTIONS = ["Retail NL", "Retail Internet", "ATT Fiber Team",
             "ATT NDS Team", "B2B", "BOX"]
+# FALLBACK ONLY — the live list comes off the board (see _caps_on). Kept so a
+# discovery hiccup degrades to "compare the twelve we knew about" instead of
+# silently comparing no captainship at all.
 CAPS = ["RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL", "CARLOS",
         "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"]
 _ZERO = {"", "0", "0.0", "0%", "0.00%"}
@@ -41,6 +44,15 @@ _ZERO = {"", "0", "0.0", "0%", "0.00%"}
 def _cell(grid, r, c):
     return (grid[r][c].strip() if 0 <= r < len(grid)
             and 0 <= c < len(grid[r]) else "")
+
+
+def _caps_on(grid) -> list:
+    """Captainship titles to compare, discovered from the board itself."""
+    try:
+        found = [t for t, _hint in cap.discover_captainships(grid)]
+    except Exception:  # noqa: BLE001 — a compare must never die on discovery
+        found = []
+    return found or CAPS
 
 
 def _classify(c, v):
@@ -188,7 +200,13 @@ def run_compare(logfn=print) -> dict:
                          if amatch(n, cnorm) is None]
 
     # --- captainships ---
-    for t in CAPS:
+    # READ THE LIST OFF THE BOARD, don't hardcode it. The fill already discovers
+    # its captainships this way ("add or remove a block on the tab and the report
+    # follows automatically"), so a hardcoded list here meant a NEW captainship
+    # box would fill every morning and never once be checked against the VA tab —
+    # a silent coverage hole, which is the one thing this compare exists to close.
+    # Verified 2026-08-18: discovery returns the same twelve on both tabs.
+    for t in _caps_on(copy):
         try:
             ca = cap.find_captainship(copy, t)
             vca = cap.find_captainship(va, t)
