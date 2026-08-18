@@ -367,7 +367,8 @@ def _bg_check_has_new_emails():
         return None
 
 
-def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2):
+def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2,
+                         daily_window: int = 7, daily_min_days: int = 5):
     """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
     all' (no Activity row today). Derived from the shared log itself, so it needs no
     schedule config and self-maintains: a card that produced a row on at least
@@ -416,6 +417,70 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
                 start_hour = min(rec["hour_by_day"].values()) if rec["hour_by_day"] else 0
             out[cid] = {"start_hour": start_hour,
                         "machine": rec["machine"], "name": rec["name"]}
+
+    # ---- DAILY cadence (Megan 2026-08-18) -----------------------------------
+    # The same-weekday baseline above is built for WEEKLY reports, and it leaves a
+    # hole for a report that runs EVERY day: each weekday only becomes watched on
+    # its 3rd occurrence, so a young daily report is invisible on the weekdays it
+    # hasn't hit twice yet. Applicant Push went live 8/4 and died on Mon 8/17 with
+    # exactly ONE prior Monday (8/10) in the window — one short of min_days — so
+    # nothing alerted for its whole first dead day; the miss was only caught 8/18,
+    # when Tuesday finally had two. A daily report doesn't need a weekday argument:
+    # if it produced a row on most of the last `daily_window` CONSECUTIVE days it
+    # runs today too, whatever weekday today is.
+    #
+    # The "most of" slack (5 of 7, not 7 of 7) is what keeps this alive ACROSS an
+    # outage: requiring yesterday would make the watcher go quiet on day 2 of the
+    # very failure it's meant to report. It degrades the same way the weekday gate
+    # does — a report genuinely retired drops out within about a week — and every
+    # downstream exemption still applies (orchestrator ids, one-shot installers,
+    # standalone_weekdays off-days are all subtracted by the caller).
+    #
+    # DENSITY ALONE IS NOT ENOUGH: a Mon-Fri report also hits 5 of the last 7 days,
+    # so density by itself would have posted "didn't run today" for daily-focus and
+    # the 1st-round-recruiter % every Saturday and Sunday, plus car_rides and the
+    # applicant-tracker sync every Sunday (measured against the real Activity log
+    # before shipping this). So today's weekday must ALSO be proven: the report has
+    # to have run on the LAST occurrence of this weekday. That's one same-weekday
+    # hit instead of the weekday path's two — which is trustworthy here precisely
+    # because the daily density is backing it, and it's what closes the young-daily-
+    # report hole without inventing weekend runs that never existed.
+    daily_dates = {(target_date - _dt.timedelta(days=n)).isoformat()
+                   for n in range(1, daily_window + 1)}
+    dseen = {}
+    for r in rows:
+        started = str(r.get("Started At") or "").strip()
+        d = started[:10]
+        if d not in daily_dates:
+            continue
+        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        if not cid:
+            continue
+        rec = dseen.setdefault(cid, {"days": set(), "hour_by_day": {},
+                                     "machine": "", "name": cid})
+        rec["days"].add(d)
+        try:
+            h = _dt.datetime.fromisoformat(started).hour
+            rec["hour_by_day"][d] = min(h, rec["hour_by_day"].get(d, h))
+        except Exception:
+            pass
+        rec["machine"] = str(r.get("Machine") or "") or rec["machine"]
+        rec["name"] = str(r.get("Report Name") or cid) or rec["name"]
+    same_wd = (target_date - _dt.timedelta(days=7)).isoformat()
+    for cid, rec in dseen.items():
+        if cid in out or len(rec["days"]) < daily_min_days:
+            continue
+        if same_wd not in rec["days"]:
+            continue   # never ran on this weekday → it isn't a report of today's
+        # Anchor "usual start" to the MOST RECENT day it ran, same reasoning as the
+        # weekday path: a past day's one-off early test run must not drag the alert
+        # time hours earlier for a week.
+        newest = max(rec["days"])
+        start_hour = rec["hour_by_day"].get(newest)
+        if start_hour is None:
+            start_hour = min(rec["hour_by_day"].values()) if rec["hour_by_day"] else 0
+        out[cid] = {"start_hour": start_hour,
+                    "machine": rec["machine"], "name": rec["name"]}
     return out
 
 
