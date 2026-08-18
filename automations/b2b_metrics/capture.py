@@ -289,7 +289,8 @@ def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
         # week, not which owner, so a saved view still needs it (its saved week
         # is whatever was on screen the day it was saved).
         if week_field:
-            url = _with_week(url, week_field, today)
+            url = _with_week(url, week_field, today,
+                             meta.get("week_format", "mdy"))
         return url
     from urllib.parse import quote
     field = meta.get("filter_field", OWNER_FIELD)
@@ -297,26 +298,27 @@ def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
     base = o.view_url(view_key).split("?")[0]
     url = "{}?{}={}".format(base, quote(field), quote(value, safe="\\"))
     if week_field:
-        url = _with_week(url, week_field, today)
+        url = _with_week(url, week_field, today,
+                         meta.get("week_format", "mdy"))
     return url
 
 
-def _with_week(url: str, week_field: str, today: dt.date = None) -> str:
-    """Append the week pin to `url`. safe="" because quote() leaves '/' alone by
-    default and '8/16/2026' must not go into the query string with raw slashes.
+def _with_week(url: str, week_field: str, today: dt.date = None,
+               fmt: str = "mdy") -> str:
+    """Append the week pin to `url`.
 
-    ':revert=all' leads. Tableau Server restores the SIGNED-IN USER'S last-viewed
-    state of a view, and Lucy 2 signs in as Carlos — so whatever week he last
-    left OutofBoundsReport on is what every capture inherits, and a remembered
-    selection outranks a URL filter. revert resets to the published state first,
-    which is the only parameter that undoes it (rep_sales_fill.view_url found
-    the same thing on PRODUCTSALESSUMMARY4WK). ':refresh=yes' then forces the
-    re-query rather than serving a cached render of the old week."""
+    `fmt` because the two ATT week filters disagree: OutofBoundsReport takes ISO
+    and ignores M/D/YYYY, while PRODUCTSALESSUMMARY4WK (rep_sales_fill) is the
+    other way round and renders nothing at all on ISO. Each view names its own in
+    VIEW_META["week_format"] rather than one of them being "the" house format.
+
+    safe="" because quote() leaves '/' alone by default, and a raw-slashed
+    '8/16/2026' in a query string is not the same parameter."""
     from urllib.parse import quote
-    wv = week_value(report_week_ending(today))
+    we = report_week_ending(today)
+    wv = we.isoformat() if fmt == "iso" else week_value(we)
     sep = "&" if "?" in url else "?"
-    return "{}{}:revert=all&:refresh=yes&{}={}".format(
-        url, sep, quote(week_field), quote(wv, safe=""))
+    return "{}{}{}={}".format(url, sep, quote(week_field), quote(wv, safe=""))
 
 
 def _tableau_filter_value(value: str) -> str:

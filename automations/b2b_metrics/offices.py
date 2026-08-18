@@ -80,14 +80,22 @@ OWNER_OFFICE_FIELD = "Owner & Office"
 # it in VIEW_META["week_filter"]; capture computes the value.
 WEEK_FIELD = "Sale Date Week Ending (mon-sun)"
 
-# …EXCEPT on OutofBoundsReport, where the dashboard PRINTS that caption but the
-# field behind the dropdown is named differently. Read off the live filter
-# checkbox ids on Lucy 2, 2026-08-17:
-#   id='FI_sqlproxy.0pea…,none:Sale Date Week Ending (copy)_1603…:ok25…_147'
-# So the URL has to say "(copy)". Sending the printed caption is a silent no-op
-# — which is the whole reason the 8/17 post went out blank on the current week.
-# Per-view, because it is a per-workbook accident, not a house convention.
-WEEK_FIELD_OOB = "Sale Date Week Ending (copy)"
+# …EXCEPT on OutofBoundsReport, which needs BOTH halves spelled differently and
+# is a silent no-op if either is wrong. Proven against the live view on Lucy 2,
+# 2026-08-17, by trying the candidates one at a time:
+#
+#   FIELD: the dashboard PRINTS "Sale Date Week Ending (mon-sun)", but the
+#   filter's own DOM reports the field as below — caption AND bare "(copy)" are
+#   both inert. Read from the quick filter's checkbox ids (--probe-filters):
+#     field='Sale Date Week Ending (copy)_1603000001376837642'  117 items
+#
+#   VALUE: ISO (2026-08-16), NOT the M/D/YYYY the dropdown displays. This is the
+#   house rule for Tableau URL date filters holding [[reference_tableau_url_filters]]
+#   #1; rep_sales_fill's M/D/YYYY is the exception on ITS view, not the norm.
+#
+# Sent together the view moves and draws the completed week's out-of-area sales.
+# Per-view, because this is a per-workbook accident, not a house convention.
+WEEK_FIELD_OOB = "Sale Date Week Ending (copy)_1603000001376837642"
 
 # ---------------------------------------------------------------------------
 # SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
@@ -156,7 +164,8 @@ VIEW_META: dict = {
     # Per-view on purpose ([[reference_tableau_url_filters]] #3): the churn and
     # activation views are day-bucket cohorts and a week pin would wreck them.
     "out_of_bounds":   {"filter_field": OWNER_FIELD,
-                        "week_filter": WEEK_FIELD_OOB},
+                        "week_filter": WEEK_FIELD_OOB,
+                        "week_format": "iso"},
 }
 
 
