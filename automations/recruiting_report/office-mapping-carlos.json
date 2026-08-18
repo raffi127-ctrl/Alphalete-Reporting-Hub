@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 27,
+  "confirmed_count": 28,
   "needs_review_count": 0,
   "skip_count": 9,
   "confirmed": [
@@ -191,6 +191,15 @@
       "as_owner": "Noah Dubale",
       "as_company": "Oracle Acquisitions, Inc",
       "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Amos White Jr",
+      "office_id": "23362",
+      "as_owner": "Amos White Jr.",
+      "as_company": "Eagles Peak Enterprises, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "no AppStream office \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him and rows 2-23 stay blank. Tableau DOES list him as 'AMOS WHITE JR. [eagles peak enterprises, inc.]' in d2d1 / cancel / activation / churn / personal_production, so the OPT half fills. Added to Carlos's roster 2026-08-17 (Eve); visibility request to eStream/Smart Circle is open \u2014 move to 'confirmed' with the real office_id once granted. NOTE: as_owner keeps the trailing period, that's how Tableau spells it"
     }
   ],
   "needs_review": [],
@@ -201,7 +210,7 @@
     },
     {
       "sheet_tab": "NDS Template",
-      "reason": "admin tab (filtered before sync) — copied in from the Alphalete Org sheet 2026-08-17 for Noah Dubale, whose ICD is NDS, not B2B. Hidden in the Sheet"
+      "reason": "admin tab (filtered before sync) \u2014 copied in from the Alphalete Org sheet 2026-08-17 for Noah Dubale, whose ICD is NDS, not B2B. Hidden in the Sheet"
     },
     {
       "sheet_tab": "Adrian Sarabia",
@@ -239,14 +248,6 @@
       "was_office_id": "16744"
     }
   ],
-  "sales_only": [
-    {
-      "sheet_tab": "Amos White Jr",
-      "as_owner": "Amos White Jr.",
-      "as_company": "Eagles Peak Enterprises, Inc.",
-      "promote_when_visible": true,
-      "reason": "no AppStream office \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him and rows 2-23 stay blank. Tableau DOES list him as 'AMOS WHITE JR. [eagles peak enterprises, inc.]' in d2d1 / cancel / activation / churn / personal_production, so the OPT half fills. Added to Carlos's roster 2026-08-17 (Eve); visibility request to eStream/Smart Circle is open \u2014 move to 'confirmed' with the real office_id once granted. NOTE: as_owner keeps the trailing period, that's how Tableau spells it"
-    }
-  ],
-  "sales_only_count": 1
+  "sales_only": [],
+  "sales_only_count": 0
 }

@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 54,
+  "confirmed_count": 55,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -400,6 +400,15 @@
       "as_company": "A-List Acquisition LLC",
       "confidence": 1.0,
       "note": "Onboarded 2026-08-17 (Eve). Tab created that day from Template Fiber; week columns start WE 7/5/26. He was missing from all-offices.json until the list was refreshed live \u00e2\u20ac\u201d the cached copy was from 2026-07-28, before his office existed."
+    },
+    {
+      "sheet_tab": "Helen Assefaw (Vz)",
+      "office_id": "14459",
+      "as_owner": "Helen Assefaw",
+      "as_company": "Signature Solutions",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "Pesta\u00f1a renombrada 'Helen Assefaw' -> 'Helen Assefaw (Vz)' el 2026-08-17. VERIZON WIRELESS RESIDENCIAL (Edge Concepts, Falls Church VA, ownerville 13382), confirmado por su capit\u00e1n Starr Rodenhurst. Sin oficina en AppStream (chequeado en vivo contra las 237) y en NINGUNA vista Tableau del ATT program \u2014 no es permisos: esas vistas son D2D/B2B y ella es residencial, as\u00ed que opt_phase no puede llenarle nada NUNCA. La llena `automations.helen_residential.run` (lunes) desde tres mails semanales a alphaletereporting. Sigue ac\u00e1 para que la pesta\u00f1a quede categorizada (si no, run.py la pinta de azul) y para que `promote_when_visible` la promueva sola el d\u00eda que le den AppStream."
     }
   ],
   "needs_review": [],
@@ -525,13 +534,7 @@
     {
       "sheet_tab": "Jesus Hawthorne",
       "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
-    },
-    {
-      "sheet_tab": "Helen Assefaw (Vz)",
-      "as_owner": "Helen Assefaw",
-      "reason": "Pesta\u00f1a renombrada 'Helen Assefaw' -> 'Helen Assefaw (Vz)' el 2026-08-17. VERIZON WIRELESS RESIDENCIAL (Edge Concepts, Falls Church VA, ownerville 13382), confirmado por su capit\u00e1n Starr Rodenhurst. Sin oficina en AppStream (chequeado en vivo contra las 237) y en NINGUNA vista Tableau del ATT program \u2014 no es permisos: esas vistas son D2D/B2B y ella es residencial, as\u00ed que opt_phase no puede llenarle nada NUNCA. La llena `automations.helen_residential.run` (lunes) desde tres mails semanales a alphaletereporting. Sigue ac\u00e1 para que la pesta\u00f1a quede categorizada (si no, run.py la pinta de azul) y para que `promote_when_visible` la promueva sola el d\u00eda que le den AppStream.",
-      "promote_when_visible": true
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 2
 }
