@@ -3197,6 +3197,20 @@ def _action_incident_resolve(args: str) -> tuple[bool, str]:
     # incident for 'vantura-board-audit'" — the id is right, it just isn't the
     # key (`drop-vantura-board-audit`), and the laptop can't translate it: the
     # index that maps id → key lives on the machine that opened the thread.
+    # The poller is a LONG-LIVED process and incident_thread caches the channel
+    # history in a module global for the life of that process (_HISTORY_CACHE,
+    # invalidated only after IT posts something). A thread another machine opened
+    # after the poller booted is therefore invisible to the lookup below, which
+    # fails as "no OPEN incident" while the post is sitting right there. Drop the
+    # cache first — one extra conversations.history call per queued row, nothing
+    # next to silently swallowing a :pending: or a ✅.
+    #
+    # NOT confirmed as the cause of the 2026-08-18 outage: 5 hand-offs failed that
+    # day (drop-tableau-screenshots ×2, drop-tableau-screenshots-box,
+    # org-sales-board, drop-org-sales-board) and a restart_poller did NOT clear
+    # it, so something else is also wrong on that path. This closes a real
+    # staleness hole; it is not the whole fix, and that outage is still open.
+    inc._forget_history(inc.CHANNEL)
     # Same rule as mark_working: family prefix = a key, anything else = a report
     # id, which resolve_report() expands across failure-/drop-/standalone-.
     # (2026-08-18)
@@ -3248,6 +3262,20 @@ def _action_incident_working(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't import incident_thread "
                        f"({type(e).__name__}: {str(e)[:90]})")
+    # The poller is a LONG-LIVED process and incident_thread caches the channel
+    # history in a module global for the life of that process (_HISTORY_CACHE,
+    # invalidated only after IT posts something). A thread another machine opened
+    # after the poller booted is therefore invisible to the lookup below, which
+    # fails as "no OPEN incident" while the post is sitting right there. Drop the
+    # cache first — one extra conversations.history call per queued row, nothing
+    # next to silently swallowing a :pending: or a ✅.
+    #
+    # NOT confirmed as the cause of the 2026-08-18 outage: 5 hand-offs failed that
+    # day (drop-tableau-screenshots ×2, drop-tableau-screenshots-box,
+    # org-sales-board, drop-org-sales-board) and a restart_poller did NOT clear
+    # it, so something else is also wrong on that path. This closes a real
+    # staleness hole; it is not the whole fix, and that outage is still open.
+    inc._forget_history(inc.CHANNEL)
     try:
         ok = inc.mark_working(key, note=note)
     except Exception as e:  # noqa: BLE001
