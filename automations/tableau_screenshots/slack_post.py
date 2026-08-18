@@ -133,6 +133,30 @@ def _merge_onboarded_trackers() -> None:
 
 _merge_onboarded_trackers()
 
+# --- Paused orgs -------------------------------------------------------------
+# A channel we deliberately do NOT post to right now. This is NOT a failure and
+# must not read like one: while an org is here the run never loops it, so it
+# can't be counted as a dropped section and can't open a 🚨 incident every
+# morning for a decision we made on purpose.
+#
+# It lives HERE and not in onboarded_trackers.json on purpose:
+# tracker_onboarding.apply rebuilds every row of that file from the Sheet
+# (_row() in apply.py), so a flag hand-added there is wiped by the next --write.
+# The org's wiring is left intact below — un-pausing is deleting one line.
+#
+# drew / #precisionmanagement-nds-sales (C0A7871FAUV): conversations.history has
+# returned channel_not_found since 2026-08-15 06:53 from all three identities
+# (Lucy's poster token, Evelyn's, the Claude connector), so the dedup read that
+# guards the day's thread can't run and the trackers skipped the channel every
+# morning — four days of incidents, two reports each. Megan 2026-08-18:
+# "anything that's just precision management we can skip for now".
+PAUSED_ORGS: dict[str, str] = {
+    "drew": "#precisionmanagement-nds-sales unreadable since 2026-08-15 "
+            "(channel_not_found) — paused by Megan 2026-08-18",
+}
+for _paused_key in PAUSED_ORGS:
+    ORG_CHANNELS.pop(_paused_key, None)
+
 # Recompute after the merge so a newly onboarded org is in ORGS (the run loops it
 # and the Hub card lists it). No-op vs the line above when nothing was merged.
 ORGS = list(ORG_CHANNELS)
@@ -190,6 +214,9 @@ def channels_for(org: str) -> list:
     try:
         return list(ORG_CHANNELS[org])
     except KeyError:
+        if org in PAUSED_ORGS:
+            raise SystemExit(f"org {org!r} is PAUSED: {PAUSED_ORGS[org]}. "
+                             f"Delete its entry in PAUSED_ORGS to resume.")
         raise SystemExit(f"unknown org {org!r}. known: {', '.join(ORGS)}")
 
 

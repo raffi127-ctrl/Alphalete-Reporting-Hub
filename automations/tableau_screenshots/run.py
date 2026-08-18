@@ -142,6 +142,13 @@ def _select_orgs(orgs: str) -> list:
     want = [o.strip() for o in raw.split(",") if o.strip()]
     bad = [o for o in want if o not in sp.ORGS]
     if bad:
+        # A PAUSED org is not a typo — say so, or the next person re-onboards a
+        # channel we took out on purpose (slack_post.PAUSED_ORGS).
+        paused = [o for o in bad if o in getattr(sp, "PAUSED_ORGS", {})]
+        if paused:
+            raise SystemExit("--orgs: " + "; ".join(
+                f"{o} is PAUSED — {sp.PAUSED_ORGS[o]}" for o in paused)
+                + ". Delete its entry in slack_post.PAUSED_ORGS to resume.")
         raise SystemExit(f"--orgs: unknown org(s) {', '.join(bad)}. "
                          f"Known: {', '.join(sp.ORGS)} (or 'all')")
     return want
