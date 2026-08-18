@@ -619,7 +619,13 @@ def main(argv=None) -> int:
             pass
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
-    office_keys = list(_off.ORDER) if args.all_offices else [args.office]
+    # An EXPLICIT --office wins over --all. The orchestrator's base_args for
+    # this report are `--all --post`, and mini_control appends your flags to
+    # them — so `lucy rerun b2b_metrics --office carlos --only out_of_bounds
+    # --post --force` used to re-post that section into EVERY office's channel,
+    # Atef's and Jamis's included. Naming one office has to mean one office.
+    office_keys = ([args.office] if args.office
+                   else (list(_off.ORDER) if args.all_offices else [None]))
     # Publish to the Hub only for a REAL post run of the office's own channel —
     # not --dry-run, not a --channel verification post, and not a single-item
     # --only run (which would flip the whole card green off one item). One publish
