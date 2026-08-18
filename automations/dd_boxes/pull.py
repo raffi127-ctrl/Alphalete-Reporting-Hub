@@ -91,6 +91,17 @@ class Sources:
         from automations.recruiting_report import opt_phase
         from automations.shared.tableau_patchright import (
             tableau_session, download_crosstab_patchright)
+        # Everything already on disk? Then there is nothing to fetch, and
+        # opening a browser to download zero files just costs a Chrome launch
+        # (and can collide with another report on the CDP port).
+        pending = [s for s in weeks
+                   if not (self.out_dir / f"product_{s.isoformat()}.csv").exists()]
+        if not pending:
+            for s in weeks:
+                f = self.out_dir / f"product_{s.isoformat()}.csv"
+                if f.exists() and f.stat().st_size:
+                    self._week_csv[s] = f
+            return
         url, sheet = opt_phase.PRODUCT_SALES_VIEW_URL, opt_phase.PRODUCT_SALES_SHEET
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
