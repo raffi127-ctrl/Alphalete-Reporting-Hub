@@ -13,6 +13,12 @@ from . import config
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# Socket timeout for every Sheets call. google-auth's AuthorizedSession ships
+# with NO timeout, so a stalled connection blocks forever — and nothing above
+# this module was bounded either, which is one of the two ways the 2026-08-18
+# morning run burned its whole 25m without printing a single office.
+HTTP_TIMEOUT_S = 90
+
 # When True, every WRITE (set_cell / paste_block) is logged but not sent to the
 # Sheet -- the reports stay fully exercisable (they still open the browser and
 # read ApplicantStream) without touching production data. Set by each entry
@@ -22,7 +28,24 @@ DRY_RUN = False
 
 def _client():
     creds = Credentials.from_service_account_file(config.SERVICE_ACCOUNT_JSON, scopes=SCOPES)
-    return gspread.authorize(creds)
+    gc = gspread.authorize(creds)
+    # Give every request a socket timeout (see HTTP_TIMEOUT_S). Best-effort:
+    # gspread's internals are not ours, so a shape change degrades to today's
+    # behaviour instead of failing the report.
+    try:
+        sess = gc.session
+        if not getattr(sess, "_tracker_timeout_wrapped", False):
+            _request = sess.request
+
+            def _timed(method, url, *a, **kw):
+                kw.setdefault("timeout", HTTP_TIMEOUT_S)
+                return _request(method, url, *a, **kw)
+
+            sess.request = _timed
+            sess._tracker_timeout_wrapped = True
+    except Exception:  # noqa: BLE001 — a timeout wrapper must never block a run
+        pass
+    return gc
 
 
 def open_tab(tab_name: str):
@@ -44,15 +67,40 @@ def read_as_credentials() -> tuple[str, str]:
     return user, pwd
 
 
+# {(spreadsheet_id, worksheet_id, name_col): {name_lower: row}} for this process.
+_NAME_INDEX: dict = {}
+
+
+def clear_name_index() -> None:
+    """Drop the cached name→row maps (call if a run ever writes into a name
+    column — nothing does today)."""
+    _NAME_INDEX.clear()
+
+
 def find_row_by_name(ws, full_name: str, name_col: int = 1):
     """Return the 1-based row index whose cell in `name_col` matches full_name
-    (case-insensitive, trimmed), or None if not found."""
-    target = full_name.strip().lower()
-    values = ws.col_values(name_col)
-    for i, v in enumerate(values, start=1):
-        if v.strip().lower() == target:
-            return i
-    return None
+    (case-insensitive, trimmed), or None if not found.
+
+    The name column is read ONCE per run and indexed. It used to be a full
+    `col_values` API call PER APPLICANT: 17 offices x every second-round name
+    was hundreds of reads of a tab that has grown near Google's 40,207-row grid
+    cap, which is slow and burns the 60-reads/minute quota. Safe to cache — no
+    phase writes into the name column (morning writes H/I/J, evening AT/AU/R),
+    so the mapping can't go stale mid-run."""
+    # Key on the live worksheet object (open_tab is called once per run and the
+    # handle is reused), plus its sheet id/title so a recycled id can't hand
+    # back another tab's index. gspread's own id attributes moved between
+    # versions and the mini is on an older one, so don't depend on them.
+    key = (id(ws), getattr(ws, "id", None), getattr(ws, "title", None), name_col)
+    index = _NAME_INDEX.get(key)
+    if index is None:
+        index = {}
+        for i, v in enumerate(ws.col_values(name_col), start=1):
+            k = (v or "").strip().lower()
+            if k and k not in index:      # first row wins, as the scan did
+                index[k] = i
+        _NAME_INDEX[key] = index
+    return index.get(full_name.strip().lower())
 
 
 def set_cell(ws, row: int, col_letter: str, value):

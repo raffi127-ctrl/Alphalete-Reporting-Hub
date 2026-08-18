@@ -59,6 +59,16 @@ from . import sheets
 BASE = "https://applicantstream.com/index.cfm"
 PAGES = {"calendar": 102, "call_list": 501, "retention_details": 701}
 
+# Every locator/navigation gets an explicit ceiling, set on the page in
+# session(). Playwright's 30s default is per-call, and one office makes ~6 of
+# them, so an office of nothing-but-timeouts used to be able to outlive its
+# whole slice. These keep a single wedged page well inside run.OFFICE_BUDGET_S.
+DEFAULT_TIMEOUT_MS = 20_000
+NAV_TIMEOUT_MS = 30_000
+# A p=715 detail page is a plain server-rendered table, so waiting for the
+# table itself is both faster and stricter than any load-state wait.
+DETAIL_TABLE_TIMEOUT_MS = 20_000
+
 
 class OfficeNotAvailable(Exception):
     """The office picker answered, but this login has no such office.
@@ -333,10 +343,28 @@ class ApplicantStream:
         )
         if not href:
             return False
+        self._goto_detail(href)
+        return True
+
+    def _goto_detail(self, href: str) -> None:
+        """Open a p=715 detail page and wait for its TABLE, not for the network.
+
+        `networkidle` was the original wait here and it is the wrong one on this
+        site: ApplicantStream holds a socket.io connection open, so the network
+        never goes idle and every detail load rode its navigation timeout to the
+        end (goto_page was already fixed for exactly this reason, the three
+        detail loads were missed). domcontentloaded + an explicit wait for the
+        table is both faster and a real readiness check."""
         if not href.startswith("http"):
             href = "https://applicantstream.com/" + href.lstrip("/")
-        self.page.goto(href, wait_until="networkidle")
-        return True
+        self.page.goto(href, wait_until="domcontentloaded")
+        try:
+            self.page.wait_for_selector("table tr",
+                                        timeout=DETAIL_TABLE_TIMEOUT_MS)
+        except PWTimeout:
+            # No table at all: an empty/erroring detail page. Let the scrape
+            # return [] rather than raising — the caller logs "no rows".
+            pass
 
     def scrape_detail_table(self, n_data_cols: int) -> list[list[str]]:
         """Scrape the p=715 detail table: skip col 0 (row number) and the trailing
@@ -402,9 +430,7 @@ class ApplicantStream:
         href = self.detail_href(row_label, date_header)
         if not href:
             return set()
-        if not href.startswith("http"):
-            href = "https://applicantstream.com/" + href.lstrip("/")
-        self.page.goto(href, wait_until="networkidle")
+        self._goto_detail(href)
         rows = self.scrape_detail_table(2)  # first two data cols = First, Last
         return {f"{r[0]} {r[1]}".strip() for r in rows if len(r) >= 2}
 
@@ -415,9 +441,7 @@ class ApplicantStream:
         fewer page loads than reloading the report before every metric."""
         if not href:
             return []
-        if not href.startswith("http"):
-            href = "https://applicantstream.com/" + href.lstrip("/")
-        self.page.goto(href, wait_until="networkidle")
+        self._goto_detail(href)
         return self.scrape_detail_table(n_data_cols)
 
     def names_at(self, href: str) -> set[str]:
@@ -490,7 +514,25 @@ def session(headless: bool | None = None):
     with appstream_direct_session(verbose=True) as page:   # headed, like daily_focus
         app = ApplicantStream(headless=headless)
         app.page = page
+        # Ceilings for everything that follows — see DEFAULT_TIMEOUT_MS.
+        try:
+            page.set_default_timeout(DEFAULT_TIMEOUT_MS)
+            page.set_default_navigation_timeout(NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001 — a page that can't take them still runs
+            pass
         app._capture_token()            # rqst already in the console URL
+        # Fail FAST on a restored-but-dead session. appstream_direct_session
+        # already checks #searchMC before it hands the page over, so this is the
+        # second line of defence: a console that's logged out answers every
+        # office select with a timeout, which reads as 17 broken offices instead
+        # of one expired login.
+        if page.locator("#searchMC").count() == 0:
+            raise RuntimeError(
+                "AppStream session expired — the console came back without the "
+                "office switcher (#searchMC), so no office can be selected. "
+                "Re-auth once with:\n"
+                "    PYTHONPATH=. .venv/bin/python -m "
+                "automations.shared.tableau_patchright --appstream-login")
         yield app                       # the session cm owns the page — don't close
 
 

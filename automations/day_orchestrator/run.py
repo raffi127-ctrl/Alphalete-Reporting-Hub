@@ -916,7 +916,14 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     args = list(args_override) if args_override is not None else list(r.base_args)
-    cmd = [sys.executable, "-m", r.command[0]] + r.command[1:] + args
+    # -u is load-bearing, not tidiness. The child's stdout is this log FILE, so
+    # Python block-buffers it — and a timeout SIGKILL discards whatever is still
+    # in that buffer. applicant_sync_morning timed out on 2026-08-18 and left a
+    # 13-line log that stopped at the last flush=True line from a shared module,
+    # with none of the report's own per-office progress: no way to tell which
+    # office hung. Unbuffered, the log always reaches the moment of the kill.
+    # (mini_control already launches its reports with -u for the same reason.)
+    cmd = [sys.executable, "-u", "-m", r.command[0]] + r.command[1:] + args
     if dry_run:
         cmd.append("--dry-run")
     logf = LOG_DIR / f"orch-{target.isoformat()}-{r.report_id}.log"
