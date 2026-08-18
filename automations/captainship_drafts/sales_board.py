@@ -58,6 +58,13 @@ CAPTAIN_TOKEN = {
     "rafael": "raf", "wayne": "wayne", "starr": "starr", "chan": "chan",
     "tony": "tony", "sahil": "sahil", "carlos": "carlos", "eveliz": "eveliz",
     "luis": "luis", "khalil": "khalil", "colten": "colten", "jairo": "jairo",
+    # 2026-08-18: Atef split off Carlos'. A captain MISSING here does not just
+    # lose their own section — discover_blocks() walks the sheet top to bottom
+    # and ends each span at the next RECOGNISED header, so the block above
+    # silently swallows the unknown one. Atef's box sits under Luis', and Luis'
+    # email came out carrying Atef's tables. Same failure the Khalil/Sahil note
+    # below describes.
+    "atef": "atef",
 }
 
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
