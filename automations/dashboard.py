@@ -5873,6 +5873,11 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "applicant_sync",
         "self_scheduled": True,
         "daily_runs": 2,
+        # The 2 runs are the morning and evening PHASES, not two passes of the
+        # same job, so count them by name: re-running the morning must not tick
+        # the evening's box. Without this the card went green at 10:55am on
+        # 2026-08-18 off two morning re-runs (Megan). See _week_run_phases.
+        "phase_runs": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4, 5],
@@ -6921,6 +6926,40 @@ def _week_run_counts(week_days: list[dt.date]) -> dict:
     return counts
 
 
+def _week_run_phases(week_days: list[dt.date]) -> dict:
+    """{(report_id, date): {run name, ...}} — the DISTINCT names that succeeded.
+
+    For a card whose daily_runs are separate PHASES rather than repeats of one
+    pass, counting successful runs is the wrong measure: run the morning phase
+    twice (a failure plus its re-run, say) and the count reaches 2 and greens
+    the card with the evening pass still to come. That is what Applicant
+    Tracker Sync did on 2026-08-18 (Megan: "this shouldn't be green yet if it's
+    a phase report").
+
+    The two phases already log under different names — the orchestrator writes
+    its registry display_name ("Applicant Tracker: morning phase (4am)") and a
+    self-logging report writes its card name ("Applicant Tracker Sync") — so
+    the phase a run belongs to is readable without any new column. Counting
+    distinct names makes a repeated phase count once, which is what "orange
+    after morning, green after evening" actually means.
+
+    Opt in per card with `phase_runs: True`; every other daily_runs card keeps
+    counting passes (BG Check Sync's 8am/11:30am/4pm are the SAME name three
+    times and must still reach 3)."""
+    wanted = set(week_days)
+    names: dict = {}
+    for r in _all_runs_merged(days=8):
+        when = r.get("_dt")
+        if when is None or when.date() not in wanted:
+            continue
+        rid = r.get("report_id")
+        if not rid or (r.get("status") or "").lower() != "success":
+            continue
+        label = (r.get("report_name") or "").strip().lower()
+        names.setdefault((rid, when.date()), set()).add(label)
+    return names
+
+
 def _latest_run_summary(report_id: str) -> str | None:
     """Return compact text like 'Today · Megan · 1:06 AM', or None.
     Considers runs by any teammate, not just this machine.
@@ -7635,6 +7674,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
     _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
     _cal_statuses = _week_run_statuses(_week_days)
     _cal_counts = _week_run_counts(_week_days)
+    _cal_phases = _week_run_phases(_week_days)   # phase_runs cards only
     # Live "running now": actual subprocesses (active_runs.json + a ps match),
     # so the card shows a pulsing 🔄 for whatever is executing right now.
     try:
@@ -7710,18 +7750,24 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             return _ramp(_done, _n), _done
         return ("up" if _day == today else "miss"), _done
 
-    def _cal_status(_rid: str, _day: dt.date, _daily_runs: int = 1) -> str:
+    def _cal_status(_rid: str, _day: dt.date, _daily_runs: int = 1,
+                    _phase_runs: bool = False) -> str:
         """Per-card outcome for a day: ok / partial / progress / fail / miss / up.
 
         `_daily_runs` > 1 marks a card that fires several times a day. Those
         stay "progress" (amber) until the LAST pass of the day succeeds, so a
         card like BG Check Sync doesn't read done-and-green at 8am with the
-        11:30am and 4pm passes still to come."""
+        11:30am and 4pm passes still to come.
+
+        `_phase_runs` marks the passes as DISTINCT phases rather than repeats,
+        so re-running one phase can't fill the card on its own — see
+        _week_run_phases."""
         if _day > today:
             return "up"                       # future — hasn't run
         _s = _cal_statuses.get((_rid, _day))
         if _daily_runs > 1:
-            _done = _cal_counts.get((_rid, _day), 0)
+            _done = (len(_cal_phases.get((_rid, _day), ())) if _phase_runs
+                     else _cal_counts.get((_rid, _day), 0))
             if _done >= _daily_runs:
                 return "ok"                   # every pass landed → green
             if _done > 0:
@@ -7856,8 +7902,13 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                             _phases, _day, _r.get("approval_phase") or "")
                     else:
                         _dr_today = _expected_runs(_r, _day)
-                        _stat = _cal_status(_r["id"], _day, _dr_today)
-                        _phase_done = _cal_counts.get((_r["id"], _day), 0)
+                        _pr = bool(_r.get("phase_runs"))
+                        _stat = _cal_status(_r["id"], _day, _dr_today, _pr)
+                        # The "(1/2 done)" label has to count the same way the
+                        # colour does, or an amber pill reads "2/2 done".
+                        _phase_done = (
+                            len(_cal_phases.get((_r["id"], _day), ())) if _pr
+                            else _cal_counts.get((_r["id"], _day), 0))
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
