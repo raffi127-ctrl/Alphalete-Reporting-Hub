@@ -71,6 +71,15 @@ INACTIVE_ICDS: dict[str, str] = {
     # cancel / 100.00% activation). Already listed as an inactive rep absent
     # from the view in country_sales_board. Eve 2026-08-10: on the way out.
     "mason davis": "winding down — off the Metrics view since 2026-08-10 (Eve)",
+    # Starr's Team. Same shape as Mason Davis: 0-30 sat flat at 0.00% for five
+    # days (8/14-8/18), then 2026-08-19 both sections went blank at once — he
+    # dropped out of the Metrics pull entirely, not a filter that broke. Backed
+    # by the two-week zero rule the same morning: WE 08.09 and WE 08.16 both
+    # closed at 0 on Starr's Fiber boxes (output/org_board_zero_two_weeks_
+    # 2026-08-19.csv), so he came off the boards and is pinned in
+    # new_owners/captain_gate.EXCLUDE["Starr"]. Row stays for the history.
+    "jason strid": "winding down — off the Metrics view since 2026-08-19, "
+                   "two-week zero rule (Eve)",
 }
 
 
