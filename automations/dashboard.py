@@ -12744,6 +12744,12 @@ else:  # st.session_state.view == "user"
             # pill in the orange OPS color, regardless of run-status (its launchd
             # job doesn't report status back, so the default pill would read gray).
             "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Pending Enrollments Check — hourly 9 AM-10 PM safety net whose
+            # wrapper deliberately does NOT publish a Hub row per pass (14 rows a
+            # day would bury the once-daily reports), so no run-status ever comes
+            # back and the default pill reads white/gray. Permanent orange OPS
+            # pill like the other always-on cards. (Megan 2026-08-19)
+            "[class*='enrollment_pending_check__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Sara+ Issue Escalation is the same kind of background OPS automation
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
