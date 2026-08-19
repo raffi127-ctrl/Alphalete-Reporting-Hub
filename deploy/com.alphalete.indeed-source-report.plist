@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.indeed-source-report</string>
+
+    <!-- Refreshes the current month of the Indeed Ad Performance dashboard for
+         every tracked manager. Path is the laptop placeholder; on the mini,
+         install_agent.py rewrites it to that machine's repo path:
+         python -m automations.day_orchestrator.install_agent indeed-source-report -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/indeed_source_report.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 4:00am, 12:00pm, 5:00pm every day. Hour/Minute are machine LOCAL time;
+         the mini is Central. TIME KNOB lives here. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.indeed-source-report.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.indeed-source-report.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
