@@ -3294,9 +3294,12 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "other-office-knocks",
-        "name": "Knocks for Other Offices",
+        "name": "Knocks for Other Offices (#alphalete-sales)",
         "creator": "Eve",
-        "emoji": "🚪",
+        # 📸 like the other cards whose output IS a Slack image post, and the
+        # channel is in the name the way the per-office metrics cards carry
+        # theirs (Megan 2026-08-19).
+        "emoji": "📸",
         "color": "#C1651B",
         "category": "📊 Metrics",
         "description": "Posts the SAME Time Gaps + Total Knocks images the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. Two images per office, same layout and columns as Raf's.",
