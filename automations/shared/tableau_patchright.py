@@ -36,6 +36,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -147,6 +148,56 @@ except ImportError:            # Windows — no flock; keep the wait+retry behav
 
 _PROFILE_LOCK_WAIT_S = 1800.0  # wait up to 30min for a long report ahead of us
 _PROFILE_LOCK_POLL_S = 2.0
+# How often, while waiting, to re-check whether the thing holding this profile is
+# an ORPHAN Chrome rather than a live run. See _clear_orphan_holder.
+_ORPHAN_RECHECK_S = 60.0
+
+
+def _lock_holder(path) -> str:
+    """Best-effort 'pid 1234 (Google Chrome)' for whoever holds `path`, for the
+    log line only. Empty string when lsof isn't there or says nothing — this is
+    a diagnostic, never a decision."""
+    try:
+        out = subprocess.run(["lsof", "-t", str(path)], capture_output=True,
+                             text=True, timeout=10).stdout.split()
+    except Exception:          # noqa: BLE001 — diagnostics never raise
+        return ""
+    parts = []
+    for pid in out[:3]:
+        try:
+            cmd = subprocess.run(["ps", "-p", pid, "-o", "comm="],
+                                 capture_output=True, text=True,
+                                 timeout=10).stdout.strip()
+        except Exception:      # noqa: BLE001
+            cmd = ""
+        parts.append(f"pid {pid}" + (f" ({Path(cmd).name})" if cmd else ""))
+    return ", ".join(parts)
+
+
+def _clear_orphan_holder(profile_dir, *, verbose: bool, label: str) -> bool:
+    """Kill a Chrome of OURS that outlived its run and still holds `profile_dir`.
+
+    WHY (2026-08-19): a browser report killed at its timeout leaves its Chrome
+    behind, and that orphan keeps the profile — so the next run sits in the wait
+    below until ITS timeout kills it too, leaving one more orphan. Three
+    tableau_screenshots runs burned their full 30 minutes on this exact wait that
+    morning and the Country Trackers reached no channel at all. Nothing will ever
+    release an orphan's hold, so waiting for it is pure dead time.
+
+    ORPHANS ONLY (PPID 1, exact profile-dir name): a live sibling legitimately
+    holding the profile is still waited for — that wait is the whole point of the
+    lock. Best-effort and silent on failure; a cleanup that raises would take out
+    the run it was trying to rescue."""
+    try:
+        from automations.day_orchestrator import chrome_guard
+        freed = chrome_guard.unstick_profile(Path(profile_dir).name,
+                                             verbose=False)
+    except Exception:          # noqa: BLE001 — never let cleanup sink a launch
+        return False
+    if freed and verbose:
+        print(f"[{label}] the profile was held by an ORPHAN Chrome from a killed "
+              f"run (PID(s) {freed}) — closed it and taking the lock", flush=True)
+    return bool(freed)
 
 
 def _profile_lock_path(profile_dir) -> Path:
@@ -176,6 +227,7 @@ def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
         return None
     start = time.monotonic()
     announced = False
+    last_orphan_check = 0.0
     while True:
         try:
             _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
@@ -184,6 +236,15 @@ def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
                       flush=True)
             return fd
         except OSError:
+            # Held — but by WHAT? A live sibling is worth waiting for; a Chrome
+            # orphaned by a killed run never lets go, and waiting on it costs the
+            # caller its whole timeout. Check on the way in and once a minute
+            # after, not every poll (each check shells out to ps).
+            now = time.monotonic()
+            if not yield_fast and now - last_orphan_check >= _ORPHAN_RECHECK_S:
+                last_orphan_check = now
+                if _clear_orphan_holder(profile_dir, verbose=verbose, label=label):
+                    continue          # retry the flock immediately
             if time.monotonic() - start >= wait_s:
                 try:
                     os.close(fd)
@@ -194,9 +255,14 @@ def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
                           "— launching anyway (wait+retry will guard)", flush=True)
                 return None
             if verbose and not announced and not yield_fast:
-                print(f"[{label}] another run holds {path.name} — waiting for it "
-                      "to finish before launching (avoids a profile collision)",
-                      flush=True)
+                # NAME the holder: without it this line reads as "Tableau is
+                # slow" and sends you to the wrong place (2026-08-19).
+                who = _lock_holder(path)
+                print(f"[{label}] another run holds {path.name}"
+                      + (f" ({who})" if who else "")
+                      + " — waiting up to "
+                      f"{int(wait_s // 60)}m for it to finish before launching "
+                      "(avoids a profile collision)", flush=True)
                 announced = True
             time.sleep(_PROFILE_LOCK_POLL_S)
 

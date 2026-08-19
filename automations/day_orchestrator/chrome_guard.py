@@ -100,6 +100,92 @@ def close_stray_chrome(*, dry: bool = False, verbose: bool = True) -> List[int]:
         return []
 
 
+def profile_holder_pids(profile: str = ".browser_profile", *,
+                        orphans_only: bool = True) -> List[int]:
+    """PIDs of AUTOMATION Chrome browser processes holding `profile`.
+
+    The mirror image of _stray_human_chrome_pids: that one skips everything under
+    automations/uploaded because those are ours; this one wants exactly one of
+    ours — the Chrome that outlived its Python parent and still owns the
+    profile's ProcessSingleton.
+
+    Matched on the `--user-data-dir=` VALUE by EXACT directory name, never a
+    substring: '.browser_profile' must not also match the session holder's
+    '.browser_profile_holder' (killing the holder logs every report out).
+    Same rule mini_control's chrome_unstick action uses.
+
+    `orphans_only` (the default) additionally requires PPID 1 — reparented to
+    launchd, i.e. its Python/driver parent is gone. That distinction is what
+    makes this safe to fire automatically after a timeout: a run can time out
+    precisely because ANOTHER report legitimately holds the profile, and killing
+    that live report's Chrome would turn one late report into two broken ones.
+    An orphan has no parent left to break. The manual `lucy chrome_unstick`
+    stays unconditional — that one is a human deciding."""
+    if sys.platform != "darwin":
+        return []
+    try:
+        out = subprocess.run(["ps", "-Ao", "pid=,ppid=,command="],
+                             capture_output=True, text=True, timeout=15).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    pids: List[int] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if _CHROME_EXE not in line or "--type=" in line:
+            continue
+        udd = ""
+        for tok in line.split():
+            if tok.startswith("--user-data-dir="):
+                udd = tok.split("=", 1)[1]
+                break
+        if not udd or os.path.basename(udd.rstrip("/")) != profile:
+            continue
+        try:
+            pid, ppid = (int(x) for x in line.split(None, 2)[:2])
+        except ValueError:
+            continue
+        if orphans_only and ppid != 1:
+            continue
+        pids.append(pid)
+    return pids
+
+
+def unstick_profile(profile: str = ".browser_profile", *,
+                    verbose: bool = True) -> List[int]:
+    """Close any orphan automation Chrome still holding `profile`. Returns the
+    PIDs acted on ([] when there was nothing to do). Never raises.
+
+    WHY (Eve 2026-08-19): killing a browser report at its timeout does NOT take
+    its Chrome with it — Playwright's browser outlives the process group — so the
+    orphan keeps the shared profile's ProcessSingleton. The next run then waits
+    out the full 30-minute profile lock (tableau_patchright._PROFILE_LOCK_WAIT_S)
+    and gets killed at ITS timeout, leaving one more orphan. That loop cost the
+    whole 2026-08-19 morning: tableau_screenshots was killed at 04:52, 05:53,
+    06:50 and 07:30 and the Country Trackers reached zero channels. Clearing the
+    orphan at the moment of the kill is what breaks the cycle — the retry then
+    starts on a free profile instead of paying 30 minutes to fail again."""
+    pids = profile_holder_pids(profile)
+    if not pids:
+        return []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except Exception:  # noqa: BLE001
+            pass
+    time.sleep(3)
+    for pid in profile_holder_pids(profile):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except Exception:  # noqa: BLE001
+            pass
+    if verbose:
+        print(f"[chrome-guard] unstuck {profile!r}: closed PID(s) {pids}",
+              flush=True)
+    return pids
+
+
 if __name__ == "__main__":
     # Standalone: default DRY (list only) so you can confirm it targets the
     # right process on the mini before trusting it. Pass --close to act.

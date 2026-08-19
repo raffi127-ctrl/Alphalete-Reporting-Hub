@@ -44,6 +44,12 @@ LOG_DIR = REPO_ROOT / "output" / "logs"
 # Generous per-report cap so a hung report can't block the whole day.
 REPORT_TIMEOUT_S = 45 * 60
 
+# Prefix of the detail string _run_report returns when it KILLS a report at its
+# timeout. _attempt_report matches on it to fire the real-time timeout alert, so
+# the wording lives in ONE place — a reworded literal would silently switch that
+# alert off, which is exactly the kind of quiet the alert exists to end.
+TIMEOUT_DETAIL = "timed out after "
+
 # Max RUN attempts for a Tableau report before it goes terminal FAILED. Tableau
 # crosstab pulls flake transiently (download-button timeout, half-rendered viz);
 # a FRESH subprocess on the next circle-back pass re-auths and usually clears it.
@@ -287,6 +293,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not dry_run:
             from automations.day_orchestrator import chrome_guard
             chrome_guard.close_stray_chrome()
+            # And a Chrome of OURS orphaned by an earlier kill: it still holds
+            # the shared profile's ProcessSingleton, so the first browser report
+            # of the day would wait out the 30m profile lock and die at its own
+            # timeout (2026-08-19). Orphans only (PPID 1), so this can never
+            # take out a run that is legitimately using the profile.
+            chrome_guard.unstick_profile(verbose=False)
 
         ds = state.load_or_create(
             target.isoformat(),
@@ -501,6 +513,68 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
             continue
 
 
+def _alert_timeout_kill(ds, r, rs, detail, target, *, dry_run, simulate) -> None:
+    """Say it in #claudecorrections the MOMENT a report is killed at its timeout.
+
+    WHY (Eve 2026-08-19): tableau_screenshots was killed at 30m twice that
+    morning — 04:52→05:22 and 05:53→06:23 — and the channel never heard a word.
+    A retryable kill only sets STILL_TRYING, and the immediate failure alert
+    fires on TERMINAL failure, so a report burning its retries on 30-minute
+    hangs is invisible for hours; the trackers reached no channel at all and it
+    took a human noticing the missing post. A kill is never routine — it means a
+    run was cut off mid-flight — so it is worth a message even when a retry is
+    coming.
+
+    ONE per report per day (ds.timeout_alerts_sent), and it posts under the SAME
+    `failure-<report_id>` incident key the terminal alert uses, so the kill, any
+    later failure and the fix all live in one thread rather than three posts.
+    _attempt_report closes it if the report goes on to run clean.
+
+    Best-effort: an alert must never sink the batch it is describing."""
+    if simulate or r.report_id in ds.timeout_alerts_sent:
+        return
+    label = r.display_name or r.report_id
+    logname = f"orch-{target.isoformat()}-{r.report_id}"
+    retrying = (r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES)
+    # The HEADLINE goes in `title`, not in the body: incident_thread re-badges
+    # line ONE of the parent when the incident is resolved (_resolved_headline),
+    # so an empty title would stamp "✅ · *RESOLVED*" onto a blank line and leave
+    # the real headline unbadged. Same shape as notify's terminal alerts.
+    title = f":x: *{label}* — killed at its timeout"
+    lines = [
+        f"*Error:* {detail} (attempt {rs.attempts}/{MAX_RUN_RETRIES}) — it "
+        "wrote/posted nothing this run."
+        + (" A retry is queued for this pass." if retrying
+           else " Retries are exhausted — this is terminal for today."),
+        f"*Log:* `lucy logtail {logname}`",
+    ]
+    # Only for browser reports: on those, a timeout kill is far more often the
+    # machine than the report. An orphan Chrome keeps the ProcessSingleton on the
+    # shared profile, the next run burns the full 30-minute profile-lock wait
+    # (tableau_patchright._PROFILE_LOCK_WAIT_S) and dies here — and each kill
+    # leaves a fresh orphan, so it repeats every attempt until someone clears it.
+    if r.source_type in ("tableau", "appstream"):
+        lines += [
+            "",
+            "*Check this first* — an orphan Chrome holding the shared browser "
+            "profile makes every run wait out the 30m profile lock and then die "
+            "right here, once per attempt:",
+            "`lucy chrome_unstick --dry`  → lists the PIDs · `lucy chrome_unstick`"
+            "  → closes them",
+        ]
+    lines += ["", f"*Then re-run:* `lucy rerun {r.report_id}`"]
+    try:
+        from automations.day_orchestrator import notify
+        notify.post_alert(title, lines, tag=f"timeout-{r.report_id}",
+                          dry_run=dry_run, incident=f"failure-{r.report_id}",
+                          label=f"*{label}*")
+    except Exception as e:  # noqa: BLE001 — never let an alert sink the batch
+        _log(f"  ({r.report_id}: timeout alert failed: "
+             f"{type(e).__name__}: {str(e)[:80]})")
+    ds.timeout_alerts_sent.append(r.report_id)
+    state.save(ds)
+
+
 def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
     """Run ONE ready report: publish its Hub pill, run the subprocess, reconcile,
     set state. Returns the outcome:
@@ -525,6 +599,11 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
     ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
 
     if not ok:
+        # A kill at the timeout is announced the MOMENT it happens, retry or not
+        # (see _alert_timeout_kill) — the retry path below is otherwise silent.
+        if detail.startswith(TIMEOUT_DETAIL):
+            _alert_timeout_kill(ds, r, rs, detail, target,
+                                dry_run=dry_run, simulate=simulate)
         # A TABLEAU flake is retryable — a fresh subprocess re-auths Tableau, which
         # is what a manual rerun did to recover Fiber et al. (2026-07-08). Cap at
         # MAX_RUN_RETRIES, then go terminal FAILED. Keep the pill yellow across
@@ -577,6 +656,19 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
         mark_ran = True
         incomplete = True
 
+    # A kill earlier today opened a thread (see _alert_timeout_kill); the run that
+    # recovers has to close it, or the channel keeps showing solved work. Free
+    # when nothing is open — resolve_if_open reads a local index first.
+    if r.report_id in ds.timeout_alerts_sent and not (dry_run or simulate):
+        try:
+            from automations.shared import incident_thread as _inc
+            _inc.resolve_if_open(
+                f"failure-{r.report_id}",
+                what=f"*{r.display_name or r.report_id}*",
+                detail=f"Ran clean after the timeout kill — {recon.note}.")
+        except Exception:  # noqa: BLE001 — closing must never sink a good run
+            pass
+
     if mark_ran and not (dry_run or simulate):
         try:
             from automations.day_orchestrator import hub_publish
@@ -601,12 +693,21 @@ def _guard_chrome(r, *, dry_run, simulate) -> None:
     launch path gets the same protection. A human Chrome window opened after batch
     start single-instances with our automation Chrome and hangs every browser
     report (2026-07-04). Best-effort; a guard that crashes the batch is worse than
-    the collision. [[reference_chrome_collision_guard]]"""
+    the collision. [[reference_chrome_collision_guard]]
+
+    Also clears an ORPHAN automation Chrome still holding the shared browser
+    profile. A run killed at its timeout leaves one behind, and the profile's
+    ProcessSingleton makes the NEXT run wait out the full 30-minute lock and get
+    killed too — so without this one timeout costs every later attempt as well
+    (2026-08-19: four straight tableau_screenshots runs, trackers in no channel
+    all morning). Orphans only (PPID 1): a report legitimately holding the
+    profile right now is never touched."""
     if dry_run or simulate or r.source_type not in ("tableau", "appstream"):
         return
     try:
         from automations.day_orchestrator import chrome_guard
         chrome_guard.close_stray_chrome(verbose=False)
+        chrome_guard.unstick_profile(verbose=False)
     except Exception:  # noqa: BLE001 — a guard must never crash the batch
         pass
 
@@ -832,12 +933,7 @@ def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
     # browser report so one opened mid-run can't silently stall the batch
     # (2026-07-04: an open Chrome window stalled the whole 4am run).
     # [[reference_chrome_collision_guard]]
-    if not dry_run and not simulate and r.source_type in ("tableau", "appstream"):
-        try:
-            from automations.day_orchestrator import chrome_guard
-            chrome_guard.close_stray_chrome(verbose=False)
-        except Exception:  # noqa: BLE001 — a guard must never crash the batch
-            pass
+    _guard_chrome(r, dry_run=dry_run, simulate=simulate)
 
     # Readiness (Tableau-gated; AppStream/API immediately ready).
     # --simulate bypasses the gate to exercise the loop offline.
@@ -926,6 +1022,21 @@ def _kill_tree(proc) -> bool:
     return False
 
 
+def _already_running(module: str) -> list:
+    """PIDs already running `python -m <module>` on this machine ([] on Windows
+    or when pgrep isn't there). Best-effort: a guard that raises would take out
+    the batch it protects."""
+    if sys.platform == "win32":
+        return []
+    try:
+        out = subprocess.run(["pgrep", "-f", "-m {}".format(module)],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    me = str(os.getpid())
+    return [x for x in out.split() if x and x != me]
+
+
 def _run_report(r, target, *, dry_run, simulate, args_override=None):
     """Run a report as a subprocess. Returns (ok, detail).
 
@@ -938,6 +1049,17 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     args = list(args_override) if args_override is not None else list(r.base_args)
+    # A manual `lucy rerun` of this same report may already be in flight. Two
+    # copies of one browser report collide on the shared Chrome profile and BOTH
+    # lose — each waits in tableau_patchright's profile lock until its own
+    # timeout kills it (2026-08-19: five overlapping tableau_screenshots runs,
+    # no trackers posted anywhere). Yield: the run that's already going is the
+    # one with a chance of finishing, and this report stays retryable.
+    busy = _already_running(r.command[0])
+    if busy:
+        return False, ("already running here (pid {}) — a second copy would "
+                       "collide on the browser profile and both would time out"
+                       .format(", ".join(busy)))
     # -u is load-bearing, not tidiness. The child's stdout is this log FILE, so
     # Python block-buffers it — and a timeout SIGKILL discards whatever is still
     # in that buffer. applicant_sync_morning timed out on 2026-08-18 and left a
@@ -980,7 +1102,22 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
                          f"{'killed' if killed else 'SURVIVED SIGKILL (zombie)'} "
                          f"=====\n")
                 note = "" if killed else " (WARNING: group survived SIGKILL)"
-                return False, f"timed out after {timeout_s//60}m{note}"
+                # The process GROUP is gone, but a browser report's Chrome isn't
+                # in it — Playwright's Chrome outlives the kill and keeps the
+                # shared profile's ProcessSingleton, so the very next attempt
+                # waits out the 30m profile lock and dies here too, leaving one
+                # more orphan. Clear it now or the retries are guaranteed to
+                # repeat the same 30 minutes (Eve 2026-08-19).
+                if r.source_type in ("tableau", "appstream"):
+                    try:
+                        from automations.day_orchestrator import chrome_guard
+                        freed = chrome_guard.unstick_profile()
+                        if freed:
+                            lf.write(f"===== freed the browser profile: closed "
+                                     f"orphan Chrome PID(s) {freed} =====\n")
+                    except Exception:  # noqa: BLE001 — cleanup never re-kills a run
+                        pass
+                return False, f"{TIMEOUT_DETAIL}{timeout_s//60}m{note}"
         if rc == 0:
             return True, "exit 0"
         if rc == HOLD_EXIT_CODE:

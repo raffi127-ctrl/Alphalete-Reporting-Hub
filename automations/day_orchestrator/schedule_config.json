@@ -4219,7 +4219,7 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 30,
+      "timeout_minutes": 45,
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"

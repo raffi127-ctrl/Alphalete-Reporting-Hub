@@ -89,6 +89,11 @@ class DayState:
     # zero extra posts, and the channel reads as the current truth (Eve
     # 2026-08-13). Absent/empty for an alert that fell back to email.
     failure_alert_posts: Dict[str, dict] = field(default_factory=dict)
+    # report_ids whose TIMEOUT KILL we've already announced today. Separate from
+    # failure_alerts_sent on purpose: a kill fires while the report is still
+    # retryable (STILL_TRYING), long before — and often instead of — a terminal
+    # FAILED, so sharing that list would let whichever came first mute the other.
+    timeout_alerts_sent: List[str] = field(default_factory=list)
     reports: Dict[str, ReportState] = field(default_factory=dict)
 
     # ---- transitions ----
@@ -141,6 +146,7 @@ def load_or_create(date: str, report_ids_with_names: Dict[str, str]) -> DayState
                 session_alert_sent=raw.get("session_alert_sent", False),
                 failure_alerts_sent=list(raw.get("failure_alerts_sent", [])),
                 failure_alert_posts=dict(raw.get("failure_alert_posts", {})),
+                timeout_alerts_sent=list(raw.get("timeout_alerts_sent", [])),
                 reports=reports,
             )
             # Add any newly-scheduled reports not in the saved file.
@@ -168,6 +174,7 @@ def save(ds: DayState) -> None:
         "session_alert_sent": ds.session_alert_sent,
         "failure_alerts_sent": list(ds.failure_alerts_sent),
         "failure_alert_posts": dict(ds.failure_alert_posts),
+        "timeout_alerts_sent": list(ds.timeout_alerts_sent),
         "reports": {rid: asdict(rs) for rid, rs in ds.reports.items()},
     }
     tmp = p.with_suffix(".json.tmp")

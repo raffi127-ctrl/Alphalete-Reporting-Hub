@@ -298,6 +298,21 @@ def _write_log(path: Path, cmd: list[str], output: str) -> None:
         pass
 
 
+def _running_pids(module: str) -> list:
+    """PIDs already running `python -m <module>` on this machine ([] on Windows,
+    or when pgrep isn't available). Best-effort — a check that raises would take
+    down the rerun it is guarding."""
+    if sys.platform == "win32":
+        return []
+    try:
+        out = subprocess.run(["pgrep", "-f", "-m {}".format(module)],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception:          # noqa: BLE001
+        return []
+    me = str(os.getpid())
+    return [p for p in out.split() if p and p != me]
+
+
 def _action_rerun(args: str) -> tuple[bool, str]:
     """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
     it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
@@ -324,10 +339,34 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # manual rerun path bypassed that — so a rerun would just collide again. Run
     # the same guard here for tableau/appstream reports. Best-effort; a guard
     # that crashes the rerun is worse than the collision. [[reference_chrome_collision_guard]]
+    # NEVER a second copy of the same report. Two runs of one browser report
+    # collide on the shared Chrome profile and BOTH lose: each waits in
+    # tableau_patchright's profile lock (up to 30m) until its own timeout kills
+    # it. 2026-08-19: tableau_screenshots was started five times between 04:52
+    # and 07:39 — orchestrator retries and manual reruns overlapping — every one
+    # of them died on that wait and the Country Trackers reached no channel all
+    # morning. A rerun fired into a run that's already going doesn't heal the
+    # morning, it doubles the damage.
+    busy = _running_pids(r.command[0])
+    if busy:
+        return False, (f"{report_id} is ALREADY running here (pid "
+                       f"{', '.join(busy)}) — not starting a second copy: two "
+                       "runs collide on the shared Chrome profile and both time "
+                       "out. Wait for it to finish, or kill that pid first and "
+                       "re-queue.")
     if r.source_type in ("tableau", "appstream"):
         try:
             from automations.day_orchestrator import chrome_guard
             chrome_guard.close_stray_chrome()
+            # And an ORPHAN automation Chrome still holding the shared profile:
+            # its ProcessSingleton makes this rerun wait out the 30m profile lock
+            # and die at its timeout — which is what a rerun is trying to escape.
+            # On 2026-08-19 Megan had to run `lucy chrome_unstick` by hand
+            # between two reruns; do it here so the rerun is self-healing.
+            freed = chrome_guard.unstick_profile()
+            if freed:
+                print(f"  (freed the browser profile: orphan Chrome {freed})",
+                      flush=True)
         except Exception:  # noqa: BLE001 — a guard must never crash the rerun
             pass
     # -u (unbuffered) is load-bearing, not tidiness. The child's stdout is a
@@ -367,6 +406,24 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     ok, result = _run_cmd(cmd, timeout_s,
                           log_name=f"rerun-{stamp}-{report_id}.log",
                           env={"HUB_REPORT_ID": str(report_id)})
+
+    # A browser report killed at its timeout leaves its Chrome behind, still
+    # holding the shared profile — so the NEXT rerun waits out the 30m profile
+    # lock and dies the same way, once per attempt. On 2026-08-19 that loop ate
+    # four consecutive tableau_screenshots runs (two orchestrator, two rerun) and
+    # the trackers reached no channel all morning. Clear it here so a re-run is a
+    # real second chance, not a repeat of the same 30 minutes. Orphans only (PPID
+    # 1): a run can time out BECAUSE another report legitimately holds the
+    # profile, and that one must not be killed.
+    if not ok and result.startswith("timed out") \
+            and r.source_type in ("tableau", "appstream"):
+        try:
+            from automations.day_orchestrator import chrome_guard
+            freed = chrome_guard.unstick_profile()
+            if freed:
+                result += f" · freed the browser profile (orphan Chrome {freed})"
+        except Exception:  # noqa: BLE001 — cleanup must never mask the result
+            pass
 
     # Close the pill: flip the SAME running row (via run_id) to success/failed so
     # it never hangs yellow. Mirrors the orchestrator, which marks DONE *and*
