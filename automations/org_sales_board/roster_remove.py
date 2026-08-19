@@ -42,10 +42,15 @@ table would leave 1,2,4. In practice the boards are sorted desc and a 0-seller
 sits at the bottom, but this renumbers every touched leaderboard/daily table
 1..N anyway rather than relying on that.
 
-DELETION ALONE DOES NOT STICK. `roster_sync.auto_insert_missing` re-creates a
-copy row for anyone still on the VA's board, so a removal here lives exactly one
-run unless the name also goes into `roster_sync.EXCLUDE` (and the All Campaigns
-board's own EXCLUDE). --apply refuses to run for a name that isn't excluded yet.
+DELETION ALONE DOES NOT STICK — but check WHICH list. A removed rep is still on
+their captain's Tableau team, so the daily captainship reports see a name with
+no board row and propose them through `new_owners/captain_gate.py`; one tick
+puts them back. `captain_gate.EXCLUDE`, keyed BY CAPTAIN, is what stops that,
+and --apply refuses to run for a captainship rep not pinned there yet.
+(`roster_sync.EXCLUDE` was the guard while the VA-board self-heal was live. That
+self-heal is retired and the list is inert — a written record, not a defence.)
+The campaign half is different: `new_owners/hook.py` only adds someone a human
+banked AND who then sold, so a campaign row cannot come back on its own.
 [[project_org-board-roster-selfheal-resurrects-deletions]]
 
     python -m automations.org_sales_board.roster_remove --names "A|B"   # dry-run
@@ -211,8 +216,34 @@ def _snapshot(ws, grid, logfn=print) -> None:
     logfn(f"  snapshot: froze {rows}x{cols} of {ws.title!r} into {BACKUP_TAB!r} @ {stamp}")
 
 
-def _excluded(name: str) -> bool:
-    return norm(name) in {norm(x) for x in roster_sync.EXCLUDE}
+def captains_of(rows) -> set:
+    """The captainships a set of plan rows actually belongs to.
+
+    LEADERBOARD ROWS ONLY, and that restriction is load-bearing. The other two
+    kinds name things that are not a captainship roster:
+      * a daily block's banner is the bare 'CAPTAIN TEAM' header — no name in it
+      * the cross-cutting delta boxes ('RAF SPECIAL TEAM', "TRANG'S ORG") carry
+        a captain's first name while listing reps from several captainships.
+        Kevin Driggs sits in RAF SPECIAL TEAM but is Carlos' rep; asking for a
+        pin under Raf would be asking for the wrong thing.
+    The leaderboard's '<X>'s Captain Team' banner is the roster the daily
+    captainship reports actually pull, which is what the gate proposes from."""
+    from automations.new_owners.captain_watch import captain_name
+    return {captain_name(h["owner"]) for h in rows
+            if h["kind"] == "leaderboard" and h["owner"] != "ALPHALETE ORG"}
+
+
+def _pinned(name: str, rows) -> bool:
+    """Is this rep pinned out of every captainship we're removing them from?
+
+    The live guard is per-captain, so a rep cold in Tony's boxes has to be
+    pinned under 'Tony' — an entry under another captain proves nothing about
+    Tony's gate, and that scoping is the rule itself (cold in one campaign,
+    still selling another). A purely campaign-section removal has no gate to
+    satisfy: hook.py only adds a banked owner who has actually sold."""
+    from automations.new_owners import captain_gate as cg
+    caps = captains_of(rows)
+    return all(cg._excluded(c, name) for c in caps) if caps else True
 
 
 def main(argv=None) -> int:
@@ -222,8 +253,8 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--tab", default=SANDBOX_TAB)
     ap.add_argument("--allow-unexcluded", action="store_true",
-                    help="delete even for names missing from roster_sync.EXCLUDE "
-                         "(they WILL be re-inserted by the next run's self-heal)")
+                    help="delete even for a captainship rep not pinned in "
+                         "captain_gate.EXCLUDE (the gate WILL offer them back)")
     args = ap.parse_args(argv)
     names = [n.strip() for n in args.names.split("|") if n.strip()]
 
@@ -235,7 +266,8 @@ def main(argv=None) -> int:
     print(f"=== roster_remove — {args.tab!r} ({'APPLY' if args.apply else 'dry-run'})")
     for n in names:
         rows = [h for h in plan if h["asked"] == n]
-        mark = "" if _excluded(n) else "   ⚠ NOT in roster_sync.EXCLUDE"
+        mark = ("" if _pinned(n, rows)
+                else "   ⚠ sin pin en captain_gate.EXCLUDE")
         print(f"\n{n}  — {len(rows)} fila(s){mark}")
         for h in sorted(rows, key=lambda x: x["row0"]):
             print(f"   r{h['row0'] + 1:<6} {h['kind']:<12} {h['owner'][:24]:<25} {h['table'][:34]}")
@@ -247,10 +279,12 @@ def main(argv=None) -> int:
         print(f"\n{len(plan)} fila(s) se borrarían. dry-run — nada escrito.")
         return 0
 
-    unexcluded = [n for n in found if not _excluded(n)]
-    if unexcluded and not args.allow_unexcluded:
-        print(f"\nABORTADO: {', '.join(unexcluded)} no está(n) en roster_sync.EXCLUDE — "
-              f"el self-heal los repondría en la próxima corrida. Agregalos ahí "
+    unpinned = [n for n in found
+                if not _pinned(n, [h for h in plan if h["asked"] == n])]
+    if unpinned and not args.allow_unexcluded:
+        print(f"\nABORTADO: {', '.join(unpinned)} no está(n) pineado(s) en "
+              f"new_owners.captain_gate.EXCLUDE bajo su capitán — el gate diario "
+              f"los va a volver a ofrecer y un ✅ los repone. Agregalos ahí "
               f"(o pasá --allow-unexcluded si sabés lo que hacés).")
         return 2
 

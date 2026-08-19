@@ -53,11 +53,32 @@ PENDING = "awaiting ✅"
 # entries once Tableau is corrected — a name here that no longer shows under
 # that captain is harmless, just dead weight.
 #
-# The sibling mechanism (the VA-board self-heal) has its own list:
-# org_sales_board.roster_sync.EXCLUDE.
+# THIS IS THE ONLY LIVE GUARD. The VA-board self-heal that used to share the job
+# (org_sales_board.roster_sync) has had no callers since cap_insert replaced it —
+# its EXCLUDE list is now just a record of past decisions and stops nothing.
+#
+# The 2026-08-19 block is the two-week zero rule (Eve): a rep at a literal 0 for
+# two closed weeks comes off that campaign's boxes. They are still on their
+# captain's Tableau team, so every daily captainship report sees a name with no
+# board row and proposes them here — which is exactly the shape this list
+# guards. Without the entry the removal would be offered back to Evelyn every
+# morning until someone ticked it.
+#
+# Keyed by captain, and that scoping is the point: the rule is PER CAMPAIGN.
+# Kevin Driggs and Selena Powers are pinned out of the captainship they went
+# cold in, not out of the board — if either turns up selling another campaign,
+# that campaign's half must still be able to add them.
 EXCLUDE: Dict[str, tuple] = {
     "Carlos": ("Atef Choudhury", "Sabrina Alicea",
-               "Joe Eckhart", "Joseph Eckhart"),
+               "Joe Eckhart", "Joseph Eckhart",
+               # two-week zero rule, 2026-08-19
+               "Ryan Kabbes", "Kevin Driggs"),
+    "Raf":    ("Edgar Muniz II",),           # 2026-08-19
+    "Wayne":  ("Mason Davis",),              # 2026-08-19
+    "Starr":  ("Jason Strid",),              # 2026-08-19
+    "Tony":   ("Melik El Jaiez", "Aden Berhane"),        # 2026-08-19
+    "Khalil": ("Jimmy Bonilla", "Ayleen Gonzalez"),      # 2026-08-19
+    "Colten": ("Javeon Lara", "Selena Powers"),          # 2026-08-19
 }
 
 
