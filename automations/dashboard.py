@@ -1726,11 +1726,17 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=893154737#gid=893154737"),
+        # It does NOT run in the 4am batch — it has its own agent,
+        # com.alphalete.owner-showdown-daily, firing at 09:00. self_scheduled
+        # puts it under ⏰ TIME SET REPORTS with its real time on the pill
+        # instead of sitting in the morning batch claiming "4 AM"
+        # (Megan 2026-08-19).
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
-            "time": "4 AM flow (when data's ready)",
+            "time": "9:00 AM",
             # Pill text: makes clear the Sunday run also emails the standings.
-            "time_label": "4 AM daily · 📧 emails standings each Sunday",
+            "time_label": "9 AM daily · 📧 emails standings each Sunday",
             "estimated_minutes": 3,
         },
         "description": (

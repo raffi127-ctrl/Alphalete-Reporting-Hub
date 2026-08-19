@@ -3431,7 +3431,7 @@
       "timeout_minutes": 5
     },
     "daily_rep_breakdown": {
-      "order": 16,
+      "_order_note": "NO explicit order ON PURPOSE (Megan 2026-08-19). registry._FLOW_LAST already marks this dead-last via flow_rank 2, but `order` is the PRIMARY sort key - an explicit order:16 overrode that and put it 40th of 48 with eight reports after it. Leaving order unset drops it to the 10_000 default so flow_rank decides, which is what pins it genuinely last.",
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",
       "source_type": "tableau",
