@@ -60,6 +60,27 @@ def completed_week_ending(today: dt.date = None) -> dt.date:
     return week_ending(today - dt.timedelta(days=1))
 
 
+def recent_week_endings(today: dt.date = None, count: int = 1) -> list:
+    """The `count` most recent Mon-Sun weeks to report on, NEWEST FIRST.
+
+    `count=1` is completed_week_ending() — unchanged, so every existing
+    week-pinned view keeps its exact behaviour. `count=3` adds the two weeks
+    before it: Carlos 2026-08-19 asked for the Out of Bounds report to show
+    "the last three weeks, so the current week and the two weeks prior, so we
+    can see all of the sales for those weeks".
+
+    Rolling, never pinned: a saved Tableau view with three dates ticked freezes
+    on those dates and silently reports a stale window from the next Monday on.
+    Computing it per run is what keeps it moving.
+
+      Wed 8/19, count=3 -> [8/23, 8/16, 8/9]
+
+    A wider window also defuses the Monday blank this module exists for: even
+    when the newest week has no finalized sales yet, the two behind it do."""
+    newest = completed_week_ending(today)
+    return [newest - dt.timedelta(days=7 * i) for i in range(max(1, count))]
+
+
 def week_value(sunday: dt.date) -> str:
     """'8/16/2026' — how the ATT week dropdowns spell a week.
 

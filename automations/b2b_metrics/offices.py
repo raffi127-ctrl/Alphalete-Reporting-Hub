@@ -163,9 +163,16 @@ VIEW_META: dict = {
     # week and box_order_log's stale window.
     # Per-view on purpose ([[reference_tableau_url_filters]] #3): the churn and
     # activation views are day-bucket cohorts and a week pin would wreck them.
+    # week_count 3 (Carlos 2026-08-19, in #l10-alphalete): "can you have it
+    # select the last three weeks, so the current week and the two weeks prior,
+    # so we can see all of the sales for those weeks". The window ROLLS — it is
+    # computed per run (report_week.recent_week_endings), not ticked into a
+    # saved view, which would freeze on today's three dates and go stale next
+    # Monday. Only this view is multi-week; everything else stays at 1.
     "out_of_bounds":   {"filter_field": OWNER_FIELD,
                         "week_filter": WEEK_FIELD_OOB,
-                        "week_format": "iso"},
+                        "week_format": "iso",
+                        "week_count": 3},
 }
 
 

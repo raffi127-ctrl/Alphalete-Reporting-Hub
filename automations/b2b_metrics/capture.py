@@ -65,6 +65,7 @@ class WeekFilterNotApplied(Exception):
 # here because this module's callers already import them from it.
 from automations.shared.report_week import (          # noqa: E402
     completed_week_ending as report_week_ending,
+    recent_week_endings,
     week_ending, week_value, week_value_variants,
 )
 
@@ -433,8 +434,13 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
         return False
 
 
-def _select_week(page, want: dt.date, log=print) -> bool:
+def _select_week(page, want, log=print) -> bool:
     """Drive the dashboard's week dropdown to `want`. Returns True if it moved.
+
+    `want` is a date OR a list of dates (newest first). A list ticks EVERY week
+    given and unticks every other date, so the view shows one multi-week window
+    — Carlos's three-week Out of Bounds ask. A bare date behaves exactly as it
+    always did, so the single-week views are untouched.
 
     WHY NOT THE URL. On OutofBoundsReport the `?Sale Date Week Ending
     (mon-sun)=` parameter is inert — proved 2026-08-17 against the live view
@@ -454,7 +460,11 @@ def _select_week(page, want: dt.date, log=print) -> bool:
 
     from automations.b2b_quality.run import _IFRAME
     fr = page.frame_locator(_IFRAME)
-    targets = week_value_variants(want)
+    wants = list(want) if isinstance(want, (list, tuple)) else [want]
+    # Every spelling of every wanted week — what a menu item is matched against.
+    targets = tuple(v for w in wants for v in week_value_variants(w))
+    # The primary (newest) week, for the log lines and the single-week shortcut.
+    targets_primary = week_value_variants(wants[0])
 
     boxes = fr.locator(".tabComboBox")
     idx, cur = None, ""
@@ -469,10 +479,15 @@ def _select_week(page, want: dt.date, log=print) -> bool:
     if idx is None:
         log("   ⚠ week dropdown not found on the dashboard")
         return False
-    if cur in targets:
+    # Single week only: if the control already reads it, there is nothing to do.
+    # A multi-week window can NEVER short-circuit here — the control collapses to
+    # "(Multiple values)" and never names the individual weeks, so the only
+    # honest check is to open the menu and read the checkboxes.
+    if len(wants) == 1 and cur in targets_primary:
         log("   week dropdown already on {}".format(cur))
         return True
-    log("   week dropdown is on {} — selecting {}".format(cur, targets[0]))
+    log("   week dropdown is on {} — selecting {}".format(
+        cur, ", ".join(week_value(w) for w in wants)))
     # OPEN. A .tabComboBox is a composite: the value label, a name container and
     # the arrow button. Which of them actually opens the menu differs by Tableau
     # build, so try each, and stop as soon as menu items appear.
@@ -553,9 +568,18 @@ def _select_week(page, want: dt.date, log=print) -> bool:
                     j, texts[j], (loc.nth(j).get_attribute("id") or "")[:120]))
             except Exception:  # noqa: BLE001
                 pass
-        pick = next((j for j, t in enumerate(texts) if t in targets), None)
-        if pick is None:
+        picks = [j for j, t in enumerate(texts) if t in targets]
+        if not picks:
             continue
+        pick = picks[0]
+        if len(picks) < len(wants):
+            # Say which weeks the dropdown does not offer rather than quietly
+            # rendering a narrower window than Carlos asked for.
+            got = {texts[j] for j in picks}
+            log("   [week] only {}/{} wanted week(s) offered — missing {}".format(
+                len(picks), len(wants),
+                ", ".join(week_value(w) for w in wants
+                          if not any(v in got for v in week_value_variants(w)))))
         # This is a MULTI-SELECT checkbox list (it carries an "(All)" item), so
         # picking a week is two moves: check the one we want, then uncheck the
         # week it was on. Check FIRST — Tableau re-selects everything if the
@@ -578,12 +602,21 @@ def _select_week(page, want: dt.date, log=print) -> bool:
             except Exception:  # noqa: BLE001
                 return False
 
-        if not _set(pick, True):
-            log("   ⚠ {} would not check".format(targets[0]))
+        # Check EVERY wanted week before unchecking anything (Tableau re-selects
+        # the whole list if the last checked value is cleared).
+        checked = []
+        for j in picks:
+            if _set(j, True):
+                checked.append(j)
+                log("   [week] checked {}".format(texts[j]))
+            else:
+                log("   ⚠ {} would not check".format(texts[j]))
+        if not checked:
             continue
         import re as _re
+        keep = set(checked)
         for j, t in enumerate(texts):
-            if j == pick or not _re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", t):
+            if j in keep or not _re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", t):
                 continue
             try:
                 if loc.nth(j).get_attribute("aria-checked") == "true":
@@ -596,18 +629,38 @@ def _select_week(page, want: dt.date, log=print) -> bool:
         # apply control is pressed — which is exactly what the first keyboard
         # pass looked like: 8/23 unchecked in the DOM, the view still drawing
         # 8/23. Press it if it's there; harmless when it isn't.
+        # The LABEL selectors matter most: this dropdown's apply control carries
+        # no tabApplyButton class and no aria-label (proved 2026-08-19 — the
+        # three-week pick staged correctly, nothing pressed apply, and the menu
+        # stayed OPEN over the toolbar, so Download→Image then timed out three
+        # times). Match the visible word, and CLICK it — unlike the checkboxes,
+        # the apply control is a real button that takes a click.
+        applied = False
         for asel in (".tabApplyButton", ".ApplyButton",
-                     "[role='button'][aria-label*='Apply']"):
+                     "[role='button'][aria-label*='Apply']",
+                     "[role='button']:has-text('Apply')",
+                     "button:has-text('Apply')",
+                     "text=\"Apply\""):
             try:
                 btn = fr.locator(asel).first
-                if btn.count():
+                if not btn.count():
+                    continue
+                try:
+                    btn.click(timeout=10_000)
+                except Exception:  # noqa: BLE001 — fall back to the keyboard
                     btn.focus()
                     page.keyboard.press("Enter")
-                    log("   [week] pressed apply ({})".format(asel))
-                    page.wait_for_timeout(8_000)
-                    break
+                log("   [week] pressed apply ({})".format(asel))
+                applied = True
+                page.wait_for_timeout(8_000)
+                break
             except Exception:  # noqa: BLE001
                 continue
+        if not applied:
+            # Not fatal on a filter that commits per click, but on a staged one
+            # it means nothing took — say so instead of reporting a clean pick.
+            log("   ⚠ [week] no apply control found — if this filter stages its "
+                "changes the selection has NOT committed")
         # Close by clicking the dashboard itself, NOT Escape: on a staged filter
         # Escape can discard the pending selection instead of committing it.
         try:
@@ -623,9 +676,10 @@ def _select_week(page, want: dt.date, log=print) -> bool:
         except Exception:  # noqa: BLE001
             now = "?"
         log("   ✓ picked {} from {} — dropdown now reads {!r}".format(
-            targets[0], sel, now))
+            ", ".join(texts[j] for j in checked), sel, now))
         return True
-    log("   ⚠ {} not offered by the week dropdown".format(targets[0]))
+    log("   ⚠ {} not offered by the week dropdown".format(
+        ", ".join(week_value(w) for w in wants)))
     return False
 
 
@@ -646,7 +700,7 @@ def _read_viz_text(page, log=print) -> str:
         return ""
 
 
-def _verify_week(view_key: str, text: str, want: dt.date, log=print) -> None:
+def _verify_week(view_key: str, text: str, want, log=print) -> None:
     """Refuse a week-pinned capture whose rendered header names another week.
 
     An unreadable viz ("" text) is NOT treated as a failure — the image itself
@@ -657,10 +711,29 @@ def _verify_week(view_key: str, text: str, want: dt.date, log=print) -> None:
         log("   ⚠ [{}] week pin UNVERIFIED (viz text unreadable) — posting the "
             "image; check the week in the header".format(view_key))
         return
-    if any(v in text for v in week_value_variants(want)):
-        log("   ✓ [{}] week pin verified — showing week ending {}".format(
-            view_key, week_value(want)))
-        return
+    wants = list(want) if isinstance(want, (list, tuple)) else [want]
+    if len(wants) == 1:
+        if any(v in text for v in week_value_variants(wants[0])):
+            log("   ✓ [{}] week pin verified — showing week ending {}".format(
+                view_key, week_value(wants[0])))
+            return
+    else:
+        # MULTI-WEEK. Tableau collapses a multi-select quick filter's caption to
+        # "(Multiple values)" — it stops naming the weeks — so requiring the
+        # dates in the header would fail every correct three-week render. Accept
+        # that caption, or the dates themselves on a workbook that still prints
+        # them. What this can no longer catch is a window of the WRONG several
+        # weeks; the selection loop logs each box it ticked, which is where that
+        # would show.
+        if "multiple value" in text.lower():
+            log("   ✓ [{}] multi-week window verified — dropdown reports "
+                "(Multiple values) for {}".format(
+                    view_key, ", ".join(week_value(w) for w in wants)))
+            return
+        if all(any(v in text for v in week_value_variants(w)) for w in wants):
+            log("   ✓ [{}] multi-week window verified — showing {}".format(
+                view_key, ", ".join(week_value(w) for w in wants)))
+            return
     # Name the week it DID render, so the log says what happened rather than
     # just that something did.
     import re
@@ -669,7 +742,7 @@ def _verify_week(view_key: str, text: str, want: dt.date, log=print) -> None:
         "{}: asked for week ending {} but the view rendered {} — the URL week "
         "filter did not apply (Tableau drops an unmatched field caption in "
         "silence). Skipping rather than posting a report of an unknown week."
-        .format(view_key, week_value(want),
+        .format(view_key, ", ".join(week_value(w) for w in wants),
                 ", ".join(sorted(set(shown))[:4]) or "no dated header"))
 
 
@@ -857,15 +930,26 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
         probe["nodata"] = viz_reports_no_data(page, log=log)
         probe["rows"] = read_table_rows(page, log=log)
         if meta.get("week_filter"):
-            want = report_week_ending(today)
+            # One date, or the rolling N-week window this view asked for.
+            want = recent_week_endings(today, meta.get("week_count", 1))
             probe["text"] = _read_viz_text(page, log=log)
             # The URL pin is the fast path and now names the field Tableau
             # actually knows. Only if it didn't land do we fall back to driving
             # the dashboard's dropdown — which costs a couple of minutes and is
             # the brittle path, so it stays a backstop, not the plan.
-            if probe["text"] and not any(v in probe["text"]
-                                         for v in week_value_variants(want)):
-                log("   week pin didn't land from the URL — trying the dropdown")
+            #
+            # A MULTI-WEEK window always takes the dropdown: a URL filter carries
+            # ONE value, so there is no fast path that can tick three boxes. Not
+            # a fallback here — it is the only route.
+            multi = len(want) > 1
+            landed = (not multi and probe["text"]
+                      and any(v in probe["text"]
+                              for v in week_value_variants(want[0])))
+            if not landed and (probe["text"] or multi):
+                log("   {} — driving the dropdown".format(
+                    "multi-week window ({})".format(
+                        ", ".join(week_value(w) for w in want))
+                    if multi else "week pin didn't land from the URL"))
                 if _select_week(page, want, log=log):
                     probe["text"] = _read_viz_text(page, log=log)
         # Activation carries no saved sort; click its measure sort glyph high->low
@@ -933,8 +1017,10 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
             if meta.get("week_filter"):
                 # Raises WeekFilterNotApplied -> the runner skips + flags the
                 # section, so a blank of an unknown week never reaches Slack.
-                _verify_week(view_key, probe["text"],
-                             report_week_ending(today), log=log)
+                _week_window = recent_week_endings(
+                    today, meta.get("week_count", 1))
+                _week_label = ", ".join(week_value(w) for w in _week_window)
+                _verify_week(view_key, probe["text"], _week_window, log=log)
                 verified_week = True
                 rows = probe["rows"] or _row_summary(probe["text"],
                                                      owner=o.owner)
@@ -944,9 +1030,9 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                     log("   [{}] shows {} line(s): {}".format(
                         view_key, len(rows), " | ".join(rows[:6])))
                 elif probe["text"]:
-                    log("   [{}] EMPTY for week ending {} — no rows in the "
-                        "verified week (a clean week, not a failed pull)".format(
-                            view_key, week_value(report_week_ending(today))))
+                    log("   [{}] EMPTY for week(s) ending {} — no rows in the "
+                        "verified window (a clean week, not a failed "
+                        "pull)".format(view_key, _week_label))
             # BLANK GUARD — every Tableau section, not just the week-pinned one.
             # An empty render is now heard about (write_manifest -> the 🚨 in
             # #claudecorrections-and-requests) instead of posting as a
@@ -962,9 +1048,9 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                 if verified_week:
                     # We KNOW which week this is and it is genuinely empty. Post
                     # it — that is Carlos's ask — but still say so out loud.
-                    log("   ⚠ [{}] renders BLANK for the verified week ending "
-                        "{} — posting (genuinely empty), flagged".format(
-                            view_key, week_value(report_week_ending(today))))
+                    log("   ⚠ [{}] renders BLANK for the verified week(s) "
+                        "ending {} — posting (genuinely empty), flagged".format(
+                            view_key, _week_label))
                 else:
                     raise BlankRender(
                         "{}: rendered BLANK (no content in the exported image) "
