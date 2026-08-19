@@ -2381,6 +2381,33 @@
         ]
       }
     },
+    "org_board_zero_streak": {
+      "order": 4.97,
+      "on_scheduler": true,
+      "_note": "Two-week zero rule (Eve, 2026-08-19): a rep at a literal 0 for TWO consecutive CLOSED weeks comes off that campaign's boxes. This step only DETECTS and posts the list to #revision-emails, next to the new-owners notices — taking someone off the board is irreversible for them, so the removal itself stays a human call, like every other gate here. The removal tools are org_sales_board.roster_remove + all_campaigns_board.roster_remove + org_sales_board.distro_remove, and `--commands` prints the exact steps. TUESDAY, after org_sales_board: the board rolls Tuesday, so that is the first run where the week just ended reads as CLOSED. Blank is not a zero, so a new hire with no history lands in a separate 'decidir a mano' bucket instead of being proposed for removal.",
+      "display_name": "Two-week zero rule — quien sale del board",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.zero_streak"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          1
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "org_sales_board"
+      ],
+      "verify": null,
+      "timeout_minutes": 6
+    },
     "all_campaigns_board_slack": {
       "order": 11,
       "on_scheduler": false,

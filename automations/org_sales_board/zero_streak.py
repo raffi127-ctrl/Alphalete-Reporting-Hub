@@ -164,6 +164,58 @@ def streak(vals: dict, closed: list) -> int:
     return n
 
 
+def build_post(flags: list, newbies: list, weeks: list, today: dt.date) -> str:
+    """The Slack message. It PROPOSES; it never says anything was removed.
+
+    Taking a rep off the board is irreversible for the person reading it, so
+    this posts a list and the command, exactly like the new-owners gate posts a
+    name and waits for a ✅. Nothing here writes to the board."""
+    # Date built from the fields, never '%-d' — that strftime flag is glibc-only
+    # and these reports run on Windows too. [[feedback_cross_platform]]
+    stamp = f"{today.day}/{today.month}"
+    wk = " y ".join(f"WE {d:%m.%d}" for d in weeks) or "las semanas cerradas"
+    if not flags and not newbies:
+        return (f"*Two-week zero rule* — {stamp} · nadie llegó al umbral "
+                f"({wk} en 0). Nada que sacar.")
+    lines = [f"*Two-week zero rule* — {stamp}",
+             f"Cero en {wk}. Esto es una PROPUESTA: no se tocó el board."]
+    if flags:
+        lines.append(f"\n*Para sacar ({len({f['name'] for f in flags})} personas)*")
+        for f in sorted(flags, key=lambda x: (-x["streak"], x["name"])):
+            warn = (f"  ⚠ sigue vendiendo en {', '.join(f['elsewhere'])} — sacar "
+                    f"SOLO este cuadro" if f["elsewhere"] else "")
+            lines.append(f"• *{f['name']}* — {f['owner']} / {f['section']} · "
+                         f"{f['streak']} sem · últ. venta {f['last_sale']}{warn}")
+    if newbies:
+        lines.append(f"\n*Sin historial de ventas — decisión a mano*")
+        for f in sorted(newbies, key=lambda x: x["name"]):
+            lines.append(f"• *{f['name']}* — {f['owner']} / {f['section']} · "
+                         f"{f['streak']} sem, nunca registró una venta")
+    lines.append("\n`python -m automations.org_sales_board.zero_streak --commands` "
+                 "para los pasos de baja.")
+    return "\n".join(lines)
+
+
+def post_slack(flags: list, newbies: list, weeks: list, today: dt.date,
+               logfn=print) -> None:
+    """Post to the channel the new-owners notices already use — who comes OFF
+    the board belongs next to who comes ON, in front of the same people.
+
+    Sends as whoever holds the Slack token on THIS machine. That is Lucy on the
+    mini, which is where the scheduled run lives; on this Windows box the token
+    is Evelyn's, so a hand-run would post under her name. If there is no token
+    at all the text is printed and nothing is sent — a failed post must never
+    fail the report, which has already done its work by now."""
+    text = build_post(flags, newbies, weeks, today)
+    try:
+        from automations.shared import slack_metrics_post as smp
+        from automations.new_owners import notify
+        smp._client().chat_postMessage(channel=notify.CHANNEL, text=text)
+        logfn(f"  Slack: posteado en {notify.CHANNEL}")
+    except Exception as e:  # noqa: BLE001 — advisory, never fatal
+        logfn(f"  Slack: NO se posteó ({type(e).__name__}: {e}). El texto era:\n{text}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board.zero_streak")
     ap.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
@@ -173,6 +225,8 @@ def main(argv=None) -> int:
     ap.add_argument("--commands", action="store_true",
                     help="also print the roster_remove / distro_remove commands")
     ap.add_argument("--csv", default=None, help="output path (default output/…)")
+    ap.add_argument("--post", action="store_true",
+                    help="post the list to Slack (the scheduled Tuesday run does this)")
     args = ap.parse_args(argv)
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
 
@@ -253,6 +307,9 @@ def main(argv=None) -> int:
             w.writeheader()
             w.writerows(rows)
         print(f"CSV: {out}")
+
+    if args.post:
+        post_slack(flags, newbies, closed[:args.weeks], today)
 
     if args.commands:
         # Only people cold EVERYWHERE can be excluded board-wide; someone still
