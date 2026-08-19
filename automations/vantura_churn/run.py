@@ -81,10 +81,18 @@ def _activation_cfg():
     from automations.vantura_churn import activation_rates as _ar
     return {
         "carlos": (_ar.VIEW_URL, _ar.CUSTOM_VIEW, _ar.OWNER_PREFIX),
+        # AtefEXP2 (Eve, 2026-08-19) — REPLACES AtefEXP (9cfd3e6c…), which
+        # stopped exposing the 'Activation Office' worksheet and took the whole
+        # run down with it. Note how this one is built: there is still NO Atef
+        # filter in "B2B Captain's Teams (SFDC)", so Eve selected his sellers
+        # as individual OWNERS. That means the "Owner & Office" values in this
+        # export may be the REPS, not 'ATEF CHOUDHURY' — if the owner_prefix
+        # below matches nothing, read `--dump-rep-grid atef` on the Vantura
+        # Diag tab and set the prefix(es) to what the export actually says.
         "atef": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                  "ATTTRACKER-B2B/ACTIVATIONRATES/"
-                 "9cfd3e6c-b221-47a6-8699-bd8eb524fd6e/AtefEXP?:iid=1",
-                 "Atef EXP", "ATEF CHOUDHURY"),
+                 "d30e7ebf-2f24-4c7f-9419-b2c713a50abb/AtefEXP2?:iid=1",
+                 "Atef EXP 2", "ATEF CHOUDHURY"),
         # JAMIS — no Jamis-scoped saved view exists yet (his onboarding row has
         # per_office_views {}), and "Owner & Office" can NOT be URL-sliced, so
         # there is no way to hand Tableau an office-filtered view here. Use the
@@ -196,19 +204,29 @@ def _write_diag(lines: list[str]) -> None:
         print(f"diag write failed: {e}", flush=True)
 
 
-def _dump_rep_grid(today: dt.date, log) -> int:
-    """DIAG: download Carlos's 'Activation Office' per-rep crosstab + the office
-    totals CSV and dump BOTH raw to the 'Vantura Diag' tab (readable from any
-    machine). Feeds building the full-board recreation (every rep + Tableau's own
-    Activation Color per cell). Read-only w.r.t. report data."""
+def _dump_rep_grid(today: dt.date, log, key: str = "carlos") -> int:
+    """DIAG: download one office's 'Activation Office' per-rep crosstab + the
+    office totals CSV and dump BOTH raw to the 'Vantura Diag' tab (readable from
+    any machine). Read-only w.r.t. report data.
+
+    Takes an office key (default carlos) because a RE-CREATED saved view has to
+    be inspected before it can be trusted: the export's own "Owner & Office"
+    values decide the owner_prefix in _activation_cfg(), and a view built from
+    individually-selected sellers may not carry the owner's name at all. The
+    distinct owner values are listed first, before the raw rows."""
     from pathlib import Path as _P
     import csv as _csv
     from automations.vantura_churn import cdp_pull, compute
     from automations.vantura_churn import activation_rates as _ar
 
-    view_url, _cv, own = _activation_cfg()["carlos"]
-    rp = _P("/tmp/_dump_activation_office_carlos.csv")
-    op = _P("/tmp/_dump_activation_office_totals_carlos.csv")
+    cfg = _activation_cfg()
+    if key not in cfg:
+        log(f"--dump-rep-grid: unknown office {key!r}; have "
+            + ", ".join(sorted(cfg)))
+        return 1
+    view_url, _cv, own = cfg[key]
+    rp = _P(f"/tmp/_dump_activation_office_{key}.csv")
+    op = _P(f"/tmp/_dump_activation_office_totals_{key}.csv")
     lines: list[str] = [f"dump-rep-grid @ {dt.datetime.now().isoformat(timespec='seconds')}",
                         f"view_url={view_url}", f"owner_prefix={own!r}", ""]
     try:
@@ -217,6 +235,15 @@ def _dump_rep_grid(today: dt.date, log) -> int:
                                     verbose=False, log=log,
                                     csv_fetches=[(_ar.CSV_URL, op)])
         grid = compute._load_grid(rp)
+        seen = []
+        for r in grid[1:]:
+            v = _ar._owner_name(r[0]) if r else ""
+            if v and v not in seen:
+                seen.append(v)
+        lines.append(f"=== distinct col-1 values ({len(seen)}) — this is what "
+                     f"owner_prefix has to match ===")
+        lines += ["  " + v for v in seen[:60]]
+        lines.append("")
         lines.append(f"=== '{_ar.REP_SHEET}' grid: {len(grid)} rows ===")
         for r in grid:
             lines.append(" | ".join("" if c is None else str(c) for c in r))
@@ -228,6 +255,10 @@ def _dump_rep_grid(today: dt.date, log) -> int:
             joined = " | ".join(str(c) for c in r)
             if own.upper() in joined.upper() or r is totals[0]:
                 lines.append(joined)
+        if len(lines) and not any(own.upper() in ln.upper() for ln in lines):
+            lines.append(f"(NO row of the totals CSV contains {own!r} — the "
+                         "owner_prefix in _activation_cfg() is wrong for this "
+                         "view; use one of the distinct values listed above.)")
     except Exception as e:  # noqa: BLE001
         import traceback
         lines.append(f"DUMP ERROR: {str(e)[:200]}")
@@ -277,10 +308,13 @@ def main(argv=None) -> int:
                     help="diagnostics only: dump what the ACTIVATION RATES "
                          "view exports (columns, bucket captions, Carlos's "
                          "rows) to the 'Vantura Diag' tab. LUCY 2 ONLY.")
-    ap.add_argument("--dump-rep-grid", action="store_true",
-                    help="diagnostics only: dump Carlos's full 'Activation "
+    ap.add_argument("--dump-rep-grid", nargs="?", const="carlos", default=None,
+                    metavar="OFFICE",
+                    help="diagnostics only: dump one office's full 'Activation "
                          "Office' per-rep grid + office totals to the 'Vantura "
-                         "Diag' tab (feeds the full-board recreation). LUCY 2 ONLY.")
+                         "Diag' tab, distinct owner values first (that is what "
+                         "verifies a re-created saved view). Defaults to "
+                         "carlos. LUCY 2 ONLY.")
     # Choices come from OWNER_CFG so adding an office is ONE table row, not a
     # row plus a literal here that silently rejects the new key.
     ap.add_argument("--owner", choices=tuple(["both"] + [k for k, *_ in OWNER_CFG]),
@@ -326,7 +360,7 @@ def main(argv=None) -> int:
                                             view_url=args.probe_activations_url)
         return 0
     if args.dump_rep_grid:
-        return _dump_rep_grid(today, log)
+        return _dump_rep_grid(today, log, args.dump_rep_grid)
     if args.theme:
         ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
         fill.apply_theme(ws, log=log)
@@ -366,6 +400,7 @@ def main(argv=None) -> int:
     rate_keys = ([] if args.skip_rates
                  else [k for k, *_ in owners if k in _act_cfg])
     ar_paths: dict = {}   # office key -> (reps_csv, office_totals_csv)
+    rate_source_down: dict = {}   # office key -> why its rates didn't download
     if args.from_files:
         for spec in args.from_files:
             k, _, p = spec.partition("=")
@@ -404,13 +439,31 @@ def main(argv=None) -> int:
                 view_url, _cv, _own = _act_cfg[k]
                 rp = out_dir / f"activation_office_{k}.csv"
                 op = out_dir / f"activation_office_totals_{k}.csv"
-                specs.append((view_url, _ar.REP_SHEET, rp))
-                csv_fetches.append((_ar.CSV_URL, op))
+                # optional=True: an office's activation view is worth CELLS
+                # (E5/F5 + the AE:AF rep list), not the report. 2026-08-19 —
+                # Atef's AtefEXP view stopped offering the 'Activation Office'
+                # worksheet and the raise took CARLOS's and JAMIS's churn down
+                # with it, though both Order Logs had already downloaded fine.
+                specs.append((view_url, _ar.REP_SHEET, rp, True))
+                csv_fetches.append((_ar.CSV_URL, op, True))
                 ar_paths[k] = (rp, op)
                 log(f"▶ Activation Rates ({k}: per-rep + office totals)…")
+        dl_failures: dict = {}
         with cdp_pull._cdp_lock(label="vantura download_views", log=log):
             cdp_pull.download_views(specs, today=today, verbose=False, log=log,
-                                    csv_fetches=csv_fetches)
+                                    csv_fetches=csv_fetches,
+                                    failures=dl_failures)
+        # An office whose activation source didn't come through is dropped from
+        # the rates pass entirely — half a pair (reps without office totals)
+        # can't be reconciled, and reconcile_reps would report it as a data
+        # problem, which would then block the churn write for EVERY office.
+        for k in list(ar_paths):
+            rp, op = ar_paths[k]
+            why = dl_failures.get(str(rp)) or dl_failures.get(str(op))
+            if why:
+                rate_source_down[k] = why
+                ar_paths.pop(k)
+                log(f"  ⚠ activation rates ({k}) SKIPPED — {why[:160]}")
 
     # ------------------------------------------------- compute + reconcile
     results = {}
@@ -438,9 +491,21 @@ def main(argv=None) -> int:
         from automations.vantura_churn import activation_rates as _ar
         for k, (rp, op) in ar_paths.items():
             _vu, _cv, own = _act_cfg[k]
-            with open(op, encoding="utf-8-sig", errors="replace") as fh:
-                office = _ar.parse_rates(list(_csv.reader(fh)), owner_prefix=own)
-            reps = _ar.parse_rep_rates(compute._load_grid(rp), owner_prefix=own)
+            # Parsing is inside the try for the same reason the download is:
+            # parse_rates/parse_rep_rates RAISE when the owner prefix matches no
+            # row (a re-created saved view can come back shaped differently —
+            # AtefEXP2 is built from individually-selected sellers). That raise
+            # used to escape main() and cost every office its churn write.
+            try:
+                with open(op, encoding="utf-8-sig", errors="replace") as fh:
+                    office = _ar.parse_rates(list(_csv.reader(fh)),
+                                             owner_prefix=own)
+                reps = _ar.parse_rep_rates(compute._load_grid(rp),
+                                           owner_prefix=own)
+            except Exception as e:  # noqa: BLE001 — rates cost cells, not the run
+                rate_source_down[k] = f"{type(e).__name__}: {str(e)[:200]}"
+                log(f"  ⚠ activation rates ({k}) UNUSABLE — {e}")
+                continue
             # The per-rep split is only trustworthy if it adds back up to the
             # office numbers — same contract as the churn reconciliation above.
             rate_problems = _ar.reconcile_reps(reps, office)
@@ -449,7 +514,13 @@ def main(argv=None) -> int:
                 f"{o30['rate']:.1%}   31-60 {o60['activated']}/{o60['sold']} = "
                 f"{o60['rate']:.1%}   ({len(reps)} reps)")
             if rate_problems:
-                problems += [f"activation rates ({k}) — {p}" for p in rate_problems]
+                # NOT `problems`: that list aborts the whole run before ANY
+                # write, and one office's rep/office mismatch is not a reason to
+                # leave three churn tabs stale. It rides the source ping with
+                # the rest, and the office simply keeps yesterday's rate cells.
+                rate_source_down[k] = "; ".join(rate_problems)[:300]
+                log(f"  ⚠ activation rates ({k}) DON'T RECONCILE — "
+                    + "; ".join(rate_problems))
             else:
                 rates_by_office[k] = (office, reps)
 
@@ -560,8 +631,21 @@ def main(argv=None) -> int:
             _email_failure(detail, log=log)
         return 3
 
+    # --------------------------------------- activation source down (a PING)
+    # Eve's rule: a dead source that costs CELLS pings by manifest kind="source"
+    # and the step still exits 0. Its OWN manifest id, never REPORT_ID — the
+    # _ok_manifest() below marks that one clean and would erase this notice.
+    # need_tableau guard: with --from-files and no reconcile nothing was
+    # pulled at all, so neither a ping nor a clean-close would mean anything.
+    if rate_keys and need_tableau and not args.dry_run:
+        _rate_source_manifest(rate_source_down, log=log)
+
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
+    if rate_source_down:
+        log("  ⚠ activation rates NOT refreshed for: "
+            + ", ".join(sorted(rate_source_down))
+            + " — those cells are stale, not wrong.")
     return 0
 
 
@@ -680,6 +764,48 @@ def _act_fail_manifest(msg: str) -> None:
                         "the report is stale."))
     except Exception:
         pass
+
+
+RATES_SOURCE_ID = "vantura_churn_activation_rates"
+
+
+def _rate_source_manifest(down: dict, log=print) -> None:
+    """Ping (or clear) the activation-rates source notice.
+
+    Separate from the report manifest on purpose: the churn half wrote fine, so
+    the Hub card stays GREEN and the report is not "failed" — but the office's
+    activation cells are stale and somebody has to know. A clean run closes the
+    incident by itself (mark_clean), so nothing has to remember to."""
+    try:
+        from automations.shared import run_manifest as _rm
+        if not down:
+            _rm.mark_clean(RATES_SOURCE_ID, kind="source")
+            return
+        who = ", ".join(sorted(down))
+        _rm.write_manifest(
+            RATES_SOURCE_ID, failed=sorted(down), kind="source",
+            note=("Activation rates did not download for: " + who + ". Their "
+                  "churn tabs ARE today's — only the activation cells (E5/F5 "
+                  "and the per-rep list) are stale."),
+            remediation=_rm.make_remediation(
+                reason="; ".join(f"{k}: {v[:160]}" for k, v in sorted(down.items())),
+                fix="A re-run will NOT fix a missing worksheet. In ATT TRACKER "
+                    "- B2B / ACTIVATION RATES, open that office's saved view "
+                    "and check it still shows the 'Activation Office' "
+                    "worksheet: a workbook republish breaks saved views and "
+                    "Tableau then falls back to the default dashboard, which "
+                    "only has 'Activation Total' + 'zzz Last Refresh'. Have "
+                    "the view re-created (as Rafael) and update its GUID URL "
+                    "in `_activation_cfg()` in automations/vantura_churn/"
+                    "run.py. Re-run after that.",
+                link="https://us-east-1.online.tableau.com/#/site/sci/views/"
+                     "ATTTRACKER-B2B/ACTIVATIONRATES",
+                message="Vantura churn wrote fine, but the activation rates "
+                        "for " + who + " couldn't be pulled — those cells are "
+                        "stale."))
+    except Exception as e:  # noqa: BLE001 — alerting never breaks a good run
+        log(f"  ⚠ couldn't record the activation-source manifest "
+            f"({type(e).__name__}: {str(e)[:120]})")
 
 
 def _ok_manifest() -> None:

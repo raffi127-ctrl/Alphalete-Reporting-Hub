@@ -575,12 +575,43 @@ def _download_orderlog_direct(page, today, out, log) -> bool:
         return False
 
 
+def _note_failure(failures, out, sheet, ex, log) -> None:
+    """Record + explain an OPTIONAL download that didn't come through.
+
+    The "Couldn't find the '<sheet>' sheet in the Crosstab dialog" wording is
+    the signature of a BROKEN SAVED VIEW, not a renamed worksheet: Tableau
+    silently falls back to the default dashboard, whose thumbnail list is the
+    one the error prints. Say so here so the log names the human fix (re-create
+    the custom view) instead of sending the next reader to the sheet-name
+    constant. Same failure mode as the 2026-06-05 Wayne/Starr/Aron sweep.
+    """
+    msg = f"{type(ex).__name__}: {str(ex)[:200]}"
+    if failures is not None:
+        failures[str(out)] = msg
+    log(f"[cdp] ⚠ optional view SKIPPED ({out.name}): {msg}")
+    if "Crosstab dialog" in str(ex):
+        log(f"[cdp]   ↳ '{sheet}' is missing from that view's crosstab list — "
+            "usually the saved/custom view broke (a workbook republish kills "
+            "them) and Tableau fell back to the default dashboard. Fix = "
+            "re-create the saved view in Tableau, then update its GUID URL.")
+
+
 def download_views(specs, today=None, verbose=True, log=print,
-                   csv_fetches=None):
+                   csv_fetches=None, failures=None):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth seeded once (ownerville storage_state → Tableau SSO).
     ORDER LOG views are primed first (see _prime_orderlog) so their worksheet
-    has data before the crosstab export. Returns {out_path: Path}."""
+    has data before the crosstab export. Returns {out_path: Path}.
+
+    OPTIONAL SPECS (2026-08-19). A spec may carry a 4th element
+    `optional=True` (csv_fetches: a 3rd), meaning "this one costs CELLS, not
+    the report". Those failures are logged, recorded in `failures`
+    ({str(out_path): reason}) and skipped instead of raising, so one dead view
+    can't take the whole run down with it. Why: Atef's ACTIVATIONRATES saved
+    view stopped exposing the 'Activation Office' worksheet, and because every
+    download shared one exception path, Carlos's and Jamis's churn — already
+    downloaded and correct — never got written either. A required spec
+    (Order Log, Churn Rates) still raises: that IS the report."""
     import datetime as _dt
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
@@ -618,34 +649,44 @@ def download_views(specs, today=None, verbose=True, log=print,
                                              allow_form_login=True)
             log("[cdp] auth OK; starting downloads")
 
-            for url, sheet, out in specs:
+            for spec in specs:
+                url, sheet, out = spec[0], spec[1], spec[2]
+                optional = bool(spec[3]) if len(spec) > 3 else False
                 out = Path(out)
-                if "ATTTRACKER-B2B/ORDERLOG" in url:
-                    # FIRST: the direct authenticated export (no rendering —
-                    # see _download_orderlog_direct). Only when that fails,
-                    # fall back to priming the worksheet + crosstab dialog,
-                    # which depends on fragile remembered view state (it
-                    # rendered EMPTY on 7/15, 7 days on 7/18).
-                    if _download_orderlog_direct(page, today, out, log):
-                        results[str(out)] = out
-                        continue
-                    last = None
-                    for attempt in (1, 2):
-                        log(f"[cdp] priming ORDER LOG {out.name} (try {attempt})…")
-                        _prime_orderlog(page, url, today, log)
-                        try:
-                            drive_crosstab_dialog(page, url, sheet, out,
-                                                  verbose=verbose, skip_nav=True)
-                            last = None
-                            break
-                        except Exception as ex:
-                            last = ex
-                            log(f"[cdp] export retry: {str(ex)[:90]}")
-                    if last is not None:
-                        raise last
-                else:
-                    download_crosstab_patchright(url, sheet, out, page=page,
-                                                 verbose=verbose)
+                try:
+                    if "ATTTRACKER-B2B/ORDERLOG" in url:
+                        # FIRST: the direct authenticated export (no rendering —
+                        # see _download_orderlog_direct). Only when that fails,
+                        # fall back to priming the worksheet + crosstab dialog,
+                        # which depends on fragile remembered view state (it
+                        # rendered EMPTY on 7/15, 7 days on 7/18).
+                        if _download_orderlog_direct(page, today, out, log):
+                            results[str(out)] = out
+                            continue
+                        last = None
+                        for attempt in (1, 2):
+                            log(f"[cdp] priming ORDER LOG {out.name} "
+                                f"(try {attempt})…")
+                            _prime_orderlog(page, url, today, log)
+                            try:
+                                drive_crosstab_dialog(page, url, sheet, out,
+                                                      verbose=verbose,
+                                                      skip_nav=True)
+                                last = None
+                                break
+                            except Exception as ex:
+                                last = ex
+                                log(f"[cdp] export retry: {str(ex)[:90]}")
+                        if last is not None:
+                            raise last
+                    else:
+                        download_crosstab_patchright(url, sheet, out, page=page,
+                                                     verbose=verbose)
+                except Exception as ex:
+                    if not optional:
+                        raise
+                    _note_failure(failures, out, sheet, ex, log)
+                    continue
                 results[str(out)] = out
                 log(f"[cdp] saved {sheet} → {out} "
                     f"({out.stat().st_size:,} bytes)")
@@ -653,16 +694,24 @@ def download_views(specs, today=None, verbose=True, log=print,
             # Direct authenticated .csv fetches in the SAME session — used for
             # the activation-rates office totals, whose numbers only exist on
             # the dashboard export (the worksheet download gives per-rep).
-            for url, out in (csv_fetches or []):
+            for fetch in (csv_fetches or []):
+                url, out = fetch[0], fetch[1]
+                optional = bool(fetch[2]) if len(fetch) > 2 else False
                 out = Path(out)
-                r = page.context.request.get(url, timeout=300_000)
-                body = r.body() or b""
-                if r.status != 200 or len(body) < 200:
-                    raise RuntimeError(
-                        f"csv fetch {url[:80]} → status {r.status}, "
-                        f"{len(body)} bytes")
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_bytes(body)
+                try:
+                    r = page.context.request.get(url, timeout=300_000)
+                    body = r.body() or b""
+                    if r.status != 200 or len(body) < 200:
+                        raise RuntimeError(
+                            f"csv fetch {url[:80]} → status {r.status}, "
+                            f"{len(body)} bytes")
+                    out.parent.mkdir(parents=True, exist_ok=True)
+                    out.write_bytes(body)
+                except Exception as ex:
+                    if not optional:
+                        raise
+                    _note_failure(failures, out, "csv", ex, log)
+                    continue
                 results[str(out)] = out
                 log(f"[cdp] saved csv → {out} ({len(body):,} bytes)")
     except Exception:
