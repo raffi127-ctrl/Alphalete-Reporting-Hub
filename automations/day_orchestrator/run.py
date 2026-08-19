@@ -1086,6 +1086,26 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
             # timeout can kill the WHOLE tree (see _kill_tree). subprocess.run(timeout=)
             # only kills the direct child and, worse, can itself block cleaning up a
             # wedged child — freezing the batch. So we Popen + wait + group-kill.
+            # HARD GUARANTEE (Megan 2026-08-19, after the tableau_screenshots
+            # incident): the ORCHESTRATOR must never hold the shared Chrome
+            # profile while a report subprocess runs.
+            #
+            # automations/uploaded/.browser_profile is single-instance. Anything
+            # this process keeps open on it blocks every browser report that
+            # wants it — silently, until a 30-minute timeout. That is exactly how
+            # PROBE_SHARED_SESSION wedged the 4am batch: a readiness probe opened
+            # a shared context and it stayed open across the whole pass, i.e.
+            # across every report launch.
+            #
+            # Closing here makes that collision STRUCTURALLY IMPOSSIBLE rather
+            # than something a future change has to remember not to do. It is a
+            # no-op when nothing is open (the normal case), and the context is
+            # rebuilt on demand by the next probe that needs it.
+            try:
+                from automations.shared.tableau_patchright import close_shared_session
+                close_shared_session()
+            except Exception:  # noqa: BLE001 — a guard must never block a report
+                pass
             # HUB_REPORT_ID lets the Tableau access ledger blame each pull on
             # the report that made it (Megan 2026-08-17). Inherited by every
             # descendant; nothing reads it except the ledger.
