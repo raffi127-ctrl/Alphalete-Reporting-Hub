@@ -533,6 +533,39 @@ def _action_restart_holder(args: str) -> tuple[bool, str]:
     return proc.returncode == 0, f"kickstart exit {proc.returncode}" + (f": {out}" if out else "")
 
 
+# --- the restart hold ---------------------------------------------------------
+# `restart_poller` SCHEDULES a kill ~3s out and returns immediately, and until
+# then this pass keeps claiming rows — which run on the code the poller loaded
+# when it BOOTED, not the code `update` just pulled. Deploying is always the
+# same three rows (update, restart_poller, the thing you actually wanted), so
+# the third one silently ran on the old code every time. On 2026-08-19 that ate
+# an incident close two seconds after the restart was scheduled, and it failed
+# as "no OPEN incident" — a message about the wrong subject entirely.
+#
+# So once a restart is scheduled we stop CLAIMING work. Rows stay `queued` with
+# a note and the fresh poller takes them seconds later, on the new code.
+#
+# TIME-BOXED ON PURPOSE: if the kickstart never lands (launchd refuses, the
+# label is wrong), an unconditional hold would freeze the queue in silence —
+# strictly worse than the bug it fixes, and this queue is how the machine gets
+# unstuck. After the window we resume and say so loudly.
+_RESTART_HOLD_SECS = 120
+_restart_scheduled_at: float | None = None
+
+
+def _restart_hold_active() -> bool:
+    """Are we inside the window where a restart is about to replace this code?"""
+    if _restart_scheduled_at is None:
+        return False
+    if time.time() - _restart_scheduled_at < _RESTART_HOLD_SECS:
+        return True
+    print("[mini_control] ⚠ a restart was scheduled {}s ago and this process is "
+          "STILL alive — the kickstart didn't land. Resuming the queue on the "
+          "OLD code; re-run restart_poller or restart it by hand."
+          .format(int(time.time() - _restart_scheduled_at)), flush=True)
+    return False
+
+
 def _action_restart_poller(args: str) -> tuple[bool, str]:
     """Kickstart THIS poller (com.alphalete.mini-control) so it reloads its own
     code — deploy a mini_control change with no human at the mini. `kickstart -k`
@@ -549,7 +582,10 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
             start_new_session=True)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't schedule restart: {str(e)[:140]}"
-    return True, f"restart scheduled for {label} (~3s) — poller reloads its code"
+    global _restart_scheduled_at
+    _restart_scheduled_at = time.time()
+    return True, (f"restart scheduled for {label} (~3s) — poller reloads its "
+                  f"code; the rest of the queue is held until it does")
 
 
 def _action_restart_hub(args: str) -> tuple[bool, str]:
@@ -4483,6 +4519,17 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         action = str(row.get("Action", "")).strip()
         args = str(row.get("Args", "")).strip()
         handler = ACTIONS.get(action)
+
+        # A restart is landing: leave this row for the process that will have
+        # the new code, and stop the pass. Nothing is lost — the row keeps its
+        # place in the queue (see _restart_hold_active).
+        if not dry_run and _restart_hold_active():
+            _set(ws, rownum, "queued",
+                 f"held @ {_now()} — a poller restart is landing; this runs on "
+                 f"the NEW code in a few seconds")
+            print(f"[mini_control] holding {action} until the restart lands",
+                  flush=True)
+            break
 
         if handler is None:
             _set(ws, rownum, "failed",

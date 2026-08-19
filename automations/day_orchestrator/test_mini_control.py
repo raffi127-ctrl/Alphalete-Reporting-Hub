@@ -105,5 +105,36 @@ class HoistControlFlagsTest(unittest.TestCase):
             out, ["--enqueue", "rerun", "X", "--dry-run", "--only", "churn"])
 
 
+class TheRestartHold(unittest.TestCase):
+    """`restart_poller` schedules a kill ~3s out and returns, so the rows behind
+    it used to run on the code this process booted with — the reason a deploy's
+    third row (update, restart_poller, <the thing>) silently ran on the OLD
+    code, and why an incident close failed two seconds after a restart on
+    2026-08-19."""
+
+    def setUp(self):
+        self._saved = mini_control._restart_scheduled_at
+
+    def tearDown(self):
+        mini_control._restart_scheduled_at = self._saved
+
+    def test_no_restart_no_hold(self):
+        mini_control._restart_scheduled_at = None
+        self.assertFalse(mini_control._restart_hold_active())
+
+    def test_a_scheduled_restart_holds_the_queue(self):
+        import time
+        mini_control._restart_scheduled_at = time.time()
+        self.assertTrue(mini_control._restart_hold_active())
+
+    def test_a_kickstart_that_never_landed_releases_the_queue(self):
+        """Time-boxed on purpose: a hold that outlives a failed restart would
+        freeze the one channel used to unstick the machine."""
+        import time
+        mini_control._restart_scheduled_at = (
+            time.time() - mini_control._RESTART_HOLD_SECS - 1)
+        self.assertFalse(mini_control._restart_hold_active())
+
+
 if __name__ == "__main__":
     unittest.main()
