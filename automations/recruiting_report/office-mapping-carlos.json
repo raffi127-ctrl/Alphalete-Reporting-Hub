@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 28,
+  "confirmed_count": 32,
   "needs_review_count": 0,
   "skip_count": 9,
   "confirmed": [
@@ -200,6 +200,42 @@
       "confidence": 1.0,
       "promoted_from_sales_only": true,
       "was_sales_only_reason": "no AppStream office \u2014 not in all-offices.json under Raf's login, so the recruiting funnel can't see him and rows 2-23 stay blank. Tableau DOES list him as 'AMOS WHITE JR. [eagles peak enterprises, inc.]' in d2d1 / cancel / activation / churn / personal_production, so the OPT half fills. Added to Carlos's roster 2026-08-17 (Eve); visibility request to eStream/Smart Circle is open \u2014 move to 'confirmed' with the real office_id once granted. NOTE: as_owner keeps the trailing period, that's how Tableau spells it"
+    },
+    {
+      "sheet_tab": "Jackie Leroy",
+      "office_id": "22358",
+      "as_owner": "Jackie LeRoy",
+      "as_company": "Elevate Marketing Team, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands."
+    },
+    {
+      "sheet_tab": "Jeff Starr",
+      "office_id": "15031",
+      "as_owner": "Jeffrey Starr",
+      "as_company": "Evolution Concepts, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands."
+    },
+    {
+      "sheet_tab": "Vincent Smith",
+      "office_id": "23318",
+      "as_owner": "Vincent Smith",
+      "as_company": "Legacy Point Marketing, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands."
+    },
+    {
+      "sheet_tab": "Dhyey Patel",
+      "office_id": "22767",
+      "as_owner": "Dhyey Patel",
+      "as_company": "Momentus Acquisitions, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands."
     }
   ],
   "needs_review": [],
@@ -248,31 +284,6 @@
       "was_office_id": "16744"
     }
   ],
-  "sales_only": [
-    {
-      "sheet_tab": "Jackie Leroy",
-      "as_owner": "Jackie LeRoy",
-      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
-      "promote_when_visible": true
-    },
-    {
-      "sheet_tab": "Jeff Starr",
-      "as_owner": "Jeffrey Starr",
-      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
-      "promote_when_visible": true
-    },
-    {
-      "sheet_tab": "Vincent Smith",
-      "as_owner": "Vincent Smith",
-      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
-      "promote_when_visible": true
-    },
-    {
-      "sheet_tab": "Dhyey Patel",
-      "as_owner": "Dhyey Patel",
-      "reason": "no AppStream office yet \u2014 visibility request pending (Eve, 2026-08-18). Tableau HAS this ICD in the B2B OPT views, so the sales/metrics half fills and the recruiting half (rows 2-23) stays blank until access lands.",
-      "promote_when_visible": true
-    }
-  ],
-  "sales_only_count": 4
+  "sales_only": [],
+  "sales_only_count": 0
 }
