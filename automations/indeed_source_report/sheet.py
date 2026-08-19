@@ -12,8 +12,19 @@ from pathlib import Path
 
 from google.auth.transport.requests import AuthorizedSession, Request
 
+# The Alphalete Org Applicant Tracker. The dashboard lives here as a tab rather
+# than in its own workbook so it sits beside the funnel board everyone already
+# opens. NOTE: this workbook has a hard 10,000,000-cell ceiling and shares it
+# with 2R / Call List / Apps, which append daily — see README before adding
+# anything wide here.
 SPREADSHEET_ID = os.environ.get(
-    "INDEED_SOURCE_SPREADSHEET_ID", "1yUvxSL5gsVEBTzlVNMyrmP_IH_vmcUcWIO_ZRtjzImo")
+    "INDEED_SOURCE_SPREADSHEET_ID", "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo")
+DATA_TAB = os.environ.get("INDEED_SOURCE_DATA_TAB", "Indeed Ad Data")
+
+
+def data_range(a1):
+    """A1 range on the hidden data tab, quoted for the spaces in its name."""
+    return "'%s'!%s" % (DATA_TAB, a1)
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 TOKEN = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
 API = "https://sheets.googleapis.com/v4/spreadsheets"

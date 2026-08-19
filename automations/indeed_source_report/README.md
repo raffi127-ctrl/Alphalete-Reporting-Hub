@@ -3,9 +3,22 @@
 One Google Sheet tab where you pick a **Manager** and a **Period** and see that
 manager's Indeed ads for that month, merged to one row per real ad.
 
-Workbook: `1yUvxSL5gsVEBTzlVNMyrmP_IH_vmcUcWIO_ZRtjzImo` — *Indeed Ad Performance
-— Dashboard*. `Dashboard` is the only visible tab; `DATA` is hidden and is the
-only thing this job writes.
+Workbook: the **Alphalete Org Applicant Tracker**
+(`1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo`), tab **Indeed Ad Performance**.
+The hidden **Indeed Ad Data** tab holds the rows and is the only thing this job
+writes.
+
+### That workbook has a hard cell ceiling — respect it
+
+Google caps a spreadsheet at 10,000,000 cells and it cannot be raised. This
+workbook hit **98.1%** on 2026-08-19 with only 193k cells free, while `2R`,
+`Call List` and `Apps` append every day. It was brought back to ~59% by deleting
+EMPTY trailing rows (no data touched) from tabs that had wildly over-allocated
+grids — `2R` alone had 50,388 rows allocated against 7,446 used, and the two
+Trend tabs 4,000 against ~115. Those tabs grow by COLUMNS, not rows.
+
+Before adding anything wide here, check the headroom first. If it is tight again,
+look for over-allocated grids before assuming the data itself is too big.
 
 ## What it does
 

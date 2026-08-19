@@ -71,7 +71,7 @@ def main(argv=None):
         return 1
 
     sess = sheet.session(verbose=True)
-    existing = sheet.get_values(sess, "DATA!A2:U20000")
+    existing = sheet.get_values(sess, sheet.data_range("A2:U20000"))
     # Drop the current month ONLY for managers this run actually pulled, so a
     # --office run (or an office that failed above) leaves everyone else's month
     # standing instead of silently deleting it. YTD always goes: it is rebuilt
@@ -125,9 +125,9 @@ def main(argv=None):
         print("\nDRY RUN — would write %d rows (%d managers, periods: %s)"
               % (len(new), len(managers), ", ".join(periods)), flush=True)
     else:
-        sheet.clear(sess, "DATA!A2:U20000")
-        sheet.put_values(sess, "DATA!A2", new)
-        sheet.put_values(sess, "DATA!W2", [[managers[i] if i < len(managers) else "",
+        sheet.clear(sess, sheet.data_range("A2:U20000"))
+        sheet.put_values(sess, sheet.data_range("A2"), new)
+        sheet.put_values(sess, sheet.data_range("W2"), [[managers[i] if i < len(managers) else "",
                                             periods[i] if i < len(periods) else ""]
                                            for i in range(max(len(managers), len(periods)))])
         print("[indeed_source_report] wrote %d rows" % len(new), flush=True)
