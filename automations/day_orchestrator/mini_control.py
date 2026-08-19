@@ -4358,12 +4358,71 @@ def _autoruns_today(rows: list[dict]) -> int:
     )
 
 
+_ORPHAN_GRACE_MIN = 10
+
+
+def _reclaim_orphans(ws, rows) -> int:
+    """Close rows still marked 'running' that nothing is actually running.
+
+    WHY (Megan 2026-08-19): three stale pills in one day —
+    box_order_log_roshan (orphaned by a poller restart), fiber_activations
+    (sat 'running' ~5h after it had finished writing both blocks) and the
+    daily_rep_breakdown row. Each one cost real time chasing work that was
+    already done, and the fiber pill nearly caused a DUPLICATE re-run.
+
+    THE INVARIANT that makes this safe: poll_once is SYNCHRONOUS and
+    single-threaded — it sets a row 'running', executes the action to
+    completion, then writes the result. So at the TOP of a pass nothing this
+    poller launched can still legitimately be 'running'; anything that is was
+    left behind by a crash, a kill, a re-exec or a launchd restart.
+
+    A _ORPHAN_GRACE_MIN cushion on the row's own 'started <ts>' stamp guards the
+    one case the invariant does not cover: a second poller process briefly
+    overlapping this one. Rows younger than that are left alone, so a live job is
+    never stolen. Marked 'orphaned' (not 'failed') so it is obvious in the tab
+    that the action's outcome is UNKNOWN — it may well have completed."""
+    import re as _re
+    now = dt.datetime.now()
+    n = 0
+    for i, row in enumerate(rows):
+        if str(row.get("Status", "")).strip().lower() != "running":
+            continue
+        started = None
+        m = _re.search(r"started\s+(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})",
+                       str(row.get("Result", "")))
+        if m:
+            try:
+                started = dt.datetime.fromisoformat(m.group(1).replace(" ", "T"))
+            except Exception:  # noqa: BLE001
+                started = None
+        if started and (now - started).total_seconds() < _ORPHAN_GRACE_MIN * 60:
+            continue                      # too fresh — could be a live overlap
+        age = f", running {int((now - started).total_seconds() // 60)}m" if started else ""
+        try:
+            _set(ws, i + 2, "orphaned",
+                 f"no poller was running this at {now:%H:%M} — left behind by a "
+                 f"restart/kill{age}. The action may have COMPLETED; check its "
+                 f"log or output before re-running.", finished=True)
+            n += 1
+        except Exception:  # noqa: BLE001 — reclaiming must never break the pass
+            pass
+    return n
+
+
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
     number of rows acted on."""
     ws = _open(sandbox, machine)
     rows = ws.get_all_records()           # list of dicts keyed by header
+    # Close anything left 'running' by a previous pass before doing new work, so
+    # a stale pill never reads as live (see _reclaim_orphans).
+    if not dry_run:
+        _orphans = _reclaim_orphans(ws, rows)
+        if _orphans:
+            print(f"[mini_control] reclaimed {_orphans} orphaned 'running' row(s)",
+                  flush=True)
+            rows = ws.get_all_records()   # re-read: statuses just changed
     cap_used = _autoruns_today(rows)
     acted = 0
     for i, row in enumerate(rows):
