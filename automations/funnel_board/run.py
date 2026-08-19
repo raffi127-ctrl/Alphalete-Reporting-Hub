@@ -570,10 +570,15 @@ def main():
             log("only: %s" % ", ".join(n for n, _, _ in todo))
         log("pulling %d office(s): %d org, %d captainship-only"
             % (len(todo), len(OFFICES), len(todo) - len(OFFICES)))
-        # A newly-appeared office is worth reaching back for, and it stays on
-        # that list until a pull for it actually SUCCEEDS — otherwise one failed
-        # first attempt would quietly cost it its history for good.
-        deep = {n for n in set(just_found) | _needs_backfill()
+        # A first pull is worth reaching back for. That covers three cases with
+        # one rule — an office discovered this pass, one discovered earlier
+        # whose deep pull never succeeded, and a name simply typed into
+        # roster.py — because all three look the same from here: no rows in the
+        # Daily Log yet. It stays on the list until a pull actually SUCCEEDS,
+        # otherwise one failed first attempt would cost that office its history
+        # for good.
+        deep = {n for n in (set(just_found) | _needs_backfill()
+                            | {t[0] for t in todo if t[0] not in history})
                 if n in {t[0] for t in todo}}
         left = attempt([o for o in todo if o[0] not in deep])
         if deep:

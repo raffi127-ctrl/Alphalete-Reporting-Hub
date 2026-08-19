@@ -20,12 +20,18 @@ Three fields, and each one is load-bearing:
            people under their legal name often enough that matching on `name`
            alone would miss them.
 
-PENDING OFFICES (oid None). Three of the thirteen are sales-only in AppStream
-today — they have no recruiting office, so there is nothing to pull and their rows sit
-at zero. Carlos expects their offices to be created (2026-08-19-ish). run.py
-therefore re-checks the office switcher by owner name on EVERY hourly pass and
-starts pulling the moment one appears; nobody has to come back and edit this
-file. Resolved ids are remembered in state/resolved_offices.json.
+PENDING OFFICES (oid None). Nobody is pending as of 2026-08-19: Jeff Starr
+(15031), Vincent Smith (23318) and Dhyey Patel (22767) were sales-only when this
+list was first written and their offices appeared the next morning — read
+straight off the switcher and typed in here. The machinery stays, because the
+next person added will be in the same position: run.py re-checks the office
+switcher by owner name on every hourly pass, resolves a name only when exactly
+ONE office matches it, and starts pulling the moment one appears. Ids found that
+way are remembered in state/resolved_offices.json.
+
+FIRST PULL. Anyone with no rows in the Daily Log yet — freshly discovered OR
+freshly typed into this list — gets a deep pull the first time, so their Trend
+opens with a shape instead of a single column.
 """
 
 CAPTAINSHIP = [
@@ -41,14 +47,14 @@ CAPTAINSHIP = [
     # it, the run says so per office and she just stays at zero.
     ("Jackie LeRoy",     "22358", "Jackie LeRoy"),
     ("Noah Dubale",      "23356", "Noah Dubale"),
-    ("Jeff Starr",       None,    "Jeffrey Starr"),
+    ("Jeff Starr",       "15031", "Jeffrey Starr"),
     ("Kinsey Guenther",  "11906", "Kinsey Guenther"),
-    ("Vincent Smith",    None,    "Vincent Smith"),
+    ("Vincent Smith",    "23318", "Vincent Smith"),
     ("George Hipolito",  "11296", "George Hipolito"),
     ("Justin Wood",      "22192", "Justin Wood"),
     ("Joshua Murphy",    "21770", "Joshua Murphy"),
     ("Joey Ramirez",     "23206", "Joey Ramirez"),
-    ("Dhyey Patel",      None,    "Dhyey Patel"),
+    ("Dhyey Patel",      "22767", "Dhyey Patel"),
 ]
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
