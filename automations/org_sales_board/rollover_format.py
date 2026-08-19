@@ -43,7 +43,9 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.org_sales_board import rollover as ro
 
-SANDBOX_PREFIX = "Copy of Alphalete ORG Sales Board"
+from automations.org_sales_board.tabs import BOARD_TAB
+
+SANDBOX_PREFIX = BOARD_TAB
 
 # Column offsets inside a leaderboard block, relative to first_col (col C):
 #   +0 = the live current week   (formula — never a format source)

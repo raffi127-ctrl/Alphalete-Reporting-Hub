@@ -2,7 +2,7 @@
 
 Multi-section board on the 'Alphalete ORG Sales Board' tab. Being built
 section by section from Megan's walkthrough videos; practice on the duplicated
-'Copy of Alphalete ORG Sales Board' tab until told to point at the real one.
+'Alphalete ORG Sales Board' tab until told to point at the real one.
 
 Sections (top to bottom):
   1. Product Summary - This Week   (Product Type x Mon-Sun + Grand Total)
@@ -34,8 +34,12 @@ except Exception:
     pass
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-SANDBOX_TAB = "Copy of Alphalete ORG Sales Board"
-PROD_TAB = "Alphalete ORG Sales Board"          # real tab — only when told
+from automations.org_sales_board.tabs import BOARD_TAB, ARCHIVED_VA_TAB
+
+# Both names live in tabs.py now — a rename is one line there, not six here.
+# The aliases stay because ~30 modules already import these two symbols.
+SANDBOX_TAB = BOARD_TAB          # the live board (was "Copy of …" until 8/19)
+PROD_TAB = ARCHIVED_VA_TAB       # the VAs' old tab — archived + hidden 8/19
 
 OUT_DIR = Path("output")                         # one-off CSVs land here
 
@@ -208,15 +212,17 @@ def main(argv=None) -> int:
         if not (args.dry_run or _sections or _programs):
             from automations.org_sales_board import rollover as _ro
             _cS = ws.get_all_values()
-            _vS = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
-            _need, _tgt, _cur, _va = _ro.needs_rollover(_cS, vS=_vS)
+            # No VA cross-check any more. It used to read the VAs' hand-keyed
+            # tab and warn when its week differed from ours. That tab has been
+            # out of circulation since 2026-07-21 and was archived + hidden on
+            # 2026-08-19, so it is FROZEN on WE 07.26 — reading it would warn
+            # every single Tuesday about a tab nobody keeps. The rollover
+            # decision never depended on it: it comes from the board's own week
+            # header (needs_rollover takes vS as optional for exactly this).
+            _need, _tgt, _cur, _va = _ro.needs_rollover(_cS)
             if _need:
                 print(f"--- weekly rollover: board is on {_cur!r}, this week is "
-                      f"{_tgt!r} (VA is on {_va!r}) — rolling before the fill ---")
-                if _va and _va != _tgt:
-                    print(f"  ⚠ the VA tab is on {_va!r}, not {_tgt!r} — rolling to "
-                          f"{_tgt!r} (the week the fill writes). If the VA really is "
-                          f"on a different week, the compare will flag it.")
+                      f"{_tgt!r} — rolling before the fill ---")
                 _ro.run_rollover(ws, dry_run=False)
                 ws = open_by_key(SHEET_ID).worksheet(tab)   # re-open post-roll
             else:

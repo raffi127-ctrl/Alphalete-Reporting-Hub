@@ -1,7 +1,7 @@
 """Org Sales Board — daily 8:30am Slack post (Item 1 of the VA-Slack replacements).
 
 Replaces Jolie's manual daily post of the full board. Screenshots the daily
-detailed board off our AUTOMATION's tab (`Copy of Alphalete ORG Sales Board`)
+detailed board off our AUTOMATION's tab (`Alphalete ORG Sales Board`)
 as ONE image and posts it to #top-leaders-alphalete-org.
 
 SOURCE TAB (Megan 2026-07-21): switched from the live VA tab (`PROD_TAB`) to our

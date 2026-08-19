@@ -1,6 +1,6 @@
 """Locate the Sales Board ranges for the Captainship drafts BY LABEL.
 
-Two sections come off the 'Copy of Alphalete ORG Sales Board' tab (the tab
+Two sections come off the 'Alphalete ORG Sales Board' tab (the tab
 the daily org_sales_board fill keeps current — same layout as the real tab):
 
   * PRODUCT SUMMARY — one block per captain, anchored on a col-B team header
@@ -35,7 +35,9 @@ from automations.recruiting_report import fill as _rf
 # tab the daily org_sales_board fill writes (freshest automated numbers) and
 # the tab the spec names for the fiber/NDS/B2B sections. [[project_org-captainship-workbook-moved]]
 SALES_BOARD_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-SALES_BOARD_TAB = "Copy of Alphalete ORG Sales Board"
+from automations.org_sales_board.tabs import BOARD_TAB
+
+SALES_BOARD_TAB = BOARD_TAB
 
 # How many columns the Product Summary block spans (A..L) — the true right edge
 # of every table in it: the daily blocks end at "PREVIOUS WEEK'S TOTALS" (L) and

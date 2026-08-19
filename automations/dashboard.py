@@ -4208,16 +4208,16 @@ AUTOMATED_REPORTS = [
         "description": "Fills the Alphalete Org Sales Board COPY TAB — 7 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX, Retail JE) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab, never the live VA tab. The VAs no longer key their own tab, so this copy is the working board now.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Fills the **copy tab** of the Alphalete Org Sales Board: all 7 "
+            "Fills the Alphalete Org Sales Board: all 7 "
             "daily product sections (Retail NL, Retail Internet, ATT Fiber, "
             "ATT NDS, B2B, BOX, Retail JE) and all 10 captainship "
             "leaderboards.\n\n"
             "WHERE IT WRITES\n"
-            "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\"; it never "
-            "touches the live VA tab. The VAs no longer key their own tab, so "
-            "this copy is the working board now — the daily board email + "
-            "screenshots render from it. (No VA compare anymore — that check "
-            "was retired when the VA tab stopped being filled.)\n\n"
+            "The **\"Alphalete ORG Sales Board\"** tab — the one and only board. "
+            "It began as a sandbox copy of a tab the VAs keyed by hand; they "
+            "stopped, so on 8/19 that old tab was archived + hidden and this "
+            "one took the plain name. The daily board email + screenshots "
+            "render from it.\n\n"
             "WHEN IT RUNS\n"
             "**Daily.** Only completed days fill; today + future stay blank.\n"
             "The weekly rollover fires **automatically on Tuesday** (the first "
@@ -4235,7 +4235,7 @@ AUTOMATED_REPORTS = [
             "An ICD with no sales this week shows **NS** — that's correct, and "
             "it fills the moment they sell."
         ),
-        # Deep-links to the Copy of Alphalete ORG Sales Board tab this run fills.
+        # Deep-links to the Alphalete ORG Sales Board tab this run fills.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=129523613#gid=129523613"),
@@ -4300,7 +4300,7 @@ AUTOMATED_REPORTS = [
             "#revision-emails, and turns GREEN only on an approver's "
             "checkmark. A failed fill or a day with no ✅ never shows green."
         ),
-        # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
+        # Deep-links to the Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=129523613#gid=129523613"),

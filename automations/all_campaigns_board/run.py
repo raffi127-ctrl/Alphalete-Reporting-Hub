@@ -1,6 +1,6 @@
 """All Campaigns Org Sales Board — daily per-person fill.
 
-Runs AFTER the ORG Sales Board fills the 'Copy of Alphalete ORG Sales Board'
+Runs AFTER the ORG Sales Board fills the 'Alphalete ORG Sales Board'
 tab. Reads that tab's eight campaign daily sections, sums each rep across ALL
 campaigns (this board is a campaign-agnostic product-totals ranking — one line
 per person), and writes the per-day values into the board's 'All Units' daily
@@ -38,7 +38,9 @@ except Exception:
     pass
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-SOURCE_TAB = "Copy of Alphalete ORG Sales Board"   # already filled by org_sales_board
+from automations.org_sales_board.tabs import BOARD_TAB
+
+SOURCE_TAB = BOARD_TAB       # already filled by org_sales_board
 TARGET_TAB = "All Campaigns Org Sales Board"       # note: live title has a trailing space
 TARGET_SECTION = "All Units"                        # the daily per-person section
 CENTRAL = ZoneInfo("America/Chicago")               # anchor dates to Texas time
