@@ -16,6 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
+from automations.funnel_board.roster import (  # noqa: E402
+    CAPTAINSHIP_NAMES, BOARD_TITLE as CAP_BOARD_TITLE,
+    TREND_TITLE as CAP_TREND_TITLE)
 
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
@@ -145,6 +148,21 @@ def tot(name, k):
 
 
 MANAGERS = sorted(OFF, key=lambda m: (-tot(m, "nsh"), -tot(m, "applies")))
+
+
+def _rank(m):
+    """Same order as the org board — but someone with no pull yet sorts last
+    rather than landing mid-table on a row of zeros."""
+    if m in OFF:
+        return (0, -tot(m, "nsh"), -tot(m, "applies"), CAPTAINSHIP_NAMES.index(m))
+    return (1, 0, 0, CAPTAINSHIP_NAMES.index(m))
+
+
+# Carlos's captainship is NOT a subset of the org board — most of it sits
+# outside those 17 offices — so it is a roster, not a filter. Names with no
+# Daily Log rows yet still get a row; every cell is a SUMIFS, so they read zero
+# today and fill themselves in the hour their first pull lands.
+CAP_ROSTER = sorted(CAPTAINSHIP_NAMES, key=_rank)
 ALL_DATES = sorted({d for m in OFF.values() for d in m["days"]})
 WEEK_ENDS = sorted({(dt.date.fromisoformat(d) + dt.timedelta(days=6 - dt.date.fromisoformat(d).weekday()))
                     for d in ALL_DATES})
@@ -344,7 +362,8 @@ GCOL = {k: a1(i) for k, i in GOAL_AT.items()}
 meta = S.get(API).json()
 SID = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
 # create any of our five tabs that are missing, appended at the far right
-_want = ["Manager Board", "Manager Trend", "Manager Matrix", "Daily Log", "Goals"]
+_want = ["Manager Board", "Manager Trend", "Manager Matrix", "Daily Log", "Goals",
+         CAP_BOARD_TITLE, CAP_TREND_TITLE]
 _missing = [t for t in _want if t not in SID]
 if _missing:
     _res = batch([{"addSheet": {"properties": {
@@ -370,15 +389,25 @@ if "Manager Matrix" not in SID:
     SID["Manager Matrix"] = res["replies"][0]["addSheet"]["properties"]["sheetId"]
 BOARD, TREND, LOG, GOALS = SID["Manager Board"], SID["Manager Trend"], SID["Daily Log"], SID["Goals"]
 MATRIX = SID["Manager Matrix"]
+CAPBOARD, CAPTREND = SID[CAP_BOARD_TITLE], SID[CAP_TREND_TITLE]
+
+# A Trend tab is 2 + 8 columns per week and keeps growing; a freshly created
+# sheet only has 60, and writing past the grid is a 400, not a resize.
+for _t in (TREND, CAPTREND):
+    batch([{"updateSheetProperties": {"properties": {
+        "sheetId": _t,
+        "gridProperties": {"columnCount": max(60, 2 + 8 * len(WEEK_ENDS) + 4)}},
+        "fields": "gridProperties.columnCount"}}])
 
 # wipe the illustrative data
-batch([{"updateCells": {"range": {"sheetId": s}, "fields": "*"} } for s in (BOARD, TREND, LOG, GOALS, MATRIX)]
+batch([{"updateCells": {"range": {"sheetId": s}, "fields": "*"} }
+       for s in (BOARD, TREND, LOG, GOALS, MATRIX, CAPBOARD, CAPTREND)]
       + [{"deleteConditionalFormatRule": {"sheetId": s, "index": 0}}
          for s in (BOARD, TREND) for _ in range(0)])
 # drop every existing CF rule + column group
 info = S.get(API, params={"fields": "sheets(properties.sheetId,conditionalFormats,columnGroups,bandedRanges)"}).json()
 clear = []
-OURS = {BOARD, TREND, MATRIX, LOG, GOALS}
+OURS = {BOARD, TREND, MATRIX, LOG, GOALS, CAPBOARD, CAPTREND}
 for s in info["sheets"]:
     sid = s["properties"]["sheetId"]
     if sid not in OURS:
@@ -414,18 +443,8 @@ BCOLS = [
 ]
 KEYCOL = {c[2]: i for i, c in enumerate(BCOLS) if isinstance(c[2], str)}
 B0, HDR, M0 = 1, 3, 4
-M1 = M0 + len(MANAGERS) - 1
-TOTR = M1 + 1
 WEEK_CELL = "$I$1"
 
-board = [["Manager Funnel Board", "", "", "", "", "", "", "Week ending", WEEK_ENDS[-1].strftime("%m/%d/%Y"),
-          "", "Week day reached",
-          # 1 = Mon .. 7 = Sun, from the latest day logged for the selected week.
-          # A finished week reaches Sunday, so its pace factors are all 1.0 and it
-          # compares against the full goal with no special case.
-          "=IF($I$1>=TODAY(),WEEKDAY(TODAY(),2),7)"],
-         ["Live from ApplicantStream · Retention Details (new)" + NOTE],
-         ["MANAGER"] + [c[0] for c in BCOLS]]
 
 def cell(kind, key, r):
     if kind == "pctd":
@@ -440,51 +459,10 @@ def cell(kind, key, r):
                 % (COL[key], COL[key], r, WEEK_CELL))
     n, d = key
     return "=IFERROR(%s%d/%s%d,\"\")" % (a1(B0 + KEYCOL[n]), r, a1(B0 + KEYCOL[d]), r)
-
-
-for mi, m in enumerate(MANAGERS):
-    r = M0 + mi
-    board.append([m] + [cell(k, key, r) for (_, k, key) in BCOLS])
-
-trow = ["OFFICE TOTAL"]
-for i, (h, kind, key) in enumerate(BCOLS):
-    c = a1(B0 + i)
-    if kind == "pctd":
-        n, d = key
-        f = "SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$B:$B,%s)"
-        trow.append("=IFERROR(%s/%s,\"\")" % (f % (COL[n], COL[n], WEEK_CELL),
-                                               f % (COL[d], COL[d], WEEK_CELL)))
-    elif kind in ("n", "derived"):
-        # SUBTOTAL(109) ignores rows the filter hides, so the total reflects
-        # whatever subset is on screen rather than always summing all 14.
-        trow.append("=SUBTOTAL(109,%s%d:%s%d)" % (c, M0, c, M1))
-    else:
-        n, d = key
-        trow.append("=IFERROR(%s%d/%s%d,\"\")" % (a1(B0 + KEYCOL[n]), TOTR, a1(B0 + KEYCOL[d]), TOTR))
-board.append(trow)
-values.append({"range": "'Manager Board'!A1", "values": board})
-values.append({"range": "'Manager Board'!A100",
-               "values": [[w.strftime("%m/%d/%Y")] for w in reversed(WEEK_ENDS)]})
 # hidden: per-column pace for the day reached, then the curve table it reads from
 PACE_ROW, CURVE0 = 108, 110
 PACE_KEY = {h: k for h, (k, kind) in GRADE.items() if kind == "count"}
-values.append({"range": "'Manager Board'!B%d" % PACE_ROW, "values": [[
-    ('=IFERROR(VLOOKUP(%s$%d,$A$%d:$H$%d,$L$1+1,FALSE),1)' % (a1(B0 + i), HDR, CURVE0, CURVE0 + 20)
-     if c[0] in PACE_KEY else "") for i, c in enumerate(BCOLS)]]})
-values.append({"range": "'Manager Board'!A%d" % CURVE0, "values":
-               [[h] + PACE_CURVE[k] for h, k in PACE_KEY.items()]})
-# hidden columns T.. : each manager's own goal, looked up by name from Goals.
-# Start the hidden goal mirror AFTER the last data column, with one blank
-# column as a buffer. Hard-coding 19 collided with NS Shw % once the board
-# grew to 19 columns, and silently blanked it on every build.
 MIRROR0 = B0 + len(BCOLS) + 1
-mirror = []
-for mi, m in enumerate(MANAGERS):
-    r = M0 + mi
-    mirror.append([('=IFERROR(VLOOKUP($A%d,Goals!$B:$U,%d,FALSE),0)'
-                    % (r, GOAL_AT[MIRROR_KEY[c[0]]]))
-                   if c[0] in MIRROR_KEY else "" for c in BCOLS])
-values.append({"range": "'Manager Board'!%s%d" % (a1(MIRROR0), M0), "values": mirror})
 
 # ---- Manager Trend
 METRICS = [
@@ -527,70 +505,6 @@ KR = {"applies": APP_R, "removed": REM_R, "sent": SENT_R, "b1": rowof["1st Booke
       "s1": rowof["1st Showed"], "b2": rowof["2nd Booked"], "s2": rowof["2nd Showed"],
       "off": rowof["Job Offered"], "bob": rowof["BOB"],
       "nss": rowof["New Starts Scheduled"], "nsh": rowof["New Starts Showed"]}
-
-trend = [[None] * ncols for _ in range(THDR + len(METRICS))]
-trend[0][0] = "Manager Trend"
-trend[0][1] = MANAGERS[0]
-trend[1][0] = "Click + above a week to open Mon–Sun" + NOTE
-trend[THDR - 1][0] = "METRIC"
-trend[THDR - 1][1] = "GOAL"
-# Each week block is [WK total][Mon..Sun], NOT [Mon..Sun][WK total]. Sheets draws
-# a collapsed group's +/- toggle on the column immediately BEFORE the group, so
-# putting the total first is what makes the + for a week sit above that week's own
-# header instead of above the previous week's.
-for wi, we in enumerate(reversed(WEEK_ENDS)):        # newest week first
-    b = TC0 + wi * WW
-    trend[THDR - 1][b] = "WK " + we.strftime("%-m/%-d")
-    trend[THDR - 2][b] = we.strftime("%m/%d/%Y")
-    for di in range(7):
-        d = we - dt.timedelta(days=6 - di)
-        trend[THDR - 1][b + 1 + di] = DAYN[di]
-        trend[THDR - 2][b + 1 + di] = d.strftime("%m/%d/%Y")
-
-for i, (kind, lab, key) in enumerate(METRICS):
-    r = TF + i
-    trend[r - 1][0] = lab
-    if kind == "grp":
-        continue
-    if kind == "pctd":
-        trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
-                           % (GOAL_AT["ret2cl"]))
-    elif kind == "derived":
-        trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
-                           % (GOAL_AT["applies"]))
-    elif kind == "n":
-        trend[r - 1][1] = ("=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),\"\")"
-                           % (GOAL_AT[key]))
-    elif lab in TREND_PCT_GOAL:
-        trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
-                           % GOAL_AT[TREND_PCT_GOAL[lab]])
-    else:
-        n, d = key
-        trend[r - 1][1] = "=IFERROR(B%d/B%d,\"\")" % (KR[n], KR[d])
-    for wi in range(len(WEEK_ENDS)):
-        b = TC0 + wi * WW
-        for di in range(8):
-            c = a1(b + di)
-            if kind == "pctd":
-                n, d = key
-                col_c = ("SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,"
-                         "'Daily Log'!$%s:$%s,%s$2)")
-                ax = "A" if di > 0 else "B"        # day cells match the date, WK the week
-                f = "=IFERROR(%s/%s,\"\")" % (
-                    col_c % (COL[n], COL[n], ax, ax, c), col_c % (COL[d], COL[d], ax, ax, c))
-            elif kind == "derived":
-                f = "=%s%d+%s%d" % (c, REM_R, c, SENT_R)
-            elif kind == "n":
-                f = ("=SUM(%s%d:%s%d)" % (a1(b + 1), r, a1(b + 7), r) if di == 0 else
-                     "=SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,'Daily Log'!$A:$A,%s$2)"
-                     % (COL[key], COL[key], c))
-            else:
-                n, d = key
-                f = "=IFERROR(%s%d/%s%d,\"\")" % (c, KR[n], c, KR[d])
-            trend[r - 1][b + di] = f
-
-values.append({"range": "'Manager Trend'!A1", "values": trend})
-
 # ---- Manager Matrix: managers down, weeks across, ONE metric at a time.
 # A grid has two axes and there are three dimensions, so the metric is the one
 # that collapses — into a picker in B1 driven by the hidden definition block.
@@ -673,8 +587,6 @@ values.append({"range": "'Manager Matrix'!%s%d" % (MXG, MX_M0), "values":
                [['=IFERROR(VLOOKUP($A%d,Goals!$B:$U,VLOOKUP($B$1,%s,5,FALSE),FALSE),0)'
                  % (MX_M0 + i, MX_H)] for i in range(len(MANAGERS))]})
 
-call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": values})
-print("values written")
 
 # ------------------------------------------------------------------ format
 def gr(s, r0, r1, c0, c1):
@@ -688,243 +600,578 @@ def fmt(s, r0, r1, c0, c1, cf, fields):
 
 F = []
 LEGEND_VALUES = []
-for s in (BOARD, TREND):
-    F.append(fmt(s, 0, 200, 0, 60, {"userEnteredFormat": {
+# ---- centring + weight, emitted per tab by the builders above.
+# Scoped to single fields so they can't disturb the colours, fonts or borders
+# set alongside them. Title/subtitle rows stay left-aligned — they overflow
+# across columns and centring them inside column A looks broken.
+CENTER = {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}
+BOLD = {"userEnteredFormat": {"textFormat": {"bold": True}}}
+FC, FB = "userEnteredFormat.horizontalAlignment", "userEnteredFormat.textFormat.bold"
+
+# ---- ad budget box, on each board below its totals
+#
+# Reads each manager's own tracker tab (the IMPORTRANGE mirrors of their Indeed
+# sheets), NOT 'Manager View'. Manager View is =INDIRECT on its own B1 picker,
+# so it only ever shows one manager — whoever last touched the dropdown. The
+# per-manager tabs are the real source and carry the same columns:
+#   B = Report Date (a real date serial)   S = Daily Budget (a real number)
+#
+# Deliberately pure formulas, no scraping. The manager tabs are IMPORTRANGE, so
+# Google refreshes them on its own and this box follows automatically — nobody
+# has to tell the automation that a tracker was updated. INDIRECT is volatile,
+# which is what we want here, and it also lets IFERROR swallow a manager who
+# has no tab yet (a literal 'No Such Tab'!B2:B would be a parse error instead).
+#
+# Whichever rows carry the newest Report Date are the current picture, so the
+# box takes MAX(date) per manager and sums Daily Budget on that date only. No
+# status filter — every ad on the latest report date counts.
+def budget(sid, title, roster, row0):
+    first, last = row0 + 2, row0 + 1 + len(roster)
+    day = ("=IFERROR(LET(d,INDIRECT(\"'\"&$A%d&\"'!$B$2:$B\"),"
+           "b,INDIRECT(\"'\"&$A%d&\"'!$S$2:$S\"),"
+           "IF(MAX(d)=0,0,SUMIF(d,MAX(d),b))),0)")
+    rows = [[m, day % (r, r), "=$B%d*7" % r, "=$B%d*DAY(EOMONTH(TODAY(),0))" % r]
+            for r, m in enumerate(roster, start=first)]
+    LEGEND_VALUES.append({"range": "'%s'!A%d" % (title, row0), "values":
+                          [["AD BUDGET — latest report date on each manager's tracker tab"],
+                           ["MANAGER", "DAILY", "WEEKLY", "MONTHLY"]]
+                          + rows
+                          + [["TOTAL", "=SUM(B%d:B%d)" % (first, last),
+                              "=SUM(C%d:C%d)" % (first, last),
+                              "=SUM(D%d:D%d)" % (first, last)]]})
+    tot = last + 1
+    F.extend([
+        # Wipe any fill left behind by whatever previously occupied these rows —
+        # the colour key used to live here and its band fills would otherwise
+        # show through the new box.
+        fmt(sid, row0 - 1, tot + 12, 0, 5, {"userEnteredFormat": {
+            "backgroundColor": rgb("#FFFFFF")}}, "userEnteredFormat(backgroundColor)"),
+        fmt(sid, row0 - 1, row0, 0, 4, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, row0, row0 + 1, 0, 4, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
+        fmt(sid, first - 1, last, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 11), "horizontalAlignment": "LEFT",
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
+        # Money reads as money, and right-aligned so the columns line up.
+        fmt(sid, first - 1, last, 1, 4, {"userEnteredFormat": {
+            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
+            "textFormat": txt(INK, False, 11, FONT), "horizontalAlignment": "RIGHT",
+            "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(numberFormat,textFormat,horizontalAlignment,borders)"),
+        fmt(sid, tot - 1, tot, 0, 1, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK, True, 11),
+            "horizontalAlignment": "LEFT", "borders": {"top": bdm(), "right": bdm()}}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"),
+        fmt(sid, tot - 1, tot, 1, 4, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2),
+            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
+            "textFormat": txt(INK, True, 11, FONT), "horizontalAlignment": "RIGHT",
+            "borders": {"top": bdm()}}},
+            "userEnteredFormat(backgroundColor,numberFormat,textFormat,"
+            "horizontalAlignment,borders)"),
+    ])
+# ---- colour key, repeated on each manager tab below its data
+def legend(sid, title, row0):
+    n = len(LEGEND)
+    LEGEND_VALUES.append({"range": "'%s'!A%d" % (title, row0), "values":
+                          [["COLOR KEY — distance from goal"],
+                           ["BAND", "MEANING"]]
+                          + [list(x) for x in LEGEND]
+                          + [["HOW IT'S MEASURED", "", ""]]
+                          + [list(x) for x in LEGEND2]
+                          + [["Coloured number = a count.  Filled cell = a rate.  "
+                              "Removed stays black — it only restates Removal %."]]})
+    F.extend([
+        fmt(sid, row0 - 1, row0, 0, 3, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, row0, row0 + 1, 0, 2, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
+        fmt(sid, row0 + 1 + n, row0 + 2 + n, 0, 2, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
+        fmt(sid, row0 + 2 + n, row0 + 2 + n + len(LEGEND2), 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 11), "horizontalAlignment": "LEFT",
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
+        fmt(sid, row0 + 2 + n, row0 + 3 + n + len(LEGEND2), 1, 4, {"userEnteredFormat": {
+            "textFormat": txt(INK_2, False, 11), "horizontalAlignment": "LEFT",
+            "wrapStrategy": "CLIP"}},
+            "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
+        fmt(sid, row0 + 2 + n + len(LEGEND2), row0 + 3 + n + len(LEGEND2), 0, 4,
+            {"userEnteredFormat": {"textFormat": txt(INK_2, False, 10),
+                                   "horizontalAlignment": "LEFT", "wrapStrategy": "CLIP"}},
+            "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
+    ])
+    for j, (fg, bg) in enumerate(((GOOD, GOOD_BG), (WARN, WARN_BG), (BAD, BAD_BG))):
+        F.append(fmt(sid, row0 + 1 + j, row0 + 2 + j, 0, 1, {"userEnteredFormat": {
+            "backgroundColor": rgb(bg), "textFormat": txt(fg, True, 11),
+            "horizontalAlignment": "LEFT",
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"))
+
+def build_board(sid, title, heading, roster, total_label, ad_box=True):
+    """One Manager-Board-shaped tab over `roster`.
+
+    Every figure is a SUMIFS against Daily Log keyed on the name in column A, so
+    a board is nothing but a row list — which is what lets the same code serve
+    the 17-office org board and Carlos's 12-person captainship. A name with no
+    rows in the log yet (someone whose AppStream office does not exist) simply
+    reads zero and starts filling itself in the hour their first pull lands.
+    """
+    global F                       # the blocks below build it with `F += [...]`
+    M1 = M0 + len(roster) - 1
+    TOTR = M1 + 1
+    # Hidden ingredient columns for the TOTAL row's ratios. SUMIFS cannot take a
+    # range of names as a criterion — it returns one sum, not an array — so the
+    # total row can't work out "Removal % across just these managers" on its own.
+    # (The org board used to sidestep this by filtering on the week alone, which
+    # totals the WHOLE log; correct while the only board was the whole org, and
+    # silently the org's own ratio on any subset.) Each ratio column gets its
+    # numerator and denominator per manager, parked out of sight to the right,
+    # and the total divides their SUBTOTALs — so it also tracks the filter, the
+    # same way the count totals already do.
+    PCTD = [i for i, c in enumerate(BCOLS) if c[1] == "pctd"]
+    HELP0 = MIRROR0 + len(BCOLS) + 1
+    F.append(fmt(sid, 0, 200, 0, 60, {"userEnteredFormat": {
         "textFormat": txt(), "verticalAlignment": "MIDDLE"}},
         "userEnteredFormat(textFormat,verticalAlignment)"))
     F.append({"updateDimensionProperties": {
-        "range": {"sheetId": s, "dimension": "ROWS", "startIndex": 0, "endIndex": 60},
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0, "endIndex": 60},
         "properties": {"pixelSize": 32}, "fields": "pixelSize"}})
 
-nb = len(BCOLS)
-F += [
-    fmt(BOARD, 0, 1, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK, True, 20)}}, "userEnteredFormat.textFormat"),
-    fmt(BOARD, 1, 2, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK_2, False, 11)}}, "userEnteredFormat.textFormat"),
-    fmt(BOARD, 0, 1, 7, 8, {"userEnteredFormat": {"textFormat": txt(INK_3, True, 9), "horizontalAlignment": "RIGHT"}},
-        "userEnteredFormat(textFormat,horizontalAlignment)"),
-    fmt(BOARD, 0, 1, 8, 9, {"userEnteredFormat": {
-        "textFormat": txt(PICK, True, 14), "backgroundColor": rgb(ACCENT_BG),
-        "horizontalAlignment": "LEFT", "numberFormat": {"type": "DATE", "pattern": "m/d/yy"},
-        "borders": {"top": bd(ACCENT), "bottom": bd(ACCENT), "left": bd(ACCENT), "right": bd(ACCENT)}}},
-        "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment,numberFormat,borders)"),
-    fmt(BOARD, HDR - 1, HDR, 0, nb + 1, {"userEnteredFormat": {
-        "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-        "horizontalAlignment": "RIGHT", "wrapStrategy": "CLIP"}},
-        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,wrapStrategy)"),
-    fmt(BOARD, HDR - 1, HDR, 0, 1, {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-        "userEnteredFormat.horizontalAlignment"),
-    fmt(BOARD, M0 - 1, M1, 0, 1, {"userEnteredFormat": {
-        "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT",
-        "borders": {"right": bdm()}}},
-        "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
-    fmt(BOARD, M0 - 1, TOTR, 1, nb + 1, {"userEnteredFormat": {
-        "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "RIGHT",
-        "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}, "borders": {"bottom": bd(LINE)}}},
-        "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
-    fmt(BOARD, TOTR - 1, TOTR, 0, nb + 1, {"userEnteredFormat": {
-        "textFormat": txt(INK, True, 12, FONT), "backgroundColor": rgb(SURF_2),
-        "borders": {"top": bdt(INK)}}},
-        "userEnteredFormat(textFormat,backgroundColor,borders)"),
-    fmt(BOARD, TOTR - 1, TOTR, 0, 1, {"userEnteredFormat": {
-        "textFormat": txt(INK, True, 12, FONT_UI), "horizontalAlignment": "LEFT"}},
-        "userEnteredFormat(textFormat,horizontalAlignment)"),
-    fmt(BOARD, M0 - 1, TOTR, B0, B0 + 1, {"userEnteredFormat": {
-        "backgroundColor": rgb(ACCENT_BG), "textFormat": txt(ACCENT, True, 12, FONT)}},
-        "userEnteredFormat(backgroundColor,textFormat)"),
-]
-for i, c in enumerate(BCOLS):
-    if c[1] in ("pct", "pctd"):
-        F.append(fmt(BOARD, M0 - 1, TOTR, B0 + i, B0 + i + 1, {"userEnteredFormat": {
-            "numberFormat": {"type": "PERCENT", "pattern": "0%"}, "borders": {"left": bdm()}}},
-            "userEnteredFormat(numberFormat,borders)"))
+    board = [[heading, "", "", "", "", "", "", "Week ending", WEEK_ENDS[-1].strftime("%m/%d/%Y"),
+              "", "Week day reached",
+              # 1 = Mon .. 7 = Sun, from the latest day logged for the selected week.
+              # A finished week reaches Sunday, so its pace factors are all 1.0 and it
+              # compares against the full goal with no special case.
+              "=IF($I$1>=TODAY(),WEEKDAY(TODAY(),2),7)"],
+             ["Live from ApplicantStream · Retention Details (new)" + NOTE],
+             ["MANAGER"] + [c[0] for c in BCOLS]]
 
-# ---- grade every column that has a goal, on distance from that goal.
-# Counts compare to goal x pace-to-date (so mid-week is judged on run rate) and are
-# shown as coloured LETTERING; rates compare to the goal directly and are FILLED —
-# filling both turns the board into one wash.
-for i, c in enumerate(BCOLS):
-    spec = GRADE.get(c[0])
-    if not spec:
-        continue
-    gkey, kind = spec
-    col, gcol = a1(B0 + i), a1(MIRROR0 + i)
-    base = ("%s%d*%s$%d" % (gcol, M0, col, PACE_ROW)) if kind == "count" else "%s%d" % (gcol, M0)
-    guard = 'AND(%s%d>0,ISNUMBER(%s%d),' % (gcol, M0, col, M0)
-    v = "%s%d" % (col, M0)
-    if kind == "rate_low":                      # under the removal goal is good
-        tests = (("%s<=%s*%s" % (v, base, 2 - BAND_OK), GOOD),
-                 ("AND(%s<=%s*%s,%s>%s*%s)" % (v, base, 2 - BAND_WARN, v, base, 2 - BAND_OK), WARN),
-                 ("%s>%s*%s" % (v, base, 2 - BAND_WARN), BAD))
-    else:
-        tests = (("%s>=%s*%s" % (v, base, BAND_OK), GOOD),
-                 ("AND(%s>=%s*%s,%s<%s*%s)" % (v, base, BAND_WARN, v, base, BAND_OK), WARN),
-                 ("%s<%s*%s" % (v, base, BAND_WARN), BAD))
-    for expr, fg in tests:
-        style = ({"backgroundColor": rgb({GOOD: GOOD_BG, WARN: WARN_BG, BAD: BAD_BG}[fg]),
-                  "textFormat": {"foregroundColor": rgb(fg), "bold": True}}
-                 if kind != "count" else
-                 {"textFormat": {"foregroundColor": rgb(fg), "bold": True}})
-        F.append({"addConditionalFormatRule": {"rule": {
-            "ranges": [gr(BOARD, M0 - 1, M1, B0 + i, B0 + i + 1)],
-            "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
-                                          "values": [{"userEnteredValue": "=" + guard + expr + ")"}]},
-                            "format": style}},
-            "index": 0}})
 
-F += [
-    fmt(BOARD, 0, 1, 10, 11, {"userEnteredFormat": {
-        "textFormat": txt(INK_3, True, 11), "horizontalAlignment": "RIGHT"}},
-        "userEnteredFormat(textFormat,horizontalAlignment)"),
-    fmt(BOARD, 0, 1, 11, 12, {"userEnteredFormat": {
-        "textFormat": txt(INK, True, 13, FONT), "horizontalAlignment": "CENTER",
-        "numberFormat": {"type": "NUMBER", "pattern": "0"},
-        "backgroundColor": rgb(SUNKEN),
-        "borders": {"top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}}},
-        "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,backgroundColor,borders)"),
-    # Filter spans the Goal row + the 14 managers. Sheets treats the first row of
-    # a filter range as its header, so anchoring on row 4 keeps the Goal row out of
-    # the sorted data AND leaves the OFFICE TOTAL row outside the range entirely.
-    {"setBasicFilter": {"filter": {"range": gr(BOARD, HDR - 1, M1, 0, len(BCOLS) + 1)}}},
-    {"updateSheetProperties": {"properties": {
-        "sheetId": BOARD, "gridProperties": {"frozenRowCount": HDR, "frozenColumnCount": 1}},
-        "fields": "gridProperties(frozenRowCount,frozenColumnCount)"}},
-    {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
-                                   "properties": {"pixelSize": 208}, "fields": "pixelSize"}},
-    {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "COLUMNS", "startIndex": 1, "endIndex": nb + 1},
-                                   "properties": {"pixelSize": 88}, "fields": "pixelSize"}},
-    {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "ROWS", "startIndex": 97, "endIndex": 140},
-                                   "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
-    {"updateDimensionProperties": {"range": {"sheetId": BOARD, "dimension": "COLUMNS",
-                                             "startIndex": MIRROR0,
-                                             "endIndex": MIRROR0 + len(BCOLS) + 1},
-                                   "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
-    {"setDataValidation": {"range": gr(BOARD, 0, 1, 8, 9), "rule": {
-        "condition": {"type": "ONE_OF_RANGE",
-                      "values": [{"userEnteredValue": "='Manager Board'!$A$100:$A$%d" % (99 + len(WEEK_ENDS))}]},
-        "showCustomUi": True, "strict": True}}},
-    fmt(BOARD, 99, 99 + len(WEEK_ENDS), 0, 1,
-        {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "m/d/yyyy"}}},
-        "userEnteredFormat.numberFormat"),
-]
 
-# ---- Trend formatting
-F += [
-    fmt(TREND, 0, 1, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK, True, 20)}}, "userEnteredFormat.textFormat"),
-    fmt(TREND, 0, 1, 1, 2, {"userEnteredFormat": {
-        "textFormat": txt(PICK, True, 14), "backgroundColor": rgb(ACCENT_BG), "horizontalAlignment": "LEFT",
-        "borders": {"top": bd(ACCENT), "bottom": bd(ACCENT), "left": bd(ACCENT), "right": bd(ACCENT)}}},
-        "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment,borders)"),
-    fmt(TREND, 1, 2, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK_2, False, 11)}}, "userEnteredFormat.textFormat"),
-    fmt(TREND, 1, 2, TC0, ncols, {"userEnteredFormat": {
-        "textFormat": txt(INK_2, False, 10, FONT), "horizontalAlignment": "CENTER",
-        "numberFormat": {"type": "DATE", "pattern": "m/d"}, "backgroundColor": rgb(SURF_2)}},
-        "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,backgroundColor)"),
-    fmt(TREND, THDR - 1, THDR, 0, ncols, {"userEnteredFormat": {
-        "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11), "horizontalAlignment": "RIGHT"}},
-        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
-    fmt(TREND, THDR - 1, THDR, 0, 1, {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-        "userEnteredFormat.horizontalAlignment"),
-    fmt(TREND, TF - 1, TF + len(METRICS) - 1, 0, ncols, {"userEnteredFormat": {
-        "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "RIGHT",
-        "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}, "borders": {"bottom": bd(LINE)}}},
-        "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
-    fmt(TREND, TF - 1, TF + len(METRICS) - 1, 0, 1, {"userEnteredFormat": {
-        "textFormat": txt(INK, False, 12, FONT_UI), "horizontalAlignment": "LEFT",
-        "borders": {"bottom": bd(LINE)}}},
-        "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
-    fmt(TREND, TF - 1, TF + len(METRICS) - 1, 1, 2, {"userEnteredFormat": {
-        "backgroundColor": rgb(SURF_2), "textFormat": txt(INK_2, False, 12, FONT),
-        "borders": {"right": bdm(), "bottom": bd(LINE)}}},
-        "userEnteredFormat(backgroundColor,textFormat,borders)"),
-]
-for wi in range(len(WEEK_ENDS)):
-    b = TC0 + wi * WW
-    # week total is now the FIRST column of the block
-    F.append(fmt(TREND, THDR - 1, TF + len(METRICS) - 1, b, b + 1, {"userEnteredFormat": {
-        "textFormat": {"bold": True}, "borders": {"left": bdm(), "right": bdm()}}},
-        "userEnteredFormat(textFormat,borders)"))
-    # Sat + Sun (day slots 6 and 7 within the block) read back
-    F.append(fmt(TREND, TF - 1, TF + len(METRICS) - 1, b + 6, b + 8, {"userEnteredFormat": {
-        "textFormat": {"foregroundColor": rgb(INK_3)}, "backgroundColor": rgb(SURF_2)}},
-        "userEnteredFormat(textFormat,backgroundColor)"))
-    F.append({"addDimensionGroup": {"range": {
-        "sheetId": TREND, "dimension": "COLUMNS", "startIndex": b + 1, "endIndex": b + 8}}})
+    for mi, m in enumerate(roster):
+        r = M0 + mi
+        board.append([m] + [cell(k, key, r) for (_, k, key) in BCOLS])
 
-LOWER_BETTER = {"Removal %"}
-for i, (kind, lab, key) in enumerate(METRICS):
-    r = TF + i
-    if kind == "grp":
-        F.append(fmt(TREND, r - 1, r, 0, ncols, {"userEnteredFormat": {
-            "backgroundColor": rgb(STAGE[key]), "textFormat": txt("#FFFFFF", True, 10),
-            "horizontalAlignment": "LEFT", "borders": {}}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"))
-        F.append({"updateDimensionProperties": {
-            "range": {"sheetId": TREND, "dimension": "ROWS", "startIndex": r - 1, "endIndex": r},
-            "properties": {"pixelSize": 28}, "fields": "pixelSize"}})
-    elif kind == "derived":
-        F.append(fmt(TREND, r - 1, r, 0, ncols, {"userEnteredFormat": {
+    trow = [total_label]
+    for i, (h, kind, key) in enumerate(BCOLS):
+        c = a1(B0 + i)
+        if kind == "pctd":
+            nc, dc = a1(HELP0 + 2 * PCTD.index(i)), a1(HELP0 + 2 * PCTD.index(i) + 1)
+            trow.append("=IFERROR(SUBTOTAL(109,%s%d:%s%d)/SUBTOTAL(109,%s%d:%s%d),\"\")"
+                        % (nc, M0, nc, M1, dc, M0, dc, M1))
+        elif kind in ("n", "derived"):
+            # SUBTOTAL(109) ignores rows the filter hides, so the total reflects
+            # whatever subset is on screen rather than always summing all 14.
+            trow.append("=SUBTOTAL(109,%s%d:%s%d)" % (c, M0, c, M1))
+        else:
+            n, d = key
+            trow.append("=IFERROR(%s%d/%s%d,\"\")" % (a1(B0 + KEYCOL[n]), TOTR, a1(B0 + KEYCOL[d]), TOTR))
+    board.append(trow)
+    values.append({"range": "'%s'!A1" % title, "values": board})
+    values.append({"range": "'%s'!A100" % title,
+                   "values": [[w.strftime("%m/%d/%Y")] for w in reversed(WEEK_ENDS)]})
+    values.append({"range": "'%s'!B%d" % (title, PACE_ROW), "values": [[
+        ('=IFERROR(VLOOKUP(%s$%d,$A$%d:$H$%d,$L$1+1,FALSE),1)' % (a1(B0 + i), HDR, CURVE0, CURVE0 + 20)
+         if c[0] in PACE_KEY else "") for i, c in enumerate(BCOLS)]]})
+    values.append({"range": "'%s'!A%d" % (title, CURVE0), "values":
+                   [[h] + PACE_CURVE[k] for h, k in PACE_KEY.items()]})
+    # hidden goal-mirror columns: each manager's own goal, looked up by name from Goals.
+    # Start the hidden goal mirror AFTER the last data column, with one blank
+    # column as a buffer. Hard-coding 19 collided with NS Shw % once the board
+    # grew to 19 columns, and silently blanked it on every build.
+
+    mirror = []
+    for mi, m in enumerate(roster):
+        r = M0 + mi
+        mirror.append([('=IFERROR(VLOOKUP($A%d,Goals!$B:$U,%d,FALSE),0)'
+                        % (r, GOAL_AT[MIRROR_KEY[c[0]]]))
+                       if c[0] in MIRROR_KEY else "" for c in BCOLS])
+    values.append({"range": "'%s'!%s%d" % (title, a1(MIRROR0), M0), "values": mirror})
+
+    helper = []
+    for mi, m in enumerate(roster):
+        r = M0 + mi
+        row = []
+        for i in PCTD:
+            n, d = BCOLS[i][2]
+            row += [cell("n", n, r), cell("n", d, r)]
+        helper.append(row)
+    values.append({"range": "'%s'!%s%d" % (title, a1(HELP0), M0), "values": helper})
+
+    nb = len(BCOLS)
+    F += [
+        fmt(sid, 0, 1, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK, True, 20)}}, "userEnteredFormat.textFormat"),
+        fmt(sid, 1, 2, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK_2, False, 11)}}, "userEnteredFormat.textFormat"),
+        fmt(sid, 0, 1, 7, 8, {"userEnteredFormat": {"textFormat": txt(INK_3, True, 9), "horizontalAlignment": "RIGHT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, 0, 1, 8, 9, {"userEnteredFormat": {
+            "textFormat": txt(PICK, True, 14), "backgroundColor": rgb(ACCENT_BG),
+            "horizontalAlignment": "LEFT", "numberFormat": {"type": "DATE", "pattern": "m/d/yy"},
+            "borders": {"top": bd(ACCENT), "bottom": bd(ACCENT), "left": bd(ACCENT), "right": bd(ACCENT)}}},
+            "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment,numberFormat,borders)"),
+        fmt(sid, HDR - 1, HDR, 0, nb + 1, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "RIGHT", "wrapStrategy": "CLIP"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,wrapStrategy)"),
+        fmt(sid, HDR - 1, HDR, 0, 1, {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "userEnteredFormat.horizontalAlignment"),
+        fmt(sid, M0 - 1, M1, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT",
+            "borders": {"right": bdm()}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
+        fmt(sid, M0 - 1, TOTR, 1, nb + 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "RIGHT",
+            "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}, "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
+        fmt(sid, TOTR - 1, TOTR, 0, nb + 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12, FONT), "backgroundColor": rgb(SURF_2),
+            "borders": {"top": bdt(INK)}}},
+            "userEnteredFormat(textFormat,backgroundColor,borders)"),
+        fmt(sid, TOTR - 1, TOTR, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12, FONT_UI), "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, M0 - 1, TOTR, B0, B0 + 1, {"userEnteredFormat": {
             "backgroundColor": rgb(ACCENT_BG), "textFormat": txt(ACCENT, True, 12, FONT)}},
-            "userEnteredFormat(backgroundColor,textFormat)"))
-        F.append(fmt(TREND, r - 1, r, 0, 1, {"userEnteredFormat": {
-            "textFormat": txt(ACCENT, True, 12, FONT_UI)}}, "userEnteredFormat.textFormat"))
-    elif kind in ("pct", "pctd"):
-        F.append(fmt(TREND, r - 1, r, 1, ncols, {"userEnteredFormat": {
-            "numberFormat": {"type": "PERCENT", "pattern": "0%"}, "textFormat": txt(INK_2, False, 11, FONT)}},
-            "userEnteredFormat(numberFormat,textFormat)"))
-        F.append(fmt(TREND, r - 1, r, 0, 1, {"userEnteredFormat": {
-            "textFormat": txt(INK_2, False, 11, FONT_UI)}}, "userEnteredFormat.textFormat"))
-        if lab not in TREND_PCT_GOAL:
-            continue                      # no goal behind it — leave it uncoloured
-        # A rate does not accumulate, so every cell (each day and the week total)
-        # is comparable to the goal in column B as-is.
-        low = lab == "Removal %"
-        v, g = "C%d" % r, "$B%d" % r
-        tests = (((("%s<=%s*%s" % (v, g, 2 - BAND_OK), GOOD, GOOD_BG),
-                   ("AND(%s<=%s*%s,%s>%s*%s)" % (v, g, 2 - BAND_WARN, v, g, 2 - BAND_OK), WARN, WARN_BG),
-                   ("%s>%s*%s" % (v, g, 2 - BAND_WARN), BAD, BAD_BG)) if low else
-                  (("%s>=%s*%s" % (v, g, BAND_OK), GOOD, GOOD_BG),
-                   ("AND(%s>=%s*%s,%s<%s*%s)" % (v, g, BAND_WARN, v, g, BAND_OK), WARN, WARN_BG),
-                   ("%s<%s*%s" % (v, g, BAND_WARN), BAD, BAD_BG))))
-        for expr, fg, bg in tests:
-            f = '=AND(ISNUMBER(%s),%s>0,%s)' % (v, g, expr)
+            "userEnteredFormat(backgroundColor,textFormat)"),
+    ]
+    for i, c in enumerate(BCOLS):
+        if c[1] in ("pct", "pctd"):
+            F.append(fmt(sid, M0 - 1, TOTR, B0 + i, B0 + i + 1, {"userEnteredFormat": {
+                "numberFormat": {"type": "PERCENT", "pattern": "0%"}, "borders": {"left": bdm()}}},
+                "userEnteredFormat(numberFormat,borders)"))
+
+    # ---- grade every column that has a goal, on distance from that goal.
+    # Counts compare to goal x pace-to-date (so mid-week is judged on run rate) and are
+    # shown as coloured LETTERING; rates compare to the goal directly and are FILLED —
+    # filling both turns the board into one wash.
+    for i, c in enumerate(BCOLS):
+        spec = GRADE.get(c[0])
+        if not spec:
+            continue
+        gkey, kind = spec
+        col, gcol = a1(B0 + i), a1(MIRROR0 + i)
+        base = ("%s%d*%s$%d" % (gcol, M0, col, PACE_ROW)) if kind == "count" else "%s%d" % (gcol, M0)
+        guard = 'AND(%s%d>0,ISNUMBER(%s%d),' % (gcol, M0, col, M0)
+        v = "%s%d" % (col, M0)
+        if kind == "rate_low":                      # under the removal goal is good
+            tests = (("%s<=%s*%s" % (v, base, 2 - BAND_OK), GOOD),
+                     ("AND(%s<=%s*%s,%s>%s*%s)" % (v, base, 2 - BAND_WARN, v, base, 2 - BAND_OK), WARN),
+                     ("%s>%s*%s" % (v, base, 2 - BAND_WARN), BAD))
+        else:
+            tests = (("%s>=%s*%s" % (v, base, BAND_OK), GOOD),
+                     ("AND(%s>=%s*%s,%s<%s*%s)" % (v, base, BAND_WARN, v, base, BAND_OK), WARN),
+                     ("%s<%s*%s" % (v, base, BAND_WARN), BAD))
+        for expr, fg in tests:
+            style = ({"backgroundColor": rgb({GOOD: GOOD_BG, WARN: WARN_BG, BAD: BAD_BG}[fg]),
+                      "textFormat": {"foregroundColor": rgb(fg), "bold": True}}
+                     if kind != "count" else
+                     {"textFormat": {"foregroundColor": rgb(fg), "bold": True}})
             F.append({"addConditionalFormatRule": {"rule": {
-                "ranges": [gr(TREND, r - 1, r, TC0, ncols)],
+                "ranges": [gr(sid, M0 - 1, M1, B0 + i, B0 + i + 1)],
                 "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
-                                              "values": [{"userEnteredValue": f}]},
-                                "format": {"backgroundColor": rgb(bg),
-                                           "textFormat": {"foregroundColor": rgb(fg), "bold": True}}}},
+                                              "values": [{"userEnteredValue": "=" + guard + expr + ")"}]},
+                                "format": style}},
                 "index": 0}})
-    elif kind == "n" and key in set(GRADE[h][0] for h in GRADE if GRADE[h][1] == "count"):
-        # Counts accumulate, so only the WEEK-TOTAL columns are comparable to a
-        # weekly goal; a single day against a week's target means nothing.
+
+    F += [
+        fmt(sid, 0, 1, 10, 11, {"userEnteredFormat": {
+            "textFormat": txt(INK_3, True, 11), "horizontalAlignment": "RIGHT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, 0, 1, 11, 12, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 13, FONT), "horizontalAlignment": "CENTER",
+            "numberFormat": {"type": "NUMBER", "pattern": "0"},
+            "backgroundColor": rgb(SUNKEN),
+            "borders": {"top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,backgroundColor,borders)"),
+        # Filter spans the Goal row + the 14 managers. Sheets treats the first row of
+        # a filter range as its header, so anchoring on row 4 keeps the Goal row out of
+        # the sorted data AND leaves the OFFICE TOTAL row outside the range entirely.
+        {"setBasicFilter": {"filter": {"range": gr(sid, HDR - 1, M1, 0, len(BCOLS) + 1)}}},
+        {"updateSheetProperties": {"properties": {
+            "sheetId": sid, "gridProperties": {"frozenRowCount": HDR, "frozenColumnCount": 1}},
+            "fields": "gridProperties(frozenRowCount,frozenColumnCount)"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
+                                       "properties": {"pixelSize": 208}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 1, "endIndex": nb + 1},
+                                       "properties": {"pixelSize": 88}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 97, "endIndex": 140},
+                                       "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS",
+                                                 "startIndex": MIRROR0,
+                                                 "endIndex": HELP0 + 2 * len(PCTD)},
+                                       "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+        {"setDataValidation": {"range": gr(sid, 0, 1, 8, 9), "rule": {
+            "condition": {"type": "ONE_OF_RANGE",
+                          "values": [{"userEnteredValue": "='%s'!$A$100:$A$%d" % (title, 99 + len(WEEK_ENDS))}]},
+            "showCustomUi": True, "strict": True}}},
+        fmt(sid, 99, 99 + len(WEEK_ENDS), 0, 1,
+            {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "m/d/yyyy"}}},
+            "userEnteredFormat.numberFormat"),
+    ]
+
+    # banding: long rows are hard to track across without an alternating tint
+    F.append({"addBanding": {"bandedRange": {
+        "range": gr(sid, M0 - 1, TOTR, 0, len(BCOLS) + 1),
+        "rowProperties": {"firstBandColor": rgb("#FFFFFF"),
+                          "secondBandColor": rgb("#DCE6F2")}}}})
+
+    # ---- Board: a rule at each funnel-stage boundary so the columns group visually
+    for _h in ("Sent to CL", "2nd Bkd", "Offered", "NS Sched"):
+        _i = [c[0] for c in BCOLS].index(_h)
+        F.append({"updateBorders": {
+            "range": gr(sid, HDR - 1, TOTR + 1, B0 + _i, B0 + _i + 1), "left": bdt(INK)}})
+
+    # the ad budget box, then the colour key underneath it
+    if ad_box:
+        budget(sid, title, roster, TOTR + 3)
+        legend(sid, title, TOTR + 3 + 2 + len(roster) + 3)
+    else:
+        legend(sid, title, TOTR + 3)
+    F.append(fmt(sid, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, CENTER, FC))
+    F.append(fmt(sid, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, BOLD, FB))
+
+
+def build_trend(sid, title, heading, roster):
+    """One Manager-Trend-shaped tab, its picker limited to `roster`."""
+    global F
+    F.append(fmt(sid, 0, 200, 0, 60, {"userEnteredFormat": {
+        "textFormat": txt(), "verticalAlignment": "MIDDLE"}},
+        "userEnteredFormat(textFormat,verticalAlignment)"))
+    F.append({"updateDimensionProperties": {
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0, "endIndex": 60},
+        "properties": {"pixelSize": 32}, "fields": "pixelSize"}})
+
+    trend = [[None] * ncols for _ in range(THDR + len(METRICS))]
+    trend[0][0] = heading
+    trend[0][1] = roster[0]
+    trend[1][0] = "Click + above a week to open Mon–Sun" + NOTE
+    trend[THDR - 1][0] = "METRIC"
+    trend[THDR - 1][1] = "GOAL"
+    # Each week block is [WK total][Mon..Sun], NOT [Mon..Sun][WK total]. Sheets draws
+    # a collapsed group's +/- toggle on the column immediately BEFORE the group, so
+    # putting the total first is what makes the + for a week sit above that week's own
+    # header instead of above the previous week's.
+    for wi, we in enumerate(reversed(WEEK_ENDS)):        # newest week first
+        b = TC0 + wi * WW
+        trend[THDR - 1][b] = "WK " + we.strftime("%-m/%-d")
+        trend[THDR - 2][b] = we.strftime("%m/%d/%Y")
+        for di in range(7):
+            d = we - dt.timedelta(days=6 - di)
+            trend[THDR - 1][b + 1 + di] = DAYN[di]
+            trend[THDR - 2][b + 1 + di] = d.strftime("%m/%d/%Y")
+
+    for i, (kind, lab, key) in enumerate(METRICS):
+        r = TF + i
+        trend[r - 1][0] = lab
+        if kind == "grp":
+            continue
+        if kind == "pctd":
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+                               % (GOAL_AT["ret2cl"]))
+        elif kind == "derived":
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+                               % (GOAL_AT["applies"]))
+        elif kind == "n":
+            trend[r - 1][1] = ("=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),\"\")"
+                               % (GOAL_AT[key]))
+        elif lab in TREND_PCT_GOAL:
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+                               % GOAL_AT[TREND_PCT_GOAL[lab]])
+        else:
+            n, d = key
+            trend[r - 1][1] = "=IFERROR(B%d/B%d,\"\")" % (KR[n], KR[d])
         for wi in range(len(WEEK_ENDS)):
-            wcol = a1(TC0 + wi * WW)
-            v, g = "%s%d" % (wcol, r), "$B%d" % r
-            for expr, fg in (("%s>=%s*%s" % (v, g, BAND_OK), GOOD),
-                             ("AND(%s>=%s*%s,%s<%s*%s)" % (v, g, BAND_WARN, v, g, BAND_OK), WARN),
-                             ("%s<%s*%s" % (v, g, BAND_WARN), BAD)):
+            b = TC0 + wi * WW
+            for di in range(8):
+                c = a1(b + di)
+                if kind == "pctd":
+                    n, d = key
+                    col_c = ("SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,"
+                             "'Daily Log'!$%s:$%s,%s$2)")
+                    ax = "A" if di > 0 else "B"        # day cells match the date, WK the week
+                    f = "=IFERROR(%s/%s,\"\")" % (
+                        col_c % (COL[n], COL[n], ax, ax, c), col_c % (COL[d], COL[d], ax, ax, c))
+                elif kind == "derived":
+                    f = "=%s%d+%s%d" % (c, REM_R, c, SENT_R)
+                elif kind == "n":
+                    f = ("=SUM(%s%d:%s%d)" % (a1(b + 1), r, a1(b + 7), r) if di == 0 else
+                         "=SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,'Daily Log'!$A:$A,%s$2)"
+                         % (COL[key], COL[key], c))
+                else:
+                    n, d = key
+                    f = "=IFERROR(%s%d/%s%d,\"\")" % (c, KR[n], c, KR[d])
+                trend[r - 1][b + di] = f
+
+    values.append({"range": "'%s'!A1" % title, "values": trend})
+    values.append({"range": "'%s'!A100" % title, "values": [[m] for m in roster]})
+
+    # ---- Trend formatting
+    F += [
+        fmt(sid, 0, 1, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK, True, 20)}}, "userEnteredFormat.textFormat"),
+        fmt(sid, 0, 1, 1, 2, {"userEnteredFormat": {
+            "textFormat": txt(PICK, True, 14), "backgroundColor": rgb(ACCENT_BG), "horizontalAlignment": "LEFT",
+            "borders": {"top": bd(ACCENT), "bottom": bd(ACCENT), "left": bd(ACCENT), "right": bd(ACCENT)}}},
+            "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment,borders)"),
+        fmt(sid, 1, 2, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK_2, False, 11)}}, "userEnteredFormat.textFormat"),
+        fmt(sid, 1, 2, TC0, ncols, {"userEnteredFormat": {
+            "textFormat": txt(INK_2, False, 10, FONT), "horizontalAlignment": "CENTER",
+            "numberFormat": {"type": "DATE", "pattern": "m/d"}, "backgroundColor": rgb(SURF_2)}},
+            "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,backgroundColor)"),
+        fmt(sid, THDR - 1, THDR, 0, ncols, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11), "horizontalAlignment": "RIGHT"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
+        fmt(sid, THDR - 1, THDR, 0, 1, {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "userEnteredFormat.horizontalAlignment"),
+        fmt(sid, TF - 1, TF + len(METRICS) - 1, 0, ncols, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "RIGHT",
+            "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}, "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
+        fmt(sid, TF - 1, TF + len(METRICS) - 1, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 12, FONT_UI), "horizontalAlignment": "LEFT",
+            "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
+        fmt(sid, TF - 1, TF + len(METRICS) - 1, 1, 2, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK_2, False, 12, FONT),
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(backgroundColor,textFormat,borders)"),
+    ]
+    for wi in range(len(WEEK_ENDS)):
+        b = TC0 + wi * WW
+        # week total is now the FIRST column of the block
+        F.append(fmt(sid, THDR - 1, TF + len(METRICS) - 1, b, b + 1, {"userEnteredFormat": {
+            "textFormat": {"bold": True}, "borders": {"left": bdm(), "right": bdm()}}},
+            "userEnteredFormat(textFormat,borders)"))
+        # Sat + Sun (day slots 6 and 7 within the block) read back
+        F.append(fmt(sid, TF - 1, TF + len(METRICS) - 1, b + 6, b + 8, {"userEnteredFormat": {
+            "textFormat": {"foregroundColor": rgb(INK_3)}, "backgroundColor": rgb(SURF_2)}},
+            "userEnteredFormat(textFormat,backgroundColor)"))
+        F.append({"addDimensionGroup": {"range": {
+            "sheetId": sid, "dimension": "COLUMNS", "startIndex": b + 1, "endIndex": b + 8}}})
+
+    LOWER_BETTER = {"Removal %"}
+    for i, (kind, lab, key) in enumerate(METRICS):
+        r = TF + i
+        if kind == "grp":
+            F.append(fmt(sid, r - 1, r, 0, ncols, {"userEnteredFormat": {
+                "backgroundColor": rgb(STAGE[key]), "textFormat": txt("#FFFFFF", True, 10),
+                "horizontalAlignment": "LEFT", "borders": {}}},
+                "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"))
+            F.append({"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": r - 1, "endIndex": r},
+                "properties": {"pixelSize": 28}, "fields": "pixelSize"}})
+        elif kind == "derived":
+            F.append(fmt(sid, r - 1, r, 0, ncols, {"userEnteredFormat": {
+                "backgroundColor": rgb(ACCENT_BG), "textFormat": txt(ACCENT, True, 12, FONT)}},
+                "userEnteredFormat(backgroundColor,textFormat)"))
+            F.append(fmt(sid, r - 1, r, 0, 1, {"userEnteredFormat": {
+                "textFormat": txt(ACCENT, True, 12, FONT_UI)}}, "userEnteredFormat.textFormat"))
+        elif kind in ("pct", "pctd"):
+            F.append(fmt(sid, r - 1, r, 1, ncols, {"userEnteredFormat": {
+                "numberFormat": {"type": "PERCENT", "pattern": "0%"}, "textFormat": txt(INK_2, False, 11, FONT)}},
+                "userEnteredFormat(numberFormat,textFormat)"))
+            F.append(fmt(sid, r - 1, r, 0, 1, {"userEnteredFormat": {
+                "textFormat": txt(INK_2, False, 11, FONT_UI)}}, "userEnteredFormat.textFormat"))
+            if lab not in TREND_PCT_GOAL:
+                continue                      # no goal behind it — leave it uncoloured
+            # A rate does not accumulate, so every cell (each day and the week total)
+            # is comparable to the goal in column B as-is.
+            low = lab == "Removal %"
+            v, g = "C%d" % r, "$B%d" % r
+            tests = (((("%s<=%s*%s" % (v, g, 2 - BAND_OK), GOOD, GOOD_BG),
+                       ("AND(%s<=%s*%s,%s>%s*%s)" % (v, g, 2 - BAND_WARN, v, g, 2 - BAND_OK), WARN, WARN_BG),
+                       ("%s>%s*%s" % (v, g, 2 - BAND_WARN), BAD, BAD_BG)) if low else
+                      (("%s>=%s*%s" % (v, g, BAND_OK), GOOD, GOOD_BG),
+                       ("AND(%s>=%s*%s,%s<%s*%s)" % (v, g, BAND_WARN, v, g, BAND_OK), WARN, WARN_BG),
+                       ("%s<%s*%s" % (v, g, BAND_WARN), BAD, BAD_BG))))
+            for expr, fg, bg in tests:
                 f = '=AND(ISNUMBER(%s),%s>0,%s)' % (v, g, expr)
                 F.append({"addConditionalFormatRule": {"rule": {
-                    "ranges": [gr(TREND, r - 1, r, TC0 + wi * WW, TC0 + wi * WW + 1)],
+                    "ranges": [gr(sid, r - 1, r, TC0, ncols)],
                     "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
                                                   "values": [{"userEnteredValue": f}]},
-                                    "format": {"textFormat": {"foregroundColor": rgb(fg),
-                                                              "bold": True}}}},
+                                    "format": {"backgroundColor": rgb(bg),
+                                               "textFormat": {"foregroundColor": rgb(fg), "bold": True}}}},
                     "index": 0}})
+        elif kind == "n" and key in set(GRADE[h][0] for h in GRADE if GRADE[h][1] == "count"):
+            # Counts accumulate, so only the WEEK-TOTAL columns are comparable to a
+            # weekly goal; a single day against a week's target means nothing.
+            for wi in range(len(WEEK_ENDS)):
+                wcol = a1(TC0 + wi * WW)
+                v, g = "%s%d" % (wcol, r), "$B%d" % r
+                for expr, fg in (("%s>=%s*%s" % (v, g, BAND_OK), GOOD),
+                                 ("AND(%s>=%s*%s,%s<%s*%s)" % (v, g, BAND_WARN, v, g, BAND_OK), WARN),
+                                 ("%s<%s*%s" % (v, g, BAND_WARN), BAD)):
+                    f = '=AND(ISNUMBER(%s),%s>0,%s)' % (v, g, expr)
+                    F.append({"addConditionalFormatRule": {"rule": {
+                        "ranges": [gr(sid, r - 1, r, TC0 + wi * WW, TC0 + wi * WW + 1)],
+                        "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
+                                                      "values": [{"userEnteredValue": f}]},
+                                        "format": {"textFormat": {"foregroundColor": rgb(fg),
+                                                                  "bold": True}}}},
+                        "index": 0}})
 
-F += [
-    {"updateSheetProperties": {"properties": {
-        "sheetId": TREND, "gridProperties": {"frozenRowCount": THDR, "frozenColumnCount": 2}},
-        "fields": "gridProperties(frozenRowCount,frozenColumnCount)"}},
-    {"updateDimensionProperties": {"range": {"sheetId": TREND, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
-                                   "properties": {"pixelSize": 250}, "fields": "pixelSize"}},
-    {"updateDimensionProperties": {"range": {"sheetId": TREND, "dimension": "COLUMNS", "startIndex": 1, "endIndex": ncols},
-                                   "properties": {"pixelSize": 80}, "fields": "pixelSize"}},
-    {"setDataValidation": {"range": gr(TREND, 0, 1, 1, 2), "rule": {
-        "condition": {"type": "ONE_OF_RANGE",
-                      "values": [{"userEnteredValue": "=Goals!$B$2:$B$%d" % (len(MANAGERS) + 1)}]},
-        "showCustomUi": True, "strict": True}}},
-]
+    F += [
+        {"updateSheetProperties": {"properties": {
+            "sheetId": sid, "gridProperties": {"frozenRowCount": THDR, "frozenColumnCount": 2}},
+            "fields": "gridProperties(frozenRowCount,frozenColumnCount)"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
+                                       "properties": {"pixelSize": 250}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": 1, "endIndex": ncols},
+                                       "properties": {"pixelSize": 80}, "fields": "pixelSize"}},
+        # The picker reads this tab's OWN hidden name list (row 100 down), not a
+        # slice of Goals. Goals is ordered by the org board, so a captainship — a
+        # scattered subset of those rows — cannot be expressed as a range there.
+        {"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
+            "condition": {"type": "ONE_OF_RANGE",
+                          "values": [{"userEnteredValue": "='%s'!$A$100:$A$%d"
+                                      % (title, 99 + len(roster))}]},
+            "showCustomUi": True, "strict": True}}},
+        {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
+                                                 "startIndex": 97, "endIndex": 140},
+                                       "properties": {"hiddenByUser": True},
+                                       "fields": "hiddenByUser"}},
+    ]
+
+    # ---- vertical rules so each week block reads as one unit
+    for wi in range(len(WEEK_ENDS)):
+        b = TC0 + wi * WW
+        F.append({"updateBorders": {
+            "range": gr(sid, THDR - 1, TF + len(METRICS) - 1, b, b + WW),
+            "left": bdt(INK)}})
+
+    legend(sid, title, TF + len(METRICS) + 2)
+    F.append(fmt(sid, THDR - 2, TF + len(METRICS) - 1, 0, ncols, CENTER, FC))
+    # On the Trend the counts are the story and the rates are support, so bold
+    # the count rows only — bolding both flattens that back out.
+    for i, (kind, lab, key) in enumerate(METRICS):
+        if kind in ("n", "derived"):
+            F.append(fmt(sid, TF + i - 1, TF + i, 0, ncols, BOLD, FB))
+    F.append(fmt(sid, THDR - 1, THDR, 0, ncols, BOLD, FB))
+
+
+# ---- the two cuts of the same data.
+# Org first so its formatting lands first; they touch different tabs, so the
+# order is only about what a reader sees in the request log.
+build_board(BOARD, "Manager Board", "Manager Funnel Board", MANAGERS, "OFFICE TOTAL")
+build_trend(TREND, "Manager Trend", "Manager Trend", MANAGERS)
+build_board(CAPBOARD, CAP_BOARD_TITLE, "Captainship Funnel Board", CAP_ROSTER,
+            "CAPTAINSHIP TOTAL")
+build_trend(CAPTREND, CAP_TREND_TITLE, "Captainship Manager Trend", CAP_ROSTER)
+
+
+call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": values})
+print("values written")
 
 # ---- Manager Matrix formatting
 F += [
@@ -997,25 +1244,11 @@ F += [
 ]
 
 # ---- banding: long rows are hard to track across without an alternating tint
-for sid, r0, r1, c1 in ((BOARD, M0 - 1, TOTR, len(BCOLS) + 1),
-                        (MATRIX, MX_M0 - 1, MX_TOT, MXN)):
-    F.append({"addBanding": {"bandedRange": {
-        "range": gr(sid, r0, r1, 0, c1),
-        "rowProperties": {"firstBandColor": rgb("#FFFFFF"),
-                          "secondBandColor": rgb("#DCE6F2")}}}})
+F.append({"addBanding": {"bandedRange": {
+    "range": gr(MATRIX, MX_M0 - 1, MX_TOT, 0, MXN),
+    "rowProperties": {"firstBandColor": rgb("#FFFFFF"),
+                      "secondBandColor": rgb("#DCE6F2")}}}})
 
-# ---- Board: a rule at each funnel-stage boundary so the columns group visually
-for _h in ("Sent to CL", "2nd Bkd", "Offered", "NS Sched"):
-    _i = [c[0] for c in BCOLS].index(_h)
-    F.append({"updateBorders": {
-        "range": gr(BOARD, HDR - 1, TOTR + 1, B0 + _i, B0 + _i + 1), "left": bdt(INK)}})
-
-# ---- vertical rules so each week block reads as one unit
-for wi in range(len(WEEK_ENDS)):
-    b = TC0 + wi * WW
-    F.append({"updateBorders": {
-        "range": gr(TREND, THDR - 1, TF + len(METRICS) - 1, b, b + WW),
-        "left": bdt(INK)}})
 for wi in range(len(WEEK_ENDS) + 1):
     F.append({"updateBorders": {
         "range": gr(MATRIX, 2, MX_TOT + 1, 1 + wi, 2 + wi), "left": bdm()}})
@@ -1150,161 +1383,17 @@ F.append({"updateDimensionProperties": {
     "range": {"sheetId": MATRIX, "dimension": "COLUMNS",
               "startIndex": MXN + 1, "endIndex": MXN + 2},
     "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
-
-
-# ---- ad budget box, Manager Board only
-#
-# Reads each manager's own tracker tab (the IMPORTRANGE mirrors of their Indeed
-# sheets), NOT 'Manager View'. Manager View is =INDIRECT on its own B1 picker,
-# so it only ever shows one manager — whoever last touched the dropdown. The
-# per-manager tabs are the real source and carry the same columns:
-#   B = Report Date (a real date serial)   S = Daily Budget (a real number)
-#
-# Deliberately pure formulas, no scraping. The manager tabs are IMPORTRANGE, so
-# Google refreshes them on its own and this box follows automatically — nobody
-# has to tell the automation that a tracker was updated. INDIRECT is volatile,
-# which is what we want here, and it also lets IFERROR swallow a manager who
-# has no tab yet (a literal 'No Such Tab'!B2:B would be a parse error instead).
-#
-# Whichever rows carry the newest Report Date are the current picture, so the
-# box takes MAX(date) per manager and sums Daily Budget on that date only. No
-# status filter — every ad on the latest report date counts.
-BUD_ROWS = 2 + len(MANAGERS)          # header + one row per manager + total
-
-
-def budget(sid, row0):
-    first, last = row0 + 2, row0 + 1 + len(MANAGERS)
-    day = ("=IFERROR(LET(d,INDIRECT(\"'\"&$A%d&\"'!$B$2:$B\"),"
-           "b,INDIRECT(\"'\"&$A%d&\"'!$S$2:$S\"),"
-           "IF(MAX(d)=0,0,SUMIF(d,MAX(d),b))),0)")
-    rows = [[m, day % (r, r), "=$B%d*7" % r, "=$B%d*DAY(EOMONTH(TODAY(),0))" % r]
-            for r, m in enumerate(MANAGERS, start=first)]
-    LEGEND_VALUES.append({"range": "'%s'!A%d" % (TITLE_OF[sid], row0), "values":
-                          [["AD BUDGET — latest report date on each manager's tracker tab"],
-                           ["MANAGER", "DAILY", "WEEKLY", "MONTHLY"]]
-                          + rows
-                          + [["ORG TOTAL", "=SUM(B%d:B%d)" % (first, last),
-                              "=SUM(C%d:C%d)" % (first, last),
-                              "=SUM(D%d:D%d)" % (first, last)]]})
-    tot = last + 1
-    F.extend([
-        # Wipe any fill left behind by whatever previously occupied these rows —
-        # the colour key used to live here and its band fills would otherwise
-        # show through the new box.
-        fmt(sid, row0 - 1, tot + 12, 0, 5, {"userEnteredFormat": {
-            "backgroundColor": rgb("#FFFFFF")}}, "userEnteredFormat(backgroundColor)"),
-        fmt(sid, row0 - 1, row0, 0, 4, {"userEnteredFormat": {
-            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(textFormat,horizontalAlignment)"),
-        fmt(sid, row0, row0 + 1, 0, 4, {"userEnteredFormat": {
-            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-            "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
-        fmt(sid, first - 1, last, 0, 1, {"userEnteredFormat": {
-            "textFormat": txt(INK, False, 11), "horizontalAlignment": "LEFT",
-            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
-            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
-        # Money reads as money, and right-aligned so the columns line up.
-        fmt(sid, first - 1, last, 1, 4, {"userEnteredFormat": {
-            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
-            "textFormat": txt(INK, False, 11, FONT), "horizontalAlignment": "RIGHT",
-            "borders": {"bottom": bd(LINE)}}},
-            "userEnteredFormat(numberFormat,textFormat,horizontalAlignment,borders)"),
-        fmt(sid, tot - 1, tot, 0, 1, {"userEnteredFormat": {
-            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK, True, 11),
-            "horizontalAlignment": "LEFT", "borders": {"top": bdm(), "right": bdm()}}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"),
-        fmt(sid, tot - 1, tot, 1, 4, {"userEnteredFormat": {
-            "backgroundColor": rgb(SURF_2),
-            "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0"},
-            "textFormat": txt(INK, True, 11, FONT), "horizontalAlignment": "RIGHT",
-            "borders": {"top": bdm()}}},
-            "userEnteredFormat(backgroundColor,numberFormat,textFormat,"
-            "horizontalAlignment,borders)"),
-    ])
-
-
-# ---- colour key, repeated on each manager tab below its data
-def legend(sid, row0):
-    n = len(LEGEND)
-    LEGEND_VALUES.append({"range": "'%s'!A%d" % (TITLE_OF[sid], row0), "values":
-                          [["COLOR KEY — distance from goal"],
-                           ["BAND", "MEANING"]]
-                          + [list(x) for x in LEGEND]
-                          + [["HOW IT'S MEASURED", "", ""]]
-                          + [list(x) for x in LEGEND2]
-                          + [["Coloured number = a count.  Filled cell = a rate.  "
-                              "Removed stays black — it only restates Removal %."]]})
-    F.extend([
-        fmt(sid, row0 - 1, row0, 0, 3, {"userEnteredFormat": {
-            "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(textFormat,horizontalAlignment)"),
-        fmt(sid, row0, row0 + 1, 0, 2, {"userEnteredFormat": {
-            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-            "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
-        fmt(sid, row0 + 1 + n, row0 + 2 + n, 0, 2, {"userEnteredFormat": {
-            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-            "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
-        fmt(sid, row0 + 2 + n, row0 + 2 + n + len(LEGEND2), 0, 1, {"userEnteredFormat": {
-            "textFormat": txt(INK, True, 11), "horizontalAlignment": "LEFT",
-            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
-            "userEnteredFormat(textFormat,horizontalAlignment,borders)"),
-        fmt(sid, row0 + 2 + n, row0 + 3 + n + len(LEGEND2), 1, 4, {"userEnteredFormat": {
-            "textFormat": txt(INK_2, False, 11), "horizontalAlignment": "LEFT",
-            "wrapStrategy": "CLIP"}},
-            "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
-        fmt(sid, row0 + 2 + n + len(LEGEND2), row0 + 3 + n + len(LEGEND2), 0, 4,
-            {"userEnteredFormat": {"textFormat": txt(INK_2, False, 10),
-                                   "horizontalAlignment": "LEFT", "wrapStrategy": "CLIP"}},
-            "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
-    ])
-    for j, (fg, bg) in enumerate(((GOOD, GOOD_BG), (WARN, WARN_BG), (BAD, BAD_BG))):
-        F.append(fmt(sid, row0 + 1 + j, row0 + 2 + j, 0, 1, {"userEnteredFormat": {
-            "backgroundColor": rgb(bg), "textFormat": txt(fg, True, 11),
-            "horizontalAlignment": "LEFT",
-            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
-            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)"))
-
-
-TITLE_OF = {BOARD: "Manager Board", TREND: "Manager Trend", MATRIX: "Manager Matrix"}
-budget(BOARD, TOTR + 3)
-# The colour key moves below the budget box on the Board; the other two tabs
-# have no budget box, so theirs stay where they were.
-legend(BOARD, TOTR + 3 + BUD_ROWS + 3)
-legend(MATRIX, MX_TOT + 3)
-legend(TREND, TF + len(METRICS) + 2)
+legend(MATRIX, "Manager Matrix", MX_TOT + 3)
 
 call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": LEGEND_VALUES})
 
-# ---- final pass: centring + weight.
-# Emitted last so it wins, and scoped to single fields so it can't disturb the
-# colours, fonts or borders set above. Title/subtitle rows stay left-aligned —
-# they overflow across columns and centring them inside column A looks broken.
-CENTER = {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}
-BOLD = {"userEnteredFormat": {"textFormat": {"bold": True}}}
-FC, FB = "userEnteredFormat.horizontalAlignment", "userEnteredFormat.textFormat.bold"
-
-F.append(fmt(BOARD, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, CENTER, FC))
 F.append(fmt(MATRIX, 2, MX_TOT + 1, 0, MXN, CENTER, FC))
-F.append(fmt(TREND, THDR - 2, TF + len(METRICS) - 1, 0, ncols, CENTER, FC))
 F.append(fmt(LOG, 0, 900, 0, len(DAILY_HEAD), CENTER, FC))
 F.append(fmt(GOALS, 0, 900, 0, len(GOALS_HEAD), CENTER, FC))
-
-# Every figure on the two roll-up boards carries weight.
-F.append(fmt(BOARD, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, BOLD, FB))
 F.append(fmt(MATRIX, 2, MX_TOT + 1, 0, MXN, BOLD, FB))
 F.append(fmt(LOG, 0, 1, 0, len(DAILY_HEAD), BOLD, FB))
 F.append(fmt(GOALS, 0, 1, 0, len(GOALS_HEAD), BOLD, FB))
 F.append(fmt(GOALS, 1, 900, 0, 2, BOLD, FB))
-
-# On the Trend the counts are the story and the rates are support, so bold the
-# count rows only — bolding both flattens that back out.
-for i, (kind, lab, key) in enumerate(METRICS):
-    if kind in ("n", "derived"):
-        F.append(fmt(TREND, TF + i - 1, TF + i, 0, ncols, BOLD, FB))
-F.append(fmt(TREND, THDR - 1, THDR, 0, ncols, BOLD, FB))
 
 batch(F)
 print("formatting applied")
@@ -1312,9 +1401,10 @@ print("formatting applied")
 # gets looked at daily, and Sheets draws a collapsed group's toggle flush against
 # the left edge of the following column, which reads as if it belongs to the week
 # before. Opening it by default sidesteps the ambiguity.
-batch([{"updateDimensionGroup": {"dimensionGroup": {
-    "range": {"sheetId": TREND, "dimension": "COLUMNS",
-              "startIndex": TC0 + wi * WW + 1, "endIndex": TC0 + wi * WW + 8},
-    "depth": 1, "collapsed": wi != 0}, "fields": "collapsed"}}
-    for wi in range(len(WEEK_ENDS))])
+for _tsid in (TREND, CAPTREND):
+    batch([{"updateDimensionGroup": {"dimensionGroup": {
+        "range": {"sheetId": _tsid, "dimension": "COLUMNS",
+                  "startIndex": TC0 + wi * WW + 1, "endIndex": TC0 + wi * WW + 8},
+        "depth": 1, "collapsed": wi != 0}, "fields": "collapsed"}}
+        for wi in range(len(WEEK_ENDS))])
 print("done -> https://docs.google.com/spreadsheets/d/%s/edit" % SSID)

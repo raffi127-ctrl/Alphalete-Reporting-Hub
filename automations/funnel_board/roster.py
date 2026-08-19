@@ -1,0 +1,60 @@
+"""Carlos's captainship — one list, read by both run.py and build.py.
+
+The Funnel Board proper covers the 17 offices of the Alphalete org. This is a
+different cut of the same data: the twelve people who report to Carlos as a
+captain. They overlap (Atef is on both) and they are NOT a subset of each other
+— most of the captainship is outside the org board entirely.
+
+Three fields, and each one is load-bearing:
+
+    name   The label on the Captainship Board, the key written into Daily Log's
+           Manager column, AND the tab name the ad-budget box reaches with
+           INDIRECT. All three have to agree, so this is the AppStream/tab
+           spelling rather than however the name gets said out loud (Carlos says
+           "James Garay", "George Hippolito", "Kenzie Gutner", "Dhey Patel";
+           AppStream and the workbook tabs say Jamis / Hipolito / Kinsey
+           Guenther / Dhyey Patel).
+    oid    AppStream office id, or None for someone who has no office yet.
+    owner  What AppStream's own office switcher calls them — the switcher lists
+           people under their legal name often enough that matching on `name`
+           alone would miss them.
+
+PENDING OFFICES (oid None). Three of the twelve are sales-only in AppStream today
+— they have no recruiting office, so there is nothing to pull and their rows sit
+at zero. Carlos expects their offices to be created (2026-08-19-ish). run.py
+therefore re-checks the office switcher by owner name on EVERY hourly pass and
+starts pulling the moment one appears; nobody has to come back and edit this
+file. Resolved ids are remembered in state/resolved_offices.json.
+"""
+
+CAPTAINSHIP = [
+    ("Atef Choudhury",   "23467", "Atef Choudhury"),      # also on the org board
+    ("Jamis Garay",      "19592", "Jamis Garay"),
+    # 22358 is not in office-mapping-carlos.json (it has her as sales-only) —
+    # it comes from her own Indeed tracker tab, whose Office ID column matches
+    # the AppStream id exactly for all four of the others. If AppStream refuses
+    # it, the run says so per office and she just stays at zero.
+    ("Jackie LeRoy",     "22358", "Jackie LeRoy"),
+    ("Noah Dubale",      "23356", "Noah Dubale"),
+    ("Jeff Starr",       None,    "Jeffrey Starr"),
+    ("Kinsey Guenther",  "11906", "Kinsey Guenther"),
+    ("Vincent Smith",    None,    "Vincent Smith"),
+    ("George Hipolito",  "11296", "George Hipolito"),
+    ("Justin Wood",      "22192", "Justin Wood"),
+    ("Joshua Murphy",    "21770", "Joshua Murphy"),
+    ("Joey Ramirez",     "23206", "Joey Ramirez"),
+    ("Dhyey Patel",      None,    "Dhyey Patel"),
+]
+
+CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
+
+# Indeed ad tracker tabs that actually exist in the workbook today, for the
+# Captain Ship Ad View dropdown. A name here must match a tab EXACTLY —
+# INDIRECT does a literal string match, and a trailing space in a tab name
+# breaks the view while looking perfectly fine in the tab bar.
+AD_TABS = ["Atef Choudhury", "Jackie LeRoy", "Jamis Garay",
+           "Justin Wood", "Noah Dubale"]
+
+BOARD_TITLE = "Captainship Board"
+TREND_TITLE = "Captainship Manager Trend"
+AD_VIEW_TITLE = "Captain Ship Ad View"

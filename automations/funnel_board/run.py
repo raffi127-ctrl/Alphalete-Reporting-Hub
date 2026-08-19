@@ -36,6 +36,7 @@ import time
 from pathlib import Path
 
 from automations.funnel_board import guard
+from automations.funnel_board.roster import CAPTAINSHIP
 from automations.funnel_board.auth import identity as _auth_identity
 from automations.funnel_board.auth import session as _auth_session
 from automations.shared.tableau_patchright import (
@@ -81,6 +82,123 @@ OFFICES = [
     ("Salik Mallick",     "21328", "Muhammad UI Haque"),
     ("Vincent Smith",     "23318", "Vincent Smith"),
 ]
+# Carlos's captainship is a SECOND cut of the same report — see roster.py. Most
+# of it lives outside the 17 offices above, so those people have to be pulled
+# too or the Captainship Board is a grid of zeros. Anyone already on the org
+# list is pulled once and shows up on both boards.
+RESOLVED = HERE / "state" / "resolved_offices.json"
+NEW_OFFICE_WEEKS = 4      # how far back to reach the first time an office appears
+
+
+def _resolved():
+    try:
+        return json.loads(RESOLVED.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — missing or damaged just means "none yet"
+        return {}
+
+
+def _known():
+    """Offices discovered on an earlier pass, {name: office id}."""
+    return {k: v["office_id"] for k, v in _resolved().items() if v.get("office_id")}
+
+
+def _needs_backfill():
+    """Found, but no successful deep pull yet."""
+    return {k for k, v in _resolved().items() if not v.get("backfilled")}
+
+
+def _remember(name, oid, backfilled=False):
+    cur = _resolved()
+    cur[name] = {"office_id": oid, "backfilled": backfilled,
+                 "found": cur.get(name, {}).get(
+                     "found", dt.datetime.now().isoformat(timespec="seconds"))}
+    RESOLVED.parent.mkdir(parents=True, exist_ok=True)
+    RESOLVED.write_text(json.dumps(cur, indent=1), encoding="utf-8")
+
+
+def to_pull(known):
+    """Every office this run should visit, org list first, no duplicates."""
+    todo = list(OFFICES)
+    have = {n for n, _, _ in todo}
+    for name, oid, owner in CAPTAINSHIP:
+        oid = oid or known.get(name)
+        if oid and name not in have:
+            todo.append((name, oid, owner))
+            have.add(name)
+    return todo
+
+
+def _norm(s):
+    return " ".join("".join(c for c in s.lower() if c.isalpha() or c.isspace()).split())
+
+
+def _same_person(a, b):
+    """Timid on purpose: exact match, or same surname with one first name a
+    prefix of the other.
+
+    The switcher lists people under their legal name — Jeff/Jeffrey — so exact
+    alone is too tight. Same-surname-plus-initial was the first cut and it is
+    too loose: it makes Vincent Smith and Victor Smith the same person, and
+    pulling the wrong office writes someone else's numbers under this name.
+    """
+    a, b = _norm(a), _norm(b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    pa, pb = a.split(), b.split()
+    if len(pa) < 2 or len(pb) < 2 or pa[-1] != pb[-1]:
+        return False
+    fa, fb = pa[0], pb[0]
+    short, long_ = sorted((fa, fb), key=len)
+    return len(short) >= 3 and long_.startswith(short)
+
+
+def discover(page, pending, log):
+    """Has AppStream created an office for anyone still waiting for one?
+
+    Four of the twelve are sales-only today and Carlos expects their offices to
+    appear. Rather than have somebody remember to come back and edit roster.py,
+    every pass with an unresolved name re-reads the office switcher and starts
+    pulling the moment one shows up. If two offices could plausibly be the same
+    person it resolves NEITHER and says so — pulling the wrong office would
+    write somebody else's numbers under this person's name, which is worse than
+    another hour of zeros.
+    """
+    try:
+        from automations.recruiting_report.list_all_offices import scrape_offices
+        offices = scrape_offices(page, verbose=False)
+    except Exception as e:  # noqa: BLE001 — discovery must never fail the pull
+        log("office discovery unavailable (%s: %s)" % (type(e).__name__, str(e)[:110]))
+        return {}
+    log("office switcher lists %d office(s); still waiting on %s"
+        % (len(offices), ", ".join(n for n, _ in pending)))
+    found = {}
+    for name, owner in pending:
+        ids = sorted({o.get("office_id") for o in offices
+                      if o.get("office_id")
+                      and (_same_person(o.get("owner", ""), name)
+                           or _same_person(o.get("owner", ""), owner))})
+        if len(ids) == 1:
+            found[name] = ids[0]
+        elif len(ids) > 1:
+            log("%-20s could be any of %s — resolving none of them, say which"
+                % (name, ", ".join(ids)))
+    return found
+
+
+def announce(msg, log, dry_run=False):
+    """A new office turning up is worth a line in Slack; nobody reads a 3am log."""
+    if dry_run or os.environ.get("FUNNEL_NO_SLACK"):
+        log("(not posting) %s" % msg)
+        return
+    try:
+        from automations.shared import slack_metrics_post as smp
+        smp._client().chat_postMessage(channel=guard.SLACK_CHANNEL, text=msg)
+    except Exception as e:  # noqa: BLE001
+        log("Slack notice didn't post (%s: %s)" % (type(e).__name__, str(e)[:110]))
+
+
 MEAS = ["applies", "sent", "removed", "processed", "retb", "b1", "s1", "b2",
         "s2", "off", "bob", "nss", "nsh"]
 AUDIT = ["emails_rx", "scoop_rx", "file_rx", "manual",
@@ -396,7 +514,7 @@ def main():
         log("AppStream account: ALT (%s)" % _creds.appstream_alt_username())
     with appstream_direct_session(**_sess) as page:
         rqst = re.search(r"rqst=([A-Za-z0-9-]+)", page.url).group(1)
-        def attempt(todo):
+        def attempt(todo, wks=None):
             still = []
             for name, oid, hint in todo:
                 try:
@@ -407,7 +525,7 @@ def main():
                     log("-> %s (office %s)…" % (name, oid))
                     if not switch(page, oid, hint, rqst):
                         raise RuntimeError("office switch failed after retries")
-                    days = pull(page, rqst, weeks, today)
+                    days = pull(page, rqst, wks or weeks, today)
                     if not days:
                         raise RuntimeError("no days returned")
                     fresh[name] = {"office_id": oid, "days": days}
@@ -421,12 +539,53 @@ def main():
         # dropped 5 of 14 offices where the mini dropped none. Sweep the
         # stragglers again rather than letting a transient render timeout cost a
         # day's numbers for that manager.
-        todo = OFFICES
+        # Anyone from the captainship whose office has appeared since the last
+        # pass joins this run — and gets NEW_OFFICE_WEEKS of history rather than
+        # just today, so their Trend opens with a shape instead of one column.
+        known = _known()
+        just_found = {}
+        pending = [(n, own) for n, oid, own in CAPTAINSHIP
+                   if not oid and n not in known]
+        if pending and not a.only:
+            just_found = discover(page, pending, log)
+            for name, oid in just_found.items():
+                known[name] = oid
+                if not a.dry_run:
+                    _remember(name, oid)
+                log("%-20s office %s appeared in AppStream — pulling from now on"
+                    % (name, oid))
+            if just_found:
+                announce("🆕 *Recruiting Funnel Board* — AppStream now has an "
+                         "office for %s. Pulling %d week(s) of history now; "
+                         "they were sitting at zero on the Captainship Board."
+                         % (", ".join("%s (%s)" % (n, o)
+                                      for n, o in just_found.items()),
+                            NEW_OFFICE_WEEKS),
+                         log, dry_run=a.dry_run)
+
+        todo = to_pull(known)
         if a.only:
             names = set(a.only.split("|"))
-            todo = [o for o in OFFICES if o[0] in names]
+            todo = [o for o in todo if o[0] in names]
             log("only: %s" % ", ".join(n for n, _, _ in todo))
-        left = attempt(todo)
+        log("pulling %d office(s): %d org, %d captainship-only"
+            % (len(todo), len(OFFICES), len(todo) - len(OFFICES)))
+        # A newly-appeared office is worth reaching back for, and it stays on
+        # that list until a pull for it actually SUCCEEDS — otherwise one failed
+        # first attempt would quietly cost it its history for good.
+        deep = {n for n in set(just_found) | _needs_backfill()
+                if n in {t[0] for t in todo}}
+        left = attempt([o for o in todo if o[0] not in deep])
+        if deep:
+            mon = today - dt.timedelta(days=today.weekday())
+            back = [mon - dt.timedelta(days=7 * i)
+                    for i in range(NEW_OFFICE_WEEKS - 1, -1, -1)]
+            log("reaching back %d weeks for %s" % (NEW_OFFICE_WEEKS,
+                                                   ", ".join(sorted(deep))))
+            left += attempt([o for o in todo if o[0] in deep], back)
+            for name in deep:
+                if name in fresh and not a.dry_run:
+                    _remember(name, fresh[name]["office_id"], backfilled=True)
         for round_no in (2, 3):
             if not left:
                 break
