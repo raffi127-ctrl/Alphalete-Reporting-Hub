@@ -996,6 +996,35 @@ def _clear_resolved_in_index(key: str, ts: Optional[str] = None) -> None:
         _save_index(idx)
 
 
+def find_live(key: str, *, channel: str = CHANNEL, client=None,
+              day: Optional[dt.date] = None) -> Optional[dict]:
+    """find(), plus a second look that survives a POISONED index.
+
+    Every caller that acts on an open thread (resolve, resolve_any, the
+    :pending: mark) has to go through here, not through find(): a machine whose
+    index wrongly lists the live ts as resolved gets None from find() forever,
+    and that is invisible from the outside — the post is sitting in the channel
+    and the CLI just says "no OPEN incident". The tie-break is the thread itself,
+    never local state (see _thread_is_closed)."""
+    inc = find(key, channel=channel, client=client, day=day, trust_index=False)
+    if inc and inc.get("ts"):
+        return inc
+    again = find(key, channel=channel, client=client, day=day,
+                 trust_index=False, ignore_closed=True)
+    if not again or not again.get("ts"):
+        return None
+    try:
+        client = client or _client()
+    except Exception:  # noqa: BLE001 — no client, no tie-break
+        return None
+    if _thread_is_closed(client, channel, again["ts"]):
+        return None
+    _clear_resolved_in_index(key, again.get("ts"))
+    print("[incident] {}: the index had this thread marked closed but it is "
+          "still open — index corrected".format(key))
+    return again
+
+
 def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
             parent_text: Optional[str] = None, day: Optional[dt.date] = None,
             dry_run: bool = False, client=None) -> bool:
@@ -1036,24 +1065,7 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     # Ask the CHANNEL, not the local cache: another machine may have closed this
     # thread already, and a second ✅ on it is exactly the duplicate we're here
     # to stop.
-    inc = find(key, channel=channel, client=client, day=day, trust_index=False)
-    if not inc or not inc.get("ts"):
-        # SECOND LOOK, without the closed-ts filter. That filter is self-poisoning:
-        # the branch below marks the key resolved every time a lookup misses, so
-        # ONE miss puts the live thread's ts in closed_ts and the scan skips it
-        # forever after — on that machine the thread can never be closed again.
-        # That is what killed five hand-offs on 2026-08-18, and on 2026-08-19 it
-        # left vantura-sales-week-hold uncloseable from BOTH Macs while a laptop
-        # could still see it open. The thread itself is the tie-breaker: if it
-        # carries no ✅ reply, it really is open and our index was wrong.
-        again = find(key, channel=channel, client=client, day=day,
-                     trust_index=False, ignore_closed=True)
-        if again and again.get("ts") and not _thread_is_closed(
-                client, channel, again["ts"]):
-            _clear_resolved_in_index(key, again.get("ts"))
-            print(f"[incident] {key}: the index had this thread marked closed "
-                  f"but it is still open — index corrected")
-            inc = again
+    inc = find_live(key, channel=channel, client=client, day=day)
     if not inc or not inc.get("ts"):
         # Nothing open there → whatever this machine still believes is out of
         # date. Fix the belief, or it will try again on every clean run.
@@ -1167,8 +1179,8 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
             client = client or _client()
         else:
             client = client or _client()
-            inc = next((i for i in (find(k, channel=channel, client=client,
-                                         day=day)
+            inc = next((i for i in (find_live(k, channel=channel,
+                                              client=client, day=day)
                                     for k in keys) if i), None)
         if not inc or not inc.get("ts"):
             print("[incident] nothing open for {} — not marking it worked on"
@@ -1345,8 +1357,11 @@ def resolve_any(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
     closing a custom thread that merely mentions X."""
     day = day or dt.date.today()
     for key in candidate_keys(key_or_report):
-        if not find(key, channel=channel, client=client, day=day,
-                    trust_index=False):
+        # find_live, not find: this gate runs BEFORE resolve() and would
+        # otherwise skip a thread the local index wrongly believes is closed —
+        # which is exactly how `incident_resolve vantura-sales-week-hold` kept
+        # answering "no OPEN incident" on 2026-08-19 with the post right there.
+        if not find_live(key, channel=channel, client=client, day=day):
             continue
         lines = [":white_check_mark: *{}* — RESOLVED.".format(key)]
         if note:

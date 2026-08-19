@@ -96,6 +96,17 @@ class FakeClient:
             msgs.append({"ts": ts, "text": text, "reply_count": replies})
         return {"messages": list(reversed(msgs))}
 
+    def conversations_replies(self, *, channel, ts, limit=200, **_kw):
+        """Parent first, then its replies — the shape _thread_is_closed reads."""
+        msgs = []
+        i = int(float(ts)) - 1
+        if 0 <= i < len(self.posts):
+            msgs.append({"ts": ts, "text": self.posts[i][1]})
+        for j, (thread_ts, text) in enumerate(self.posts, start=1):
+            if thread_ts == ts:
+                msgs.append({"ts": f"{j}.0000", "text": text})
+        return {"messages": msgs}
+
     # helpers
     @property
     def top_level(self):
@@ -595,6 +606,42 @@ class IncidentThreadTest(unittest.TestCase):
                                             day=day, client=self.c))
         self.assertEqual(self.c.history_calls, calls,
                          "a second clean run inside the cooldown must not re-scan")
+
+
+    def test_a_poisoned_index_cannot_hide_a_live_thread(self):
+        """One missed lookup used to blind a machine for good: resolve() marks
+        the key resolved whenever it can't find the thread, and find() then skips
+        that ts on every later scan. Five hand-offs died on 2026-08-18 and
+        vantura-sales-week-hold could not be closed from either Mac on 8/19,
+        while the post sat in the channel the whole time."""
+        day = dt.date(2026, 8, 19)
+        opened = self._open(day)
+        inc._mark_resolved_in_index("failure-r", ts=opened["ts"], channel="C1")
+        inc._HISTORY_CACHE.clear()
+        self.assertIsNone(
+            inc.find("failure-r", channel="C1", client=self.c, day=day,
+                     trust_index=False),
+            "this is the poisoning being reproduced, not the behaviour we want")
+        live = inc.find_live("failure-r", channel="C1", client=self.c, day=day)
+        self.assertTrue(live and live["ts"] == opened["ts"],
+                        "the thread is open in the channel and has no check")
+        self.assertTrue(inc.resolve_any("failure-r", note="fixed", channel="C1",
+                                        day=day, client=self.c))
+        self.assertTrue(any("RESOLVED" in t for t in self.c.replies))
+
+    def test_a_thread_that_already_has_a_check_is_left_alone(self):
+        """The closed-ts filter guards a real case — a parent we closed whose
+        edit Slack refused still reads `open`. find_live must NOT re-open that
+        one: the check-mark reply in the thread is the tell, so the second look
+        can never double a resolution."""
+        day = dt.date(2026, 8, 19)
+        self.c.refuse_updates()
+        self._open(day)
+        self.assertTrue(inc.resolve_any("failure-r", note="fixed", channel="C1",
+                                        day=day, client=self.c))
+        inc._HISTORY_CACHE.clear()
+        self.assertIsNone(inc.find_live("failure-r", channel="C1",
+                                        client=self.c, day=day))
 
 
 if __name__ == "__main__":  # pragma: no cover
