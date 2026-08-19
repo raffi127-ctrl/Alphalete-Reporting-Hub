@@ -1,9 +1,10 @@
 """Carlos's captainship — one list, read by both run.py and build.py.
 
 The Funnel Board proper covers the 17 offices of the Alphalete org. This is a
-different cut of the same data: the twelve people who report to Carlos as a
-captain. They overlap (Atef is on both) and they are NOT a subset of each other
-— most of the captainship is outside the org board entirely.
+different cut of the same data: Carlos's own office plus the twelve people who
+report to him as a captain. They overlap (Carlos and Atef are on both) and
+neither is a subset of the other — most of the captainship sits outside the org
+board entirely.
 
 Three fields, and each one is load-bearing:
 
@@ -19,8 +20,8 @@ Three fields, and each one is load-bearing:
            people under their legal name often enough that matching on `name`
            alone would miss them.
 
-PENDING OFFICES (oid None). Three of the twelve are sales-only in AppStream today
-— they have no recruiting office, so there is nothing to pull and their rows sit
+PENDING OFFICES (oid None). Three of the thirteen are sales-only in AppStream
+today — they have no recruiting office, so there is nothing to pull and their rows sit
 at zero. Carlos expects their offices to be created (2026-08-19-ish). run.py
 therefore re-checks the office switcher by owner name on EVERY hourly pass and
 starts pulling the moment one appears; nobody has to come back and edit this
@@ -28,6 +29,10 @@ file. Resolved ids are remembered in state/resolved_offices.json.
 """
 
 CAPTAINSHIP = [
+    # Carlos's own office leads it — he sits on the org board too, and asked for
+    # his numbers here as well so the captainship total is the whole team
+    # including him, not the team he manages minus himself.
+    ("Carlos Hidalgo",   "11580", "CARLOS HIDALGO"),      # also on the org board
     ("Atef Choudhury",   "23467", "Atef Choudhury"),      # also on the org board
     ("Jamis Garay",      "19592", "Jamis Garay"),
     # 22358 is not in office-mapping-carlos.json (it has her as sales-only) —
