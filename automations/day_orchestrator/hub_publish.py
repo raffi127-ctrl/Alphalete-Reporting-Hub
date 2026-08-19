@@ -504,3 +504,64 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
         return True
     except Exception:
         return False
+
+def main(argv=None) -> int:
+    """Mark a report DONE on the Hub from anywhere — including a run that never
+    touched a Lucy.
+
+        python -m automations.day_orchestrator.hub_publish --done <report_id> [...]
+        python -m automations.day_orchestrator.hub_publish --done fiber_activations --status success
+
+    WHY (Megan 2026-08-19): a report run BY HAND from her laptop really ran, but
+    its Hub card stayed white — only the orchestrator (and the handful of modules
+    that self-publish) ever calls publish_done, so a hand-run report looks like it
+    never happened. On 2026-08-19 owner_showdown, daily_rep_breakdown and the d2d
+    metrics all ran on her laptop and every one of those cards read as missing.
+
+    This ONLY records that a run finished; it does not run anything. Use it after
+    you have actually confirmed the report's output, never to silence a card.
+    Display names resolve from schedule_config so the Hub row matches what the
+    orchestrator would have written."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="hub_publish")
+    ap.add_argument("--done", nargs="+", metavar="REPORT_ID", required=True,
+                    help="report_id(s) to mark finished on the Hub")
+    ap.add_argument("--status", default="success",
+                    help="success (default) or a failure status")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="show what would be published, touch nothing")
+    a = ap.parse_args(argv)
+
+    try:
+        from automations.day_orchestrator import registry
+        cfg = registry.load_config()
+    except Exception:  # noqa: BLE001 — names are a nicety, not a requirement
+        cfg = None
+
+    rc = 0
+    for rid in a.done:
+        name = rid
+        if cfg is not None:
+            try:
+                r = registry.resolve_report(cfg, rid)
+                if r is not None and getattr(r, "display_name", None):
+                    name = r.display_name
+            except Exception:  # noqa: BLE001
+                pass
+        if a.dry_run:
+            print(f"[dry-run] would publish DONE: {rid} ({name}) status={a.status}")
+            continue
+        try:
+            ok = publish_done(rid, name, status=a.status)
+            print(f"{'✓' if ok else '·'} {rid} ({name}) -> {a.status}"
+                  f"{'' if ok else '  [Hub not touched]'}")
+            if not ok:
+                rc = 1
+        except Exception as e:  # noqa: BLE001
+            print(f"✗ {rid}: {type(e).__name__}: {e}")
+            rc = 1
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
