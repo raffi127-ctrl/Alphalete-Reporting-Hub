@@ -27,6 +27,12 @@ class FakeClient:
         self.history_calls = 0
         self._n = 0
 
+    def auth_test(self):
+        """The fake IS Lucy — that's the machine these flows run on. mark_working
+        refuses to add a :pending: it could never remove, so a client with no
+        identity would silently stop marking anything (see OnlyLucyMarksItWorked)."""
+        return {"user_id": inc.LUCY_USER_ID}
+
     def chat_postMessage(self, *, channel, text, thread_ts=None, **_kw):
         self._n += 1
         ts = f"{self._n}.0000"
@@ -681,6 +687,48 @@ class ABareCheckIsNotAResolution(unittest.TestCase):
                     {"ts": ts, "text": "*x* — broke"},
                     {"ts": "2", "text": ":white_check_mark: *x* — RESOLVED."}]}
         self.assertTrue(inc._thread_is_closed(_C(), "C0BK5PRG259", "1"))
+
+
+class OnlyLucyMarksItWorked(unittest.TestCase):
+    """Slack only lets you remove your OWN reaction, and the ✅ side always runs
+    as Lucy. A :pending: added under any other token therefore never comes off —
+    the post wears ⏳ and ✅ at once. Both of 2026-08-19's threads did."""
+
+    class _Client:
+        def __init__(self, uid):
+            self.uid, self.added = uid, []
+
+        def auth_test(self):
+            return {"user_id": self.uid}
+
+        def conversations_history(self, **kw):
+            return {"messages": []}
+
+        def reactions_add(self, channel, timestamp, name):
+            self.added.append(name)
+
+    def _run(self, uid):
+        c = self._Client(uid)
+        inc._HISTORY_CACHE.clear()
+        found = {"ts": "1787160187.277349", "key": "drop-x"}
+        real_find, real_open = inc.find_live, inc._parent_still_open
+        inc.find_live = lambda k, **kw: found
+        inc._parent_still_open = lambda *a, **kw: True
+        try:
+            ok = inc.mark_working("drop-x", client=c)
+        finally:
+            inc.find_live, inc._parent_still_open = real_find, real_open
+        return ok, c.added
+
+    def test_lucy_marks_it(self):
+        ok, added = self._run(inc.LUCY_USER_ID)
+        self.assertTrue(ok)
+        self.assertEqual(added, [inc.WORKING_REACTION])
+
+    def test_anyone_else_does_not(self):
+        ok, added = self._run("U088E2KJEV8")   # evelyns.sobrino, the Windows box
+        self.assertFalse(ok)
+        self.assertEqual(added, [], "a mark nobody can remove is worse than none")
 
 
 if __name__ == "__main__":  # pragma: no cover

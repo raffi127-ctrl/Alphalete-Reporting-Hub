@@ -1236,6 +1236,26 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
             print("[incident] DRY-RUN — would react :{}: on {}".format(
                 WORKING_REACTION, inc["ts"]))
             return True
+        # ONLY LUCY MAY MARK IT (Eve 2026-08-19). Slack lets you remove your OWN
+        # reaction and nobody else's, and the ✅ side of this — _react_done —
+        # always runs as Lucy on the mini. So a :pending: added under any other
+        # token can never come off: the post ends up wearing ⏳ AND ✅ at once,
+        # which reads as "fixed, but someone is still on it". That is what
+        # incident_reformat._clear_stray_pending exists to sweep up after, and
+        # both of today's threads had to be un-marked by hand.
+        #
+        # Skipping is the cheap side of the trade, and the module already says
+        # so: "a missed :pending: is a much cheaper mistake than a wrong one".
+        # The CLI doesn't lose anything either — it hands the whole job to the
+        # mini before it ever gets here (see main()), so the mark still lands,
+        # just as Lucy a few seconds later.
+        if not is_lucy(client):
+            print("[incident] {}: not marking :{}: from {} — only Lucy can "
+                  "take it off again, so a mark from here would outlive the "
+                  "fix. Queue it on the mini (`lucy incident_working {}`)."
+                  .format(key_or_report, WORKING_REACTION,
+                          whoami(client) or "this machine", key_or_report))
+            return False
         ok = _react(client, channel, inc["ts"], WORKING_REACTION)
         if note:
             try:
