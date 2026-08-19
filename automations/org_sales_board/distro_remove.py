@@ -58,6 +58,14 @@ REMOVALS: dict = {
         ("Cinthya Reyes", "cinthyareyes093@gmail.com"),
         ("Benjamin Burden", "benjaminburden02@gmail.com"),   # also burdenb@bgsu.edu
         ("David Martinez", "martinez699341@gmail.com"),
+        # 2026-08-19 (Eve): Paola Rodriguez comes off EVERY report, so both of
+        # her distros go, not just the board's. Her second card
+        # (rpaola17@icloud.com) is on no group, so it needs no entry.
+        ("Paola Rodriguez", "rpaola205@gmail.com"),
+    ],
+    # Owners Call Reminder's distro — no code fallback, the live group is it.
+    "Org. Call Invite": [
+        ("Paola Rodriguez", "rpaola205@gmail.com"),          # 2026-08-19
     ],
     "Raf's Captain Team": [
         ("Edgar Muniz II", "edgarmuniz2020@icloud.com"),     # "Edgar Munoz II" in Contacts

@@ -404,7 +404,9 @@ REVENUE_OWNERS = [
     "Hammad Haque", "Jacob Dover", "Cody Cannon", "Rashad Reed", "Salik Mallick",
     "Khalil Mansour", "Maxamad Aden", "Isaiah Revelle",
     "Atef Choudhury", "Carlos Hidalgo", "Kevin Driggs",
-    "David Martinez", "Cinthya Reyes", "Paola Rodriguez",
+    "David Martinez", "Cinthya Reyes",
+    # Paola Rodriguez removed 2026-08-19 (Eve): off every report — board
+    # rows, All Campaigns line and both Contacts distros went with it.
     "Roshan Amin Ahmad", "Ryan McSpadden",
     "Amjad Malhas", "Ana Griffin", "Boaktear Chowdhury", "Ronald Dawson",
 ]

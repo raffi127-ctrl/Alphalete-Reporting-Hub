@@ -79,6 +79,7 @@ EXCLUDE: set = {
     "jimmy bonilla",
     "ayleen gonzalez",
     "javeon lara",
+    "paola rodriguez",      # 2026-08-19, off every report
 }
 
 
