@@ -159,7 +159,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # FIXING them. Worse, the failure is quiet: the poller keeps running plumbing, so
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
-READONLY_ACTIONS = {"logtail", "git_status", "git_diff",
+READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
@@ -4158,6 +4158,76 @@ def _action_chrome_unstick(args: str) -> tuple[bool, str]:
                   + (f" (SIGKILL needed for {still})" if still else ""))
 
 
+def _action_daystate(args: str) -> tuple[bool, str]:
+    """Read the orchestrator's OWN per-report record for a day. READ ONLY.
+
+      daystate [YYYY-MM-DD] [filter]
+        date    defaults to today
+        filter  optional status substring (e.g. failed, incomplete, still) —
+                omit for the full roll-up
+
+    WHY THIS EXISTS (Megan 2026-08-19): "what actually ran today?" was
+    unanswerable from a laptop all day. The Hub Activity sheet logs runs from
+    ANY machine (so a laptop run looks like a mini run), and `logtail` only sees
+    the orchestrator's console lines — reports that neither DONE nor failed
+    simply do not appear. Both got read as evidence and both gave wrong answers.
+    output/day_state/<date>.json is the orchestrator's own status per report,
+    and logtail cannot reach it (it is path-locked to output/logs).
+
+    NOTE the mini's day_state only knows what the MINI ran. Reports run by hand
+    from Megan's laptop (2026-08-19: owner_showdown, daily_rep_breakdown, the
+    d2d metrics) are absent here and are NOT failures.
+
+    The Sheet result cell holds ~470 chars, so this returns COUNTS plus the
+    reports that are not terminal-clean; the full dump is teed to
+    output/logs/daystate-<date>.log for `lucy logtail daystate`."""
+    import json as _json
+    parts = (args or "").split()
+    date = _now()[:10]
+    filt = None
+    for tok in parts:
+        if len(tok) == 10 and tok[4] == "-" and tok[7] == "-":
+            date = tok
+        else:
+            filt = tok.lower()
+    if not all(c.isdigit() or c == "-" for c in date):
+        return False, "daystate: date must be YYYY-MM-DD"
+    path = (REPO_ROOT / "output" / "day_state" / f"{date}.json").resolve()
+    root = (REPO_ROOT / "output" / "day_state").resolve()
+    if root not in path.parents:
+        return False, "daystate: refused (path escaped output/day_state)"
+    if not path.exists():
+        return False, f"no day_state for {date} (the orchestrator may not have run)"
+    try:
+        data = _json.loads(path.read_text())
+    except Exception as e:  # noqa: BLE001
+        return False, f"daystate: unreadable ({type(e).__name__}: {e})"
+    reports = data.get("reports") or {}
+    buckets: dict = {}
+    detail = []
+    for rid, rs in sorted(reports.items()):
+        st = str((rs or {}).get("status", "?")).lower()
+        buckets[st] = buckets.get(st, 0) + 1
+        if filt and filt not in st:
+            continue
+        if filt or not st.startswith("done"):
+            why = str((rs or {}).get("reason") or (rs or {}).get("waiting_on") or "")[:60]
+            detail.append(f"{rid}: {st}{(' - ' + why) if why else ''}")
+    counts = ", ".join(f"{k}={v}" for k, v in sorted(buckets.items(), key=lambda kv: -kv[1]))
+    full = (f"day_state {date} — {len(reports)} report(s)\n{counts}\n\n"
+            + "\n".join(detail if detail else ["(all terminal-clean)"]))
+    try:
+        _log_dir = REPO_ROOT / "output" / "logs"
+        _log_dir.mkdir(parents=True, exist_ok=True)
+        _write_log(_log_dir / f"daystate-{date}.log", ["daystate", date], full)
+    except Exception:  # noqa: BLE001 — the tee is a convenience, never a failure
+        pass
+    head = f"{len(reports)} report(s) · {counts}"
+    shown = "; ".join(detail[:6])
+    more = f" (+{len(detail)-6} more — lucy logtail daystate-{date})" if len(detail) > 6 else ""
+    return True, (head + ((" · " + shown + more) if detail else " · all terminal-clean"))
+
+
 ACTIONS = {
     "ping": _action_ping,
     "messages_diag": _action_messages_diag,
@@ -4177,6 +4247,7 @@ ACTIONS = {
     "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
+    "daystate": _action_daystate,
     "probe_knocks": _action_probe_knocks,
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
