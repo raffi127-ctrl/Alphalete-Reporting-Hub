@@ -22,6 +22,11 @@ stays quiet. A feed that freezes is 2 days behind by the next morning and alerts
 then — which on the 8/13 incident means the first alert lands the morning of
 8/15, before that day's bad send, instead of on 8/17 after three of them.
 
+A source that is WEEKLY by nature is judged against the week, not the day —
+see WEEKLY_SOURCE_MARKERS. Direct Deposit posts one Sat/Sun pair per week, so
+"1 day behind" is a bar it can only clear on Mondays; asking for it produced two
+false alarms in two days before the rule existed (Eve 2026-08-19).
+
 One day of slack is deliberate. Sunday-quiet campaigns, a supplier that posts
 overnight, a report that runs at 4am against a feed refreshed at 7am — all sit
 exactly one day back on a good day, and a gate that shouts about those would be
@@ -102,10 +107,28 @@ _YEARLESS = re.compile(r"^\s*(?:[A-Za-z]{3,9}\s*)?\(?\s*(\d{1,2})[/-](\d{1,2})\s
 
 def _decode(path) -> str:
     """Tableau crosstabs come back UTF-16 tab-separated more often than not, but
-    the HTTP-direct pulls are UTF-8 comma-separated. Try the encodings in the
-    order they actually occur and keep whichever decodes."""
+    the HTTP-direct pulls are UTF-8 comma-separated.
+
+    DECIDE ON THE BYTES, NEVER ON "it decoded" (Eve 2026-08-19). Trying utf-16
+    first and keeping whatever didn't raise silently mangled every UTF-8 export
+    whose length happens to be EVEN: utf-16 pairs the bytes up, ASCII text comes
+    back as CJK mojibake, no exception is raised, and the header row then carries
+    no recognisable column at all. The export was then judged "no event-date
+    column" and quietly dropped out of staleness cover — a coin flip, per file,
+    per day. Real UTF-16 is unmistakable in the raw bytes (a BOM, or the NUL
+    that sits beside every ASCII character), so ask that instead."""
     raw = Path(path).read_bytes()
-    for enc in ("utf-16", "utf-8-sig", "utf-8", "latin-1"):
+    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+        order = ("utf-16", "utf-8-sig", "utf-8", "latin-1")
+    elif raw.startswith(codecs.BOM_UTF8):
+        order = ("utf-8-sig", "utf-8", "latin-1")
+    elif 0 in raw[:4096]:
+        # BOM-less UTF-16 — the interleaved NUL is the tell, and no UTF-8
+        # crosstab has one.
+        order = ("utf-16", "utf-8", "latin-1")
+    else:
+        order = ("utf-8-sig", "utf-8", "latin-1")
+    for enc in order:
         try:
             text = raw.decode(enc)
         except (UnicodeDecodeError, UnicodeError):
@@ -370,6 +393,46 @@ FROZEN_AFTER_DAYS = 3          # identical this many days running -> suspicious
 _MIN_DISTINCT_TO_JUDGE = 2     # ...but only if it has ever changed
 
 
+# --- Sources that are WEEKLY by nature ---------------------------------------
+# The daily default judges a weekly feed as stale on every day but one. Direct
+# Deposit is the case that proved it (Eve 2026-08-19): DD is paid per week —
+# `cl.DD Week` is the Sat/Sun deposit pair, the view only ever serves the week
+# that just ended, and so the newest date in the export IS that Sunday from the
+# moment it lands. Judged at 1 day behind it reads "stale" every Tuesday through
+# Saturday for data that is exactly as fresh as it will ever be. Two threads in
+# two days came from that and both were false:
+#   8/18  DDDETAILORG → ORG DD Detail, newest 8/09, "9 days behind"  (harvest)
+#   8/19  DDDETAIL    → ICD dd Detail, newest 8/16, "3 days behind"  (vantura_payroll)
+# day_orchestrator's own dd_week readiness probe already refuses to use the
+# generic day-coverage rule on this source for exactly this reason ("DD is
+# weekly … we compare the extract's newest DD week against the week that just
+# ended") — this is that same reasoning, moved to where the alert fires.
+#
+# Matched on the lowercased view label, so one entry covers every sheet of the
+# workbook and both the ICD and ORG cuts.
+WEEKLY_SOURCE_MARKERS = (
+    "directdepositicdviewversion2_0",
+)
+# A weekly feed still has to move. `needs` becomes the Sunday BEFORE the one
+# that just ended, so ONE missed week is still loud: the deposits post mid-week
+# (the DD bulletin's own probe holds until Thursday 09:30 for them), which is
+# why the bar is a full week back and not the current Sunday.
+WEEKLY_FROZEN_AFTER_DAYS = 9   # byte-identical for a week is normal here
+
+
+def is_weekly_source(label: str) -> bool:
+    """Is this view a weekly feed, where days-behind is the wrong yardstick?"""
+    low = (label or "").lower()
+    return any(m in low for m in WEEKLY_SOURCE_MARKERS)
+
+
+def weekly_needs(today: dt.date) -> dt.date:
+    """Oldest newest-date a healthy weekly source may carry: the Sunday before
+    the one that just ended (i.e. one whole week of posting lag is fine)."""
+    last_sunday = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    return last_sunday - dt.timedelta(days=7)
+
+
 def _fingerprint(path) -> Optional[str]:
     """A stable digest of the export's DATA (header excluded — a column rename
     isn't new data, and a stable header is what makes runs comparable)."""
@@ -501,13 +564,20 @@ def check_export(path,
            "column": "", "behind": None, "alerted": False}
     try:
         today = today or dt.date.today()
+        label = _view_label(view_url, sheet)
+        # A weekly source gets the weekly bar unless the CALLER named a date:
+        # an explicit `needs` is a report saying it knows better, and this must
+        # never tighten it — only loosen the daily default that never fitted.
+        weekly = is_weekly_source(label)
+        if needs is None and weekly:
+            needs = weekly_needs(today)
         needs = needs or (today - dt.timedelta(days=max_days_behind))
         out["needs"] = needs
+        out["weekly"] = weekly
         p = Path(path)
         if not p.exists() or p.stat().st_size == 0:
             out["column"] = "missing or empty export"
             return out
-        label = _view_label(view_url, sheet)
         newest, col = newest_date(p, today=today)
         out["newest"], out["column"] = newest, col
         if newest is None:
@@ -516,7 +586,10 @@ def check_export(path,
             # that had no staleness cover at all until 2026-08-18.
             unchanged = check_unchanged(p, source_key=label, view_label=label,
                                         today=today,
-                                        report=report or _current_report())
+                                        report=report or _current_report(),
+                                        frozen_after=(WEEKLY_FROZEN_AFTER_DAYS
+                                                      if weekly
+                                                      else FROZEN_AFTER_DAYS))
             out["verdict"] = {"frozen": "stale"}.get(
                 unchanged["verdict"], "unknown")
             out["days_same"] = unchanged["days_same"]
@@ -530,11 +603,11 @@ def check_export(path,
         if newest >= needs:
             out["verdict"] = "fresh"
             if verbose:
-                print("  [freshness] {} — newest {} (ok)".format(
-                    _view_label(view_url, sheet), newest), flush=True)
+                print("  [freshness] {} — newest {} (ok{})".format(
+                    label, newest, ", weekly source" if weekly else ""),
+                    flush=True)
             return out
         out["verdict"] = "stale"
-        label = _view_label(view_url, sheet)
         print("  ⚠ STALE PULL: {} — newest data {}, needs {} ({} day(s) "
               "behind). Numbers built on this UNDERSTATE reality.".format(
                   label, newest, needs, out["behind"]), flush=True)
