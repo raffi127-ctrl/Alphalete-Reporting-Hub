@@ -44,7 +44,9 @@ from typing import List, Optional, Tuple
 # section header's col-A label. Retail JE is the standing one (its source
 # publishes a day behind; the VAs' own manual board shows the same gap);
 # Frontier has historically lagged too.
-LAGGING_SECTIONS = ("retail je", "frontier")
+# "frontier" dropped 2026-08-19 with the campaign: the section no longer
+# exists on the board, so the exemption had nothing left to exempt.
+LAGGING_SECTIONS = ("retail je",)
 
 # Local clock (the runners are on Central) past which an incomplete board stops
 # holding the email — the send goes out with what's on the board. MUST stay before
