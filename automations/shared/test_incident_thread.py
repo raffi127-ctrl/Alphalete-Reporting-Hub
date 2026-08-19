@@ -644,5 +644,44 @@ class IncidentThreadTest(unittest.TestCase):
                                         client=self.c, day=day))
 
 
+class ABareCheckIsNotAResolution(unittest.TestCase):
+    """The real 2026-08-19 lockout: the `unfilled_icd` alert opens its body with
+    a ✅ because the run did its whole job, and _thread_is_closed read that as
+    "already resolved" — so captainship-cancel-rate could not be closed by any
+    path, key or report id, while its post sat open in the channel."""
+
+    ALERT_BODY = (":white_check_mark: *captainship-cancel-rate* ran fine — every "
+                  "tab filled. 2 ICDs didn't fill: Jason Strid (Starr's team, "
+                  "0-30), Jason Strid (Starr's team, 30-60).  Detail in thread.")
+
+    def test_the_alerts_own_check_does_not_close_it(self):
+        self.assertFalse(inc._is_resolution_reply(self.ALERT_BODY))
+
+    def test_every_writers_resolution_still_counts(self):
+        for real in (
+                ":white_check_mark: *drop-x* — RESOLVED.",
+                ":white_check_mark: *x* — RESOLVED. It just ran clean.",
+                "_Closed. If it happens again it opens a fresh post, not this "
+                "thread._",
+                "_Closed by hand. If it happens again it opens a fresh post, "
+                "not this thread._"):
+            self.assertTrue(inc._is_resolution_reply(real), real[:40])
+
+    def test_a_thread_holding_only_that_alert_reads_OPEN(self):
+        class _C:
+            def conversations_replies(self, channel, ts, limit=200):
+                return {"messages": [{"ts": ts, "text": "*x* — ran fine"},
+                                     {"ts": "2", "text": ABareCheckIsNotAResolution.ALERT_BODY}]}
+        self.assertFalse(inc._thread_is_closed(_C(), "C0BK5PRG259", "1"))
+
+    def test_a_thread_that_really_was_closed_still_reads_CLOSED(self):
+        class _C:
+            def conversations_replies(self, channel, ts, limit=200):
+                return {"messages": [
+                    {"ts": ts, "text": "*x* — broke"},
+                    {"ts": "2", "text": ":white_check_mark: *x* — RESOLVED."}]}
+        self.assertTrue(inc._thread_is_closed(_C(), "C0BK5PRG259", "1"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

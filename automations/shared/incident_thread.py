@@ -958,6 +958,32 @@ def _mark_resolved_in_index(key: str, *, ts: Optional[str] = None,
 
 # ------------------------------------------------------------------ resolve ---
 
+# The closing sentence every resolution reply carries, whichever entry point
+# wrote it (resolve / resolve_report / resolve_any / resolved).
+_CLOSING_SENTENCE = "opens a fresh post, not this thread"
+
+
+def _is_resolution_reply(text: str) -> bool:
+    """Is this reply OUR resolution, or just a reply that happens to have a ✅?
+
+    A BARE ✅ is not proof (Eve 2026-08-19). The low-key `unfilled_icd` alert
+    opens its own body with one — ":white_check_mark: *captainship-cancel-rate*
+    ran fine — every tab filled. 2 ICDs didn't fill…" — because the run DID do
+    its whole job. Reading that as a resolution made _thread_is_closed say CLOSED
+    on a thread that had never been closed, so find_live handed back None and
+    every close path answered "no OPEN incident" with the post sitting right
+    there. Not a one-off: it locks out that entire family of alerts, and it takes
+    both a --resolve <key> and a --resolve-report <id> down with it.
+
+    A real resolution says so in words. All three writers stamp "— RESOLVED." and
+    the same closing sentence, so ask for that instead of for an emoji.
+    """
+    low = (text or "").lower()
+    if _CLOSING_SENTENCE in low:
+        return True
+    return DONE_EMOJI in (text or "") and "resolved" in low
+
+
 def _thread_is_closed(client, channel: str, ts: str) -> bool:
     """Does this thread already carry a resolution reply?
 
@@ -975,8 +1001,7 @@ def _thread_is_closed(client, channel: str, ts: str) -> bool:
     for msg in (resp.get("messages") or []):
         if msg.get("ts") == ts:
             continue                      # the parent, not a reply
-        text = (msg.get("text") or "")
-        if DONE_EMOJI in text or "RESOLVED" in text.upper():
+        if _is_resolution_reply(msg.get("text") or ""):
             return True
     return False
 
