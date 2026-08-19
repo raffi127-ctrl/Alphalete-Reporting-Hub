@@ -534,6 +534,31 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))
         self.assertEqual(self.c.reactions, [])
 
+    def test_a_custom_key_can_be_marked_and_closed_by_hand(self):
+        """Threads filed under a key with NO family prefix — one thread per KIND
+        of problem, not per report (vantura-sales-week-hold, org-sales-board,
+        applicant-tracker-gaps). Copying that key off its own marker line into
+        `lucy incident_resolve` used to expand it to `failure-<key>` and die on
+        "no OPEN incident" with the post sitting right there (2026-08-19)."""
+        day = dt.date(2026, 8, 19)
+        first = self._open_key("vantura-sales-week-hold", day)
+        self.assertTrue(inc.mark_working("vantura-sales-week-hold",
+                                         channel="C1", day=day, client=self.c))
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+        self.assertTrue(inc.resolve_any("vantura-sales-week-hold",
+                                        note="the board was rolled to 8.23",
+                                        channel="C1", day=day, client=self.c))
+        self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_a_bare_report_id_still_expands_after_the_literal_try(self):
+        """candidate_keys() puts the literal first, but a report id must still
+        reach its prefixed thread — the old behaviour, not replaced by it."""
+        day = dt.date(2026, 8, 19)
+        first = self._open_key("drop-box-order-log", day)
+        self.assertTrue(inc.resolve_any("box_order_log", channel="C1", day=day,
+                                        client=self.c))
+        self.assertIn((first["ts"], "white_check_mark"), self.c.reactions)
+
     def test_a_clean_run_closes_whichever_witness_opened_the_thread(self):
         """resolve_report is what hub_publish calls on ANY successful run: the
         person who fixed the cause and re-ran the report from the Hub shouldn't

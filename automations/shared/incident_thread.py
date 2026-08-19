@@ -1091,9 +1091,7 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
     cheaper mistake than an API call per run."""
     day = day or dt.date.today()
     try:
-        keys = ([key_or_report] if any(key_or_report.startswith(p)
-                                       for p in _KEY_PREFIXES)
-                else keys_for(key_or_report))
+        keys = candidate_keys(key_or_report)
         if not scan:
             idx = _load_index() or {}
             live = [idx[k] for k in keys
@@ -1151,6 +1149,30 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
         print("  - couldn't mark {} as being worked on ({}: {})".format(
             key_or_report, type(e).__name__, str(e)[:80]))
         return False
+
+
+def candidate_keys(key_or_report: str) -> List[str]:
+    """Every key a hand-typed string could name, most literal first.
+
+    WHY (2026-08-19): "is this a KEY or a REPORT ID?" was answered by prefix
+    alone — `failure-`/`drop-`/`standalone-`/`finding-` meant key, anything else
+    meant report id and got expanded by keys_for(). But plenty of live threads
+    are filed under a CUSTOM key with no prefix at all, because the producer
+    picked one thread per KIND of problem rather than per report:
+    `vantura-sales-week-hold` / `-failed` / `-roll-due` / `-unknown-poster`
+    (vantura_slack_sales.alert), `org-sales-board`, `applicant-tracker-gaps`.
+    Copy such a key off its own marker line into `lucy incident_resolve` and the
+    prefix test called it a report id, expanded it to `failure-<key>` … which
+    matches nothing — "no OPEN incident for 'vantura-sales-week-hold'" while the
+    post sits right there. (`org-sales-board` was one of the five hand-offs that
+    failed on 2026-08-18; this explains that one, not the prefixed ones.)
+
+    So: try the string EXACTLY as given first, then the expansions. A custom key
+    resolves as itself; a bare report id finds nothing under its own name and
+    falls through to keys_for() exactly as before."""
+    if any(key_or_report.startswith(p) for p in _KEY_PREFIXES):
+        return [key_or_report]
+    return [key_or_report] + keys_for(key_or_report)
 
 
 def keys_for(report_id: str) -> List[str]:
@@ -1243,6 +1265,37 @@ def resolve_report(report_id: str, *, what: str = "", note: str = "",
         print("  ⚠ couldn't close the incident for {} ({}: {})".format(
             report_id, type(e).__name__, str(e)[:80]), flush=True)
         return False
+
+
+def resolve_any(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
+                day: Optional[dt.date] = None, dry_run: bool = False,
+                client=None) -> bool:
+    """Close whatever `key_or_report` names — a person typed it, so it may be an
+    incident key (custom or prefixed) OR a report id. Tries the string literally
+    before expanding it (see candidate_keys), which is the difference between
+    closing `vantura-sales-week-hold` and telling the person there is no such
+    incident while its post sits in the channel.
+
+    The by-hand counterpart of resolve_report(), which stays report-only on
+    purpose: it runs off a CLEAN RUN, and a clean run of report X has no business
+    closing a custom thread that merely mentions X."""
+    day = day or dt.date.today()
+    for key in candidate_keys(key_or_report):
+        if not find(key, channel=channel, client=client, day=day,
+                    trust_index=False):
+            continue
+        lines = [":white_check_mark: *{}* — RESOLVED.".format(key)]
+        if note:
+            lines.append(note)
+        lines.append("_Closed by hand. If it happens again it opens a fresh "
+                     "post, not this thread._")
+        ok = resolve(key=key, lines=lines, channel=channel, day=day,
+                     dry_run=dry_run, client=client)
+        # resolve()'s dry-run answers off the LOCAL index, which on a laptop that
+        # never posted is empty — but we just found the thread in the CHANNEL, so
+        # don't report "nothing open" for a key that plainly is.
+        return True if dry_run else ok
+    return False
 
 
 def close(key: str) -> None:

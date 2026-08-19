@@ -3219,18 +3219,16 @@ def _action_incident_resolve(args: str) -> tuple[bool, str]:
     # it, so something else is also wrong on that path. This closes a real
     # staleness hole; it is not the whole fix, and that outage is still open.
     inc._forget_history(inc.CHANNEL)
-    # Same rule as mark_working: family prefix = a key, anything else = a report
-    # id, which resolve_report() expands across failure-/drop-/standalone-.
-    # (2026-08-18)
-    is_key = any(key.startswith(p) for p in inc._KEY_PREFIXES)
+    # A key or a report id — resolve_any() tries the string LITERALLY first and
+    # only then expands it. The old test was the prefix alone, which broke every
+    # thread filed under a CUSTOM key (vantura-sales-week-hold, org-sales-board,
+    # applicant-tracker-gaps): those have no family prefix, so a key copied
+    # straight off its own marker line was treated as a report id, expanded to
+    # `failure-<key>`, and died on "no OPEN incident" with the post right there.
+    # (2026-08-19)
     try:
-        if is_key:
-            lines = [f":white_check_mark: *{key}* — RESOLVED."]
-            if note:
-                lines.append(note)
-            lines.append("_Closed by hand from `lucy incident_resolve`. If it "
-                         "happens again it opens a fresh post, not this thread._")
-            told = inc.resolve(key=key, lines=lines)
+        if inc.resolve_any(key, note=note):
+            told = True
         else:
             told = inc.resolve_report(key, note=note)
     except Exception as e:  # noqa: BLE001 — resolve() swallows its own, but the
