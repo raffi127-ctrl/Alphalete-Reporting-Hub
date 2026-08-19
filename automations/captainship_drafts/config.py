@@ -76,10 +76,13 @@ _INTRO = {
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
     ]),
+    # B2B churn switched to WIRELESS 2026-08-19 (Eve) — the four B2B tabs are
+    # filled from the wireless slice of CHURNRATES now, so the section title and
+    # the churn blocks below say Wireless. NDS still reports New Internet.
     "b2b": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
         "⚠️Captain Team Stats Breakout ⚠️",
-        "💰New Internet Ongoing Churn Metrics 💰",
+        "💰Wireless Ongoing Churn Metrics 💰",
     ]),
     "nds": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
@@ -497,20 +500,20 @@ CAPTAINS: List[Captain] = [
     ], boxes=_fiber_boxes("sahil")),
     # ----- B2B (5 buckets incl 120) -----
     Captain("carlos", "Carlos", "b2b", title_bg="#4CAF4F", to=_to("carlos"), churn=[
-        ChurnSource(_own.open_ws_b2b_carlos, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_b2b_carlos, _wl_render, "Wireless Churn"),
     ]),
     Captain("eveliz", "Eveliz", "b2b", title_bg="#A64D79", to=_to("eveliz"), churn=[
-        ChurnSource(_own.open_ws_b2b_eveliz, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_b2b_eveliz, _wl_render, "Wireless Churn"),
     ]),
     Captain("luis", "Luis", "b2b", title_bg="#B5ADFB", to=_to("luis"), churn=[
-        ChurnSource(_own.open_ws_b2b_luis, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_b2b_luis, _wl_render, "Wireless Churn"),
     ]),
     # Split off Carlos' captainship 2026-08-18 (Atef + Sabrina Alicea + Dhey
     # Patel). His churn tab fills off the ALL-TEAMS view until Tableau adds him
     # to the captain dropdown — see owners_metrics_churn.pull
     # .make_b2b_captainship_parser. Nothing here changes when that happens.
     Captain("atef", "Atef", "b2b", title_bg="#00695C", to=_to("atef"), churn=[
-        ChurnSource(_own.open_ws_b2b_atef, _ni_render, "New Internet Churn"),
+        ChurnSource(_own.open_ws_b2b_atef, _wl_render, "Wireless Churn"),
     ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
