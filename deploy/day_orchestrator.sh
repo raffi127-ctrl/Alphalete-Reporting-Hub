@@ -42,13 +42,26 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
-# One Tableau login for every readiness probe in a pass, instead of one per
-# probe (Megan 2026-08-18). PROVEN on the mini the same day via
-# `lucy rerun session_proof_probes` — A/B/A' hash diff, all 3 downloading probes
-# (dd_week, box_daily, captainship_bonus_raf) byte-identical under one shared
-# login. The access ledger had day_orchestrator at 16 logins/day spent purely on
-# asking "is the data there yet"; this is the fix. Unset to roll back instantly.
-export PROBE_SHARED_SESSION=1
+# PROBE_SHARED_SESSION is DISABLED (2026-08-19). It was correct about the data
+# — the A/B/A' proof showed the 3 downloading probes are byte-identical under one
+# shared login — but the WIRING was wrong and it broke the 4am batch.
+#
+# ReadinessCache.probe_pass() wrapped the WHOLE pass, including _run_pass, which
+# launches every report as a subprocess. So once any probe opened the shared
+# context, the orchestrator process held a lock on
+# automations/uploaded/.browser_profile for the rest of the pass, and every
+# browser report that wanted that profile blocked until its timeout. That is the
+# 2026-08-19 tableau_screenshots incident (04:52 run, 30m timeout on a stuck
+# .browser_profile).
+#
+# This is the SAME collision already documented in captain_pull: a shared context
+# holds the profile, so anything else opening a session on it collides. It was
+# applied inside that one report and missed at the orchestrator level.
+#
+# The fix is NOT to re-enable this line. Probes need either their own profile_dir
+# (tableau_session(profile_dir=...), the way session_holder keeps
+# .browser_profile_holder separate) or a context closed immediately after each
+# probe rather than held across the pass.
 
 EXTRA_ARGS="$*"
 LOG_FILE="$LOG_DIR/day-orchestrator-$(date +%Y-%m-%d-%H%M%S).log"
