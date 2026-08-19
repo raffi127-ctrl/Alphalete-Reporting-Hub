@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 
 from automations.funnel_board import guard
-from automations.funnel_board.roster import CAPTAINSHIP
+from automations.funnel_board.roster import CAPTAINSHIP, ORG as OFFICES
 from automations.funnel_board.auth import identity as _auth_identity
 from automations.funnel_board.auth import session as _auth_session
 from automations.shared.tableau_patchright import (
@@ -51,37 +51,6 @@ API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 # Sheets credentials live in auth.py — shared with build.py, service account
 # first. See the note there on why the personal token is only a fallback.
 
-# name -> (office id, the owner string AppStream's switcher matches on)
-OFFICES = [
-    ("Atef Choudhury",    "23467", "Atef Choudhury"),
-    ("Aya Al-Khafaji",    "22992", "Aya Al-Khafaji"),
-    ("Carlos Hidalgo",    "11580", "CARLOS HIDALGO"),
-    ("Cody Cannon",       "21151", "Cody Cannon"),
-    ("Cyrus Wade",        "22815", "Cyrus Wade"),
-    ("Dhyey Patel",       "22767", "Dhyey Patel"),
-    ("Drew Tepper",       "22583", "Drew Tepper"),
-    ("George Hipolito",   "11296", "George Hipolito"),
-    ("Haytham Nagi",      "22524", "Haytham Nagi"),
-    ("Isaiah Revelle",    "19717", "Isaiah Revelle"),
-    ("Jackie LeRoy",      "22358", "Jackie LeRoy"),
-    ("Jacob Dover",       "23607", "Jacob Dover"),
-    ("Jamis Garay",       "19592", "Jamis Garay"),
-    ("Jeff Starr",        "15031", "Jeffrey Starr"),
-    ("Joey Ramirez",      "23206", "Joey Ramirez"),
-    ("Joshua Murphy",     "21770", "Joshua Murphy"),
-    ("Justin Wood",       "22192", "Justin Wood"),
-    ("Kash Rai",          "22177", "Akashdeep Rai"),
-    ("Khalil Mansour",    "11901", "KHALIL MANSOUR"),
-    ("Kinsey Guenther",   "11906", "Kinsey Guenther"),
-    ("Maxamad-Amin Aden", "23066", "Maxamad Aden"),
-    ("Noah Dubale",       "23356", "Noah Dubale"),
-    ("Rafael Hidalgo",    "11280", "Rafael Hidalgo"),
-    ("Rashad Reed",       "23411", "Rashad Reed"),
-    ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
-    ("Ryan McSpadden",    "22820", "Ryan McSpadden"),
-    ("Salik Mallick",     "21328", "Muhammad UI Haque"),
-    ("Vincent Smith",     "23318", "Vincent Smith"),
-]
 # Carlos's captainship is a SECOND cut of the same report — see roster.py. Most
 # of it lives outside the 17 offices above, so those people have to be pulled
 # too or the Captainship Board is a grid of zeros. Anyone already on the org
@@ -568,8 +537,10 @@ def main():
             names = set(a.only.split("|"))
             todo = [o for o in todo if o[0] in names]
             log("only: %s" % ", ".join(n for n, _, _ in todo))
+        _org = {n for n, _, _ in OFFICES}
         log("pulling %d office(s): %d org, %d captainship-only"
-            % (len(todo), len(OFFICES), len(todo) - len(OFFICES)))
+            % (len(todo), sum(1 for t in todo if t[0] in _org),
+               sum(1 for t in todo if t[0] not in _org)))
         # A first pull is worth reaching back for. That covers three cases with
         # one rule — an office discovered this pass, one discovered earlier
         # whose deep pull never succeeded, and a name simply typed into

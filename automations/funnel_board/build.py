@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
 from automations.funnel_board.roster import (  # noqa: E402
-    CAPTAINSHIP_NAMES, BOARD_TITLE as CAP_BOARD_TITLE,
+    CAPTAINSHIP_NAMES, ORG_NAMES, BOARD_TITLE as CAP_BOARD_TITLE,
     TREND_TITLE as CAP_TREND_TITLE)
 
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
@@ -147,7 +147,16 @@ def tot(name, k):
     return sum(_fix(d)[k] for d in OFF[name]["days"].values())
 
 
+# Everyone the pull covers, best first. Daily Log and Goals span all of them —
+# Goals in particular MUST, because every board grades each row against that
+# person's own goal row, wherever they appear.
 MANAGERS = sorted(OFF, key=lambda m: (-tot(m, "nsh"), -tot(m, "applies")))
+
+# ...but the org board is the ORG. Deriving its rows from "whoever is in the
+# data" put all eleven captainship-only offices on the Manager Board the first
+# time they were pulled (2026-08-19). The two rosters are named lists precisely
+# so that can't happen again.
+ORG_ROSTER = [m for m in MANAGERS if m in ORG_NAMES]
 
 
 def _rank(m):
@@ -166,7 +175,8 @@ CAP_ROSTER = sorted(CAPTAINSHIP_NAMES, key=_rank)
 ALL_DATES = sorted({d for m in OFF.values() for d in m["days"]})
 WEEK_ENDS = sorted({(dt.date.fromisoformat(d) + dt.timedelta(days=6 - dt.date.fromisoformat(d).weekday()))
                     for d in ALL_DATES})
-print("managers=%d dates=%d weeks=%s" % (len(MANAGERS), len(ALL_DATES), WEEK_ENDS))
+print("managers=%d (org %d, captainship %d) dates=%d weeks=%s"
+      % (len(MANAGERS), len(ORG_ROSTER), len(CAP_ROSTER), len(ALL_DATES), WEEK_ENDS))
 
 # A week still in flight has fewer than 7 days of data. Say so on every tab —
 # otherwise a 5-day week sitting beside 7-day weeks reads as a collapse.
@@ -534,7 +544,7 @@ MX_DEFS = [
 MX_H = "$A$100:$G$%d" % (99 + len(MX_DEFS))
 MX_M0 = 4                                        # first manager row
 MXN = len(WEEK_ENDS) + 2                         # manager col + weeks + ALL WEEKS
-MX_TOT = MX_M0 + len(MANAGERS)
+MX_TOT = MX_M0 + len(ORG_ROSTER)
 
 
 def mx(mgr_ref, week_ref):
@@ -557,7 +567,7 @@ def mx(mgr_ref, week_ref):
 matrix = [["Manager Matrix", MX_DEFS[6][0]],
           ["Every manager × every week. Pick the metric in B1." + NOTE],
           ["MANAGER"] + [w.strftime("%m/%d/%Y") for w in reversed(WEEK_ENDS)] + ["ALL WEEKS"]]
-for i, m in enumerate(MANAGERS):
+for i, m in enumerate(ORG_ROSTER):
     r = MX_M0 + i
     matrix.append([m] + [mx("$A%d" % r, "%s$3" % a1(1 + wi)) for wi in range(len(WEEK_ENDS))]
                   + [mx("$A%d" % r, None)])
@@ -585,7 +595,7 @@ values.append({"range": "'Manager Matrix'!%s1" % MXG, "values":
                 ['=IFERROR(VLOOKUP($B$1,%s,7,FALSE),0)' % MX_H]]})
 values.append({"range": "'Manager Matrix'!%s%d" % (MXG, MX_M0), "values":
                [['=IFERROR(VLOOKUP($A%d,Goals!$B:$U,VLOOKUP($B$1,%s,5,FALSE),FALSE),0)'
-                 % (MX_M0 + i, MX_H)] for i in range(len(MANAGERS))]})
+                 % (MX_M0 + i, MX_H)] for i in range(len(ORG_ROSTER))]})
 
 
 # ------------------------------------------------------------------ format
@@ -1163,8 +1173,8 @@ def build_trend(sid, title, heading, roster):
 # ---- the two cuts of the same data.
 # Org first so its formatting lands first; they touch different tabs, so the
 # order is only about what a reader sees in the request log.
-build_board(BOARD, "Manager Board", "Manager Funnel Board", MANAGERS, "OFFICE TOTAL")
-build_trend(TREND, "Manager Trend", "Manager Trend", MANAGERS)
+build_board(BOARD, "Manager Board", "Manager Funnel Board", ORG_ROSTER, "OFFICE TOTAL")
+build_trend(TREND, "Manager Trend", "Manager Trend", ORG_ROSTER)
 build_board(CAPBOARD, CAP_BOARD_TITLE, "Captainship Funnel Board", CAP_ROSTER,
             "CAPTAINSHIP TOTAL")
 build_trend(CAPTREND, CAP_TREND_TITLE, "Captainship Manager Trend", CAP_ROSTER)

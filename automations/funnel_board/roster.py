@@ -34,6 +34,34 @@ freshly typed into this list — gets a deep pull the first time, so their Trend
 opens with a shape instead of a single column.
 """
 
+# The Alphalete org's own 17 — the Manager Board / Trend / Matrix roster, and
+# the list run.py pulls first. It lives here rather than in run.py so build.py
+# can read it too WITHOUT importing run (which drags in the browser stack): the
+# org board has to be the 17, not "whoever happens to be in the Daily Log", or
+# the captainship people appear on it the moment they are first pulled. That is
+# exactly what happened on 2026-08-19.
+ORG = [
+    ("Atef Choudhury",    "23467", "Atef Choudhury"),
+    ("Aya Al-Khafaji",    "22992", "Aya Al-Khafaji"),
+    ("Carlos Hidalgo",    "11580", "CARLOS HIDALGO"),
+    ("Cody Cannon",       "21151", "Cody Cannon"),
+    ("Cyrus Wade",        "22815", "Cyrus Wade"),
+    ("Drew Tepper",       "22583", "Drew Tepper"),
+    ("Haytham Nagi",      "22524", "Haytham Nagi"),
+    ("Isaiah Revelle",    "19717", "Isaiah Revelle"),
+    ("Jacob Dover",       "23607", "Jacob Dover"),
+    ("Kash Rai",          "22177", "Akashdeep Rai"),
+    ("Khalil Mansour",    "11901", "KHALIL MANSOUR"),
+    ("Maxamad-Amin Aden", "23066", "Maxamad Aden"),
+    ("Rafael Hidalgo",    "11280", "Rafael Hidalgo"),
+    ("Rashad Reed",       "23411", "Rashad Reed"),
+    ("Roshan Amin",       "19833", "Roshan Amin Ahmad"),
+    ("Ryan McSpadden",    "22820", "Ryan McSpadden"),
+    ("Salik Mallick",     "21328", "Muhammad UI Haque"),
+]
+
+ORG_NAMES = [n for n, _, _ in ORG]
+
 CAPTAINSHIP = [
     # Carlos's own office leads it — he sits on the org board too, and asked for
     # his numbers here as well so the captainship total is the whole team
