@@ -22,6 +22,16 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# --authorize prints Google's own consent prompt, which carries a '➡'. On a
+# Windows console (cp1252) that print RAISES UnicodeEncodeError inside
+# run_local_server, so the browser never opens and the whole authorization dies
+# on a decorative character (Eve, 2026-08-19).
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 WRITE_SCOPES = ["https://www.googleapis.com/auth/contacts"]
 _CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
 OAUTH_CLIENT_PATH = _CONFIG_DIR / "oauth-client.json"          # reuse existing desktop client

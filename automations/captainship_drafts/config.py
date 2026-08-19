@@ -303,11 +303,17 @@ class Captain:
 RECIPIENTS: dict = {
     "rafael": [
         "andrew.sanborn07@gmail.com", "Ayakhafaji02@gmail.com",
-        # Benjamin Burden: the group carries his gmail, not the bgsu.edu
-        # address this list had. Synced 2026-07-30.
-        "Benjaminburden02@gmail.com", "codycannon1993@gmail.com",
+        # OUT 2026-08-19, two-week zero rule: Benjamin Burden
+        # (Benjaminburden02@gmail.com — the group carried his gmail, not the
+        # bgsu.edu this list used to have) and Edgar Muniz II
+        # (edgarmuniz2020@icloud.com, "Edgar Munoz II" in Contacts). Both came
+        # off the Org Sales Board the same day. NOTE this group is SHARED with
+        # the Org Sales Board email (GROUPS docstring), so the removal takes
+        # them off that mail too — correct here, since neither has a board row
+        # left anywhere.
+        "codycannon1993@gmail.com",
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
-        "edgarmuniz2020@icloud.com", "m.hammad.malikk@gmail.com",
+        "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
         "Loganjoseph81@yahoo.com", "Palace.kash@gmail.com",
         "maudmiller4@gmail.com", "Zenithzenith2099@gmail.com",
@@ -320,14 +326,14 @@ RECIPIENTS: dict = {
         "iraffi127@icloud.com",
         "Turzynskialex@yahoo.com", "ascottburris@gmail.com",
         "resoundinc@gmail.com", "dylanjtwaddle@gmail.com",
-        "mason.d.management@gmail.com", "maudmiller4@gmail.com",
+        "maudmiller4@gmail.com",
         "alistacquisition@gmail.com", "raffi127@gmail.com",
         "sykes.meridian@gmail.com", "elitestrategicsolutions@gmail.com",
     ],
     "starr": [
         "iraffi127@icloud.com",
         "adreyb15@gmail.com", "dylanjtwaddle@gmail.com",
-        "jason.vyzahinc@gmail.com", "jpascual@elevaremanagementinc.com",
+        "jpascual@elevaremanagementinc.com",
         "maudmiller4@gmail.com", "milly.vinceremarketing@gmail.com",
         "nataliagwarda@gmail.com", "omniamanagementinc@gmail.com",
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
@@ -342,11 +348,11 @@ RECIPIENTS: dict = {
         "samjpark1497@gmail.com",
     ],
     "tony": [
-        "berhaneaden3@gmail.com", "kingslegacyconsultants@gmail.com",
+        "kingslegacyconsultants@gmail.com",
         "dmarilongmire7@gmail.com", "dylanjtwaddle@gmail.com",
         "orbitc2025@gmail.com", "clearviewc.inc@gmail.com",
         "kcireus@gmail.com", "maudmiller4@gmail.com",
-        "melikeljaiez@yahoo.com", "raffi127@gmail.com",
+        "raffi127@gmail.com",
         "tonycv1920@gmail.com",
     ],
     "sahil": [
@@ -381,10 +387,9 @@ RECIPIENTS: dict = {
         "georgehipolito2@gmail.com", "jamisgaray18@gmail.com",
         "jackieleroyatt@gmail.com", "jeffcstarr@gmail.com",
         "joeyrmz2002@gmail.com", "justinryanwood.93@gmail.com",
-        "kevdriggs25@gmail.com", "kinseyguenther@gmail.com",
+        "kinseyguenther@gmail.com",
         "maudmiller4@gmail.com", "murphjjm@gmail.com",
-        "raffi127@gmail.com", "ryankabbes@gmail.com",
-        "vincentsmith24.att@gmail.com",
+        "raffi127@gmail.com", "vincentsmith24.att@gmail.com",
     ],
     "eveliz": [
         "themillenders@gmail.com", "evelizroca.ssm@gmail.com",
@@ -410,7 +415,7 @@ RECIPIENTS: dict = {
         "raffi127@gmail.com", "sabrinaalicea2021@gmail.com",
     ],
     "khalil": [
-        "agonzalezz25@outlook.com", "CarlosHidalgo349@gmail.com",
+        "CarlosHidalgo349@gmail.com",
         "dylanjtwaddle@gmail.com", "isaiah.revelle@gmail.com",
         # 2026-07-30: was "KhalilImmansour@..." — an extra capital I that made
         # every scheduled send bounce 550 5.1.1 while a hand-resend (Gmail
@@ -423,14 +428,13 @@ RECIPIENTS: dict = {
     "colten": [
         "coltenwrightsc@gmail.com", "dylanjtwaddle@gmail.com",
         "fernandomunoz710@icloud.com", "georgedelgadod2d@gmail.com",
-        "javeonterrell@gmail.com", "josevelasquezlsm@gmail.com",
+        "josevelasquezlsm@gmail.com",
         "josephdelgadosc@gmail.com", "coastalcreativeconcepts@yahoo.com",
         "campas.kyle@gmail.com", "lajaviusbrown@yahoo.com",
         "logan.waite24@gmail.com", "marcosbarbosa.entrepeneur@gmail.com",
         "maudmiller4@gmail.com", "arisesolutions.milan@gmail.com",
         "nickopereira98@gmail.com", "dubalenoah@gmail.com",
-        "raffi127@gmail.com", "selena.powersmiami@gmail.com",
-        "taylor.4597@gmail.com",
+        "raffi127@gmail.com", "taylor.4597@gmail.com",
     ],
     "jairo": [
         "coltenwrightsc@gmail.com", "drewtepp2735@gmail.com",

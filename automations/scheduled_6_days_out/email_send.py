@@ -72,12 +72,15 @@ def recipients_for(team: str, *, logfn=print) -> List[str]:
 
 RECIPIENTS: dict[str, List[str]] = {
     "raf": [
+        # OUT 2026-08-19, two-week zero rule (same removal as
+        # captainship_drafts.config.RECIPIENTS and the live Contacts
+        # group): Benjamin Burden, Edgar Muniz II.
         "andrew.sanborn07@gmail.com", "Ayakhafaji02@gmail.com",
         # Benjamin Burden: bgsu.edu was his university address; his contact
         # card carries the gmail. Synced 2026-07-30 with the captainship list.
-        "Benjaminburden02@gmail.com", "codycannon1993@gmail.com",
+        "codycannon1993@gmail.com",
         "cywadeambient@gmail.com", "dylanjtwaddle@gmail.com",
-        "edgarmuniz2020@icloud.com", "m.hammad.malikk@gmail.com",
+        "m.hammad.malikk@gmail.com",
         "haythamnagi1@gmail.com", "doverjacob94@gmail.com",
         "Loganjoseph81@yahoo.com", "Palace.kash@gmail.com",
         # Kiarri McBroom + Preppie Olison dropped 2026-07-30: they are not in
@@ -90,11 +93,11 @@ RECIPIENTS: dict[str, List[str]] = {
         "kesslerzadrian@gmail.com",
     ],
     "starr": [
+        # OUT 2026-08-19, two-week zero rule: Jason Strid.
         # Added 2026-07-30 to match "Starr's Captainship".
         "adreyb15@gmail.com", "nataliagwarda@gmail.com",
         "iraffi127@icloud.com",
-        "dylanjtwaddle@gmail.com", "jason.vyzahinc@gmail.com",
-        "jpascual@elevaremanagementinc.com", "maudmiller4@gmail.com",
+        "dylanjtwaddle@gmail.com", "jpascual@elevaremanagementinc.com", "maudmiller4@gmail.com",
         "milly.vinceremarketing@gmail.com", "omniamanagementinc@gmail.com",
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
         "William@optimabusinessmgmt.com",

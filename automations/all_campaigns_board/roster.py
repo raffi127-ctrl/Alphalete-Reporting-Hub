@@ -57,9 +57,28 @@ RANKING_LABEL = "All Units - All Campaigns"   # col-B header of block 3
 # 2026-07-31 and the very next run would have put them straight back, every
 # run, forever. A hand deletion is a decision — it has to outlive the sync.
 # Matched on the normalized name, so spelling variants are covered.
+# The 2026-08-19 block is the two-week zero rule (Eve): these came off the ORG
+# board's campaign sections, which are this board's only trigger, so the auto-add
+# already can't reach them. They stay listed anyway — the trigger is the Copy
+# tab, and a hand re-add there (or a section refill) would otherwise resurrect
+# them here. See org_sales_board/roster_sync.EXCLUDE, the same decision upstream.
 EXCLUDE: set = {
     "kevin driggs",
     "selena powers",
+    # --- two-week zero rule, 2026-08-19 ---
+    "ronald dawson",
+    "cinthya reyes",
+    "david martinez",
+    "benjamin burden",
+    "edgar muniz ii",
+    "ryan kabbes",
+    "mason davis",
+    "jason strid",
+    "melik el jaiez",
+    "aden berhane",
+    "jimmy bonilla",
+    "ayleen gonzalez",
+    "javeon lara",
 }
 
 

@@ -1,11 +1,10 @@
 {
-  "_why": "Last-known expansion of the 'Alphalete Org Owners' contact group, used ONLY when the People API can't be reached. Seeded 2026-07-31 from the To: line of the Org Sales Board email that actually went out on 2026-07-30 (subject 'Alphalete Org Sales Board 7/29') — i.e. verified delivery, not a guess. A successful live expansion overwrites the runtime cache under output/, which wins over this file.",
+  "_why": "Last-known expansion of the 'Alphalete Org Owners' contact group, used ONLY when the People API can't be reached. Seeded 2026-07-31 from the To: line of the Org Sales Board email that actually went out on 2026-07-30 (subject 'Alphalete Org Sales Board 7/29') — i.e. verified delivery, not a guess. A successful live expansion overwrites the runtime cache under output/, which wins over this file. Cinthya Reyes, Benjamin Burden and David Martinez removed 2026-08-19 under the two-week zero rule, to match the live group.",
   "group": "Alphalete Org Owners",
   "as_of": "2026-07-30",
   "emails": [
     "atefchoudhury349@gmail.com",
     "haywilson403838@gmail.com",
-    "cinthyareyes093@gmail.com",
     "codycannon1993@gmail.com",
     "isaiah.revelle@gmail.com",
     "lizetteruiz0510@gmail.com",
@@ -39,7 +38,6 @@
     "kcue15@gmail.com",
     "cywadeambient@gmail.com",
     "josevelasquezlsm@gmail.com",
-    "Benjaminburden02@gmail.com",
     "maxamed.hersi6292@gmail.com",
     "tatianaarreola.hr@gmail.com",
     "doverjacob94@gmail.com",
@@ -60,7 +58,6 @@
     "marianoaiysha@gmail.com",
     "Palace.kash@gmail.com",
     "rpaola205@gmail.com",
-    "Khalilmmansour@gmail.com",
-    "martinez699341@gmail.com"
+    "Khalilmmansour@gmail.com"
   ]
 }

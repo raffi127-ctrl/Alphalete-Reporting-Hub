@@ -46,8 +46,32 @@ from automations.alphalete_org_report.tableau_http import _norm_owner
 # cleanup is removing the rep on the VA's own board, which no automation may
 # write to (see the hard guard in auto_insert_missing). Keep the entry until the
 # VA board is corrected; a name here that is no longer on the VA is harmless.
+# The 2026-08-19 batch below is the first application of the TWO-WEEK ZERO RULE
+# (Eve): a rep who closes two consecutive weeks at a literal 0 comes off that
+# campaign's boxes. Removed from the copy tab with `roster_remove.py`; listed
+# here so the self-heal treats each one as a decision, not a gap. Scoped per
+# campaign — a name here is excluded board-wide, which is only correct because
+# every one of them was at 0 in EVERY campaign they appeared in. A rep who goes
+# cold on one campaign while selling another must NOT be added here; delete the
+# rows and let the self-heal keep the campaign they still sell.
 EXCLUDE = (
     "Ethan McKendree",      # Eve, 2026-08-10 — Carlos' captainship
+    # --- two-week zero rule, 2026-08-19 ---
+    "Ronald Dawson",        # Retail NL + Retail Internet
+    "Cinthya Reyes",        # Retail JE
+    "David Martinez",       # Retail JE
+    "Selena Powers",        # ATT NDS Team + Colten's captainship
+    "Kevin Driggs",         # B2B + Carlos' captainship + Raf Special Team
+    "Benjamin Burden",      # BOX — 34 weeks at 0
+    "Edgar Muniz II",       # Raf's captainship (both boxes) + Trang's Org
+    "Ryan Kabbes",          # Carlos' captainship
+    "Mason Davis",          # Wayne's captainship (both boxes)
+    "Jason Strid",          # Starr's captainship (both boxes)
+    "Melik El Jaiez",       # Tony's captainship (both boxes)
+    "Aden Berhane",         # Tony's captainship (both boxes)
+    "Jimmy Bonilla",        # Khalil's captainship
+    "Ayleen Gonzalez",      # Khalil's captainship
+    "Javeon Lara",          # Colten's captainship
 )
 
 
