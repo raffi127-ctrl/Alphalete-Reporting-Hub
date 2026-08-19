@@ -327,6 +327,7 @@ def main(argv=None) -> int:
 
     rc = 0
     results = {}          # "office_product" -> "ok" | "FAILED"
+    gaps = {}             # "office_product" -> owner the view no longer carries
 
     # Pull each ALL-TEAM product view ONCE (its own fresh browser + one retry —
     # the CDP Chrome on Lucy 2 dies mid-run intermittently, so isolating each pull
@@ -405,6 +406,28 @@ def main(argv=None) -> int:
                             tag, len(parsed.get("reps") or {}), pv["tab"]))
                     results[tag] = "ok"
                 except Exception:  # noqa: BLE001 — one office must not kill the rest
+                    # Is this office simply NOT IN the view any more? These are
+                    # Carlos's TEAM views (8 owners), not the whole site: an
+                    # office that leaves his captaincy drops out of them
+                    # overnight. That is what happened to Atef — he split off on
+                    # 2026-08-18 and every one of his feeds came back empty on
+                    # 8/19 with "parsed 0 reps". It is a SOURCE gap, not a break
+                    # in this code, and it lasts until someone saves an all-team
+                    # view — so failing the whole report every morning would
+                    # leave a permanently red card that stops meaning anything
+                    # ([[feedback_dead-source-pings-not-fails-the-card]]). Ping
+                    # once per run, by name, and keep the exit code clean.
+                    try:
+                        owners = _distinct_owners(adapted)
+                    except Exception:  # noqa: BLE001 — can't tell: treat as break
+                        owners = {}
+                    if owners and office["owner"] not in owners:
+                        log("  {} SOURCE GAP — {!r} is not in this view; it "
+                            "carries {} owner(s): {}".format(
+                                tag, office["owner"], len(owners),
+                                ", ".join(sorted(owners))))
+                        gaps[tag] = office["owner"]
+                        continue
                     log("  {} slice/fill FAILED:".format(tag))
                     for ln in traceback.format_exc().splitlines()[-12:]:
                         log("    " + ln[:200])
@@ -417,7 +440,7 @@ def main(argv=None) -> int:
     else:
         log("feed results: " + ", ".join(
             "{}={}".format(k, v) for k, v in results.items()))
-        _write_manifest(results, fill=args.fill, log=log)
+        _write_manifest(results, fill=args.fill, gaps=gaps, log=log)
     return rc
 
 
@@ -430,7 +453,69 @@ def _split_tag(tag: str) -> tuple:
     return None, None
 
 
-def _write_manifest(results: dict, *, fill: bool, log=print) -> None:
+# The gap manifest gets its OWN id. The orchestrator VERIFIES att_churn against
+# the "att_churn" manifest (verify: {type: manifest}), and run_manifest keys its
+# file by report_id alone — writing the gap under the same id would overwrite the
+# feed manifest and tell reconcile the run filled nothing.
+SOURCE_MANIFEST_ID = "att_churn_source"
+
+
+def _write_source_manifest(gaps: dict, *, log=print) -> None:
+    """An office the pulled view no longer carries: ping once, card stays green.
+
+    Cleared (mark_clean) the moment every office is back in its view, so the
+    `drop-att_churn_source` thread closes itself instead of sitting open."""
+    try:
+        from automations.shared import run_manifest
+    except Exception as e:  # noqa: BLE001 — bookkeeping never fails a run
+        log("source manifest skipped ({}: {})".format(type(e).__name__, str(e)[:120]))
+        return
+    if not gaps:
+        try:
+            run_manifest.mark_clean(SOURCE_MANIFEST_ID, kind="source")
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    owners = sorted(set(gaps.values()))
+    tags = sorted(gaps)
+    try:
+        run_manifest.write_manifest(
+            SOURCE_MANIFEST_ID, failed=tags, retry_args=[], kind="source",
+            note="{} feed(s) had nothing to slice: {} is not in the churn "
+                 "view(s) this report pulls".format(len(tags), ", ".join(owners)),
+            remediation=run_manifest.make_remediation(
+                reason="{} has no rows in the CarlosTEAM* CHURNRATES views. "
+                       "Those views carry Carlos's team only, so an office that "
+                       "leaves his captaincy drops out of them the next morning "
+                       "(Atef split off 2026-08-18; his feeds went empty 8/19). "
+                       "The pull and the parser are fine — there is simply "
+                       "nothing of theirs in the crosstab.".format(
+                           ", ".join(owners)),
+                fix="In Tableau, under the identity that owns these views "
+                    "(Carlos, on Lucy 2), save one custom view per product off "
+                    "ATTTRACKER-B2B/CHURNRATES with the product filter kept and "
+                    "the captain/team filter CLEARED, then point PRODUCTS[*]"
+                    "['url'] in automations/att_order_log/churn_run.py at them. "
+                    "Filtering by the office's own team is not an option yet: "
+                    "SmartCircle has not created \"Atef's Team\" in the "
+                    "B2B Captain's Teams (SFDC) field.",
+                link=PRODUCTS["wireless"]["url"],
+                message="The B2B churn views we pull (CarlosTEAMWireless / "
+                        "CarlosTEAMNewINTEXP / CarlosTEAMAIREXP) only contain "
+                        "Carlos's team. Since Atef left that captaincy his reps "
+                        "are not in them, so his Wireless / New INT / AIR churn "
+                        "tabs cannot be filled. Could we get an all-team version "
+                        "of each of those three views (same product filter, no "
+                        "team filter)?"),
+        )
+        log("source gap: {} feed(s) — {} (card stays green; pinged once)".format(
+            len(tags), ", ".join(tags)))
+    except Exception as e:  # noqa: BLE001
+        log("source manifest skipped ({}: {})".format(type(e).__name__, str(e)[:120]))
+
+
+def _write_manifest(results: dict, *, fill: bool, gaps: dict = None,
+                    log=print) -> None:
     """Record per-feed outcomes so the orchestrator can RECONCILE this run instead
     of trusting exit 0 (Megan 2026-07-30 — att_churn had verify:null, so a run that
     exited clean having filled nothing read as DONE).
@@ -441,7 +526,10 @@ def _write_manifest(results: dict, *, fill: bool, log=print) -> None:
     otherwise overwrite the 4am fill's real result).
 
     Best-effort — a manifest problem must never change this run's exit code."""
-    if not fill or not results:
+    if not fill:
+        return
+    _write_source_manifest(gaps or {}, log=log)
+    if not results:
         return
     try:
         from automations.shared import run_manifest
