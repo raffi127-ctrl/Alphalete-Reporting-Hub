@@ -42,10 +42,14 @@ HOLD_EXIT = "75"
 INC_FAILED = "vantura-sales-failed"
 INC_HOLD = "vantura-sales-week-hold"
 INC_UNKNOWN = "vantura-sales-unknown-poster"
+INC_ROLL = "vantura-sales-roll-due"
 
 # The run prints: The gold WE cell reads '7.26' but Monday 7/27's sales belong
-# to week '8.2'. Pull the week it wants so the alert can name it.
+# to week '8.2'. Pull both weeks so the alert can name them.
 WANT_WEEK_RE = re.compile(r"belong to week '([^']+)'")
+SHOWN_WEEK_RE = re.compile(r"gold WE cell reads '([^']+)'")
+# run.py prints one "HELD DAY: 2026-08-18" line per day it refused to write.
+HELD_DAY_RE = re.compile(r"^HELD DAY: (\d{4}-\d{2}-\d{2})", re.M)
 
 
 def _tail(log_path: str, n: int = TAIL_LINES) -> str:
@@ -64,19 +68,42 @@ def build_message(log_path: str, exit_code: str) -> list[str]:
         # retrying fixes it, so say exactly what to do and by when.
         # Nested bold ("*week *8.2**") renders as literal asterisks in Slack —
         # the week goes INSIDE the one bold span, not in its own.
-        want = WANT_WEEK_RE.search(_tail(log_path, 400))
+        tail = _tail(log_path, 400)
+        want = WANT_WEEK_RE.search(tail)
         wk = f"week {want.group(1)}" if want else "the new week"
+        shown = SHOWN_WEEK_RE.search(tail)
+        on = f"reads *{shown.group(1)}*" if shown else "is on an older week"
         head = [
-            f":warning: *{REPORT_NAME}* is HOLDING — the new week's board "
-            f"isn't up yet",
+            f":warning: *{REPORT_NAME}* is HOLDING — the board isn't on the "
+            f"week being filled",
             "",
-            f"The gold *WE* cell on the *Sales Board* tab is still on last "
-            f"week, so nothing was written — filling now would overwrite last "
-            f"week's column.",
+            f"The gold *WE* cell on the *Sales Board* tab {on}, so nothing was "
+            f"written — filling now would overwrite that week's column.",
             "",
-            f"*Set the board to {wk}* (cell `B2`). The "
-            f"next hourly pass picks it up on its own — no re-run needed.",
+            f"*Set the board to {wk}* (cell `B2`).",
         ]
+        # Days already in the past do NOT come back on their own: the 4-9pm
+        # passes fill the day in progress and the 5:00am pass closes out the day
+        # before it, so nobody ever returns to Tuesday once Wednesday started.
+        # Saying "the next pass picks it up" there is how Tue 8/18 sat empty for
+        # two days (Eve 2026-08-19).
+        stale = [d for d in HELD_DAY_RE.findall(tail)
+                 if d < dt.date.today().isoformat()]
+        if stale:
+            head += [
+                "",
+                ":exclamation: Rolling the board is *not enough* for "
+                + ", ".join(stale)
+                + " — no later pass returns to a day that is already past. "
+                  "After the roll, run one per day:",
+                "```",
+                *[f'lucy rerun vantura_slack_sales --date {d} '
+                  f'--machine "Lucy 2"' for d in stale],
+                "```",
+            ]
+        else:
+            head += ["", "The next hourly pass picks it up on its own — no "
+                         "re-run needed."]
     else:
         head = [
             f":rotating_light: *{REPORT_NAME}* failed — exit {exit_code}",
@@ -221,6 +248,64 @@ def resolve_all(*, dry_run: bool = False) -> None:
     for key, what in ((INC_FAILED, "*{}*".format(REPORT_NAME)),
                       (INC_HOLD, "*{}* — the week hold cleared".format(REPORT_NAME))):
         inc.resolve_if_open(key, what=what, dry_run=dry_run)
+
+
+# The Monday roll reminder fires from the 5:00am pass, at most once a day.
+ROLL_STATE = Path(__file__).resolve().parents[2] / "output" / ".vslack_roll_alert"
+
+
+def build_roll_message(shown: str, want: str) -> list[str]:
+    """The Monday heads-up: the board still has to be rolled TODAY."""
+    return [
+        f":calendar: *{REPORT_NAME}* — the Sales Board still has to be rolled "
+        f"to week {want} today",
+        "",
+        f"This morning's pass ran fine: it was closing out Sunday, which lives "
+        f"on the week the board shows now (*{shown}*). But the *4:00pm* pass "
+        f"fills MONDAY, and Monday's sales live on week *{want}*.",
+        "",
+        f"*Set cell `B2` on the Sales Board tab to {want}* before 4:00pm. "
+        f"Careful with the picker — the previous weeks sit right under the one "
+        f"you want, and a wrong pick reads exactly like a board that was never "
+        f"rolled.",
+        "",
+        "Nothing is broken yet. If the board isn't up by 4:00pm the fill starts "
+        "HOLDING instead, and each day it holds needs its own catch-up run.",
+    ]
+
+
+def remind_roll(shown: str, want: str, state: Path = ROLL_STATE) -> bool:
+    """Post the Monday roll reminder, at most once a day."""
+    today = dt.date.today().isoformat()
+    try:
+        if state.read_text().strip() == today:
+            print("[alert] roll reminder already posted today", flush=True)
+            return False
+    except Exception:  # noqa: BLE001 — no state file yet is normal
+        pass
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(today)
+    except Exception:  # noqa: BLE001 — never block the alert on bookkeeping
+        pass
+
+    from automations.day_orchestrator import notify
+    from automations.day_orchestrator.registry import load_config
+
+    lines = build_roll_message(shown, want)
+    ts = notify.post_alert(lines[0], lines[1:], tag="vantura_slack_sales-roll-due",
+                           cfg=load_config(), incident=INC_ROLL)
+    print(f"[alert] roll reminder {'sent' if ts else 'SKIPPED/failed'}",
+          flush=True)
+    return bool(ts)
+
+
+def resolve_roll(*, dry_run: bool = False) -> bool:
+    """An afternoon pass wrote into a rolled board — the reminder is done."""
+    from automations.shared import incident_thread as inc
+    return inc.resolve_if_open(
+        INC_ROLL, what="*{}* — the board is on the new week".format(REPORT_NAME),
+        dry_run=dry_run)
 
 
 def resolve_unknown(*, dry_run: bool = False) -> bool:

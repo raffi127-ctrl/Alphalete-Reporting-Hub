@@ -132,6 +132,11 @@ KNOWN_USERS = {
     # Kyara's row is the only BOX row carrying exactly that pair on those two
     # days. Worth a second pair of eyes if her row ever looks off.
     "U0BMMCG2494": "Kyara Nayibe Mancilla Hurtado",
+    # Added 2026-08-19. Both had been selling into the day TOTAL and onto no
+    # row. Names confirmed off Slack's own "<@id|Display Name>" rendering in
+    # teammates' shout-out lists, and the threads agree ("RUBBBYYYY",
+    # "It's her first timeee !!!!" on her first sale, 8/17).
+    "U0BMT31A54L": "Ruby Flores",
     # B2B (AT&T lines and fiber)
     "U0ATXM9KYPM": "Jacob Ortega",
     "U07PU3WCN7P": "Nicholas Smedra",
@@ -152,6 +157,12 @@ KNOWN_USERS = {
     "U0BL7DT90FN": "Caleb Gregory Deleon",      # threads: "LETS GOOO CALEB"
     "U0BKXFE2SDR": "Francisco Javier Jimenez",  # threads: "FRANNNNNN", "Francisco !!!!"
     "U0BMX3TRTNK": "Emmanuel Nieto",            # thread: "El eman el og"
+    # Added 2026-08-19 — same story, B2B side. Rodolfo posts under his own
+    # name but the office only ever shouts "RUDYYYYYYYY"; Adabella posts as
+    # "Adabella Amaya", two thirds of her board name, so first+last can't
+    # bridge it on its own (hence the NAME_ALIASES line below).
+    "U0BQ3GB6RA4": "Rodolfo Bazan",
+    "U0BP752M3V4": "Adabella Amaya Gallegos",   # thread: "Bella!!!!"
     # Not reps, but they post here — named so a mis-parse points at a person.
     "U0BCG8F9B5Z": "Lucy Reporting",
     "U046G04P5LG": "Carlos Hidalgo",
@@ -185,6 +196,7 @@ NAME_ALIASES = {
     "caleb deleon": "Caleb Gregory Deleon",
     "tara ecklof": "Tara Lynn Ecklof",
     "francisco jimenez": "Francisco Javier Jimenez",
+    "adabella amaya": "Adabella Amaya Gallegos",
 }
 
 # The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20".
@@ -695,12 +707,13 @@ def main(argv=None) -> int:
 
     from automations.recruiting_report.fill import _retry
     _log("")
-    held = False
+    held, held_days = False, set()
     for res in results:
         # GATE: never write into a week the board isn't showing.
         ok, shown, want = week_ok(g, res["day"])
         if not ok:
             held = True
+            held_days.add(res["day"])
             _log(f"{res['campaign']} {_md(res['day'])}: WRONG WEEK — holding. "
                  f"The gold WE cell reads {shown!r} but {_md(res['day'])}'s "
                  f"sales belong to week {want!r}. Roll the board (set B2 to "
@@ -725,6 +738,52 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
+
+    # A held day that is ALREADY PAST is not self-healing, and the alert used to
+    # promise the opposite ("the next hourly pass picks it up on its own"). The
+    # 4-9pm passes only ever fill the day IN PROGRESS, and the 5:00am pass only
+    # closes out the day before it — so nothing ever comes back for Tuesday once
+    # Wednesday has started. Tue 8/18 was filled two days late for exactly this
+    # reason (Eve 2026-08-19). Machine-readable so alert.py can carry it into
+    # the Slack post.
+    if held_days:
+        _log("")
+        for d in sorted(held_days):
+            _log(f"HELD DAY: {d.isoformat()}")
+        stale = [d for d in sorted(held_days) if d < today]
+        if stale:
+            _log("NOT SELF-HEALING — no later pass returns to a day that is "
+                 "already past. Once the board is rolled, each of these needs "
+                 "its own run:")
+            for d in stale:
+                _log(f"  lucy rerun vantura_slack_sales --date {d.isoformat()}"
+                     f' --machine "Lucy 2"')
+
+    # Monday heads-up, while there is still time to act. The 5:00am pass runs on
+    # LAST week's board on purpose (it is closing out Sunday), but the 4:00pm
+    # pass needs the NEW week up — and nothing in between says so. Without this
+    # the first sign of a board that was never rolled (or rolled to the wrong
+    # week: the picker list has 8.9 sitting right under 8.23, which is how
+    # 2026-08-17 went wrong) is the 4:00pm HOLD, and every pass after it.
+    if not a.date and today.weekday() == 0 and now.hour < OFFICE_DAY_START:
+        from automations.sales_boards.run import WE_CELL, expected_we
+        shown = str(_cell(g, *WE_CELL)).strip()
+        _, new_we = expected_we(today)      # Sunday of the week starting today
+        if shown != new_we:
+            _log("")
+            _log(f"ROLL DUE: the board reads WE {shown!r} — right for this "
+                 f"pass, which is closing out Sunday. It has to read "
+                 f"{new_we!r} (cell B2) before the 4:00pm pass fills "
+                 f"{_md(today)}.")
+            if a.fill and a.yes:
+                from automations.vantura_slack_sales import alert
+                alert.remind_roll(shown, new_we)
+
+    # The afternoon wrote into a rolled board, so a Monday-morning ROLL DUE
+    # reminder has been acted on. No-op when nothing is open.
+    if a.fill and a.yes and not held and now.hour >= OFFICE_DAY_START:
+        from automations.vantura_slack_sales import alert
+        alert.resolve_roll()
     # 75 = EX_TEMPFAIL, the same hold code sales_boards uses for a wrong-week
     # board. The next pass retries; nothing was written.
     return 75 if held else 0
