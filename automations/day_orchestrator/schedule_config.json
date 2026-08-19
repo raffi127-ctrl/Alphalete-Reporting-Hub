@@ -1829,9 +1829,9 @@
       "verify": null
     },
     "harvest_prime": {
-      "order": 5.9,
+      "order": 4.05,
       "on_scheduler": true,
-      "_note": "Harvest cutover CANARY prime step (2026-07-22, after a clean ~week of the 1pm shadow proof). Pulls today's churn Tableau views ONCE into the dated cache (automations.harvest.run) so the daily_metrics churn subprocess \u2014 the ONLY report flipped to HARVEST_MODE=on \u2014 reads cache instead of re-scraping. order 5.9 = runs immediately before daily_metrics (order 6) so the cache is warm first. source_type tableau => chrome_guard runs first + wave-2 timing (Tableau has had the most time to publish). HARMLESS if it fails or is skipped: it writes NO Sheet, posts NO Slack, and daily_metrics churn falls straight back to a live scrape on any cache miss (adapter guardrail \u2014 cache can only serve byte-identical bytes or defer to live, never stale). Every OTHER churn report (captainship_churn / owners_metrics_churn) has no HARVEST_MODE set and stays 100% live. Rollback = unset HARVEST_MODE in daily_metrics/run.py; this prime can stay (writes unused cache) or be removed. Full procedure: output/harvest-cutover-plan.md.",
+      "_note": "Harvest cutover CANARY prime step (2026-07-22, after a clean ~week of the 1pm shadow proof). Pulls today's churn Tableau views ONCE into the dated cache (automations.harvest.run) so the daily_metrics churn subprocess \u2014 the ONLY report flipped to HARVEST_MODE=on \u2014 reads cache instead of re-scraping. order 4.05 = runs immediately before daily_metrics (order 4.06) so the cache is warm first. Moved 5.9 -> 4.05 on 2026-08-19 with daily_metrics (see that entry's _order_note). source_type tableau => chrome_guard runs first + wave-2 timing (Tableau has had the most time to publish). HARMLESS if it fails or is skipped: it writes NO Sheet, posts NO Slack, and daily_metrics churn falls straight back to a live scrape on any cache miss (adapter guardrail \u2014 cache can only serve byte-identical bytes or defer to live, never stale). Every OTHER churn report (captainship_churn / owners_metrics_churn) has no HARVEST_MODE set and stays 100% live. Rollback = unset HARVEST_MODE in daily_metrics/run.py; this prime can stay (writes unused cache) or be removed. Full procedure: output/harvest-cutover-plan.md.",
       "display_name": "Harvest Prime (churn cache warm)",
       "source_type": "tableau",
       "data_sources": [],
@@ -1857,12 +1857,12 @@
       "timeout_minutes": 30
     },
     "other_office_knocks": {
-      "order": 6.1,
+      "order": 4.07,
       "on_scheduler": true,
       "display_name": "Knocks for Other Offices (Sahil, Chan)",
       "source_type": "appstream",
       "data_sources": [],
-      "_sources_note": "Source is OWNERVILLE (Disposition by Rep + Time Tracker, one impersonated session per office), not AppStream. source_type is set to 'appstream' for its BEHAVIOUR, which is the one this report needs: no readiness probe (yesterday's ownerville data is complete at any hour, and a 'tableau'/'local' type would gate it on a warm Tableau session it never touches — a pointless HOLD that reads as FAILED), plus the stray-Chrome guard every browser report wants. Runs right after daily_metrics (order 6) so the knocks go out with the morning metrics, but posts to its OWN 'Knocks for other offices' thread and verifies on its OWN manifest — an office that drops turns THIS card red instead of hiding inside the Daily Metrics summary.",
+      "_sources_note": "Source is OWNERVILLE (Disposition by Rep + Time Tracker, one impersonated session per office), not AppStream. source_type is set to 'appstream' for its BEHAVIOUR, which is the one this report needs: no readiness probe (yesterday's ownerville data is complete at any hour, and a 'tableau'/'local' type would gate it on a warm Tableau session it never touches — a pointless HOLD that reads as FAILED), plus the stray-Chrome guard every browser report wants. Runs right after daily_metrics (order 4.06) so the knocks go out with the morning metrics, but posts to its OWN 'Knocks for other offices' thread and verifies on its OWN manifest — an office that drops turns THIS card red instead of hiding inside the Daily Metrics summary.",
       "command": [
         "automations.other_office_knocks.run"
       ],
@@ -1894,8 +1894,9 @@
       }
     },
     "daily_metrics": {
-      "order": 6,
+      "order": 4.06,
       "on_scheduler": true,
+      "_order_note": "Eve 2026-08-19: moved 6 -> 4.06 (with harvest_prime 4.05 and other_office_knocks 4.07) so the 10 metrics stop landing at ~09:00-10:00. At order 6 they sat behind ~15 reports plus the whole Tableau screenshot wave: on 8/18 the knocks card posted 09:59 CT, on 8/19 the first metric posted 09:06 CT. alphalete_production (order 4) finishes ~04:37 CT, so the slot right after it puts the metrics out ~04:45-05:45. NOTE: this report has NO effective readiness gate - its data_source tableau:order_log has probe type not_configured and settings.gate_unprobed_sources is false - so nothing stops an early run from reading a stale extract. If a metric ever posts yesterday's numbers, wire the tableau:order_log probe rather than pushing this order back.",
       "display_name": "10 Daily Metrics Report",
       "source_type": "tableau",
       "data_sources": [
