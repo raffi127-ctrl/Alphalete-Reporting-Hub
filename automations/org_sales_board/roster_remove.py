@@ -134,12 +134,20 @@ def index_rep_rows(grid) -> list:
                 rr += 1
             r = rr
             continue
-        if cC == "monday":
-            title = text(grid, r, 0) or text(grid, r, 1)
+        if cC == "monday" and text(grid, r, 0) and not text(grid, r, 1):
+            # A REP section names itself in col A ('Retail NL', 'BOX') and leaves
+            # col B empty. The summary tables at the top of every block ('Product
+            # Summary - This Week', 'RAF ORG - Current vs Prior Weeks') carry a
+            # Monday header too, but label themselves in col B with col A blank —
+            # their rows are product types / stat lines, not reps, and ranking
+            # them stamped 1..N down a gutter that is meant to stay empty
+            # (Eve 2026-08-19).
+            title = text(grid, r, 0)
             owner, rr = _owner_above(grid, r), r + 1
             while rr < len(grid) and not _blank(grid, rr):
                 a, b = text(grid, rr, 0), text(grid, rr, 1)
-                if a.lower() in END_LABELS:
+                # the closing label lives in col B once col A holds a rank
+                if a.lower() in END_LABELS or b.lower() in END_LABELS:
                     break
                 if b:
                     out.append({"row0": rr, "kind": "daily", "table": title,
