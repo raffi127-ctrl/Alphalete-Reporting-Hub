@@ -301,6 +301,12 @@ def main(argv=None) -> int:
                     help="pull each TEAM view once and print the distinct owners "
                          "it contains (no slice, no write) — confirm an office's "
                          "owner spelling before wiring it")
+    ap.add_argument("--url", default=None, metavar="URL",
+                    help="pull this view URL instead of the wired one, for the "
+                         "product named by --only. Lets a CANDIDATE view be "
+                         "checked with --probe-owners before anything is "
+                         "rewired (a wrong URL in PRODUCTS would poison the "
+                         "next daily run for that product).")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
     if args.png:
@@ -309,6 +315,11 @@ def main(argv=None) -> int:
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
     products = ({args.only: PRODUCTS[args.only]} if args.only else PRODUCTS)
+    if args.url:
+        if not args.only:
+            ap.error("--url needs --only <product>, so it is unambiguous which "
+                     "view is being replaced")
+        products = {args.only: dict(PRODUCTS[args.only], url=args.url)}
     offices = ({args.office: OFFICES[args.office]} if args.office else OFFICES)
     log = print
     if args.probe_owners:
