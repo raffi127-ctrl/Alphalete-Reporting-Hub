@@ -129,6 +129,7 @@ DAILY_AUTORUN_CAP = 100
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
+                    "install_enrollment_pending",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_office_slack_token",
@@ -3083,6 +3084,55 @@ def _action_set_doubleentry_creds(args: str) -> tuple[bool, str]:
     return True, f"Double Entry creds installed for {user} + sign-in verified · {detail}"
 
 
+def _action_install_enrollment_pending(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the pending-enrollments LaunchAgent
+    (com.alphalete.enrollment-pending-hourly) on THIS machine — hourly 09:00
+    through 22:00, every day.
+
+    Megan 2026-08-19: the check moved OFF the 4am orchestrator pass onto this
+    cadence, so until this agent is bootstrapped it runs NOWHERE. It only speaks
+    when an office enrollment is sitting un-applied, so a silent card is the
+    healthy state — which is exactly why a missing agent would go unnoticed.
+
+    Regenerates the plist for this machine's path, lints it, runs a real
+    smoke test (the module reads the sheet and posts only on a genuine pending
+    row), then bootstraps. Run `update` first so the plist and wrapper exist."""
+    uid = os.getuid()
+    label = "com.alphalete.enrollment-pending-hourly"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "enrollment_pending_hourly.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+        os.chmod(wrapper, 0o755)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist/wrapper: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.office_onboarding.pending_alert"],
+        timeout_s=180, log_name="enrollment-pending-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, (f"installed {label} (hourly 09:00-22:00) · smoke ok · {smoke[:70]}")
+
+
 def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the BG-check sync LaunchAgent
     (com.alphalete.bg-check-sync) on THIS machine — 3x/day (8:00/11:30/16:00),
@@ -4286,6 +4336,7 @@ ACTIONS = {
     "post_note": _action_post_note,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
+    "install_enrollment_pending": _action_install_enrollment_pending,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
