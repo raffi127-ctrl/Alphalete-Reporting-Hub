@@ -67,23 +67,24 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 PRODUCTS = {
     "wireless": {
         "label": "Wireless Churn", "tab": "Lucy Wireless Churn",
-        # ALL-TEAM for real since 2026-08-19: CarlosTEAMWireless carried only
-        # Carlos's captaincy (8 owners), so Atef's feeds went empty the morning
-        # after he split off. Eve saved this one off the same viz with the
-        # captaincy filter cleared — 93 owners, ATEF CHOUDHURY among them
-        # (verified with --probe-owners before wiring).
+        # ALL-TEAM for real since 2026-08-19. The CarlosTEAM* views carried
+        # only Carlos's captaincy (8 owners), so Atef's three feeds went empty
+        # the morning after he split off. Eve saved these three off the same
+        # viz with the captaincy filter cleared, and each was checked with
+        # --probe-owners BEFORE being wired here: wireless 93 owners, new_int
+        # 85, air 92 — ATEF CHOUDHURY present in all three.
         "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
                "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1",
     },
     "new_int": {
         "label": "New Internet Churn", "tab": "Lucy New INT Churn",
         "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "2365c727-4967-4bfc-a3c5-01015ea98278/CarlosTEAMNewINTEXP?:iid=2",
+               "0392114c-6f14-43e7-8c84-c93ba7cdc502/ALLTEAMNewINT?:iid=1",
     },
     "air": {
         "label": "AIR Churn", "tab": "Lucy AIR Churn",
         "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "66dd0946-c47b-488e-990c-cf67f04de4c0/CarlosTEAMAIREXP?:iid=1",
+               "a20aafca-748f-4e80-b52f-107bf5f2b78e/ALLTEAMAIR?:iid=1",
     },
 }
 
