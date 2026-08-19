@@ -112,7 +112,13 @@ SECTION_KINDS = {
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
                "box:six-days"],
-    "b2b":    ["product_summary", "teamstats_tableau", "churn_ni"],
+    # churn_WIRELESS since 2026-08-19: the four B2B tabs are filled from the
+    # wireless slice now, so render_captain labels their buckets "Wireless
+    # Churn" and run.py sorts them into churn_wireless. Leaving this at
+    # churn_ni asked for a list that is now always empty, and the section
+    # fell back to the "could not be captured" note in all four B2B drafts
+    # while the images sat rendered on disk (Eve 2026-08-19).
+    "b2b":    ["product_summary", "teamstats_tableau", "churn_wireless"],
     "nds":    ["product_summary", "teamstats_tableau", "churn_ni"],
 }
 
