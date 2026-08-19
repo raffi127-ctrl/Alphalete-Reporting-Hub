@@ -52,6 +52,10 @@ CAPTAINSHIP = [
     ("Vincent Smith",    "23318", "Vincent Smith"),
     ("George Hipolito",  "11296", "George Hipolito"),
     ("Justin Wood",      "22192", "Justin Wood"),
+    # Two offices answer to "Joshua Murphy" on this login — 21770 Leadsphere
+    # Solutions and 10707 Zealous United. Carlos confirmed 21770 (2026-08-19),
+    # which is also what office-mapping-carlos.json had. Discovery would have
+    # resolved NEITHER here, by design.
     ("Joshua Murphy",    "21770", "Joshua Murphy"),
     ("Joey Ramirez",     "23206", "Joey Ramirez"),
     ("Dhyey Patel",      "22767", "Dhyey Patel"),
