@@ -141,6 +141,13 @@ def main(argv: Optional[list] = None) -> int:
                          "a no-op, whatever launched it (wrapper, `lucy rerun`, "
                          "Hub card) — use this only when the first email was "
                          "wrong and they really do need a second one.")
+    ap.add_argument("--mark-sent-only", action="store_true",
+                    help="write THIS MACHINE's 'delivered today' marker for the "
+                         "owner and exit — no pull, no email, no sheet write. "
+                         "The marker is per-machine, so a copy sent by hand from "
+                         "another box is invisible here and this machine's later "
+                         "pass would send a second one. Use this to tell it the "
+                         "day is already done.")
     ap.add_argument("--require-fresh", action="store_true",
                     help="EARLY pass only: if this owner's newest sale hasn't "
                          "reached yesterday, exit 3 (no email) so the later "
@@ -174,6 +181,29 @@ def main(argv: Optional[list] = None) -> int:
         print("✗ unknown owner {!r}. Known: {}".format(
             args.owner, ", ".join(sorted(owners_mod.OWNERS))), file=sys.stderr)
         return 2
+
+    # CLAIM THE DAY WITHOUT SENDING (2026-08-19). The marker lives on the machine
+    # that sent, and nothing syncs it: on 8/19 the mini's browser profile wedged,
+    # Roshan's 7:00 email never went (Abel's, second in the loop, did), and her
+    # copy was sent by hand from Megan's laptop at 09:21. That satisfied Roshan
+    # but left the MINI still believing she was owed one — so its next pass, or a
+    # launchd replay of the 8:30 after the reboot, would have mailed her an
+    # identical second log. This is how the machine that DIDN'T send is told the
+    # day is done. Deliberately before every other branch: it must not need
+    # --email, must never pull (a wedged profile is often exactly why we're here),
+    # and must never touch the Sheet. Python 3.9 on the mini — .format(), no
+    # runtime `X | Y`.
+    if args.mark_sent_only:
+        stem = day_marker.owner_stem(cfg.key)
+        already = day_marker.already_done(stem, today)
+        day_marker.mark_done(stem, today)
+        print("  {} {}'s BOX Order Log as already delivered for {} ({}). No "
+              "pull, no email, no sheet write — this machine's later pass will "
+              "now skip her.".format(
+                  "confirmed" if already else "marked", cfg.display,
+                  today.isoformat(), day_marker.path(stem, today).name),
+              flush=True)
+        return 0
 
     # ONE EMAIL PER OWNER PER DAY (2026-08-17). deploy/box_order_log_owners.sh
     # has always checked this marker before adding --email, but nothing else
