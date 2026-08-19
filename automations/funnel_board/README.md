@@ -1,5 +1,8 @@
 # Recruiting Funnel Board — how it updates
 
+> Quick version. The complete reference — every tab, the Lucy schedule,
+> metric definitions, adding a manager — is in **`RUNBOOK.md`**.
+
 Five tabs at the far right of the **Alphalete Org Applicant Tracker**
 (`1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo`):
 
