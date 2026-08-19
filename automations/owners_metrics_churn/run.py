@@ -174,8 +174,14 @@ REPORTS = [
     ("atef", "Atef Choudhury (B2B)",
      pull.fetch_b2b_allteams, fill.open_ws_b2b_atef,
      "owners_b2b_allteams.csv",
+     # Roster names are matched against the RAW crosstab spelling — the slice
+     # runs inside the parser, before _apply_aliases — so Dhyey is listed the
+     # way Tableau writes him. "Dhey Patel" (the tab's row label, and his alias
+     # in the ICD Aliases sheet) stays for readability; without the Tableau
+     # spelling he was dropped from the slice and from the Captainship Avg
+     # while his row still filled off the backfill (Eve 2026-08-19).
      pull.make_b2b_captainship_parser(
-         ("Atef Choudhury", "Sabrina Alicea", "Dhey Patel")),
+         ("Atef Choudhury", "Sabrina Alicea", "Dhyey Patel", "Dhey Patel")),
      pull.B2B_PERIODS),
     # ----- NDS (Phase 3) -----
     ("khalil", "Khalil Mansour (NDS)",

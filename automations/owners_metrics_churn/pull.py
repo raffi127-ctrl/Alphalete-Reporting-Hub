@@ -374,7 +374,25 @@ def fetch_fiber_sahil(out_path: Optional[Path] = None,
 # (0-30 / 30 / 60 / 90 / 120 day) per-ICD churn shape. Total row
 # labeled "Grand Total" in the Crosstab (megan called it "Total
 # General" in the live view; the export label is "Grand Total").
-B2B_CARLOS_URL = (
+#
+# PRODUCT = WIRELESS ONLY (Eve 2026-08-19). Same views, same worksheet — the
+# four B2B captainship tabs (Carlos / Eveliz / Luis / Atef) now report WIRELESS
+# churn instead of whatever product mix each saved view opened on. The switch is
+# a URL filter, not a new custom view: CHURNRATES matches
+# `Product Type (Broken Out)` cleanly from the URL (proven in
+# b2b_metrics.offices, which drives Carlos' and Atef's per-product churn posts
+# off ONE saved view that way). A URL filter overrides the view's own product
+# filter, so the saved views stay untouched and this stays reversible by
+# dropping the param.
+_B2B_PRODUCT_PARAM = "Product%20Type%20(Broken%20Out)=WIRELESS"
+
+
+def _wireless(url: str) -> str:
+    """Append the WIRELESS product filter to a CHURNRATES view URL."""
+    return url + ("&" if "?" in url else "?") + _B2B_PRODUCT_PARAM
+
+
+B2B_CARLOS_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
     "77b888d4-dec2-45c9-bdce-5511f6055084/CarlosCaptainship?:iid=1"
@@ -385,7 +403,7 @@ B2B_CARLOS_URL = (
 # updates the view. If it's an exclude-list ("exclude Van"), new ICDs
 # auto-flow through. Megan flagged this 2026-05-29 — verify the
 # filter type and re-save as exclude if needed.
-B2B_EVELIZ_URL = (
+B2B_EVELIZ_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
     "867f88d3-4026-4c70-b275-330208a4053c/EvelizWOVan?:iid=1"
@@ -393,7 +411,7 @@ B2B_EVELIZ_URL = (
 
 # Luis Salazar — same B2B workbook, view filtered to his captainship team
 # (added 2026-05-30 at Eve's request).
-B2B_LUIS_URL = (
+B2B_LUIS_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
     "2d2a9ec0-8088-4e4e-8ada-ed370f4b9d8f/LuissCaptainship?:iid=1"
@@ -407,10 +425,15 @@ B2B_LUIS_URL = (
 # though her row is still on that captain's sheet tab — she'd silently go dark.
 # Pulling her from here keeps the tab filling instead. (Proven view id — also used
 # by recruiting_report.opt_phase_carlos.)
-B2B_ALLTEAM_URL = (
+# WIRELESS (Eve 2026-08-19): swapped from ALLTEAMCHURN
+# (429cb06d-a32e-4d0e-bf06-9acb77587afd, all products) to ALLTEAMWireless — the
+# same CHURNRATES dashboard with WIRELESS baked in, which is what the four B2B
+# captainship tabs report now. The product param is appended anyway so the pull
+# does not depend on the saved view keeping its filter.
+B2B_ALLTEAM_URL = _wireless(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/"
-    "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN?:iid=1"
+    "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1"
 )
 
 
