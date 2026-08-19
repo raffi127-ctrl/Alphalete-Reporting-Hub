@@ -625,6 +625,18 @@ NDS_ALLTEAM_URL = (
 )
 NDS_WORKSHEET = "Churn Rates (ICD)"
 NDS_PERIODS = ("0-30", "30", "60", "90")
+# The view also publishes a '120 Day Churn' column since 2026-08; the three NDS
+# tabs have no 120-day section, so it is read past on purpose.
+
+# MATCH THE MEASURE ROWS ON A SET, NOT ONE LITERAL. On 2026-08-07 this view
+# renamed both of them - 'Disconnect count' -> 'Disconnect Count Churn' and
+# 'Activated Wireless Lines' -> 'Activated SPE/SP' - while 'Churn Rate' kept its
+# name. That is the worst shape a source change can take: the % column kept
+# filling, so all three NDS tabs read healthy, and the units column went blank
+# for 13 days before anyone noticed (Eve 2026-08-19).
+NDS_NUM_LABELS = {"disconnect count", "disconnect count churn",
+                  "disconnect count (spe/sp)"}
+NDS_DENOM_LABELS = {"activated wireless lines", "activated spe/sp"}
 
 
 def fetch_nds_khalil(out_path: Optional[Path] = None,
@@ -660,8 +672,9 @@ def parse_nds(csv_path: Path) -> dict:
         '0-30 Day Churn' at index 3.
       * Office row labeled 'Office/Organization Average' (NDS) vs
         'Grand Total' (Fiber/B2B).
-      * Metric labels: 'Activated Wireless Lines' (denom) +
-        'Disconnect count' (num), no '(SPE/SP)' suffix.
+      * Metric rows are matched against NDS_DENOM_LABELS (denom) +
+        NDS_NUM_LABELS (num). Neither is matched as a single literal -
+        this view has already renamed both of them once.
       * Owner cell is multi-line: 'NAME\\n[office]' (square brackets,
         no leading space) — split at newline.
     """
@@ -673,6 +686,7 @@ def parse_nds(csv_path: Path) -> dict:
 
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     period_cols = {p: header.index(f"{p} Day Churn") for p in NDS_PERIODS}
+    seen_metrics: set = set()
 
     office_total: dict = {}
     reps: dict = {}
@@ -684,6 +698,8 @@ def parse_nds(csv_path: Path) -> dict:
         bare_name = raw_name.split("\n")[0].strip()
         color = (r[1] or "").strip()
         metric = (r[2] or "").strip()
+        metric_key = metric.casefold()
+        seen_metrics.add(metric)
         is_total = bare_name == "Office/Organization Average"
 
         display_name = bare_name if is_total else _shared._smart_title(bare_name)
@@ -698,10 +714,23 @@ def parse_nds(csv_path: Path) -> dict:
                 slot.setdefault("color", color)
             if metric == "Churn Rate":
                 slot["pct"] = cell
-            elif metric == "Disconnect count":
+            elif metric_key in NDS_NUM_LABELS:
                 slot["num"] = _ni_shared._to_num(cell)
-            elif metric == "Activated Wireless Lines":
+            elif metric_key in NDS_DENOM_LABELS:
                 slot["denom"] = _ni_shared._to_num(cell)
+
+    # A rename of either measure row must not pass silently again: with no units
+    # the tabs still fill their % column and read perfectly healthy. Rep rows but
+    # not one complete num/denom pair means the labels moved - say so, and name
+    # what the view calls them now so the fix is one line.
+    if reps and not any("num" in slot and "denom" in slot
+                        for periods in reps.values()
+                        for slot in periods.values()):
+        raise ValueError(
+            "NDS crosstab parsed rows but no units: no metric row matched "
+            f"{sorted(NDS_NUM_LABELS)} (num) or {sorted(NDS_DENOM_LABELS)} "
+            f"(denom). The view calls them {sorted(seen_metrics)} now - add "
+            "the new spelling to those sets.")
 
     return {"office_total": office_total, "reps": reps}
 
