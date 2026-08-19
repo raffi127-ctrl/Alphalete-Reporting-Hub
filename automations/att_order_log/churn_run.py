@@ -67,8 +67,13 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 PRODUCTS = {
     "wireless": {
         "label": "Wireless Churn", "tab": "Lucy Wireless Churn",
+        # ALL-TEAM for real since 2026-08-19: CarlosTEAMWireless carried only
+        # Carlos's captaincy (8 owners), so Atef's feeds went empty the morning
+        # after he split off. Eve saved this one off the same viz with the
+        # captaincy filter cleared — 93 owners, ATEF CHOUDHURY among them
+        # (verified with --probe-owners before wiring).
         "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
-               "e5d34696-30de-4db7-a27e-2654dbf9babd/CarlosTEAMWireless?:iid=1",
+               "f800acd5-c7aa-4600-9a8c-522cd61af026/ALLTEAMWireless?:iid=1",
     },
     "new_int": {
         "label": "New Internet Churn", "tab": "Lucy New INT Churn",
