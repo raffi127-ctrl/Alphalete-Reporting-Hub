@@ -40,8 +40,7 @@ CAMPAIGN_SECTIONS: List[str] = [
     "ATT NDS Team",
     "B2B",
     "BOX",
-    "Frontier",
-    "Retail Internet",
+    "Retail Internet",          # Frontier retired 2026-08-19
 ]
 
 
