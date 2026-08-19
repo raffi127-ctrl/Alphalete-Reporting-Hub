@@ -1954,6 +1954,59 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        # Promoted from an auto-registered library row (Megan 2026-08-19) so it
+        # renders like the other Ops cards — the library path does not apply a
+        # card's `color`, which is why it sat white next to the amber ones.
+        "id": "enrollment_pending_check",
+        # Cadence in the name, same pattern as Sara+ / RingCentral above.
+        "name": "Pending Enrollments Check (Hourly)",
+        "creator": "Megan & Claude",
+        "emoji": "📋",
+        # Amber = an ONGOING self-running job, matching the other continuous Ops
+        # cards (sara-plus-issues, rc-autoread, stf-field-check, bg-check-sync).
+        "color": "#F59E0B",
+        # 📲 Ops category → renders under the "OPS" divider.
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "enrollment_pending_check",
+        "description": "Safety net for office onboarding — every hour from 9 AM to 10 PM it checks the 'Office Onboarding' sheet and posts to the corrections channel if an enrollment is sitting un-applied. A quiet card is the normal, healthy state.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads the **Office Onboarding** sheet and looks for an "
+            "enrollment that has been submitted but never applied.\n"
+            "**•** If it finds one, it posts to the corrections channel so it "
+            "gets picked up the same day.\n"
+            "**•** Finds nothing → says nothing. It never writes anything.\n\n"
+            "WHY IT EXISTS\n"
+            "Section EDITS (Thread Builder) sync themselves each morning, but a "
+            "BRAND-NEW office needs a reviewed `office_onboarding.apply --write` "
+            "plus a commit — it rewrites the committed registry and "
+            "schedule_config, so it is deliberately NOT auto-applied at 4am. "
+            "This is what stops a new office sitting unnoticed in the meantime. "
+            "Apply the flagged ones via the **apply_enrollments** handle.\n\n"
+            "WHEN IT RUNS\n"
+            "**Hourly, 9 AM–10 PM**, on its own LaunchAgent "
+            "(com.alphalete.enrollment-pending-hourly). It used to run once in "
+            "the 4am batch, which meant an enrollment added at 9:05am waited a "
+            "full day to be noticed (Megan 2026-08-19). Nothing overnight — a "
+            "2am enrollment is caught by the 9 AM pass."
+        ),
+        "assignee_note": "Runs unattended on Lucy 1 (the mini) as a LaunchAgent. Nothing to run from here.",
+        # Hourly self-runner: self_scheduled + hide_schedule keep it out of the
+        # 4am batch, the due-today counter, and any time/DUE pills — there is no
+        # single run time to show (same treatment as sara-plus-issues).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 AM",
+            "time_label": "hourly 9 AM–10 PM",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
+    {
         "id": "sara-plus-issues",
         # Cadence in the name, same as the RingCentral Auto-Read card. The
         #   are non-breaking spaces so "(Q 5 Min)" wraps as ONE clean unit
