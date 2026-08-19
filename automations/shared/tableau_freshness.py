@@ -318,7 +318,7 @@ def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
         # frozen view is one problem with one thread, and the reports that hit
         # it ride inside the line. A different stale view gets its own thread.
         sda.alert(report_id="tableau-stale-{}".format(_slug(source_key)),
-                  failed=[line], kind="capped", day=today)
+                  failed=[line], kind="stale_source", day=today)
         state.update({"alerted": True, "reports": reports,
                       "newest": newest.isoformat() if newest else None,
                       "view": view_label})
@@ -532,7 +532,7 @@ def alert_frozen(source_key: str, view_label: str, days_same: int,
             line += " · hit by: {}".format(", ".join(sorted(reports)))
         from automations.shared import section_drop_alert as sda
         sda.alert(report_id="tableau-stale-{}".format(_slug(source_key)),
-                  failed=[line], kind="capped", day=today)
+                  failed=[line], kind="stale_source", day=today)
         _save_state(key, today, {"alerted": True, "reports": reports,
                                  "view": view_label, "kind": "frozen"})
         return True

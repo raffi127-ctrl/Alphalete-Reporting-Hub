@@ -121,5 +121,46 @@ class TheTwoFalseAlarms(unittest.TestCase):
         self.assertEqual(out["verdict"], "stale")
 
 
+class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
+    """A stale SOURCE is not a suppressed report. The wording it borrowed from
+    'capped' claimed three things that were false on 8/19 — pin all three."""
+
+    def _text(self):
+        from automations.shared import section_drop_alert as sda
+        return sda._compose(
+            "tableau-stale-directdepositicdviewversion2-0-dddetail-icd-dd-detail",
+            ["DirectDepositICDVIEWVersion2_0/DDDETAIL - ICD dd Detail - newest "
+             "data is 2026-08-16"],
+            None, "", "stale_source")
+
+    def test_it_does_not_claim_the_report_was_suppressed(self):
+        text = self._text().lower()
+        self.assertNotIn("nothing was sent", text)
+        self.assertNotIn("no email/post went out", text)
+        self.assertIn("ran and sent normally", text)
+
+    def test_it_does_not_send_anyone_to_the_box_filters(self):
+        text = self._text().lower()
+        for wrong in ("contract id", "account id", "probe-filters",
+                      "box_order_log_roshan"):
+            self.assertNotIn(wrong, text)
+
+    def test_it_does_not_tell_you_to_re_run_a_source(self):
+        text = self._text()
+        self.assertIn("that id is the SOURCE, not a report", text)
+
+    def test_the_kind_exists_so_it_cannot_fall_back_to_section(self):
+        from automations.shared import section_drop_alert as sda
+        self.assertIn("stale_source", sda._KINDS)
+        self.assertNotIn("did NOT post", self._text())
+
+    def test_capped_still_says_all_of_that_where_it_belongs(self):
+        from automations.shared import section_drop_alert as sda
+        capped = sda._compose("box_order_log_roshan", ["W/V - Order Log"],
+                              None, "", "capped")
+        self.assertIn("nothing was sent", capped.lower())
+        self.assertIn("Contract ID", capped)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -231,6 +231,47 @@ _KINDS = {
         # send either".
         "followup_stamp": ":heavy_plus_sign: *Also didn't send*",
     },
+    # A STALE SOURCE (tableau_freshness) — NOT a report, and NOTHING DROPPED.
+    # The freshness gate hangs off the shared crosstab download and never blocks
+    # a run ("NEVER BREAKS A RUN" — its own docstring), so the report that
+    # tripped it pulled, filled and sent exactly as usual; the only news is that
+    # the data underneath is older than it should be.
+    #
+    # It borrowed 'capped' until 2026-08-19, and that wording was false in three
+    # places at once (Eve, on the DirectDeposit/DDDETAIL thread): "so nothing was
+    # sent" (it was sent), "check the Contract ID and Account Id filters … probe
+    # with box_order_log_roshan --probe-filters" (that is the BOX view; a stale
+    # source here can be any of ~120), and "re-run {report_id}" — the id names
+    # the SOURCE, so no such command exists. Three dead ends before the reader
+    # could find out nothing was broken.
+    #
+    # 'capped' still says all of that, correctly, where it belongs: a BOX pull
+    # that really did refuse to send, and alert_unconfirmed_filter's pinned
+    # filters.
+    "stale_source": {
+        "what": "Tableau source",
+        "headline": "⚠️ *{report_id}* is serving data older than it should "
+                    "be — {tail}",
+        "tail_headline": "the report that pulled it ran and sent normally: "
+                         "nothing dropped, nothing to re-run.",
+        "label": "Source",
+        "fix": "open the view in Tableau and see whether the day or week it's "
+               "missing is actually there. If the view looks right, the feed "
+               "behind it is genuinely behind and there is nothing on our side "
+               "to change. Do not re-run `{report_id}` — that id is the SOURCE, "
+               "not a report; the next pull takes whatever the view has by "
+               "then.",
+        "tail": "Anything already built on this pull is as old as the data was.",
+        # ALWAYS thread. The channel line has to read as the small note it is;
+        # the source path, the dates and a five-line fix underneath it turn a
+        # "nothing is broken" alert into the biggest post of the morning.
+        "thread_always": True,
+        "see_thread": "Detail in the thread.",
+        # Not "that dropped" — nothing dropped. That default header was the
+        # fourth false sentence in the same alert.
+        "detail_header": "*The {n} {what}{s} running behind:*",
+        "fix_in_thread": True,
+    },
     # A data-quality AUDIT finding (kind='finding' — vantura_board_audit today).
     # NOTHING DROPPED. The audit ran end to end and did exactly the job it
     # exists to do: report a contradiction it found on the board. It posts no
