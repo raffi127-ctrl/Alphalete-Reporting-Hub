@@ -236,20 +236,24 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
 
     clock.check("write 2R status")
     updated = 0
+    # Collected and written as ONE batched call — per-cell writes blew the
+    # per-minute quota on big offices (see sheets.set_cells).
+    cells = []
     for name in roster:
         row = sheets.find_row_by_name(ws_2r, name, 1)  # col A = Full Name
         if not row:
             continue
         if name in offered:
-            sheets.set_cell(ws_2r, row, "H", "yes")
+            cells.append((row, "H", "yes"))
         if name not in showed:
-            sheets.set_cell(ws_2r, row, "I", "no show")
+            cells.append((row, "I", "no show"))
         elif name in bob:
-            sheets.set_cell(ws_2r, row, "I", "BOB")
+            cells.append((row, "I", "BOB"))
             d = bob_dates.get(name.strip().lower())
             if d:
-                sheets.set_cell(ws_2r, row, "J", d)
+                cells.append((row, "J", d))
         updated += 1
+    sheets.set_cells(ws_2r, cells)
     print(f"  [{office_id}] 2R status: {updated}/{len(roster)} matched", flush=True)
 
 
@@ -300,6 +304,12 @@ def _evening_office(app, ws_2r, office_id: str, header: str,
 
 def _header_to_date(header: str) -> dt.date:
     return dt.datetime.strptime(header, "%b %d, %Y").date()
+
+
+def _names(office_ids: list) -> str:
+    """Gap lists render as ICD names, not bare account numbers — the Slack
+    reader knows 'Rafael Hidalgo', not '11280' (Megan 2026-08-19)."""
+    return ", ".join(config.label(o) for o in office_ids)
 
 
 def run(phase: str, target: dt.date | None = None) -> None:
@@ -396,22 +406,22 @@ def _finish(phase: str, total: int, *, failed: list, no_access: list,
     if timed_out:
         print(f"!! {len(timed_out)} of {total} office(s) ran past the "
               f"{OFFICE_BUDGET_S}s per-office budget and were skipped: "
-              f"{', '.join(timed_out)}", flush=True)
+              f"{_names(timed_out)}", flush=True)
     if skipped:
         print(f"!! {len(skipped)} of {total} office(s) were never started — the "
               f"run hit its {RUN_BUDGET_S // 60}m budget first: "
-              f"{', '.join(skipped)}", flush=True)
+              f"{_names(skipped)}", flush=True)
     if failed:
         print(f"!! {len(failed)} of {total} office(s) did NOT sync: "
-              f"{', '.join(failed)}", flush=True)
+              f"{_names(failed)}", flush=True)
     if no_access:
         print(f"!! {len(no_access)} of {total} office(s) are NOT VISIBLE to this "
-              f"login ({config.__name__} OFFICE_IDS): {', '.join(no_access)} — "
+              f"login ({config.__name__} OFFICE_IDS): {_names(no_access)} — "
               "this repeats nightly until access is granted or the id is removed",
               flush=True)
     if ad_blank:
         print(f"!! {len(ad_blank)} of {total} office(s) imported the Call List "
-              f"with a BLANK Ad: {', '.join(ad_blank)} — check whether the "
+              f"with a BLANK Ad: {_names(ad_blank)} — check whether the "
               "'Sent to Call List' detail table gained/moved a column "
               f"(N_CALL_COLS is {N_CALL_COLS})", flush=True)
 
@@ -472,23 +482,23 @@ def _finish(phase: str, total: int, *, failed: list, no_access: list,
                              wedged, HARD_BUDGET_S // 60))
         if no_access:
             lines.append("• No access ({}): {}".format(
-                len(no_access), ", ".join(no_access)))
+                len(no_access), _names(no_access)))
         if timed_out:
             lines.append("• Ran past the {}s per-office budget ({}): {}".format(
-                OFFICE_BUDGET_S, len(timed_out), ", ".join(timed_out)))
+                OFFICE_BUDGET_S, len(timed_out), _names(timed_out)))
         if skipped:
             lines.append("• Never started, run hit its {}m budget ({}): "
                          "{}".format(RUN_BUDGET_S // 60, len(skipped),
-                                     ", ".join(skipped)))
+                                     _names(skipped)))
         if failed:
             lines.append("• Errored ({}): {}".format(
-                len(failed), ", ".join(failed)))
+                len(failed), _names(failed)))
         if ad_blank:
             lines.append(
                 "• Call List imported with a BLANK Ad ({}): {} — the "
                 "'Sent to Call List' detail table may have gained or "
                 "moved a column".format(len(ad_blank),
-                                        ", ".join(ad_blank)))
+                                        _names(ad_blank)))
         # ONE thread for the office gaps, not a post per run. This fired
         # twice a day, every day, with the same office in it — six
         # near-identical posts sat in the channel between 8/13 and 8/17.

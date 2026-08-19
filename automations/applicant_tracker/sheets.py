@@ -111,6 +111,24 @@ def set_cell(ws, row: int, col_letter: str, value):
     ws.update_acell(f"{col_letter}{row}", value)
 
 
+def set_cells(ws, cells: list):
+    """Write many scattered cells in ONE API call. `cells` is a list of
+    (row, col_letter, value).
+
+    WHY (2026-08-19): the 2R status update wrote one API call per cell, so a big
+    office (Rafael: ~100 cells) blew Google's per-minute write quota and 429'd
+    itself AND the next office in line (Khalil) — the recurring 'Errored (2):
+    11280, 11901' morning gap. One batched call per office ends that."""
+    if not cells:
+        return
+    if DRY_RUN:
+        for row, col, value in cells:
+            print(f"    [dry-run] would set {col}{row} = {value!r}")
+        return
+    ws.batch_update([{"range": f"{col}{row}", "values": [[value]]}
+                     for row, col, value in cells])
+
+
 def first_empty_row_in_column(ws, col_letter: str) -> int:
     """1-based index of the first empty cell in a column (for append-style writes)."""
     col_index = gspread.utils.a1_to_rowcol(f"{col_letter}1")[1]

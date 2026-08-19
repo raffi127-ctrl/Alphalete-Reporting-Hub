@@ -81,6 +81,37 @@ OFFICE_IDS = [
     "23607", "23411",
 ]
 
+# Office id -> ICD name, for alerts and logs. Slack gap posts read "who", not
+# "which account number" (Megan 2026-08-19). Names as they appear in the
+# ApplicantStream office picker, title-cased. An id missing here still works —
+# label() falls back to the bare id.
+OFFICE_NAMES = {
+    "11280": "Rafael Hidalgo",
+    "11901": "Khalil Mansour",
+    "11580": "Carlos Hidalgo",
+    "19833": "Roshan Amin Ahmad",
+    "23467": "Atef Choudhury",
+    "22815": "Cyrus Wade",
+    "22820": "Ryan McSpadden",
+    "21151": "Cody Cannon",
+    "22524": "Haytham Nagi",
+    "22177": "Akashdeep Rai",
+    "19717": "Isaiah Revelle",
+    "21328": "Muhammad Ul Haque",
+    "23066": "Maxamad Aden",
+    "22992": "Aya Al-Khafaji",
+    "23607": "Jacob Dover",
+    "23411": "Rashad Reed",
+}
+
+
+def label(office_id) -> str:
+    """'11280' -> 'Rafael Hidalgo (11280)'; unknown ids stay as the bare id."""
+    oid = str(office_id).strip()
+    name = OFFICE_NAMES.get(oid)
+    return "{} ({})".format(name, oid) if name else oid
+
+
 # /confirm-first-day used a slightly shorter list (no 14229) in the source doc —
 # so this list is now identical to OFFICE_IDS above.
 OFFICE_IDS_FIRST_DAY = [
