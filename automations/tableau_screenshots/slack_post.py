@@ -96,8 +96,10 @@ ORG_ORDER: dict[str, list[str]] = {
 #
 # Cesar/Domin8 2026-07-23: #domin8-b2b-sales wants just B2B AT&T ("National
 # Tracker"), B2B AT&T CRU ("National CRU"), and the Order Tiered Bonus ranking.
+# Cesar 2026-08-19 (thread on the day's tracker post): add B2B D2D Consolidated.
 ORG_TRACKERS: dict[str, list[str]] = {
-    "domin8": ["b2b_att_country", "b2b_att_country_cru", "order_tiered_bonus"],
+    "domin8": ["b2b_att_country", "b2b_att_country_cru",
+               "b2b_d2d_consolidated", "order_tiered_bonus"],
 }
 
 

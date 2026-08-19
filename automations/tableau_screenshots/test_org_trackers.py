@@ -50,10 +50,12 @@ class OrgTrackerSelectionTest(unittest.TestCase):
     def _plan(self, org):
         return sp.post_all(_caps(), pg.PAGES, self.TODAY, dry_run=True, org=org)
 
-    def test_domin8_posts_exactly_its_three_in_order(self):
+    def test_domin8_posts_exactly_its_selection_in_order(self):
+        # 4th board (b2b_d2d_consolidated) added on Cesar's ask, 2026-08-19.
         self.assertEqual(
             _reply_ids(self._plan("domin8")),
-            ["b2b_att_country", "b2b_att_country_cru", "order_tiered_bonus"])
+            ["b2b_att_country", "b2b_att_country_cru",
+             "b2b_d2d_consolidated", "order_tiered_bonus"])
 
     def test_domin8_has_no_late_note(self):
         # Box isn't in its selection, so nothing is "still coming".
