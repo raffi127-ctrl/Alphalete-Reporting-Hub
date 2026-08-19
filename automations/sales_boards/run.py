@@ -261,6 +261,52 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
     return out
 
 
+def _alert_wrong_week(shown: str, want: str, yday, *, post: bool) -> None:
+    """Say in #claudecorrections that we HELD, and name the cell that caused it.
+
+    The hold below returns 75, and here that reaches nobody. Exit 75 only turns
+    into an alert when the run came through `lucy rerun` or a Hub card; this
+    report is driven by its OWN LaunchAgent (com.alphalete.sales-boards, 5:10am
+    daily), so a hold is completely silent. On 2026-08-19 someone left the gold
+    WE cell on an old week (8.9 while the board lived 8.23), this held at 5:10,
+    and the missing production thread was only noticed three hours later — off a
+    vantura-board-audit finding that happens to check the same cell. The board
+    fix takes a minute once you know; the whole cost was not knowing.
+
+    Best-effort and DRY-RUN AWARE: a human running `lucy rerun sales_boards`
+    (no --post) to see where the board stands must not open a channel incident.
+
+    Filed under the report's `standalone-` key so the one-thread-per-problem
+    family rules apply, and so the next clean post closes it on its own
+    (_publish_hub -> hub_publish -> resolve_report).
+    """
+    if not post:
+        return
+    try:
+        from automations.shared import incident_thread
+        incident_thread.open_or_followup(
+            key="standalone-sales_boards",
+            title=f"Sales Boards held — the board is showing week {shown!r}, "
+                  f"not {want!r}",
+            channel_line=f"*Sales Boards* — gold WE cell reads {shown!r}, "
+                         f"needs {want!r}; today's thread was not posted",
+            body=[
+                f"The Sales Board gold WE cell (tab 'Sales Board', row 2, right "
+                f"of the 'WE' label) reads {shown!r}. {yday:%a %m/%d}'s numbers "
+                f"live in week {want!r}, so posting now would ship the wrong "
+                f"week — the run held instead and NOTHING was posted.",
+                f"Fix: set that cell to {want}. Nothing else to re-run by hand; "
+                "the next pass renders and posts, and closes this thread.",
+                "Only some day cells are formulas keyed on that cell, so it is "
+                "never rolled automatically — a human moves it to read an old "
+                "week and forgets to move it back.",
+            ],
+            label="Sales Boards → #alphalete-gp-sales",
+        )
+    except Exception:  # noqa: BLE001 — an alert must never change the hold
+        pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--program", choices=PROGRAMS, help="just one program")
@@ -292,6 +338,7 @@ def main(argv=None) -> int:
               f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to {want} "
               "(or wait for the roll) and re-run; posting now would ship the "
               "wrong week.")
+        _alert_wrong_week(shown, want, yday, post=args.post and not args.dm)
         return 75          # EX_TEMPFAIL — the scheduler retries
 
     # Open a live 'running' pill so the card PULSES while the boards render/post;
