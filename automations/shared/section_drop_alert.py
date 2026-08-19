@@ -101,6 +101,22 @@ _KINDS = {
         "fix": "read the run's log, fix the cause, then re-post `{report_id}`.",
         "tail": "There is NO thread in the channel today — not a short one, none.",
     },
+    # AN OWNER'S EMAIL never went out. 'no_post' is nearly right — the whole
+    # delivery is missing, not a piece of it — but every word of it says thread
+    # and channel, and these owners have neither: they read their BOX Order Log
+    # in their inbox. On 2026-08-19 Roshan's 7:00 email died on a wedged browser
+    # profile and nothing in the channel said so; wording that sent the reader
+    # hunting a Slack thread would have cost more of the morning. Added
+    # 2026-08-19 for deploy/box_order_log_owners.sh.
+    "no_email": {
+        "what": "owner email",
+        "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
+        "tail_headline": "their inbox got nothing at all.",
+        "label": "Never emailed",
+        "fix": "read the run's log, fix the cause, then re-send `{report_id}`.",
+        "tail": "There is NO email today — not a short one, none. They have no "
+                "way to notice it's missing; they just don't get it.",
+    },
     "section": {
         "what": "section",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
