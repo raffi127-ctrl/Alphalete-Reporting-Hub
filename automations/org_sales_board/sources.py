@@ -128,18 +128,41 @@ DAILY_SOURCES: List[Source] = [
               "STALENESS-GUARDED: at a week's start JE runs a day behind, so "
               "if the latest posted week != the current week the fill SKIPS + "
               "flags (never writes last week's numbers into this week)."),
+]
+
+# RETIRED — not filled any more, kept verbatim so putting a campaign back is
+# copy-one-entry rather than archaeology. Nothing reads this list.
+#
+# Frontier (Eve, 2026-08-19): wound down. It was a one-ICD campaign (Abel
+# Draper) and he stopped selling it — the leaderboard went 36 -> 25 -> 9 -> 0
+# across July and has been 0 since. Abel stays on the board: he sells BOX and
+# those rows are untouched.
+#
+# ORDER OF OPERATIONS, and it matters. Dropping the Source only stops the
+# section being FILLED — the rows stay put and nothing breaks. Deleting the
+# board rows is the step that cannot come first: fill_section raises
+# ValueError("Daily section 'Frontier' not found") and that takes down the
+# WHOLE daily fill, not just Frontier. So: retire the source, confirm the
+# runner has this code, only then delete the rows. While the rows are still
+# there, "frontier" must also stay in data_gate.LAGGING_SECTIONS or their now
+# permanently blank cells read as a gap and hold the board email.
+#
+# Deliberately NOT touched: frontier_pull.py, the _adapter_frontier entry in
+# orchestrate.ADAPTERS (dead once no Source carries the key), the Frontier
+# anchor in rollover.py (still needed while the rows exist), and the
+# `frontier_opt` / `install_frontier_sunday_agent` jobs — those two belong to
+# the OPT report, NOT this board, and are out of scope.
+RETIRED_SOURCES: List[Source] = [
     Source(
         label="Frontier", metric="sales",
         method=SCRAPE, date_mode=RELATIVE, shared_key="frontier",
         column_verified=True,
-        notes="AUTOMATED 2026-07-07 (was hand-keyed): pulled from the emailed "
-              "Credico 'Daily Sales - Frontier - Events by Store' PDF via "
-              "frontier_pull (fetch->parse->to_board_pull, adapter "
-              "_adapter_frontier) — NOT Tableau. 1 ICD (Abel Draper), Sun-Sat "
-              "section. Validated the PDF summed dailies map 1:1 to the board's "
-              "Sun-Sat columns + matched Abel's VA row exactly. Day-behind like "
-              "JE (Sunday posts Monday); current-week-only so no stale week is "
-              "written. Rollover must still freeze its weekly total."),
+        notes="RETIRED 2026-08-19. AUTOMATED 2026-07-07 (was hand-keyed): "
+              "pulled from the emailed Credico 'Daily Sales - Frontier - "
+              "Events by Store' PDF via frontier_pull (fetch->parse->"
+              "to_board_pull, adapter _adapter_frontier) — NOT Tableau. 1 ICD "
+              "(Abel Draper), Sun-Sat section. Day-behind like JE (Sunday "
+              "posts Monday); current-week-only so no stale week is written."),
 ]
 
 
