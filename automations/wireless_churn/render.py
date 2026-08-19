@@ -32,13 +32,7 @@ TITLE_BY_PERIOD = {
 
 def render_multi_week(ws, section, period, today, out_path,
                       n_weeks: int = _shared.N_WEEKS,
-                      show_subtitle: bool = True,
-                      title_bg=None, title_fg=None) -> Path:
-    # title_bg/title_fg (Eve 2026-08-19): the B2B captainship blocks paint the
-    # title bar in the captain's brand color (churn_images, brand_title=True).
-    # Without these the wireless renderer rejected those kwargs, which is why
-    # the fiber wireless blocks had to opt out with brand_title=False. Default
-    # None = the standard wireless blue, unchanged for every existing caller.
+                      show_subtitle: bool = True) -> Path:
     # Temporarily monkey-patch the shared module's section-header band
     # so the blue palette propagates through the date-row. Same for the goal
     # band's three colors (gold here, dark on New Internet).
@@ -51,8 +45,7 @@ def render_multi_week(ws, section, period, today, out_path,
         return _shared.render_multi_week(
             ws, section, period, today, out_path,
             n_weeks=n_weeks,
-            title_bg=title_bg or TITLE_BG,
-            title_fg=title_fg,
+            title_bg=TITLE_BG,
             office_avg_bg=OFFICE_AVG_BG,
             title_text=TITLE_BY_PERIOD.get(period, f"WIRELESS CHURN — {period} DAY"),
             show_subtitle=show_subtitle,

@@ -41,6 +41,11 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
         # keeps the render's own default (brand_title=False). title_fg is
         # auto-contrasted so pale brands (Luis, Colten, Jairo) get dark text.
         kw = {"show_subtitle": False}
+        # A block whose DATA changed product but kept its renderer overrides the
+        # words in the title bar (B2B churn went wireless 2026-08-19 and keeps
+        # the owner-colored New Internet look — Eve).
+        if getattr(src, "title_prefix", ""):
+            kw["title_text_fn"] = lambda per: f"{src.title_prefix} — {per} DAY"
         if src.brand_title:
             kw["title_bg"] = captain.title_bg
             kw["title_fg"] = _ni.contrast_fg(captain.title_bg)
@@ -56,9 +61,13 @@ def render_captain(captain: Captain, today: dt.date, out_dir: Path,
             if sect is None:
                 continue
             path = sub_dir / f"{_slug(src.label)}_{period.replace('-', '_')}_day.png"
+            per_kw = dict(kw)
+            title_fn = per_kw.pop("title_text_fn", None)
+            if title_fn is not None:
+                per_kw["title_text"] = title_fn(period)
             src.render_mod.render_multi_week(
                 ws, sect, period, today, path,
-                n_weeks=filled.get(period, MAX_WEEKS), **kw)
+                n_weeks=filled.get(period, MAX_WEEKS), **per_kw)
             images.append((f"{src.label} — {period} Day", path))
             rendered += 1
         logfn(f"  {captain.key}/{src.label}: rendered {rendered} bucket(s)")

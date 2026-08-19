@@ -127,6 +127,13 @@ class ChurnSource:
     brand_title: bool = True   # paint the title bar in the captain's brand
                                # color; False keeps the render's own default
                                # (e.g. Rafael's Wireless stays the std blue)
+    title_prefix: str = ""     # override the words in the title bar, e.g.
+                               # "WIRELESS CHURN" -> "WIRELESS CHURN - 30 DAY".
+                               # Use when the DATA changed product but the block
+                               # keeps its renderer: the B2B tabs went wireless
+                               # 2026-08-19 and must keep the owner-colored
+                               # New Internet look (Eve). Empty = the render
+                               # module's own title.
 
 
 @dataclass(frozen=True)
@@ -500,20 +507,24 @@ CAPTAINS: List[Captain] = [
     ], boxes=_fiber_boxes("sahil")),
     # ----- B2B (5 buckets incl 120) -----
     Captain("carlos", "Carlos", "b2b", title_bg="#4CAF4F", to=_to("carlos"), churn=[
-        ChurnSource(_own.open_ws_b2b_carlos, _wl_render, "Wireless Churn"),
+        ChurnSource(_own.open_ws_b2b_carlos, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
     ]),
     Captain("eveliz", "Eveliz", "b2b", title_bg="#A64D79", to=_to("eveliz"), churn=[
-        ChurnSource(_own.open_ws_b2b_eveliz, _wl_render, "Wireless Churn"),
+        ChurnSource(_own.open_ws_b2b_eveliz, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
     ]),
     Captain("luis", "Luis", "b2b", title_bg="#B5ADFB", to=_to("luis"), churn=[
-        ChurnSource(_own.open_ws_b2b_luis, _wl_render, "Wireless Churn"),
+        ChurnSource(_own.open_ws_b2b_luis, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
     ]),
     # Split off Carlos' captainship 2026-08-18 (Atef + Sabrina Alicea + Dhey
     # Patel). His churn tab fills off the ALL-TEAMS view until Tableau adds him
     # to the captain dropdown — see owners_metrics_churn.pull
     # .make_b2b_captainship_parser. Nothing here changes when that happens.
     Captain("atef", "Atef", "b2b", title_bg="#00695C", to=_to("atef"), churn=[
-        ChurnSource(_own.open_ws_b2b_atef, _wl_render, "Wireless Churn"),
+        ChurnSource(_own.open_ws_b2b_atef, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
     ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
