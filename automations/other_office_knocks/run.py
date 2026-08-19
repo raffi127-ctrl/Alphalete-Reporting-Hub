@@ -257,6 +257,15 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
           f" ({thread_ts}).", flush=True)
 
     # 3. Replies in `rendered` order: per office, Time Gaps then Total Knocks.
+    # wait_visible: files_upload_v2 returns when the UPLOAD is done, but Slack
+    # posts the share message when it has finished PROCESSING the file — so four
+    # uploads fired back to back land in SIZE order, not call order. On
+    # 2026-08-19 (the first day both offices ran in one pass — before that they
+    # ran half an hour apart, which hid it) the thread came out as both Time Gaps
+    # then both Total Knocks, instead of the per-office grouping Eve asked for on
+    # 8/18. Waiting for each image to be visible before sending the next is what
+    # makes the posted order OUR order. Costs a couple of seconds per image and
+    # gives up after 20s rather than holding the report.
     for office, label, img, day in rendered:
         comment = f"{label} — {office} — {day.strftime('%b')} {day.day}"
         if img is None:
@@ -266,7 +275,7 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
         else:
             resp = smp.post_reply_with_image(
                 Path(img), comment=comment, today=slack_today,
-                thread_ts=thread_ts,
+                thread_ts=thread_ts, wait_visible=True,
                 file_name=f"{Path(img).stem}_{_slug(office)}.png")
         if resp.get("ok"):
             print(f"[other_knocks] ✅ Posted {label} — {office}.", flush=True)

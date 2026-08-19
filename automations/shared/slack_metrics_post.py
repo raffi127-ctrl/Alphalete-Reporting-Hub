@@ -15,6 +15,7 @@ import datetime as dt
 import os
 import re
 import ssl
+import time
 from pathlib import Path
 
 CHANNEL_ID = os.environ.get("METRICS_CHANNEL_ID", "C068PH3RFSM")  # default #alphalete-sales; override via METRICS_CHANNEL_ID (e.g. Rashad's private #elevate-sales) — read at import so subprocesses pick it up
@@ -397,6 +398,70 @@ def post_reply_text_only(
     return out
 
 
+# How long wait_visible waits for ONE image's share message to appear, and how
+# often it looks. Generous enough for a slow render, short enough that a thread
+# never stalls on it — past the cap we post the next image anyway.
+_SHARE_WAIT_S = 20.0
+_SHARE_POLL_S = 1.0
+
+
+def _uploaded_file_id(resp) -> str:
+    """The new file's id out of a files_upload_v2 response. The SDK returns
+    {'files': [{...}]} for v2 and {'file': {...}} for the older shape — read both
+    rather than trusting one, because getting it wrong here doesn't raise, it
+    just silently turns wait_visible into a no-op."""
+    try:
+        files = resp.get("files") or []
+        if files:
+            first = files[0]
+            # v2 nests one more level in some SDK versions: {'files':[{'files':[…]}]}
+            inner = (first.get("files") or [None])[0] if isinstance(first, dict) else None
+            return (inner or first).get("id") or ""
+        return (resp.get("file") or {}).get("id") or ""
+    except Exception:          # noqa: BLE001
+        return ""
+
+
+def wait_for_share(client, channel_id: str, thread_ts: str, file_id: str,
+                   *, text: str = "", timeout_s: float = _SHARE_WAIT_S) -> bool:
+    """Block until `file_id`'s message is actually IN the thread. True if it
+    showed up, False on timeout (the caller posts the next one regardless — a
+    tidier order is never worth a missing image).
+
+    WHY (Eve 2026-08-19): files_upload_v2 returns when the UPLOAD finishes, but
+    Slack posts the share message once it has finished PROCESSING the file — so
+    several uploads fired back to back land in size order, not call order. In the
+    'Knocks for other offices' thread that turned "Time Gaps + Knocks Sahil, then
+    Time Gaps + Knocks Chan" (what Eve asked for on 8/18) into all the Time Gaps
+    followed by all the Knocks: the small images overtook the big ones. It only
+    showed up the first day both offices ran in ONE pass — before that they ran
+    half an hour apart, which hid it.
+
+    Matches on the file id, falling back to the initial comment `text` when the
+    upload response didn't carry an id — without a fallback an unexpected
+    response shape would quietly restore the old, wrong order.
+
+    Never raises: a thread read that fails is treated as 'not visible yet'."""
+    if not thread_ts or not (file_id or text):
+        return False
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            resp = client.conversations_replies(channel=channel_id,
+                                                ts=thread_ts, limit=200)
+            for msg in resp.get("messages") or []:
+                if file_id and any(f.get("id") == file_id
+                                   for f in msg.get("files") or []):
+                    return True
+                if text and (msg.get("text") or "").strip() == text.strip():
+                    return True
+        except Exception:      # noqa: BLE001 — ordering is best-effort
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_SHARE_POLL_S)
+
+
 def post_reply_with_image(
     image_path: Path,
     *,
@@ -407,12 +472,19 @@ def post_reply_with_image(
     file_name: str | None = None,
     thread_ts: str | None = None,
     channel_id: str | None = None,
+    wait_visible: bool = False,
 ) -> dict:
     """Reply in today's Metrics thread with an image attachment + optional
     reaction emoji on the parent.
 
     react_emoji: short name WITHOUT colons, e.g. 'arrows_counterclockwise',
     'negative_squared_cross_mark'.
+
+    wait_visible (default False = unchanged for every existing caller): don't
+    return until this image is visible in the thread, so a caller posting a
+    SEQUENCE gets its own order instead of Slack's upload-processing order. See
+    wait_for_share. Adds ~1-2s per image; use it only where the order carries
+    meaning, i.e. images grouped by whose they are.
     """
     today = today or dt.date.today()
     channel_id = channel_id or CHANNEL_ID
@@ -438,8 +510,11 @@ def post_reply_with_image(
     out = {
         "ok": upload_resp.get("ok"),
         "thread_ts": thread_ts,
-        "file": upload_resp.get("file", {}).get("id"),
+        "file": _uploaded_file_id(upload_resp),
     }
+    if wait_visible and out["ok"]:
+        out["visible"] = wait_for_share(client, channel_id, thread_ts,
+                                        out.get("file") or "", text=comment)
     if react_emoji:
         try:
             r = client.reactions_add(
