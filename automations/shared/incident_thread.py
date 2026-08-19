@@ -540,7 +540,8 @@ def _days_open(opened: str, day: dt.date) -> int:
 
 def find(key: str, *, channel: str = CHANNEL, client=None,
          day: Optional[dt.date] = None, family: bool = True,
-         trust_index: bool = True) -> Optional[dict]:
+         trust_index: bool = True,
+         ignore_closed: bool = False) -> Optional[dict]:
     """The OPEN incident for `key`, or None. Index first (no API call), then a
     channel scan so an incident opened on another machine is still found.
 
@@ -572,8 +573,16 @@ def find(key: str, *, channel: str = CHANNEL, client=None,
     # three identities. Remember those ts so the scan below doesn't re-open a
     # thread we just resolved. Every resolved entry counts, not only this key's:
     # with families, the entry that closed a shared thread is usually a SIBLING's.
-    closed_ts = {e.get("ts") for e in idx.values()
-                 if isinstance(e, dict) and e.get("resolved") and e.get("ts")}
+    #
+    # `ignore_closed` drops that filter. It exists because the filter can go
+    # WRONG in one direction and never recover: resolve() marks a key resolved
+    # whenever it fails to find its thread, so a single miss puts the LIVE ts in
+    # closed_ts and every later scan on that machine skips it — the thread is
+    # invisible for good. resolve() re-asks with this flag and settles it against
+    # the thread itself (see _thread_is_closed).
+    closed_ts = set() if ignore_closed else {
+        e.get("ts") for e in idx.values()
+        if isinstance(e, dict) and e.get("resolved") and e.get("ts")}
     try:
         client = client or _client()
     except Exception as e:  # noqa: BLE001 — no Slack client = caller posts fresh
@@ -949,6 +958,44 @@ def _mark_resolved_in_index(key: str, *, ts: Optional[str] = None,
 
 # ------------------------------------------------------------------ resolve ---
 
+def _thread_is_closed(client, channel: str, ts: str) -> bool:
+    """Does this thread already carry a resolution reply?
+
+    The one honest way to tell "we closed it and Slack refused the parent edit"
+    from "our index is wrong" without trusting local state: resolve() always
+    replies in the thread before touching the parent, so a closed incident has a
+    ✅ reply under it. Conservative on error — if the read fails we say CLOSED,
+    which at worst leaves the thread open, never doubles a ✅ on it."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=ts, limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ incident: couldn't read thread {ts} "
+              f"({type(e).__name__}: {str(e)[:60]})", flush=True)
+        return True
+    for msg in (resp.get("messages") or []):
+        if msg.get("ts") == ts:
+            continue                      # the parent, not a reply
+        text = (msg.get("text") or "")
+        if DONE_EMOJI in text or "RESOLVED" in text.upper():
+            return True
+    return False
+
+
+def _clear_resolved_in_index(key: str, ts: Optional[str] = None) -> None:
+    """Undo a wrong `resolved` flag — this key's, and any sibling on the same ts."""
+    idx = _load_index()
+    changed = False
+    for k, e in idx.items():
+        if not isinstance(e, dict):
+            continue
+        if k == key or (ts and e.get("ts") == ts):
+            if e.get("resolved"):
+                e["resolved"] = False
+                changed = True
+    if changed:
+        _save_index(idx)
+
+
 def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
             parent_text: Optional[str] = None, day: Optional[dt.date] = None,
             dry_run: bool = False, client=None) -> bool:
@@ -990,6 +1037,23 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     # thread already, and a second ✅ on it is exactly the duplicate we're here
     # to stop.
     inc = find(key, channel=channel, client=client, day=day, trust_index=False)
+    if not inc or not inc.get("ts"):
+        # SECOND LOOK, without the closed-ts filter. That filter is self-poisoning:
+        # the branch below marks the key resolved every time a lookup misses, so
+        # ONE miss puts the live thread's ts in closed_ts and the scan skips it
+        # forever after — on that machine the thread can never be closed again.
+        # That is what killed five hand-offs on 2026-08-18, and on 2026-08-19 it
+        # left vantura-sales-week-hold uncloseable from BOTH Macs while a laptop
+        # could still see it open. The thread itself is the tie-breaker: if it
+        # carries no ✅ reply, it really is open and our index was wrong.
+        again = find(key, channel=channel, client=client, day=day,
+                     trust_index=False, ignore_closed=True)
+        if again and again.get("ts") and not _thread_is_closed(
+                client, channel, again["ts"]):
+            _clear_resolved_in_index(key, again.get("ts"))
+            print(f"[incident] {key}: the index had this thread marked closed "
+                  f"but it is still open — index corrected")
+            inc = again
     if not inc or not inc.get("ts"):
         # Nothing open there → whatever this machine still believes is out of
         # date. Fix the belief, or it will try again on every clean run.
