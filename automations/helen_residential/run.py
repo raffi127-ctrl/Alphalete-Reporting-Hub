@@ -34,6 +34,12 @@ Total Store Count Frontier, the Store rows, Approval, Canceled, Pending,
 GIG %, VAS %, ABP %, Direct Deposit and the whole financial block. They are
 Frontier-Events / Alphalete-downline metrics and she is in neither.
 
+A hole in a row this DOES own is invisible on the tab -- it looks exactly like
+the blanks above. So every run also checks the weeks it could still repair and,
+when one is past its source's normal lag, pings by manifest `kind="source"` and
+still exits 0 (Eve's rule: a late source that costs rows must not leave the Hub
+card red for weeks). A clean run closes the notice by itself.
+
 Usage:
     python -m automations.helen_residential.run
     python -m automations.helen_residential.run --dry-run
@@ -64,6 +70,29 @@ TAB = "Helen Assefaw"      # resolved by PREFIX — see _resolve_tab
 DEFAULT_DAYS = 75          # wide enough to catch a tracker edition that is
                            # two weeks late, cheap enough to run weekly.
 
+# Its OWN manifest id, never the report's: the wrapper marks that one clean at
+# the end of every good run and would erase this notice.
+SOURCE_MANIFEST_ID = "helen_residential_sources"
+
+# The rows this module owns -> (the mail that feeds it, how many CLOSED weeks
+# of lag are NORMAL before an empty cell counts as overdue).
+#   tracker  : runs 8-15 days behind its Saturday and sometimes skips an
+#              edition entirely, so a hole younger than two closed weeks is
+#              just the source being itself.
+#   rep count: lands the Thursday AFTER its week closes, so by the next Monday
+#              run it should be there -- one week of slack is enough.
+OWNED_ROWS = {
+    "Total Sales Frontier": (
+        "RANKED Residential Telecom Tracker PDF (anowrouzi@aptel.com), "
+        "middle 'Residential Wireless' table", 2),
+    "Active Headcount on Scorecard": (
+        "Residential Rep Count values.xlsx (rarchey@thesmartcircle.com), "
+        "sheet 'ICD Owner Snapshot', column Headcount", 1),
+    "Headcount Beginning of week": (
+        "Residential Rep Count values.xlsx (rarchey@thesmartcircle.com), "
+        "sheet 'ICD Owner Snapshot', column Existing", 1),
+}
+
 
 def _resolve_tab(sh, wanted: str):
     """The worksheet whose title is `wanted`, or that STARTS WITH it.
@@ -93,6 +122,83 @@ def _rows_by_label(grid):
         if b and b.lower() not in out:
             out[b.lower()] = i
     return out
+
+
+def _overdue_holes(grid, cols, rows, written, days, today):
+    """{label: [WE-Sunday, ...]} -- cells this module owns that are STILL empty
+    and are already past their source's normal lag.
+
+    Bounded by the same window the run scans: those are exactly the weeks a
+    late edition could still repair. Anything older is out of this report's
+    reach and re-flagging it every Monday would be noise, not a signal."""
+    last_closed = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    floor = today - dt.timedelta(days=days)
+    holes = {}
+    for label, (_src, lag) in OWNED_ROWS.items():
+        r = rows.get(label.lower())
+        if r is None:
+            continue
+        cutoff = last_closed - dt.timedelta(days=7 * lag)
+        for wk in sorted(cols):
+            col = cols[wk]
+            if not (floor <= wk <= cutoff):
+                continue
+            if (r, col) in written:            # filled by THIS run
+                continue
+            row = grid[r - 1] if r - 1 < len(grid) else []
+            val = row[col - 1] if col - 1 < len(row) else ""
+            if str(val).strip() == "":
+                holes.setdefault(label, []).append(wk)
+    return holes
+
+
+def _fmt_weeks(weeks) -> str:
+    # never %-m/%-d -- that is Mac-only and this has to run on Windows too
+    return ", ".join(f"{w.month}/{w.day}" for w in weeks)
+
+
+def _source_manifest(holes: dict, log=print) -> None:
+    """Ping (or clear) the notice for her weekly mail sources.
+
+    Not a failure: the rest of the tab filled, so the Hub card stays GREEN and
+    the step exits 0. But a blank cell in her OPT block is indistinguishable
+    from the dozen cells that are blank on purpose, so without this the only
+    way anyone finds out is by reading the tab."""
+    try:
+        from automations.shared import run_manifest as _rm
+    except Exception as e:                                  # noqa: BLE001
+        log(f"[helen] manifest unavailable ({type(e).__name__}: {e})")
+        return
+    try:
+        if not holes:
+            _rm.mark_clean(SOURCE_MANIFEST_ID, kind="source")
+            return
+        why = [f"{lab} - no edition covering {_fmt_weeks(wks)} "
+               f"({OWNED_ROWS[lab][0]})"
+               for lab, wks in sorted(holes.items())]
+        ask = "; ".join(
+            f"{OWNED_ROWS[lab][0].split(' (')[0]} for week(s) ending "
+            f"{_fmt_weeks(wks)}" for lab, wks in sorted(holes.items()))
+        _rm.write_manifest(
+            SOURCE_MANIFEST_ID, failed=sorted(holes), retry_args=[],
+            kind="source",
+            note=("Helen Assefaw (Vz) - " + "; ".join(why) + ". The rest of "
+                  "her tab is filled; only these cells are missing."),
+            remediation=_rm.make_remediation(
+                reason="The weekly mail behind those rows never arrived for "
+                       "those weeks, or arrived without her row on it. She is "
+                       "residential Verizon, so there is no Tableau or "
+                       "AppStream fallback -- the mail IS the source.",
+                fix="Ask the sender for the missing edition. When it lands, "
+                    "re-run `python -m automations.helen_residential.run` (or "
+                    "just wait for Monday): it writes ONLY empty cells, so "
+                    "re-running can never overwrite anything.",
+                message=("Hi -- we're missing the " + ask + ". Could you "
+                         "resend it to alphaletereporting@gmail.com? "
+                         "Thanks!")))
+        log("[helen] ! source ping: " + "; ".join(why))
+    except Exception as e:                                  # noqa: BLE001
+        log(f"[helen] manifest ping failed ({type(e).__name__}: {e})")
 
 
 def main(argv=None) -> int:
@@ -179,6 +285,7 @@ def main(argv=None) -> int:
                 plan.setdefault(wk, []).append((label, v, "recruiting mail"))
 
     updates, filled, kept, nocol, norow = [], [], 0, [], set()
+    written = set()                # (row, col) this run is about to fill
     for wk in sorted(plan):
         col = cols.get(wk)
         if col is None:
@@ -196,6 +303,7 @@ def main(argv=None) -> int:
                 kept += 1
                 continue
             updates.append({"range": rowcol_to_a1(r, col), "values": [[value]]})
+            written.add((r, col))
             wrote.append(f"{label}={value}")
         if wrote:
             filled.append(f"  {wk}  {rowcol_to_a1(1, col)[:-1]}  " + ", ".join(wrote))
@@ -209,15 +317,23 @@ def main(argv=None) -> int:
         print(f"[helen] label(s) not on the tab: {sorted(norow)}")
     print(f"[helen] {len(updates)} cell(s) to fill, {kept} already filled (kept)")
 
-    if not updates:
-        print("[helen] nothing new — every week the sources cover is already "
-              "on the tab")
-        return 0
     if dry:
         print("[helen] DRY RUN — nothing written")
-        return 0
-    fill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
-    print(f"[helen] wrote {len(updates)} cell(s)")
+    elif updates:
+        fill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
+        print(f"[helen] wrote {len(updates)} cell(s)")
+    else:
+        print("[helen] nothing new — every week the sources cover is already "
+              "on the tab")
+
+    # What is STILL missing after this run. This runs on the nothing-to-write
+    # path too — that is precisely the run where a source has gone quiet.
+    # Never alerts on a dry-run: a rehearsal must not ping anyone.
+    holes = _overdue_holes(grid, cols, rows, written, args.days, today)
+    for lab, wks in sorted(holes.items()):
+        print(f"[helen] STILL EMPTY  {lab}: {_fmt_weeks(wks)}")
+    if not dry:
+        _source_manifest(holes)
     return 0
 
 
