@@ -47,6 +47,21 @@ def main(argv=None):
     print("[indeed_source_report] %s (%s) — %d offices" % (period, rng, len(targets)),
           flush=True)
 
+    # PREFLIGHT. Pulling 28 offices takes ~12 minutes; discovering only then that
+    # this machine's credential cannot write the workbook wastes the whole run and
+    # reads as a mysterious failure. Prove the write BEFORE the browser opens.
+    sess = sheet.session(verbose=True)
+    if not a.dry_run:
+        try:
+            sheet.probe_write(sess)
+        except Exception as e:  # noqa: BLE001 — the reason matters more than the trace
+            print("[indeed_source_report] ABORT — cannot write the workbook as this "
+                  "machine's identity: %s" % str(e)[:200], flush=True)
+            print("  fix: install the applicant_tracker service-account key here "
+                  "(preferred), or share the workbook with this machine's Google "
+                  "account. Nothing was pulled and nothing was changed.", flush=True)
+            return 3
+
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures, flags = {}, [], []
     with appstream_direct_session(headless=not a.headed, verbose=False,
@@ -70,7 +85,6 @@ def main(argv=None):
         print("nothing pulled — leaving the sheet alone", flush=True)
         return 1
 
-    sess = sheet.session(verbose=True)
     existing = sheet.get_values(sess, sheet.data_range("A2:U20000"))
     # Drop the current month ONLY for managers this run actually pulled, so a
     # --office run (or an office that failed above) leaves everyone else's month

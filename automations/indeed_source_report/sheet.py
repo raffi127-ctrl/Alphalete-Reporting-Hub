@@ -99,3 +99,23 @@ def put_values(sess, rng, values):
 def clear(sess, rng):
     r = sess.post("%s/%s/values/%s:clear" % (API, SPREADSHEET_ID, rng), json={})
     r.raise_for_status()
+
+
+def probe_write(sess):
+    """Prove this credential can WRITE the workbook, cheaply.
+
+    A read succeeds for anyone-with-the-link, so reading proves nothing. This
+    rewrites one throwaway cell on the hidden data tab with what it already
+    contains — a real write that changes nothing. Raises on 403/404.
+    """
+    # Far below the data, but INSIDE the grid — a column past the sheet's
+    # width answers 400 Bad Request, which would look like a permission fault.
+    cell = data_range("X4999")
+    r = sess.get("%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
+                 params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    r.raise_for_status()
+    current = (r.json().get("values") or [[""]])[0]
+    w = sess.put("%s/%s/values/%s" % (API, SPREADSHEET_ID, cell),
+                 params={"valueInputOption": "RAW"},
+                 json={"majorDimension": "ROWS", "values": [current or [""]]})
+    w.raise_for_status()
