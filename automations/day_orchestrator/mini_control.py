@@ -159,6 +159,7 @@ DAILY_AUTORUN_CAP = 100
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
+                    "restart_orchestrator",
                     "install_enrollment_pending",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
@@ -600,6 +601,53 @@ def _restart_hold_active() -> bool:
           "OLD code; re-run restart_poller or restart it by hand."
           .format(int(time.time() - _restart_scheduled_at)), flush=True)
     return False
+
+
+def _action_restart_orchestrator(args: str) -> tuple[bool, str]:
+    """Kickstart the DAY ORCHESTRATOR (com.alphalete.day-orchestrator) so a
+    running batch reloads freshly-pulled code.
+
+    WHY (Megan 2026-08-20): the orchestrator is a SEPARATE launchd job from this
+    poller, so `restart_poller` never touched it and there was no remote path to
+    it at all — a fix pulled by `update` sat unused until the next 4am. That day
+    the per-report day_state save landed at 09:22 and `lucy daystate` stayed an
+    hour stale for the rest of the morning because the running process still had
+    the old code.
+
+    ⚠️ THIS KILLS WHATEVER REPORT IS RUNNING. `kickstart -k` SIGKILLs the
+    process group, so a mid-flight report dies and may leave an orphan Chrome
+    holding the shared profile (the post-run unstick cannot fire on an outside
+    kill — run `chrome_unstick` after if a browser report was in flight). The
+    fresh instance re-reads today's state file and resumes: reports already
+    terminal are skipped, the killed one is retried. Prefer waiting for the noon
+    backstop unless the new code actually matters today.
+
+    Pass --force to acknowledge that. Without it this refuses while a report is
+    running, and only restarts when the orchestrator is idle."""
+    label = "com.alphalete.day-orchestrator"
+    force = "--force" in (args or "")
+    if not force:
+        try:
+            out = subprocess.run(["pgrep", "-f", "automations\\..*\\.run"],
+                                 stdout=subprocess.PIPE, text=True).stdout.strip()
+            if out:
+                return False, ("a report is RUNNING — restarting would SIGKILL it "
+                               "and can orphan its Chrome. Re-queue with --force "
+                               "if that is what you want, or wait for the batch.")
+        except Exception:  # noqa: BLE001 — probe failure must not block a --force
+            pass
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c",
+             f"sleep 3; launchctl kickstart -k gui/{os.getuid()}/{label}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't schedule restart: {str(e)[:140]}"
+    return True, (f"restart scheduled for {label} (~3s)"
+                  f"{' (FORCED — a running report was killed)' if force else ''}"
+                  f" — it re-reads today's state and resumes; terminal reports "
+                  f"are skipped")
 
 
 def _action_restart_poller(args: str) -> tuple[bool, str]:
@@ -4397,6 +4445,7 @@ ACTIONS = {
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
     "restart_holder": _action_restart_holder,
+    "restart_orchestrator": _action_restart_orchestrator,
     "restart_poller": _action_restart_poller,
     "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
