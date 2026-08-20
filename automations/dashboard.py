@@ -5113,15 +5113,19 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "dd_bulletin",
         "self_scheduled": True,
-        # Two-phase pill: ORANGE once the review link is posted for Evelyn, GREEN
+        # Two-phase pill: PURPLE once the review link is posted for Evelyn, GREEN
         # once she approves and it emails. Modelled as daily_runs:2 (like BG Check
         # Sync) — BOTH phases publish success under the SAME card id, so 1 success
-        # = 1/2 (orange, "posted, waiting on the ✅") and 2 = green. A Thursday
-        # that ends unapproved stays orange, not a false green. Same-day window, so
+        # = 1/2 (purple, "posted, waiting on the ✅") and 2 = green. A Thursday
+        # that ends unapproved stays on the miss colours, not a false green. Same-day window, so
         # the per-day count is correct. daily_runs (not `phases`) because a chain
         # of two DIFFERENT ids auto-registers a phantom library card for the
         # second id. (Megan 2026-08-07)
         "daily_runs": 2,
+        # The pass still owed after 1/2 is Evelyn's ✅, not a machine — so the
+        # mid state shows PURPLE "awaiting ✅" like the phased review-gated
+        # cards, not the orange work-in-progress ramp. (Megan 2026-08-20)
+        "approval_final_run": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],   # Thursday (Mon=0 … Thu=3)
@@ -5211,14 +5215,16 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "override_bulletin",
         "self_scheduled": True,
-        # Two-phase pill (mirrors the DD bulletin): ORANGE once the review link is
+        # Two-phase pill (mirrors the DD bulletin): PURPLE once the review link is
         # posted for Eve, GREEN once she approves and it sends. Modelled as
         # daily_runs:2 — BOTH the post pass and the send pass publish success under
-        # THIS card's id, so 1 success = 1/2 (orange, "posted, waiting on the ✅")
-        # and 2 = green. A week that is never approved stays orange, not a false
-        # green. daily_runs (not `phases`) so no phantom sub-card is auto-created.
+        # THIS card's id, so 1 success = 1/2 (purple, "posted, waiting on the ✅")
+        # and 2 = green. A week that is never approved stays on the miss colours,
+        # not a false green. daily_runs (not `phases`) so no phantom sub-card is auto-created.
         # (Megan 2026-08-07)
         "daily_runs": 2,
+        # 1/2 = posted, waiting on Eve's ✅ → PURPLE, same as the DD bulletin.
+        "approval_final_run": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [4],   # Friday (Mon=0 \u2026 Fri=4)
@@ -6949,6 +6955,17 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
     return False
 
 
+def _success_count_today(report_id: str, today: dt.date | None = None) -> int:
+    """How many successful runs of this report were logged today, by anyone.
+    Lets a daily_runs card's header pill count the same way the calendar tile
+    does, instead of reading DONE TODAY off the first pass."""
+    today = today or dt.date.today()
+    return sum(1 for r in _all_runs_merged(2)
+               if r.get("report_id") == report_id
+               and r.get("status") == "success"
+               and r["_dt"].date() == today)
+
+
 def _week_run_statuses(week_days: list[dt.date]) -> dict:
     """{(report_id, date): status} for the given days, from the shared run feed
     (local + Hub Activity) — powers the This-week grid's per-card outcome badges.
@@ -7827,7 +7844,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
         return ("up" if _day == today else "miss"), _done
 
     def _cal_status(_rid: str, _day: dt.date, _daily_runs: int = 1,
-                    _phase_runs: bool = False) -> str:
+                    _phase_runs: bool = False,
+                    _approval_final: bool = False) -> str:
         """Per-card outcome for a day: ok / partial / progress / fail / miss / up.
 
         `_daily_runs` > 1 marks a card that fires several times a day. Those
@@ -7837,7 +7855,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
 
         `_phase_runs` marks the passes as DISTINCT phases rather than repeats,
         so re-running one phase can't fill the card on its own — see
-        _week_run_phases."""
+        _week_run_phases.
+
+        `_approval_final` (approval_final_run cards — DD / Override Bulletin)
+        marks the day's LAST pass as a human's ✅-gated send: once any pass has
+        landed, what's still owed is a person, not a machine, so today's mid
+        state is PURPLE "awaiting ✅" instead of the orange ramp. A PAST day
+        that never got its ✅ stays "partial" — it isn't awaiting anything, it's
+        a day that didn't go out."""
         if _day > today:
             return "up"                       # future — hasn't run
         _s = _cal_statuses.get((_rid, _day))
@@ -7849,6 +7874,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             if _done > 0:
                 if _day != today:
                     return "partial"          # past day, never finished
+                if _approval_final:
+                    return "review"           # posted — waiting on the ✅
                 return _ramp(_done, _daily_runs)   # today, mid-run
             if _s in (None, "success"):
                 return "up" if _day == today else "miss"
@@ -7979,7 +8006,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     else:
                         _dr_today = _expected_runs(_r, _day)
                         _pr = bool(_r.get("phase_runs"))
-                        _stat = _cal_status(_r["id"], _day, _dr_today, _pr)
+                        _stat = _cal_status(_r["id"], _day, _dr_today, _pr,
+                                            bool(_r.get("approval_final_run")))
                         # The "(1/2 done)" label has to count the same way the
                         # colour does, or an amber pill reads "2/2 done".
                         _phase_done = (
@@ -8289,6 +8317,17 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         _appr_ready = bool(_appr) and not _appr_done and all(
             _was_run_successfully_today(_p, today)
             for _p in (report.get("phases") or []) if _p != _appr)
+        # approval_final_run cards (DD / Override Bulletin): same ✅-gate, but
+        # counted as daily_runs of ONE id instead of a chain — 1/2 = posted and
+        # waiting on the checkmark, full count = approved and sent.
+        _appr_runs = bool(report.get("approval_final_run")) and not _appr
+        if _appr_runs:
+            _appr = "approval_final_run"     # joins the pill logic below
+            _n_ok = _success_count_today(report["id"], today)
+            _t_ok = report.get("daily_runs")
+            _t_ok = int(_t_ok) if isinstance(_t_ok, int) else 1
+            _appr_done = _n_ok >= _t_ok
+            _appr_ready = 0 < _n_ok < _t_ok
         # "DONE TODAY" on a report that is built but NOT yet approved is the
         # exact confusion this card set out to kill — hold it until the ✅.
         if ran_today and not _hide_sched and not (_appr and not _appr_done):
