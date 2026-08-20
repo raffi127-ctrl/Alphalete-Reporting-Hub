@@ -1103,6 +1103,10 @@ def _cdp_test() -> int:
 # --------------------------------------------------------------------------- #
 CDP_PROFILE = "/tmp/rp_cdp_profile"
 CDP_PORT = "9245"
+# The pkill target for stray CDP Chromes. A one-off run (--office) overrides all
+# three of these so it uses an ISOLATED profile/port/kill-pattern and can't be
+# pkill'd by the concurrently-scheduled 11580 job (whose pattern stays this).
+_CDP_KILL_PAT = "rp_cdp_profile"
 EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"
 
 
@@ -1131,7 +1135,7 @@ def _copy_default_profile(force_fresh: bool = False) -> str:
     dst = CDP_PROFILE
     # Always kill any leftover CDP Chrome + clear stale singleton locks so a REUSED
     # profile can relaunch (a profile Chrome didn't close cleanly keeps a lock).
-    subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+    subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
     _t.sleep(2)
     reuse = (not force_fresh) and os.path.exists(_CDP_SEED_MARKER)
     if reuse:
@@ -1329,7 +1333,7 @@ def _cdp_warm(force_fresh: bool = True) -> int:
             proc.terminate()
         except Exception:  # noqa: BLE001
             pass
-        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+        subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
         _flush_diag("RP Warm Diag")
     return rc
 
@@ -1492,7 +1496,7 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             proc.terminate()
         except Exception:  # noqa: BLE001
             pass
-        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+        subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
         _flush_diag(diag_tab)
 
 
@@ -1878,7 +1882,7 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
             proc.terminate()
         except Exception:
             pass
-        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+        subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
         _flush_diag()
     return rc
 
@@ -2238,8 +2242,19 @@ def main() -> int:
     if args.office:
         globals()["OFFICE_ID"] = args.office
         globals()["OFFICE_HINT"] = args.office_hint or ""
+        # Isolate the CDP browser so a one-off never collides with the live 11580
+        # launchd job (both otherwise share /tmp/rp_cdp_profile + port 9245, and
+        # each pkills that profile on start — the collision that zeroed the first
+        # 22358 run). Use a name WITHOUT the 'rp_cdp_profile' substring so the
+        # 11580 job's pkill can't match it, plus a distinct port.
+        safe = "".join(ch for ch in args.office if ch.isalnum())
+        globals()["CDP_PROFILE"] = f"/tmp/rp_oneoff_{safe}"
+        globals()["CDP_PORT"] = "9246"
+        globals()["_CDP_KILL_PAT"] = f"rp_oneoff_{safe}"
+        globals()["_CDP_SEED_MARKER"] = f"/tmp/rp_oneoff_{safe}/.rp_seeded"
         _log(f"[office] one-off override: OFFICE_ID={args.office} "
-             f"OFFICE_HINT={args.office_hint or '(none)'}")
+             f"OFFICE_HINT={args.office_hint or '(none)'} "
+             f"profile=/tmp/rp_oneoff_{safe} port=9246 (isolated)")
 
     if args.warm:
         return _cdp_warm()
