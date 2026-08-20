@@ -576,6 +576,27 @@ def _alert_timeout_kill(ds, r, rs, detail, target, *, dry_run, simulate) -> None
 
 
 def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
+    """Persist day_state the moment THIS report reaches a verdict.
+
+    WHY (Megan 2026-08-20): _attempt_report set DONE/FAILED/INCOMPLETE in memory
+    but never saved — state only hit disk at a few pass-level points. With
+    reports running sequentially a pass lasts over an hour, so day_state (and
+    `lucy daystate`, which reads it) lagged badly: at 06:03 it showed all 49
+    PENDING while daily_metrics had finished and posted at 05:07. Acting on that
+    stale read is what caused the duplicate tracker posts that morning.
+
+    Saving per report costs one small local write and makes daystate current."""
+    try:
+        return _attempt_report_inner(ds, r, rs, target,
+                                     dry_run=dry_run, simulate=simulate)
+    finally:
+        try:
+            state.save(ds)
+        except Exception:  # noqa: BLE001 — a save must never fail the report
+            pass
+
+
+def _attempt_report_inner(ds, r, rs, target, *, dry_run, simulate) -> str:
     """Run ONE ready report: publish its Hub pill, run the subprocess, reconcile,
     set state. Returns the outcome:
       'done'   — ran (DONE or INCOMPLETE); terminal for this batch

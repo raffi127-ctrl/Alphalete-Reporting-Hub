@@ -367,16 +367,29 @@ def final_status(report_id: str, ok: bool) -> str:
 
 
 def incomplete_status(report_id: str) -> str:
-    """Pill status for a run the orchestrator marked INCOMPLETE (it RAN, with a
-    note). Historically these show green ('ran') — keep that, EXCEPT upgrade to
-    'partial' (orange) when the report's manifest explicitly records some parts
-    succeeded and some failed (e.g. metrics posted to 6 of 8 channels). Reports
-    that don't record `succeeded` are unchanged (still green)."""
+    """Pill status for a run the orchestrator marked INCOMPLETE (it RAN, but did
+    not deliver everything). NEVER 'success'.
+
+    WHY (Megan 2026-08-20): this used to return 'success' unless the report's
+    manifest explicitly recorded a partial outcome. daily_metrics posted 8 of 9
+    metrics, its manifest recorded nothing, so an INCOMPLETE run published GREEN
+    — and because publish_done auto-resolves an open incident on 'success', Lucy
+    also posted "RESOLVED. It just ran clean." while New Internet ABP % was
+    still missing. A card cannot read done while a section is missing, and a
+    missing section cannot close its own ticket.
+
+    'partial' (orange) is the floor now. The manifest is still consulted so a
+    report that records something finer can override, but the default for
+    INCOMPLETE is partial, not green — and 'partial' is not 'success', so
+    publish_done leaves the incident thread OPEN."""
     try:
         from automations.shared import run_manifest
-        return "partial" if run_manifest.outcome(report_id) == "partial" else "success"
+        outcome = run_manifest.outcome(report_id)
+        if outcome in ("partial", "failed"):
+            return outcome
     except Exception:      # noqa: BLE001 — status must never break the run
-        return "success"
+        pass
+    return "partial"
 
 
 def _find_open_row_for_card(ws, card: str):
