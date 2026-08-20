@@ -551,7 +551,8 @@ _XML_COMMENT = re.compile(rb"<!--.*?-->", re.S)
 def _plist_schedule(plist_path: Path) -> Optional[dict]:
     """Parse a plist's StartCalendarInterval into a card schedule (fixed clock →
     a card that lands in ⏰ Time Set). None for interval/continuous jobs (no
-    calendar) → on-demand. launchd Weekday: 0/7=Sun, 1=Mon…6=Sat → Python Mon=0."""
+    calendar) → on-demand. launchd Weekday: 0/7=Sun, 1=Mon…6=Sat → Python Mon=0.
+    launchd Day = day-of-month → a monthly schedule (days_of_month list)."""
     try:
         import plistlib
         raw = plist_path.read_bytes()
@@ -569,8 +570,14 @@ def _plist_schedule(plist_path: Path) -> Optional[dict]:
     def _pywd(wd):
         return 6 if wd in (0, 7) else wd - 1
     wds = sorted({_pywd(e["Weekday"]) for e in cal if "Weekday" in e})
+    doms = sorted({int(e["Day"]) for e in cal if "Day" in e})
     e0 = min(cal, key=lambda e: (e.get("Hour", 0), e.get("Minute", 0)))
     t = "%02d:%02d" % (e0.get("Hour", 0), e0.get("Minute", 0))
+    if doms:
+        # Day-of-month job (e.g. dd-gross-revenue, 1st + 15th at noon). Before
+        # this branch existed the card was saved as DAILY, so 🚨 Needs attention
+        # flagged it "no run logged" on every day it correctly didn't run.
+        return {"frequency": "monthly", "days_of_month": doms, "time": t}
     sc = {"frequency": "daily" if not wds or len(wds) >= 7 else "weekly", "time": t}
     if wds and len(wds) < 7:
         sc["weekdays"] = wds

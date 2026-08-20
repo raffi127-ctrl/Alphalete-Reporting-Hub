@@ -1519,30 +1519,44 @@ def _is_due_today(report: dict, today: dt.date) -> bool:
     return _was_due_on(report, today)
 
 
+def _sched_month_days(sched: dict) -> list:
+    """Day-of-month list for a monthly schedule. Cards store either a single
+    `day_of_month` (upload form) or a `days_of_month` list (launchd jobs that
+    fire more than once a month, e.g. DD Gross Revenue on the 1st + 15th)."""
+    days = sched.get("days_of_month") or sched.get("day_of_month") or []
+    if not isinstance(days, (list, tuple)):
+        days = [days]
+    out = set()
+    for d in days:
+        try:
+            out.add(int(d))
+        except (TypeError, ValueError):
+            pass
+    return sorted(out)
+
+
 def _next_due(report: dict, today: dt.date):
     sched = report.get("schedule")
     if not sched:
         return None
     if sched.get("frequency") == "monthly":
-        dom = sched.get("day_of_month")
-        if not dom:
+        doms = _sched_month_days(sched)
+        if not doms:
             return None
-        # Next occurrence of dom (this month if in future, else next month)
-        try:
-            this_month = today.replace(day=dom)
-        except ValueError:
-            this_month = None
-        if this_month and this_month > today:
-            return this_month
-        # Next month
-        if today.month == 12:
-            next_year, next_month = today.year + 1, 1
-        else:
-            next_year, next_month = today.year, today.month + 1
-        try:
-            return dt.date(next_year, next_month, dom)
-        except ValueError:
-            return None
+        # Earliest occurrence after today, checking this month then next.
+        candidates = []
+        for months_ahead in (0, 1):
+            year, month = today.year, today.month + months_ahead
+            if month > 12:
+                year, month = year + 1, month - 12
+            for dom in doms:
+                try:
+                    d = dt.date(year, month, dom)
+                except ValueError:
+                    continue
+                if d > today:
+                    candidates.append(d)
+        return min(candidates) if candidates else None
     if sched.get("frequency") == "daily":
         wd = sched.get("weekdays")
         if not wd:
@@ -1563,7 +1577,7 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
     if not sched:
         return False
     if sched.get("frequency") == "monthly":
-        return day.day == sched.get("day_of_month")
+        return day.day in _sched_month_days(sched)
     if sched.get("frequency") == "daily":
         # A daily report may restrict to certain weekdays (e.g. Daily
         # Recruiter Retention runs Mon–Fri only). Honor the list if present;
@@ -6417,9 +6431,10 @@ def _format_schedule_short(report: dict) -> str:
     time_str = (sched.get("time") or "").strip()
     time_part = f" at {time_str}" if time_str else ""
     if freq == "monthly":
-        dom = sched.get("day_of_month")
-        if dom:
-            return f"{_ordinal(int(dom))} of each month{time_part}"
+        doms = _sched_month_days(sched)
+        if doms:
+            days = " & ".join(_ordinal(d) for d in doms)
+            return f"{days} of each month{time_part}"
         return f"Monthly{time_part}"
     if freq == "daily":
         return f"Daily{time_part}"
