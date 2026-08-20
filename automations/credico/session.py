@@ -124,8 +124,11 @@ def credico_session(headless: bool = True, verbose: bool = True):
     from patchright.sync_api import sync_playwright
     if not STATE.exists():
         raise RuntimeError(
-            f"no Credico session at {STATE.name}. Run ONCE on Lucy 1 with someone "
-            f"at the screen:\n    python -m automations.credico.session --login")
+            f"no Credico session at {STATE.name}. Log in headed on ANY "
+            f"machine — the state is plain JSON and replays anywhere:\n"
+            f"    python -m automations.credico.session --login\n"
+            f"then ship it to the mini with mini_control.enqueue"
+            f"('set_credico_state', <contents of {STATE.name}>)")
     state = json.loads(STATE.read_text())
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
@@ -155,8 +158,12 @@ def credico_session(headless: bool = True, verbose: bool = True):
         if not _looks_logged_in(page, verbose=verbose):
             ctx.close(); browser.close()
             raise RuntimeError(
-                "Credico session expired. Re-run ON LUCY 1 with someone at the "
-                "screen:\n    python -m automations.credico.session --login")
+                "Credico session expired. Log in headed on ANY machine — "
+                "the state is plain JSON and replays anywhere; it is not "
+                "pinned to Lucy 1 nor to its IP:\n"
+                "    python -m automations.credico.session --login\n"
+                "then ship it to the mini with mini_control.enqueue"
+                "('set_credico_state', <contents of the state file>)")
         try:
             yield page
         finally:
