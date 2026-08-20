@@ -139,7 +139,7 @@ RAW_FIRST_DATA_ROW = 2
 # headed "WE m/d" in row 1; rep rows 3-152; the campaign summary blocks sit
 # below (~rows 154-210), located by their labels — never by hardcoded rows.
 PNL_TAB = "Copy of Carlos PNL 2026"
-PNL_REP_FIRST, PNL_REP_LAST = 3, 163
+PNL_REP_FIRST, PNL_REP_LAST = 3, 171
 
 
 def _week_num(week: dt.date) -> float:
@@ -434,10 +434,10 @@ LEAD_DESCS = ("Lead Disposition Bonus",)
 # labels in the paid column, values in the profit column, mirroring the
 # summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
 # writes it for each new week. Anchored at fixed rows per Carlos's spec.
-REV_TITLE_ROW = 228
+REV_TITLE_ROW = 236
 # 2026-07-23 v2 (Carlos): Lead Disposition revenue belongs under BOX (still
 # never paid — BOX's Paid Out mask excludes it). No separate section.
-REV_CAMPAIGNS = (("B2B", 230), ("BOX", 236), ("Base", 242))
+REV_CAMPAIGNS = (("B2B", 238), ("BOX", 244), ("Base", 250))
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
 # House style (read off the hand-built summary blocks 2026-07-19): dark
