@@ -45,24 +45,25 @@ if [ -d .git ]; then
   DID_UPDATE=0
 
   if [ -f .dev-machine ]; then
-    # --- DEV machine: protect local edits (only update when tree is clean) ---
-    if [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
-      echo "→ Checking for updates (dev)..."
-      git fetch --quiet origin main 2>/dev/null || true
-      LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
-      REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
-      if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
-        echo "→ Updates found — pulling..."
-        if git pull --ff-only --quiet origin main; then
-          echo "✅ Updated to latest version"; DID_UPDATE=1
-        else
-          echo "⚠️  Auto-update failed — continuing with current version"
-        fi
+    # --- DEV machine: protect local edits (ff-only, git's overwrite check) ---
+    # A dirty tree is the NORMAL state here — concurrent Claude sessions keep
+    # WIP files around — so gating on a fully-clean tree meant this machine
+    # almost never updated. ff-only is already safe with local edits: git
+    # aborts the pull untouched if an incoming file overlaps one.
+    echo "→ Checking for updates (dev)..."
+    git fetch --quiet origin main 2>/dev/null || true
+    LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
+    REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
+    if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
+      echo "→ Updates found — pulling..."
+      if git pull --ff-only --quiet origin main; then
+        echo "✅ Updated to latest version"; DID_UPDATE=1
       else
-        echo "✅ Already up to date"
+        echo "⚠️  Auto-update skipped — an incoming update touches a file that"
+        echo "    has local edits here. Continuing on current version."
       fi
     else
-      echo "→ Local changes detected — skipping auto-update (dev mode)"
+      echo "✅ Already up to date"
     fi
   else
     # --- TEAMMATE machine: force-align to origin/main, every launch ---
