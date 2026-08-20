@@ -3253,6 +3253,120 @@ def _action_install_enrollment_pending(args: str) -> tuple[bool, str]:
     return True, (f"installed {label} (hourly 09:00-22:00) · smoke ok · {smoke[:70]}")
 
 
+def _action_git_push_setup(args: str) -> tuple[bool, str]:
+    """One-time: give THIS machine push access to the Hub repo via its own SSH
+    deploy key — so the enrollment auto-commit can make a confirmed office
+    durable from an always-on runner instead of the laptop (Megan 2026-08-20:
+    "my laptop won't always be on — that's why we have lucy 1 and 2").
+
+    Generates ~/.ssh/alphalete_hub_deploy (ed25519, no passphrase) if absent,
+    configures THE REPO ONLY (ssh push URL + pinned key + committer identity —
+    nothing global, fetch URL untouched so `update` keeps working over https),
+    and returns the PUBLIC key. Register that on GitHub as a READ-WRITE deploy
+    key (repo → Settings → Deploy keys), then verify with `git_push_check`.
+    Idempotent — re-running reuses the existing key."""
+    def _git(*a):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=60)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+    key = Path.home() / ".ssh" / "alphalete_hub_deploy"
+    try:
+        key.parent.mkdir(mode=0o700, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    if not key.exists():
+        r = subprocess.run(
+            ["ssh-keygen", "-t", "ed25519", "-N", "", "-C",
+             "alphalete-hub-auto-commit-" + _machine_profile().replace(" ", ""),
+             "-f", str(key)],
+            capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            return False, f"ssh-keygen failed: {(r.stderr or r.stdout)[:200]}"
+    try:
+        pub = key.with_suffix(".pub").read_text().strip()
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read public key: {str(e)[:160]}"
+    ssh_cmd = (f'ssh -i "{key}" -o IdentitiesOnly=yes '
+               "-o StrictHostKeyChecking=accept-new")
+    for k, v in (("core.sshCommand", ssh_cmd),
+                 ("user.name", f"Alphalete Runner ({_machine_profile()})"),
+                 ("user.email", "alphaletereporting@gmail.com")):
+        ok, out = _git("config", k, v)
+        if not ok:
+            return False, f"git config {k} failed: {out[:160]}"
+    ok, out = _git("remote", "set-url", "--push", "origin",
+                   "git@github.com:raffi127-ctrl/Alphalete-Reporting-Hub.git")
+    if not ok:
+        return False, f"set-url --push failed: {out[:160]}"
+    return True, f"PUBKEY {pub}"
+
+
+def _action_git_push_check(args: str) -> tuple[bool, str]:
+    """`git push --dry-run origin main` — proves the deploy key + push wiring
+    work end to end WITHOUT pushing anything. Run after git_push_setup + the
+    key is registered on GitHub."""
+    p = subprocess.run(["git", "-C", str(REPO_ROOT), "push", "--dry-run",
+                        "origin", "main"],
+                       capture_output=True, text=True, timeout=120)
+    out = ((p.stdout or "") + (p.stderr or "")).strip()
+    return p.returncode == 0, (out[:300] or f"exit {p.returncode}")
+
+
+def _action_install_tracker_auto_commit(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the tracker enrollment auto-commit LaunchAgent
+    (com.alphalete.tracker-auto-commit) on THIS machine — daily 03:15 + 17:30.
+    It commits confirmed (wired) tracker enrollments to origin/main so the 4am
+    self-update can never reset a freshly confirmed office out of the daily
+    tracker run. Prereqs, in order: `update`, `restart_poller`,
+    `git_push_setup` (+ key registered on GitHub), `git_push_check`.
+    Smoke = push --dry-run, then one REAL module pass (idempotent — a quiet
+    day prints 'No enrollment changes')."""
+    uid = os.getuid()
+    label = "com.alphalete.tracker-auto-commit"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "tracker_auto_commit.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+        os.chmod(wrapper, 0o755)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist/wrapper: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    # smoke 1: push auth must already work, else the agent would fail silently
+    # at 3am forever.
+    p = subprocess.run(["git", "-C", str(REPO_ROOT), "push", "--dry-run",
+                        "origin", "main"],
+                       capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        return False, ("push --dry-run failed — run git_push_setup and "
+                       "register the key first: "
+                       + ((p.stderr or p.stdout) or "").strip()[:150])
+    # smoke 2: one real pass (idempotent).
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.tracker_onboarding.auto_commit"],
+        timeout_s=300, log_name="tracker-auto-commit-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke pass failed — NOT going live: {smoke[:150]}"
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, f"installed {label} (03:15 + 17:30) · smoke ok · {smoke[:70]}"
+
+
 def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the BG-check sync LaunchAgent
     (com.alphalete.bg-check-sync) on THIS machine — 3x/day (8:00/11:30/16:00),
@@ -4517,6 +4631,9 @@ ACTIONS = {
     "incident_working": _action_incident_working,
     "incident_unmark": _action_incident_unmark,
     "install_enrollment_pending": _action_install_enrollment_pending,
+    "git_push_setup": _action_git_push_setup,
+    "git_push_check": _action_git_push_check,
+    "install_tracker_auto_commit": _action_install_tracker_auto_commit,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,

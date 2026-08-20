@@ -16,7 +16,11 @@ What it does (idempotent, safe to run any time):
      (pull --rebase --autostash first). Other sessions' work-in-progress in
      the tree is never staged.
 
-Run from the laptop (needs Google creds + git push):
+Runs on LUCY 1 (always-on) as the com.alphalete.tracker-auto-commit
+LaunchAgent, daily 03:15 + 17:30 — the laptop isn't reliably awake (Megan,
+2026-08-20). Needs Google creds (~/.config/recruiting-report/oauth-token.json,
+same file the poller uses) + git push access (one-time mini_control
+`git_push_setup`). Also runs fine by hand from the laptop:
   .venv/bin/python -m automations.tracker_onboarding.auto_commit
 Exit 0 = committed or nothing to do; 1 = blocked/failed (message says why).
 """
@@ -86,7 +90,11 @@ def main() -> int:
            "- committed so the enrollment survives the mini's morning "
            "self-update\n\n"
            "Co-Authored-By: Claude <noreply@anthropic.com>")
-    r = _git("commit", "-m", msg)
+    # Explicit committer identity so a runner machine with no git config
+    # (Lucy 1/2, the mini) can still commit.
+    r = _git("-c", "user.name=Alphalete Runner",
+             "-c", "user.email=alphaletereporting@gmail.com",
+             "commit", "-m", msg)
     if r.returncode != 0:
         print(f"FAILED to commit:\n{r.stdout}\n{r.stderr}")
         return 1
