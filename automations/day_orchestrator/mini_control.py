@@ -3564,7 +3564,7 @@ def _action_incident_unmark(args: str) -> tuple[bool, str]:
 
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
-    the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
+    the weekly thread in BOTH recruiting rooms as Lucy). Pass extra args to override,
     e.g. `--dry-run` (no writes/post) or `--week 7/27/2026`."""
     import shlex
     extra = shlex.split(args) if (args or "").strip() else []

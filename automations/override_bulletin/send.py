@@ -20,7 +20,8 @@ is deliberate — this is an outward-facing post to the whole org, and the stand
 rule is that Megan approves each send.
 
 WHAT GETS SENT
-  * Slack — the rendered PNG to #alphalete-sales and #rafs-office-recruiting,
+  * Slack — the rendered PNG to #alphalete-sales, #rafs-office-recruiting and
+    #11280-alphalete-marketing-inc-rafael-hidalgo,
     posted AS LUCY (channel posts use the xoxp USER token, per
     slack_metrics_post._client()).
   * Email — from alphaletereporting@gmail.com to the "Alphalete Org Owners" and
@@ -65,22 +66,30 @@ from automations.override_bulletin import build as B
 from automations.override_bulletin import fill as F
 
 # Slack targets — Lucy is a member of both (the VA posted the bulletin to both).
+# Eve 2026-08-20: the bulletin goes to BOTH recruiting rooms — the original
+# #rafs-office-recruiting (C06881A7WLV) AND Raf's office channel
+# #11280-alphalete-marketing-inc-rafael-hidalgo (C0AUAS88FGW), in BOTH lists
+# below. Same workspace org (AO). The new one is private; lucy_reporting
+# (U0BCG8F9B5Z) is a member (confirmed 2026-08-20).
 # Set OVERRIDE_BULLETIN_CHANNEL_ID to a scratch channel to test a real post
-# safely; it replaces BOTH real channels (same knob as pnl_office).
+# safely; it replaces ALL the real channels (same knob as pnl_office).
 # Eve 2026-08-07: the override bulletin posts to the SAME rooms as the
 # Organization (DD) bulletin — #alphalete-lvl1-chat was the one it was missing.
 CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
     ("#rafs-office-recruiting", "C06881A7WLV"),
+    ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
 ]
 # DD bulletin rooms — DD_SOURCES.md: the VA posted it to #alphalete-sales and
-# #alphalete-lvl1-chat, and Megan also lists #rafs-office-recruiting. Every id
-# was resolved against the workspace on 2026-07-24, not copied from a doc.
+# #alphalete-lvl1-chat, and Megan also lists the recruiting room. Every id
+# was resolved against the workspace on 2026-07-24, not copied from a doc
+# (C0AUAS88FGW joined the list on 2026-08-20, see above).
 DD_CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
     ("#rafs-office-recruiting", "C06881A7WLV"),
+    ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
 ]
 # Preview recipient for --preview (Megan only, before the distro goes live).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]

@@ -87,7 +87,8 @@ EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
                 "Jairo's Captainship", "Starr's Captainship",
                 "Colten's Captainship"]
 # Slack targets for the posted image (VA sent to both).
-SLACK_CHANNELS = ["#alphalete-sales", "#rafs-office-recruiting"]
+SLACK_CHANNELS = ["#alphalete-sales", "#rafs-office-recruiting",
+                  "#11280-alphalete-marketing-inc-rafael-hidalgo"]
 
 
 def email_subject(week_label: str) -> str:

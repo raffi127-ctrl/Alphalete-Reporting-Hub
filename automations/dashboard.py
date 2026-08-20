@@ -5098,7 +5098,7 @@ AUTOMATED_REPORTS = [
             "minutes until **1:00pm CST**).\n\n"
             "WHERE IT GOES\n"
             "Slack: **#alphalete-sales**, **#alphalete-lvl1-chat**, and "
-            "**#rafs-office-recruiting**. Email (the PNG pages, from "
+            "**#rafs-office-recruiting**, and **#11280-alphalete-marketing-inc-rafael-hidalgo**. Email (the PNG pages, from "
             "alphaletereporting@gmail.com): the **Alphalete Org Owners** and "
             "**Bulletins** contact groups.\n\n"
             "SAFETY\n"
@@ -5177,7 +5177,7 @@ AUTOMATED_REPORTS = [
         "id": "override-bulletin",
         # Sits directly before the PNL card: the bulletin goes out first, then
         # PNL for the Office posts right after (same Friday 10am slot, Lucy 1).
-        "name": "Override Bulletin \u2192 #alphalete-sales + #rafs-office-recruiting",
+        "name": "Override Bulletin \u2192 #alphalete-sales + both recruiting rooms",
         "creator": "Megan & Claude",
         "emoji": "\U0001F3C6",
         # Gold \u2014 matches the black/gold bulletin artwork.
@@ -5197,7 +5197,7 @@ AUTOMATED_REPORTS = [
             "Lucy posts the week's bulletin link in **#revision-emails** and "
             "@-mentions Eve. **Nothing goes out until Eve reacts "
             ":white_check_mark:** \u2014 then it posts to **#alphalete-sales + "
-            "#rafs-office-recruiting** and emails both contact groups "
+            "#rafs-office-recruiting + #11280-alphalete-marketing-inc-rafael-hidalgo** and emails both contact groups "
             "(Owners/Bulletins). It **holds** if the week isn't filled yet and "
             "**never double-sends**. A checkmark from anyone but Eve does "
             "nothing.\n\n"
@@ -5256,7 +5256,7 @@ AUTOMATED_REPORTS = [
                 "label": "Send Now (after Eve's \u2705)",
                 "icon": "\U0001F680",
                 "primary": False,
-                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro: #alphalete-sales + #rafs-office-recruiting + both contact groups. Does nothing until she has approved.",
+                "help": "Checks for Eve's checkmark and, if it's there, sends the full distro: #alphalete-sales + #rafs-office-recruiting + #11280-alphalete-marketing-inc-rafael-hidalgo + both contact groups. Does nothing until she has approved.",
                 "module": "automations.override_bulletin.override_gate",
                 "args_fn": lambda: ["--check", "--send", "--distro"],
             },
@@ -5630,13 +5630,14 @@ AUTOMATED_REPORTS = [
         # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
         # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
         "daily_runs": 2,
-        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #rafs-office-recruiting.",
+        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to BOTH #rafs-office-recruiting and #11280-alphalete-marketing-inc-rafael-hidalgo.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
             "inbox) and updates **column K “BG Status”** for the week's new "
             "starts on both `D2D OBCL` tabs. Then posts a weekly "
-            "**#rafs-office-recruiting** thread grouping everyone into Passed / "
+            "thread in **#rafs-office-recruiting** AND in "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo** (one per room), grouping everyone into Passed / "
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
             "edited-in-place reply, so the thread never grows).\n\n"
             "WHEN IT RUNS\n"
@@ -5668,7 +5669,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ BG statuses synced to both D2D OBCL tabs and the weekly Slack thread updated.",
-            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #rafs-office-recruiting.",
+            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #rafs-office-recruiting / #11280-alphalete-marketing-inc-rafael-hidalgo.",
         },
         "actions": [
             {
