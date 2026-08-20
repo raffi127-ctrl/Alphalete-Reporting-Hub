@@ -337,13 +337,16 @@ def _request_done_view(catalog) -> None:
     st.markdown(f"**{ch_names}** will get, every morning:")
     st.markdown("\n".join(f"{i+1}. {titles.get(tid, tid)}"
                           for i, tid in enumerate(d.get("trackers", []))))
+    # ICD-facing: keep it simple — the detailed per-channel diagnostics go to
+    # Megan's ping/confirm view, not here.
     missing = [r for r in (res.get("lucy") or [])
                if r.get("status") in ("not_member", "not_found")]
     if missing:
-        lines = "\n".join(f"- {_lucy_line(r)}" for r in missing)
-        st.warning(f"⚠️ Lucy can't post everywhere yet:\n{lines}\n\nJust make "
-                   "sure **Megan Hidalgo** is added to **each** of those "
-                   "channels — she'll add Lucy from there.")
+        chs = " and ".join(f"**{r.get('channel_name') or 'your channel'}**"
+                           for r in missing)
+        st.warning(f"⚠️ One last thing: Lucy isn't in {chs} yet. Make sure "
+                   "**Megan Hidalgo** is added — she'll add Lucy and get "
+                   "your boards posting.")
     ping_ok, ping_note = res.get("ping", (False, ""))
     if res["where"] == "sheet" and not ping_ok:
         st.warning("Your request is saved, but the automatic heads-up to Megan "
