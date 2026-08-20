@@ -102,31 +102,20 @@ fi
 
 echo "[$(date)] dd-bulletin finished exit=$ST" >> "$LOG_FILE"
 
-# Publish to the Hub card ONLY on a pass that actually emailed — holding for the
-# tab, or waiting on the checkmark, is the normal state of most passes, and
-# marking those green would make "nobody approved it" look like a clean run. A
-# failure always publishes. Quiet card = it hasn't gone out yet, which is true.
+# SUCCESS publishing moved INTO review_gate.py (2026-08-20): the gate itself
+# publishes phase 1 on the week's first real post and phase 2 on the send that
+# went out, so a post/send made OUTSIDE a wrapper pass (`lucy rerun
+# dd_bulletin_gate`) counts too — this wrapper's old log-grep missed those and
+# the card sat white with the link already up. Publishing both here AND there
+# would double-count a pass to a false green, so the wrapper now reports only
+# FAILURES (which the gate does not publish). A held pass publishes nothing:
+# quiet card = it hasn't gone out yet, which is true.
 # [[feedback_launchd_reports_must_publish]]
-# PHASE 1 of the 2-phase pill (card daily_runs:2): the review link was posted for
-# Evelyn this pass. --post is idempotent, so only the pass that actually posts
-# prints "✓ posted to" — one success this day. That makes the pill 1/2 = ORANGE
-# ("posted, waiting on the checkmark") instead of blank until the emailing pass.
-# Published under the SAME card id as the send (dd_bulletin) so the two count
-# together to green at 2/2 — a distinct id would auto-register a phantom card.
-# (Megan 2026-08-07)
-if grep -q "✓ posted to" "$LOG_FILE"; then
-    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_bulletin','DD / Organization Bulletin','success')" >> "$LOG_FILE" 2>&1 || true
-fi
-
 if [ "$ST" -ne 0 ]; then
-    _PUB=failed
-elif grep -q "^emailed " "$LOG_FILE"; then
-    _PUB=success
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_bulletin','DD / Organization Bulletin','failed')" >> "$LOG_FILE" 2>&1 || true
 else
-    _PUB=""
-    echo "[$(date)] held (nothing emailed) — card left alone" >> "$LOG_FILE"
+    echo "[$(date)] publish is the gate's job now — wrapper reports failures only" >> "$LOG_FILE"
 fi
-[ -n "$_PUB" ] && "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('dd_bulletin','DD / Organization Bulletin','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 
 # --- Up and Coming RCs and NCs — the EMAIL-ONLY companion sent right after the DD
 # bulletin (Megan 2026-07-31). It reuses the DD data and stays in LOCK-STEP: the

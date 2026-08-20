@@ -361,7 +361,30 @@ def post_review(link: str, blocking=None, today: Optional[dt.date] = None,
                              unfurl_links=False)
     if verbose:
         print(f"✓ posted to {_channel(channel)} ts={r['ts']}", flush=True)
+    # PHASE 1 of the card's 2-phase pill (daily_runs:2): the review link is up,
+    # waiting on the checkmark. Published HERE, not by the Thursday wrapper
+    # grepping its own pass log, so a post made outside a wrapper pass
+    # (`lucy rerun dd_bulletin_gate`) counts too — 2026-08-20 the link was
+    # posted by hand at 9:29 and the card sat white all morning. Only the
+    # week's FIRST post counts: a --repost replacement (olds non-empty) would
+    # otherwise add a second row and green the card without any approval.
+    if not olds:
+        _publish_phase()
     return r["ts"]
+
+
+def _publish_phase(status: str = "success") -> None:
+    """One Hub Activity row under the DD card's id. The post pass and the send
+    pass each add one; the card's daily_runs:2 counts them (1 = awaiting the
+    checkmark, 2 = sent). Best-effort — a publish failure must never break the
+    post/send it is reporting on."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("dd_bulletin", "DD / Organization Bulletin",
+                                 status)
+    except Exception as e:  # noqa: BLE001
+        print(f"  (hub publish failed: {type(e).__name__} — the card pill "
+              f"will lag reality)", flush=True)
 
 
 def already_sent(today: Optional[dt.date] = None,
@@ -642,6 +665,10 @@ def main(argv=None) -> int:
             return 0
         rc = send_reviewed(args.distro, force=args.force)
         if rc == 0:
+            # PHASE 2 of the pill: the approved send actually went out this
+            # invocation (already_sent returned above, so this is not a re-run
+            # of a sent week). Greens the card from any path, wrapper or rerun.
+            _publish_phase()
             # Read the headline back so the confirmation names what was mailed,
             # not what was approved — see the module docstring.
             try:

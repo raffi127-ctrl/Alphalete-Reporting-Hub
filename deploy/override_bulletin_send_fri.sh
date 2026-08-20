@@ -77,13 +77,13 @@ echo "[$(date)] override-bulletin-send starting (gated: post -> check -> remind)
 # 1. post the week's link (idempotent; HOLDS while the copy tab is unfilled).
 "$VENV_PY" -u -m "${GATE[@]}" --post >> "$LOG_FILE" 2>&1
 ST=$?
-# PHASE 1 (1/2 = orange): a real post landed this pass. A HOLD exits 0 but prints
-# no "posted to" line, so it does NOT count phase 1 — the card stays blank until
-# the link is actually up. A crash (non-zero) reds it.
+# SUCCESS publishing moved INTO override_gate.py (2026-08-20, same day the DD
+# wrapper's was): the gate publishes phase 1 on the week's first real post and
+# phase 2 on the send, so a `lucy rerun` outside a wrapper pass counts too.
+# Publishing here as well would double-count a pass to a false green, so the
+# wrapper now reports only FAILURES (which the gate does not publish).
 if [ "$ST" -ne 0 ]; then
     _pub override_bulletin "Override Bulletin" failed
-elif grep -q "✓ posted to" "$LOG_FILE"; then
-    _pub override_bulletin "Override Bulletin" success
 fi
 
 # 2. send it if Eve has ticked it. Exit 1 just means "not approved yet" — the
@@ -91,13 +91,9 @@ fi
 if [ "$ST" -eq 0 ]; then
     "$VENV_PY" -u -m "${GATE[@]}" "${CHECK_ARGS[@]}" >> "$LOG_FILE" 2>&1
     CK=$?
-    # PHASE 2 (2/2 = green): "✓ SENT" prints only on a send that actually went out
-    # this pass (an already-sent week returns 0 quietly and does NOT re-publish, so
-    # the count never exceeds 2). Same card id as phase 1 so the two count together
-    # to green. A code >1 is approved-but-failed → 'failed' (also alerts Slack).
-    if [ "$CK" -eq 0 ] && grep -q "✓ SENT" "$LOG_FILE"; then
-        _pub override_bulletin "Override Bulletin" success
-    elif [ "$CK" -gt 1 ]; then
+    # PHASE 2 success is the gate's to publish (see above). A code >1 is
+    # approved-but-failed → 'failed' (also alerts Slack).
+    if [ "$CK" -gt 1 ]; then
         _pub override_bulletin "Override Bulletin" failed
         ST=$CK
     fi

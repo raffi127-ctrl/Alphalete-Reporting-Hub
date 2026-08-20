@@ -249,7 +249,26 @@ def post_review(link: str, wk: str, gaps=None, channel: Optional[str] = None,
                              unfurl_links=False)
     if verbose:
         print(f"✓ posted to {RG._channel(channel)} ts={r['ts']}", flush=True)
+    # PHASE 1 of the card's 2-phase pill (daily_runs:2) — same reasoning as the
+    # DD gate: published here so a post made outside a Friday wrapper pass
+    # (`lucy rerun`) still lands on the card. First post of the week only; a
+    # --repost replacement must not add a second row.
+    if not olds:
+        _publish_phase()
     return r["ts"]
+
+
+def _publish_phase(status: str = "success") -> None:
+    """One Hub Activity row under the Override Bulletin card's id. The post
+    pass and the send pass each add one; daily_runs:2 counts them (1 = awaiting
+    the checkmark, 2 = sent). Best-effort — never breaks the post/send."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("override_bulletin", "Override Bulletin",
+                                 status)
+    except Exception as e:  # noqa: BLE001
+        print(f"  (hub publish failed: {type(e).__name__} — the card pill "
+              f"will lag reality)", flush=True)
 
 
 def already_sent(wk: str, channel: Optional[str] = None) -> bool:
@@ -480,6 +499,9 @@ def main(argv=None) -> int:
             return 0
         rc = send_reviewed(args.distro, force=args.force)
         if rc == 0:
+            # PHASE 2: the approved send went out this invocation (already_sent
+            # returned above). Greens the card from any path, wrapper or rerun.
+            _publish_phase()
             confirm_sent(who[1], html_path_wk,
                          to_note=("full distro" if args.distro
                                   else "soft-launch group (4 people)"),
