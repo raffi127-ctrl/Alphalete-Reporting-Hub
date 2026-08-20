@@ -504,6 +504,13 @@ def parse_b2b(csv_path: Path) -> dict:
     color_i = header.index(color_col)
     metric_i = header.index("0-30 Day") - 1
     period_cols = {p: header.index(f"{p} Day") for p in B2B_PERIODS}
+    # SOME CHURNRATES views break the crosstab out by Rep as well as by owner.
+    # ALLTEAMWireless does (~15.9k rows, one per owner x rep x metric); the
+    # per-captain views do not (one row per owner x metric). With a Rep column,
+    # plain assignment leaves the LAST rep's numbers standing as the owner's:
+    # Atef's tab read 32.3% (10/31, one rep) on 2026-08-19/20 instead of 4.2%
+    # (37/871, his ICD). Sum the rep rows and recompute the rate from the sums.
+    by_rep = "Rep" in header
 
     office_total: dict = {}
     reps: dict = {}
@@ -529,11 +536,32 @@ def parse_b2b(csv_path: Path) -> dict:
             if not is_total and color and color != "Total":
                 slot.setdefault("color", color)
             if metric == "Churn Rate":
-                slot["pct"] = cell
+                if by_rep:
+                    slot.setdefault("_pcts", []).append(cell)
+                else:
+                    slot["pct"] = cell
             elif metric == "Disconnect count (SPE/SP)":
-                slot["num"] = _ni_shared._to_num(cell)
+                val = _ni_shared._to_num(cell)
+                if by_rep:
+                    slot["num"] = (slot.get("num") or 0) + (val or 0)
+                else:
+                    slot["num"] = val
             elif metric == "Activated SPE/SP":
-                slot["denom"] = _ni_shared._to_num(cell)
+                val = _ni_shared._to_num(cell)
+                if by_rep:
+                    slot["denom"] = (slot.get("denom") or 0) + (val or 0)
+                else:
+                    slot["denom"] = val
+
+    if by_rep:
+        for bucket in list(reps.values()) + [office_total]:
+            for slot in bucket.values():
+                pcts = slot.pop("_pcts", None)
+                denom = slot.get("denom")
+                if denom:
+                    slot["pct"] = "%.1f%%" % (100.0 * (slot.get("num") or 0) / denom)
+                elif pcts and len(set(pcts)) == 1:
+                    slot["pct"] = pcts[0]
 
     return {"office_total": office_total, "reps": reps}
 
