@@ -661,12 +661,53 @@ def _select_week(page, want, log=print) -> bool:
             # it means nothing took — say so instead of reporting a clean pick.
             log("   ⚠ [week] no apply control found — if this filter stages its "
                 "changes the selection has NOT committed")
-        # Close by clicking the dashboard itself, NOT Escape: on a staged filter
-        # Escape can discard the pending selection instead of committing it.
+        # CLOSE IT, AND PROVE IT CLOSED (2026-08-20). A single click at (8, 8)
+        # did not reliably dismiss this menu, and an open menu sits ON TOP of the
+        # viz toolbar — so the Download→Image click that follows hits the overlay
+        # and times out. That is how out_of_bounds dropped from all four B2B
+        # threads on 8/20: the pick itself was fine, the menu just never got out
+        # of the way. Escape is safe HERE (apply already committed above) but not
+        # before it, which is why the first attempt stays a plain click.
+        # Order matters. Clicking the combo box AGAIN is what actually toggles a
+        # Tableau quick-filter shut — the corner click and Escape both left it
+        # open on 8/20, which is the whole reason this section stopped posting.
+        # The click-outside has to land INSIDE THE IFRAME. page.mouse.click(8, 8)
+        # and page.keyboard.press hit the OUTER document, which the menu never
+        # sees — that is why both "worked" and left it open on 8/20. Click the
+        # viz's own title bar (top-left of the frame body, well clear of the
+        # filter row) and send Escape to an element inside the frame.
+        def _closers():
+            yield "click inside the frame", lambda: fr.locator("body").click(
+                position={"x": 8, "y": 8}, timeout=5_000)
+            yield "toggle the combo box", lambda: boxes.nth(idx).click(
+                timeout=5_000, force=True)
+            yield "Escape inside the frame", lambda: (
+                fr.locator("body").press("Escape", timeout=5_000))
+            yield "click the outer page", lambda: page.mouse.click(8, 8)
+
+        for how, act in _closers():
+            try:
+                if not fr.locator(sel).first.is_visible(timeout=3_000):
+                    break
+            except Exception:  # noqa: BLE001 — gone/detached reads as closed
+                break
+            try:
+                act()
+                log("   [week] closing the menu — {}".format(how))
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(2_000)
         try:
-            page.mouse.click(8, 8)
+            still_open = fr.locator(sel).first.is_visible(timeout=3_000)
         except Exception:  # noqa: BLE001
-            pass
+            still_open = False
+        if still_open:
+            # Say it plainly: the capture that follows is the thing that breaks,
+            # and this is the reason it will.
+            log("   ⚠ [week] the menu is STILL open over the toolbar — the "
+                "Download→Image click will likely time out")
+        else:
+            log("   [week] menu closed")
         page.wait_for_timeout(20_000)           # let the viz requery
         # The control's OWN value is the honest read of whether it moved —
         # independent of the caption the dashboard prints.
