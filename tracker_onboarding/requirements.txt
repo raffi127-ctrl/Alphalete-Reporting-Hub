@@ -8,3 +8,6 @@ streamlit>=1.30
 pandas>=2.0
 gspread>=5.10
 google-auth>=2.20
+slack_sdk>=3.21        # corrections ping + Lucy channel-membership check
+certifi>=2023.7        # SSL bundle for the Slack client
+streamlit-sortables>=0.2   # drag-and-drop tracker ordering

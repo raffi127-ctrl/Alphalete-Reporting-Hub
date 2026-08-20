@@ -31,14 +31,24 @@ ONBOARDED_JSON = (REPO_ROOT / "automations" / "tableau_screenshots"
 
 
 def _row(rec: TrackerRecord) -> dict:
+    # channel_ids is already a LIST everywhere downstream (ORG_CHANNELS), so a
+    # multi-channel enrollment just rides along — same boards to every channel.
     return {"key": rec.key, "label": rec.label(), "owner": rec.owner,
-            "channel_ids": [rec.channel_id], "trackers": rec.trackers}
+            "channel_ids": [cid for cid, _ in rec.channel_pairs()],
+            "trackers": rec.trackers}
 
 
 def plan() -> "List[dict]":
     out = []
     for d in store.load_all():
         rec = store.record_from_json(d)
+        # Self-serve ICD requests sit as "pending" until Megan confirms them in
+        # the form (status -> "wired"). A pending row must NEVER be materialized
+        # — not even by a broad `apply --write` — or an unconfirmed channel
+        # would start receiving posts.
+        if rec.status == "pending":
+            print(f"  (skipping {rec.key!r} — pending, not confirmed yet)")
+            continue
         reg = store.existing_registry(exclude_key=rec.key)
         problems = validate(rec, existing_keys=[k for k in reg["keys"] if k != rec.key],
                             existing_channels=reg["channels"])

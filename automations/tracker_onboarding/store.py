@@ -17,6 +17,12 @@ ONBOARDING_TAB = "Tracker Onboarding"
 _HEADER = ["office_key", "config_json", "channel", "n_trackers",
            "submitted_at", "submitted_by"]
 
+
+def _row_values(rec: TrackerRecord) -> list:
+    channels = ", ".join(n for _, n in rec.channel_pairs() if n)
+    return [rec.key, json.dumps(rec.to_json()), channels or rec.channel_name,
+            len(rec.trackers), rec.submitted_at, rec.submitted_by]
+
 _LOCAL_FALLBACK = (Path(__file__).resolve().parents[2] / "output"
                    / "tracker_onboarding_submissions.json")
 
@@ -47,8 +53,7 @@ def _ws():
 
 
 def save(rec: TrackerRecord) -> str:
-    row = [rec.key, json.dumps(rec.to_json()), rec.channel_name,
-           len(rec.trackers), rec.submitted_at, rec.submitted_by]
+    row = _row_values(rec)
     ws = _ws()
     if ws is not None:
         if not ws.get_all_values():
@@ -85,6 +90,43 @@ def load_all() -> "List[dict]":
         except Exception:
             return []
     return []
+
+
+def update(rec: TrackerRecord) -> str:
+    """Overwrite the (last) existing row for rec.key in place — used when Megan
+    confirms a pending request, or an ICD re-submits their own pending one.
+    Falls back to append if the key has no row yet."""
+    ws = _ws()
+    if ws is not None:
+        keys = ws.col_values(1)
+        row_i = None
+        for i, k in enumerate(keys[1:], start=2):   # skip header
+            if k == rec.key:
+                row_i = i                            # last match wins
+        if row_i is None:
+            return save(rec)
+        ws.update(f"A{row_i}:F{row_i}", [_row_values(rec)])
+        return "sheet"
+    data = []
+    if _LOCAL_FALLBACK.exists():
+        try:
+            data = json.loads(_LOCAL_FALLBACK.read_text())
+        except Exception:
+            data = []
+    data = [d for d in data if d.get("key") != rec.key]
+    data.append(rec.to_json())
+    _LOCAL_FALLBACK.parent.mkdir(parents=True, exist_ok=True)
+    _LOCAL_FALLBACK.write_text(json.dumps(data, indent=2))
+    return "local"
+
+
+def load_one(key: str) -> "Optional[dict]":
+    """The (last) submission for this office key, or None."""
+    hit = None
+    for d in load_all():
+        if d.get("key") == key:
+            hit = d
+    return hit
 
 
 def record_from_json(d: dict) -> TrackerRecord:
