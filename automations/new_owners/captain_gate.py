@@ -30,6 +30,7 @@ import datetime as dt
 from typing import Dict, List, Optional
 
 from automations.new_owners import bank, cap_insert, notify
+from automations.shared import captainship_pins as _pins
 from automations.new_owners.captain_watch import captain_name
 from automations.org_sales_board.review_gate import (
     APPROVE_EMOJI,
@@ -83,9 +84,20 @@ EXCLUDE: Dict[str, tuple] = {
 
 
 def _excluded(captain: str, name: str) -> bool:
-    """Is this rep pinned OUT of this captainship, whatever Tableau says?"""
+    """Is this rep pinned OUT of this captainship, whatever Tableau says?
+
+    TWO lists answer that, and they mean different things:
+      * EXCLUDE below — a rep who DID belong and came off these boxes (the
+        two-week zero rule, a move to another captain). Their history stays.
+      * shared/captainship_pins.NOT_ON_TEAM — a rep who was never on this team
+        at all. That one also drops them from the metrics PULLS, so the same
+        pin covers the ✅ gate and the daily reports rather than being repeated
+        in each of them.
+    """
     def _k(s):
         return " ".join(str(s or "").lower().split())
+    if _pins.is_pinned(captain, name):
+        return True
     for capt, names in EXCLUDE.items():
         if _k(capt) == _k(captain):
             return _k(name) in {_k(n) for n in names}

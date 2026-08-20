@@ -70,6 +70,13 @@ REMOVALS: dict = {
     "Raf's Captain Team": [
         ("Edgar Muniz II", "edgarmuniz2020@icloud.com"),     # "Edgar Munoz II" in Contacts
         ("Benjamin Burden", "benjaminburden02@gmail.com"),
+        # 2026-08-20 (Eve): Steve McElwee is not in Rafael's captainship at all
+        # — a different reason from the two-week zero rule above, same removal.
+        # His rows came off the board and off Rafael's six metrics tabs the
+        # same day, and Tableau is pinned in shared/captainship_pins.
+        # His card is on ONE other group, "ATT Fiber Owners", which STAYS: he
+        # is still a real ATT fiber ICD, just not one of Raf's.
+        ("Steve McElwee", "mcelwee.steve95@gmail.com"),
     ],
     "Wayne's Captain Team": [
         ("Mason Davis", "mason.d.management@gmail.com"),

@@ -89,7 +89,10 @@ RECIPIENTS: dict[str, List[str]] = {
         "Zenithzenith2099@gmail.com", "niitagoe4@gmail.com",
         "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
-        "mcelwee.steve95@gmail.com", "trang.lecanavan@gmail.com",
+        # OUT 2026-08-20 (Eve): Steve McElwee — not in Rafael's captainship.
+        # Same removal as captainship_drafts.config.RECIPIENTS and the live
+        # "Raf's Captain Team" group.
+        "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
     ],
     "starr": [

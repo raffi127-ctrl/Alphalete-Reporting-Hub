@@ -23,6 +23,7 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.new_internet_churn import pull as _shared
+from automations.shared import captainship_pins as _pins
 
 
 def _dl(view_url, crosstab_sheet, out_path, verbose=False, page=None, pre_export=None):
@@ -61,6 +62,9 @@ WIRELESS_VIEW_URL = (
     "5ac5e7e6-50e0-4965-b619-8031c65e96cd/RafWirelessTeam?:iid=1"  # re-saved 2026-06-05 (old view showed 1 rep only)
 )
 WORKSHEET = "ICD Churn"
+
+# The captainship both views are filtered to, for the roster pin below.
+TEAM = "Raf's Team"
 
 PERIODS = _shared.PERIODS
 fmt_units = _shared.fmt_units
@@ -144,5 +148,12 @@ def parse(csv_path: Path) -> dict:
             elif metric == "Activated SPE/SP":
                 slot["denom"] = _shared._to_num(cell)
             # Calculation1 (1) is a tableau normalizer — skip.
+
+    # Both views are pre-filtered to Raf's Team in Tableau, so the pin is his.
+    # Same reason as the metrics pulls: the churn fill inserts a row for any
+    # owner it doesn't already carry, so a deleted row returns tomorrow unless
+    # the name never reaches the fill. The 'Grand Total' row is Tableau's and
+    # still includes them. See automations/shared/captainship_pins.py.
+    reps = _pins.drop_reps(reps, TEAM, logfn=print, where=csv_path.name)
 
     return {"office_total": office_total, "reps": reps}

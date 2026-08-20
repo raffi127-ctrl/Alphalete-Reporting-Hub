@@ -67,6 +67,7 @@ from typing import Optional
 
 from automations.recruiting_report import opt_phase
 from automations.focus_office_att import aliases as _aliases
+from automations.shared import captainship_pins as _pins
 
 # Base Metrics dashboard with 'Metrics View' PINNED to Internet (2026-08-20 —
 # see opt_phase.pin_internet_metrics). Stays the BASE, collapsed view for the
@@ -241,5 +242,13 @@ def parse(path: Path, alias_raw: Optional[dict] = None) -> dict:
 
 
 def for_team(parsed: dict, team: str) -> dict:
-    """One captain's slice: {"avg": {...}, "reps": {name: {...}}}."""
-    return parsed.get("teams", {}).get(team, {"avg": {}, "reps": {}})
+    """One captain's slice: {"avg": {...}, "reps": {name: {...}}}.
+
+    Reps Tableau files under a captain they are not on are dropped here — the
+    fill appends a row for every owner in the slice, so the pin has to land
+    before it. `avg` is Tableau's own team row and still carries them; see
+    automations/shared/captainship_pins.py.
+    """
+    slice_ = parsed.get("teams", {}).get(team, {"avg": {}, "reps": {}})
+    slice_["reps"] = _pins.drop_reps(slice_.get("reps", {}), team, logfn=print)
+    return slice_

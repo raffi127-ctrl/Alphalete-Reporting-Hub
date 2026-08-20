@@ -32,6 +32,7 @@ from automations.captainship_activation_rate.pull import (
 )
 from automations.captainship_churn import pull as _cs   # _smart_title
 from automations.captainship_raf_metrics import boxes as B
+from automations.shared import captainship_pins as _pins
 
 CSV_NAME = "captainship_raf_metrics.csv"
 
@@ -142,6 +143,12 @@ def parse(csv_path: Path, team_value: str = B.TEAM) -> dict:
             f"No rows for {TEAM_COL} == {team_value!r} in {csv_path.name}. "
             f"Teams present: {teams}. The team was renamed in SFDC — update "
             f"boxes.TEAM.")
+
+    # Pinned out of Raf's captainship whatever the team filter says. Applied
+    # in the PULL and not in the fill, because fill.place_reps appends a row
+    # for every owner the pull returns — deleting the row alone would only
+    # last until tomorrow. See automations/shared/captainship_pins.py.
+    reps = _pins.drop_reps(reps, team_value, logfn=print, where=csv_path.name)
 
     return {"office_total": office_total, "reps": reps}
 

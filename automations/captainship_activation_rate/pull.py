@@ -32,6 +32,7 @@ from typing import Optional
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.captainship_churn import pull as _cs   # _smart_title
 from automations.recruiting_report import opt_phase as _opt
+from automations.shared import captainship_pins as _pins
 
 # The base Metrics dashboard, with its 'Metrics View' selector PINNED to
 # Internet (2026-08-20 — a stray flip to Wireless killed this report and four
@@ -205,6 +206,14 @@ def parse(csv_path: Path, team_value: Optional[str] = None,
             f"Teams present: "
             f"{sorted({(r[team_i] or '').strip() for r in rows[1:] if len(r) > team_i})}"
         )
+
+    # A rep Tableau still files under a captain they are not on would get an
+    # owner row appended to the tab tomorrow even after the row is deleted, so
+    # the pin is applied HERE, once, for every report off this parser
+    # (activation rate + captainship_abp_6days). The office_total is Tableau's
+    # own team row and still carries them — see the pins module.
+    reps = _pins.drop_reps(reps, team_value or "Grand Total",
+                           logfn=print, where=csv_path.name)
 
     return {"office_total": office_total, "reps": reps}
 

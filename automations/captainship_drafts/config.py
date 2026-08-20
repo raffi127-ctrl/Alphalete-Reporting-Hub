@@ -335,7 +335,12 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com", "Zenithzenith2099@gmail.com",
         "niitagoe4@gmail.com", "raffi127@gmail.com",
         "rashadreed715@gmail.com", "salikmallick6@gmail.com",
-        "mcelwee.steve95@gmail.com", "trang.lecanavan@gmail.com",
+        # OUT 2026-08-20 (Eve): Steve McElwee (mcelwee.steve95@gmail.com) is not
+        # in Rafael's captainship. Off the board, off his six metrics tabs and
+        # off the live "Raf's Captain Team" group the same day — and since that
+        # group is SHARED with the Org Sales Board email, off that mail too. He
+        # keeps "ATT Fiber Owners": still an ATT fiber ICD, just not Raf's.
+        "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
     ],
     "wayne": [
