@@ -30,7 +30,25 @@ from typing import Optional
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.captainship_activation_rate import pull as _act
 
-VIEW_URL = _act.VIEW_URL
+# MetricsINTfullyEXP, not the BASE Metrics view the activation report uses
+# (2026-08-20). The base view carries a live Internet/Wireless filter that any
+# viewer can flip: on 2026-08-20 it came down set to Wireless, so the Crosstab
+# dialog offered only '… (Wireless)' + the speedtest sheet and all six fills
+# died. This custom view bakes the Internet filter in, so a stray filter change
+# can't reach us. [[project_metrics-internet-worksheet-gone-from-view]]
+#
+# Safe HERE and not for the siblings, measured the same day against the 8/19
+# column already on the tabs: MetricsINTfullyEXP reproduces every ABP and
+# 6-days-out value EXACTLY for all six captains, because both are office-level
+# mixes that don't move when the view is expanded to Rep Name. The activation
+# 30-60 DOES move under that expansion (0.1-1.5 pts — the partial-cohort drift
+# captainship_cancel_rate documents), so captainship_activation_rate and
+# captainship_cancel_rate must keep reading the collapsed base view.
+# Do NOT use ALLEXP here: it bakes the 'This Week' parameter and its ABP came
+# back up to 4 points off (starr 89.2% vs the 93.4% the tab carries).
+VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER2_1-D2D/Metrics/"
+            "de2c904b-1438-4d76-bb14-8e5b2861d2ec/MetricsINTfullyEXP")
 WORKSHEET = _act.WORKSHEET
 
 # Box key -> crosstab column header. Box keys match fill.BOX_LABELS.
