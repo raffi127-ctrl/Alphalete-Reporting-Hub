@@ -14,7 +14,54 @@ from __future__ import annotations
 
 import datetime as dt
 
-from automations.funnel_board.roster import ORG, CAPTAINSHIP
+# The roster is the source of truth WHEN IT IS PRESENT. It arrived on a branch
+# that had not reached main yet, and a plain import made this whole report a
+# ModuleNotFoundError on any runner that pulled main — so fall back to a frozen
+# copy rather than fail. Once roster.py lands on main this stops being used and
+# the two can never drift, because the import wins.
+try:
+    from automations.funnel_board.roster import ORG, CAPTAINSHIP
+    _SOURCE = "funnel_board.roster"
+except ImportError:                                   # roster not on this checkout
+    _SOURCE = "frozen fallback (funnel_board.roster absent)"
+    # (name, office id, AppStream owner) — resolved from the #searchMC picker
+    # 2026-08-19. The owner column is why name lookup alone is not enough:
+    # Salik Mallick's office is listed under "Muhammad UI Haque".
+    ORG = [
+        ("Atef Choudhury", "23467", "Atef Choudhury"),
+        ("Aya Al-Khafaji", "22992", "Aya Al-Khafaji"),
+        ("Carlos Hidalgo", "11580", "CARLOS HIDALGO"),
+        ("Cody Cannon", "21151", "Cody Cannon"),
+        ("Cyrus Wade", "22815", "Cyrus Wade"),
+        ("Drew Tepper", "22583", "Drew Tepper"),
+        ("Haytham Nagi", "22524", "Haytham Nagi"),
+        ("Isaiah Revelle", "19717", "Isaiah Revelle"),
+        ("Jacob Dover", "23607", "Jacob Dover"),
+        ("Kash Rai", "22177", "Akashdeep Rai"),
+        ("Khalil Mansour", "11901", "KHALIL MANSOUR"),
+        ("Maxamad-Amin Aden", "23066", "Maxamad Aden"),
+        ("Rafael Hidalgo", "11280", "Rafael Hidalgo"),
+        ("Rashad Reed", "23411", "Rashad Reed"),
+        ("Roshan Amin", "19833", "Roshan Amin Ahmad"),
+        ("Ryan McSpadden", "22820", "Ryan McSpadden"),
+        ("Salik Mallick", "21328", "Muhammad UI Haque"),
+    ]
+    CAPTAINSHIP = [
+        ("Carlos Hidalgo", "11580", "CARLOS HIDALGO"),
+        ("Atef Choudhury", "23467", "Atef Choudhury"),
+        ("Jamis Garay", "19592", "Jamis Garay"),
+        ("Jackie LeRoy", "22358", "Jackie LeRoy"),
+        ("Noah Dubale", "23356", "Noah Dubale"),
+        ("Jeff Starr", "15031", "Jeffrey Starr"),
+        ("Kinsey Guenther", "11906", "Kinsey Guenther"),
+        ("Vincent Smith", "23318", "Vincent Smith"),
+        ("George Hipolito", "11296", "George Hipolito"),
+        ("Justin Wood", "22192", "Justin Wood"),
+        # Two offices answer to "Joshua Murphy"; Carlos confirmed 21770.
+        ("Joshua Murphy", "21770", "Joshua Murphy"),
+        ("Joey Ramirez", "23206", "Joey Ramirez"),
+        ("Dhyey Patel", "22767", "Dhyey Patel"),
+    ]
 
 
 def _dedupe():
