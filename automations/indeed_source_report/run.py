@@ -19,6 +19,49 @@ import traceback
 from . import fetch, parse, sheet
 from .offices import OFFICES, month_window
 
+# Hub identity. log_completed self-registers a Report Library card under this
+# id on the first real run, so the report is visible on the Hub (card + pill +
+# needs-attention strip) — Megan's standing rule: a LaunchAgent report must
+# publish its runs, or silence and success look identical.
+CARD_ID = "indeed-source-report"
+CARD_NAME = "Indeed Ad Performance (Source Report)"
+INCIDENT_KEY = "indeed-source-report"
+
+
+def _publish_outcome(status, headline, details, *, started_at=None,
+                     dry_run=False):
+    """Hub run row + corrections-channel alert, both best-effort.
+
+    Standing rules this implements (same shape as applicant_tracker/run.py):
+    every run lands in Hub Activity so the card's pill tells the truth, and
+    every failure posts to #claudecorrections-and-requests in real time —
+    NOT into a log nobody reads. A clean run closes the incident thread.
+    Skipped entirely on --dry-run. Under the orchestrator (HUB_REPORT_ID set)
+    the pill row is the orchestrator's job; the alert is still ours."""
+    if dry_run:
+        return
+    import os
+    if not os.environ.get("HUB_REPORT_ID"):
+        try:
+            from automations.shared import hub_activity
+            hub_activity.log_completed(CARD_ID, CARD_NAME, status=status,
+                                       started_at=started_at)
+        except Exception:  # noqa: BLE001 — reporting never sinks the report
+            pass
+    try:
+        if status == "success":
+            from automations.shared import incident_thread as _inc
+            _inc.resolve_if_open(INCIDENT_KEY, what="*Indeed Source Report*",
+                                 detail="Clean refresh — every office wrote.")
+        else:
+            from automations.day_orchestrator import notify
+            notify.post_alert(headline, details, tag=INCIDENT_KEY,
+                              incident=INCIDENT_KEY,
+                              label="*Indeed Source Report*")
+    except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+        print("  (corrections post skipped: %s)" % e, flush=True)
+
+
 YTD_LABEL = "YTD (all months)"
 def rows_for(manager, period, ads):
     out, tot = [], parse.blank()
@@ -41,6 +84,7 @@ def main(argv=None):
     ap.add_argument("--office", action="append", help="limit to office id(s)")
     ap.add_argument("--headed", action="store_true")
     a = ap.parse_args(argv)
+    run_started = dt.datetime.now()
 
     period, rng, start, end = month_window(a.month)
     targets = [(o, n) for o, n in OFFICES if not a.office or o in a.office]
@@ -60,6 +104,17 @@ def main(argv=None):
             print("  fix: install the applicant_tracker service-account key here "
                   "(preferred), or share the workbook with this machine's Google "
                   "account. Nothing was pulled and nothing was changed.", flush=True)
+            _publish_outcome(
+                "failed",
+                "🗂️ *Indeed Source Report ABORTED — this machine can't write "
+                "the workbook*",
+                ["• Preflight write failed before anything was pulled: %s"
+                 % str(e)[:200],
+                 "• Fix: install the applicant_tracker service-account key on "
+                 "this machine (`set_applicant_service_account` action), or "
+                 "share the workbook with its Google account.",
+                 "• Nothing was pulled and nothing was changed."],
+                started_at=run_started, dry_run=a.dry_run)
             return 3
 
     from automations.shared.tableau_patchright import appstream_direct_session
@@ -156,7 +211,17 @@ def main(argv=None):
               flush=True)
         for oid, name, err in failures:
             print("   %-8s %-30s %s" % (oid, name[:30], err), flush=True)
+        _publish_outcome(
+            "partial",
+            "🗂️ *Indeed Source Report — %d of %d office(s) did not refresh*"
+            % (len(failures), len(targets)),
+            ["• %s (%s): %s" % (name, oid, str(err)[:160])
+             for oid, name, err in failures]
+            + ["• Their rows were left untouched; every other office wrote."],
+            started_at=run_started, dry_run=a.dry_run)
         return 2
+    _publish_outcome("success", "", [], started_at=run_started,
+                     dry_run=a.dry_run)
     return 0
 
 
@@ -165,4 +230,15 @@ if __name__ == "__main__":
         sys.exit(main())
     except Exception:  # noqa: BLE001
         traceback.print_exc()
+        # A crash outside main's own handling (session died, parse blew up)
+        # must still reach the Hub + corrections channel — an unhandled
+        # traceback in a launchd log is the definition of failing silently.
+        _tail = traceback.format_exc().strip().splitlines()[-1][:200]
+        _publish_outcome(
+            "failed",
+            "🗂️ *Indeed Source Report CRASHED before finishing*",
+            ["• %s" % _tail,
+             "• Full traceback in output/logs/indeed_source_report_*.log on "
+             "the machine that ran it."],
+            dry_run=("--dry-run" in sys.argv))
         sys.exit(1)
