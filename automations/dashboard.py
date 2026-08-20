@@ -1735,8 +1735,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "9:00 AM",
-            # Pill text: makes clear the Sunday run also emails the standings.
-            "time_label": "9 AM daily · 📧 emails standings each Sunday",
+            "time_label": "9 AM",
             "estimated_minutes": 3,
         },
         "description": (
