@@ -4286,6 +4286,21 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
     return ok_all, " · ".join(out)
 
 
+def _action_install_indeed_source_report(args: str) -> tuple[bool, str]:
+    """Install the Indeed Ad Performance refresh agent on THIS machine (Lucy 2).
+
+    Rebuilds the CURRENT month of the "Indeed Ad Performance" tab in the Alphalete
+    Org Applicant Tracker from AppStream's Source Report, for all 28 offices, at
+    4:00am / 12:00pm / 5:00pm. Idempotent — reinstalling re-locks the plist.
+    `git pull` (update) must have landed the plist first."""
+    from automations.day_orchestrator import install_agent
+    try:
+        ok, msg = install_agent.install("indeed-source-report")
+    except Exception as e:  # noqa: BLE001 — report the reason, never a stack trace
+        return False, f"{type(e).__name__}: {str(e)[:120]}"
+    return ok, msg[:400]
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -4502,6 +4517,7 @@ ACTIONS = {
     "incident_working": _action_incident_working,
     "incident_unmark": _action_incident_unmark,
     "install_enrollment_pending": _action_install_enrollment_pending,
+    "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
