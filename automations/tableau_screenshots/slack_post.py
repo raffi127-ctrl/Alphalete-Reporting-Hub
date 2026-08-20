@@ -828,6 +828,20 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     channels = channels_for(org)
     from automations.tableau_screenshots import pages as _pages_mod
 
+    # CROSS-MACHINE guard. _ChannelPostLock below is a flock, so it only sees
+    # other runs on THIS machine — and "the mini is running the trackers while
+    # the same report is kicked off from the laptop" is a normal day here. This
+    # claims the report+day in the shared control workbook, which both machines
+    # reach, so the second one waits instead of racing the dedup.
+    #
+    # Re-entrant per process and keyed on the report+day, NOT the org: a run that
+    # posts 15 orgs claims once. Best-effort — if the sheet is unreachable we log
+    # it and post anyway (see cross_machine_lock: duplicates are cosmetic, a
+    # report that never goes out is not).
+    from automations.shared.cross_machine_lock import SharedLock
+    _lock = SharedLock("tableau_screenshots|{}".format(today.isoformat()),
+                       note="posting trackers ({})".format(org))
+
     # Filter + order to THIS org's tracker selection FIRST (a subset channel like
     # #domin8-b2b-sales, and the only route an opt_in_only board takes to a
     # channel). Drops both the header line (pages) and the image reply (captures)
@@ -882,30 +896,31 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
 
     client = smp._client()
     channel_results = []
-    for channel in channels:
-        try:
-            channel_results.append(
-                _post_to_channel(client, channel, captures, pages, today,
-                                 replace=replace, late_all=late_all,
-                                 new_thread=new_thread, note=note,
-                                 updated=updated))
-        except DedupReadUnavailable as e:
-            # SOFT miss: we could not read what's already in this channel, so we
-            # deliberately post NOTHING (a blind post duplicates today's thread).
-            # `soft` tells run.py to record an INCOMPLETE + fire the alert without
-            # exiting 1 — one unreadable channel must not fail the whole run.
-            print(f"  {channel}: {e.method} failed ({e.err}) — SKIPPING this "
-                  f"channel; can't confirm what's already posted, and posting "
-                  f"blind would duplicate today's thread", flush=True)
-            channel_results.append(
-                {"channel": channel, "ok": False, "soft": True,
-                 "error": f"dedup read blocked: {e.method} → {e.err} "
-                          f"(nothing posted — no duplicate thread)"})
-        except Exception as e:
-            # _slack_err already names the Slack code (or the exception type for a
-            # non-Slack error) — no second type prefix.
-            channel_results.append(
-                {"channel": channel, "ok": False, "error": _slack_err(e)[:160]})
+    with _lock:
+        for channel in channels:
+            try:
+                channel_results.append(
+                    _post_to_channel(client, channel, captures, pages, today,
+                                     replace=replace, late_all=late_all,
+                                     new_thread=new_thread, note=note,
+                                     updated=updated))
+            except DedupReadUnavailable as e:
+                # SOFT miss: we could not read what's already in this channel, so we
+                # deliberately post NOTHING (a blind post duplicates today's thread).
+                # `soft` tells run.py to record an INCOMPLETE + fire the alert without
+                # exiting 1 — one unreadable channel must not fail the whole run.
+                print(f"  {channel}: {e.method} failed ({e.err}) — SKIPPING this "
+                      f"channel; can't confirm what's already posted, and posting "
+                      f"blind would duplicate today's thread", flush=True)
+                channel_results.append(
+                    {"channel": channel, "ok": False, "soft": True,
+                     "error": f"dedup read blocked: {e.method} → {e.err} "
+                              f"(nothing posted — no duplicate thread)"})
+            except Exception as e:
+                # _slack_err already names the Slack code (or the exception type for a
+                # non-Slack error) — no second type prefix.
+                channel_results.append(
+                    {"channel": channel, "ok": False, "error": _slack_err(e)[:160]})
 
     return {
         "ok": all(c.get("ok") for c in channel_results) if channel_results else False,
