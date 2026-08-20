@@ -29,9 +29,19 @@ git config core.hooksPath deploy/git-hooks 2>/dev/null || true
 
 # Self-update: fast-forward to latest before the run so config/code changes land
 # without a manual pull (the source of all the babysitting on 2026-06-24).
-# Best-effort: only when the working tree is clean; never blocks the run.
-if [ -d .git ] && [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
-  git pull --ff-only --quiet origin main 2>/dev/null || true
+#
+# --autostash, NOT a clean-tree gate (Megan 2026-08-20). The old test required
+# `git status --porcelain -uno` to be EMPTY, so ANY tracked modification made
+# this silently skip — and the runner then ran all day on stale code with no
+# signal. Lucy 2 had been stuck 3 commits behind on exactly that: two deploy
+# scripts showed as modified with ZERO changed lines, a file-MODE change from a
+# chmod during an install. A metadata difference with no content behind it was
+# blocking every deploy.
+#
+# autostash is what `lucy update` already uses successfully: stash, fast-forward,
+# restore. Still best-effort — a failure never blocks the run.
+if [ -d .git ]; then
+  git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
 fi
 
 # macOS Sequoia fork-safety + proxy workarounds (mirrors appstream_morning.sh so
