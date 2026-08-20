@@ -260,6 +260,11 @@ def build(*, write: bool = True, log=_log) -> dict:
             num, den = f"({num}+{cap})", f"({den}+{cap})"
         return f'=IFERROR(IF({den}=0,"",{num}/{den}),"")'
 
+    # Profit BEFORE the captain's bonus is added back — this is the figure
+    # the Commission tab's TOTAL Profit/Loss shows, so Carlos can tie the two
+    # together directly (Carlos, 2026-08-20).
+    add("Total Gross Profit (no captainship)",
+        lambda b: ref(b, b["total_pnl"]), "money", bold=True, tone="profit")
     add("Total Gross Profit (incl. captainship)", _gross, "money",
         bold=True, tone="profit")
     add("Profit Margin %", _gross_margin, "pct", bold=True, tone="profit")
