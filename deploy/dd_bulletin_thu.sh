@@ -95,8 +95,12 @@ if [ "$ST" -eq 0 ]; then
 fi
 
 # 3. nudge once after 3h, and on the last pass say so if nobody approved.
+#    22, not 13: the pass window now runs into the evening (hourly 14:00-22:00
+#    after the 25-min morning passes) so a late checkmark still releases the
+#    send — closing the day at 13:00 would declare "nobody approved" with nine
+#    passes still to go.
 "$VENV_PY" -u -m "${GATE[@]}" --remind >> "$LOG_FILE" 2>&1 || true
-if [ "$(date +%H)" -ge 13 ]; then
+if [ "$(date +%H)" -ge 22 ]; then
     "$VENV_PY" -u -m "${GATE[@]}" --close-day >> "$LOG_FILE" 2>&1 || true
 fi
 
@@ -117,41 +121,13 @@ else
     echo "[$(date)] publish is the gate's job now — wrapper reports failures only" >> "$LOG_FILE"
 fi
 
-# --- Up and Coming RCs and NCs — the EMAIL-ONLY companion sent right after the DD
-# bulletin (Megan 2026-07-31). It reuses the DD data and stays in LOCK-STEP: the
-# pass that sends the DD bulletin sends this too, every other pass holds it.
-#
-# That lock-step now runs through the gate. It used to derive its args from the
-# DD's ARGS and fire on every pass, self-guarding on its own week marker; with the
-# DD waiting on Evelyn's checkmark, firing unconditionally would mail the
-# companion to the whole org on a Thursday nobody ever approved the bulletin.
-# So it runs ONLY on the pass where the DD actually went out, and mirrors the
-# gate's mode rather than a variable the gate no longer defines.
-#
-# "Went out" is read from THIS pass's log: the gate's send prints "emailed …" at
-# column 0 only on the pass that mails the bulletin. This used to be the $_PUB
-# log-grep; ebc5807 moved the Hub publish into the gate and removed _PUB, but
-# under `set -u` the read left behind here killed every pass before the
-# companion could run (Thu 2026-08-20 — rcs_ncs recorded no run).
-case " ${CHECK_ARGS[*]} " in
-    *" --distro "*) RCS_ARGS=(--rcs-ncs --send --notify) ;;
-    *)              RCS_ARGS=(--rcs-ncs --test --send) ;;
-esac
-_RPUB=""
-if grep -q "^emailed " "$LOG_FILE"; then
-    echo "[$(date)] rcs-ncs starting (mode: ${RCS_ARGS[*]})" >> "$LOG_FILE"
-    "$VENV_PY" -u -m automations.override_bulletin.send "${RCS_ARGS[@]}" >> "$LOG_FILE" 2>&1
-    RST=$?
-    echo "[$(date)] rcs-ncs finished exit=$RST" >> "$LOG_FILE"
-    if [ "$RST" -ne 0 ]; then
-        _RPUB=failed
-    elif grep -q "^emailed .*Up and Coming RCs and NCs" "$LOG_FILE"; then
-        _RPUB=success
-    fi
-else
-    echo "[$(date)] rcs-ncs held — the DD bulletin did not send on this pass" >> "$LOG_FILE"
-fi
-[ -n "$_RPUB" ] && "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('rcs_ncs','Up and Coming RCs and NCs','$_RPUB')" >> "$LOG_FILE" 2>&1 || true
+# The 'Up and Coming RCs and NCs' companion is the GATE's job now (2026-08-20):
+# review_gate.send_companion fires it right after the DD send that actually goes
+# out, whichever path released it — a pass here or `lucy rerun dd_bulletin_gate`
+# after the window. The lock-step block that lived here only saw its own passes
+# (and its $_PUB read died under set -u all of Thu 2026-08-20, so the companion
+# never ran at all). Do NOT re-add a send here: two callers means either a
+# double-fire race or another variable drifting out from under one of them.
 
 # A held pass exits 0 — a correct hold, not a failure; the next pass tries again.
 exit $ST

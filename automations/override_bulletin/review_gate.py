@@ -564,6 +564,47 @@ def send_reviewed(distro: bool = False, force: bool = False,
     return subprocess.call(cmd)
 
 
+def send_companion(distro: bool = False, verbose: bool = True) -> None:
+    """Fire the 'Up and Coming RCs and NCs' email right after the DD send that
+    actually went out — HERE, not in the Thursday wrapper, so the companion
+    rides on EVERY path a send can take (a wrapper pass, `lucy rerun
+    dd_bulletin_gate` after the pass window). The wrapper's old lock-step block
+    only saw its own passes; a send released by rerun left the companion unsent
+    (2026-08-20). Mode mirrors the DD send: --distro → both contact groups,
+    otherwise the 4-person test group — same rule as send_reviewed.
+
+    Best-effort ON PURPOSE: the bulletin is already out when this runs, so a
+    companion failure must never flip the gate's exit code into "the send
+    failed". It publishes its own Hub pill ('rcs_ncs') instead — success only
+    when the sender actually printed an 'emailed' line; exit 0 with no email is
+    a correct hold (hard-block or already sent this week) and leaves the pill
+    quiet. send.py alerts #claudecorrections itself on a hard-block."""
+    cmd = [sys.executable, "-u", "-m", "automations.override_bulletin.send",
+           "--rcs-ncs", "--send"] + (["--notify"] if distro else ["--test"])
+    if verbose:
+        print(f"→ {' '.join(cmd)}", flush=True)
+    status = None
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        print((proc.stdout or "") + (proc.stderr or ""), end="", flush=True)
+        if proc.returncode != 0:
+            status = "failed"
+        elif any(line.startswith("emailed ")
+                 for line in (proc.stdout or "").splitlines()):
+            status = "success"
+    except Exception as e:  # noqa: BLE001 — never fail the gate for the rider
+        print(f"  (companion send crashed: {type(e).__name__}: {e})", flush=True)
+        status = "failed"
+    if status:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_done("rcs_ncs", "Up and Coming RCs and NCs",
+                                     status)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (hub publish failed: {type(e).__name__} — the rcs_ncs "
+                  f"pill will lag, the email did what it did)", flush=True)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--post", action="store_true",
@@ -679,6 +720,9 @@ def main(argv=None) -> int:
                          to_note=("full distro" if args.distro
                                   else "soft-launch group (4 people)"),
                          today=today, channel=args.channel)
+            # The 'Up and Coming RCs and NCs' companion rides on the send that
+            # went out, whatever released it and whenever Evelyn ticked it.
+            send_companion(args.distro)
         else:
             report_failure(rc, today, args.channel)
         return rc

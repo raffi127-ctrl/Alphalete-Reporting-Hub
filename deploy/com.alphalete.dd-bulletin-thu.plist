@@ -23,12 +23,17 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- THURSDAYS only (Weekday 4). Passes 10:30-13:00 Central, every 25 min —
-         AFTER Eve's 10am deadline for opening the week's column on the DD tab
-         (Eve 2026-07-30). This report never writes that tab, so the send has to
-         wait for her; in the 4am batch it fired first and republished last week.
+    <!-- THURSDAYS only (Weekday 4). Passes 10:30-13:00 Central every 25 min,
+         then HOURLY 14:00-22:00 (Megan 2026-08-20: the send is released by
+         Evelyn's checkmark, so the gate has to keep watching for it no matter
+         what time she ticks — 13:00 used to be the last look, and a later
+         approval sat unsent until someone reran the gate by hand). Morning
+         stays dense because that's when Eve fills the tab (10am deadline) and
+         approval usually lands; evening passes are cheap checkmark polls.
          Repeats are safe: the send refuses a stale week, refuses a blocking data
-         problem, and records the week it sent so it cannot double-email.
+         problem, and records the week it sent so it cannot double-email. The
+         22:00 pass also runs --close-day (dd_bulletin_thu.sh keys it to hour
+         >= 22 — keep the two in sync when moving the last pass).
          TIME KNOB: edit these entries (Hour/Minute are machine LOCAL time; the
          mini is Central). -->
     <key>StartCalendarInterval</key>
@@ -40,6 +45,15 @@
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>10</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>35</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
