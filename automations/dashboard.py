@@ -1192,13 +1192,13 @@ MEMBERS = [
     # `email` powers the "Ask for an update" button on claimed backlog cards.
     # Fill these in (or correct any guesses) — when blank, the button opens
     # an empty mailto and the requester types the address manually.
-    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": "alphaletereporting@gmail.com"},
+    # Eve + Maud removed 2026-08-20 (Megan): their profiles held zero reports —
+    # everything runs on the Lucys or Office Operations now.
     # Not people — buckets for reports that run on a schedule with NO human
     # trigger (fully unattended via patchright auto-login). No email.
     # Lucy 1 = the main mini; Lucy 2 = Carlos's machine (his org's reports).
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
-    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
     # Office Operations — a functional profile (not a single person) that holds
     # office-run workflows anyone on staff can pick up: new-hire swag texts,
     # etc. People navigate here to find those cards. (Megan 2026-07-13)
@@ -12303,10 +12303,11 @@ if st.session_state.view == "home":
     """, unsafe_allow_html=True)
 
     st.markdown("### 🐺 The Pack")
-    # Layout (Megan 2026-07-13): two full, gap-free rows of 3. Top row = the
-    # Lucy automations on the outer columns (Megan's preference) with Office
-    # Operations filling the middle; bottom row = the people (Eve, Maud) + the
-    # Unassigned bucket. Any other/new members flow into full rows below.
+    # Layout (Megan 2026-07-13): one full row of 3 — the Lucy automations on
+    # the outer columns (Megan's preference) with Office Operations in the
+    # middle. Eve/Maud/Unassigned cards removed 2026-08-20 (Megan): all empty.
+    # The Unassigned bucket still appears (bottom row) whenever an uploaded
+    # report actually lands without an assignee, so those stay reachable.
     UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
     _by_name = {m["name"]: m for m in MEMBERS}
@@ -12315,7 +12316,8 @@ if st.session_state.view == "home":
     _top = [c for c in _top if c]
     _placed = {"Lucy 1", "Lucy 2", "Office Operations"}
     _bottom = [m for m in MEMBERS if m["name"] not in _placed]
-    _bottom.append(UNASSIGNED_CARD)
+    if any(not r.get("assignees") for r in AUTOMATED_REPORTS):
+        _bottom.append(UNASSIGNED_CARD)
     pack_rows = [(_top, list(range(len(_top))))]
     for i in range(0, len(_bottom), PACK_COLS):
         chunk = _bottom[i:i + PACK_COLS]
@@ -12867,10 +12869,10 @@ else:  # st.session_state.view == "user"
         _this_week_strip(today, my_reports, user_name)
         st.markdown("---")
 
-        # ---- Document Generations (Maud) — quick links to the self-serve
-        # Document Builder app + its access codes, so she can jump straight in
-        # without hunting for the URLs. Its own labeled area (not the schedule).
-        if user_name == "Maud":
+        # ---- Document Generations (Office Operations) — quick links to the
+        # self-serve Document Builder app + its access codes. Its own labeled
+        # area (not the schedule). Moved off Maud's profile (Megan 2026-08-20).
+        if user_name == "Office Operations":
             st.markdown("### 🧾 Document Generations")
             with st.container(border=True):
                 st.markdown(
