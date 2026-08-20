@@ -268,16 +268,34 @@ fi
 # crashes the Hub with 'RuntimeError: reentrant call inside <_io.BufferedWriter>'
 # (Eve, 2026-05-22). Teammates get new code via git pull + Hub restart anyway.
 NATIVE_ARCH="$(arch 2>/dev/null || echo unknown)"
-if [ "$NATIVE_ARCH" = "arm64" ]; then
-  exec /usr/bin/arch -arm64 ./.venv/bin/python -m streamlit run automations/dashboard.py \
-    --server.headless true \
-    --server.address 0.0.0.0 \
-    --server.port "$PORT" \
-    --server.fileWatcherType=none
-else
-  exec ./.venv/bin/python -m streamlit run automations/dashboard.py \
-    --server.headless true \
-    --server.address 0.0.0.0 \
-    --server.port "$PORT" \
-    --server.fileWatcherType=none
-fi
+
+# ----- Supervised run: the Hub can restart itself onto new code -----
+# The sidebar's "N update(s) behind" badge gets an "Update & restart" button
+# when HUB_SUPERVISED=1. Clicking it writes the marker below and exits the
+# server; this loop then pulls, re-syncs packages, and starts it again on the
+# same port (the browser tab reconnects on its own). Quitting the Terminal
+# window still kills everything — no marker, no loop.
+RESTART_MARKER="$HOME/.config/recruiting-report/.hub-restart-requested"
+export HUB_SUPERVISED=1
+while :; do
+  rm -f "$RESTART_MARKER"
+  if [ "$NATIVE_ARCH" = "arm64" ]; then
+    /usr/bin/arch -arm64 ./.venv/bin/python -m streamlit run automations/dashboard.py \
+      --server.headless true \
+      --server.address 0.0.0.0 \
+      --server.port "$PORT" \
+      --server.fileWatcherType=none
+  else
+    ./.venv/bin/python -m streamlit run automations/dashboard.py \
+      --server.headless true \
+      --server.address 0.0.0.0 \
+      --server.port "$PORT" \
+      --server.fileWatcherType=none
+  fi
+  [ -f "$RESTART_MARKER" ] || break
+  echo ""
+  echo "→ Hub asked to restart — pulling latest and starting again…"
+  git pull --ff-only --quiet origin main 2>/dev/null \
+    || echo "⚠️  Pull failed (offline, or an update overlaps a local edit) — restarting on current code"
+  ./.venv/bin/python -m pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null || true
+done

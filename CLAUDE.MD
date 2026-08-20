@@ -6,6 +6,14 @@ financial pulls, daily focus, first-sale/last-sale, production
 breakdowns. Code lives under `automations/`, surfaced as cards in
 `automations/dashboard.py` (a Streamlit app).
 
+**Naming quirk (one codebase, two names):** the GitHub repo is
+`Alphalete-Reporting-Hub`, but every TEAM machine clones it to
+`~/recruiting-report` (the project's original name — renaming would
+break every install). Megan's copy lives in `~/1st Claude Folder`
+instead. Same repo, same code: if a session on a team machine talks
+about `~/recruiting-report`, that IS the Hub — don't go hunting for a
+separate repo (that goose chase burned a whole day on 2026-08-20).
+
 # About Me
 
 We own a D2D sales company. My goal is to automate communication with

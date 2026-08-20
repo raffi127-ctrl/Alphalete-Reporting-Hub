@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Recruiting Report — one-click installer
+# Alphalete Reporting Hub — one-click installer
 # Double-click this file to set up the dashboard on a new Mac.
 # No Terminal commands to copy/paste. Takes ~5 minutes.
 #
@@ -40,7 +40,7 @@ on_error() {
     echo ""
     echo "Take a screenshot of this window and send it to Megan."
     echo "Then close this window."
-    show_dialog "Recruiting Report — Setup Failed" "Something went wrong. Take a screenshot of the Terminal window and send it to Megan." "stop"
+    show_dialog "Alphalete Reporting Hub — Setup Failed" "Something went wrong. Take a screenshot of the Terminal window and send it to Megan." "stop"
     # Keep window open
     echo ""
     read -p "Press Enter to close this window."
@@ -50,7 +50,7 @@ trap on_error ERR
 
 clear
 bold "════════════════════════════════════════════════"
-bold "  🐺  Recruiting Report — One-Click Setup"
+bold "  🐺  Alphalete Reporting Hub — One-Click Setup"
 bold "════════════════════════════════════════════════"
 echo ""
 echo "This will install everything you need. Takes ~5 minutes."
@@ -182,7 +182,7 @@ echo "The 🐺 Alphalete Reporting Hub icon is now in your Dock."
 echo "Click it any time you want to open the hub."
 echo ""
 
-show_dialog "Recruiting Report — Ready!" "Setup complete. The 🐺 wolf icon is now in your Dock — click it any time to open the hub." "note"
+show_dialog "Alphalete Reporting Hub — Ready!" "Setup complete. The 🐺 wolf icon is now in your Dock — click it any time to open the hub." "note"
 
 echo ""
 read -p "Press Enter to close this window."

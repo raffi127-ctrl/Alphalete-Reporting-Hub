@@ -43,6 +43,9 @@ from typing import Dict, List, Optional, Set, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_PY = REPO_ROOT / "automations" / "dashboard.py"
+# Cards were split out of dashboard.py 2026-08-20; scan both so ids in either
+# file (and any card that ever moves back) keep counting as hardcoded.
+HUB_CARDS_PY = REPO_ROOT / "automations" / "hub_cards.py"
 CONFIG_PATH = Path(__file__).resolve().parent / "schedule_config.json"
 
 # Mirror of dashboard.SHARED_LIBRARY_* (not imported — importing dashboard pulls
@@ -63,6 +66,8 @@ _SKIP_RE = re.compile(
     r"|recruiting_backfill_juan|applicant_clear_session"
     r"|harvest_prime"                       # churn-cache warm — internal, not a report
     r"|dd_headshots_sync|dd_special_accumulate"  # DD sub-steps under dd-bulletin
+    r"|session_proof_"                      # ownerville session-holder heartbeats
+    r"|tableau_ledger"                      # access-budget ledger summaries
     r").*|.*(_slack|_post|_send|_finalize)$")
 
 # Reports whose card already exists under an id slug() can't derive — map by hand
@@ -115,13 +120,17 @@ def is_internal(report_id: str) -> bool:
 
 # ---------------------------------------------------------------- card inventory
 def _hardcoded_card_ids() -> Set[str]:
-    """Card ids baked into dashboard.AUTOMATED_REPORTS — read by regex so we never
-    import Streamlit. Stable format: `"id": "kebab-case"`."""
-    try:
-        text = DASHBOARD_PY.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return set()
-    return set(re.findall(r'"id":\s*"([a-z0-9_-]+)"', text))
+    """Card ids baked into AUTOMATED_REPORTS (hub_cards.py, plus dashboard.py
+    for anything not yet moved) — read by regex so we never import Streamlit.
+    Stable format: `"id": "kebab-case"`."""
+    ids: Set[str] = set()
+    for path in (HUB_CARDS_PY, DASHBOARD_PY):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        ids |= set(re.findall(r'"id":\s*"([a-z0-9_-]+)"', text))
+    return ids
 
 
 def _library_ws():

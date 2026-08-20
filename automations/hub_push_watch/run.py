@@ -118,23 +118,27 @@ def _clean_body(body: str) -> list[str]:
 
 def _card_names_by_pkg() -> dict:
     """Map automations package dir → the Hub card name it powers, scraped from
-    dashboard.py's source. In each card dict the "name" comes first and its
-    actions' "module": "automations.<pkg>..." entries follow, so pairing every
-    module with the most recent name is correct without importing the (heavy,
-    Streamlit) dashboard. First pairing wins; shared helpers never map."""
-    try:
-        src = (REPO_ROOT / "automations" / "dashboard.py").read_text(
-            encoding="utf-8")
-    except OSError:
-        return {}
-    mapping, name = {}, None
-    for m in re.finditer(r'"(name|module)":\s*"([^"]+)"', src):
-        key, val = m.groups()
-        if key == "name":
-            name = val
-        elif val.startswith("automations.") and name:
-            pkg = val.split(".")[1]
-            mapping.setdefault(pkg, name)
+    the card sources (hub_cards.py since the 2026-08-20 split; dashboard.py
+    kept as a fallback for anything not yet moved). In each card dict the
+    "name" comes first and its actions' "module": "automations.<pkg>..."
+    entries follow, so pairing every module with the most recent name is
+    correct without importing the (heavy, Streamlit) dashboard. First pairing
+    wins; shared helpers never map."""
+    mapping: dict = {}
+    for fname in ("hub_cards.py", "dashboard.py"):
+        try:
+            src = (REPO_ROOT / "automations" / fname).read_text(
+                encoding="utf-8")
+        except OSError:
+            continue
+        name = None
+        for m in re.finditer(r'"(name|module)":\s*"([^"]+)"', src):
+            key, val = m.groups()
+            if key == "name":
+                name = val
+            elif val.startswith("automations.") and name:
+                pkg = val.split(".")[1]
+                mapping.setdefault(pkg, name)
     return mapping
 
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Recruiting Report — one-shot installer for new operators (Maud, Eve, etc.)
+# Alphalete Reporting Hub — one-shot installer for new operators (Maud, Eve, etc.)
 #
 # Run this in Terminal:
 #   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/install.sh | bash
@@ -18,7 +18,7 @@ green() { printf "\033[32m%s\033[0m\n" "$1"; }
 red() { printf "\033[31m%s\033[0m\n" "$1"; }
 
 bold "════════════════════════════════════════════════"
-bold "  Recruiting Report — installer"
+bold "  Alphalete Reporting Hub — installer"
 bold "════════════════════════════════════════════════"
 echo
 
