@@ -119,6 +119,36 @@ CONTROL_TAB = "Mini Control"
 SANDBOX_TAB = "Mini Control TEST"
 HEADERS = ["Queued At", "Action", "Args", "By", "Status", "Result", "Finished At"]
 
+# WHO QUEUED THE ROW BEING RUN (Megan 2026-08-20). The action handlers all take
+# `(args)` and nothing else — forty of them — so rather than re-sign every one,
+# poll_once parks the current row's By value here for the duration of the call.
+# Only _action_rerun reads it, and only to answer one question: is a person on
+# this, or is a watchdog? That decides whether the report's alert thread gets the
+# :pending: mark, and marking a thread nobody is working is exactly what made
+# #claudecorrections unreadable.
+AUTO_BY_PREFIX = "auto:"
+# By values code has always written for itself, from before AUTO_BY_PREFIX
+# existed. Kept as a literal list because these rows are already in the Sheet;
+# new automated callers use enqueue(auto=True) instead of growing this.
+_AUTO_BY = {"appstream_watch", "tableau_screenshots", "b2b_dispositions",
+            "orchestrator", "day_orchestrator", "mini", "lucy"}
+_CURRENT_BY = ""
+
+
+def is_manual(by: str = "") -> bool:
+    """Did a PERSON queue this row? Falls back to the row poll_once is running.
+
+    Unknown / empty answers False. That is the safe direction: the cost of
+    guessing wrong toward "auto" is a missing ⏳ on a thread someone is working;
+    the cost of guessing wrong toward "manual" is the false ⏳ this whole change
+    exists to stop — and incident_thread's own rule is that a missed mark is much
+    the cheaper mistake."""
+    who = (by or _CURRENT_BY or "").strip()
+    if not who or who.lower().startswith(AUTO_BY_PREFIX):
+        return False
+    return who.lower() not in _AUTO_BY
+
+
 # Don't auto-run more than this many SIDE-EFFECTING fixes in one day — a guard
 # against a runaway loop (a fix that re-queues itself, a stuck report). Hitting
 # the cap pauses auto-run and leaves the rows queued for a human to look at.
@@ -387,11 +417,17 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # to only mark DONE at the end, so a report looked idle the whole time it ran
     # (Megan 2026-07-08). Best-effort; publish_running is a no-op (returns None)
     # when the report has no Hub card. [[project_hub_live_running_pill]]
+    #
+    # manual=is_manual(): a rerun a PERSON queued (from the Hub, or `lucy rerun`)
+    # also marks the report's alert thread :pending: — "I'm on this, don't both
+    # start". A rerun a watchdog queued (appstream_watch) marks nothing: the
+    # ticket is still open and still nobody's (Megan 2026-08-20).
     hub_run_id = None
     try:
         from automations.day_orchestrator import hub_publish
         hub_run_id = hub_publish.publish_running(
-            report_id, getattr(r, "display_name", report_id))
+            report_id, getattr(r, "display_name", report_id),
+            manual=is_manual())
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         hub_run_id = None
 
@@ -4402,9 +4438,18 @@ ACTIONS = {
 # ---------------------------------------------------------------------------
 
 def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False,
-            machine: str | None = None) -> None:
+            machine: str | None = None, auto: bool = False) -> None:
     """Add a fix request to the queue (called by Eve / Megan / the orchestrator).
-    Targets `machine`'s tab (default 'Lucy 1' → the original 'Mini Control')."""
+    Targets `machine`'s tab (default 'Lucy 1' → the original 'Mini Control').
+
+    `auto=True` stamps the By column `auto:<name>` — CODE queued this, not a
+    person. A `rerun` row is the only place that changes behaviour today: a
+    human's rerun marks the report's alert thread :pending: ("I'm on this"), and
+    a watchdog's must not, because nobody is (see _action_rerun / is_manual).
+    Any future automated enqueuer should pass it; forgetting it costs one wrong
+    ⏳, which the daily sweep clears."""
+    if auto and not str(by).startswith(AUTO_BY_PREFIX):
+        by = "{}{}".format(AUTO_BY_PREFIX, by)
     ws = _open(sandbox, machine)
     ws.append_row([_now(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
@@ -4562,10 +4607,16 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         print(f"[mini_control] running: {action} {shown}")
         _set(ws, rownum, "running", f"started {_now()}")
         cap_used += 1
+        # Park who queued this for the handler to read (see _CURRENT_BY). Always
+        # cleared, so a handler can never inherit the previous row's author.
+        global _CURRENT_BY
+        _CURRENT_BY = str(row.get("By", "")).strip()
         try:
             ok, result = handler(args)
         except Exception as e:
             ok, result = False, f"handler error: {str(e).splitlines()[0][:160]}"
+        finally:
+            _CURRENT_BY = ""
         _set(ws, rownum, "done" if ok else "failed", result, finished=True)
         if action in SECRET_ACTIONS:
             # Blank the Args cell now that the secret has been consumed — pass or

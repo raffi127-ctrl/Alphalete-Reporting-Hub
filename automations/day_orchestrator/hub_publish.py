@@ -271,12 +271,15 @@ def _ws():
     return _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID).worksheet(HUB_ACTIVITY_TAB)
 
 
-def publish_running(report_id: str, report_name: str):
+def publish_running(report_id: str, report_name: str, *, manual: bool = False):
     """Append a 'started' row so the Hub shows this mini run as RUNNING (yellow),
     live, from ANY machine's Hub — the dashboard already reads these rows
     (_hub_active_runs) with a 2h staleness guard. Returns the RunID to hand to
     publish_done (which flips this same row running->done in place), or None if the
-    report has no Hub card / the write failed. Best-effort — never raises."""
+    report has no Hub card / the write failed. Best-effort — never raises.
+
+    `manual=True` means A PERSON started this run, and only then does the report's
+    open alert thread get the :pending: mark (see _mark_working)."""
     card = _resolve_card(report_id, report_name)
     if not card:
         return None
@@ -286,20 +289,37 @@ def publish_running(report_id: str, report_name: str):
             [run_id, dt.datetime.now().isoformat(timespec="seconds"), card,
              report_name, "Mini (auto)", socket.gethostname(), "", "started", ""],
             value_input_option="RAW")     # column shape matches dashboard.HUB_ACTIVITY_HEADERS
-        _mark_working(report_id)
+        if manual:
+            _mark_working(report_id)
         return run_id
     except Exception:
         return None
 
 
 def _mark_working(report_id: str) -> None:
-    """A report with an OPEN alert thread just started running again → react
-    :pending: on that thread's post (Eve 2026-08-17).
+    """A PERSON just re-ran a report with an OPEN alert thread → react :pending:
+    on that thread's post (Eve 2026-08-17).
 
-    Re-running a broken report IS someone working the ticket — usually the fix
-    Claude was just asked for. Two people pull these tickets off the channel
-    list, and without this both can start on the same one. `scan=False` keeps it
-    free: local index only, so a report start never costs a Slack read."""
+    Two people pull these tickets off the channel list, and without this both can
+    start on the same one. `scan=False` keeps it free: local index only, so a
+    report start never costs a Slack read.
+
+    A MACHINE STARTING A REPORT IS NOT SOMEBODY WORKING IT (Megan 2026-08-20).
+    This used to run on every publish_running, on the premise that "re-running a
+    broken report IS someone working the ticket — usually the fix Claude was just
+    asked for". True when a re-run meant a human clicking Run Now; not true of
+    what actually calls publish_running now — the 4am loop (_attempt_report),
+    every auto-retry, the standalone LaunchAgents on their own clocks, and worst
+    of the four, _sync_hub_pills, which opens a pill for every non-terminal
+    report on every pass INCLUDING ones merely waiting on data or a not_before
+    clock with nothing executing at all. The channel filled with ⏳ on threads
+    nobody had touched, which is worth no more than no mark at all: you can't
+    tell what is really being worked.
+
+    The callers that mean a person now say so with manual=True — a `lucy rerun`
+    queued by a human (mini_control._action_rerun) is the live case. Anything a
+    machine schedules leaves the thread unmarked, which is correct: it is still
+    open and still nobody's."""
     try:
         from automations.shared import incident_thread as inc
         inc.mark_working(report_id, scan=False)

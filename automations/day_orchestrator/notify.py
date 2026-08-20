@@ -400,7 +400,18 @@ def resolve_failure_alert(cfg, post, *, rs, now=None, dry_run=False) -> bool:
         return True
     try:
         from automations.shared.slack_metrics_post import _client
-        _client().chat_update(channel=ch, ts=ts, text=text)
+        client = _client()
+        client.chat_update(channel=ch, ts=ts, text=text)
+        # This path bypasses incident_thread.resolve(), so nothing has put the
+        # parent's reaction layer straight: it would read RESOLVED in the text
+        # while still wearing the ⏳ somebody's re-run left on it, and with no ✅
+        # in the channel list at all (Megan 2026-08-20). Best-effort — the edit
+        # already landed and is the part that matters.
+        try:
+            from automations.shared import incident_thread as _inc
+            _inc._react_done(client, ch, ts)
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as e:  # noqa: BLE001 — a failed edit must never sink the batch
         print(f"[notify] corrections edit failed ({rs.report_id}): {e}", flush=True)
         return False

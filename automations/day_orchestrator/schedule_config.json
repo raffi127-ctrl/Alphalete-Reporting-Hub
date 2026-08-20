@@ -1646,6 +1646,35 @@
       "verify": null,
       "timeout_minutes": 10
     },
+    "sweep_incident_marks": {
+      "on_scheduler": true,
+      "_note": "BACKSTOP for the corrections channel's REACTION layer (Megan 2026-08-20). She triages #claudecorrections by reaction — :pending: = somebody is on it, ✅ = done — and marks were getting stuck on posts nothing would ever clear: a thread ROLLED OVER to the next day flips its marker to `resolved`, and incident_thread.find() only returns `open` ones, so from that moment no resolve can reach the post and its :pending: is frozen there. Both leaks are fixed at the source (publish_running only marks a PERSON's re-run; _roll_over strips the marks before it closes the door) — this clears whatever is ALREADY standing, over the last 7 days, and keeps running so a leak nobody has thought of yet costs one day instead of forever. Only CLOSED posts are touched; an OPEN one is left exactly as it is, mark and all. It NEVER posts, replies, edits or resolves — it removes reactions and prints. Marks added BY HAND can't be removed by Lucy (Slack only lets you remove your own), so those are LISTED to the log and to output/incident-stray-pending.md for somebody to clear by hand — no channel message, Megan's call 2026-08-20.",
+      "display_name": "Sweep stale pending marks (#claudecorrections)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.shared.incident_sweep"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
+    },
     "install_new_start_checklist_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_checklist_agent` installs com.alphalete.new-start-followup-sun (Sun 13:00 CST). Posts the numbered checklist Raf used to build by hand. weekdays [] = manual only.",

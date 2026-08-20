@@ -529,6 +529,19 @@ def _forget_history(channel: str) -> None:
     _HISTORY_CACHE.pop(channel, None)
 
 
+def _is_todays(ent: dict, day: dt.date) -> bool:
+    """Is this index entry about a thread that is still TODAY's?
+
+    `opened` is the day the post went up; `last` is the last day something
+    happened in it. Either one landing on `day` means the thread is current.
+    Unreadable/absent dates answer False on purpose — an entry we can't date is
+    exactly the stale one this guard exists to skip, and the cost of being wrong
+    here is a missed mark, not a false one."""
+    if not isinstance(ent, dict):
+        return False
+    return day.isoformat() in (ent.get("opened"), ent.get("last"))
+
+
 def _days_open(opened: str, day: dt.date) -> int:
     try:
         return (day - dt.date.fromisoformat(opened)).days
@@ -696,7 +709,17 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
     in the old thread so anyone reading it knows where the story continues, and
     the parent's marker flips to `resolved` — otherwise every machine keeps
     finding that old post and rolling it over again tomorrow. No ✅ reaction: it
-    is superseded, not fixed."""
+    is superseded, not fixed.
+
+    THE IN-PROGRESS MARKS COME OFF (Megan 2026-08-20). No ✅ was right; leaving
+    the :pending: was not. Flipping the marker to `resolved` makes this post
+    invisible to find() forever (it only ever returns `open` ones), so whatever
+    ⏳ / 🟣 it is wearing can never be cleared by any later resolve — the channel
+    keeps a post that reads "someone is on this" about a thread that ended.
+    That is half of why the channel looked worked-on when nothing was: a report
+    failing two mornings running rolls its post over wearing yesterday's mark.
+    Strip both here, while we still have the ts, before the marker closes the
+    door on it."""
     try:
         _post(client, channel,
               ":arrows_counterclockwise: *Still open after {} day(s)* — this "
@@ -704,6 +727,9 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
               "channel.".format(age), thread_ts=inc["ts"])
     except Exception:  # noqa: BLE001
         pass
+    # Superseded, not fixed: no ✅. But it is no longer being worked either.
+    _react(client, channel, inc["ts"], WORKING_REACTION, remove=True)
+    _react(client, channel, inc["ts"], WAITING_REACTION, remove=True)
     was = _MARK_RE.sub("", inc.get("text") or "").rstrip()
     if was:
         try:
@@ -1189,7 +1215,17 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
     `scan=False` answers off the LOCAL index only (no Slack read at all) — for
     callers on a hot path, like every report start on the mini. It costs the case
     where the thread was opened on another machine; a missed :pending: is a much
-    cheaper mistake than an API call per run."""
+    cheaper mistake than an API call per run.
+
+    TODAY'S THREAD ONLY (Megan 2026-08-20). The index has no expiry — an entry
+    sits there `resolved: false` until something closes it, and with MAX_AGE_DAYS
+    at 0 a thread that is not from today is not a live thread at all, it is one
+    roll-over away from being closed. Marking off a stale entry put ⏳ on posts
+    from days back (the index on this laptop still carried
+    `drop-tableau-stale-w-v-uuid-order-log` open from 2026-08-18), and
+    _parent_still_open can't catch it: an old parent that hasn't been rolled over
+    yet still says `open`. The day filter can only ever SUPPRESS a mark, never
+    add one, which is the safe direction for this module."""
     day = day or dt.date.today()
     try:
         keys = candidate_keys(key_or_report)
@@ -1197,7 +1233,8 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
             idx = _load_index() or {}
             live = [idx[k] for k in keys
                     if isinstance(idx.get(k), dict) and idx[k].get("ts")
-                    and not idx[k].get("resolved")]
+                    and not idx[k].get("resolved")
+                    and _is_todays(idx[k], day)]
             if not live:
                 return False
             inc = live[0]
@@ -1323,6 +1360,26 @@ def keys_for(report_id: str) -> List[str]:
 # and a day-long flag would leave that second thread open until tomorrow.
 _CLEAN_SCAN_DIR = REPO_ROOT / "output" / "state" / "incident_clean_scans"
 _CLEAN_SCAN_COOLDOWN = 4 * 3600
+# hub_publish._fail_marker: the "this report already alerted" stamp, dropped when
+# the report next runs clean. Path duplicated rather than imported for the same
+# reason as _WATCH_SUFFIX — shared/ must not depend on day_orchestrator/.
+_FAIL_MARKER_DIR = REPO_ROOT / "output" / "logs"
+
+
+def _alerted_recently(report_id: str) -> bool:
+    """Is there a standing failure alert for this report on THIS machine?
+
+    The cooldown below is sized for the common case — a few hundred clean runs a
+    day, almost none of which have anything open. But a report that alerted and
+    is now running clean is the exact opposite case: the one time the channel
+    scan is certainly worth spending. Without this, a report that alerted on the
+    mini and recovered on Lucy 2 inside four hours had its thread left open (and
+    its ⏳ left standing), because Lucy 2's index knew nothing and the cooldown
+    refused the look (Megan 2026-08-20)."""
+    try:
+        return (_FAIL_MARKER_DIR / ".failalert-{}".format(report_id)).exists()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _clean_scan_due(report_id: str) -> bool:
@@ -1368,8 +1425,10 @@ def resolve_report(report_id: str, *, what: str = "", note: str = "",
                     and not idx[k].get("resolved")), None)
         if not hit:
             # Nothing local: either there is no incident, or another machine owns
-            # it. A throttled scan decides which.
-            if not _clean_scan_due(report_id):
+            # it. A throttled scan decides which — unless this report is carrying
+            # a standing failure alert, in which case the answer is worth the
+            # call every time (see _alerted_recently).
+            if not (_alerted_recently(report_id) or _clean_scan_due(report_id)):
                 return False
             found = find(keys[0], channel=channel, client=client, day=day)
             if not found:

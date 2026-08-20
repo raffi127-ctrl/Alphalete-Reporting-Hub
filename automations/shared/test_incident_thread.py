@@ -547,6 +547,62 @@ class IncidentThreadTest(unittest.TestCase):
         self.assertIn((res["ts"], "white_check_mark"), self.c.reactions)
         self.assertNotIn((res["ts"], "large_purple_circle"), self.c.reactions)
 
+    def test_a_rolled_over_thread_does_not_keep_wearing_pending(self):
+        """Megan 2026-08-20: "Lucy is putting a pending reaction on things that
+        she's not actually working … it looks like it's been worked on, but it's
+        not." The roll-over is how they got STUCK: it flips the parent's marker
+        to `resolved`, and find() only ever returns `open` ones, so from that
+        moment no resolve on earth can reach the post — whatever mark it is
+        wearing is frozen there. Superseded still isn't fixed, so no ✅ appears;
+        it just stops claiming somebody is on it."""
+        day = dt.date(2026, 8, 17)
+        first = self._open(day)
+        self.assertTrue(inc.mark_working("r", channel="C1", day=day,
+                                         client=self.c))
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+        self._open(dt.date(2026, 8, 18))          # next day → roll-over
+        self.assertNotIn((first["ts"], "pending"), self.c.reactions)
+        self.assertNotIn((first["ts"], "white_check_mark"), self.c.reactions,
+                         "superseded is not fixed — no ✅ on a rolled-over post")
+
+    def test_the_purple_waiting_mark_also_comes_off_on_roll_over(self):
+        """Same hole, same cure, for the approval-gated alerts."""
+        res = inc.open_or_followup(key="failure-r", title="*r* — waiting",
+                                   body=["*Error:* not approved yet"],
+                                   reaction=inc.WAITING_REACTION, channel="C1",
+                                   day=dt.date(2026, 8, 17), client=self.c)
+        self.assertIn((res["ts"], "large_purple_circle"), self.c.reactions)
+        inc._HISTORY_CACHE.clear()
+        self._open(dt.date(2026, 8, 18))
+        self.assertNotIn((res["ts"], "large_purple_circle"), self.c.reactions)
+
+    def test_the_cheap_path_will_not_mark_a_thread_from_another_day(self):
+        """The index has no expiry — an entry sits there `resolved: false` until
+        something closes it. With one thread per DAY, a thread that isn't
+        today's is one roll-over from being closed, and marking off it put ⏳ on
+        posts from days back (this laptop's index still carried
+        `drop-tableau-stale-w-v-uuid-order-log` open from 2026-08-18 on the
+        20th). _parent_still_open can't catch it either: an old parent nobody
+        has rolled over yet still says `open`."""
+        day = dt.date(2026, 8, 17)
+        self._open(day)
+        idx = inc._load_index()
+        idx["failure-r"]["opened"] = "2026-08-17"
+        idx["failure-r"]["last"] = "2026-08-17"     # not today
+        inc._save_index(idx)
+        self.assertFalse(inc.mark_working("failure-r", channel="C1",
+                                          client=self.c, scan=False))
+        self.assertEqual(self.c.reactions, [],
+                         "a stale index entry may not put a mark anywhere")
+
+    def test_the_cheap_path_still_marks_todays_thread(self):
+        """The day guard may only ever SUPPRESS a mark — today's still lands."""
+        today = dt.date.today()
+        first = self._open(today)
+        self.assertTrue(inc.mark_working("failure-r", channel="C1",
+                                         client=self.c, scan=False))
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+
     def test_working_on_nothing_open_is_a_no_op(self):
         self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))
         self.assertEqual(self.c.reactions, [])

@@ -193,7 +193,9 @@ def _enqueue_rerun(report_id: str, dry_run: bool) -> None:
         return
     try:
         from automations.day_orchestrator import mini_control
-        mini_control.enqueue("rerun", report_id, by="appstream_watch")
+        # auto=True: a watchdog re-running a report is not a person working its
+        # alert thread, so this rerun must not leave a :pending: on it.
+        mini_control.enqueue("rerun", report_id, by="appstream_watch", auto=True)
     except Exception as e:
         print(f"[appstream_watch] (enqueue failed: {type(e).__name__}: {str(e)[:100]})")
 
