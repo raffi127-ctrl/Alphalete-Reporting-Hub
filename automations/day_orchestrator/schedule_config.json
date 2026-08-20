@@ -5323,6 +5323,25 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "box_order_log_repost": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "REPAIR handle, never scheduled: re-posts TODAY's BOX Order Log workbook into the thread that ALREADY posted, as a reply \u2014 for the day a formatting change lands after the morning thread went out. Built 2026-08-20, the day Carlos's pending-tab rework shipped (two sections by sales rep; Ready For Booking turned yellow) after the 7:00 thread had already gone. Runs automations.box_order_log.repost_workbook: finds today's parent by its dated header (backfill_tier.find_parent), replies with the workbook, and NEVER starts a second thread. Unlike backfill_tier it re-uploads a filename the thread already carries \u2014 that is the point \u2014 so dedupe is on the caption's marker phrase; a second run reports 'already re-posted'. Build the workbook FIRST with `lucy rerun box_order_log` (base_args --sheet --xlsx, no post). DRY by default; --post uploads. --channel <id> limits it to one room, otherwise it does every channel in run.TARGETS (#alphalete-gp-sales + #a-players-b2b). MUST run on LUCY 2: the reply has to come from Lucy, and a laptop run would post as whoever's token is on the laptop. Registered 2026-08-20.",
+      "display_name": "BOX Order Log \u2014 re-post today's workbook into its thread (repair)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.repost_workbook"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null
+    },
     "box_order_log_roshan": {
       "on_scheduler": false,
       "_off_scheduler_note": "PER-OWNER BOX Order Log for Roshan Amin Ahmad (OwnerVille #19833, Sapphire Marketing), EMAILED to her (roshanaminahmad10@gmail.com), NOT posted to Slack. Requested via Megan 2026-07-29 ('her own production, nothing of Carlos'). Roshan is a SEPARATE BOX ICD \u2014 she does NOT appear in Carlos's CarlosOrderLog view. This runs automations.box_order_log.run_owner, which pulls the ORG-WIDE BoxOrderLog view (no /CarlosOrderLog custom-view segment), filters rows to her Owner & Office (owners.py match='roshan'), and reuses box_order_log's xlsx/payout/png to build her office's workbook + payout image, then emails it. DRY by default (base_args '--owner roshan' writes a preview .eml, sends nothing); add --email to send to Roshan, or --test-to <addr> to proving-send to one address only. Present so `lucy rerun box_order_log_roshan` works. MACHINE: the pull needs a Tableau/OwnerVille session that can SEE all BOX owners org-wide (Carlos's Lucy 2 session is scoped to himself) \u2014 the mini's org_sales_board session pulls every BOX owner (BoxDailyTracker), so run it there. A dry run prints every Owner & Office it finds, so the first real pull confirms whether Roshan is visible and her exact filter string. Cadence rides the 7-8am window (BOX extract lands ~7-8am; a 4am run would email an empty log). Registered 2026-07-29.",
