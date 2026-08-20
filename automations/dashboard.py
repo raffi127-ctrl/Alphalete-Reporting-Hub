@@ -6238,10 +6238,19 @@ try:
     _shared_uploaded = _read_shared_library()
 except Exception:
     _shared_uploaded = []   # fail open — Hub still loads off legacy reports
+# A curated in-repo card wins over an uploaded/self-registered row with the
+# same id. Autopublish self-registration can write a library row for a report
+# that later gets promoted to a real static card (enrollment_pending_check,
+# 2026-08-20) — without this guard the id appears twice and the This-week
+# strip dies on a StreamlitDuplicateElementKey after the first occurrence.
+_static_ids = {r.get("id") for r in AUTOMATED_REPORTS}
+_shared_uploaded = [r for r in _shared_uploaded
+                    if r.get("id") not in _static_ids]
 _shared_ids = {r.get("id") for r in _shared_uploaded}
 AUTOMATED_REPORTS.extend(_shared_uploaded)
 AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
-                         if r.get("id") not in _shared_ids)
+                         if r.get("id") not in _static_ids
+                         and r.get("id") not in _shared_ids)
 
 
 def _load_library_overrides() -> dict[str, list[str]]:
