@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import html
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -64,32 +65,127 @@ def _write_marker(sha: str) -> None:
 
 
 def _commits(rng: str) -> list[dict]:
-    """Parse `git log rng` into dicts. Uses a unit-separator format so subjects
-    with any punctuation survive."""
-    fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s"
+    """Parse `git log rng` into dicts. Unit separator between fields and a
+    record separator between commits, so subjects with any punctuation AND
+    multi-line bodies survive."""
+    fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b%x1e"
     out = _git("log", "--date=format:%b %d %-I:%M %p", f"--pretty={fmt}", rng)
     # NB: %-I above runs on the mini/macOS (Unix) only — this watcher is a mini
     # LaunchAgent, never Windows, so it's safe here (unlike Hub-side code).
     commits = []
-    for line in out.splitlines():
-        if not line.strip():
+    for rec in out.split("\x1e"):
+        if not rec.strip():
             continue
-        full, short, an, ae, date, subject = line.split("\x1f")
+        full, short, an, ae, date, subject, body = rec.strip("\n").split("\x1f")
         files = _git("show", "--pretty=format:", "--name-only", full).strip()
         # Map the git identity to a team name (raffi127-ctrl → Megan).
         commits.append({"full": full, "short": short,
                         "author": hub_identity.git_author(an, ae),
                         "date": date, "subject": subject,
+                        "body": _clean_body(body),
                         "files": [f for f in files.splitlines() if f]})
     return commits
+
+
+def _clean_body(body: str) -> list[str]:
+    """Commit body → plain-English items: our house style is a bullet list
+    explaining the change, which is exactly the 'what was the change, in plain
+    words' Megan wants in the email. Wrapped lines are re-joined into whole
+    sentences (one item per bullet / paragraph); trailers (Co-Authored-By
+    etc.) are noise."""
+    items, cur = [], ""
+
+    def flush():
+        nonlocal cur
+        if cur.strip():
+            items.append(cur.strip())
+        cur = ""
+
+    for ln in body.splitlines():
+        s = ln.strip()
+        if not s:
+            flush()          # blank line = paragraph/bullet break
+        elif re.match(r"^[A-Za-z-]+-[Bb]y:", s):
+            flush()          # trailer — drop it and stop accumulating into it
+        elif s[0] in "-*•":
+            flush()          # a new bullet starts a new item
+            cur = s.lstrip("-*• ").strip()
+        else:
+            cur = f"{cur} {s}".strip() if cur else s
+    flush()
+    return items
+
+
+def _card_names_by_pkg() -> dict:
+    """Map automations package dir → the Hub card name it powers, scraped from
+    dashboard.py's source. In each card dict the "name" comes first and its
+    actions' "module": "automations.<pkg>..." entries follow, so pairing every
+    module with the most recent name is correct without importing the (heavy,
+    Streamlit) dashboard. First pairing wins; shared helpers never map."""
+    try:
+        src = (REPO_ROOT / "automations" / "dashboard.py").read_text(
+            encoding="utf-8")
+    except OSError:
+        return {}
+    mapping, name = {}, None
+    for m in re.finditer(r'"(name|module)":\s*"([^"]+)"', src):
+        key, val = m.groups()
+        if key == "name":
+            name = val
+        elif val.startswith("automations.") and name:
+            pkg = val.split(".")[1]
+            mapping.setdefault(pkg, name)
+    return mapping
+
+
+def _report_names(files: list) -> list:
+    """Human report names for the files a commit touched, in first-seen order.
+    Falls back to the title-cased package dir for modules that have no Hub
+    card (auto-run steps, brand-new reports not wired to a card yet)."""
+    card_by_pkg = _card_names_by_pkg()
+    names, seen = [], set()
+
+    def add(n):
+        if n not in seen:
+            seen.add(n)
+            names.append(n)
+
+    for f in files:
+        parts = f.split("/")
+        if f == "automations/dashboard.py":
+            add("the Hub dashboard")
+        elif len(parts) >= 2 and parts[0] == "automations":
+            pkg = parts[1]
+            if pkg == "shared":
+                add("shared Hub plumbing")
+            else:
+                add(card_by_pkg.get(pkg) or pkg.replace("_", " ").title())
+        elif parts[0] in ("launch_dashboard.command", "install.sh",
+                          "install.ps1") or "Install-" in parts[0]:
+            add("the launcher / installer")
+    return names
 
 
 def _render(commits: list[dict], diff: str, elided: int,
             branch: str, diverged: bool) -> tuple[str, str, str]:
     n = len(commits)
     authors = sorted({c["author"] for c in commits})
-    subject = (f"⬆️ {n} new commit{'s' if n != 1 else ''} pushed to the Hub "
-               f"({', '.join(authors)})")
+    # Lead the subject with WHICH reports changed — "2 new commits" alone made
+    # Megan open the diff just to learn what was touched (Megan 2026-08-20).
+    all_names, _seen = [], set()
+    for c in commits:
+        for nm in _report_names(c["files"]):
+            if nm not in _seen:
+                _seen.add(nm)
+                all_names.append(nm)
+    if all_names:
+        shown = ", ".join(all_names[:3]) + (
+            f" +{len(all_names) - 3} more" if len(all_names) > 3 else "")
+        subject = (f"⬆️ {shown} — {n} new commit{'s' if n != 1 else ''} "
+                   f"({', '.join(authors)})")
+    else:
+        subject = (f"⬆️ {n} new commit{'s' if n != 1 else ''} pushed to the "
+                   f"Hub ({', '.join(authors)})")
 
     h = ['<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;'
          'color:#111;max-width:820px">',
@@ -107,21 +203,35 @@ def _render(commits: list[dict], diff: str, elided: int,
 
     for c in commits:
         files = c["files"]
+        names = _report_names(files)
+        report_line = ", ".join(names) if names else ""
         flist = "".join(f'<li>{html.escape(f)}</li>' for f in files[:40])
         if len(files) > 40:
             flist += f'<li style="color:#666">… {len(files) - 40} more</li>'
+        why = "".join(f'<li>{html.escape(b)}</li>' for b in c["body"])
         h.append(
             f'<div style="margin:0 0 14px;padding:10px;border:1px solid #e1e4e8;'
             f'border-radius:6px">'
-            f'<div style="font-weight:600">{html.escape(c["subject"])}</div>'
+            + (f'<div style="font-size:15px;margin:0 0 2px">📋 '
+               f'<b>{html.escape(report_line)}</b></div>' if report_line else '')
+            + f'<div style="font-weight:600">{html.escape(c["subject"])}</div>'
             f'<div style="color:#666;font-size:13px;margin:2px 0 6px">'
             f'{html.escape(c["short"])} · {html.escape(c["author"])} · '
             f'{html.escape(c["date"])} · {len(files)} file(s)</div>'
-            f'<ul style="margin:0;padding-left:18px;font-size:13px">{flist}</ul>'
+            + (f'<div style="font-size:13px;margin:0 0 6px">What changed:'
+               f'<ul style="margin:2px 0 0;padding-left:18px">{why}</ul></div>'
+               if why else '')
+            + f'<ul style="margin:0;padding-left:18px;font-size:13px;'
+            f'color:#666">{flist}</ul>'
             f'</div>')
+        if report_line:
+            t.append(f"Report: {report_line}")
         t += [f"* {c['subject']}",
               f"    {c['short']} · {c['author']} · {c['date']} · "
               f"{len(files)} file(s)"]
+        if c["body"]:
+            t.append("    What changed:")
+            t += [f"      - {b}" for b in c["body"]]
         t += [f"      {f}" for f in files[:40]]
         if len(files) > 40:
             t.append(f"      … {len(files) - 40} more")
