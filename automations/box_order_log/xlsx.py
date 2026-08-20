@@ -371,17 +371,17 @@ def build(sales: Sequence, out_path: Path, *,
     # aren't in yellow, organized by sales rep").
     #
     # "Yellow" is whatever color_for() actually paints yellow, NOT a status
-    # name: that's Submitted to Supplier, plus a Verification sale whose
-    # HISTORY shows it was already submitted (an un-submitted Verification is
-    # orange). Splitting on the paint is also the who-has-the-ball split —
-    # section 1 is every deal with something still to do on our end, section 2
-    # is the ones sitting with the supplier.
-    ours, waiting = [], []
+    # name: Submitted to Supplier, Ready For Booking (yellow since 2026-08-20),
+    # and a Verification sale whose HISTORY shows it was already submitted (an
+    # un-submitted Verification is orange, so it stays in the first section).
+    # Reading the paint is the point — recolor a status in clean.py and it
+    # moves sections on its own, with no second rule to keep in sync.
+    not_yellow, yellow = [], []
     for s in pend:
         if clean.color_for(s.status, s.history) == clean.YELLOW:
-            waiting.append(s)
+            yellow.append(s)
         else:
-            ours.append(s)
+            not_yellow.append(s)
 
     def _by_rep(rows):
         """[(rep, sales)] — reps A-Z, oldest deal first inside each rep.
@@ -458,16 +458,20 @@ def build(sales: Sequence, out_path: Path, *,
         psh.cell(row=4, column=1, value="Nothing pending — every deal is "
                  "accepted or closed.").font = _font(italic=True)
     else:
+        # Banners name the COLOR, not who has the ball. They used to say
+        # "ours to work" / "waiting on the supplier", which stopped being true
+        # on 2026-08-20 when Ready For Booking turned yellow: that one still
+        # needs a document from us but now sits in the yellow half. The
+        # per-row "Next step" column carries the meaning instead.
         r = _pending_section(
             psh, 4,
-            "OURS TO WORK  •  {} order{}  —  something still to do on our "
-            "end".format(len(ours), _plural(len(ours))),
-            ours, "Nothing here — every open deal is with the supplier.")
+            "NOT YELLOW  •  {} order{}".format(len(not_yellow),
+                                                _plural(len(not_yellow))),
+            not_yellow, "Nothing here — every open deal is yellow.")
         _pending_section(
             psh, r,
-            "WAITING ON THE SUPPLIER  •  {} order{}  —  the yellow ones, "
-            "nothing for us to do".format(len(waiting), _plural(len(waiting))),
-            waiting, "Nothing here — no deal is sitting with the supplier.")
+            "YELLOW  •  {} order{}".format(len(yellow), _plural(len(yellow))),
+            yellow, "Nothing here — no yellow deal is open.")
     widths = [22, 12, 13, 30, 12, 22, 40]
     for c, w in enumerate(widths, start=1):
         psh.column_dimensions[get_column_letter(c)].width = w

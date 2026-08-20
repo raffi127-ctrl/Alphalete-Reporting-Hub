@@ -661,7 +661,8 @@ def _color_rules(view_id: int, n_reps: int) -> List[dict]:
     st = "$" + _STATUS_COL + str(first)
     was_submitted = 'ISNUMBER(SEARCH("{s}",{h}))'.format(s=clean.SUBMITTED, h=sec)
     specs = [
-        (clean.GREEN_BRIGHT, '={st}="Ready For Booking"'.format(st=st)),
+        (clean.STATUS_COLORS["Ready For Booking"],
+         '={st}="Ready For Booking"'.format(st=st)),
         (clean.GREEN, '={st}="Accepted by Supplier"'.format(st=st)),
         (clean.RED_BRIGHT, '={st}="Incomplete"'.format(st=st)),
         (clean.RED, '=OR({st}="Cancelled by Broker",{st}="Rejected",'

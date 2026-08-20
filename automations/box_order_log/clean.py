@@ -216,7 +216,7 @@ STATUS_MEANING = {
 # already submitted. Hence color_for() rather than a plain status->color dict.
 # Megan's palette (2026-07-18). Two greens and two reds, deliberately: the
 # brighter shade of each is the one that wants attention.
-GREEN_BRIGHT = "92D050"   # Ready For Booking — good, one doc still to send
+GREEN_BRIGHT = "92D050"   # was Ready For Booking until 2026-08-20 (see below)
 GREEN = "57BB8A"          # Accepted by Supplier — done
 YELLOW = "FFFB00"         # macOS "Lemon" — Megan picked it 2026-07-18
 ORANGE = "F4B183"         # we owe something (bill / ETF doc)
@@ -225,9 +225,16 @@ RED_BRIGHT = "EA4335"     # Incomplete — dead-ish but fixable, chase it
 
 SUBMITTED = "Submitted to Supplier"
 
+# Ready For Booking is YELLOW, not green (Carlos, 2026-08-20, looking at the
+# new pending tab: "ready for booking should be yellow ... outside of that it's
+# good"). It used to be GREEN_BRIGHT; that constant is kept above so flipping
+# back is one edit here. Read this off STATUS_COLORS rather than copying a
+# color constant elsewhere — sheet.py's rules went stale exactly that way when
+# Ready For Booking moved from red to green.
+#
 # Kept for the legend and for anything that only knows a bare status.
 STATUS_COLORS = {
-    "Ready For Booking":     GREEN_BRIGHT,
+    "Ready For Booking":     YELLOW,
     "Accepted by Supplier":  GREEN,
     "Submitted to Supplier": YELLOW,
     "Verification":          ORANGE,
@@ -246,10 +253,14 @@ def color_for(status: str, history: Sequence[str] = ()) -> str:
     palette that's yellow vs orange, so a Verification sale that has already
     been submitted reads as waiting (yellow), and one that hasn't reads as
     ours to chase (orange).
+
+    Ready For Booking joined the yellow group on 2026-08-20 at Carlos's ask —
+    which also moves it into the yellow SECTION of the pending tab, since that
+    split reads this function (xlsx._pending_section).
     """
     status = (status or "").strip()
     if status == "Ready For Booking":
-        return GREEN_BRIGHT
+        return STATUS_COLORS["Ready For Booking"]
     if status == "Accepted by Supplier":
         return GREEN
     if status in ("Cancelled by Broker", "Rejected", "Dropped"):
@@ -267,7 +278,7 @@ def color_for(status: str, history: Sequence[str] = ()) -> str:
 # fill colors are tuned to sit behind black text and wash out when used as
 # ink (pale-yellow "Verification" counts were unreadable on the summary).
 STATUS_INK = {
-    "Ready For Booking":     "4E7A1E",
+    "Ready For Booking":     "9A6A00",     # yellow's ink twin, since 2026-08-20
     "Accepted by Supplier":  "1E7A4C",
     "Submitted to Supplier": "9A6A00",
     "Verification":          "B25A1E",
