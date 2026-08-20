@@ -5093,7 +5093,10 @@ AUTOMATED_REPORTS = [
             "column, the next fills every active owner's DD from our Tableau "
             "pull (Credico folded in). The bulletin then builds off that column.\n\n"
             "WHEN IT RUNS\n"
-            "**Thursday mornings by 10am CST**, off the settled week.\n\n"
+            "**Thursday mornings.** The tab fills by 10am CST; the review link "
+            "posts to **#revision-emails** at **10:30am CST**, and the send goes "
+            "out on the next pass after Evelyn's ✅ (it re-checks every 25 "
+            "minutes until **1:00pm CST**).\n\n"
             "WHERE IT GOES\n"
             "Slack: **#alphalete-sales**, **#alphalete-lvl1-chat**, and "
             "**#rafs-office-recruiting**. Email (the PNG pages, from "
@@ -5122,7 +5125,9 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],   # Thursday (Mon=0 … Thu=3)
-            "time": "9:00 AM",
+            # First LaunchAgent pass (com.alphalete.dd-bulletin-thu). The send
+            # itself lands after Evelyn's ✅, re-checked q25m until 1:00pm CT.
+            "time": "10:30 AM",
             "estimated_minutes": 3,
         },
         "checklist": [],
