@@ -139,8 +139,11 @@ def _download(week: dt.date, page, logfn) -> dict:
     week_url = opt_phase._week_url(PRODUCT_URL, week)
     week_url += ("&" if "?" in week_url else "?") + PRODUCT_FILTER_PARAM
     logfn(f"  Metrics crosstab (Last Week filter)…")
-    opt_phase.download_crosstab(METRICS_URL + METRICS_WEEK_FILTER, METRICS_SHEET,
-                                paths["metrics"], verbose=False, page=page)
+    # 'Metrics View' pinned to Internet on top of the week filter — the
+    # dashboard selector is per-user and flipped to Wireless on 2026-08-20.
+    opt_phase.download_crosstab(
+        opt_phase.pin_internet_metrics(METRICS_URL + METRICS_WEEK_FILTER),
+        METRICS_SHEET, paths["metrics"], verbose=False, page=page)
     logfn(f"  PRODUCT SALES ORG @ {week}…")
     opt_phase.download_crosstab(week_url, ORG_SHEET, paths["org"], verbose=False, page=page)
     logfn(f"  PRODUCT SALES by-ICD @ {week}…")

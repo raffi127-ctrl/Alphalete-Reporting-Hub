@@ -68,8 +68,12 @@ from typing import Optional
 from automations.recruiting_report import opt_phase
 from automations.focus_office_att import aliases as _aliases
 
-METRICS_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-               "ATTTRACKER2_1-D2D/Metrics")
+# Base Metrics dashboard with 'Metrics View' PINNED to Internet (2026-08-20 —
+# see opt_phase.pin_internet_metrics). Stays the BASE, collapsed view for the
+# 30-60 cohort reason spelled out in the module docstring above.
+METRICS_URL = opt_phase.pin_internet_metrics(
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/Metrics")
 METRICS_SHEET = "Metrics Call Last week data (Internet)"
 
 COL_TEAM = "Captain's Bonus Teams"

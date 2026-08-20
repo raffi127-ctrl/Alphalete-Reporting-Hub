@@ -118,5 +118,41 @@ class RenameToleranceStillWorks(unittest.TestCase):
         self.assertEqual(match([INTERNET.lower()], INTERNET), 0)
 
 
+class MetricsViewIsPinned(unittest.TestCase):
+    """The 'Metrics View' selector is per-user and any viewer can flip it; on
+    2026-08-20 it came down on Wireless and five reports died. The URL pin has
+    to survive an existing query string (':iid=1', the week filter)."""
+
+    BASE = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER2_1-D2D/Metrics")
+    PIN = "Metrics%20View=Internet%20Metrics"
+
+    def test_bare_url_gets_a_question_mark(self):
+        got = opt_phase.pin_internet_metrics(self.BASE)
+        self.assertEqual(got, self.BASE + "?" + self.PIN)
+
+    def test_existing_query_string_gets_an_ampersand(self):
+        got = opt_phase.pin_internet_metrics(self.BASE + "?:iid=1")
+        self.assertEqual(got, self.BASE + "?:iid=1&" + self.PIN)
+
+    def test_stacks_on_the_country_metrics_week_filter(self):
+        from automations.country_metrics import pull as cm
+        got = opt_phase.pin_internet_metrics(cm.METRICS_URL
+                                             + cm.METRICS_WEEK_FILTER)
+        self.assertIn("Week%27s%20Metrics=Last%20Week", got)
+        self.assertTrue(got.endswith("&" + self.PIN))
+
+    def test_every_base_view_reader_is_pinned(self):
+        """The five reports that can't move to an Internet-baked custom view."""
+        from automations.captainship_activation_rate import pull as act
+        from automations.captainship_cancel_rate import pull as cr
+        from automations.captainship_raf_metrics import pull as raf
+        for name, url in (("opt_phase", opt_phase.METRICS_VIEW_URL),
+                          ("activation_rate", act.VIEW_URL),
+                          ("raf_metrics", raf.VIEW_URL),
+                          ("cancel_rate", cr.METRICS_URL)):
+            self.assertIn(self.PIN, url, "%s is not pinned" % name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

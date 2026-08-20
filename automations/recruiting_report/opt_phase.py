@@ -35,6 +35,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import gspread
@@ -97,7 +98,42 @@ PRODUCT_SALES_PATH = WORKSPACE / "output" / "opt_personal_production.csv"
 # AUTOMATIONPULL-METRICS was deleted (caught 2026-06-01, Eve's run — 6+ days /
 # cancel rate / 1 GIG% / activation% were blank). Base Metrics dashboard holds
 # the same "Metrics Call Last week data (Internet)" worksheet with all fields.
-METRICS_VIEW_URL = (
+# The base Metrics dashboard carries a live 'Metrics View' selector
+# (Internet Metrics / Wireless Metrics) that ANY viewer can flip, and Tableau
+# remembers it PER USER — so what a person sees on their screen proves nothing
+# about what the automation account gets. On 2026-08-20 it came down on
+# 'Wireless Metrics' and every report reading the '(Internet)' worksheet died
+# in the same hour: captainship cancel_rate / activation_rate / abp_6days /
+# raf_metrics, country_metrics, due_diligence, new_internet_abp.
+#
+# Pinning the parameter in the URL takes the selector out of the loop —
+# Tableau applies it on load whatever state the account had saved. This is the
+# same mechanism country_metrics already uses for "Week's Metrics".
+#
+# Reports that CAN'T just switch to an Internet-baked custom view need this:
+# MetricsINTfullyEXP expands to Rep Name, which drifts the 30-60 activation by
+# 0.1-1.5 pts (the partial-cohort trap captainship_cancel_rate documents), and
+# ALLEXP bakes 'This Week'. So the collapsed base view stays, pinned.
+METRICS_VIEW_PARAM = "Metrics View"
+METRICS_VIEW_INTERNET = "Internet Metrics"
+
+
+def pin_internet_metrics(url: str) -> str:
+    """Append the 'Metrics View=Internet Metrics' parameter to a Metrics URL.
+
+    Uses '&' when the URL already carries a query string (e.g. '?:iid=1' or
+    country_metrics' week filter), '?' otherwise.
+
+    A wrong or unknown parameter value is IGNORED by Tableau rather than
+    raising, and since 2026-08-20 the Crosstab matcher no longer substitutes a
+    sibling worksheet — so a typo here degrades to the honest "Couldn't find
+    the ... sheet" failure, never to silently wrong numbers."""
+    sep = "&" if "?" in url else "?"
+    return (url + sep + quote(METRICS_VIEW_PARAM) + "="
+            + quote(METRICS_VIEW_INTERNET))
+
+
+METRICS_VIEW_URL = pin_internet_metrics(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/Metrics"
 )

@@ -31,8 +31,14 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.captainship_churn import pull as _cs   # _smart_title
+from automations.recruiting_report import opt_phase as _opt
 
-VIEW_URL = (
+# The base Metrics dashboard, with its 'Metrics View' selector PINNED to
+# Internet (2026-08-20 — a stray flip to Wireless killed this report and four
+# siblings; see opt_phase.pin_internet_metrics). It has to stay the BASE view:
+# the Internet-baked custom views expand to Rep Name, and that drifts the
+# 30-60 activation by 0.1-1.5 pts. captainship_raf_metrics imports this URL.
+VIEW_URL = _opt.pin_internet_metrics(
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/Metrics?:iid=1"
 )
