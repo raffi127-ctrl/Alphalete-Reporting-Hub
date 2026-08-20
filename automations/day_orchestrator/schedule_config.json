@@ -171,8 +171,8 @@
   "reports": {
     "helen_residential": {
       "on_scheduler": true,
-      "_note": "Helen Assefaw (tab 'Helen Assefaw (Vz)' on the ATT Program - Focus Report) is a RESIDENTIAL Verizon Wireless ICD — Edge Concepts, Falls Church VA, ownerville 13382, confirmed by her captain Starr Rodenhurst 2026-08-17. She is in NO AppStream office and in NO ATT-program Tableau view, so att_focus_raf/opt_phase can never write a number on her tab: those sources are D2D/B2B and she is residential. This report is the only thing that fills it, from THREE weekly emails to alphaletereporting — RANKED Residential Wireless tracker (anowrouzi@aptel.com, sales), Residential Rep Count (rarchey@thesmartcircle.com, headcount) and Headcount and Recruiting Totals (mdanesi3@gmail.com, funnel). Ordered with `after` and NOT `depends_on`: att_focus_raf touches none of her sources, so its failure must not skip her. ONLY the recruiting mail has landed by Monday — the rep count arrives Thursday night and the sales tracker runs 8-15 days behind its week and sometimes skips an edition. That is by design: the run scans a 75-day window and writes ONLY still-empty cells, so a late edition is picked up by the next Monday without disturbing anything already filled. Re-running is always safe. Not a Hub card.",
-      "display_name": "ATT Program — Helen Assefaw (Verizon residential)",
+      "_note": "Helen Assefaw (tab 'Helen Assefaw (Vz)' on the ATT Program - Focus Report) is a RESIDENTIAL Verizon Wireless ICD \u2014 Edge Concepts, Falls Church VA, ownerville 13382, confirmed by her captain Starr Rodenhurst 2026-08-17. She is in NO AppStream office and in NO ATT-program Tableau view, so att_focus_raf/opt_phase can never write a number on her tab: those sources are D2D/B2B and she is residential. This report is the only thing that fills it, from THREE weekly emails to alphaletereporting \u2014 RANKED Residential Wireless tracker (anowrouzi@aptel.com, sales), Residential Rep Count (rarchey@thesmartcircle.com, headcount) and Headcount and Recruiting Totals (mdanesi3@gmail.com, funnel). Ordered with `after` and NOT `depends_on`: att_focus_raf touches none of her sources, so its failure must not skip her. ONLY the recruiting mail has landed by Monday \u2014 the rep count arrives Thursday night and the sales tracker runs 8-15 days behind its week and sometimes skips an edition. That is by design: the run scans a 75-day window and writes ONLY still-empty cells, so a late edition is picked up by the next Monday without disturbing anything already filled. Re-running is always safe. Not a Hub card.",
+      "display_name": "ATT Program \u2014 Helen Assefaw (Verizon residential)",
       "source_type": "email",
       "data_sources": [],
       "command": [
@@ -191,7 +191,9 @@
         "att_focus_raf"
       ],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 20,
+      "order": 38,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "mobrium_list": {
       "on_scheduler": true,
@@ -218,7 +220,9 @@
         "terminated_reps"
       ],
       "verify": null,
-      "timeout_minutes": 12
+      "timeout_minutes": 12,
+      "order": 50,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "owner_showdown": {
       "on_scheduler": false,
@@ -406,7 +410,8 @@
       ],
       "verify": null,
       "timeout_minutes": 25,
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "disable_applicant_morning_agent": {
       "on_scheduler": false,
@@ -476,7 +481,7 @@
     },
     "install_terminated_reps_evening_agent": {
       "on_scheduler": false,
-      "_note": "One-shot installer for com.alphalete.terminated-reps-evening on Lucy 1 / the mini (8:00pm CST, all 7 days; deploy/terminated_reps_evening.sh -> python -m automations.terminated_reps.run). SAME-DAY pass for Terminated Reps: the orchestrator's own terminated_reps run lands mid-morning and the loop dies at the noon backstop, so a cadence not_before in the afternoon would never fire and the #revision-emails notice always arrived a day late (Eve 2026-08-12). Runs on the mini so the post goes out as Lucy, not as a human account. The 4am orchestrator run STAYS as the backstop — the module is idempotent (tracker dedupes on name + date ±1 day, the Slack reply skips anyone already in the week's thread). `lucy update` then `lucy rerun install_terminated_reps_evening_agent`.",
+      "_note": "One-shot installer for com.alphalete.terminated-reps-evening on Lucy 1 / the mini (8:00pm CST, all 7 days; deploy/terminated_reps_evening.sh -> python -m automations.terminated_reps.run). SAME-DAY pass for Terminated Reps: the orchestrator's own terminated_reps run lands mid-morning and the loop dies at the noon backstop, so a cadence not_before in the afternoon would never fire and the #revision-emails notice always arrived a day late (Eve 2026-08-12). Runs on the mini so the post goes out as Lucy, not as a human account. The 4am orchestrator run STAYS as the backstop \u2014 the module is idempotent (tracker dedupes on name + date \u00b11 day, the Slack reply skips anyone already in the week's thread). `lucy update` then `lucy rerun install_terminated_reps_evening_agent`.",
       "display_name": "Install Terminated Reps evening agent (8pm)",
       "source_type": "local",
       "data_sources": [],
@@ -499,8 +504,10 @@
     "vantura_payroll": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "standalone_weekdays": [2],
-      "_standalone_weekdays_note": "Python weekday(): Wednesday. The REAL schedule is com.alphalete.vantura-payroll-wed (plist Weekday 3 = Wed, 11:00 machine-local). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log: hand-reruns on Thu 7/23, 7/30 and 8/6 made _historical_expected believe it was a Thursday 11:00 report, and it posted 'did not run today' every Thursday afternoon even though the Wednesday run had succeeded (Eve 2026-08-13). Off-day exemption covers the DIDN'T-RUN check only — an off-day rerun that FAILS still alerts. Keep this in sync with the plist's Weekday if the day ever moves.",
+      "standalone_weekdays": [
+        2
+      ],
+      "_standalone_weekdays_note": "Python weekday(): Wednesday. The REAL schedule is com.alphalete.vantura-payroll-wed (plist Weekday 3 = Wed, 11:00 machine-local). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log: hand-reruns on Thu 7/23, 7/30 and 8/6 made _historical_expected believe it was a Thursday 11:00 report, and it posted 'did not run today' every Thursday afternoon even though the Wednesday run had succeeded (Eve 2026-08-13). Off-day exemption covers the DIDN'T-RUN check only \u2014 an off-day rerun that FAILS still alerts. Keep this in sync with the plist's Weekday if the day ever moves.",
       "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it \u2014 its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. LIVE since 2026-07-15 \u2014 the WRAPPER passes --live (the module still defaults to --dry-run if you run it bare, but the scheduled job does NOT). It writes the board for real: RAW load incl. self-pulled Tableau crosstab, Commission!B1, per-campaign P&L formulas, read-only checks, kickoff DM to Carlos as Lucy. The one step still skipped is the headless Refresh via the Payroll.gs web app \u2014 it logs 'refresh NOT triggered \u2014 no web-app URL configured' and continues (exit 0); deploy the web app (RUNBOOK \u00a71) to enable it. Verified fired + exit 0 on 2026-07-22 (wrote 16 P&L formulas). Publishes to the vantura-payroll Hub card since 2026-07-22 (wrapper -> hub_publish, mapped in hub_publish._HUB_CARD) so the card shows green/red instead of always-grey. Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
       "display_name": "Vantura Weekly Payroll (prep)",
       "source_type": "tableau",
@@ -1072,7 +1079,7 @@
     },
     "install_org_board_review_post_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_review_post_agent` can install/refresh the STANDALONE com.alphalete.org-board-review-post LaunchAgent on the mini — the half of the Org Sales Board email that PUTS THE LINK UP. deploy/org_board_review_post.sh runs review_gate --post Tue-Sun at 07:00 (07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state), so the review link is UP at 07:00 — 5 min after the board's own 06:55 post — and the 5-minute checkmark watcher mails it by ~07:15, which is Eve's 2026-08-13 ask instead of whenever the orchestrator's serial pass happened to reach order 8.2 (08:58 on 08-12; never on 08-13). Sends NOTHING — com.alphalete.org-board-email-review still mails the report only once an approver checkmarks it. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_org_board_review_post_agent` can install/refresh the STANDALONE com.alphalete.org-board-review-post LaunchAgent on the mini \u2014 the half of the Org Sales Board email that PUTS THE LINK UP. deploy/org_board_review_post.sh runs review_gate --post Tue-Sun at 07:00 (07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state), so the review link is UP at 07:00 \u2014 5 min after the board's own 06:55 post \u2014 and the 5-minute checkmark watcher mails it by ~07:15, which is Eve's 2026-08-13 ask instead of whenever the orchestrator's serial pass happened to reach order 8.2 (08:58 on 08-12; never on 08-13). Sends NOTHING \u2014 com.alphalete.org-board-email-review still mails the report only once an approver checkmarks it. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
       "display_name": "Install Org Sales Board review-post agent (7am)",
       "source_type": "local",
       "data_sources": [],
@@ -1648,7 +1655,7 @@
     },
     "sweep_incident_marks": {
       "on_scheduler": true,
-      "_note": "BACKSTOP for the corrections channel's REACTION layer (Megan 2026-08-20). She triages #claudecorrections by reaction — :pending: = somebody is on it, ✅ = done — and marks were getting stuck on posts nothing would ever clear: a thread ROLLED OVER to the next day flips its marker to `resolved`, and incident_thread.find() only returns `open` ones, so from that moment no resolve can reach the post and its :pending: is frozen there. Both leaks are fixed at the source (publish_running only marks a PERSON's re-run; _roll_over strips the marks before it closes the door) — this clears whatever is ALREADY standing, over the last 7 days, and keeps running so a leak nobody has thought of yet costs one day instead of forever. Only CLOSED posts are touched; an OPEN one is left exactly as it is, mark and all. It NEVER posts, replies, edits or resolves — it removes reactions and prints. Marks added BY HAND can't be removed by Lucy (Slack only lets you remove your own), so those are LISTED to the log and to output/incident-stray-pending.md for somebody to clear by hand — no channel message, Megan's call 2026-08-20.",
+      "_note": "BACKSTOP for the corrections channel's REACTION layer (Megan 2026-08-20). She triages #claudecorrections by reaction \u2014 :pending: = somebody is on it, \u2705 = done \u2014 and marks were getting stuck on posts nothing would ever clear: a thread ROLLED OVER to the next day flips its marker to `resolved`, and incident_thread.find() only returns `open` ones, so from that moment no resolve can reach the post and its :pending: is frozen there. Both leaks are fixed at the source (publish_running only marks a PERSON's re-run; _roll_over strips the marks before it closes the door) \u2014 this clears whatever is ALREADY standing, over the last 7 days, and keeps running so a leak nobody has thought of yet costs one day instead of forever. Only CLOSED posts are touched; an OPEN one is left exactly as it is, mark and all. It NEVER posts, replies, edits or resolves \u2014 it removes reactions and prints. Marks added BY HAND can't be removed by Lucy (Slack only lets you remove your own), so those are LISTED to the log and to output/incident-stray-pending.md for somebody to clear by hand \u2014 no channel message, Megan's call 2026-08-20.",
       "display_name": "Sweep stale pending marks (#claudecorrections)",
       "source_type": "local",
       "data_sources": [],
@@ -1673,7 +1680,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 10
+      "timeout_minutes": 10,
+      "order": 59,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "install_new_start_checklist_agent": {
       "on_scheduler": true,
@@ -1742,7 +1751,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 8
+      "timeout_minutes": 8,
+      "order": 49,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "morning_diag": {
       "on_scheduler": true,
@@ -1763,7 +1774,7 @@
       "verify": null
     },
     "energy_slack_fill": {
-      "order": 3.9,
+      "order": 5,
       "on_scheduler": true,
       "_note": "Fills the Energy reps' EN column on 'Alphalete SALES BOARD 2025' from #alphalete-sales, so it is done BEFORE alphalete_production (order 4) renders the board at ~4am. Nothing else feeds those cells \u2014 the Energy campaign (col CH) is hand-typed every morning off the running board the office re-posts all evening; the last message of the night is the finished day. Only ever RAISES a cell, so re-running is safe. Holds (exit 75, writes nothing) when there is no Energy block for the day, when the block's own 'N/goal' tally disagrees with the lines, or when a name matches no rep / two reps on the board's Energy roster. Validated cell-for-cell against the hand-filled Mon 8/3 - Thu 8/6 columns (16 rep-days, 4 tallies, zero diffs).",
       "_warn": "LIVE on the PROD workbook from 2026-08-08 (Eve turned it on 8/7 without a live rehearsal \u2014 the downside is bounded: every failure mode HOLDS and writes nothing, which just leaves the cells blank exactly as they are when nobody fills them by hand). Preview any day without writing: `python -m automations.energy_slack_fill.run --date YYYY-MM-DD` (no --apply). Point it at a duplicated Sheet with --sheet-id or ENERGY_FILL_SHEET_ID.",
@@ -1791,10 +1802,11 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 15,
-      "verify": null
+      "verify": null,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "alphalete_production": {
-      "order": 4,
+      "order": 6,
       "on_scheduler": true,
       "_note": "LIVE daily (Megan approved preview 2026-07-05). Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. Uses the tab CONTAINING yesterday -> Monday shows the fully-completed prior M-S week. source_type local = wave 1 (runs ~4am; yesterday's data is complete by then, before Jolie's ~6am). Preview instead of post: base_args ['--preview-dm','U045Z8N0ZQC','U04G5HJBGFN']. Replaces Jolie's 2 manual production posts \u2014 tell her to stop at cutover.",
       "display_name": "Alphalete Daily Production Slack Post",
@@ -1822,10 +1834,11 @@
       "verify": {
         "type": "manifest",
         "report_id": "alphalete-production"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "energy_crossref": {
-      "order": 4.1,
+      "order": 7,
       "on_scheduler": true,
       "_note": "Posts the morning Energy webform check as a reply in that day's ':wolf: Alphalete Production MM/DD/YYYY' thread in #alphalete-sales - which is why order is 4.1, right after alphalete_production (4) creates that thread. It FINDS the thread and never starts one. Counts yesterday's Energy sales three ways: the last running board of the night in #alphalete-sales (same parser as energy_slack_fill), the 'EN' column of 'Alphalete SALES BOARD 2025', and the 'Base Power Energy' Google Form (1wwvSEQ...wa50, tab 'Form Responses 1') filtered on col J 'Date of Sale' - NOT the timestamp, reps file days late. Every rep owes ONE form per sale and is asked for the HIGHER of their two sale counts; whoever is short gets tagged, plus Rafael Hidalgo and Dylan Twaddle always. A rep who filed the SAME sale twice (same phone or same customer) is not covered twice. Carries two images: the Energy Sales Board re-rendered (the 4:34am one predates the board's own fill) and the day's webform rows. Replaces what Evelyn posted by hand - it reproduces her 8/13 post word for word and tag for tag.",
       "_warn": "Posts AS Evelyn (the Slack user token) and TAGS REAL REPS. Preview any day without posting: `python -m automations.energy_crossref.run --date YYYY-MM-DD` - prints the rep-by-rep table and the exact message. HOLDS (exit 75, posts nothing) when neither source has a single Energy sale, or when the day's wolf thread isn't up yet. Exit 75 AFTER posting means it went out but the day wasn't clean: a rep with no Slack account (named in bold instead of tagged), a Slack line matching nobody, or a tally that didn't close. Slack ids are PINNED in energy_crossref/roster.py - the token has no users:read and two active accounts are both 'Miguel Vargas'; add a new rep there.",
@@ -1855,10 +1868,11 @@
         "alphalete_production"
       ],
       "timeout_minutes": 20,
-      "verify": null
+      "verify": null,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "harvest_prime": {
-      "order": 4.05,
+      "order": 8,
       "on_scheduler": true,
       "_note": "Harvest cutover CANARY prime step (2026-07-22, after a clean ~week of the 1pm shadow proof). Pulls today's churn Tableau views ONCE into the dated cache (automations.harvest.run) so the daily_metrics churn subprocess \u2014 the ONLY report flipped to HARVEST_MODE=on \u2014 reads cache instead of re-scraping. order 4.05 = runs immediately before daily_metrics (order 4.06) so the cache is warm first. Moved 5.9 -> 4.05 on 2026-08-19 with daily_metrics (see that entry's _order_note). source_type tableau => chrome_guard runs first + wave-2 timing (Tableau has had the most time to publish). HARMLESS if it fails or is skipped: it writes NO Sheet, posts NO Slack, and daily_metrics churn falls straight back to a live scrape on any cache miss (adapter guardrail \u2014 cache can only serve byte-identical bytes or defer to live, never stale). Every OTHER churn report (captainship_churn / owners_metrics_churn) has no HARVEST_MODE set and stays 100% live. Rollback = unset HARVEST_MODE in daily_metrics/run.py; this prime can stay (writes unused cache) or be removed. Full procedure: output/harvest-cutover-plan.md.",
       "display_name": "Harvest Prime (churn cache warm)",
@@ -1883,22 +1897,23 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 30
+      "timeout_minutes": 30,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "other_office_knocks": {
-      "order": 4.07,
+      "order": 11,
       "on_scheduler": true,
       "display_name": "Knocks for Other Offices (Sahil, Chan)",
       "source_type": "appstream",
       "data_sources": [],
-      "_sources_note": "Source is OWNERVILLE (Disposition by Rep + Time Tracker, one impersonated session per office), not AppStream. source_type is set to 'appstream' for its BEHAVIOUR, which is the one this report needs: no readiness probe (yesterday's ownerville data is complete at any hour, and a 'tableau'/'local' type would gate it on a warm Tableau session it never touches — a pointless HOLD that reads as FAILED), plus the stray-Chrome guard every browser report wants. Runs right after daily_metrics (order 4.06) so the knocks go out with the morning metrics, but posts to its OWN 'Knocks for other offices' thread and verifies on its OWN manifest — an office that drops turns THIS card red instead of hiding inside the Daily Metrics summary.",
+      "_sources_note": "Source is OWNERVILLE (Disposition by Rep + Time Tracker, one impersonated session per office), not AppStream. source_type is set to 'appstream' for its BEHAVIOUR, which is the one this report needs: no readiness probe (yesterday's ownerville data is complete at any hour, and a 'tableau'/'local' type would gate it on a warm Tableau session it never touches \u2014 a pointless HOLD that reads as FAILED), plus the stray-Chrome guard every browser report wants. Runs right after daily_metrics (order 4.06) so the knocks go out with the morning metrics, but posts to its OWN 'Knocks for other offices' thread and verifies on its OWN manifest \u2014 an office that drops turns THIS card red instead of hiding inside the Daily Metrics summary.",
       "command": [
         "automations.other_office_knocks.run"
       ],
       "base_args": [
         "--live"
       ],
-      "_base_args_note": "LIVE: pulls both offices + posts one Total Knocks image each into today's thread in #alphalete-sales. Without --live the module only renders to output/ (dry-run is the default, so a bare re-run can never post by accident). A scoped re-run of one office is `--live --office \"Chan Park\"` — the manifest's retry_args build exactly that, because a full re-run RE-POSTS the office that already landed.",
+      "_base_args_note": "LIVE: pulls both offices + posts one Total Knocks image each into today's thread in #alphalete-sales. Without --live the module only renders to output/ (dry-run is the default, so a bare re-run can never post by accident). A scoped re-run of one office is `--live --office \"Chan Park\"` \u2014 the manifest's retry_args build exactly that, because a full re-run RE-POSTS the office that already landed.",
       "cadence": {
         "weekdays": [
           0,
@@ -1920,12 +1935,13 @@
       "verify": {
         "type": "manifest",
         "report_id": "other_office_knocks"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "daily_metrics": {
-      "order": 4.06,
+      "order": 9,
       "on_scheduler": true,
-      "_order_note": "Eve 2026-08-19: moved 6 -> 4.06 (with harvest_prime 4.05 and other_office_knocks 4.07) so the 10 metrics stop landing at ~09:00-10:00. At order 6 they sat behind ~15 reports plus the whole Tableau screenshot wave: on 8/18 the knocks card posted 09:59 CT, on 8/19 the first metric posted 09:06 CT. alphalete_production (order 4) finishes ~04:37 CT, so the slot right after it puts the metrics out ~04:45-05:45. NOTE: this report has NO effective readiness gate - its data_source tableau:order_log has probe type not_configured and settings.gate_unprobed_sources is false - so nothing stops an early run from reading a stale extract. If a metric ever posts yesterday's numbers, wire the tableau:order_log probe rather than pushing this order back.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "display_name": "10 Daily Metrics Report",
       "source_type": "tableau",
       "data_sources": [
@@ -1984,7 +2000,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "daily-focus"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "weather_alert": {
       "on_scheduler": true,
@@ -2007,7 +2024,7 @@
       }
     },
     "fiber_activations": {
-      "order": 14,
+      "order": 42,
       "on_scheduler": true,
       "display_name": "Fiber Activations Report",
       "source_type": "tableau",
@@ -2035,11 +2052,12 @@
       "verify": {
         "type": "manifest",
         "report_id": "fiber-activations"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "captainship_activations": {
-      "order": 4.961,
-      "_order_note": "12 -> 4.961 (Eve 2026-08-19). THE WHOLE CAPTAINSHIP BLOCK MOVED TO THE FRONT OF THE TABLEAU WAVE, right behind org_sales_board (4.95) and all_campaigns_board (4.96): activations 4.961, churn 4.962, cancel_rate 4.963, owners_metrics_churn 4.964, activation_rate 4.965, abp_6days 4.966, raf_metrics 4.967, drafts 4.968. WHY: Eve asked for the Captainship review link to go up right after the Org Sales Board's, ~07:15 Central, so both get approved and sent together. `order` is the real clock in a serial pass, and at 12-20 this chain only started once the nine per-owner office-metrics reports were done - measured 2026-08-17 it ran 07:55-09:30 and 2026-08-18 07:40-09:14, so the link landed 09:14-09:30, two hours behind the board's 07:03. The chain itself is 80-95 min (activations alone 20-30, owners_metrics_churn up to 30, the drafts build 12-20 and 57 on its worst day), so the ONLY way to have previews on disk before 07:15 is to run it first. From here it starts ~04:50 and the previews are done ~06:10-06:30, half an hour of slack before the clock. WHAT IT COSTS: everything from tableau_screenshots (5) down slides ~80 min - the nine office-metrics posts move from ~05:16-06:31 to ~06:35-07:55, country_sales_board from ~07:55 to ~09:10. Eve's call, made knowing that. Nothing here needs a source that isn't ready at 04:50: fiber_pss / churn / metrics have no readiness probe wired, all three metrics are rolling windows, and the drafts read the board tab the 04:49 fill just wrote. fiber_activations (14) is NOT a dependency - section 2 renders live from the per-captain Captainship Activations tabs (captainship_drafts/fiber_png.py), so the drafts running ahead of it is fine. THE POST ITSELF IS NO LONGER IN THE QUEUE: captainship_drafts_review went on_scheduler:false and onto its own 07:15 LaunchAgent - see its _off_scheduler_note.",
+      "order": 17,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "display_name": "Captainship Activations (per-captain)",
       "source_type": "tableau",
@@ -2071,8 +2089,8 @@
       }
     },
     "captainship_churn": {
-      "order": 4.962,
-      "_order_note": "13 -> 4.962 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 18,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "display_name": "Captainship - New Internet & Wireless Churn",
       "source_type": "tableau",
@@ -2103,8 +2121,8 @@
       }
     },
     "captainship_cancel_rate": {
-      "order": 4.963,
-      "_order_note": "13.5 -> 4.963 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 19,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) \u2014 same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. Writes the LIVE workbook \u2014 no flag needed (Eve 2026-07-28: these tabs were built from scratch for this report, so there is nothing to protect). --sandbox is the opt-in for a practice run.",
       "display_name": "Captainship - Cancel Rate (ATT Fiber)",
@@ -2138,8 +2156,8 @@
       }
     },
     "owners_metrics_churn": {
-      "order": 4.964,
-      "_order_note": "15 -> 4.964 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 20,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "display_name": "Captainship Churn - Owners Metrics",
       "source_type": "tableau",
@@ -2170,8 +2188,8 @@
       }
     },
     "captainship_activation_rate": {
-      "order": 4.965,
-      "_order_note": "15.1 -> 4.965 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 21,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "Eve 2026-07-28: fills the two activation boxes on each fiber captain's 'Activation Rate - <captain> (ATT Fiber)' tab in the Captainship Metrics Report workbook. ORDER 15.1 puts it directly after the other per-captain metrics (captainship_activations 12, captainship_churn 13, owners_metrics_churn 15) and before int_wow_penetration (15.5). ONE Metrics crosstab feeds all five captains \u2014 it is grouped by Captain's Bonus Teams, so the run downloads once and slices per captainship in Python; there are no per-captain views in this workbook. data_sources is [] on purpose: the Metrics workbook has no readiness probe mapped, and both metrics are ROLLING windows (Rolling 4 Weeks / 30-60 day activation rate) rather than 'today's data', so the tableau warm-session gate is the only gate that applies. Sheet-only, no Slack.",
       "display_name": "Captainship Activation Rate (per-captain)",
@@ -2201,8 +2219,8 @@
       }
     },
     "captainship_abp_6days": {
-      "order": 4.966,
-      "_order_note": "15.2 -> 4.966 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 22,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "Eve 2026-07-29: fills the 'ABP %' and '% of Ongoing 6+ Days Sales' boxes on each fiber captain's 'ABP & 6 days out - <captain> (ATT Fiber)' tab in the 'Captainship Metrics Report - ABP and 6 days out' workbook (1XlHd...). ORDER 15.2 puts it right after captainship_activation_rate (15.1), which reads the SAME Metrics crosstab \u2014 same warm Tableau session, and the two never fight over the browser profile. ONE crosstab feeds all five captains (it is grouped by Captain's Bonus Teams, sliced per captainship in Python; this workbook has no per-captain views). The 6-days-out number is a TOOLTIP measure: the visible column is a count, and the % rides along in the export as '% of sales scheduled 6+ days out (4 wks)' \u2014 if someone drops it from the tooltip, the export loses it and the run fails loudly. data_sources is [] for the same reason as the activation report: no readiness probe is mapped to the Metrics workbook and both measures are rolling 4-week windows rather than 'today's data', so the tableau warm-session gate is the only one that applies. Sheet-only, no Slack.",
       "display_name": "Captainship ABP & 6 Days Out (per-captain)",
@@ -2232,8 +2250,8 @@
       }
     },
     "captainship_raf_metrics": {
-      "order": 4.967,
-      "_order_note": "15.3 -> 4.967 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
+      "order": 23,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "The same three metrics the five ATT Fiber captains get, but for RAFAEL \u2014 'Captainship - Cancel Rate' (0-30 + 30-60), 'Captainship - Activation Rate' (0-30 + 30-60), 'Captainship - ABP' and 'Captainship - 6 days out', all in HIS workbook ('AT&T Fiber Metrics Report', 1Xddk29...). Runs right after the three per-captain fills because it reads the SAME Metrics crosstab (ATT TRACKER 2_1 - D2D -> Metrics -> 'Metrics Call Last week data (Internet)'), sliced to Captain's Bonus Teams == \"Raf's Team\". Separate module (captainship_raf_metrics) because his tabs carry a TWO-column pair per day (% + count, date merged over the pair) instead of the fiber tabs' single column. The 30-60 cancel rate is derived as 100% - the 30-60 activation rate (no 30-60 cancel column exists) and the two 30-60 boxes have no count, so their 'units' cells stay blank on purpose. 'Captainship - ABP' is his CAPTAINSHIP's ABP mix and is the one his draft shows (Eve 2026-07-30). Do not confuse it with 'Local Office - New Internet ABP%' in the same workbook: that is his local office, filled by daily_metrics (new_internet_abp), and the draft does not read it. Writes the LIVE workbook: Eve built these three tabs empty for this report on 2026-07-30, so there is nothing to protect; --sheet-id retargets a duplicate for a practice run.",
       "display_name": "Captainship Metrics - Rafael",
@@ -2265,10 +2283,10 @@
       }
     },
     "new_owners_scan": {
-      "order": 15.4,
+      "order": 43,
       "on_scheduler": true,
-      "_note": "Rosters every non-fiber captainship straight from Tableau and asks for a ✅ in #revision-emails on anyone who has no row in that captainship's tables on the Org Sales Board. Read-only against the board: it PROPOSES, it never inserts — the rows appear when Evelyn tick the line and the next captainship run (org_sales_board --with-captainships) resolves it. Runs at 15.4, right after the per-captain fills (Cancel Rate / Activation Rate / ABP / Raf Metrics), which already detect the six FIBER captainships during their own pulls — so this covers what they can't: NDS (Khalil, Colten, Jairo) via the URL filter '?NDS Captain Teams=<X>'s Team', and B2B (Carlos, Eveliz, Luis) via one saved custom view per captain on the 'B2B 1-PAGER_Captain View' tab. NOT folded into the 4am board fill on purpose: six crosstab exports is ~6 minutes and the board must not wait on them. A rep already in the 'New Owners Log' tab — pending OR added — is never proposed twice, so a re-run is silent. Fiber can be added with --programs all once its rosters are worth the extra six pulls.",
-      "display_name": "New Owners — captainship roster scan",
+      "_note": "Rosters every non-fiber captainship straight from Tableau and asks for a \u2705 in #revision-emails on anyone who has no row in that captainship's tables on the Org Sales Board. Read-only against the board: it PROPOSES, it never inserts \u2014 the rows appear when Evelyn tick the line and the next captainship run (org_sales_board --with-captainships) resolves it. Runs at 15.4, right after the per-captain fills (Cancel Rate / Activation Rate / ABP / Raf Metrics), which already detect the six FIBER captainships during their own pulls \u2014 so this covers what they can't: NDS (Khalil, Colten, Jairo) via the URL filter '?NDS Captain Teams=<X>'s Team', and B2B (Carlos, Eveliz, Luis) via one saved custom view per captain on the 'B2B 1-PAGER_Captain View' tab. NOT folded into the 4am board fill on purpose: six crosstab exports is ~6 minutes and the board must not wait on them. A rep already in the 'New Owners Log' tab \u2014 pending OR added \u2014 is never proposed twice, so a re-run is silent. Fiber can be added with --programs all once its rosters are worth the extra six pulls.",
+      "display_name": "New Owners \u2014 captainship roster scan",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -2292,11 +2310,12 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 20,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "org_sales_board": {
-      "order": 4.95,
-      "_order_note": "8 -> 4.95 AND not_before REMOVED (Eve 2026-08-13). A pass runs every ready report SEQUENTIALLY and can take hours, so 'order' is the real clock, not the cadence. At order 8 this fill sat behind FOURTEEN Tableau browser reports (tableau_screenshots 5, _box 5.5, harvest_prime 5.9, daily_metrics 6, and the nine per-owner metrics reports 7-7.9) plus their flake retries, and the 07:05 Slack post / ~07:15 review link Eve asked for on 08-11 could only be hit by luck: 08-12 the board posted 08:34 and the link 08:58; on 08-13 the pass was still retrying tableau_screenshots_box at 07:11 and NEVER REACHED THE BOARD — 8/12 was 0/201 at 08:00, nothing posted, no link, and no alert (a report that never becomes ready never runs and never fails). The 'not_before 06:35' floor added 08-12 made it worse, not better: the pass sweeps order 8 BEFORE 06:35, stamps the board PENDING 'before 06:35', and from then on it can only be caught by an end-of-pass recheck — which is exactly where the flaking Box screenshots live. 4.95 puts it FIRST in the Tableau wave (just ahead of tableau_screenshots at 5), so it fills ~04:50-05:20 with its retries, verify and failure alerts intact, and the 07:05 post has a finished board waiting for it every day. Running this early is the ORIGINAL shape — the 4am fill several notes here still refer to — and is safe now that the box_daily gate is gone: BOX is a day behind ON PURPOSE (Eve 2026-08-12) and the 14:30 board-catchup re-pulls every day-behind section the same afternoon.",
+      "order": 15,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "Fills the SANDBOX 'Copy of' tab daily, the fill AND the weekly rollover BOTH run AUTOMATICALLY. Nobody rolls a board by hand (Eve 2026-07-30). The roll was briefly manual ('a person Monday night', 2026-06-30) and that note outlived the change: it was re-automated 2026-07-14 and runs inside '--step daily' with no flag of its own (run.py, before the fill). It is idempotent and keyed to the REPORTING week, so it rolls at most once a week, on the first run of the Tuesday, and a missed Tuesday self-heals on the next run. Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING: was a not_before '08:00' clock (removed Megan 2026-07-11), then a 'tableau:box_daily' readiness gate that held the board until Box had the latest completed day. Both are gone as of 2026-08-12 \u2014 see _box_gate_note: the board now runs in its ORDER (8) behind a not_before '06:35' floor and does NOT wait for Box, so the chain it feeds lands on a predictable clock. The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop, and is now what makes the day-behind Box column correct. ONLY JE stays a day behind (inherent \u2014 the VAs' manual board is too). COMPARE DEFERRED (Megan 2026-07-14): the fill now runs with --skip-compare. Comparing right after the 4am fill pitted us against a VA tab the VAs hadn't touched yet, so every cell we were merely AHEAD on counted as a difference and the fill closed INCOMPLETE every morning. The real compare is report_id 'board_compare', which runs at 9am CST once the VAs have finished keying.",
       "display_name": "Alphalete Org Sales Board",
@@ -2304,7 +2323,7 @@
       "data_sources": [
         "tableau:sara_byday"
       ],
-      "_box_gate_note": "'tableau:box_daily' REMOVED from data_sources (Eve 2026-08-12): 'que se postee a las 7:15 aunque Box esté siempre un día atrasado'. Box was the board's only real gate and its extract lands 06:50-08:00, so on a slow Box day (8/12: nothing by 07:30) the gate held the fill to its 08:00 fallback and the WHOLE chain behind it — public post, review draft, email — slid to 08:30-09:40. The board no longer waits: it fills at not_before 06:35 with whatever Box has, which is normally the day before. That is accepted, not a bug — the 2:30pm com.alphalete.board-catchup already re-pulls the day-behind sections (Retail NL/Internet/JE + BOX + Frontier), so the CORRECT Box numbers land on the board the same afternoon; only the morning post and the emailed picture show Box a day short. NOTHING ELSE LOSES ITS BOX GATE: tableau_screenshots_box (order 5.5) keeps 'tableau:box_daily' with its 08:00 fallback untouched, so Carlos's channels still get real Box numbers (the 2026-07-16 complaint) instead of yesterday's. Restore by putting 'tableau:box_daily' back here and dropping not_before.",
+      "_box_gate_note": "'tableau:box_daily' REMOVED from data_sources (Eve 2026-08-12): 'que se postee a las 7:15 aunque Box est\u00e9 siempre un d\u00eda atrasado'. Box was the board's only real gate and its extract lands 06:50-08:00, so on a slow Box day (8/12: nothing by 07:30) the gate held the fill to its 08:00 fallback and the WHOLE chain behind it \u2014 public post, review draft, email \u2014 slid to 08:30-09:40. The board no longer waits: it fills at not_before 06:35 with whatever Box has, which is normally the day before. That is accepted, not a bug \u2014 the 2:30pm com.alphalete.board-catchup already re-pulls the day-behind sections (Retail NL/Internet/JE + BOX + Frontier), so the CORRECT Box numbers land on the board the same afternoon; only the morning post and the emailed picture show Box a day short. NOTHING ELSE LOSES ITS BOX GATE: tableau_screenshots_box (order 5.5) keeps 'tableau:box_daily' with its 08:00 fallback untouched, so Carlos's channels still get real Box numbers (the 2026-07-16 complaint) instead of yesterday's. Restore by putting 'tableau:box_daily' back here and dropping not_before.",
       "command": [
         "automations.org_sales_board.run"
       ],
@@ -2325,7 +2344,7 @@
           6
         ]
       },
-      "_cadence_note": "NO not_before. It was added 2026-08-12 to give the fill a fixed 06:35 start once the box_daily gate came off; what it actually did was guarantee the pass would skip the board on its way past and leave it to the recheck sweep. Order is the clock here — see _order_note.",
+      "_cadence_note": "NO not_before. It was added 2026-08-12 to give the fill a fixed 06:35 start once the box_daily gate came off; what it actually did was guarantee the pass would skip the board on its way past and leave it to the recheck sweep. Order is the clock here \u2014 see _order_note.",
       "priority": "P1",
       "freshness_target": null,
       "depends_on": [],
@@ -2338,8 +2357,8 @@
     "org_sales_board_email": {
       "order": 8.2,
       "on_scheduler": false,
-      "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-13 (Eve) — the review link now runs on a CLOCK, from the standalone com.alphalete.org-board-review-post LaunchAgent (deploy/org_board_review_post.sh, 07:00 every day with 07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state; Tue-Sun until Eve added Monday 2026-08-17). Kept here so `lucy rerun org_sales_board_email` still works, and because every gate documented below still describes what review_gate --post does. WHY IT HAD TO LEAVE. Its trigger is 'slack:org_board_posted' — ready only once the board is posted at 07:05 — but a pass runs every ready report SEQUENTIALLY and sweeps this entry long before 07:05, stamping it PENDING; from there only an end-of-pass recheck or the next pass can pick it up, i.e. it queues behind fourteen Tableau reports and their flake retries. 2026-08-12 the link landed 08:58 (board out 08:34); 2026-08-13 the pass never got past order 5.5 and there was NO LINK AT ALL and no alert — the exact silent-hold failure the 08-04 note below describes, one gate later. A clock cannot be starved by the queue in front of it. The 11:30 fail-open, the checkmark gate and the recipients are all unchanged. MONDAY: belonged to deploy/board_catchup.sh at 14:30 until 2026-08-17, when Eve moved it to 07:00 with every other day (Weekday 1 added to the plist) and turned the 14:30 Monday branch into a silent data-only refresh ahead of Tuesday's rollover — see the cadence _note below.",
-      "_order_note": "10.5 -> 8.2 (Eve 2026-08-11), kept BEHIND all_campaigns_board (8.1) — the ordering the 8/06 note above exists to protect, moved forwardas a pair. All gates unchanged: depends_on org_sales_board + all_campaigns_board, and readiness slack:org_board_posted still holds the draft until the board is public, so this cannot outrun the post. The review gate stays: nothing here mails anyone.",
+      "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-13 (Eve) \u2014 the review link now runs on a CLOCK, from the standalone com.alphalete.org-board-review-post LaunchAgent (deploy/org_board_review_post.sh, 07:00 every day with 07:30 / 08:00 / 09:00 as a safety net, one post per day via a marker in output/day_state; Tue-Sun until Eve added Monday 2026-08-17). Kept here so `lucy rerun org_sales_board_email` still works, and because every gate documented below still describes what review_gate --post does. WHY IT HAD TO LEAVE. Its trigger is 'slack:org_board_posted' \u2014 ready only once the board is posted at 07:05 \u2014 but a pass runs every ready report SEQUENTIALLY and sweeps this entry long before 07:05, stamping it PENDING; from there only an end-of-pass recheck or the next pass can pick it up, i.e. it queues behind fourteen Tableau reports and their flake retries. 2026-08-12 the link landed 08:58 (board out 08:34); 2026-08-13 the pass never got past order 5.5 and there was NO LINK AT ALL and no alert \u2014 the exact silent-hold failure the 08-04 note below describes, one gate later. A clock cannot be starved by the queue in front of it. The 11:30 fail-open, the checkmark gate and the recipients are all unchanged. MONDAY: belonged to deploy/board_catchup.sh at 14:30 until 2026-08-17, when Eve moved it to 07:00 with every other day (Weekday 1 added to the plist) and turned the 14:30 Monday branch into a silent data-only refresh ahead of Tuesday's rollover \u2014 see the cadence _note below.",
+      "_order_note": "10.5 -> 8.2 (Eve 2026-08-11), kept BEHIND all_campaigns_board (8.1) \u2014 the ordering the 8/06 note above exists to protect, moved forwardas a pair. All gates unchanged: depends_on org_sales_board + all_campaigns_board, and readiness slack:org_board_posted still holds the draft until the board is public, so this cannot outrun the post. The review gate stays: nothing here mails anyone.",
       "_note": "BACK ON, DELAYED, DATA-GATED, AND NOW REVIEW-GATED (Eve 2026-07-29). This entry no longer sends anything: it runs review_gate --post, which builds the day's preview, prints it to PDF, drops it in Drive and posts the link in #revision-emails AS LUCY (the mini's token). The email goes out only when Lucy or Evelyn puts a checkmark on that post \u2014 picked up within 15 min by the com.alphalete.org-board-email-review LaunchAgent (deploy/org_board_email_review.sh, 9am-8pm), which mails the images ALREADY captured, from the run's manifest, so what was approved is what goes out. Same review habit as the captainship drafts, deliberately. History: Megan took it off the scheduler 2026-07-28 (it was still emailing only the proving list) and handed it to Eve, who turned it back on with three gates instead of one. (1) + (2) WERE a clock (not_before 09:30) and a completeness rule of its own (data_sources 'sheet:org_board_yesterday' -> readiness._probe_org_board_filled -> org_sales_board.data_gate: hold until YESTERDAY's column is filled for every section but the day-behind ones, opening at 11:30 regardless). BOTH REPLACED 2026-08-04 (Eve) by ONE trigger: 'slack:org_board_posted' -> readiness._probe_org_board_posted, ready the moment the board is POSTED in #top-leaders-alphalete-org. The draft is that same board, so the post is what makes it worth reviewing, and the org seeing it is a stronger signal than any rule of ours. WHY: the post clears a LIGHTER bar than the old gate did (slack_post.fill_gate posts unless yesterday is entirely empty), so the two could disagree and on 2026-08-04 they did \u2014 board out at 08:33, draft still not in #revision-emails at 11:00, and no alert, because a report that never becomes ready never runs, never fails and writes no Hub Activity row. Still fails OPEN at 11:30, before the 12:00 backstop, so a board that never posts cannot also cost the day's email. Gating in READINESS, not in an exit code, keeps a late board STILL_TRYING \u2014 circled back each pass, no burnt retries, no red pill, no failure alert. (3) the human checkmark, unchanged: nothing here mails anyone. RECIPIENTS UNCHANGED: the proving list (Rafael + Megan); the real distro is a separate call \u2014 add '--distro' to the CHECKER's args in deploy/org_board_email_review.sh, not here. depends_on org_sales_board so it only runs AFTER the fill is DONE. ORDER 9 -> 10.5 AND depends_on all_campaigns_board TOO (Eve 2026-08-06): this email carries the All Units board as a SECOND SECTION (screenshot_email.capture_all_units renders 4 blocks off that tab LIVE, via all_campaigns_board.slack_post.build_pngs), but all_campaigns_board is order 10 \u2014 so at order 9 the email always photographed the All Units tab BEFORE the day's fill wrote it, and every draft carried the day-before-yesterday's numbers there. Measured 2026-08-06: email 09:02-09:05, All Campaigns fill 09:05:18. Thirteen seconds, every single day. Nothing caught it because capture_all_units is deliberately fail-soft (logs '\u26a0 All Units section SKIPPED' and carries on \u2014 a missing section beats no email), so the run still exits 0 and the PDF still looks whole. depends_on (not `after`) is right here because INCOMPLETE COUNTS AS MET: all_campaigns_board exits 75 whenever a rep doesn't match, and run._gates treats DONE and INCOMPLETE alike \u2014 only a FAILED fill holds the email, which is exactly when its All Units section would be wrong. A held email is visible: it sits PENDING 'waiting on all_campaigns_board' and the 12:00 backstop makes it terminal and alerts. Monday did not come through here at all until 2026-08-17 (it ran from deploy/board_catchup.sh); it now posts at 07:00 like every other day and board_catchup.sh only refreshes the numbers. source_type 'tableau' only to phase it right after the board \u2014 it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email (a revisi\u00f3n)",
       "source_type": "tableau",
@@ -2353,7 +2372,7 @@
         "--post"
       ],
       "cadence": {
-        "_note": "SEVEN DAYS since 2026-08-17 (Eve: 'que salga temprano como todos los dias y luego haga un refresh por la tarde'). Monday (0) was EXCLUDED from 2026-07-13 (Megan) because last week's Sunday only lands in the day-behind sources through Monday afternoon, so a 07:00 email undercounts it — Monday's board+email ran at 14:30 from deploy/board_catchup.sh instead. That bought a complete picture for a link seven hours later than every other day, on the day the board IS the whole closed week, and it made Monday the one day the approvers had a different habit. Now Monday posts at 07:00 with the rest and board_catchup.sh's Monday branch is a SILENT data refresh (no post, no PDF re-cut) that still gets Retail JE / SARA / BOX / Frontier right before TUESDAY's rollover freezes the week. ACCEPTED TRADE: Monday's emailed picture can show Sunday missing in those sections; the board itself is correct by ~14:45. This entry is on_scheduler false, so the weekdays list is documentation plus what a `lucy rerun` reads — the real clock is deploy/com.alphalete.org-board-review-post.plist, which now has Weekday 1.",
+        "_note": "SEVEN DAYS since 2026-08-17 (Eve: 'que salga temprano como todos los dias y luego haga un refresh por la tarde'). Monday (0) was EXCLUDED from 2026-07-13 (Megan) because last week's Sunday only lands in the day-behind sources through Monday afternoon, so a 07:00 email undercounts it \u2014 Monday's board+email ran at 14:30 from deploy/board_catchup.sh instead. That bought a complete picture for a link seven hours later than every other day, on the day the board IS the whole closed week, and it made Monday the one day the approvers had a different habit. Now Monday posts at 07:00 with the rest and board_catchup.sh's Monday branch is a SILENT data refresh (no post, no PDF re-cut) that still gets Retail JE / SARA / BOX / Frontier right before TUESDAY's rollover freezes the week. ACCEPTED TRADE: Monday's emailed picture can show Sunday missing in those sections; the board itself is correct by ~14:45. This entry is on_scheduler false, so the weekdays list is documentation plus what a `lucy rerun` reads \u2014 the real clock is deploy/com.alphalete.org-board-review-post.plist, which now has Weekday 1.",
         "weekdays": [
           0,
           1,
@@ -2373,9 +2392,9 @@
       "verify": null
     },
     "all_campaigns_board": {
-      "order": 4.96,
-      "_order_note_2026_08_13": "8.1 -> 4.96 (Eve 2026-08-13): moved as a PAIR with org_sales_board (8 -> 4.95), keeping this immediately behind the board exactly as the note below intends. Its `after` on the board is unchanged, so it still cannot run first. Note the last sentence below is now stale: box_daily was dropped from the board's data_sources on 2026-08-12, so there is no longer a ~7-8am floor under the fill — BOX is simply a day behind until the 14:30 catch-up.",
-      "_order_note": "10 -> 8.1 (Eve 2026-08-11). This fill is what the Org board EMAIL waits on (depends_on), and the draft starts within a minute of it finishing — so this report's clock IS the draft's clock. Measured 8/06-8/11: the board fill ended 07:04-07:11 and this ran 08:24-09:40, a 1.5-2.5h gap that was pure queue position, then the draft at 09:05-09:40 and the email at 09:19-10:00. Sitting it right behind org_sales_board (8) removes that gap. It reads the board's own tab and takes ~1 min, so nothing before order 8 is delayed. The floor underneath all of this is NOT the queue: org_sales_board is gated on tableau:box_daily, whose extract lands ~7-8am, so a COMPLETE board cannot exist before ~07:05 no matter how this is ordered.",
+      "order": 16,
+      "_order_note_2026_08_13": "8.1 -> 4.96 (Eve 2026-08-13): moved as a PAIR with org_sales_board (8 -> 4.95), keeping this immediately behind the board exactly as the note below intends. Its `after` on the board is unchanged, so it still cannot run first. Note the last sentence below is now stale: box_daily was dropped from the board's data_sources on 2026-08-12, so there is no longer a ~7-8am floor under the fill \u2014 BOX is simply a day behind until the 14:30 catch-up.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "Fills the 'All Campaigns Org Sales Board' tab's per-person 'All Units' daily section. It's a campaign-AGNOSTIC product-totals ranking: unlike the ORG Sales Board it does NOT split a rep by campaign \u2014 one line per person = SUM across every campaign. Reads the already-filled 'Alphalete ORG Sales Board' tab's eight daily sections (Retail NL, ATT Fiber Team, Retail JE, ATT NDS Team, B2B, BOX, Frontier, Retail Internet), sums each rep by normalized name across all of them, and writes the Mon-Sun day cells via the ORG board's fill_section engine. Everything else on the tab is formula-driven (running total =SUM, leaderboard =SUMIF, Product Summary/vs-Prior) and auto-derives. `after` org_sales_board (SOFT: runs once the board reaches ANY terminal state, so a board INCOMPLETE \u2014 which is common \u2014 never strands this) rather than depends_on. base_args '--apply' = LIVE write. Validated + ROLLED OUT LIVE 2026-07-24 (Megan): aggregated grand-total-per-day matched the Copy tab's Grand Total row exactly; 38/38 board rows matched, 0 unmatched. Auto-fires daily (weekdays [0..6]) right after the board. TUESDAY ROLLOVER (base_args '--enable-rollover', validated + approved by Megan 2026-07-24): same fixed-window system as the Copy tab \u2014 self-heals off the leaderboard week header, so it rolls on the first run of the new reporting week (Tuesday) and is a no-op otherwise. NO columns/rows grow: the weekly leaderboard shifts C(this wk value)->D->..->G with the oldest week DROPPED; the daily per-rep running total shifts J->K->L (L lost); the WE-history rows shift down (oldest dropped); the delta box freezes this-week->last-week; then day cells clear + the date anchor advances. Snapshots to backup_pre_rollover_allcampaigns first. `lucy rerun all_campaigns_board` runs it on demand. Exits 75 (INCOMPLETE) if a board rep never matched the pull, or a producing rep has no board row (flagged, never silently dropped).",
       "display_name": "All Campaigns Org Sales Board",
@@ -2418,10 +2437,10 @@
       }
     },
     "org_board_zero_streak": {
-      "order": 4.97,
+      "order": 26,
       "on_scheduler": true,
-      "_note": "Two-week zero rule (Eve, 2026-08-19): a rep at a literal 0 for TWO consecutive CLOSED weeks comes off that campaign's boxes. This step only DETECTS and posts the list to #revision-emails, next to the new-owners notices — taking someone off the board is irreversible for them, so the removal itself stays a human call, like every other gate here. The removal tools are org_sales_board.roster_remove + all_campaigns_board.roster_remove + org_sales_board.distro_remove, and `--commands` prints the exact steps. TUESDAY, after org_sales_board: the board rolls Tuesday, so that is the first run where the week just ended reads as CLOSED. Blank is not a zero, so a new hire with no history lands in a separate 'decidir a mano' bucket instead of being proposed for removal.",
-      "display_name": "Two-week zero rule — quien sale del board",
+      "_note": "Two-week zero rule (Eve, 2026-08-19): a rep at a literal 0 for TWO consecutive CLOSED weeks comes off that campaign's boxes. This step only DETECTS and posts the list to #revision-emails, next to the new-owners notices \u2014 taking someone off the board is irreversible for them, so the removal itself stays a human call, like every other gate here. The removal tools are org_sales_board.roster_remove + all_campaigns_board.roster_remove + org_sales_board.distro_remove, and `--commands` prints the exact steps. TUESDAY, after org_sales_board: the board rolls Tuesday, so that is the first run where the week just ended reads as CLOSED. Blank is not a zero, so a new hire with no history lands in a separate 'decidir a mano' bucket instead of being proposed for removal.",
+      "display_name": "Two-week zero rule \u2014 quien sale del board",
       "source_type": "sheet",
       "data_sources": [],
       "command": [
@@ -2442,7 +2461,8 @@
         "org_sales_board"
       ],
       "verify": null,
-      "timeout_minutes": 6
+      "timeout_minutes": 6,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "all_campaigns_board_slack": {
       "order": 11,
@@ -2510,7 +2530,7 @@
       "verify": null
     },
     "country_sales_board_email": {
-      "order": 11.6,
+      "order": 41,
       "on_scheduler": true,
       "_note": "BUILDS AND POSTS FOR REVIEW \u2014 it never mails anyone. The run captures the board (the same exact-sheet PNG its Slack DM uses), writes output/board_emails/country/<date>/, renders a PDF, drops it in Drive and has Lucy post the link in #revision-emails. A :white_check_mark: from Evelyn is what sends it, via deploy/org_board_email_review.sh, the every-15-min watcher ALREADY installed on the mini \u2014 it now checks this board alongside the Org board's own email, and mails the image ALREADY captured, so what was approved is what goes out. Nothing new to install. Recipients: Rafael + Maud Miller ONLY (Eve 2026-07-30). NO not_before since 2026-08-04 (Eve) \u2014 see the cadence note. It used to be 09:30 'so the post lands when the approvers are actually reading', which cost far more than it bought: in a serial queue a clock does not delay a report, it makes it lose its turn, and on 2026-08-04 the draft never went up at all. An early post is not a problem the way a missing one is \u2014 the checker looks every 15 min from 09:00 to 20:00 and nudges the channel if nobody has reacted, so a link posted at 07:20 is still waiting, in one piece, when the approvers open Slack. depends_on country_sales_board stays: the email can never show a board that hasn't filled yet.",
       "display_name": "Country Sales Board Email (a revisi\u00f3n)",
@@ -2541,10 +2561,11 @@
       "depends_on": [
         "country_sales_board"
       ],
-      "verify": null
+      "verify": null,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "country_sales_board": {
-      "order": 11.5,
+      "order": 40,
       "on_scheduler": true,
       "_note": "Fills the 'Country Sales Board' tab's per-ICD daily block ('Fiber - All Units') and runs its TUESDAY rollover. Modelled on all_campaigns_board and slotted right after it, i.e. after the 'Alphalete ORG Sales Board' block (Eve 2026-07-27). SOURCE IS TABLEAU, NOT THE COPY TAB \u2014 unlike all_campaigns_board this one does its own crosstab download: ATT Tracker 2.1 - D2D / D2D 1-PAGERV4, worksheet 'Sales By ICD (ATT) (V2)', which is the 'D2D Page 1 - This Week' tracker (its header row literally reads 'This Week'). One crosstab in, seven day columns out; the leaderboard =SUMIF, Totals =SUM, Product Summary and Current-vs-Prior all derive themselves, so the fill writes ONLY the Mon-Sun day cells. The view's two windows are relative and NOT filterable by week, so pull.pull_icd_days_aligned checks which week came back and falls back to the '(LW2)' worksheet if 'This Week' doesn't cover the board \u2014 a source that ever rolls a day early can never smear one week into another week's columns. TUESDAY ROLLOVER (base_args '--enable-rollover'): keyed off week.reporting_sunday, so it fires on the first run of the new reporting week and is a no-op every other day; a missed Tuesday rolls Wednesday. MONDAY never rolls (Monday's fill writes SUNDAY into the closing week). Snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything. VALIDATED 2026-07-27 (Eve): fill engine reproduced the VAs' own frozen WE 07.19 leaderboard column 75/75 EXACT off the 7/20 crosstab, 0 differences \u2014 the only delta was Blue Mendoza, blank on the VA column because her row postdates that freeze and correctly 50 from the automation. Rollover run live end-to-end on the sandbox (WE 07.26 -> WE 08.02): leaderboard grows right, WE stack insert + Current-vs-Prior re-anchor, per-rep J->K->L, day cells clear, and it is a no-op on every later day of the week. POST-WRITE VERIFICATION (Eve 2026-07-27): the run re-reads the sheet and asserts the day block's Totals row carries NUMBERS for YESTERDAY \u2014 the day it reports on, and always the newest column with data. A zero or blank there exits 1, so the orchestrator marks it FAILED and the failure alert fires. This exists because there is no `verify` manifest for this report, so a run that completed having written nothing used to exit 0 and be recorded DONE with nobody told. It reads the TOTALS row (a =SUM over the cells just written), which proves both that the numbers arrived AND that they landed inside the ranges the board's own aggregates cover. Every early-return path is gated by it too, including the 'no data yet' one. A country-wide 0 is a real signal: this board does ~7,000 units a week and its quietest day still runs ~190. Escape hatch: --no-verify. Unmatched board ICDs, by contrast, are WARNED, never a non-zero exit \u2014 5 rows (Edgar Muniz II, Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) are inactive reps absent from the view sitting at a correct 0.",
       "_warn": "LIVE ON THE REAL TAB since 2026-07-27 (Eve, after the sandbox validation in _note) \u2014 base_args carries '--real --i-mean-it', so this writes 'Country Sales Board', the tab the country reads and the one the VAs used to key BY HAND. THE VAs MUST NOT ALSO ROLL IT: two rollovers on one tab in one Tuesday double-shift the leaderboard (every frozen week lands one column too far right) and push a second WE row into the history stack. The Tuesday roll snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything \u2014 that is the tab to restore from if it ever happens. To back out, drop '--real --i-mean-it' from base_args and it returns to 'Country Sales Board (sandbox)'; nothing else changes.",
@@ -2586,7 +2607,8 @@
             "min_nonblank": 1
           }
         ]
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "country_sales_board_slack": {
       "order": 11.6,
@@ -2621,8 +2643,8 @@
     },
     "captainship_drafts": {
       "timeout_minutes": 90,
-      "order": 4.968,
-      "_order_note": "20 -> 4.968 (Eve 2026-08-19). Last step of the captainship block, which moved to the front of the Tableau wave so its review link can go up at 07:15 Central, right after the Org Sales Board's 07:00 one - see captainship_activations' _order_note. The build still runs in the 4am pass; only the POST left the queue for a clock (captainship_drafts_review, on_scheduler:false + com.alphalete.captainship-review-post at 07:15). So the previews are on disk by ~06:10-06:30 and the 07:15 agent just prints and posts them. Its depends_on is unchanged and is what actually orders it: all seven captainship fills plus org_sales_board.",
+      "order": 24,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau \u00a72 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. RAFAEL followed on 2026-07-30 (Eve): his draft went from 4 sections to 9 in her exact order \u2014 Product Summary, the two cancel-rate boxes, NI churn, Wireless churn, then ABP %, activation 0-30 / 30-60 and 6+ days out. All six of those boxes are filled by captainship_raf_metrics on his own workbook, ABP included \u2014 it comes from his 'Captainship - ABP' tab, NOT from 'Local Office - New Internet ABP%' in the same workbook. His Tableau Cancel-Rates \u00a72 shot is gone with the change, so only B2B/NDS still need a Tableau session for their second section. B2B / NDS are otherwise unchanged.",
       "display_name": "Captainship Report Drafts (12)",
@@ -2997,7 +3019,7 @@
     "resume_pushing": {
       "on_scheduler": false,
       "standalone_watch": false,
-      "_retired_note": "MERGED into applicant_push 2026-08-10. Resume Pushing no longer runs as its own report — its batch stage + OAT leftovers now run together q5min under applicant_push on Lucy 2. on_scheduler:false + standalone_watch:false so machine_digest's missed-run watcher STOPS expecting it (it ran historically, so without standalone_watch:false the 3-week baseline keeps posting 'didn't run today on Lucy 2'). Entry kept only so old `lucy rerun resume_pushing` handles still resolve.",
+      "_retired_note": "MERGED into applicant_push 2026-08-10. Resume Pushing no longer runs as its own report \u2014 its batch stage + OAT leftovers now run together q5min under applicant_push on Lucy 2. on_scheduler:false + standalone_watch:false so machine_digest's missed-run watcher STOPS expecting it (it ran historically, so without standalone_watch:false the 3-week baseline keeps posting 'didn't run today on Lucy 2'). Entry kept only so old `lucy rerun resume_pushing` handles still resolve.",
       "machine": "Lucy 2",
       "_note": "Carlos's ApplicantStream office-11580 resume extract + send-to-AI, as a remote-runnable handle. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it \u2014 its real schedule is the 8am launchd job (com.alphalete.resume-pushing, installed via install_resume_pushing_agent). This entry exists so `lucy rerun resume_pushing --dry-run` (safe probe) and `lucy rerun resume_pushing` (LIVE) work on Lucy 2, and so the Hub card's Dry Run / Run Live buttons have a path. SEND-TO-AI IS IRREVERSIBLE \u2014 always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first.",
       "display_name": "Resume Pushing (Carlos, office 11580)",
@@ -3381,7 +3403,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 20,
+      "order": 51,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "disable_raf_captainship_bonus_agent": {
       "on_scheduler": false,
@@ -3490,7 +3514,7 @@
       "timeout_minutes": 5
     },
     "daily_rep_breakdown": {
-      "_order_note": "NO explicit order ON PURPOSE (Megan 2026-08-19). registry._FLOW_LAST already marks this dead-last via flow_rank 2, but `order` is the PRIMARY sort key - an explicit order:16 overrode that and put it 40th of 48 with eight reports after it. Leaving order unset drops it to the 10_000 default so flow_rank decides, which is what pins it genuinely last.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",
       "source_type": "tableau",
@@ -3527,10 +3551,11 @@
       "verify": {
         "type": "manifest",
         "report_id": "daily-rep-breakdown"
-      }
+      },
+      "order": 60
     },
     "recruiter_retention_daily": {
-      "order": 2,
+      "order": 3,
       "on_scheduler": true,
       "display_name": "Daily Recruiter 1st Round Retention",
       "source_type": "appstream",
@@ -3554,7 +3579,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "recruiter-retention-daily"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "brand_audit": {
       "on_scheduler": false,
@@ -3590,7 +3616,7 @@
       }
     },
     "att_focus_raf": {
-      "order": 10,
+      "order": 37,
       "on_scheduler": true,
       "display_name": "ATT Program - Focus Report (Raf)",
       "source_type": "tableau",
@@ -3613,7 +3639,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "recruiting"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "vantura_churn": {
       "on_scheduler": true,
@@ -3701,7 +3728,7 @@
       }
     },
     "alphalete_org_focus": {
-      "order": 11,
+      "order": 39,
       "on_scheduler": true,
       "display_name": "Alphalete Org 1on1s - Focus Report",
       "source_type": "tableau",
@@ -3726,7 +3753,8 @@
       },
       "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week).",
       "timeout_minutes": 90,
-      "_timeout_note": "Was UNSET, i.e. the 45m default — for a wrapper that chains SIX steps (recruiting pull + NDS + BOX + JE + B2B + Retail), each its own patchright Tableau session. That budget was never measured against a real run: on 2026-08-10 the 45m cap fired INSIDE B2B (step 5), so Retail (step 6) never ran at all and the two steps had to be recovered by hand. Measured that day: steps 1-4 ~10min, B2B ~17min, Retail ~6min = ~33min with the mini otherwise idle — under the 4am batch, with several browser reports competing for the same Chrome profile, every step is slower. 90 gives real headroom without being unbounded. The per-step ids (_retail/_box/_je/_b2b, 30-40m each) stay the escape hatch when only one step needs redoing."
+      "_timeout_note": "Was UNSET, i.e. the 45m default \u2014 for a wrapper that chains SIX steps (recruiting pull + NDS + BOX + JE + B2B + Retail), each its own patchright Tableau session. That budget was never measured against a real run: on 2026-08-10 the 45m cap fired INSIDE B2B (step 5), so Retail (step 6) never ran at all and the two steps had to be recovered by hand. Measured that day: steps 1-4 ~10min, B2B ~17min, Retail ~6min = ~33min with the mini otherwise idle \u2014 under the 4am batch, with several browser reports competing for the same Chrome profile, every step is slower. 90 gives real headroom without being unbounded. The per-step ids (_retail/_box/_je/_b2b, 30-40m each) stay the escape hatch when only one step needs redoing.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "alphalete_org_retail": {
       "on_scheduler": true,
@@ -3791,8 +3819,8 @@
     },
     "carlos_noah_nds": {
       "on_scheduler": true,
-      "_note": "Noah Dubale (office 23356) is on the Carlos 1on1s roster but SELLS NDS — confirmed by Carlos 2026-08-17, after an earlier read that he had moved to B2B was corrected. Carlos's OPT engine pulls all six views from ATTTRACKER-B2B, so Noah's whole OPT block came back empty while his recruiting half filled fine. This entry runs the NDS/ATT opt_phase against his ONE tab (automations.recruiting_report.carlos_noah_nds sets CAPTAINSHIP=Carlos, which schedule_config cannot do, then calls opt_phase --only 'Noah Dubale'). machine 'Lucy 2' to match carlos_focus — Carlos's sheet and session live there. source_type tableau so the Chrome-collision guard runs first; data_sources [] so a manual run is never held by a readiness gate. Not a Hub card. NOTE for a manual run: a clean exit does not prove Noah is present in the NDS crosstabs, only that the run finished. RUNS AUTOMATICALLY WITH CARLOS'S REPORT (Eve 2026-08-17: 'tiene que estar en la sheet de carlos y correr cuando corra su reporte') — it was rerun-only (weekdays []) when first added, deliberately, to keep the one NDS exception on a B2B report visible. Eve overrode that: same weekday [0] as carlos_focus, ordered behind it with `after`. `after` and NOT `depends_on` ON PURPOSE — depends_on strands the dependent when the dep FAILS, and carlos_focus fails routinely on a dead Tableau view (B2BCancelRates, 3x on 2026-08-16/17); Noah's NDS pull has nothing to do with those B2B views, so a B2B failure must not skip him. It still stays OUT of carlos_opt_all's step list for the original visibility reason — see the module docstring.",
-      "display_name": "Carlos 1on1s — Noah Dubale NDS OPT only",
+      "_note": "Noah Dubale (office 23356) is on the Carlos 1on1s roster but SELLS NDS \u2014 confirmed by Carlos 2026-08-17, after an earlier read that he had moved to B2B was corrected. Carlos's OPT engine pulls all six views from ATTTRACKER-B2B, so Noah's whole OPT block came back empty while his recruiting half filled fine. This entry runs the NDS/ATT opt_phase against his ONE tab (automations.recruiting_report.carlos_noah_nds sets CAPTAINSHIP=Carlos, which schedule_config cannot do, then calls opt_phase --only 'Noah Dubale'). machine 'Lucy 2' to match carlos_focus \u2014 Carlos's sheet and session live there. source_type tableau so the Chrome-collision guard runs first; data_sources [] so a manual run is never held by a readiness gate. Not a Hub card. NOTE for a manual run: a clean exit does not prove Noah is present in the NDS crosstabs, only that the run finished. RUNS AUTOMATICALLY WITH CARLOS'S REPORT (Eve 2026-08-17: 'tiene que estar en la sheet de carlos y correr cuando corra su reporte') \u2014 it was rerun-only (weekdays []) when first added, deliberately, to keep the one NDS exception on a B2B report visible. Eve overrode that: same weekday [0] as carlos_focus, ordered behind it with `after`. `after` and NOT `depends_on` ON PURPOSE \u2014 depends_on strands the dependent when the dep FAILS, and carlos_focus fails routinely on a dead Tableau view (B2BCancelRates, 3x on 2026-08-16/17); Noah's NDS pull has nothing to do with those B2B views, so a B2B failure must not skip him. It still stays OUT of carlos_opt_all's step list for the original visibility reason \u2014 see the module docstring.",
+      "display_name": "Carlos 1on1s \u2014 Noah Dubale NDS OPT only",
       "machine": "Lucy 2",
       "source_type": "tableau",
       "data_sources": [],
@@ -3817,8 +3845,8 @@
     },
     "alphalete_org_b2b": {
       "on_scheduler": true,
-      "_note": "Re-run ONLY the B2B OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_b2b` — added 2026-08-10 after a full rerun (rerun-2026-08-10-095316-alphalete_org_focus) printed the '=== B2B OPT ===' banner and then went SILENT for ~42min until the 45m queue cap killed it, so Retail (step 6) never ran and the whole-report retry was the only way back in. Completes the per-step set alongside alphalete_org_retail / _box / _je. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes this step). source_type tableau so the Chrome-collision guard runs first. data_sources [] like _je so a manual retry is never held by a readiness gate. timeout_minutes 40: first set to 25 on the theory that this step hangs, then RAISED the same day once the evidence said otherwise — Tableau on the mini was demonstrably healthy (country_sales_board exit 0 with 539 writes at 12:16-12:38, tableau_screenshots_box at 08:28, both AFTER these failures), so the step isn't hanging, it just needs more wall-clock than the cap allowed. Sibling _retail raised 20 -> 40 for the same reason. Not a Hub card.",
-      "display_name": "Alphalete Org 1on1s — B2B OPT only",
+      "_note": "Re-run ONLY the B2B OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_b2b` \u2014 added 2026-08-10 after a full rerun (rerun-2026-08-10-095316-alphalete_org_focus) printed the '=== B2B OPT ===' banner and then went SILENT for ~42min until the 45m queue cap killed it, so Retail (step 6) never ran and the whole-report retry was the only way back in. Completes the per-step set alongside alphalete_org_retail / _box / _je. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes this step). source_type tableau so the Chrome-collision guard runs first. data_sources [] like _je so a manual retry is never held by a readiness gate. timeout_minutes 40: first set to 25 on the theory that this step hangs, then RAISED the same day once the evidence said otherwise \u2014 Tableau on the mini was demonstrably healthy (country_sales_board exit 0 with 539 writes at 12:16-12:38, tableau_screenshots_box at 08:28, both AFTER these failures), so the step isn't hanging, it just needs more wall-clock than the cap allowed. Sibling _retail raised 20 -> 40 for the same reason. Not a Hub card.",
+      "display_name": "Alphalete Org 1on1s \u2014 B2B OPT only",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -3835,7 +3863,7 @@
       "timeout_minutes": 40
     },
     "recruiter_retention_weekly": {
-      "order": 3,
+      "order": 4,
       "on_scheduler": true,
       "display_name": "Ongoing 1st Round Recruiter Retention",
       "source_type": "appstream",
@@ -3855,7 +3883,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "recruiter-retention-weekly"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "leaders_call": {
       "on_scheduler": false,
@@ -3965,7 +3994,7 @@
       "verify": null
     },
     "int_wow_penetration": {
-      "order": 15.5,
+      "order": 44,
       "on_scheduler": true,
       "display_name": "Int WoW Report - Penetration %",
       "source_type": "tableau",
@@ -3991,10 +4020,11 @@
       "idempotency": {
         "insert_style": true,
         "_note": "inserts a new week column; existing guard overwrites WE column if already at B (verified 2026-06-23)."
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "country_metrics": {
-      "order": 15.6,
+      "order": 45,
       "on_scheduler": true,
       "display_name": "Country Metrics",
       "source_type": "tableau",
@@ -4020,10 +4050,11 @@
       "idempotency": {
         "insert_style": true,
         "_warn": "inserts a new week column \u2014 confirm it won't double-insert on retry before cutover."
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "residential_rep_count": {
-      "order": 4.6,
+      "order": 13,
       "on_scheduler": true,
       "display_name": "Residential Rep Count",
       "source_type": "email",
@@ -4052,7 +4083,8 @@
           "no clear source signals found"
         ],
         "readiness_applies": false
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "frontier_opt": {
       "on_scheduler": true,
@@ -4077,7 +4109,7 @@
       }
     },
     "rashad_metrics": {
-      "order": 7,
+      "order": 27,
       "on_scheduler": true,
       "_disabled_reason": "BUILDING 2026-06-28. 4 of 7 metrics wired (order_log, canceled_orders, disconnects, sales_6plus) via the org-wide-pull \u2192 filter-to-Rashad pattern. Posts AS Lucy by reusing the SAME Slack token path as daily_metrics (no separate token \u2014 on the mini that file is Lucy). Remaining 3 are FLAGGED, each needs a Tableau asset that doesn't exist: ongoing_cancel (a Rashad/org-wide cancel-rates view \u2014 current RafExpanded is Raf-only computed), churn (a Rashad churn view \u2014 INTLocalOffice bakes owner=Raf; also sheet-coupled, needs a Rashad tab or direct-render), knocks_gaps (Rashad's rep roster \u2014 Disposition-by-Rep has no owner column). Flip true only after a clean dry-run of the 4 wired on the mini + Megan's go-ahead (and the 3 flagged either built or accepted as omitted).",
       "display_name": "Rashad's Daily Metrics (#elevate-sales)",
@@ -4111,10 +4143,11 @@
       "verify": {
         "type": "manifest",
         "report_id": "rashad_metrics"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "aya_metrics": {
-      "order": 7.5,
+      "order": 28,
       "on_scheduler": true,
       "display_name": "Aya's Daily Metrics (#indelible-sales)",
       "source_type": "tableau",
@@ -4148,7 +4181,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "aya_metrics"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "rashad_churn": {
       "on_scheduler": true,
@@ -4249,7 +4283,7 @@
       }
     },
     "financial_report": {
-      "order": 4.5,
+      "order": 12,
       "on_scheduler": true,
       "display_name": "Financial Report",
       "source_type": "email",
@@ -4273,10 +4307,11 @@
       "verify": {
         "type": "manifest",
         "report_id": "financial-pull"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "tableau_screenshots": {
-      "order": 5,
+      "order": 10,
       "on_scheduler": true,
       "_note": "LIVE daily Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts the 7 boards whose data IS current at 4:31 -- B2B Box is `late: True` in pages.py and rides the tableau_screenshots_box catch-up at ~7am instead, because its extract doesn't refresh until then (see that report's note). The header still lists Box in its normal slot, flagged as still coming. ONE run captures the boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN']. FRESHNESS GATE WIRED 2026-07-30 (Megan 7/29: 'trackers were sent out today without being updated and we ran them anyway'). data_sources was [] \u2014 which readiness.report_ready() treats as 'all sources ready' after a session-warmth check \u2014 so NOTHING gated these boards on data freshness. Now gated on the three extracts behind them (tableau:tracker_att / _nds / _b2b), each a tracker_extract probe with an 06:30 fail-open floor: the pass circles back while an extract is behind, and past 06:30 it runs regardless (a gate never skips a report). quantum_fiber is NOT gated (no verified crosstab worksheet on RES-LumenSalesTrackervMZ \u2014 see freshness.UNGATED and --discover); b2b_box keeps its own tableau:box_daily gate on the ~7am catch-up. Belt-and-braces: run.py re-checks at capture time and HOLDS + flags any board whose extract is still stale (listed in the header as still coming, picked up by the ~7am --late-only run) rather than posting stale numbers as if fresh.",
       "display_name": "Tableau Country Trackers",
@@ -4310,10 +4345,11 @@
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "tableau_screenshots_box": {
-      "order": 5.5,
+      "order": 25,
       "on_scheduler": true,
       "_note": "The ~7am B2B BOX catch-up for the Tableau Country Trackers. Box's extract refreshes ~7-8am with the prior day's FINAL numbers, so at 4:31 it posted yesterday's figures into every channel every morning (Carlos flagged it 2026-07-16, 'Box isn't updated, it was off yesterday too'). The other 7 boards are correct at 4:31, so they still post then -- pages.py marks Box `late: True`, the morning run drops it, and THIS run posts it with --late-only once its data is actually in. NOT A CLOCK: data_sources 'tableau:box_daily' is the SAME readiness probe org_sales_board already waits on, and ReadinessCache is per-run + shared, so this costs no extra Tableau pull and Box posts the moment its extract lands (typically well before 7) -- never later than the probe's 08:00 fail-open floor, which exists so the gate can never skip the post. Appends Box's image into today's EXISTING thread in every channel (find-or-create by dated title, same routing as the morning run) and clears the header's 'data lands ~7am' note. Idempotent per tracker: a re-run leaves a channel that already has today's Box alone. Own report_id/manifest/status file so it can't overwrite the morning card's per-channel checklist.",
       "display_name": "Tableau Country Trackers \u2014 Box (late)",
@@ -4346,7 +4382,8 @@
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots-box"
-      }
+      },
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "tableau_preview": {
       "on_scheduler": true,
@@ -4429,7 +4466,7 @@
       "verify": null
     },
     "cyrus_metrics": {
-      "order": 7.6,
+      "order": 29,
       "on_scheduler": true,
       "display_name": "Cyrus's Daily Metrics (#ambient-sales-1)",
       "source_type": "tableau",
@@ -4466,10 +4503,11 @@
         "type": "manifest",
         "report_id": "cyrus_metrics"
       },
-      "_note": "Office metrics for cyrus \u2192 #ambient-sales-1. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+      "_note": "Office metrics for cyrus \u2192 #ambient-sales-1. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "hammad_metrics": {
-      "order": 7.7,
+      "order": 30,
       "on_scheduler": true,
       "display_name": "Hammad's Daily Metrics (#elite-prime-sales)",
       "source_type": "tableau",
@@ -4506,10 +4544,11 @@
         "type": "manifest",
         "report_id": "hammad_metrics"
       },
-      "_note": "Office metrics for hammad \u2192 #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+      "_note": "Office metrics for hammad \u2192 #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "kash_metrics": {
-      "order": 7.8,
+      "order": 31,
       "on_scheduler": true,
       "display_name": "Kash's Daily Metrics (#palace-sales)",
       "source_type": "tableau",
@@ -4546,10 +4585,11 @@
         "type": "manifest",
         "report_id": "kash_metrics"
       },
-      "_note": "Office metrics for kash \u2192 #palace-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+      "_note": "Office metrics for kash \u2192 #palace-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "salik_metrics": {
-      "order": 7.9,
+      "order": 34,
       "on_scheduler": true,
       "display_name": "Salik's Daily Metrics (#elite-prime-sales)",
       "source_type": "tableau",
@@ -4586,10 +4626,11 @@
         "type": "manifest",
         "report_id": "salik_metrics"
       },
-      "_note": "Office metrics for salik \u2192 #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+      "_note": "Office metrics for salik \u2192 #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "cody_metrics": {
-      "order": 8.0,
+      "order": 36,
       "on_scheduler": true,
       "display_name": "Cody's Daily Metrics (#aeon-sales)",
       "source_type": "tableau",
@@ -4625,7 +4666,8 @@
         "type": "manifest",
         "report_id": "cody_metrics"
       },
-      "_note": "Office metrics for cody \u2192 #aeon-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+      "_note": "Office metrics for cody \u2192 #aeon-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "metrics_shot_preview": {
       "order": 99,
@@ -4879,7 +4921,7 @@
       "machine": "Lucy 2"
     },
     "att_owners_list": {
-      "order": 15.7,
+      "order": 46,
       "on_scheduler": true,
       "_note": "FRIDAY roster fill of the 'ATT owners list' tab (ATT Program - Focus Report workbook), for the week that ended the previous Sunday. Source: ATT Tracker 2.1 - D2D / D2D 1-PAGERV2 (Internet Only), worksheet 'Sales By ICD (ATT) (V2) (LW2) (2)' \u2014 the crosstab behind the 'D2D PAGE 2 LAST WEEK (Internet Only)' PAGE (the page itself is a dashboard tab and never appears in the Crosstab dialog). Writes one column: the owner's name where they sold, a RED blank where they didn't, and a new YELLOW row for anyone who has never been on the list. Nobody is ever removed \u2014 red means 'not this week' and the weeks beside it are how a quiet week is told from someone leaving. Then it posts the joined/returned/no-sales summary to #revision-emails (a REPORT, not a review gate \u2014 it tags nobody) as a REPLY inside the year's single thread ('ATT Owners List \u2014 2026'), which the first run of a new year starts; the parent's ts is cached in ~/.config/recruiting-report/att_owners_list_threads.json and, when that file is missing (another machine ran it), found by reading the channel back from Jan 1 and seeds every brand-new owner into all THREE Country Sales Board boxes, inserting AT the last data row of each so the tab's fixed =SUMIF/=SUM ranges grow to cover them. The Tableau worksheet is pinned to a RELATIVE week and cannot be filtered, so the run reads the dates back out of the export and EXITS 1 rather than write one week's roster into another week's column; it also exits 1 if the column already holds different names than the pull (someone filled it by hand) unless --overwrite. Re-running the same Friday is a no-op that says so.",
       "display_name": "ATT Owners List (weekly roster)",
@@ -4901,7 +4943,8 @@
       "depends_on": [],
       "timeout_minutes": 15,
       "verify": null,
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "rep_sales_fill": {
       "order": 3.95,
@@ -5137,7 +5180,7 @@
     },
     "disable_sales_boards_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_sales_boards_agent` (Lucy 1 queue) can RETIRE the leftover com.alphalete.sales-boards LaunchAgent on the MINI. The report's home is Lucy 2 (Lucys-MacBook-Neo — sales-boards + vantura-slack-sales agents loaded there, sleep locked off); the mini's copy was firing the same 5:10→8:05 q25m ladder in parallel, and the two runs share ONE production Sheet + the same temp tabs, so the mini's pass kept dying mid-render (2026-08-20 08:05: gspread 'Unable to parse range _sb_zeros_tmp' after Lucy 2 deleted the tab) and leaving open 'started' rows in Hub Activity — the stuck pulsing 🔄 pill Megan asked about. Race-free bootout + stashes the plist as .plist.disabled; reversible via install_agent (python -m automations.day_orchestrator.install_agent sales-boards). Read-only w.r.t. any Sheet/report data.",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_sales_boards_agent` (Lucy 1 queue) can RETIRE the leftover com.alphalete.sales-boards LaunchAgent on the MINI. The report's home is Lucy 2 (Lucys-MacBook-Neo \u2014 sales-boards + vantura-slack-sales agents loaded there, sleep locked off); the mini's copy was firing the same 5:10\u21928:05 q25m ladder in parallel, and the two runs share ONE production Sheet + the same temp tabs, so the mini's pass kept dying mid-render (2026-08-20 08:05: gspread 'Unable to parse range _sb_zeros_tmp' after Lucy 2 deleted the tab) and leaving open 'started' rows in Hub Activity \u2014 the stuck pulsing \ud83d\udd04 pill Megan asked about. Race-free bootout + stashes the plist as .plist.disabled; reversible via install_agent (python -m automations.day_orchestrator.install_agent sales-boards). Read-only w.r.t. any Sheet/report data.",
       "display_name": "Disable Sales Boards standalone agent (mini)",
       "source_type": "local",
       "data_sources": [],
@@ -5200,8 +5243,8 @@
     },
     "att_cancels": {
       "on_scheduler": true,
-      "_note": "SCHEDULED 2026-08-17 (Eve). Ran off-scheduler for a month, which meant it only ran when a human pressed the button — the 'Lucy Cancel Rates' tab silently went stale. Sundays because THIS view's weeks end SATURDAY (its newest column is 'WE (08/22)'), unlike the Sunday-ending weeks the rest of the Hub uses — so a Sunday run is the first one that sees the week complete. Weekly, not daily, is Megan's 2026-07-20 call, still pending her confirming with Carlos (see _off_scheduler_note). Nothing is lost by waiting a week: the view carries 6 weeks and the tab is rebuilt from all of them each run.",
-      "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). The MODULE is dry-run by default; base_args carries --sheet so a Hub run actually fills the tab. It did NOT until 2026-08-17: base_args was empty, so every run pulled Tableau and threw the result away while the card said 'B2B Ongoing Cancels -> Sheet' — the tab has never been written by an automated run. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
+      "_note": "SCHEDULED 2026-08-17 (Eve). Ran off-scheduler for a month, which meant it only ran when a human pressed the button \u2014 the 'Lucy Cancel Rates' tab silently went stale. Sundays because THIS view's weeks end SATURDAY (its newest column is 'WE (08/22)'), unlike the Sunday-ending weeks the rest of the Hub uses \u2014 so a Sunday run is the first one that sees the week complete. Weekly, not daily, is Megan's 2026-07-20 call, still pending her confirming with Carlos (see _off_scheduler_note). Nothing is lost by waiting a week: the view carries 6 weeks and the tab is rebuilt from all of them each run.",
+      "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). The MODULE is dry-run by default; base_args carries --sheet so a Hub run actually fills the tab. It did NOT until 2026-08-17: base_args was empty, so every run pulled Tableau and threw the result away while the card said 'B2B Ongoing Cancels -> Sheet' \u2014 the tab has never been written by an automated run. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
       "display_name": "B2B Ongoing Cancels (Carlos) -> Sheet",
       "source_type": "tableau",
       "data_sources": [],
@@ -5329,8 +5372,8 @@
     },
     "box_order_log_tier_backfill": {
       "on_scheduler": false,
-      "_off_scheduler_note": "ONE-OFF/repair handle, never scheduled: adds the 'Box Tier Bonus Rep Level' board to a BOX Order Log thread that ALREADY posted, and edits that parent's header to list it. Built 2026-08-15, the day the board was wired into box_order_log.run — that morning's 8:32 thread went out before the change, and Megan asked for the board added to the LIVE thread rather than left for the next day. Runs automations.box_order_log.backfill_tier: finds today's parent by its dated header ('BOX Order Log — August 15, 2026'), uploads the board as a reply, and chat_update's the header. Fully idempotent — a board already in the thread is skipped and a header already listing it isn't re-edited, so a second run reports 'nothing to do'. MUST run on LUCY 2: only Lucy's own token can edit Lucy's message, and a laptop run would post as Megan. DRY by default; add --post. Use --channel <id> for the #a-players-b2b copy, --date YYYY-MM-DD for an older thread. Keep for the next time a thread needs an attachment added after the fact. Registered 2026-08-15.",
-      "display_name": "BOX Order Log — add tier board to a posted thread (repair)",
+      "_off_scheduler_note": "ONE-OFF/repair handle, never scheduled: adds the 'Box Tier Bonus Rep Level' board to a BOX Order Log thread that ALREADY posted, and edits that parent's header to list it. Built 2026-08-15, the day the board was wired into box_order_log.run \u2014 that morning's 8:32 thread went out before the change, and Megan asked for the board added to the LIVE thread rather than left for the next day. Runs automations.box_order_log.backfill_tier: finds today's parent by its dated header ('BOX Order Log \u2014 August 15, 2026'), uploads the board as a reply, and chat_update's the header. Fully idempotent \u2014 a board already in the thread is skipped and a header already listing it isn't re-edited, so a second run reports 'nothing to do'. MUST run on LUCY 2: only Lucy's own token can edit Lucy's message, and a laptop run would post as Megan. DRY by default; add --post. Use --channel <id> for the #a-players-b2b copy, --date YYYY-MM-DD for an older thread. Keep for the next time a thread needs an attachment added after the fact. Registered 2026-08-15.",
+      "display_name": "BOX Order Log \u2014 add tier board to a posted thread (repair)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -5580,8 +5623,8 @@
     },
     "override_bulletin_gate": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin REVIEW GATE (automations.override_bulletin.override_gate). The scheduled path is deploy/override_bulletin_send_fri.sh, which runs post -> check -> remind every 25m Fri 10:30-13:00 CST; this entry exists so a Friday that goes wrong can be driven by hand, exactly like dd_bulletin_gate. base_args are ['--post'] and the gate resolves --refresh/--check BEFORE --post, so the extra flags win: `lucy rerun override_bulletin_gate --refresh` (rebuild the PDF over the SAME Drive link after the Sheet is corrected — never a second post, that is how someone approves the version you already fixed), `--check --send --distro` (release the send Eve has ticked: full org + Slack), `--check --send` (soft-launch 4-person group instead), `--repost` (replace this week's message; refuses over an approval). Approver is EVE ONLY, same as the DD bulletin. Added 2026-08-07 (Eve).",
-      "display_name": "Override Bulletin — review gate (post / refresh / check)",
+      "_off_scheduler_note": "Manual lever for the Friday Override Bulletin REVIEW GATE (automations.override_bulletin.override_gate). The scheduled path is deploy/override_bulletin_send_fri.sh, which runs post -> check -> remind every 25m Fri 10:30-13:00 CST; this entry exists so a Friday that goes wrong can be driven by hand, exactly like dd_bulletin_gate. base_args are ['--post'] and the gate resolves --refresh/--check BEFORE --post, so the extra flags win: `lucy rerun override_bulletin_gate --refresh` (rebuild the PDF over the SAME Drive link after the Sheet is corrected \u2014 never a second post, that is how someone approves the version you already fixed), `--check --send --distro` (release the send Eve has ticked: full org + Slack), `--check --send` (soft-launch 4-person group instead), `--repost` (replace this week's message; refuses over an approval). Approver is EVE ONLY, same as the DD bulletin. Added 2026-08-07 (Eve).",
+      "display_name": "Override Bulletin \u2014 review gate (post / refresh / check)",
       "source_type": "sheet",
       "data_sources": [],
       "command": [
@@ -5873,12 +5916,14 @@
       "verify": {
         "type": "not_configured"
       },
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "order": 56,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "dd_populate_probe": {
       "on_scheduler": false,
-      "_off_scheduler_note": "DRY probe of the populate — prints every cell it WOULD change against the tab and writes NOTHING. Exists because dd_populate carries --write in its base_args, so `lucy rerun dd_populate --source X` is still a live write; there was no way to ask for a rehearsal (learned the hard way 2026-08-10, when a source swap overwrote the whole 8.2.26 column with 7.26.26 money). Default source here is PROGRAM SUMMARY / DOWNLINE, the view Eve builds Org. Bulletin.xlsx from: run this and compare the deltas against her file. Delta ~0 across the 37 owners = the week anchor is right, and only then flip the default in dd_search.accumulate/accumulate_all back to 'program-summary'. Pass `--source dd-detail` to rehearse the current live source instead. LUCY 1.",
-      "display_name": "DD — populate DRY probe (writes nothing)",
+      "_off_scheduler_note": "DRY probe of the populate \u2014 prints every cell it WOULD change against the tab and writes NOTHING. Exists because dd_populate carries --write in its base_args, so `lucy rerun dd_populate --source X` is still a live write; there was no way to ask for a rehearsal (learned the hard way 2026-08-10, when a source swap overwrote the whole 8.2.26 column with 7.26.26 money). Default source here is PROGRAM SUMMARY / DOWNLINE, the view Eve builds Org. Bulletin.xlsx from: run this and compare the deltas against her file. Delta ~0 across the 37 owners = the week anchor is right, and only then flip the default in dd_search.accumulate/accumulate_all back to 'program-summary'. Pass `--source dd-detail` to rehearse the current live source instead. LUCY 1.",
+      "display_name": "DD \u2014 populate DRY probe (writes nothing)",
       "source_type": "tableau",
       "data_sources": [
         "tableau:dd_detail"
@@ -5952,7 +5997,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "order": 54,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "dd_populate": {
       "on_scheduler": true,
@@ -5983,7 +6030,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "order": 55,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "dd_name_search": {
       "on_scheduler": false,
@@ -6075,7 +6124,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "order": 52,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "credico_inspect": {
       "on_scheduler": false,
@@ -6253,7 +6304,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "order": 53,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "reps_gross_paycheck": {
       "on_scheduler": true,
@@ -6281,7 +6334,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "timeout_minutes": 15
+      "timeout_minutes": 15,
+      "order": 48,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "dd_bulletin_preview": {
       "on_scheduler": false,
@@ -6337,9 +6392,15 @@
       "display_name": "Install Funnel Board hourly agent (24x7, :05)",
       "source_type": "none",
       "data_sources": [],
-      "command": ["automations.day_orchestrator.install_agent"],
-      "base_args": ["funnel-board-hourly"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "funnel-board-hourly"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
@@ -6393,7 +6454,7 @@
       "machine": "Lucy 2"
     },
     "sci_campaigns": {
-      "order": 4.65,
+      "order": 14,
       "on_scheduler": true,
       "display_name": "SCI Campaigns",
       "source_type": "email",
@@ -6430,7 +6491,8 @@
         ]
       },
       "_onboarded": true,
-      "machine": "Lucy 1"
+      "machine": "Lucy 1",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "sci_campaigns_notify": {
       "on_scheduler": false,
@@ -6477,7 +6539,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "timeout_minutes": 8
+      "timeout_minutes": 8,
+      "order": 57,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "fiber_owners_distro_finalize": {
       "on_scheduler": true,
@@ -6505,7 +6569,9 @@
       "verify": {
         "type": "not_configured"
       },
-      "timeout_minutes": 5
+      "timeout_minutes": 5,
+      "order": 58,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "vantura_sara_recon": {
       "on_scheduler": false,
@@ -6531,7 +6597,7 @@
       "machine": "Lucy 2"
     },
     "haytham_metrics": {
-      "order": 7.9,
+      "order": 32,
       "on_scheduler": true,
       "display_name": "Haytham's Daily Metrics (horizon-edge-sales)",
       "source_type": "tableau",
@@ -6566,10 +6632,11 @@
         "report_id": "haytham_metrics"
       },
       "_note": "Office metrics for haytham -> horizon-edge-sales. Onboarded via office_onboarding on 2026-07-28 20:35 UTC. Machine Lucy 1 (view owners).",
-      "_onboarded": true
+      "_onboarded": true,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "isaiah_metrics": {
-      "order": 7.9,
+      "order": 33,
       "on_scheduler": true,
       "display_name": "Isaiah's Daily Metrics (Legacy-Office-Sales)",
       "source_type": "tableau",
@@ -6604,7 +6671,8 @@
         "report_id": "isaiah_metrics"
       },
       "_note": "Office metrics for isaiah -> Legacy-Office-Sales. Onboarded via office_onboarding on 2026-08-05 01:53 UTC. Machine Lucy 1 (view owners).",
-      "_onboarded": true
+      "_onboarded": true,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "jamis_metrics": {
       "order": 7.9,
@@ -6646,7 +6714,7 @@
       "machine": "Lucy 2"
     },
     "trang_metrics": {
-      "order": 7.9,
+      "order": 35,
       "on_scheduler": true,
       "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders)",
       "source_type": "tableau",
@@ -6681,7 +6749,8 @@
         "report_id": "trang_metrics"
       },
       "_note": "Office metrics for trang -> #freshsuccess-all-leaders. Onboarded via office_onboarding on 2026-08-06 00:33 UTC. Machine Lucy 1 (view owners). LIVE 2026-08-06: her channel is in the FRESH SUCCESS Slack workspace (not AO); posts via a dedicated FS bot ('alphalete_metrics') whose xoxb token is routed by office_metrics.runner (offices.CROSS_WS_TOKEN_FILES -> slack-token-freshsuccess). First live post verified: 10/11 sections landed; Rep Activations was fixed (was EPERM'ing on ~/Downloads, now renders to output/).",
-      "_onboarded": true
+      "_onboarded": true,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "funnel_board": {
       "on_scheduler": true,
@@ -6708,7 +6777,9 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-10): moved Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks."
+      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-10): moved Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
+      "order": 47,
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     }
   },
   "read_only_standalone": {
