@@ -4559,6 +4559,48 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     ⏳, which the daily sweep clears."""
     if auto and not str(by).startswith(AUTO_BY_PREFIX):
         by = "{}{}".format(AUTO_BY_PREFIX, by)
+    # An EXPLICIT --machine target whose tab doesn't exist is a typo, not a new
+    # machine: _open would silently create a tab no poller reads and the row
+    # would sit "queued" forever (--machine lucy2 vs 'Lucy 2', 2026-08-20 —
+    # looked exactly like a wedged poller). Machine names are matched loosely
+    # (case/space/hyphen-insensitive) against the tabs that already exist, so
+    # 'lucy2' still routes to 'Mini Control - Lucy 2'. A genuinely NEW machine
+    # bootstraps its own tab the first time ITS poller runs — never from here.
+    if machine is not None and not sandbox:
+        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        prefix = "{} - ".format(CONTROL_TAB)
+        tabs = {t.title for t in sh.worksheets()
+                if t.title == CONTROL_TAB or t.title.startswith(prefix)}
+        def _canon_m(s):
+            return re.sub(r"[^a-z0-9]", "", s.lower())
+        wanted = _control_tab_for(machine)
+        cands = [t for t in tabs if _canon_m(t) == _canon_m(wanted)]
+        if not cands:
+            known = ", ".join(sorted(
+                (t[len(prefix):] if t != CONTROL_TAB else DEFAULT_MACHINE)
+                for t in tabs))
+            print("[mini_control] UNKNOWN machine '{}' — nothing queued. "
+                  "Known machines: {}".format(machine, known))
+            return
+        if len(cands) == 1:
+            target = cands[0]
+        else:
+            # Twin tabs that differ only in case/spacing (an orphan from an old
+            # typo next to the real one): route to the tab a poller has
+            # DEMONSTRABLY read — it has processed rows; an orphan never does.
+            proven = []
+            for t in cands:
+                try:
+                    vals = sh.worksheet(t).get_all_values()
+                    if any(len(r) > 4 and r[4] not in ("", "queued")
+                           for r in vals[1:]):
+                        proven.append(t)
+                except Exception:  # noqa: BLE001
+                    pass
+            target = proven[0] if len(proven) == 1 else (
+                wanted if wanted in tabs else cands[0])
+        machine = DEFAULT_MACHINE if target == CONTROL_TAB \
+            else target[len(prefix):]
     ws = _open(sandbox, machine)
     ws.append_row([_now(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
