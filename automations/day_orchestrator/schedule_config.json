@@ -6416,6 +6416,22 @@
       "timeout_minutes": 15,
       "machine": "Lucy 1"
     },
+    "disable_funnel_board_hourly_agent": {
+      "on_scheduler": false,
+      "_note": "Pause the hourly Funnel Board agent on Lucy 1 (launchctl bootout + move the plist aside). Use during a long manual backfill run from another machine, because the run lock is a LOCAL file and does not serialize across machines. REVERSIBLE: `lucy rerun install_funnel_board_hourly_agent` puts it back. Does not affect the 4am orchestrator pass.",
+      "display_name": "Pause Funnel Board hourly agent",
+      "source_type": "none",
+      "data_sources": [],
+      "command": ["automations.day_orchestrator.disable_agent"],
+      "base_args": ["funnel-board-hourly"],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
+      "machine": "Lucy 1"
+    },
     "install_funnel_board_hourly_agent": {
       "on_scheduler": false,
       "_note": "One-shot installer for com.alphalete.funnel-board-hourly on Lucy 1 \u2014 the HOURLY intraday refresh of the Funnel Board (deploy/funnel_board_hourly.sh -> python -m automations.funnel_board.run), :05 past the hour, EVERY hour, every day. The 4am orchestrator pass still owns the daily run and the Monday close-out of the prior week; this only keeps Manager Board / Manager Trend from showing hours-old numbers (Carlos, 2026-08-11). Safe to repeat: every pass re-pulls and overwrites the whole current week (restatement rule), and overlapping writes are blocked by the wrapper's pgrep plus run.py's state/run.lock. Run via `lucy rerun install_funnel_board_hourly_agent` after `lucy update`; install_agent only reloads the plist (race-free bootout+bootstrap). Widen/narrow the window by editing the Hour dicts in the plist.",
