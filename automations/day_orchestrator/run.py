@@ -1037,6 +1037,23 @@ def _already_running(module: str) -> list:
     return [x for x in out.split() if x and x != me]
 
 
+def _unstick_after_run(r, logf=None) -> None:
+    """Close an orphan Chrome left holding the shared profile by a run that just
+    ENDED — clean exit or not. Best-effort and silent: a guard must never turn a
+    finished report into a failure."""
+    if getattr(r, "source_type", None) not in ("tableau", "appstream"):
+        return
+    try:
+        from automations.day_orchestrator import chrome_guard
+        freed = chrome_guard.unstick_profile(verbose=False)
+        if freed and logf is not None:
+            logf.write(f"===== freed the browser profile after the run: closed "
+                       f"orphan Chrome PID(s) {freed} =====\n")
+            logf.flush()
+    except Exception:  # noqa: BLE001 — never affect the report's outcome
+        pass
+
+
 def _run_report(r, target, *, dry_run, simulate, args_override=None):
     """Run a report as a subprocess. Returns (ok, detail).
 
@@ -1138,6 +1155,14 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
                     except Exception:  # noqa: BLE001 — cleanup never re-kills a run
                         pass
                 return False, f"{TIMEOUT_DETAIL}{timeout_s//60}m{note}"
+        # A run that FINISHES can still leave its Chrome behind — Playwright's
+        # browser outlives the python process whether it was killed or exited
+        # cleanly. The kill path below already unsticks; without this, a clean
+        # run's orphan sits on the shared profile until the NEXT report's
+        # pre-run guard happens to clear it, and anything outside the
+        # orchestrator/lucy paths (a standalone LaunchAgent) hits it cold.
+        # Clear it at the moment the run ends instead. (Megan 2026-08-20)
+        _unstick_after_run(r, logf)
         if rc == 0:
             return True, "exit 0"
         if rc == HOLD_EXIT_CODE:
