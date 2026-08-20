@@ -66,7 +66,13 @@ _REPORTED = False       # a module already published for this run
 _FIRED = False          # we already published (never twice in one process)
 
 _SKIP_ARGS = ("--dry-run", "--dryrun", "--preview", "--sandbox", "--help", "-h",
-              "--make-sandbox", "--probe-only", "--simulate", "--test", "--audit")
+              "--make-sandbox", "--probe-only", "--simulate", "--test", "--audit",
+              # LOOKING is not RUNNING. These print what's there and exit —
+              # sci_campaigns --list ("list the tracker weeks … then exit"),
+              # new_owners --status ("print the bank and the log"),
+              # icd_sales_board --check. Publishing one would tell Megan the
+              # report ran today when nobody did any work.
+              "--list", "--status", "--check")
 
 # Runs FROM a .run module that must never colour a card of their own: the
 # orchestrator is the thing publishing everyone else's rows.
