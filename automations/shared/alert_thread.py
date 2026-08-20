@@ -211,6 +211,34 @@ def strip_emoji(text: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", s).strip()
 
 
+# Slack italics: `_like this_`. The underscores have to sit on a WORD BOUNDARY —
+# which is exactly what tells them apart from the ones inside `out_of_bounds`.
+# The lookarounds are the whole point of this regex, so don't "simplify" them:
+#   (?<!\w)_  the opener may not follow a word character  → `out_of` never opens
+#   (?=\S)    no `_ spaced _`; italics hug their text
+#   _(?!\w)   the closer may not precede one              → `of_bounds` never closes
+_ITALIC = re.compile(r"(?<!\w)_(?=\S)([^_]+?)(?<=\S)_(?!\w)")
+
+
+def demarkup(text: str) -> str:
+    """`text` with Slack's formatting characters dropped — but NOT the ones that
+    are part of a name.
+
+    WHY THIS IS NOT `re.sub(r"[*_`]", "", …)` (Megan 2026-08-20). It was, and it
+    ate every underscore it found, identifiers included: the channel line for a
+    dropped out-of-bounds section came out as "jamis: outofbounds", and
+    `b2b_box` as `b2bbox`. Half our report and section ids are snake_case, so
+    that fires constantly — headline() builds the channel line for every alert
+    that doesn't pass an explicit channel_line, so this was mangling live posts,
+    not just the incident_reformat catch-up pass. (It also made that pass unsafe
+    to run: on 2026-08-20 it wanted to rewrite two perfectly good posts purely to
+    strip those underscores.)
+
+    `*` and backtick are still dropped outright — no id we alert about contains
+    either, so there is nothing to protect and a stray one is just noise."""
+    return _ITALIC.sub(r"\1", str(text)).replace("*", "").replace("`", "")
+
+
 def _clause(reason: str) -> str:
     """The FIRST clause of `reason` — everything up to the first ' — ', ' · ',
     '. ', etc. "Didn't fill: section: BOX — 1 part(s) missing this run." is
@@ -302,9 +330,9 @@ def headline(title: str, body: Sequence[str] = ()) -> str:
                 break
     if len(reason) < 3:                            # the title was just a name
         reason = _reason_from(body)
-    reason = _trim(_clause(re.sub(r"[*_`]", "", reason).strip()))
+    reason = _trim(_clause(demarkup(reason).strip()))
     if not name:
-        return _trim(_clause(re.sub(r"[*_`]", "", t)), max_chars=90,
+        return _trim(_clause(demarkup(t)), max_chars=90,
                      max_words=12) or t[:90]
     return "*{}* — {}".format(name, reason) if reason else "*{}*".format(name)
 

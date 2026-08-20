@@ -302,6 +302,43 @@ class HeadlineTests(unittest.TestCase):
         self.assertLess(len(head), 80, head)
         self.assertTrue(head.startswith("*Vantura Board Audit* — the roll call"))
 
+    # --- snake_case ids survive the markdown strip (Megan 2026-08-20) --------
+
+    def test_an_id_in_the_reason_keeps_its_underscores(self):
+        """The strip was `re.sub(r"[*_`]", "", …)`, which ate every underscore it
+        found — so the channel read "jamis: outofbounds" and "b2bbox". Half our
+        report and section ids are snake_case, and headline() builds the channel
+        line for every alert that doesn't pass an explicit channel_line, so this
+        was mangling live posts."""
+        for title, want in (
+            ("*b2b_metrics* — jamis: out_of_bounds",
+             "*b2b_metrics* — jamis: out_of_bounds"),
+            ("*tableau-screenshots-box* — b2b_box",
+             "*tableau-screenshots-box* — b2b_box"),
+            ("*Daily Rep Breakdown* — daily_rep_breakdown closed a run FAILED",
+             "*Daily Rep Breakdown* — daily_rep_breakdown closed a run FAILED"),
+        ):
+            self.assertEqual(at.headline(title, []), want)
+
+    def test_real_italics_are_still_unwrapped(self):
+        """Only the underscores that ACT as markdown come off — the ones sitting
+        on a word boundary. That is what tells `_italic_` from `out_of_bounds`."""
+        self.assertEqual(at.headline("*r* — _the export stopped short_", []),
+                         "*r* — the export stopped short")
+
+    def test_stars_and_backticks_still_go(self):
+        """No id we alert about contains either, so there's nothing to protect."""
+        self.assertEqual(at.headline("*r* — some `code` and *bold* here", []),
+                         "*r* — some code and bold here")
+
+    def test_demarkup_leaves_an_ambiguous_run_alone(self):
+        """`_x_y_` could be read either way; changing it is the risk, not
+        leaving it. The bias is toward keeping the characters."""
+        for s in ("out_of_bounds", "b2b_box", "snake_case_id_here", "_x_y_"):
+            self.assertEqual(at.demarkup(s), s)
+        self.assertEqual(at.demarkup("_Closed._"), "Closed.")
+        self.assertEqual(at.demarkup("a _b_ c"), "a b c")
+
     def test_ordinary_colons_are_not_shortcodes(self):
         self.assertEqual(at.strip_emoji("usually starts ~7:00 · Error: boom :x:"),
                          "usually starts ~7:00 · Error: boom")
