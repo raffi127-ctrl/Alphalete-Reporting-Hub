@@ -152,13 +152,71 @@ def _preview_path(tracker_id: str) -> "Path | None":
     return p if p.exists() else None
 
 
+def _channel_owners() -> "tuple":
+    """({channel_id: org_key}, {channel_name: org_key}) across every org that
+    already posts trackers (live + onboarded + pending rows). Lets the form
+    recognize 'this channel already gets trackers' and turn the submission
+    into a CHANGE request instead of a dead end. Cached per session."""
+    if "_chan_owners" not in st.session_state:
+        by_id = {}
+        by_name = {}
+        try:
+            by_id = dict(store.existing_registry()["channels"])
+        except Exception:                            # noqa: BLE001
+            pass
+        try:
+            from automations.tableau_screenshots import slack_post as _sp
+            for k, lbl in getattr(_sp, "ORG_LABEL", {}).items():
+                by_name[(lbl or "").strip().lstrip("#").lower()] = k
+        except Exception:                            # noqa: BLE001
+            pass
+        try:
+            for d in store.load_all():
+                names = [d.get("channel_name", "")] + [
+                    c.get("channel_name", "")
+                    for c in d.get("extra_channels", [])]
+                for nm in names:
+                    nm = (nm or "").strip().lstrip("#").lower()
+                    if nm:
+                        by_name.setdefault(nm, d.get("key"))
+        except Exception:                            # noqa: BLE001
+            pass
+        st.session_state["_chan_owners"] = (by_id, by_name)
+    return st.session_state["_chan_owners"]
+
+
+def _org_owning(channel_id: str, channel_name: str) -> "str | None":
+    by_id, by_name = _channel_owners()
+    k = by_id.get((channel_id or "").strip())
+    if k:
+        return k
+    return by_name.get((channel_name or "").strip().lstrip("#").lower())
+
+
+def _form_managed(key: str) -> bool:
+    """True if this org lives in onboarded_trackers.json (the form can update
+    it); False = hardcoded in slack_post.py, needs a code change."""
+    import json
+    p = (Path(__file__).resolve().parents[1] / "automations"
+         / "tableau_screenshots" / "onboarded_trackers.json")
+    try:
+        return any(r.get("key") == key for r in json.loads(p.read_text()))
+    except Exception:                                # noqa: BLE001
+        return False
+
+
 # ---------------------------------------------------------------------------
 # ICD self-serve request view (the default page)
 # ---------------------------------------------------------------------------
 
 def request_view() -> None:
     st.markdown("## 📊 Alphalete Reporting by Lucy")
-    st.markdown("### Daily Sales Tracker Sign-Up")
+    st.markdown("### Daily Tableau Tracker Views Sign-Up")
+    # After a successful submit, show ONLY the confirmation — the form (and
+    # its submit button) is gone, so it can't be re-clicked into a duplicate.
+    if st.session_state.get("_req_done"):
+        _request_done_view()
+        return
     st.caption("Pick the boards you want and Lucy will post fresh "
                "screenshots to your Slack channel every morning.")
 
@@ -204,6 +262,15 @@ def request_view() -> None:
     st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
             "channel you want the Tableau trackers posted in — she'll add "
             "Lucy (the bot that posts the boards) from there.")
+
+    # Channel already enrolled? Turn this into a CHANGE request, not a dead end.
+    change_of = _org_owning(chan_pairs[0][0], chan_pairs[0][1])
+    if change_of:
+        st.info("ℹ️ **This channel is already getting trackers posted.** Need "
+                "to add more boards or change the lineup? Keep going — check "
+                "the **full** set of boards you want below (your picks "
+                "replace the current lineup) and submit. Megan will update "
+                "the existing setup.")
 
     # ---- 2. Pick your boards ---------------------------------------------
     st.divider()
@@ -253,7 +320,9 @@ def request_view() -> None:
 
     # ---- submit ----------------------------------------------------------
     st.divider()
-    key = S.slug_from(owner)
+    # A change request files under the EXISTING org's key, so Megan's confirm
+    # + wire replaces that org's board lineup instead of creating a twin.
+    key = change_of or S.slug_from(owner)
     rec = S.TrackerRecord(
         key=key, owner=owner.strip(),
         channel_id=chan_pairs[0][0], channel_name=chan_pairs[0][1],
@@ -285,51 +354,68 @@ def request_view() -> None:
                    + ", ".join(missing) + ".")
     if st.button("📨 Send my sign-up to Megan", type="primary",
                  disabled=bool(missing)):
-        prior = store.load_one(key) if key else None
-        updating = bool(prior) and prior.get("status") == "pending"
-        reg = store.existing_registry(exclude_key=key if updating else None)
-        problems = S.validate_request(rec, existing_keys=reg["keys"])
-        if problems:
-            st.error("A couple of things to fix first:")
-            for p in problems:
-                st.markdown(f"- {p}")
-            return
-        rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        rec.submitted_by = rec.requested_by
-        lucy_all = [_check_lucy(cid, cname)
-                    for cid, cname in rec.channel_pairs()]
-        if lucy_all[0].get("channel_id") and not rec.channel_id:
-            rec.channel_id = lucy_all[0]["channel_id"]
-        for j, c in enumerate(rec.extra_channels, start=1):
-            if lucy_all[j].get("channel_id") and not c.get("channel_id"):
-                c["channel_id"] = lucy_all[j]["channel_id"]
-        try:
-            where = store.update(rec) if updating else store.save(rec)
-        except Exception as e:                       # noqa: BLE001
-            st.error(f"Couldn't save your request — please tell Megan. ({e})")
-            return
-        ping = (False, "not pinged (local draft)")
-        if where == "sheet":
-            from automations.tracker_onboarding import request_notify
-            ping = request_notify.notify(rec, lucy_all)
-        st.session_state["_req_done"] = {"rec": rec.to_json(), "lucy": lucy_all,
-                                         "where": where, "ping": ping,
-                                         "updated": updating}
+        # The Slack channel check takes a few seconds — show a spinner so
+        # nobody thinks the click didn't take (and clicks it five more times).
+        with st.spinner("📨 Sending your sign-up — this takes a few seconds, "
+                        "hang tight..."):
+            prior = store.load_one(key) if key else None
+            # Overwrite our own pending row on a re-submit; a change request
+            # for an already-live org also replaces that org's row (and is
+            # excluded from the collision scan — colliding with itself is the
+            # point).
+            updating = bool(prior) and (prior.get("status") == "pending"
+                                        or bool(change_of))
+            reg = store.existing_registry(
+                exclude_key=key if (updating or change_of) else None)
+            problems = S.validate_request(rec, existing_keys=reg["keys"])
+            if problems:
+                st.error("A couple of things to fix first:")
+                for p in problems:
+                    st.markdown(f"- {p}")
+                return
+            rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            rec.submitted_by = rec.requested_by
+            lucy_all = [_check_lucy(cid, cname)
+                        for cid, cname in rec.channel_pairs()]
+            if lucy_all[0].get("channel_id") and not rec.channel_id:
+                rec.channel_id = lucy_all[0]["channel_id"]
+            for j, c in enumerate(rec.extra_channels, start=1):
+                if lucy_all[j].get("channel_id") and not c.get("channel_id"):
+                    c["channel_id"] = lucy_all[j]["channel_id"]
+            try:
+                where = store.update(rec) if updating else store.save(rec)
+            except Exception as e:                   # noqa: BLE001
+                st.error(f"Couldn't save your request — please tell Megan. ({e})")
+                return
+            ping = (False, "not pinged (local draft)")
+            if where == "sheet":
+                from automations.tracker_onboarding import request_notify
+                ping = request_notify.notify(rec, lucy_all,
+                                             change=bool(change_of))
+            st.session_state["_req_done"] = {"rec": rec.to_json(),
+                                             "lucy": lucy_all,
+                                             "where": where, "ping": ping,
+                                             "updated": updating,
+                                             "change": bool(change_of)}
         st.rerun()
 
-    _request_done_view(catalog)
 
-
-def _request_done_view(catalog) -> None:
+def _request_done_view() -> None:
     res = st.session_state.get("_req_done")
     if not res:
         return
+    catalog = [t for t in S.tracker_catalog() if not t["opt_in"]]
     d = res["rec"]
     st.divider()
-    st.success(f"🎉 You're signed up{' (updated)' if res.get('updated') else ''}! "
-               "Once everything's hooked up, Lucy starts fetching your boards "
-               "every morning. Nothing else for you to do — go sell "
-               "something. 🐾🚀")
+    if res.get("change"):
+        st.success("🎉 Change request sent! Once Megan confirms, the boards "
+                   "you picked replace the channel's current lineup. Nothing "
+                   "else for you to do.")
+    else:
+        st.success(f"🎉 You're signed up{' (updated)' if res.get('updated') else ''}! "
+                   "Once everything's hooked up, Lucy starts fetching your boards "
+                   "every morning. Nothing else for you to do — go sell "
+                   "something. 🐾🚀")
     titles = {t["id"]: f"{t['emoji']} {t['title']}" for t in catalog}
     ch_names = " + ".join(
         [d["channel_name"]] + [c.get("channel_name", "?")
@@ -402,6 +488,23 @@ def confirm_view(key: str) -> None:
     if rec.status == "wired":
         st.info("This one is already confirmed + wired — confirming again just "
                 "re-applies it (safe / idempotent).")
+    # A change request files under an org that already posts. Say so, and how
+    # confirming behaves — or that it CAN'T apply, for hardcoded orgs.
+    try:
+        from automations.tableau_screenshots import slack_post as _sp
+        already_live = key in getattr(_sp, "ORG_CHANNELS", {})
+    except Exception:                                # noqa: BLE001
+        already_live = False
+    if already_live:
+        if _form_managed(key):
+            st.info(f"🔁 **Change request:** {rec.channel_name or key} already "
+                    "posts trackers. Confirming REPLACES its current board "
+                    "lineup with the set below.")
+        else:
+            st.error(f"⚠️ {key!r} is a HARDCODED org in slack_post.py — the "
+                     "form can't update it (apply never clobbers hardcoded "
+                     "orgs). Confirming here would be a no-op; ask Claude to "
+                     "change the code instead.")
     st.markdown(f"- **Requested by:** {rec.requested_by or rec.owner}\n"
                 f"- **ICD (OwnerVille):** {rec.owner}\n"
                 f"- **Submitted:** {rec.submitted_at or '—'}")

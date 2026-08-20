@@ -20,30 +20,39 @@ from automations.tracker_onboarding.schema import TrackerRecord, tracker_catalog
 FORM_URL = "https://alphaletetrackerintake.streamlit.app"
 
 
-def _lines(rec: TrackerRecord,
-           lucy: "Optional[List[dict]]") -> Tuple[str, List[str]]:
+def _lines(rec: TrackerRecord, lucy: "Optional[List[dict]]",
+           change: bool = False) -> Tuple[str, List[str]]:
     who = rec.owner or rec.key
     ch_names = " + ".join(n or "?" for _, n in rec.channel_pairs())
-    title = "New tracker request — {} wants {} daily tracker board(s) in {}".format(
-        who, len(rec.trackers), ch_names)
+    if change:
+        title = ("Tracker change request — {} wants the board lineup updated "
+                 "in {} (already posts as {!r})".format(who, ch_names, rec.key))
+    else:
+        title = "New tracker request — {} wants {} daily tracker board(s) in {}".format(
+            who, len(rec.trackers), ch_names)
     link = "{}/?confirm={}".format(FORM_URL, rec.key or "")
     titles = {t["id"]: t["title"] for t in tracker_catalog()}
-    thread = ["Requested by: {}".format(rec.requested_by or who),
-              "Boards: " + ", ".join(titles.get(t, t) for t in rec.trackers)]
+    thread = ["• Requested by: {}".format(rec.requested_by or who),
+              "• Boards:"]
+    thread += ["      ◦ {}".format(titles.get(t, t)) for t in rec.trackers]
+    if change:
+        thread.append("• This channel ALREADY gets trackers — confirming "
+                      "REPLACES its current lineup with the boards above.")
     if lucy:
         from automations.tracker_onboarding.slack_check import human_line
         for r in lucy:
-            thread.append(human_line(r))
+            thread.append("• " + human_line(r))
     thread.append("👉 <{}|Review + confirm {}'s trackers →>".format(link, who))
     return title, thread
 
 
 def notify(rec: TrackerRecord, lucy: "Optional[List[dict]]" = None, *,
-           dry_run: bool = False) -> Tuple[bool, str]:
+           change: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
     """Post the request heads-up (title line + detail as a thread reply).
-    `lucy` = one slack_check result per channel (primary first).
+    `lucy` = one slack_check result per channel (primary first). `change` =
+    the channel already posts trackers, this replaces its lineup.
     Returns (ok, note). Never raises — alerting must not break the submit."""
-    title, thread = _lines(rec, lucy)
+    title, thread = _lines(rec, lucy, change)
     if dry_run:
         print(title + "\n  " + "\n  ".join(thread))
         return True, "dry-run"
