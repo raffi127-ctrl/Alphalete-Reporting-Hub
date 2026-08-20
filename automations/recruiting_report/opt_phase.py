@@ -576,8 +576,18 @@ def _norm_crosstab_sheet(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def _sheet_parenthetical(s: str) -> str:
+    """The trailing '(...)' of a Crosstab sheet name, normalized ('' if none).
+    On this workbook the parenthetical is the METRIC, not decoration:
+    'Metrics Call Last week data (Internet)' and '… (Wireless)' are two
+    different sheets that share a base name."""
+    m = re.search(r"\(([^)]*)\)\s*$", s or "")
+    return re.sub(r"\s+", " ", m.group(1)).strip().lower() if m else ""
+
+
 def _match_crosstab_sheet(available: List[str], wanted: str,
-                          verbose: bool = True) -> Optional[int]:
+                          verbose: bool = True,
+                          allow_rename: bool = True) -> Optional[int]:
     """Find `wanted` among the `available` Crosstab thumbnails, with fallbacks
     so a Tableau-side rename degrades gracefully instead of aborting the whole
     OPT phase (the 2026-05-25 'ICD Churn (Wireless)' incident):
@@ -585,6 +595,18 @@ def _match_crosstab_sheet(available: List[str], wanted: str,
       2) case-insensitive exact
       3) rename-tolerant (trailing parentheticals stripped) — but ONLY when
          it's unambiguous (exactly one candidate); never guess between two.
+
+    Step 3 never crosses two DIFFERENT parentheticals. Stripping '(Internet)'
+    and matching '(Wireless)' is not a rename, it's a different metric: on
+    2026-08-20 captainship_cancel_rate silently downloaded the Wireless sheet
+    that way and died on missing Internet columns (it was lucky — a shape-
+    compatible sibling would have filled the tab with the wrong numbers).
+    Tolerance still covers the case it was built for, where a parenthetical is
+    ADDED or REMOVED ('ICD Churn' <-> 'ICD Churn (Wireless)').
+
+    allow_rename=False disables step 3 entirely — for callers polling a dialog
+    that is still hydrating, where a fuzzy hit on an already-loaded sibling
+    would beat the exact sheet that hasn't rendered yet.
     Returns the matched index, or None."""
     for i, a in enumerate(available):                 # 1) exact
         if a == wanted:
@@ -595,8 +617,14 @@ def _match_crosstab_sheet(available: List[str], wanted: str,
             if verbose:
                 print(f"  (matched {wanted!r} -> {a!r}, case-insensitive)", flush=True)
             return i
+    if not allow_rename:
+        return None
     nw = _norm_crosstab_sheet(wanted)                 # 3) rename-tolerant, unambiguous
-    hits = [i for i, a in enumerate(available) if _norm_crosstab_sheet(a) == nw]
+    pw = _sheet_parenthetical(wanted)
+    hits = [i for i, a in enumerate(available)
+            if _norm_crosstab_sheet(a) == nw
+            and not (pw and _sheet_parenthetical(a)
+                     and _sheet_parenthetical(a) != pw)]
     if len(hits) == 1:
         print(f"  WARNING: Crosstab sheet {wanted!r} not found exactly; matched "
               f"{available[hits[0]]!r} (rename-tolerant). Update the sheet-name "
@@ -805,10 +833,18 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
             if n == 0:
                 continue
             avail = [thumbs.nth(i).inner_text().strip() for i in range(n)]
-            hit = _match_crosstab_sheet(avail, crosstab_sheet, verbose=False)
+            # EXACT names only while the dialog is still filling in. A
+            # rename-tolerant hit here would settle on whichever sibling
+            # hydrated first and never wait for the sheet we asked for.
+            hit = _match_crosstab_sheet(avail, crosstab_sheet, verbose=False,
+                                        allow_rename=False)
             if hit is not None:
                 return hit, avail, n
-        return None, avail, thumbs.count()
+        # The exact name never showed in max_s seconds — the dialog is as
+        # hydrated as it's going to get, so now let the rename-tolerant
+        # fallback have its say (it logs loudly when it fires).
+        hit = _match_crosstab_sheet(avail, crosstab_sheet, verbose=True)
+        return hit, avail, thumbs.count()
 
     idx, available, count = _poll_for_target()
 
