@@ -32,6 +32,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from automations.funnel_board import guard
@@ -85,9 +86,27 @@ def _session():
 
 def read_daily_log(S):
     """Existing history, as {manager: {iso date: metrics}}."""
-    r = S.get(API + "/values/'Daily Log'!A1:U100000",
-              params={"valueRenderOption": "UNFORMATTED_VALUE"})
-    rows = r.json().get("values", []) if r.status_code == 200 else []
+    # A FAILED READ IS NOT AN EMPTY LOG. This used to be
+    #     rows = r.json().get("values", []) if r.status_code == 200 else []
+    # so one 429 or 500 turned into "there is no history", and the run then
+    # wrote ONLY the days it had just pulled — silently destroying everything
+    # else. That is exactly what happened on 2026-08-20: 3,898 day-rows back to
+    # December collapsed to 331, and nothing in the log said so. Retry, then
+    # refuse to continue; a run that cannot read the log must not write it.
+    rows = None
+    for attempt in range(3):
+        r = S.get(API + "/values/'Daily Log'!A1:U100000",
+                  params={"valueRenderOption": "UNFORMATTED_VALUE"})
+        if r.status_code == 200:
+            rows = r.json().get("values", [])
+            break
+        log("read of Daily Log failed (HTTP %d), attempt %d/3" % (r.status_code, attempt + 1))
+        time.sleep(5 * (attempt + 1))
+    if rows is None:
+        raise RuntimeError(
+            "could not read the existing Daily Log after 3 attempts (last HTTP %d). "
+            "Refusing to run: writing now would replace the whole history with "
+            "just this run's days." % r.status_code)
     if not rows:
         return {}
     hdr, out = rows[0], {}
@@ -268,6 +287,8 @@ def main():
     ap.add_argument("--weeks", type=int, default=0, help="backfill this many weeks instead")
     ap.add_argument("--today", help="override today (YYYY-MM-DD), for testing")
     ap.add_argument("--only", help="pipe-separated manager names, e.g. 'Rafael Hidalgo|Kash Rai'")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="permit a write that has fewer day-rows than the sheet already holds")
     a = ap.parse_args()
 
     # --dry-run writes nothing, so it never needs the lock and must never block
@@ -373,6 +394,18 @@ def main():
         merged.setdefault(name, {"office_id": o["office_id"], "days": {}})
         merged[name]["office_id"] = o["office_id"]
         merged[name]["days"].update(o["days"])
+
+    # Belt and braces to the read guard above: whatever the cause, a merge that
+    # comes out SMALLER than what was already in the sheet means history is
+    # being dropped, and the write must not go ahead unsupervised.
+    had = sum(len(v["days"]) for v in history.values())
+    now_have = sum(len(v["days"]) for v in merged.values())
+    if now_have < had and not a.allow_shrink:
+        raise RuntimeError(
+            "refusing to write: the merged log has %d day-rows but the sheet already "
+            "had %d (%d managers -> %d). History would be lost. Investigate, then "
+            "re-run with --allow-shrink if the shrink is genuinely intended."
+            % (now_have, had, len(history), len(merged)))
 
     alld = sorted({d for v in merged.values() for d in v["days"]})
     log("merged: %d manager(s), %d day-rows, %s .. %s"
