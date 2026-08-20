@@ -2225,7 +2225,21 @@ def main() -> int:
                     help="DIAGNOSTIC (no send): capture which hosts the extractor fetches "
                          "during ONE short extract cycle and flag any Cloudflare-challenged "
                          "ones — to find the durable-fix target for the exit=3 document wedge.")
+    ap.add_argument("--office", default=None, metavar="ID",
+                    help="Override the office id for a one-off run (default: the "
+                         "hard-coded OFFICE_ID, i.e. 11580). The scheduled job passes "
+                         "no --office, so its behaviour is unchanged.")
+    ap.add_argument("--office-hint", default=None, metavar="NAME",
+                    help="Optional owner-name hint for --office (helps _switch_office "
+                         "disambiguate). Ignored unless --office is given.")
     args = ap.parse_args()
+
+    # One-off office override (additive; no flag => the hard-coded 11580 as before).
+    if args.office:
+        globals()["OFFICE_ID"] = args.office
+        globals()["OFFICE_HINT"] = args.office_hint or ""
+        _log(f"[office] one-off override: OFFICE_ID={args.office} "
+             f"OFFICE_HINT={args.office_hint or '(none)'}")
 
     if args.warm:
         return _cdp_warm()
