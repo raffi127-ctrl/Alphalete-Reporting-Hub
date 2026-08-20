@@ -1,9 +1,14 @@
-"""Read/write the Indeed Ad Performance dashboard's hidden DATA tab.
+"""Read/write the Indeed Ad Performance dashboard's hidden data tab.
 
-Auth prefers the PERSONAL OAuth token, unlike funnel_board: this workbook is
-Carlos's own file, so his identity is the one guaranteed to be on it. The
-applicant_tracker service account is the fallback and only works once the file
-has been shared with it.
+Auth prefers the applicant_tracker SERVICE ACCOUNT, same as funnel_board and for
+the same reason: the dashboard now lives in the Alphalete Org Applicant Tracker,
+which is applicant_tracker's own workbook — that key already writes to this exact
+file every morning, so it travels with the report and which machine runs it stops
+mattering. A machine's personal OAuth identity is NOT guaranteed to be on this
+file; funnel_board died on PERMISSION_DENIED exactly that way after a clean pull.
+
+The personal token stays as the fallback, which is what makes this work on a
+laptop that has the token but not the key.
 """
 from __future__ import annotations
 
@@ -63,14 +68,14 @@ def _service_account():
 
 
 def session(verbose=False):
-    creds, which = _oauth(), "personal OAuth token (%s)" % TOKEN.name
+    creds, which = _service_account(), "applicant_tracker service account"
     if creds is None:
-        creds, which = _service_account(), "applicant_tracker service account"
+        creds, which = _oauth(), "personal OAuth token (%s)" % TOKEN.name
     if creds is None:
         raise SystemExit(
-            "No Google credential on this machine. Drop %s (Carlos's identity, the "
-            "workbook owner) or share the workbook with the applicant_tracker "
-            "service account." % TOKEN)
+            "No Google credential on this machine. Drop the applicant_tracker "
+            "service-account key (preferred — it is already on the tracker), or "
+            "%s for an identity that has been shared on the file." % TOKEN)
     if verbose:
         print("[indeed_source_report] Sheets auth: %s" % which, flush=True)
     return AuthorizedSession(creds)
