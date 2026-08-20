@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -465,6 +466,24 @@ def main(argv: Optional[list] = None) -> int:
     # it — the owner still hasn't been mailed.
     if args.email and not args.test_to:
         day_marker.mark_done(day_marker.owner_stem(cfg.key), today)
+        # Record the delivery on the Hub (2026-08-20). The scheduled launchd
+        # passes were the ONE entry point that never wrote an Activity row —
+        # the only box_order_log_<owner> rows on record came from `lucy rerun`
+        # debugging sessions, so machine_digest learned "Abel runs Thursdays
+        # ~15:00" from two capped-pull afternoons and posted "didn't run today"
+        # on a morning the email had gone out at 7am. Guards mirror run.py's
+        # _report_to_hub plus HUB_REPORT_ID: the dashboard launcher (HUB_RUN)
+        # and mini_control/orchestrator (HUB_REPORT_ID) publish their own row,
+        # and a second one would double-fill the pill. Best-effort — a Sheets
+        # hiccup must not fail a run whose email is already away.
+        if not os.environ.get("HUB_RUN") and not os.environ.get("HUB_REPORT_ID"):
+            try:
+                from automations.shared import hub_activity
+                hub_activity.log_completed(
+                    "box_order_log_{}".format(cfg.key),
+                    "BOX Order Log ({}) -> Email".format(first_name))
+            except Exception:  # noqa: BLE001
+                pass
 
     if not send_for_real and verbose:
         print("\n  Dry-run: nothing emailed. Re-run with --email to send to {}."
