@@ -41,6 +41,7 @@ st.set_page_config(page_title="Alphalete Reporting by Lucy", page_icon="📊",
                    layout="centered")
 
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
+SLACK_ID_IMG = Path(__file__).resolve().parent / "slack_id_help.png"
 
 
 def _inject_gs_client() -> dict:
@@ -191,6 +192,14 @@ def request_view() -> None:
                  "the channel's name. To find it: in Slack, click the "
                  "channel's name at the top of the screen, scroll to the very "
                  "bottom of the pop-up, and copy the Channel ID shown there.")
+        if SLACK_ID_IMG.exists():
+            with st.expander("Where do I find my Channel ID?"):
+                st.caption("In Slack, click the channel's name at the top of "
+                           "the screen, scroll to the bottom of the pop-up, "
+                           "and copy the Channel ID:")
+                # 397 = half the source's 794px — pixel-perfect on retina
+                # screens. Bigger = the browser upscales and it goes soft.
+                st.image(str(SLACK_ID_IMG), width=397)
         chan_pairs.append((cid.strip(), cname.strip()))
     st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
             "channel you want the Tableau trackers posted in — she'll add "
@@ -208,15 +217,15 @@ def request_view() -> None:
     if not catalog:
         st.error("Couldn't load the tracker list — please tell Megan the "
                  "sign-up form is down.")
-    st.caption("Check every board you want. Tap 👀 View preview to see exactly "
-               "what would land in your channel (that's yesterday's real post).")
+    st.caption("Check every board you want. Tap View preview to see exactly "
+               "what would land in your channel.")
     picked: list = []
     for t in catalog:
         on = st.checkbox(f"{t['emoji']} **{t['title']}**", value=False,
                          key=f"trk_{t['id']}")
         pv = _preview_path(t["id"])
         if pv is not None:
-            with st.expander("👀 View preview"):
+            with st.expander("View preview"):
                 st.image(str(pv), use_container_width=True)
         if on:
             picked.append(t["id"])
@@ -256,10 +265,26 @@ def request_view() -> None:
     st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
             "listed above **BEFORE HITTING SUBMIT** — we can't start your "
             "posting without it!")
-    if st.button("📨 Send my sign-up to Megan", type="primary"):
-        if not requested_by.strip():
-            st.error("Please enter your name.")
-            return
+    # The button stays OFF until every required field is filled, with a live
+    # list of what's still needed — no dead-end "submit then get yelled at".
+    missing: list = []
+    if not requested_by.strip():
+        missing.append("your name")
+    if not owner.strip():
+        missing.append("your OwnerVille name")
+    for i, (cid, cname) in enumerate(chan_pairs):
+        tag = "" if len(chan_pairs) == 1 else f" (channel {i + 1})"
+        if not cname:
+            missing.append(f"Slack channel name{tag}")
+        if not cid:
+            missing.append(f"Slack Channel ID{tag}")
+    if not trackers:
+        missing.append("at least one tracker board")
+    if missing:
+        st.warning("⚠️ **Still needed before you can submit:** "
+                   + ", ".join(missing) + ".")
+    if st.button("📨 Send my sign-up to Megan", type="primary",
+                 disabled=bool(missing)):
         prior = store.load_one(key) if key else None
         updating = bool(prior) and prior.get("status") == "pending"
         reg = store.existing_registry(exclude_key=key if updating else None)
