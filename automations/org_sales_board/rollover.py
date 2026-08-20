@@ -1093,6 +1093,62 @@ def check_per_rep_kl(grid: List[List[str]]) -> List[tuple]:
     return bad
 
 
+def check_delta_totals_lastweek(grid: List[List[str]]) -> List[tuple]:
+    """Tripwire: on every DELTA box, the totals row's per-day 'Last week' cell
+    must equal the sum of the rep rows above it. Returns
+    [(box_title, column_letter, sum_of_reps, totals_row_value)].
+
+    THE DEFECT IT WATCHES. `plan_delta_rollover` freezes This -> Last only over
+    `find_delta_tables`' data_rows, and that list stops AT the totals row. So
+    the totals row's own 'Last week' cells are rolled by nobody. They were
+    hand-written by the VA and froze at WE 07.12 when that stopped — the same
+    date, and the same shape, as the per-rep K/L freeze above, except mirrored:
+    there the Totals rolled and the reps didn't. Raf's two boxes were comparing
+    against a five-week-old week (-18.3% shown where the honest number was
+    +5.9%) until 2026-08-20.
+
+    THE FIX IS A FORMULA, NOT A ROLL. All 20 boxes now carry
+    `=SUM(<rep rows>)` there — the same shape the 'This week' cell in that row
+    already had. A formula cell is SKIPPED by this check: it cannot drift. So a
+    hit here means someone typed a literal over one, or a NEW box was built
+    with literals and needs converting (output/fix_delta_totals_lastweek.py).
+
+    Why summing the visible reps is the right number and not merely a
+    consistent one: 'This week' is a sum over the CURRENT roster, so 'Last
+    week' has to span that same roster or the delta is not apples-to-apples.
+    """
+    # Takes the same VALUES grid as its two sibling checks (full_compare's
+    # `cS`, a get_all_values()). A =SUM cell reads as its own result there, so
+    # it passes on the arithmetic and never needs the formula text. Cells are
+    # coerced to str rather than read through _cell so an UNFORMATTED_VALUE
+    # grid (numbers, not strings) can't blow the check up.
+    def _c(g, r, c) -> str:
+        row = g[r] if 0 <= r < len(g) else []
+        return str(row[c]).strip() if 0 <= c < len(row) else ""
+
+    bad: List[tuple] = []
+    for t in find_delta_tables(grid):
+        hdr, rows = t["header_row"] - 1, [r - 1 for r in t["data_rows"]]
+        if not rows:
+            continue
+        # the totals row sits right under the last rep row, labelled or not
+        tot = rows[-1] + 1
+        title = next((_c(grid, rr, 1) for rr in range(hdr - 1, max(-1, hdr - 4), -1)
+                      if _c(grid, rr, 1)), "?")
+        for c in t["this_cols"]:                 # 1-based 'This week' columns
+            lw = c + 1                           # its 'Last week' neighbour
+            raw = _c(grid, tot, lw - 1)
+            if raw.startswith("="):
+                continue                         # a formula cannot go stale
+            got = _num(raw)
+            if got is None:
+                continue
+            s = sum(_num(_c(grid, r, lw - 1)) or 0 for r in rows)
+            if s != got:
+                bad.append((title, a1col(lw), s, got))
+    return bad
+
+
 def apply_per_rep_kl_freeze(ws, grid=None, dry_run: bool = False,
                             logfn=print) -> List[dict]:
     """Freeze every daily block's per-REP running total into its prior-week

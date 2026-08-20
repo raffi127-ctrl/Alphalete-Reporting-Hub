@@ -782,6 +782,29 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ per-rep prior-week self-check skipped ({str(e)[:60]})")
 
+    # The same freeze, one row lower: a DELTA box's totals row has per-day
+    # 'Last week' cells that plan_delta_rollover never touches (it stops at the
+    # totals row). They sat at WE 07.12 in 15 of 20 boxes until 2026-08-20 and
+    # are now =SUM() over the rep rows, which cannot drift — so anything this
+    # reports is a literal someone typed back in, or a new box.
+    logfn("  --- DELTA BOXES, TOTALS-ROW 'LAST WEEK' (report-only) ---")
+    try:
+        _dl = rollover.check_delta_totals_lastweek(cS)
+        if _dl:
+            logfn(f"  ⚠ {len(_dl)} delta-box column(s) whose totals row does "
+                  f"NOT equal the sum of its rep rows:")
+            for _nm, _c, _sum, _tot in _dl[:20]:
+                logfn(f"      [{_nm}] col {_c}: reps sum {_sum:g}, "
+                      f"totals row says {_tot:g}")
+            if len(_dl) > 20:
+                logfn(f"      …and {len(_dl) - 20} more")
+            logfn("      fix: python output/fix_delta_totals_lastweek.py "
+                  "--apply  (turns the literal into =SUM over the rep rows)")
+        else:
+            logfn("  ✅ every delta box's totals row follows its own rep rows.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ delta totals self-check skipped ({str(e)[:60]})")
+
     # Captainship leaderboard TOTALS rows — is each one's frozen history still
     # under the right week header? REPORT-ONLY. The totals line was excluded
     # from the rollover's shift (CaptainAnchor.leaderboard stops AT it), so it
