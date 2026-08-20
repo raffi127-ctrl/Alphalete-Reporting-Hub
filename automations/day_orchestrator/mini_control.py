@@ -178,7 +178,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # a thread. Bounded, idempotent, and the laptops hand these
                     # here BECAUSE only the mini is Lucy, so they must not eat
                     # the report budget.
-                    "incident_resolve", "incident_working",
+                    "incident_resolve", "incident_working", "incident_unmark",
                     "find_group"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
@@ -3519,6 +3519,49 @@ def _action_incident_working(args: str) -> tuple[bool, str]:
     return True, f"{key} marked :pending: — someone is on it"
 
 
+def _action_incident_unmark(args: str) -> tuple[bool, str]:
+    """Take the :pending: / waiting mark back OFF an incident post — nobody is
+    on it after all.
+
+      incident_unmark <key|report_id>
+
+    The incident's STATE is untouched: an open ticket stays open, it just stops
+    claiming somebody has picked it up. Works on a closed post too.
+
+    WHY IT HAS TO RUN HERE: Slack only lets you remove your OWN reaction, and
+    these marks are Lucy's. The mini is Lucy — from a laptop this would try to
+    remove a reaction that isn't there and change nothing.
+
+    What it is for (Megan 2026-08-20): the 4am batch loads its code at 04:00 and
+    keeps it in memory all morning, so a `git pull` mid-morning does NOT stop the
+    running process from behaving the old way. `failure-credico_fetch` got a
+    :pending: at 08:30 from code that had been fixed on disk an hour earlier.
+    Also covers the ordinary case — somebody picked a ticket up, then put it
+    down."""
+    key = (args or "").strip().split(None, 1)[0] if (args or "").strip() else ""
+    if not key:
+        return False, ("incident_unmark needs a key or report id (e.g. "
+                       "failure-credico_fetch)")
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    # Same long-lived-poller staleness as the two actions above: this process
+    # caches channel history for its whole life, so a post opened after it booted
+    # is invisible until the cache is dropped.
+    inc._forget_history(inc.CHANNEL)
+    try:
+        ok = inc.mark_not_working(key)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"mark_not_working failed ({type(e).__name__}: "
+                       f"{str(e)[:100]})")
+    if not ok:
+        return False, (f"no post found for {key!r} — copy the key off the "
+                       f"thread's marker line (_incident · <key> · … _)")
+    return True, f"{key}: in-progress mark cleared — nobody is shown on it now"
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -4457,6 +4500,7 @@ ACTIONS = {
     "post_note": _action_post_note,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
+    "incident_unmark": _action_incident_unmark,
     "install_enrollment_pending": _action_install_enrollment_pending,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
@@ -4826,6 +4870,9 @@ def print_help() -> None:
         '  lucy incident_resolve <key> ["note"]\n'
         "                            close an incident thread in #claudecorrections\n"
         "                            (the key is in its '_incident · … · open …_' line)\n"
+        "  lucy incident_unmark <key>\n"
+        "                            take the :pending: mark back OFF a post —\n"
+        "                            nobody is on it (leaves the incident open)\n"
         "  lucy help                 show this\n\n"
         "After any command, run 'lucy status' to see if it worked (done / failed).\n"
     )

@@ -603,6 +603,105 @@ class IncidentThreadTest(unittest.TestCase):
                                          client=self.c, scan=False))
         self.assertIn((first["ts"], "pending"), self.c.reactions)
 
+    # --- a thread only gets told ONCE (Megan 2026-08-20) ---------------------
+
+    def _resolve_from_a_laptop(self, day):
+        """What a resolve run off a laptop leaves behind: the reply lands, the
+        parent edit is REFUSED (chat.update only touches your own messages and
+        these parents are Lucy's), so the marker still reads `open`."""
+        self.c.refuse_updates()
+        inc.resolve(key="failure-r", lines=[
+            ":white_check_mark: *r* — RESOLVED. It just ran clean.",
+            "_Closed. If it happens again it opens a fresh post, not this "
+            "thread._"], channel="C1", day=day, client=self.c)
+
+    def test_a_thread_already_resolved_is_not_resolved_a_second_time(self):
+        """failure-daily_rep_breakdown, 2026-08-20: resolved from the laptop at
+        16:59 (reply posted, parent edit refused, marker left `open`), then
+        resolved AGAIN by the mini at 09:25 the next morning — the mini read
+        that stale `open` marker and said the whole thing over. Two identical ✅
+        replies in one thread. find_live guards against a stale INDEX; the
+        parent's MARKER goes stale the same way and nothing was checking it."""
+        day = dt.date(2026, 8, 19)
+        first = self._open(day)
+        self._resolve_from_a_laptop(day)
+        replies_after_first = len(self.c.replies)
+        self.assertIn("RESOLVED", "\n".join(self.c.replies))
+        self.assertIn("· open ", self.c.top_level[0], "the marker is still stale")
+
+        # Now the MINI runs its own clean-run close. Its index never saw the
+        # laptop's resolve — that flag is per-machine — so it still believes the
+        # incident is open, which is what sends it past find_live's index guard
+        # and straight at the stale marker.
+        idx = inc._load_index()
+        idx["failure-r"]["resolved"] = False
+        inc._save_index(idx)
+        fresh = FakeClient()
+        fresh.posts = list(self.c.posts)
+        fresh._n = self.c._n
+        fresh.reactions = list(self.c.reactions)
+        inc._HISTORY_CACHE.clear()
+        ok = inc.resolve(key="failure-r", lines=["✅ *r* — RESOLVED."],
+                         channel="C1", day=dt.date(2026, 8, 20), client=fresh)
+        self.assertTrue(ok, "the incident IS closed — the caller must be told so")
+        self.assertEqual(len(fresh.replies), replies_after_first,
+                         "no second resolution reply")
+        # …and it still does the half the laptop couldn't: the marker is fixed.
+        self.assertIn("· resolved 2026-08-20", fresh.top_level[0])
+        self.assertIn((first["ts"], "white_check_mark"), fresh.reactions)
+
+    def test_an_unreadable_thread_still_gets_told(self):
+        """The tie-break on a failed read is POST, not stay quiet: losing a
+        resolution leaves people working a fixed problem, which this module
+        ranks worse than repeating one (the FAILURE LADDER)."""
+        self._open(dt.date(2026, 8, 19))
+        before = len(self.c.replies)
+
+        def _boom(**_kw):
+            raise RuntimeError("ratelimited")
+        self.c.conversations_replies = _boom
+        inc.resolve(key="failure-r", lines=["✅ *r* — RESOLVED."], channel="C1",
+                    day=dt.date(2026, 8, 19), client=self.c)
+        self.assertEqual(len(self.c.replies), before + 1)
+
+    # --- taking the mark back off (Megan 2026-08-20) -------------------------
+
+    def test_a_mark_can_be_taken_back_off_without_closing_the_ticket(self):
+        """The 4am batch keeps its code in memory all morning, so a mid-morning
+        `git pull` doesn't stop it marking the old way — failure-credico_fetch
+        got a :pending: at 08:30 from code fixed on disk at 08:29."""
+        day = dt.date.today()
+        first = self._open(day)
+        inc.mark_working("failure-r", channel="C1", day=day, client=self.c)
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+        inc._HISTORY_CACHE.clear()
+        self.assertTrue(inc.mark_not_working("failure-r", channel="C1",
+                                             client=self.c))
+        self.assertNotIn((first["ts"], "pending"), self.c.reactions)
+        # The ticket is still OPEN — this is about the mark, not the state.
+        self.assertIn("· open ", self.c.top_level[0])
+        self.assertNotIn((first["ts"], "white_check_mark"), self.c.reactions)
+
+    def test_the_mark_comes_off_a_closed_post_too(self):
+        """find() only ever answers `open` posts, so the un-mark has to look the
+        parent up a different way or a mark stuck on a resolved post — the exact
+        thing being cleaned up — would be unreachable."""
+        day = dt.date.today()
+        first = self._open(day)
+        inc.mark_working("failure-r", channel="C1", day=day, client=self.c)
+        inc._HISTORY_CACHE.clear()
+        inc.resolve(key="failure-r", lines=["done"], channel="C1", day=day,
+                    client=self.c)
+        self.c.reactions.append((first["ts"], "pending"))   # left behind
+        inc._HISTORY_CACHE.clear()
+        self.assertTrue(inc.mark_not_working("failure-r", channel="C1",
+                                             client=self.c))
+        self.assertNotIn((first["ts"], "pending"), self.c.reactions)
+
+    def test_unmarking_something_that_was_never_posted_is_a_no_op(self):
+        self.assertFalse(inc.mark_not_working("failure-nope", channel="C1",
+                                              client=self.c))
+
     def test_working_on_nothing_open_is_a_no_op(self):
         self.assertFalse(inc.mark_working("r", channel="C1", client=self.c))
         self.assertEqual(self.c.reactions, [])

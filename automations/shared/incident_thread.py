@@ -1010,6 +1010,31 @@ def _is_resolution_reply(text: str) -> bool:
     return DONE_EMOJI in (text or "") and "resolved" in low
 
 
+def _thread_has_resolution(client, channel: str, ts: str) -> Optional[bool]:
+    """Same question as _thread_is_closed, but honest about not knowing.
+
+    True = there is already a resolution reply under this parent, False = there
+    isn't, None = the read failed and we cannot tell. The two callers want
+    OPPOSITE things on a failed read, which is why this is a separate function
+    rather than a flag: find_live is deciding whether to REOPEN a thread (saying
+    "closed" on error is safe — worst case a thread stays open), while resolve()
+    is deciding whether to POST (saying "closed" on error would swallow a real
+    resolution, and losing the announcement is the one outcome this module ranks
+    worse than a duplicate — see the FAILURE LADDER note at the top)."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=ts, limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠ incident: couldn't read thread {ts} "
+              f"({type(e).__name__}: {str(e)[:60]})", flush=True)
+        return None
+    for msg in (resp.get("messages") or []):
+        if msg.get("ts") == ts:
+            continue                      # the parent, not a reply
+        if _is_resolution_reply(msg.get("text") or ""):
+            return True
+    return False
+
+
 def _thread_is_closed(client, channel: str, ts: str) -> bool:
     """Does this thread already carry a resolution reply?
 
@@ -1126,13 +1151,36 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
                   f"caught up, nothing posted")
         return False
     ts = inc["ts"]
+    # A STALE PARENT LIES THE SAME WAY A STALE INDEX DOES (Megan 2026-08-20).
+    # find_live already refuses to trust the local index — but the thing it
+    # trusts INSTEAD is the parent's marker, and that marker goes stale in one
+    # very ordinary case: a resolve run from a LAPTOP posts its reply and is then
+    # refused the chat.update (you may only edit your own messages, and these
+    # parents are Lucy's). The thread is closed; the marker still says `open`.
+    # The next machine to run a clean pass finds that `open` marker, believes it,
+    # and says the whole thing again — which is what happened to
+    # failure-daily_rep_breakdown: resolved from the laptop 08-19 16:59, resolved
+    # AGAIN by the mini 08-20 09:25, two identical ✅ replies in one thread.
+    #
+    # _thread_is_closed exists for exactly this and was simply never reached: it
+    # only runs on find_live's fallback lookup, which is skipped whenever the
+    # first lookup succeeds. So ask the THREAD here, before speaking.
+    #
+    # Unknown (None) means post: losing a resolution is worse than repeating one
+    # — people go on working a problem that is already fixed, which is the
+    # complaint this module was built for. Only a definite True stays quiet.
+    already = _thread_has_resolution(client, channel, ts) is True
     told = False
-    try:
-        _send(client, channel, lines, thread_ts=ts)
-        told = True
-    except Exception as e:  # noqa: BLE001
-        print(f"  ⚠ incident resolve reply failed ({type(e).__name__}: "
-              f"{str(e)[:80]})", flush=True)
+    if already:
+        print(f"[incident] {key}: thread {ts} already says RESOLVED — not "
+              f"repeating it; straightening the parent instead", flush=True)
+    else:
+        try:
+            _send(client, channel, lines, thread_ts=ts)
+            told = True
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ incident resolve reply failed ({type(e).__name__}: "
+                  f"{str(e)[:80]})", flush=True)
     # THE PARENT KEEPS ITS OWN HEADLINE (Megan 2026-08-18). It is re-badged, not
     # rewritten: the channel line still says what broke and why, now ending in
     # "· *RESOLVED* <date>". A caller's `parent_text` is only the fallback for a
@@ -1167,8 +1215,11 @@ def resolve(*, key: str, lines: Sequence[str], channel: str = CHANNEL,
     print(f"[incident] {key}: resolved in thread {ts}", flush=True)
     # `edited` counts: the parent already reads ✅ and carries the resolved
     # marker, so a caller's own "resolve failed" fallback edit would only strip
-    # that marker back off (see the docstring).
-    return told or edited
+    # that marker back off (see the docstring). `already` counts for the same
+    # reason and one more: the incident IS closed — that is what the caller
+    # asked about — and answering False would send it down its own fallback
+    # path to re-announce the very resolution we just declined to repeat.
+    return told or edited or already
 
 
 def resolve_if_open(key: str, *, what: str, detail: str = "",
@@ -1305,6 +1356,62 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
         return ok
     except Exception as e:  # noqa: BLE001
         print("  - couldn't mark {} as being worked on ({}: {})".format(
+            key_or_report, type(e).__name__, str(e)[:80]))
+        return False
+
+
+def _find_any_state(key: str, *, channel: str, client) -> Optional[dict]:
+    """This key's parent, open OR resolved — for the jobs that are about the
+    REACTIONS on a post rather than about the incident's state. find() answers
+    only `open` ones on purpose (it is used to decide where an alert goes); a
+    mark left on a closed post still has to be reachable."""
+    if not _valid(key):
+        return None
+    for msg in _history(client, channel):
+        m = _MARK_RE.search(msg.get("text") or "")
+        if m and m.group("key") == key:
+            return {"ts": msg.get("ts"), "state": m.group("state"),
+                    "text": msg.get("text") or ""}
+    return None
+
+
+def mark_not_working(key_or_report: str, *, channel: str = CHANNEL,
+                     dry_run: bool = False, client=None) -> bool:
+    """The inverse of mark_working: "nobody is on this one after all."
+
+    Takes Lucy's :pending: / waiting mark back off a post without touching the
+    incident's state — the ticket stays exactly as open (or as closed) as it was.
+    Two uses, both real (Megan 2026-08-20):
+
+      • a mark the OLD code left behind. The 4am batch imports hub_publish at
+        04:00 and keeps it in memory all morning, so a `git pull` at 08:29 does
+        not stop the running process from marking; failure-credico_fetch got a
+        :pending: at 08:30 from code that had already been fixed on disk.
+      • somebody picked a ticket up, then put it down.
+
+    Only Lucy's own reaction can come off (Slack has no removing another user's),
+    so this belongs on the mini — the CLI hands it there, same as --working.
+    Works on a CLOSED post too, which is why it looks the parent up through
+    _find_any_state rather than find(). Never raises."""
+    try:
+        client = client or _client()
+        inc = next((i for i in (_find_any_state(k, channel=channel, client=client)
+                                for k in candidate_keys(key_or_report)) if i), None)
+        if not inc or not inc.get("ts"):
+            print("[incident] no post found for {} — nothing to un-mark"
+                  .format(key_or_report))
+            return False
+        if dry_run:
+            print("[incident] DRY-RUN — would clear :{}: / :{}: on {}".format(
+                WORKING_REACTION, WAITING_REACTION, inc["ts"]))
+            return True
+        ok = _react(client, channel, inc["ts"], WORKING_REACTION, remove=True)
+        _react(client, channel, inc["ts"], WAITING_REACTION, remove=True)
+        print("[incident] {}: in-progress mark cleared ({}, still {})".format(
+            key_or_report, inc["ts"], inc.get("state")))
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print("  - couldn't un-mark {} ({}: {})".format(
             key_or_report, type(e).__name__, str(e)[:80]))
         return False
 
@@ -1498,6 +1605,10 @@ def main(argv=None) -> int:
     ap.add_argument("--working", metavar="KEY_OR_REPORT",
                     help="react :pending: on its post — somebody (or Claude) is "
                          "on it, so the other person doesn't start too")
+    ap.add_argument("--unmark", metavar="KEY_OR_REPORT",
+                    help="take the :pending: / waiting mark back OFF its post "
+                         "— nobody is on it after all. Leaves the incident's "
+                         "state alone; works on a closed post too")
     ap.add_argument("--resolve-report", metavar="REPORT_ID",
                     help="close whatever failure thread a report left open "
                          "(failure-/standalone-/drop-, its siblings included) — "
@@ -1512,9 +1623,10 @@ def main(argv=None) -> int:
     # name AND the parent could never be re-badged. Rather than half-do it, hand
     # the job to the mini, which is Lucy — the queue is serial, so it runs in
     # order behind whatever else is pending.
-    if (a.working or a.resolve or a.resolve_report) and not (a.dry_run
-                                                             or is_lucy()):
+    if (a.working or a.unmark or a.resolve
+            or a.resolve_report) and not (a.dry_run or is_lucy()):
         act, arg = (("incident_working", a.working) if a.working else
+                    ("incident_unmark", a.unmark) if a.unmark else
                     ("incident_resolve", a.resolve or a.resolve_report))
         who = whoami() or "unknown"
         try:
@@ -1545,6 +1657,10 @@ def main(argv=None) -> int:
         ok = mark_working(a.working, note=a.note, channel=a.channel,
                           dry_run=a.dry_run)
         print("marked" if ok else "nothing open for that key/report")
+        return 0 if ok else 1
+    if a.unmark:
+        ok = mark_not_working(a.unmark, channel=a.channel, dry_run=a.dry_run)
+        print("cleared" if ok else "no post found for that key/report")
         return 0 if ok else 1
     if a.resolve_report:
         ok = resolve_report(a.resolve_report, note=a.note, channel=a.channel,
