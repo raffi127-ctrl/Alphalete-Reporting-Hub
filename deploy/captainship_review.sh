@@ -1,9 +1,11 @@
 #!/bin/bash
 # Captainship Reports — the approval half of the review gate, on the mini.
 #
-# The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run) and
-# then posts them for review as ONE PDF (captainship_drafts_review ->
-# review_gate --post). THIS agent is the other half: every 15 minutes it asks
+# The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run,
+# moved to the front of the Tableau wave 2026-08-19 so they are on disk by
+# ~06:10-06:30) and com.alphalete.captainship-review-post posts them for review
+# as ONE PDF at 07:15 (deploy/captainship_review_post.sh -> review_gate
+# --ensure-posted). THIS agent is the other half: every 15 minutes it asks
 # Slack whether Evelyn put a checkmark on that post, and mails the
 # reviewed .eml files the moment she has. Until then it does nothing.
 #
@@ -33,7 +35,13 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-START_HOUR=9        # first check of the day (the post lands with the 4am batch)
+# 9 -> 7 (Eve 2026-08-19): the review link now goes up at 07:15 on its own agent
+# instead of whenever the serial 4am pass reached order 21 (09:14-09:30 on
+# 08-17/08-18). At START_HOUR=9 a checkmark at 07:20 sat unread until 09:00 —
+# the same trap the Org Sales Board's watcher hit before its START_HOUR went
+# 9 -> 7. Eve's ask was the two emails going out practically together, so the
+# window has to open before the link does.
+START_HOUR=7        # first check of the day (the link goes up at 07:15)
 END_HOUR=20         # last check — after this, tomorrow's run takes over
 
 HOUR=$(date +%H)
@@ -92,21 +100,30 @@ fi
 # morning would not have saved one of those days, and it would have pushed eight
 # office-metrics posts back to pay for it. This costs no other report its slot.
 #
+# 2026-08-19: the morning WAS reordered after all — the captainship block moved
+# to the front of the Tableau wave and the post to a 07:15 agent, because Eve
+# wanted this link beside the board's, and the office-metrics posts DID pay for
+# it (~05:16-06:31 -> ~06:35-07:55). That changes nothing here: this stays the
+# last-resort deadline for a day where the chain and all four 07:15-09:15 slots
+# came up empty.
+#
 # 10:00 and not 10:45: the build takes 11-20 min normally, 31 on a bad day and
 # 57 min once (2026-08-04, against a loaded mini). 10:00 keeps even that inside
 # the 11:00 promise.
 #
-# NOT ON MONDAY (date +%u = 1). Monday's reports are built at 14:30 by
-# board_catchup.sh on purpose: last week's Sunday only lands in the sources
-# through Monday afternoon, so a 10:00 Monday build would post an incomplete
-# Sunday. Changing that is a data decision, not a scheduling one.
+# MONDAY IS IN (2026-08-19). This used to skip Monday (date +%u = 1) because
+# Monday's reports were built at 14:30 by board_catchup.sh, waiting for last
+# week's Sunday. That detour ended 2026-08-10 — captainship_drafts runs seven
+# days on the morning path and board_catchup.sh posts nothing on any day — so
+# the skip only meant Monday was the one day with no deadline behind it: if the
+# morning chain and the 07:15-09:15 slots all failed, nobody was asked at all.
 #
 # SAFE ON EVERY TICK: --ensure-posted is a no-op when the day is already up for
 # review (approved or not), so this cannot post twice, and it mails nobody --
 # the twelve reports still go out only on a checkmark.
 DEADLINE_HHMM=1000
 NOW_HHMM=$(date +%H%M)
-if [ "$(date +%u)" != "1" ] && [ "${NOW_HHMM#0}" -ge "$DEADLINE_HHMM" ]; then
+if [ "${NOW_HHMM#0}" -ge "$DEADLINE_HHMM" ]; then
     echo "[$(date)] deadline check (>= ${DEADLINE_HHMM})" >> "$LOG_FILE"
     "$VENV_PY" -u -m automations.captainship_drafts.review_gate \
         --ensure-posted >> "$LOG_FILE" 2>&1

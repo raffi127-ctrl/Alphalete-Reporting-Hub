@@ -2009,7 +2009,8 @@
       }
     },
     "captainship_activations": {
-      "order": 12,
+      "order": 4.961,
+      "_order_note": "12 -> 4.961 (Eve 2026-08-19). THE WHOLE CAPTAINSHIP BLOCK MOVED TO THE FRONT OF THE TABLEAU WAVE, right behind org_sales_board (4.95) and all_campaigns_board (4.96): activations 4.961, churn 4.962, cancel_rate 4.963, owners_metrics_churn 4.964, activation_rate 4.965, abp_6days 4.966, raf_metrics 4.967, drafts 4.968. WHY: Eve asked for the Captainship review link to go up right after the Org Sales Board's, ~07:15 Central, so both get approved and sent together. `order` is the real clock in a serial pass, and at 12-20 this chain only started once the nine per-owner office-metrics reports were done - measured 2026-08-17 it ran 07:55-09:30 and 2026-08-18 07:40-09:14, so the link landed 09:14-09:30, two hours behind the board's 07:03. The chain itself is 80-95 min (activations alone 20-30, owners_metrics_churn up to 30, the drafts build 12-20 and 57 on its worst day), so the ONLY way to have previews on disk before 07:15 is to run it first. From here it starts ~04:50 and the previews are done ~06:10-06:30, half an hour of slack before the clock. WHAT IT COSTS: everything from tableau_screenshots (5) down slides ~80 min - the nine office-metrics posts move from ~05:16-06:31 to ~06:35-07:55, country_sales_board from ~07:55 to ~09:10. Eve's call, made knowing that. Nothing here needs a source that isn't ready at 04:50: fiber_pss / churn / metrics have no readiness probe wired, all three metrics are rolling windows, and the drafts read the board tab the 04:49 fill just wrote. fiber_activations (14) is NOT a dependency - section 2 renders live from the per-captain Captainship Activations tabs (captainship_drafts/fiber_png.py), so the drafts running ahead of it is fine. THE POST ITSELF IS NO LONGER IN THE QUEUE: captainship_drafts_review went on_scheduler:false and onto its own 07:15 LaunchAgent - see its _off_scheduler_note.",
       "on_scheduler": true,
       "display_name": "Captainship Activations (per-captain)",
       "source_type": "tableau",
@@ -2041,7 +2042,8 @@
       }
     },
     "captainship_churn": {
-      "order": 13,
+      "order": 4.962,
+      "_order_note": "13 -> 4.962 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "display_name": "Captainship - New Internet & Wireless Churn",
       "source_type": "tableau",
@@ -2072,7 +2074,8 @@
       }
     },
     "captainship_cancel_rate": {
-      "order": 13.5,
+      "order": 4.963,
+      "_order_note": "13.5 -> 4.963 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "_note": "Runs immediately AFTER captainship_churn (Eve 2026-07-28) \u2014 same 5 ATT Fiber captains, different workbook (Captainship Metrics Report - Cancel Rate) and a different metric: 0-30 day New Internet CANCEL rate, plus 30-60 day cancel derived as 100% - the 30-60 activation rate (the Metrics view carries no 30-60 cancel column). Source is the Metrics view, NOT the CHURN view, so it doesn't share tableau:churn. Writes the LIVE workbook \u2014 no flag needed (Eve 2026-07-28: these tabs were built from scratch for this report, so there is nothing to protect). --sandbox is the opt-in for a practice run.",
       "display_name": "Captainship - Cancel Rate (ATT Fiber)",
@@ -2106,7 +2109,8 @@
       }
     },
     "owners_metrics_churn": {
-      "order": 15,
+      "order": 4.964,
+      "_order_note": "15 -> 4.964 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "display_name": "Captainship Churn - Owners Metrics",
       "source_type": "tableau",
@@ -2137,7 +2141,8 @@
       }
     },
     "captainship_activation_rate": {
-      "order": 15.1,
+      "order": 4.965,
+      "_order_note": "15.1 -> 4.965 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "_note": "Eve 2026-07-28: fills the two activation boxes on each fiber captain's 'Activation Rate - <captain> (ATT Fiber)' tab in the Captainship Metrics Report workbook. ORDER 15.1 puts it directly after the other per-captain metrics (captainship_activations 12, captainship_churn 13, owners_metrics_churn 15) and before int_wow_penetration (15.5). ONE Metrics crosstab feeds all five captains \u2014 it is grouped by Captain's Bonus Teams, so the run downloads once and slices per captainship in Python; there are no per-captain views in this workbook. data_sources is [] on purpose: the Metrics workbook has no readiness probe mapped, and both metrics are ROLLING windows (Rolling 4 Weeks / 30-60 day activation rate) rather than 'today's data', so the tableau warm-session gate is the only gate that applies. Sheet-only, no Slack.",
       "display_name": "Captainship Activation Rate (per-captain)",
@@ -2167,7 +2172,8 @@
       }
     },
     "captainship_abp_6days": {
-      "order": 15.2,
+      "order": 4.966,
+      "_order_note": "15.2 -> 4.966 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "_note": "Eve 2026-07-29: fills the 'ABP %' and '% of Ongoing 6+ Days Sales' boxes on each fiber captain's 'ABP & 6 days out - <captain> (ATT Fiber)' tab in the 'Captainship Metrics Report - ABP and 6 days out' workbook (1XlHd...). ORDER 15.2 puts it right after captainship_activation_rate (15.1), which reads the SAME Metrics crosstab \u2014 same warm Tableau session, and the two never fight over the browser profile. ONE crosstab feeds all five captains (it is grouped by Captain's Bonus Teams, sliced per captainship in Python; this workbook has no per-captain views). The 6-days-out number is a TOOLTIP measure: the visible column is a count, and the % rides along in the export as '% of sales scheduled 6+ days out (4 wks)' \u2014 if someone drops it from the tooltip, the export loses it and the run fails loudly. data_sources is [] for the same reason as the activation report: no readiness probe is mapped to the Metrics workbook and both measures are rolling 4-week windows rather than 'today's data', so the tableau warm-session gate is the only one that applies. Sheet-only, no Slack.",
       "display_name": "Captainship ABP & 6 Days Out (per-captain)",
@@ -2197,7 +2203,8 @@
       }
     },
     "captainship_raf_metrics": {
-      "order": 15.3,
+      "order": 4.967,
+      "_order_note": "15.3 -> 4.967 (Eve 2026-08-19) - moved with the rest of the captainship block to the front of the Tableau wave so the review link can go up at 07:15. See captainship_activations' _order_note for the why and the cost.",
       "on_scheduler": true,
       "_note": "The same three metrics the five ATT Fiber captains get, but for RAFAEL \u2014 'Captainship - Cancel Rate' (0-30 + 30-60), 'Captainship - Activation Rate' (0-30 + 30-60), 'Captainship - ABP' and 'Captainship - 6 days out', all in HIS workbook ('AT&T Fiber Metrics Report', 1Xddk29...). Runs right after the three per-captain fills because it reads the SAME Metrics crosstab (ATT TRACKER 2_1 - D2D -> Metrics -> 'Metrics Call Last week data (Internet)'), sliced to Captain's Bonus Teams == \"Raf's Team\". Separate module (captainship_raf_metrics) because his tabs carry a TWO-column pair per day (% + count, date merged over the pair) instead of the fiber tabs' single column. The 30-60 cancel rate is derived as 100% - the 30-60 activation rate (no 30-60 cancel column exists) and the two 30-60 boxes have no count, so their 'units' cells stay blank on purpose. 'Captainship - ABP' is his CAPTAINSHIP's ABP mix and is the one his draft shows (Eve 2026-07-30). Do not confuse it with 'Local Office - New Internet ABP%' in the same workbook: that is his local office, filled by daily_metrics (new_internet_abp), and the draft does not read it. Writes the LIVE workbook: Eve built these three tabs empty for this report on 2026-07-30, so there is nothing to protect; --sheet-id retargets a duplicate for a practice run.",
       "display_name": "Captainship Metrics - Rafael",
@@ -2585,7 +2592,8 @@
     },
     "captainship_drafts": {
       "timeout_minutes": 90,
-      "order": 20,
+      "order": 4.968,
+      "_order_note": "20 -> 4.968 (Eve 2026-08-19). Last step of the captainship block, which moved to the front of the Tableau wave so its review link can go up at 07:15 Central, right after the Org Sales Board's 07:00 one - see captainship_activations' _order_note. The build still runs in the 4am pass; only the POST left the queue for a clock (captainship_drafts_review, on_scheduler:false + com.alphalete.captainship-review-post at 07:15). So the previews are on disk by ~06:10-06:30 and the 07:15 agent just prints and posts them. Its depends_on is unchanged and is what actually orders it: all seven captainship fills plus org_sales_board.",
       "on_scheduler": true,
       "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Alphalete ORG Sales Board' tab for \u00a71 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber \u00a72), and the filled churn tabs (\u00a73/\u00a74). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh \u2014 this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau \u00a72 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 \u2014 the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. RAFAEL followed on 2026-07-30 (Eve): his draft went from 4 sections to 9 in her exact order \u2014 Product Summary, the two cancel-rate boxes, NI churn, Wireless churn, then ABP %, activation 0-30 / 30-60 and 6+ days out. All six of those boxes are filled by captainship_raf_metrics on his own workbook, ABP included \u2014 it comes from his 'Captainship - ABP' tab, NOT from 'Local Office - New Internet ABP%' in the same workbook. His Tableau Cancel-Rates \u00a72 shot is gone with the change, so only B2B/NDS still need a Tableau session for their second section. B2B / NDS are otherwise unchanged.",
       "display_name": "Captainship Report Drafts (12)",
@@ -2625,8 +2633,9 @@
       "report_id": "captainship-drafts"
     },
     "captainship_drafts_review": {
-      "order": 21,
-      "on_scheduler": true,
+      "order": 4.969,
+      "on_scheduler": false,
+      "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-19 (Eve). The review link now runs on a CLOCK, from the standalone com.alphalete.captainship-review-post LaunchAgent (deploy/captainship_review_post.sh, 07:15 every day with 07:45 / 08:15 / 09:15 as a safety net), so it lands ~15 min after the Org Sales Board's 07:00 link and the two get approved and sent together - Eve's ask: 'que se envien practicamente juntos, aprox 7:15/20am central'. Kept here so `lucy rerun captainship_drafts_review` still works (and it is still what re-posts a link by hand). WHY A CLOCK AND NOT AN ORDER: a pass runs every ready report SEQUENTIALLY, so a queue position is not a time - the block ahead of it decides when it fires, and it fired 09:14-09:30 while the board's link was at 07:03. Moving the whole captainship block to 4.961-4.968 makes the previews exist by ~06:10-06:30, but leaving the post in the queue right behind them would put the link up at 06:30, an hour before the board's. A clock cannot be starved by the queue and does not drift with it. The agent runs review_gate --ensure-posted, not --post: it is a no-op when the day is already up for review (approved or not) and builds the previews itself if the morning chain never produced them, so the later slots cannot double-post and a failed build still gets a link up. The 10:00 backstop in deploy/captainship_review.sh (same --ensure-posted) is unchanged. SENDS NOTHING: com.alphalete.captainship-review still mails the 12 reports only on a checkmark - its window moved 9am -> 7am the same day so a 07:20 checkmark is not parked until 09:00.",
       "_note": "The review half of the Captainship Reports (Eve 2026-07-30). Sends NOTHING: it prints the 12 previews captainship_drafts just built into ONE PDF, drops it in Drive and posts the link in the review channel AS LUCY (the mini's Slack token). The reports go out only when an approver reacts with a checkmark - picked up within 15 min by com.alphalete.captainship-review (deploy/captainship_review.sh, 9am-8pm), which runs review_gate --check --send and mails the reviewed .eml files untouched. Kept as its OWN entry rather than folded into captainship_drafts so a build that half-fails still shows as its own red pill, and so re-posting (`lucy rerun captainship_drafts_review`) never rebuilds the drafts. Re-posting is safe: --post replaces its own earlier post for the same day and refuses to touch one that already carries an approval. depends_on captainship_drafts so it can only run once the previews exist. source_type 'local' - it reads previews off disk and talks to Drive + Slack; no Tableau, no chrome guard. Same shape as org_sales_board_email on purpose: one review habit for both emails, one channel.",
       "display_name": "Captainship Reports (in review)",
       "source_type": "local",
@@ -2655,6 +2664,27 @@
         "captainship_drafts"
       ],
       "verify": null
+    },
+    "install_captainship_review_post_agent": {
+      "on_scheduler": false,
+      "_note": "NOT a report - the one-shot installer for com.alphalete.captainship-review-post, the agent that PUTS THE LINK UP (deploy/captainship_review_post.sh, review_gate --ensure-posted at 07:15 with 07:45 / 08:15 / 09:15 as a safety net). Added 2026-08-19 when captainship_drafts_review left the orchestrator for a clock, so the Captainship review link lands ~15 min after the Org Sales Board's 07:00 one and the two get approved together. Run `lucy rerun install_captainship_review_post_agent` after a `lucy update`, and again any time the plist or its slots change - a plist edit alone does nothing until launchd reloads it. Same pattern as install_org_board_review_post_agent. Sends nothing and touches no Sheet; it only rewrites the plist path and reloads the agent.",
+      "display_name": "Install Captainship review-post agent (7:15am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "captainship-review-post"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
     },
     "install_captainship_review_agent": {
       "on_scheduler": false,

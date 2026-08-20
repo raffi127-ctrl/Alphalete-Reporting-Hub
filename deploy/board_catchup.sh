@@ -164,7 +164,11 @@ if [ "$(date +%u)" = "1" ]; then
   # Units, §2 the fiber activations PNGs, §3/§4 the churn tabs — all filled by
   # the morning batch (09:23-11:07 on 2026-08-10). So captainship_drafts and
   # captainship_drafts_review now run SEVEN days in schedule_config.json, like
-  # any other report.
+  # any other report. (2026-08-19: the build moved to the FRONT of the Tableau
+  # wave — captainship_activations 4.961 … captainship_drafts 4.968 — and the
+  # post left the queue for com.alphalete.captainship-review-post at 07:15, so
+  # the previews are done ~06:10-06:30 and the link lands right behind the
+  # board's 07:00 one. Even less reason for a 14:30 rebuild than before.)
   #
   # NOT left here as a fallback on purpose. A 14:30 rebuild would spend ~17
   # minutes of the SERIAL queue redoing previews that already exist, and its

@@ -795,13 +795,26 @@ def main(argv=None) -> int:
         if not args.send:
             return 0
         msg = _find_post(today, args.channel)
-        if msg is not None and already_sent(msg, args.channel):
+        # NO POST, NO SEND (2026-08-19). The SENT lock lives in the post's
+        # THREAD (mark_sent), so sending before the post exists mails twelve
+        # reports with nothing to write the lock into — and the next tick, 15
+        # minutes later, mails them again. Only the weekend auto-release can
+        # reach here without a post (a human ✅ implies one), and it just got
+        # much easier to hit: the checker's window opens at 07:00 now and the
+        # previews are built by ~06:15, so on a clean Saturday the 07:00 tick
+        # would find the chain DONE a quarter of an hour before the 07:15 agent
+        # puts the link up. Wait for it — the very next tick sends, with a
+        # thread to lock.
+        if msg is None:
+            print("— the day has no review post yet; waiting for it before "
+                  "sending (the send lock lives in its thread)", flush=True)
+            return 1
+        if already_sent(msg, args.channel):
             print("— already sent today (the thread carries the lock); "
                   "nothing to do", flush=True)
             return 0
         failures = send_reviewed(today)
-        if msg is not None:
-            mark_sent(msg, failures, args.channel)
+        mark_sent(msg, failures, args.channel)
         return failures
     ap.print_help()
     return 2
