@@ -2121,14 +2121,22 @@ def _card_self_check() -> list[str]:
         _lib_ids = _cov._library_card_ids()
         if _lib_ids:
             known = {i for i in ids if i} | _lib_ids
+            # A card's declared phase ids are legitimate publish targets too
+            # (country-sales-board logs its email gate's ✅ under
+            # `country-sales-board-email-approved` — declared in `phases`).
+            for r in AUTOMATED_REPORTS:
+                known |= {p for p in (r.get("phases") or []) if p}
+                if r.get("approval_phase"):
+                    known.add(r["approval_phase"])
+            # Only the last 2 days: an id that stopped publishing (fixed,
+            # renamed, retired) shouldn't keep warning for a week —
+            # applicant_sync_morning's pre-fix rows did exactly that.
             orphans = sorted({
-                r.get("report_id") for r in _all_runs_merged(days=7)
+                r.get("report_id") for r in _all_runs_merged(days=2)
                 if r.get("report_id") and r.get("report_id") not in known})
             for rid in orphans:
-                # Known non-card publishers: internal machinery (probes,
-                # session heartbeats — hub_coverage.is_internal) and the
-                # review gate, which logs approvals under `<card>-approved`
-                # by design (review_approval.SUFFIX).
+                # Internal machinery (probes, heartbeats) and the generic
+                # `<card>-approved` review-gate convention never get cards.
                 if _cov.is_internal(rid):
                     continue
                 if rid.endswith("-approved") and rid[:-9] in known:
