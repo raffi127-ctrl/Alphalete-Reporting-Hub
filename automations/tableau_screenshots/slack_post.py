@@ -281,6 +281,87 @@ def reply_caption(spec: dict, today: dt.date) -> str:
     return f"*{spec['title']} - {today.strftime('%b')} {today.day}*"
 
 
+_LOCK_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots" / ".locks"
+
+
+class _ChannelPostLock:
+    """Serialize one channel's read-then-post for one day, across processes.
+
+    WHY (2026-08-20). #ambient-sales-1 and #aeon-sales each got all EIGHT boards
+    twice. The dedup below is read-then-write — it reads what today's thread
+    already holds, decides, then posts — with nothing held in between. Two runs
+    that overlap both read "not there yet" and both post, and the whole idea that
+    posting twice is harmless quietly stops being true.
+
+    The existing guard (mini_control._running_pids) only covers `lucy rerun`, and
+    only on one machine — a scheduled job overlapping the orchestrator sails
+    straight past it, which is what happened.
+
+    Per CHANNEL per DAY on purpose: different channels still post in parallel,
+    and the lock is held for one channel's read+post rather than a whole run.
+
+    Best-effort by design. No fcntl (Windows), an unwritable lock dir, or a stale
+    holder must never stop a report from posting — the failure we are preventing
+    is cosmetic duplicates; the failure we must not cause is a silent no-post.
+    Waits rather than skips: the second run should post what the first missed,
+    not give up."""
+
+    WAIT_S = 600.0
+    POLL_S = 2.0
+
+    def __init__(self, channel: str, today: dt.date, log=print):
+        self.channel, self.today, self.log = channel, today, log
+        self.fd = None
+
+    def __enter__(self):
+        try:
+            import fcntl
+        except ImportError:            # Windows — no flock, run unserialized
+            return self
+        try:
+            _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+            path = _LOCK_DIR / "{}-{}.lock".format(self.channel,
+                                                   self.today.isoformat())
+            self.fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o644)
+        except Exception:              # noqa: BLE001 — never block a post
+            self.fd = None
+            return self
+        start, waited = time.monotonic(), False
+        while True:
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if waited:
+                    self.log("  {}: another run finished — posting now"
+                             .format(self.channel))
+                return self
+            except OSError:
+                if time.monotonic() - start >= self.WAIT_S:
+                    self.log("  ⚠ {}: another run has held this channel for "
+                             "{:.0f}s — posting anyway (duplicates possible)"
+                             .format(self.channel, self.WAIT_S))
+                    return self
+                if not waited:
+                    waited = True
+                    self.log("  {}: another run is posting to this channel — "
+                             "waiting for it to finish (avoids a double post)"
+                             .format(self.channel))
+                time.sleep(self.POLL_S)
+
+    def __exit__(self, *exc):
+        if self.fd is None:
+            return False
+        try:
+            import fcntl
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+        except Exception:              # noqa: BLE001
+            pass
+        try:
+            os.close(self.fd)
+        except Exception:              # noqa: BLE001
+            pass
+        return False
+
+
 class DedupReadUnavailable(Exception):
     """ONE channel's "what's already posted today?" read failed.
 
@@ -511,6 +592,22 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
                      today: dt.date, replace: bool = False,
                      late_all=(), *, new_thread: bool = False,
                      note: str = "", updated: bool = False) -> dict:
+    """Serialized entry point — see _post_to_channel_unlocked for the work.
+
+    The lock is held across the WHOLE read-then-post, because that pair is the
+    thing that has to be atomic: the dedup reads the thread, decides what is
+    missing, and posts. Split those across two overlapping runs and both decide
+    "missing" and both post (2026-08-20: 8 boards twice in two channels)."""
+    with _ChannelPostLock(channel, today):
+        return _post_to_channel_unlocked(
+            client, channel, captures, pages, today, replace, late_all,
+            new_thread=new_thread, note=note, updated=updated)
+
+
+def _post_to_channel_unlocked(client, channel: str, captures: list, pages: list,
+                              today: dt.date, replace: bool = False,
+                              late_all=(), *, new_thread: bool = False,
+                              note: str = "", updated: bool = False) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
     channel. A failure in one channel is caught by the caller so the others still
     post.
