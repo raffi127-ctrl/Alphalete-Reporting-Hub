@@ -127,12 +127,18 @@ fi
 # companion to the whole org on a Thursday nobody ever approved the bulletin.
 # So it runs ONLY on the pass where the DD actually went out, and mirrors the
 # gate's mode rather than a variable the gate no longer defines.
+#
+# "Went out" is read from THIS pass's log: the gate's send prints "emailed …" at
+# column 0 only on the pass that mails the bulletin. This used to be the $_PUB
+# log-grep; ebc5807 moved the Hub publish into the gate and removed _PUB, but
+# under `set -u` the read left behind here killed every pass before the
+# companion could run (Thu 2026-08-20 — rcs_ncs recorded no run).
 case " ${CHECK_ARGS[*]} " in
     *" --distro "*) RCS_ARGS=(--rcs-ncs --send --notify) ;;
     *)              RCS_ARGS=(--rcs-ncs --test --send) ;;
 esac
 _RPUB=""
-if [ "$_PUB" = "success" ]; then
+if grep -q "^emailed " "$LOG_FILE"; then
     echo "[$(date)] rcs-ncs starting (mode: ${RCS_ARGS[*]})" >> "$LOG_FILE"
     "$VENV_PY" -u -m automations.override_bulletin.send "${RCS_ARGS[@]}" >> "$LOG_FILE" 2>&1
     RST=$?
