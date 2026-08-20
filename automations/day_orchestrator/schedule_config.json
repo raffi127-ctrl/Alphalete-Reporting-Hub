@@ -5135,6 +5135,29 @@
       },
       "machine": "Lucy 2"
     },
+    "disable_sales_boards_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_sales_boards_agent` (Lucy 1 queue) can RETIRE the leftover com.alphalete.sales-boards LaunchAgent on the MINI. The report's home is Lucy 2 (Lucys-MacBook-Neo — sales-boards + vantura-slack-sales agents loaded there, sleep locked off); the mini's copy was firing the same 5:10→8:05 q25m ladder in parallel, and the two runs share ONE production Sheet + the same temp tabs, so the mini's pass kept dying mid-render (2026-08-20 08:05: gspread 'Unable to parse range _sb_zeros_tmp' after Lucy 2 deleted the tab) and leaving open 'started' rows in Hub Activity — the stuck pulsing 🔄 pill Megan asked about. Race-free bootout + stashes the plist as .plist.disabled; reversible via install_agent (python -m automations.day_orchestrator.install_agent sales-boards). Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable Sales Boards standalone agent (mini)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "sales-boards"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "att_thread": {
       "on_scheduler": false,
       "_off_scheduler_note": "READINESS REPORT for Carlos's 'B2B Metrics MM/DD/YYYY' thread. DOES NOT POST \u2014 and that is deliberate, not unfinished: Megan has a standing rule that nothing goes to Slack without her say-so, and this targets someone else's channel. CHANNEL_ID is intentionally None so a dry run cannot quietly acquire a destination (box_order_log posts Carlos's BOX thread to #alphalete-gp-sales, which is the likely target, but 'carlos' slack channel in this thread' is not the same claim). Prints the exact parent message and checks all 7 artifacts \u2014 BOX Order Log, Accepted-by-supplier, AT&T B2B Order Log, New Internet Churn, Wireless Churn, Ongoing Cancel, Tableau Metrics \u2014 reporting present/stale/missing with the module that produces each. Built as a check rather than a poster because the failure that matters is a thread that posts 5 of 7 and looks complete. MUST RUN ON LUCY 2: every artifact is written to that machine's output/, so a laptop run truthfully reports 0/7. Enabling posting is a separate reviewable change (add a poster + a confirmed channel id), not a flag flip.",
