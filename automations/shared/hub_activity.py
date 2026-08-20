@@ -60,6 +60,15 @@ def log_completed(report_id: str, report_name: str, *,
         except _gs.WorksheetNotFound:
             return False        # the Hub creates it; don't invent one here
 
+        # This module reported itself, so the hand-run hook in
+        # shared/hub_autopublish.py must stay out of the way — two rows for
+        # one run would green a daily_runs>1 pill off a single pass.
+        try:
+            from automations.shared import hub_autopublish
+            hub_autopublish.mark_reported()
+        except Exception:   # noqa: BLE001
+            pass
+
         # Self-register: if this card id has no Hub card yet, create a shared
         # Report Library card so a standalone LaunchAgent report (which reports
         # here, not through the orchestrator) is never invisible. Best-effort —

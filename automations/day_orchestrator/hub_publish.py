@@ -460,7 +460,8 @@ def _clear_failure(report_id: str, report_name: str) -> None:
 
 
 def publish_done(report_id: str, report_name: str, status: str = "success",
-                 run_id: str | None = None, *, alert_on_fail: bool = True) -> bool:
+                 run_id: str | None = None, *, alert_on_fail: bool = True,
+                 user: str = "Mini (auto)") -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
     UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
     flips running->done and doesn't leave a dangling yellow pill. With no run_id,
@@ -468,10 +469,22 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
     wrapper that publish_running'd at its start), so it too shows a running->done
     pulse; only if there's no open row do we append a fresh finished row (the
     reverify / no-prior-start path). Returns True if the Hub was touched, False if
-    the report has no Hub card. Best-effort — never raises."""
+    the report has no Hub card. Best-effort — never raises.
+
+    `user` fills the User column on an appended row. It defaults to the mini so
+    every existing caller reads exactly as before; the hand-run hook
+    (shared/hub_autopublish.py) passes the real person, because "Mini (auto)" on
+    a row someone typed on their laptop sends you to the wrong machine."""
     card = _resolve_card(report_id, report_name)
     if not card:
         return False
+    # Tell the hand-run hook this run already reported itself, so it cannot add
+    # a SECOND row and fill a daily_runs>1 pill off a single pass.
+    try:
+        from automations.shared import hub_autopublish
+        hub_autopublish.mark_reported()
+    except Exception:   # noqa: BLE001
+        pass
     now = dt.datetime.now().isoformat(timespec="seconds")
     try:
         ws = _ws()
@@ -486,7 +499,7 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
             ws.update([[now]], f"I{row}", value_input_option="RAW")   # Ended At
         else:
             ws.append_row(
-                [uuid.uuid4().hex[:12], now, card, report_name, "Mini (auto)",
+                [uuid.uuid4().hex[:12], now, card, report_name, user,
                  socket.gethostname(), "", status, now],
                 value_input_option="RAW")
         # A hard failure alerts Slack (deduped) so it can't fail silently. Only
