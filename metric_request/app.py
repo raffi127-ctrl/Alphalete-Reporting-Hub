@@ -298,47 +298,51 @@ def form_view() -> None:
                    + ", ".join(missing) + ".")
     if st.button("📨 Send my sign-up to Megan", type="primary",
                  disabled=bool(missing)):
-        problems = S.validate_request(rec)
-        if problems:
-            st.error("Almost there — please fix these:")
-            for p in problems:
-                st.markdown(f"- {p}")
-            return
-        rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        rec.submitted_by = requested_by.strip() or rec.owner or "owner"
-        # Live "is Lucy in this channel" check per channel (same helper the
-        # tracker form uses) — surfaced in Megan's ping + the confirmation
-        # page, so a stale/uninvited channel is caught at sign-up, not on the
-        # first 4am run (the drew lesson).
-        try:
-            from automations.tracker_onboarding import slack_check
-            lucy_all = [slack_check.check_channel(p.channel_id, p.channel_name)
-                        for p in named_plans]
-        except Exception:                            # noqa: BLE001
-            lucy_all = []
-        for j, p in enumerate(named_plans):
-            if (not p.channel_id and j < len(lucy_all)
-                    and lucy_all[j].get("channel_id")):
-                p.channel_id = lucy_all[j]["channel_id"]
-        if named_plans and not rec.channel_id:
-            rec.channel_id = named_plans[0].channel_id
-        try:
-            where = store.save_request(rec)
-        except Exception as e:  # noqa: BLE001
-            st.error(f"Sorry — couldn't send that ({e}). Please try again.")
-            return
-        alerted = (False, "")
-        if where == "sheet":
-            alerted = request_notify.notify(rec, lucy=lucy_all)
-        summary = []
-        for p in named_plans:
-            labels = [S.REPORTS_BY_KEY[k].label for k in p.report_keys
-                      if k in S.REPORTS_BY_KEY]
-            summary.append((p.channel_name, labels))
-        st.session_state["_req_done"] = {
-            "owner": rec.owner, "business": rec.business_name,
-            "goes_by": requested_by.strip(), "lucy": lucy_all,
-            "summary": summary, "where": where, "alerted": alerted}
+        # The Slack channel check takes a few seconds — show a spinner so
+        # nobody thinks the click didn't take (and clicks it five more times).
+        with st.spinner("📨 Sending your sign-up — this takes a few "
+                        "seconds, hang tight..."):
+            problems = S.validate_request(rec)
+            if problems:
+                st.error("Almost there — please fix these:")
+                for p in problems:
+                    st.markdown(f"- {p}")
+                return
+            rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            rec.submitted_by = requested_by.strip() or rec.owner or "owner"
+            # Live "is Lucy in this channel" check per channel (same helper the
+            # tracker form uses) — surfaced in Megan's ping + the confirmation
+            # page, so a stale/uninvited channel is caught at sign-up, not on the
+            # first 4am run (the drew lesson).
+            try:
+                from automations.tracker_onboarding import slack_check
+                lucy_all = [slack_check.check_channel(p.channel_id, p.channel_name)
+                            for p in named_plans]
+            except Exception:                            # noqa: BLE001
+                lucy_all = []
+            for j, p in enumerate(named_plans):
+                if (not p.channel_id and j < len(lucy_all)
+                        and lucy_all[j].get("channel_id")):
+                    p.channel_id = lucy_all[j]["channel_id"]
+            if named_plans and not rec.channel_id:
+                rec.channel_id = named_plans[0].channel_id
+            try:
+                where = store.save_request(rec)
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Sorry — couldn't send that ({e}). Please try again.")
+                return
+            alerted = (False, "")
+            if where == "sheet":
+                alerted = request_notify.notify(rec, lucy=lucy_all)
+            summary = []
+            for p in named_plans:
+                labels = [S.REPORTS_BY_KEY[k].label for k in p.report_keys
+                          if k in S.REPORTS_BY_KEY]
+                summary.append((p.channel_name, labels))
+            st.session_state["_req_done"] = {
+                "owner": rec.owner, "business": rec.business_name,
+                "goes_by": requested_by.strip(), "lucy": lucy_all,
+                "summary": summary, "where": where, "alerted": alerted}
         st.rerun()
 
 
