@@ -24,16 +24,12 @@ def _lines(rec: TrackerRecord, lucy: "Optional[List[dict]]",
            change: bool = False) -> Tuple[str, List[str]]:
     who = rec.owner or rec.key
     ch_names = " + ".join(n or "?" for _, n in rec.channel_pairs())
-    # @-mention Megan so the ping BUZZES her even with the channel on
-    # "Just mentions" (her actual setting, 2026-08-20).
-    _megan = "<@U04G5HJBGFN>"
     if change:
         title = ("Tracker change request — {} wants the board lineup updated "
-                 "in {} (already posts as {!r}) {}".format(
-                     who, ch_names, rec.key, _megan))
+                 "in {} (already posts as {!r})".format(who, ch_names, rec.key))
     else:
-        title = ("New tracker request — {} wants {} daily tracker board(s) "
-                 "in {} {}".format(who, len(rec.trackers), ch_names, _megan))
+        title = "New tracker request — {} wants {} daily tracker board(s) in {}".format(
+            who, len(rec.trackers), ch_names)
     link = "{}/?confirm={}".format(FORM_URL, rec.key or "")
     titles = {t["id"]: t["title"] for t in tracker_catalog()}
     thread = ["• Requested by: {}".format(rec.requested_by or who),
