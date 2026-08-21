@@ -45,6 +45,7 @@
     },
     "per_office_views": {},
     "machine": "Lucy 1",
+    "campaign": "",
     "notes": "",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
@@ -96,6 +97,7 @@
     },
     "per_office_views": {},
     "machine": "Lucy 1",
+    "campaign": "",
     "notes": "",
     "channel_plans": [
       {
@@ -167,6 +169,7 @@
     },
     "per_office_views": {},
     "machine": "Lucy 1",
+    "campaign": "",
     "notes": "",
     "channel_plans": [
       {
@@ -238,6 +241,7 @@
     },
     "per_office_views": {},
     "machine": "Lucy 1",
+    "campaign": "",
     "notes": "",
     "channel_plans": [
       {
@@ -301,6 +305,7 @@
     },
     "per_office_views": {},
     "machine": "Lucy 1",
+    "campaign": "",
     "notes": "",
     "channel_plans": [
       {
