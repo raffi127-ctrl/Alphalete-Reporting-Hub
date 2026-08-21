@@ -2695,6 +2695,45 @@ def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
                   f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
 
 
+def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
+    """Copy THIS machine's Slack tokens to another runner, zero-touch.
+
+    Reads ~/.config/recruiting-report/slack-user-token + slack-bot-token and
+    enqueues set_slack_user_token / set_slack_token rows on the TARGET
+    machine's tab. The secrets ride the queue's Args cell exactly like a
+    hand-pasted set_slack_token — both landing actions are in SECRET_ACTIONS,
+    so the poller blanks the cell when the row finishes.
+
+    Why (2026-08-21): provisioning Lucy 3 needed Lucy 1's tokens and every
+    path required a human screen-share to read a token file. One installed
+    token should feed the fleet — same idea as --appstream-push-fleet.
+
+    Args: the target machine name, e.g. 'Lucy 3'."""
+    target = (args or "").strip()
+    if not target:
+        return False, ("push_slack_tokens needs the target machine name as "
+                       "Args, e.g. 'Lucy 3'")
+    if target.strip().lower() == _machine_profile().strip().lower():
+        return False, "target is THIS machine — nothing to push"
+    base = Path.home() / ".config" / "recruiting-report"
+    pushed = []
+    for fname, action in (("slack-user-token", "set_slack_user_token"),
+                          ("slack-bot-token", "set_slack_token")):
+        p = base / fname
+        try:
+            token = p.read_text().strip()
+        except Exception:  # noqa: BLE001 — missing file just isn't pushed
+            continue
+        if token:
+            enqueue(action, token, by=f"push from {_machine_profile()}",
+                    machine=target, auto=True)
+            pushed.append(fname)
+    if not pushed:
+        return False, "no Slack token files on this machine to push"
+    return True, (f"queued {', '.join(pushed)} onto '{target}' — the target "
+                  "verifies each with auth_test; Args cells blank on landing")
+
+
 def _action_set_office_slack_token(args: str) -> tuple[bool, str]:
     """set_office_slack_token <office_key> <xoxb-token>: install the WORKSPACE bot
     token for an office whose Slack channel lives in a non-AO workspace (e.g.
@@ -4895,6 +4934,7 @@ ACTIONS = {
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
+    "push_slack_tokens": _action_push_slack_tokens,
     "set_office_slack_token": _action_set_office_slack_token,
     "set_dd_bot_token": _action_set_dd_bot_token,
     "set_dd_app_token": _action_set_dd_app_token,
