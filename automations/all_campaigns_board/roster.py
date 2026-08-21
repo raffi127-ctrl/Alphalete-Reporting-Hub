@@ -80,6 +80,7 @@ EXCLUDE: set = {
     "ayleen gonzalez",
     "javeon lara",
     "paola rodriguez",      # 2026-08-19, off every report
+    "jeremiah minor",       # 2026-08-21, two-week zero rule (Sahil's captainship)
 }
 
 

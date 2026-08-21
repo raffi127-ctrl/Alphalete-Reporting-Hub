@@ -77,6 +77,14 @@ EXCLUDE: Dict[str, tuple] = {
     "Raf":    ("Edgar Muniz II",),           # 2026-08-19
     "Wayne":  ("Mason Davis",),              # 2026-08-19
     "Starr":  ("Jason Strid",),              # 2026-08-19
+    # 2026-08-21 (Eve): Jeremiah Minor. Held out of the 2026-08-19 batch because
+    # WE 07.26 / 07.19 were BLANK, which read as "new owner, no history" — but
+    # the blanks were only "no board row yet": his 30-60 cancel window already
+    # carried 25.00% on the tabs' first day (7/28), i.e. New Internet sales from
+    # ~June. Zero for WE 08.02 / 08.09 / 08.16, and on 2026-08-20 he dropped out
+    # of the Metrics view entirely (confirmed live 8/21: Sahil's Team returns
+    # only Andre Burton Jr., Brian Tran, Marcellus Butler, Sahil Multani).
+    "Sahil":  ("Jeremiah Minor",),           # 2026-08-21
     "Tony":   ("Melik El Jaiez", "Aden Berhane"),        # 2026-08-19
     "Khalil": ("Jimmy Bonilla", "Ayleen Gonzalez"),      # 2026-08-19
     "Colten": ("Javeon Lara", "Selena Powers"),          # 2026-08-19
