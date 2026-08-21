@@ -46,6 +46,9 @@ def main(argv=None):
     ap.add_argument("--accounts", action="store_true",
                     help="list which AppStream accounts this machine can use, "
                          "then exit (names only — never a password)")
+    ap.add_argument("--alt", action="store_true",
+                    help="use the stored ALTERNATE account "
+                         "(set_appstream_alt_creds) instead of the primary")
     ap.add_argument("--user", help="log in as this account instead of the "
                                    "configured one (needs --pass)")
     ap.add_argument("--pass", dest="pw", help="password for --user")
@@ -86,6 +89,22 @@ def main(argv=None):
               % ", ".join(sorted(k for k in blob if "password" not in k.lower())))
         print("env APPLICANTSTREAM_USERNAME: %s"
               % (_os.environ.get("APPLICANTSTREAM_USERNAME") or "-unset-"))
+        alt_path = pathlib.Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
+        try:
+            alt_blob = _json.loads(alt_path.read_text())
+        except Exception:
+            alt_blob = {}
+        print("ALT file            : %s (%s)"
+              % (alt_path.name, "present" if alt_path.exists() else "ABSENT"))
+        print("  alt username      : %s"
+              % (alt_blob.get("appstream_alt_username") or "-none-"))
+        print("  alt password      : %s"
+              % ("set (%d chars)" % len(alt_blob.get("appstream_alt_password") or "")
+                 if alt_blob.get("appstream_alt_password") else "-none-"))
+        try:
+            print("creds.has_appstream_alt(): %s" % creds.has_appstream_alt())
+        except Exception as e:  # noqa: BLE001
+            print("creds.has_appstream_alt(): error %s" % type(e).__name__)
         for svc in ("applicantstream-username", "applicantstream-username-rcaptain",
                     "applicantstream-username-alt"):
             r = _sp.run(["security", "find-generic-password", "-a", "applicantstream",
@@ -93,6 +112,13 @@ def main(argv=None):
             print("keychain %-38s: %s"
                   % (svc, r.stdout.strip() if r.returncode == 0 else "-not found-"))
         return 0
+
+    if a.alt and not (a.user and a.pw):
+        if not creds.has_appstream_alt():
+            print("no ALTERNATE account configured on this machine "
+                  "(set one with the set_appstream_alt_creds action)")
+            return 5
+        a.user, a.pw = creds.appstream_alt_username(), creds.appstream_alt_password()
 
     try:
         user = a.user or creds.appstream_username()
