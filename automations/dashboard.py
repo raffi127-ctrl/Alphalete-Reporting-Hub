@@ -1188,6 +1188,10 @@ MEMBERS = [
     # Lucy 1 = the main mini; Lucy 2 = Carlos's machine (his org's reports).
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
+    # Lucy 3 — rerun/overflow mini on Raf's accounts (provisioned 2026-08-21;
+    # workflows/lucy3-provisioning.md). Takes daytime reruns + new-report
+    # testing so Lucy 1's 4am flow stops fighting hand-queued work.
+    {"name": "Lucy 3", "emoji": "🦿", "color": "#3B82F6", "email": ""},
     # Office Operations — a functional profile (not a single person) that holds
     # office-run workflows anyone on staff can pick up: new-hire swag texts,
     # etc. People navigate here to find those cards. (Megan 2026-07-13)
@@ -1418,6 +1422,44 @@ def _git_health() -> dict:
                 "detail": f"on '{branch}' @ {head}", "ok": False}
     return {"icon": "✅", "label": "On latest",
             "detail": f"{head} · updated {when}", "ok": True}
+
+
+def _request_hub_restart() -> None:
+    """Ask the supervising launcher to pull + restart this Hub: write the
+    marker launch_dashboard.command watches, let this rerun finish rendering,
+    then exit — the launcher pulls, restarts on the same port, and the
+    browser tab reconnects on its own (~15s)."""
+    import threading
+    marker = (Path.home() / ".config" / "recruiting-report"
+              / ".hub-restart-requested")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("restart\n")
+    st.info("Updating — this page reconnects in ~15 seconds…")
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+
+
+def _stale_code_banner() -> None:
+    """Loud, top-of-page prompt whenever this Hub isn't on the latest code
+    (Megan 2026-08-21: the sidebar pill alone was too easy to scroll past).
+    Supervised runs get the one-click button; unsupervised runs get told
+    exactly what to do instead. Renders nothing when on latest."""
+    gh = _git_health()
+    if not gh.get("label") or gh["ok"]:
+        return
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            st.markdown(f"### ⚠️ This Hub is {gh['label']}")
+            st.caption(f"Reports run from here may use OLD code. {gh['detail']}")
+        with c2:
+            if os.environ.get("HUB_SUPERVISED") == "1":
+                if st.button("⬆️ Update & restart now", type="primary",
+                             key="hub_update_restart_banner",
+                             use_container_width=True):
+                    _request_hub_restart()
+            else:
+                st.markdown("**Fully quit the Hub window, then click the "
+                            "🐺 icon again to update.**")
 
 
 # Sites the debug Chrome opens as login-ready tabs on launch. Scraping
@@ -7285,22 +7327,15 @@ with st.sidebar:
             st.caption(f"⚠️ {_gh['detail']}")
             # One-click catch-up when the launcher is supervising us (Mac
             # launch_dashboard.command sets HUB_SUPERVISED=1 and restarts the
-            # server whenever this marker appears). Writes the marker, exits;
-            # the launcher pulls + restarts and the browser tab reconnects.
-            # Not shown on unsupervised runs (direct `streamlit run`, Windows)
-            # where exiting would just kill the Hub with nobody to restart it.
+            # server whenever the marker appears). Not shown on unsupervised
+            # runs (direct `streamlit run`, Windows) where exiting would just
+            # kill the Hub with nobody to restart it. The main-area banner
+            # (every view, above the fold) is the loud twin of this button.
             if os.environ.get("HUB_SUPERVISED") == "1":
                 if st.button("⬆️ Update & restart the Hub",
                              key="hub_update_restart",
                              use_container_width=True):
-                    import threading
-                    _marker = (Path.home() / ".config" / "recruiting-report"
-                               / ".hub-restart-requested")
-                    _marker.parent.mkdir(parents=True, exist_ok=True)
-                    _marker.write_text("restart\n")
-                    st.info("Updating — this page reconnects in ~15 seconds…")
-                    # Let this rerun finish rendering before the server dies.
-                    threading.Timer(1.0, lambda: os._exit(0)).start()
+                    _request_hub_restart()
 
     # Chrome status check removed 2026-05-26: every report now runs through
     # patchright's unattended login (rcaptain on AppStream, ownerville on
@@ -7391,6 +7426,10 @@ with st.sidebar:
         _clear_session()
         st.rerun()
 
+
+# Being behind on code must be impossible to miss, on every view — the
+# sidebar pill has a loud twin above the fold. No-op when on latest.
+_stale_code_banner()
 
 # --------------------------------------------------------------------------
 # HOME VIEW — logo + date header + The Pack
