@@ -536,6 +536,16 @@ def close_day(today: dt.date, channel: Optional[str] = None,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    # A WEEKEND AUTO-SEND LEAVES NO REACTION. `_approver_of` above only sees a
+    # human tick, so on Sun 2026-08-16 this posted "were NOT sent" at 20:12 on
+    # a thread that had said "Sent" at 09:10 — the twelve reports HAD gone out,
+    # released by weekend_release. Read on Monday, that reads as a weekend that
+    # failed. The thread's own sent mark is the honest answer to "was this day
+    # decided", and it covers both routes; the reaction only covers one.
+    if any(SENT_MARKER in (r.get("text") or "") for r in replies[1:]):
+        if verbose:
+            print("- already sent today; nothing to close", flush=True)
+        return False
     if any(CLOSED_MARKER in (r.get("text") or "") for r in replies[1:]):
         if verbose:
             print("— already closed once", flush=True)

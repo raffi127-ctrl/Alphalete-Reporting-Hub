@@ -301,6 +301,16 @@ def close_day(board: B.Board, run_day: dt.date,
         return False
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    # A WEEKEND AUTO-SEND LEAVES NO REACTION. `_approver_of` above only sees a
+    # human tick, so on Sun 2026-08-16 this posted "did not go out" at 20:02 on
+    # a thread that had said "Sent" at 07:07 — the day HAD gone out, released by
+    # weekend_release. Read on Monday, that reads as a weekend that failed. The
+    # thread's own sent mark is the honest answer to "was this day decided", and
+    # it covers both routes; the reaction only covers one.
+    if _said(replies, SENT_MARK):
+        if verbose:
+            print("- already sent today; nothing to close", flush=True)
+        return False
     if _said(replies, CLOSED_MARK):
         if verbose:
             print("— already closed once", flush=True)
