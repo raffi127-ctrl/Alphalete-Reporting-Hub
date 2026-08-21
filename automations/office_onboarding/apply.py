@@ -181,6 +181,12 @@ def main(argv=None) -> int:
     ap.add_argument("--write", action="store_true",
                     help="apply the changes (default: dry-run / show plan).")
     ap.add_argument("--only", default=None, help="materialize a single office key.")
+    ap.add_argument("--registry-only", action="store_true",
+                    help="write ONLY the onboarded_offices.json registries — "
+                         "never schedule_config.json. Used by the enrollment "
+                         "auto-commit (the schedule file is hot on the "
+                         "runners; committing it from elsewhere makes "
+                         "conflicts).")
     args = ap.parse_args(argv)
 
     plans = plan()
@@ -225,7 +231,10 @@ def main(argv=None) -> int:
     for fam, rows in by_family.items():
         fam_key = "d2d" if fam == "d2d" else "b2b"
         print("  " + _merge_json(ONBOARDED_JSON[fam_key], rows, args.write))
-    print("  " + _patch_schedule(sched, args.write))
+    if args.registry_only:
+        print("  schedule_config.json: untouched (--registry-only)")
+    else:
+        print("  " + _patch_schedule(sched, args.write))
 
     if not args.write:
         print("\nDRY-RUN — nothing written. Re-run with --write to apply, then "
