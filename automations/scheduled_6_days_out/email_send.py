@@ -117,13 +117,25 @@ PHOTO_EMBED_PX = 200     # embedded resolution (crisp on retina, small file)
 
 _SIG_NAME = "Evelyn Sobrino"
 _SIG_TITLE = "Virtual Assistant, Alphalete Marketing"
-_SIG_EMAIL = "alphaletereporting@gmail.com"
+# Two addresses since 2026-08-21 (Eve): the one people should REPLY to is
+# eve@alphaletemarketing.com; alphaletereporting@ is the account these
+# automated emails are actually SENT FROM, kept visible so a reply to either
+# one reaches her. The emojis are plain unicode (escaped so this file stays
+# ASCII) — no extra CID to embed, and they render wherever the rest does.
+_SIG_EMAIL = "eve@alphaletemarketing.com"
+_SIG_EMAIL_ALT = "alphaletereporting@gmail.com"
+_SIG_NAME_EMOJI = "\U0001F338"    # cherry blossom, before her name
+_SIG_TITLE_EMOJI = "\U0001F43A"   # wolf, after the title
+_SIG_MAIL_EMOJI = "\u2709\ufe0f"      # envelope, before the work address
+_SIG_ALT_EMOJI = "\U0001F310"     # globe, before the reporting address
 
 # Plain-text fallback only (clients that don't render HTML/images).
-_SIGNATURE_TEXT = (
-    "Best,\n\n"
-    f"{_SIG_NAME}\n{_SIG_TITLE}\n{_SIG_EMAIL}"
+# The name/title/emails on their own, so a report that signs off with other
+# wording ("Kind regards" on the captainship drafts) reuses the same details.
+_SIGNATURE_TEXT_BODY = (
+    f"{_SIG_NAME}\n{_SIG_TITLE}\n{_SIG_EMAIL}\n{_SIG_EMAIL_ALT}"
 )
+_SIGNATURE_TEXT = "Best,\n\n" + _SIGNATURE_TEXT_BODY
 
 
 def _circular_photo_png(path: Path, px: int) -> bytes:
@@ -148,10 +160,16 @@ def _signature_html(cid_photo: str) -> str:
         f'height="{d}" style="display:block;border-radius:50%"/></td>'
         '<td valign="middle" style="padding-left:14px;'
         'font-family:Arial,Helvetica,sans-serif">'
-        f'<div style="font-size:16px;font-weight:bold;color:#000">{_SIG_NAME}</div>'
-        f'<div style="font-size:13px;color:#555">{_SIG_TITLE}</div>'
-        f'<div style="font-size:13px"><a href="mailto:{_SIG_EMAIL}" '
+        f'<div style="font-size:16px;font-weight:bold;color:#000">'
+        f'{_SIG_NAME_EMOJI} {_SIG_NAME}</div>'
+        f'<div style="font-size:13px;color:#555">'
+        f'{_SIG_TITLE} {_SIG_TITLE_EMOJI}</div>'
+        f'<div style="font-size:13px">{_SIG_MAIL_EMOJI} '
+        f'<a href="mailto:{_SIG_EMAIL}" '
         f'style="color:#1a73e8;text-decoration:none">{_SIG_EMAIL}</a></div>'
+        f'<div style="font-size:13px">{_SIG_ALT_EMOJI} '
+        f'<a href="mailto:{_SIG_EMAIL_ALT}" '
+        f'style="color:#1a73e8;text-decoration:none">{_SIG_EMAIL_ALT}</a></div>'
         '</td></tr></table>'
     )
 

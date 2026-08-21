@@ -30,7 +30,7 @@ from typing import List, Optional, Tuple
 from automations.captainship_drafts.config import Captain
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
-    _signature_html, _circular_photo_png,
+    _signature_html, _circular_photo_png, _SIGNATURE_TEXT_BODY,
 )
 
 _FONT_STACK = "Arial,Helvetica,sans-serif"
@@ -260,7 +260,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
 
     msg.set_content(
         "This Captainship Report is best viewed in an HTML email client.\n\n"
-        "Kind regards,\nEve")
+        "Kind regards,\n\n" + _SIGNATURE_TEXT_BODY)
 
     imgs = _Images()
     sections_html = "".join(

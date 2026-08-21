@@ -36,7 +36,7 @@ from automations.org_sales_board.screenshot_email import (
 )
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, PHOTO_EMBED_PX, PHOTO_IMG,
-    _signature_html, _circular_photo_png,
+    _signature_html, _circular_photo_png, _SIGNATURE_TEXT,
 )
 
 # Texas company — the reported day is Central, never the machine clock. The mini
@@ -161,7 +161,7 @@ def build_email(board: B.Board, images: List[Tuple[str, Path]],
                               + _signature_html(f"<{cid_photo}>")))
     html = _beh.document(rows)
     msg.set_content(f"{board.name} — see the HTML version for the screenshot.\n\n"
-                    f"Best,\nEvelyn Sobrino")
+                    + _SIGNATURE_TEXT)
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
     for cid, path in cids:

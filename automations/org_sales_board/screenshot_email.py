@@ -44,7 +44,7 @@ from automations.recruiting_report.fill import (
 from automations.shared import board_email_html as _beh
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password,
-    PHOTO_EMBED_PX, PHOTO_IMG, _signature_html, _circular_photo_png,
+    PHOTO_EMBED_PX, PHOTO_IMG, _signature_html, _circular_photo_png, _SIGNATURE_TEXT,
 )
 
 # Rollout recipient tiers (Megan 2026-07-03).
@@ -720,7 +720,7 @@ def build_email(images: List[Tuple], to_addrs: List[str],
     html = _beh.document(rows)
     msg.set_content("Alphalete Org Sales Board + All Units Org Sales Board — "
                     "see the HTML version for the screenshots.\n\n"
-                    "Best,\nEvelyn Sobrino")
+                    + _SIGNATURE_TEXT)
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
     for cid, path in cids:
