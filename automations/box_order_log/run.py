@@ -112,29 +112,35 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
 
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  payout_path: Path, tier_path: Optional[Path],
-                 tier_line: str) -> str:
+                 tier_line: str, sections=None) -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
     One call per destination: Slack threads don't span channels, so Carlos's two
-    rooms each get their own parent and their own replies.
+    rooms each get their own parent and their own replies. `sections` (a set of
+    order_log/accepted/tier_bonus) narrows the attachments to an office's
+    enrolled boards; None = everything (the standalone run).
     """
+    sections = sections if sections is not None else {"order_log", "accepted",
+                                                      "tier_bonus"}
     ts = client.chat_postMessage(channel=channel, text=text)["ts"]
     # Workbook first — the overall log plus a tab per rep plus the payout grid.
     # Then the payout image, which Slack renders inline so the numbers are
     # readable without opening anything. Same pairing as the Fiber post. Last
     # the tier board, so the thread reads log -> pay -> where each rep sits on
     # the ladder; it goes in only when we have it, matching the header.
-    client.files_upload_v2(
-        channel=channel, thread_ts=ts, file=str(xlsx_path),
-        filename=xlsx_path.name, title=xlsx_path.stem,
-        initial_comment=WORKBOOK_LINE,
-    )
-    client.files_upload_v2(
-        channel=channel, thread_ts=ts, file=str(payout_path),
-        filename=payout_path.name, title=payout_path.stem,
-        initial_comment=PAYOUT_LINE,
-    )
-    if tier_path:
+    if "order_log" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(xlsx_path),
+            filename=xlsx_path.name, title=xlsx_path.stem,
+            initial_comment=WORKBOOK_LINE,
+        )
+    if "accepted" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(payout_path),
+            filename=payout_path.name, title=payout_path.stem,
+            initial_comment=PAYOUT_LINE,
+        )
+    if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(tier_path),
             filename=tier_path.name, title=tier_path.stem,
@@ -244,11 +250,18 @@ def main(argv: Optional[list] = None) -> int:
                              tier_bonus.DEFAULT_OWNER))
     ap.add_argument("--no-tier", action="store_true",
                     help="leave the Box Tier Bonus board out of the thread")
+    ap.add_argument("--sections", default="order_log,accepted,tier_bonus",
+                    help="which thread sections to post, csv of: order_log "
+                         "(the workbook), accepted (the payout board), "
+                         "tier_bonus. Per-office enrollment subsets from the "
+                         "onboarding form pass this; default = the full "
+                         "thread (Carlos's standalone run unchanged).")
     args = ap.parse_args(argv)
+    sections = {s.strip() for s in args.sections.split(",") if s.strip()}
 
     # Carlos's run (no --owner-office) gets the board by default; every other
     # office must name its own owner. See --tier-owner above.
-    tier_owner = "" if args.no_tier else (
+    tier_owner = "" if (args.no_tier or "tier_bonus" not in sections) else (
         args.tier_owner or ("" if args.owner_office else tier_bonus.DEFAULT_OWNER))
 
     # Resolve the post destinations once. A --channel override (per-office runs)
@@ -438,7 +451,11 @@ def main(argv: Optional[list] = None) -> int:
     # The header lists exactly what's in the thread — so the tier line goes in
     # only when the board is actually in hand. A capture that failed is called
     # out below instead of being quietly left off.
-    attach_lines = [WORKBOOK_LINE, PAYOUT_LINE]
+    attach_lines = []
+    if "order_log" in sections:
+        attach_lines.append(WORKBOOK_LINE)
+    if "accepted" in sections:
+        attach_lines.append(PAYOUT_LINE)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
     header = "*BOX Order Log — {}*\n{}".format(
@@ -540,7 +557,7 @@ def main(argv: Optional[list] = None) -> int:
             # channel that fails is recorded and the rest still go out.
             try:
                 _post_thread(client, target, text, out_xlsx, out_png, tier_png,
-                             tier_bonus.TIER_LINE)
+                             tier_bonus.TIER_LINE, sections=sections)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
                     name, type(exc).__name__,

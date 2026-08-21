@@ -46,22 +46,31 @@ def box_offices() -> List[Dict[str, str]]:
         rows = json.loads(bo._ONBOARDED_FILE.read_text())
     except Exception:                                # noqa: BLE001
         return out
+    # The Box thread's three boards are separately enrollable since 2026-08-20
+    # (owner-key -> run.py --sections name). Enrolling ANY of them puts the
+    # office on the Box run; the run posts only the enrolled boards.
+    BOX_SECTION_KEYS = {"b2b_order_log_box": "order_log",
+                        "b2b_box_accepted": "accepted",
+                        "b2b_box_tier_bonus": "tier_bonus"}
     for r in rows:
         plans = r.get("channel_plans") or []
         enrolled = set(r.get("enrolled_reports") or [])
         for p in plans:
             enrolled |= set(p.get("report_keys") or [])
-        if BOX_KEY not in enrolled:
+        box_keys = enrolled & set(BOX_SECTION_KEYS)
+        if not box_keys:
             continue
         cid, cname = r.get("channel_id", ""), r.get("channel_name", "")
         for p in plans:                              # a plan that picked Box wins
-            if BOX_KEY in (p.get("report_keys") or []):
+            if set(p.get("report_keys") or []) & set(BOX_SECTION_KEYS):
                 cid = p.get("channel_id") or cid
                 cname = p.get("channel_name") or cname
                 break
         out.append({"key": r.get("key", ""),
                     "owner_office": (r.get("owner_office") or "").strip(),
-                    "channel_id": cid, "channel_name": cname})
+                    "channel_id": cid, "channel_name": cname,
+                    "sections": [s for k, s in BOX_SECTION_KEYS.items()
+                                 if k in box_keys]})
     return out
 
 
@@ -204,6 +213,8 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
                "--owner-office", o["owner_office"],
                "--channel", o["channel_id"],
                "--channel-name", o["channel_name"] or o["channel_id"],
+               "--sections", ",".join(o.get("sections") or
+                                      ["order_log", "accepted", "tier_bonus"]),
                "--weeks", str(weeks), "--xlsx"]
         if post:
             cmd.append("--post")
