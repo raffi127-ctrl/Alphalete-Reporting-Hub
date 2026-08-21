@@ -306,6 +306,22 @@ def form_view() -> None:
             return
         rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         rec.submitted_by = requested_by.strip() or rec.owner or "owner"
+        # Live "is Lucy in this channel" check per channel (same helper the
+        # tracker form uses) — surfaced in Megan's ping + the confirmation
+        # page, so a stale/uninvited channel is caught at sign-up, not on the
+        # first 4am run (the drew lesson).
+        try:
+            from automations.tracker_onboarding import slack_check
+            lucy_all = [slack_check.check_channel(p.channel_id, p.channel_name)
+                        for p in named_plans]
+        except Exception:                            # noqa: BLE001
+            lucy_all = []
+        for j, p in enumerate(named_plans):
+            if (not p.channel_id and j < len(lucy_all)
+                    and lucy_all[j].get("channel_id")):
+                p.channel_id = lucy_all[j]["channel_id"]
+        if named_plans and not rec.channel_id:
+            rec.channel_id = named_plans[0].channel_id
         try:
             where = store.save_request(rec)
         except Exception as e:  # noqa: BLE001
@@ -313,7 +329,7 @@ def form_view() -> None:
             return
         alerted = (False, "")
         if where == "sheet":
-            alerted = request_notify.notify(rec)
+            alerted = request_notify.notify(rec, lucy=lucy_all)
         summary = []
         for p in named_plans:
             labels = [S.REPORTS_BY_KEY[k].label for k in p.report_keys
@@ -321,7 +337,7 @@ def form_view() -> None:
             summary.append((p.channel_name, labels))
         st.session_state["_req_done"] = {
             "owner": rec.owner, "business": rec.business_name,
-            "goes_by": requested_by.strip(),
+            "goes_by": requested_by.strip(), "lucy": lucy_all,
             "summary": summary, "where": where, "alerted": alerted}
         st.rerun()
 
@@ -337,6 +353,14 @@ def _done_view() -> None:
     for cname, labels in (d.get("summary") or []):
         st.markdown(f"**{cname}** will get, every morning:")
         st.markdown("\n".join(f"- {l}" for l in labels) or "- (no metrics)")
+    _missing = [r for r in (d.get("lucy") or [])
+                if r.get("status") in ("not_member", "not_found")]
+    if _missing:
+        _chs = " and ".join(f"**{r.get('channel_name') or 'your channel'}**"
+                            for r in _missing)
+        st.warning(f"⚠️ One thing: Lucy isn't in {_chs} yet. Make sure "
+                   "**Megan Hidalgo** is added — she'll add Lucy and get "
+                   "your metrics posting.")
     st.markdown(
         "\nHere's what happens next:\n"
         "1. Our team sets up your office's report sheet and wires it in.\n"

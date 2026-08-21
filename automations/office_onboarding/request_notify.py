@@ -19,18 +19,27 @@ from automations.office_onboarding.schema import OnboardingRecord, REPORTS_BY_KE
 ONBOARDING_URL = "https://alphaletemetricsintake.streamlit.app"
 
 
-def _lines(rec: OnboardingRecord) -> Tuple[str, List[str]]:
-    """Minimal heads-up: just the office name + the finalize link (Megan opens it
-    to see the full request pre-filled — no need to repeat the metrics/email here)."""
-    fam = "D2D" if rec.family == "d2d" else "B2B"
+def _lines(rec: OnboardingRecord,
+           lucy: "list | None" = None) -> Tuple[str, List[str]]:
+    """Minimal heads-up: the office name, per-channel Lucy status, and the
+    finalize link (Megan opens it to see the full request pre-filled — no need
+    to repeat the metrics/email here)."""
+    from automations.office_onboarding.schema import CAMPAIGNS_BY_KEY
+    _c = CAMPAIGNS_BY_KEY.get(rec.campaign)
+    fam = _c[1] if _c else ("D2D" if rec.family == "d2d" else "B2B")
     who = rec.owner or rec.business_name or rec.key
     title = ":sparkles: *New metrics request — {}*  ({})".format(who, fam)
+    body: List[str] = []
+    if lucy:
+        from automations.tracker_onboarding.slack_check import human_line
+        body += ["• " + human_line(r) for r in lucy]
     link = "{}/?request={}".format(ONBOARDING_URL, rec.key or "")
-    body = ["👉 <{}|Finalize {}'s onboarding →>".format(link, who)]
+    body.append("👉 <{}|Finalize {}'s onboarding →>".format(link, who))
     return title, body
 
 
-def notify(rec: OnboardingRecord, *, dry_run: bool = False) -> Tuple[bool, str]:
+def notify(rec: OnboardingRecord, *, lucy: "list | None" = None,
+           dry_run: bool = False) -> Tuple[bool, str]:
     """Post the request heads-up to the corrections channel. Returns (ok, note).
     Never raises — alerting must not break the owner's submit.
 
@@ -38,7 +47,7 @@ def notify(rec: OnboardingRecord, *, dry_run: bool = False) -> Tuple[bool, str]:
     swallows Slack errors) so `note` carries the real failure reason — no token,
     invalid_auth, not_in_channel, missing_scope — surfaced to Megan on-screen.
     """
-    title, body = _lines(rec)
+    title, body = _lines(rec, lucy)
     text = "\n".join([title] + body)
     if dry_run:
         print(text)

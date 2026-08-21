@@ -428,6 +428,25 @@ def form_view() -> None:
                           key=f"chanid_{i}",
                           help="Right-click the channel → View channel details → the "
                                "ID at the bottom.")
+    # Live "is Lucy in the channel" check — the same helper the tracker
+    # confirm view uses. A stale id / missing invite is the #1 wiring
+    # firefight (drew), so surface it BEFORE Megan submits.
+    if st.button("🔄 Check Lucy's membership"):
+        from automations.tracker_onboarding import slack_check
+        _pairs = [(channel_id.strip(), channel_name.strip())]
+        for i, spec in enumerate(_plans):
+            _pairs.append((
+                (st.session_state.get(f"chanid_{i}") or "").strip(),
+                spec.get("channel_name", "")))
+        seen = set()
+        st.session_state["_lucy_checks"] = [
+            slack_check.check_channel(c, n) for c, n in _pairs
+            if (c or n) and not ((c, n) in seen or seen.add((c, n)))]
+    for _r in (st.session_state.get("_lucy_checks") or []):
+        from automations.tracker_onboarding import slack_check as _sc
+        (st.success if _r.get("status") == "member" else st.warning)(
+            _sc.human_line(_r))
+
     header_label = st.text_input(
         "Thread name — only if another office shares this channel", key="on_header",
         help="Leave blank if this office has the channel to itself. If two "
