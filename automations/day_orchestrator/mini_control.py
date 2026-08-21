@@ -169,6 +169,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_contacts_token", "set_contacts_ro_token",
                     "set_credico_state", "set_alphalete_app_password",
                     "set_appstream_state", "set_appstream_alt_state",
+                    "appstream_promote_alt",
                     "post_note",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
@@ -1137,6 +1138,57 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
         return False, (f"primary session installed ({n_rqst} rqst) but the "
                        f"verify FAILED: {res[:300]}")
     return True, f"primary session installed + verified · {res[:300]}"
+
+
+def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
+    """Make the ALTERNATE AppStream login this machine's PRIMARY — copy the
+    alt credentials (appstream-alt.json, installed by set_appstream_alt_creds)
+    into the primary keys of ownerville-creds.json. Runs entirely on THIS
+    machine: no password ever transits the queue.
+
+    Why (Megan 2026-08-21): rcaptain sees every office CarlosNLR does plus the
+    6 he can't, so Lucy 2's reports should all run as rcaptain — one account,
+    one daily re-seed. The alt file stays (funnel_board --account alt keeps
+    working). Push the rcaptain SESSION separately with
+    --appstream-push-primary; this action only aligns the configured creds so
+    nothing ever falls back to the old primary account."""
+    import json
+    import shutil
+    alt_path = Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
+    try:
+        alt = json.loads(alt_path.read_text())
+    except Exception as e:  # noqa: BLE001
+        return False, (f"no readable alt login at {alt_path.name} "
+                       f"({str(e)[:80]}) — run set_appstream_alt_creds first")
+    user = str(alt.get("appstream_alt_username") or "").strip()
+    pw = str(alt.get("appstream_alt_password") or "")
+    if not user or not pw:
+        return False, f"{alt_path.name} is missing the username or password"
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, f"couldn't read {path.name}: {str(e).splitlines()[0][:120]}"
+        old = str(data.get("appstream_username") or "").strip()
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        old = ""
+    data["appstream_username"] = user
+    data["appstream_password"] = pw
+    try:
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    return True, (f"primary AppStream creds now {user}"
+                  + (f" (was {old})" if old and old != user else "")
+                  + " — push the matching session with --appstream-push-primary")
 
 
 def _action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
@@ -4810,6 +4862,7 @@ ACTIONS = {
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_state": _action_set_appstream_state,
     "set_appstream_alt_state": _action_set_appstream_alt_state,
+    "appstream_promote_alt": _action_appstream_promote_alt,
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,

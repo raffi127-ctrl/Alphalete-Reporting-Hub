@@ -1754,11 +1754,14 @@ if __name__ == "__main__":
             print("❌ saved session has no rqst_ token — re-run --appstream-login")
             _sys.exit(1)
         from automations.day_orchestrator import mini_control as _mc
-        # Where each machine wants the rcaptain session. Lucy 1's PRIMARY
-        # account is rcaptain; Lucy 2 runs CarlosNLR primary with rcaptain as
-        # the ALTERNATE. Extend here when Lucy 3 exists.
+        # Where each machine wants the rcaptain session. Since 2026-08-21 BOTH
+        # machines run rcaptain as primary (Megan: rcaptain sees everything
+        # CarlosNLR did, so one account, one daily re-seed); Lucy 2 also keeps
+        # its alt slot fresh so `--account alt` flags keep working unchanged.
+        # Extend here when Lucy 3 exists.
         if args.appstream_push_fleet:
             _dests = [("Lucy 1", "set_appstream_state"),
+                      ("Lucy 2", "set_appstream_state"),
                       ("Lucy 2", "set_appstream_alt_state")]
         else:
             _dests = [(args.appstream_push_primary, "set_appstream_state")]
