@@ -52,10 +52,6 @@ def main(argv=None):
     ap.add_argument("--user", help="log in as this account instead of the "
                                    "configured one (needs --pass)")
     ap.add_argument("--pass", dest="pw", help="password for --user")
-    ap.add_argument("--alt", action="store_true",
-                    help="log in as the stored ALTERNATE account "
-                         "(set_appstream_alt_creds) — no password on the "
-                         "command line")
     a = ap.parse_args(argv)
 
     from automations.shared import creds
