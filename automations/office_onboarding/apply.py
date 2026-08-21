@@ -34,6 +34,8 @@ from automations.office_onboarding.schema import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEDULE_CONFIG = REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
+ICD_MAPPINGS = (REPO_ROOT / "automations" / "recruiting_report"
+                / "icd_office_mappings.json")
 ONBOARDED_JSON = {
     "d2d": REPO_ROOT / "automations" / "office_metrics" / "onboarded_offices.json",
     "b2b": REPO_ROOT / "automations" / "b2b_metrics" / "onboarded_offices.json",
@@ -176,6 +178,43 @@ def _patch_schedule(entries: Dict[str, dict], write: bool) -> str:
     return f"schedule_config.json: +{added or '—'} ~{updated or '—'}"
 
 
+def _patch_icd_mappings(plans: "List[dict]", write: bool) -> str:
+    """Pin each onboarded owner → OwnerVille account number in the COMMITTED
+    icd_office_mappings.json — the FIRST stop of the knocks/Time Gaps office
+    resolution — so a new office works day one instead of needing a hand
+    alias (drew's 22583, commit a50426c). Never overwrites an existing
+    DIFFERENT pin (that's a human call); reports it instead."""
+    try:
+        base = json.loads(ICD_MAPPINGS.read_text())
+    except Exception:                                # noqa: BLE001
+        base = {}
+    added: List[str] = []
+    conflicts: List[str] = []
+    for p in plans:
+        rec = p["rec"]
+        acct = (rec.ov_account or "").strip()
+        if not acct or not acct.isdigit():
+            continue
+        for nm in {rec.owner.strip().lower(),
+                   (rec.knocks_office or "").strip().lower()}:
+            if not nm:
+                continue
+            cur = base.get(nm)
+            if cur is None:
+                base[nm] = acct
+                added.append(f"{nm} -> {acct}")
+            elif str(cur) != acct:
+                conflicts.append(f"{nm}: keeps {cur} (form said {acct})")
+    if write and added:
+        tmp = ICD_MAPPINGS.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(dict(sorted(base.items())), indent=2) + "\n")
+        tmp.replace(ICD_MAPPINGS)
+    out = f"icd_office_mappings.json: +{added or '—'}"
+    if conflicts:
+        out += "  ⚠️ " + "; ".join(conflicts)
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="office_onboarding.apply")
     ap.add_argument("--write", action="store_true",
@@ -235,6 +274,7 @@ def main(argv=None) -> int:
         print("  schedule_config.json: untouched (--registry-only)")
     else:
         print("  " + _patch_schedule(sched, args.write))
+    print("  " + _patch_icd_mappings(plans, args.write))
 
     if not args.write:
         print("\nDRY-RUN — nothing written. Re-run with --write to apply, then "

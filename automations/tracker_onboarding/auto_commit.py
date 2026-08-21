@@ -43,6 +43,9 @@ TARGETS = [
     "automations/tableau_screenshots/onboarded_trackers.json",
     "automations/office_metrics/onboarded_offices.json",
     "automations/b2b_metrics/onboarded_offices.json",
+    # apply pins owner -> OwnerVille account number here (knocks/Time Gaps
+    # office resolution) — same durability need as the registries.
+    "automations/recruiting_report/icd_office_mappings.json",
 ]
 
 
