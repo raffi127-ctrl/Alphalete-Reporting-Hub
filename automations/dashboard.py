@@ -7562,28 +7562,30 @@ if st.session_state.view == "home":
         st.markdown("---")
 
     st.markdown("### 🐺 The Pack")
-    # Layout (Megan 2026-07-13): one full row of 3 — the Lucy automations on
-    # the outer columns (Megan's preference) with Office Operations in the
-    # middle. Eve/Maud/Unassigned cards removed 2026-08-20 (Megan): all empty.
-    # The Unassigned bucket still appears (bottom row) whenever an uploaded
-    # report actually lands without an assignee, so those stay reachable.
+    # Layout (Megan 2026-08-21): top row = the three Lucys in order; Office
+    # Operations gets its own FULL-WIDTH row underneath so the grid stays
+    # even. The Unassigned bucket still appears (bottom row) whenever an
+    # uploaded report actually lands without an assignee, so those stay
+    # reachable. Each row carries its own column count.
     UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
     _by_name = {m["name"]: m for m in MEMBERS}
-    _top = [_by_name.get("Lucy 1"), _by_name.get("Office Operations"),
-            _by_name.get("Lucy 2")]
+    _top = [_by_name.get("Lucy 1"), _by_name.get("Lucy 2"),
+            _by_name.get("Lucy 3")]
     _top = [c for c in _top if c]
-    _placed = {"Lucy 1", "Lucy 2", "Office Operations"}
+    _placed = {"Lucy 1", "Lucy 2", "Lucy 3", "Office Operations"}
     _bottom = [m for m in MEMBERS if m["name"] not in _placed]
     if any(not r.get("assignees") for r in AUTOMATED_REPORTS):
         _bottom.append(UNASSIGNED_CARD)
-    pack_rows = [(_top, list(range(len(_top))))]
+    pack_rows = [(_top, len(_top) or 1)]
+    if _by_name.get("Office Operations"):
+        pack_rows.append(([_by_name["Office Operations"]], 1))
     for i in range(0, len(_bottom), PACK_COLS):
         chunk = _bottom[i:i + PACK_COLS]
-        pack_rows.append((chunk, list(range(len(chunk)))))
-    for row, slots in pack_rows:
-        cols = st.columns(PACK_COLS)
-        card_cols = [cols[s] for s in slots]
+        pack_rows.append((chunk, PACK_COLS))
+    for row, ncols in pack_rows:
+        cols = st.columns(ncols)
+        card_cols = cols[:len(row)]
         for col, member in zip(card_cols, row):
             with col:
                 is_unassigned = member.get("is_unassigned", False)
