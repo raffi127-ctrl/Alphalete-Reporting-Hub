@@ -7473,8 +7473,18 @@ if st.session_state.view == "home":
                 break
     except Exception:
         pass
+    # An EMPTY run feed never means "nothing ran" — ~130 reports run daily,
+    # so zero visible runs means this machine can't SEE them: a fresh
+    # install with no Google authorization (Lucy 3, 2026-08-21: every
+    # report flagged 'no run logged'), a dead token, or plain pre-dawn.
+    # Missing data gets one quiet line, never a wall of false alarms.
+    if not _statuses:
+        st.caption(
+            "⏸️ This machine can't see any run history right now (new "
+            "install, missing Google authorization, or nothing has run yet "
+            "today) — per-report alerts are paused.")
     _attention = []
-    for r in AUTOMATED_REPORTS:
+    for r in (AUTOMATED_REPORTS if _statuses else []):
         if not _is_due_today(r, today) or r.get("hide_schedule"):
             continue
         _stt = (_statuses.get((r["id"], today)) or "").lower()
