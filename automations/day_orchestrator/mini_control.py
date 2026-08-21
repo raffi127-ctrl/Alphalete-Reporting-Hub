@@ -2152,7 +2152,10 @@ def _action_logtail(args: str) -> tuple[bool, str]:
 # jpeg — without it that attachment reaches Sara+ support as a .heic almost no
 # mail client can open (2026-08-11). Best-effort in the report, so a missing
 # wheel degrades rather than fails.
-PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif"}
+# lxml is pandas.read_html's parser — indeed_source_report failed per-office on
+# Lucy 2 without it (2026-08-21: every office FAIL "Missing optional dependency
+# 'lxml'"), and any other report that parses an HTML table needs it too.
+PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif", "lxml"}
 
 
 def _action_pip_install(args: str) -> tuple[bool, str]:
