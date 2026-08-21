@@ -6931,6 +6931,26 @@
       "priority": "P3",
       "timeout_minutes": 10,
       "verify": null
+    },
+    "indeed_source_report": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Manual trigger for the 04:00/12:00/17:00 launchd agent (com.alphalete.indeed-source-report on Lucy 2): `lucy rerun indeed_source_report --machine lucy2` re-pulls the current month for all 28 offices on demand. Activity rows log under the dashed card id indeed-source-report (run.py CARD_ID). Added 2026-08-21 while chasing the noon failure: session state verified live by whoami while the report's own run fell to the dead form login.",
+      "display_name": "Indeed Ad Performance (Source Report)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.indeed_source_report.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "timeout_minutes": 45,
+      "verify": null,
+      "machine": "Lucy 2"
     }
   },
   "read_only_standalone": {
