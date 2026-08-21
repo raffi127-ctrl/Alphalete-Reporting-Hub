@@ -4312,7 +4312,7 @@
     },
     "tableau_screenshots": {
       "order": 0.5,
-      "_order_note": "0.5 = FIRST report of the 4am pass (Megan 2026-08-20: 'we need the trackers out before 4:30'). At slot 10 they sat behind daily_focus/production/harvest/daily_metrics and didn't start until ~4:45+; run+post is only ~5-6 min, so fronting them posts ~4:06-4:10. The freshness gate below still holds them if an extract hasn't refreshed — fronting removes QUEUE delay only; if SmartCircle publishes late, the gate (correctly) waits and no slot can beat that.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
       "_note": "LIVE daily Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts the 7 boards whose data IS current at 4:31 -- B2B Box is `late: True` in pages.py and rides the tableau_screenshots_box catch-up at ~7am instead, because its extract doesn't refresh until then (see that report's note). The header still lists Box in its normal slot, flagged as still coming. ONE run captures the boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN']. FRESHNESS GATE WIRED 2026-07-30 (Megan 7/29: 'trackers were sent out today without being updated and we ran them anyway'). data_sources was [] \u2014 which readiness.report_ready() treats as 'all sources ready' after a session-warmth check \u2014 so NOTHING gated these boards on data freshness. Now gated on the three extracts behind them (tableau:tracker_att / _nds / _b2b), each a tracker_extract probe with an 06:30 fail-open floor: the pass circles back while an extract is behind, and past 06:30 it runs regardless (a gate never skips a report). quantum_fiber is NOT gated (no verified crosstab worksheet on RES-LumenSalesTrackervMZ \u2014 see freshness.UNGATED and --discover); b2b_box keeps its own tableau:box_daily gate on the ~7am catch-up. Belt-and-braces: run.py re-checks at capture time and HOLDS + flags any board whose extract is still stale (listed in the header as still coming, picked up by the ~7am --late-only run) rather than posting stale numbers as if fresh.",
       "display_name": "Tableau Country Trackers",
@@ -4346,8 +4346,7 @@
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"
-      },
-      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+      }
     },
     "tableau_screenshots_box": {
       "order": 25,
@@ -6262,7 +6261,7 @@
     },
     "rcs_ncs": {
       "on_scheduler": false,
-      "_off_scheduler_note": "'Up and Coming RCs and NCs' — the EMAIL-ONLY companion the Thursday wrapper (deploy/dd_bulletin_thu.sh) sends right after the DD bulletin goes out. Normally the wrapper's lock-step fires it, so this entry exists ONLY so `lucy rerun rcs_ncs` can send it by hand when the wrapper's pass window (Thu 10:30-13:00 Central) is over — e.g. the DD bulletin was approved and sent late via `lucy rerun dd_bulletin_gate`, which bypasses the wrapper and so never fires the companion (added 2026-08-20 after exactly that gap left rcs_ncs with no run all Thursday). Safe to re-fire: send_rcs_ncs keeps its own per-week sent marker (ALREADY SENT → no-op) and inherits the DD hard_block, so a wrong/empty DD week alerts instead of mailing a bogus board. Report id matches the Hub card id 'rcs_ncs' the wrapper publishes under.",
+      "_off_scheduler_note": "'Up and Coming RCs and NCs' \u2014 the EMAIL-ONLY companion the Thursday wrapper (deploy/dd_bulletin_thu.sh) sends right after the DD bulletin goes out. Normally the wrapper's lock-step fires it, so this entry exists ONLY so `lucy rerun rcs_ncs` can send it by hand when the wrapper's pass window (Thu 10:30-13:00 Central) is over \u2014 e.g. the DD bulletin was approved and sent late via `lucy rerun dd_bulletin_gate`, which bypasses the wrapper and so never fires the companion (added 2026-08-20 after exactly that gap left rcs_ncs with no run all Thursday). Safe to re-fire: send_rcs_ncs keeps its own per-week sent marker (ALREADY SENT \u2192 no-op) and inherits the DD hard_block, so a wrong/empty DD week alerts instead of mailing a bogus board. Report id matches the Hub card id 'rcs_ncs' the wrapper publishes under.",
       "display_name": "Up and Coming RCs and NCs",
       "source_type": "sheet",
       "data_sources": [],
@@ -6422,9 +6421,15 @@
       "display_name": "Pause Funnel Board hourly agent",
       "source_type": "none",
       "data_sources": [],
-      "command": ["automations.day_orchestrator.disable_agent"],
-      "base_args": ["funnel-board-hourly"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "funnel-board-hourly"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
@@ -6825,7 +6830,9 @@
       "verify": null,
       "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-10): moved Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
       "order": 47,
-      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
+      "timeout_minutes": 180,
+      "_note_timeout": "180, not the 45-minute default. A normal pass is ~3 min for the current week; this ceiling exists for BACKFILLS (--weeks N), where 34 weeks across the slowest offices (Rafael 11280 / Khalil 11901 wait 240s per render) runs well past 45 min. On 2026-08-20 the 45-minute kill also left state/run.lock behind, and every later run then skipped for STALE_MIN minutes \u2014 so a too-short timeout did not just lose one pass, it wedged the report. Lower this back to ~60 once the recovery backfill is done."
     }
   },
   "read_only_standalone": {
