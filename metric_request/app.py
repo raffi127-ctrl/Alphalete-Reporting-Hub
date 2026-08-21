@@ -205,7 +205,7 @@ def form_view() -> None:
                                "pop-up, and copy the Channel ID:")
                     # 397 = half the source's 794px — pixel-perfect on retina
                     # screens. Bigger = the browser upscales, it goes soft.
-                    st.image(str(SLACK_ID_IMG), width=397)
+                    st.image(str(SLACK_ID_IMG), width=550)
             st.caption("Metrics to post in this channel:")
             keys_here: list = []
             for rk in fam_reports:

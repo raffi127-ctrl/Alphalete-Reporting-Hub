@@ -280,7 +280,7 @@ def request_view() -> None:
                                "pop-up, and copy the Channel ID:")
                     # 397 = half the source's 794px — pixel-perfect on retina
                     # screens. Bigger = the browser upscales, it goes soft.
-                    st.image(str(SLACK_ID_IMG), width=397)
+                    st.image(str(SLACK_ID_IMG), width=550)
             st.caption("Boards to post in this channel:")
             here: list = []
             for t in catalog:
@@ -628,6 +628,9 @@ def confirm_view(key: str) -> None:
     if any(r.get("status") != "member" for r in lucy_all):
         st.caption("You can confirm anyway, but nothing will actually post "
                    "to a channel until Lucy is invited to it.")
+    st.info("🔔 **Before you confirm:** make sure the **Lucy user** AND the "
+            "**Lucy bot** are both members of every channel above — a private "
+            "channel needs BOTH invited or the posts/uploads fail.")
     if st.button("✅ Confirm + wire up", type="primary"):
         # Per-channel board subsets ride through the confirm: same channels
         # (with any id/name fixes), each keeping its own picks filtered to

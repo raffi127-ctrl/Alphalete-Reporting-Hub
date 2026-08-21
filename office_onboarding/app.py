@@ -455,19 +455,20 @@ def form_view() -> None:
     if sheet_link and sheet_id != sheet_link.strip():
         st.caption(f"→ sheet id: `{sheet_id}`")
 
-    # Which tabs the office's sheet must contain (only the reports that WRITE to
-    # the sheet — the Slack-only metrics like order log / knocks post images and
-    # need none). Duplicate each from the template workbook.
+    # One uniform setup for every campaign (Megan 2026-08-20): duplicate the
+    # ENTIRE Master Metrics Templates workbook — it has every tab any campaign
+    # needs; the morning runs write only this campaign's tabs and leave the
+    # rest alone. No per-tab copying.
+    st.markdown("**Duplicate the entire "
+                f"[Master Metrics Templates workbook]({S.TEMPLATE_WORKBOOK_URL})** "
+                "(File → Make a copy) — it has every tab any campaign needs. "
+                "Rename the copy for this office and paste its link above.")
     tabs = S.needed_tabs(family,
                          [rk.key for rk in S.campaign_reports(campaign)])
     if tabs:
-        st.markdown("**This office's sheet needs these tabs** — duplicate each "
-                    f"from the [template workbook]({S.TEMPLATE_WORKBOOK_URL}):")
-        for t in tabs:
-            if t["template"]:
-                st.markdown(f"- `{t['tab']}` — [copy this tab]({t['template']})")
-            else:
-                st.markdown(f"- `{t['tab']}`")
+        st.caption("For this campaign the daily run will fill: "
+                   + ", ".join(f"`{t['tab']}`" for t in tabs)
+                   + " — the other tabs are simply left alone.")
 
     # ---- 5. Reports to enroll --------------------------------------------
     st.divider()
@@ -550,6 +551,9 @@ def form_view() -> None:
         reports=enrolled, header_label=header_label.strip())
 
     # ---- submit -----------------------------------------------------------
+    st.info("🔔 **Before you submit:** make sure the **Lucy user** AND the "
+            "**Lucy bot** are both members of every Slack channel above — a "
+            "private channel needs BOTH invited or the posts/uploads fail.")
     if st.button("💾 Submit office", type="primary"):
         reg = store.existing_registry(exclude_key=rec.key)
         problems = S.validate(
