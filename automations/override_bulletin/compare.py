@@ -61,6 +61,13 @@ from automations.override_bulletin import fill as F
 DEFAULT_TOLERANCE = 1.00
 
 _WEEK_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$")
+# The CUMULATIVE columns ('Total Overrides 2026', 'TOTAL 2023-2025'). They are
+# what makes this check reach past the week window: a wrong cell in ANY 2026 week
+# keeps showing up here forever, so a drift that happened outside the last 5
+# weeks is still visible. WE 8.16.26 is why they are checked at all — $6.58 of
+# year total traced back to Rafael 6.7.26 and Carlos 6.28.26, weeks nothing
+# re-reads any more (Eve 2026-08-21).
+_YEAR_RE = re.compile(r"^total( overrides)?\s+\d{4}(\s*-\s*\d{4})?$", re.I)
 _SUB_LABELS = ("captain override", "special override", "special overrides")
 _SHEET_URL = "https://docs.google.com/spreadsheets/d/{}/edit"
 
@@ -88,6 +95,12 @@ def _money(raw):
     except ValueError:
         return None
     return -v if neg else v
+
+
+def _year_cols(header):
+    """(index, label) for the cumulative year columns, located by their header."""
+    return [(i, " ".join((h or "").split()))
+            for i, h in enumerate(header) if _YEAR_RE.match(" ".join((h or "").split()))]
 
 
 def _week_cols(header):
@@ -118,6 +131,7 @@ def read_tab(ws, aliases):
     if not vals:
         return [], {}
     wcols = _week_cols(vals[0])
+    ycols = _year_cols(vals[0])
     out, section, leader = {}, "org", None
     for ri, r in enumerate(vals[1:], start=2):
         label = (r[0] if r else "").strip()
@@ -141,6 +155,8 @@ def read_tab(ws, aliases):
             "row": ri,
             "cells": {lbl: (_money(r[i]) if i < len(r) else None)
                       for i, lbl in wcols},
+            "years": {lbl: (_money(r[i]) if i < len(r) else None)
+                      for i, lbl in ycols},
         }
     return [lbl for _i, lbl in wcols], out
 
@@ -190,7 +206,50 @@ def compare(*, weeks=None, tolerance=DEFAULT_TOLERANCE, verbose=True):
                           "eve": a, "bot": b, "delta": d,
                           "eve_row": eve[key]["row"], "bot_row": bot[key]["row"]})
 
-    result = {"weeks": want, "diffs": diffs, "only_eve": only_eve,
+    # ---- the cumulative columns, over EVERY row -----------------------------
+    # Deliberately NOT limited by `weeks`: these carry the whole year, so a cell
+    # that drifted in a week nothing re-reads any more still shows up here. WE
+    # 8.16.26 is why they are checked at all (Eve 2026-08-21): every week read
+    # IGUALES while the year total was $6.58 short, and that $6.58 was Rafael on
+    # 6.7.26 and Carlos on 6.28.26 - weeks far outside any backtrack window.
+    year_diffs = []
+    for key in sorted(shared):
+        for lbl, a in eve[key]["years"].items():
+            b = bot[key]["years"].get(lbl)
+            if a is None and b is None:
+                continue
+            d = round((a or 0) - (b or 0), 2)
+            if abs(d) >= tolerance:
+                year_diffs.append({"col": lbl, "key": key,
+                                   "label": _display(eve[key]),
+                                   "eve": a, "bot": b, "delta": d,
+                                   "eve_row": eve[key]["row"],
+                                   "bot_row": bot[key]["row"]})
+
+    # ---- what the PDF will PRINT vs the bot tab's own Total row -------------
+    # The headline is computed by build.read_data (it sums the 2026 weeks itself
+    # and applies its own row rules); the Total row is a sheet formula. They are
+    # supposed to be the same number and nothing was checking it: on WE 8.16.26
+    # the PDF read $4,943,354 against $4,988,926.23, because five ICDs hidden
+    # from the tables were being left out of the total as well.
+    headline = {}
+    try:
+        from automations.override_bulletin import build as B
+        _wl, combined, _r, _c, _p = B.read_data(F.SANDBOX_TAB)
+        tot = next((v for v in bot.values()
+                    if v["label"].strip().lower() == "total"), None) or {}
+        headline = {
+            "pdf_year": round(sum(r["total"] or 0 for r in combined), 2),
+            "pdf_week": round(sum(r["week"] or 0 for r in combined), 2),
+            "tab_year": next((v for c, v in tot.get("years", {}).items()
+                              if c.strip().lower().endswith("2026")), None),
+            "tab_week": tot.get("cells", {}).get(want[0]) if want else None,
+        }
+    except Exception as e:  # noqa: BLE001 - an extra check never kills the run
+        headline = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+
+    result = {"weeks": want, "diffs": diffs, "year_diffs": year_diffs,
+              "headline": headline, "only_eve": only_eve,
               "only_bot": only_bot, "skipped": skipped,
               "tolerance": tolerance}
     if verbose:
@@ -234,11 +293,60 @@ def _print(res):
     if res["skipped"]:
         print(f"\n  ({res['skipped']} celda(s) difieren por menos de "
               f"${res['tolerance']:.2f} — redondeo, no se listan)")
+    yd = res.get("year_diffs") or []
+    print("\nCOLUMNAS ACUMULADAS DEL ANO (todas las filas, sin tope de semanas)")
+    if not yd:
+        print("  IGUALES")
+    else:
+        for d in sorted(yd, key=lambda x: -abs(x["delta"])):
+            print(f"  {d['col']:<22} {d['label']:<30} Eve {_fmt(d['eve']):>15}"
+                  f"   bot {_fmt(d['bot']):>15}   {d['delta']:+,.2f}")
+        print("  ^ una diferencia aca con las semanas IGUALES = el hueco esta en "
+              "una semana vieja, fuera de la ventana revisada.")
+
+    h = res.get("headline") or {}
+    print("\nLO QUE VA A IMPRIMIR EL PDF vs la fila Total de la pestana del bot")
+    if h.get("error"):
+        print(f"  (no se pudo calcular: {h['error']})")
+    else:
+        for lbl, a, b in (("Total 2026 Overrides", h.get("pdf_year"), h.get("tab_year")),
+                          ("This Week", h.get("pdf_week"), h.get("tab_week"))):
+            d = round((a or 0) - (b or 0), 2)
+            mark = "OK" if abs(d) < max(res["tolerance"], 0.005) else f"!! {d:+,.2f}"
+            print(f"  {lbl:<22} PDF {_fmt(a):>15}   pestana {_fmt(b):>15}   {mark}")
+
     print("\n" + verdict(res))
 
 
+def _headline_gap(res):
+    """(gap, pdf, tab) for the year total if the PDF would print a different
+    number than the tab's own Total row, else None."""
+    h = res.get("headline") or {}
+    if h.get("error") or h.get("pdf_year") is None or h.get("tab_year") is None:
+        return None
+    d = round(h["pdf_year"] - h["tab_year"], 2)
+    return (d, h["pdf_year"], h["tab_year"]) if abs(d) >= 1 else None
+
+
 def verdict(res) -> str:
-    """One line a person can act on. Also what --slack posts."""
+    """One line a person can act on. Also what --slack posts.
+
+    The year total and the headline are part of the verdict, not a footnote: the
+    weeks read IGUALES on WE 8.16.26 while the PDF was printing $45,565.99 less
+    than the tab, and a green line above that would have sent it out."""
+    hg = _headline_gap(res)
+    if hg:
+        d, pdf, tab = hg
+        return (f"!! EL PDF NO CIERRA con la pestana: titular 2026 = "
+                f"{pdf:,.2f} contra {tab:,.2f} de la fila Total "
+                f"({d:+,.2f}). Revisar antes de mandar.")
+    if res.get("year_diffs"):
+        yd = res["year_diffs"]
+        net = round(sum(d["delta"] for d in yd), 2)
+        cols = sorted({d["col"] for d in yd})
+        return (f"!! Las semanas revisadas coinciden, pero {len(yd)} columna(s) "
+                f"acumulada(s) NO ({', '.join(cols)}), neto Eve - bot = "
+                f"{net:+,.2f}. El hueco esta en una semana vieja.")
     if res["only_eve"] or res["only_bot"]:
         extra = (f"  ADEMÁS hay filas en una sola pestaña "
                  f"({len(res['only_eve'])} solo de Eve, "
