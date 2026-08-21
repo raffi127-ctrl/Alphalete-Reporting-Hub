@@ -36,7 +36,24 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# HEARTBEAT — one line per FIRING, before anything can go wrong.
+#
+# Fri 2026-08-21 cost an afternoon of guessing because "did launchd fire at
+# 11:20?" had no answer. 10:55 and 11:45 each left a per-run log; 11:20 left
+# nothing at all, and neither did the launchd stdout/stderr logs (both empty).
+# A pass that dies, or is skipped, before LOG_FILE exists is indistinguishable
+# from a pass that launchd never started -- and those want opposite fixes.
+#
+# This line is written by every invocation, whatever happens next, so the next
+# time the question comes up it is one `lucy logtail override-bulletin-send-fires`
+# away. Append-only and one line a pass: seven lines a Friday.
+mkdir -p output/logs
+echo "[$(date)] FIRED pid=$$ args=${*:-none}" >> output/logs/override-bulletin-send-fires.log
+
 if pgrep -f "automations.override_bulletin.override_gate" > /dev/null 2>&1; then
+    # Same file, not just stdout: the launchd stdout log is the one nobody reads
+    # and, on 2026-08-21, the one that could not settle the question.
+    echo "[$(date)] SKIPPED - a previous pass is still running" >> output/logs/override-bulletin-send-fires.log
     echo "[$(date)] override-bulletin-send SKIPPED — previous pass still running"
     exit 0
 fi
