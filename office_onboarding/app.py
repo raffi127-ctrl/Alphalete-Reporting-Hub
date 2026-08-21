@@ -752,7 +752,21 @@ def thread_admin_view() -> None:
 
 
 # --------------------------------------------------------------------------
+def _inject_slack_token() -> None:
+    """Export the `slack_user_token` secret as SLACK_USER_TOKEN so the
+    'Check Lucy's membership' button works on Streamlit Cloud. Best-effort —
+    absent secret just means the check reports 'no Slack access here'."""
+    import os as _os
+    try:
+        tok = st.secrets.get("slack_user_token")
+    except Exception:                                # noqa: BLE001
+        tok = None
+    if tok and not _os.environ.get("SLACK_USER_TOKEN"):
+        _os.environ["SLACK_USER_TOKEN"] = str(tok).strip()
+
+
 _inject_gs_client()
+_inject_slack_token()
 
 _MODES = ("🏢 Enroll a new office", "✏️ Edit a thread (admin)")
 # ?admin=1 (the Hub's Thread Builder button) opens straight into the editor.
