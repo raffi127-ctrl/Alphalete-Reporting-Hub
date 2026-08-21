@@ -28,6 +28,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.tracker_onboarding import schema as S, store  # noqa: E402
+from automations.shared import onboarding_ui as ui             # noqa: E402
 
 # Drag-and-drop ordering (same component the Thread Builder uses). Fall back to
 # plain widgets if the Cloud deploy doesn't have it installed yet.
@@ -45,78 +46,17 @@ SLACK_ID_IMG = Path(__file__).resolve().parent / "slack_id_help.png"
 
 
 def _inject_gs_client() -> dict:
-    """Wire the Sheets client from secrets. Returns a KEYS-ONLY diagnostic (never
-    secret values) so `?debug=1` can show WHY it fell back to a local draft."""
-    diag = {"local_only": os.environ.get("TRACKER_ONBOARDING_LOCAL_ONLY"),
-            "gspread_import": False, "secret_keys": None, "has_gcp_oauth": False,
-            "has_gcp_service_account": False, "oauth_field_keys": None,
-            "client_set": False, "error": ""}
-    if os.environ.get("TRACKER_ONBOARDING_LOCAL_ONLY") == "1":
-        diag["error"] = "TRACKER_ONBOARDING_LOCAL_ONLY=1 forces local draft"
-        return diag
-    try:
-        import gspread
-        diag["gspread_import"] = True
-    except Exception as e:                       # noqa: BLE001
-        diag["error"] = f"gspread import failed: {type(e).__name__}: {e}"
-        return diag
-    try:
-        diag["secret_keys"] = sorted(list(st.secrets.keys()))
-    except Exception as e:                       # noqa: BLE001
-        diag["error"] = f"st.secrets unreadable: {type(e).__name__}: {e}"
-    try:
-        sa = st.secrets.get("gcp_service_account")
-    except Exception:
-        sa = None
-    diag["has_gcp_service_account"] = bool(sa)
-    if sa:
-        try:
-            store.set_client(gspread.service_account_from_dict(dict(sa)))
-            diag["client_set"] = True
-        except Exception as e:                   # noqa: BLE001
-            diag["error"] = f"service_account client failed: {type(e).__name__}: {e}"
-        return diag
-    try:
-        o = st.secrets.get("gcp_oauth")
-    except Exception:
-        o = None
-    diag["has_gcp_oauth"] = bool(o)
-    if o:
-        try:
-            diag["oauth_field_keys"] = sorted(list(dict(o).keys()))
-        except Exception:
-            pass
-    if not o:
-        tok = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
-        if tok.exists():
-            import json
-            o = json.loads(tok.read_text())
-    if o:
-        try:
-            from google.oauth2.credentials import Credentials
-            creds = Credentials(
-                token=o.get("token"), refresh_token=o.get("refresh_token"),
-                token_uri=o.get("token_uri", "https://oauth2.googleapis.com/token"),
-                client_id=o.get("client_id"), client_secret=o.get("client_secret"),
-                scopes=list(o.get("scopes") or
-                            ["https://www.googleapis.com/auth/spreadsheets"]))
-            store.set_client(gspread.authorize(creds))
-            diag["client_set"] = True
-        except Exception as e:                   # noqa: BLE001 — report, don't crash
-            diag["error"] = f"oauth client build failed: {type(e).__name__}: {e}"
+    """Wire the Sheets client from secrets (shared builder). Returns a
+    KEYS-ONLY diagnostic (never secret values) so `?debug=1` can show WHY it
+    fell back to a local draft."""
+    gc, diag = ui.build_gs_client("TRACKER_ONBOARDING_LOCAL_ONLY")
+    if gc is not None:
+        store.set_client(gc)
     return diag
 
 
 def _inject_slack_token() -> None:
-    """Export the `slack_user_token` secret as SLACK_USER_TOKEN so the corrections
-    ping + the Lucy-membership check work on Streamlit Cloud. Best-effort —
-    absent secret just means no ping/check (the request still saves)."""
-    try:
-        tok = st.secrets.get("slack_user_token")
-    except Exception:                                # noqa: BLE001
-        tok = None
-    if tok and not os.environ.get("SLACK_USER_TOKEN"):
-        os.environ["SLACK_USER_TOKEN"] = str(tok).strip()
+    ui.inject_slack_token()
 
 
 def _enqueue_onboard(key: str, *, post: bool) -> "tuple":
@@ -138,13 +78,11 @@ def _enqueue_onboard(key: str, *, post: bool) -> "tuple":
 
 
 def _check_lucy(channel_id: str, channel_name: str) -> dict:
-    from automations.tracker_onboarding import slack_check
-    return slack_check.check_channel(channel_id, channel_name)
+    return ui.check_channel(channel_id, channel_name)
 
 
 def _lucy_line(res: dict) -> str:
-    from automations.tracker_onboarding import slack_check
-    return slack_check.human_line(res)
+    return ui.lucy_line(res)
 
 
 def _preview_path(tracker_id: str) -> "Path | None":
@@ -210,8 +148,7 @@ def _form_managed(key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def request_view() -> None:
-    st.markdown("## 📊 Alphalete Reporting by Lucy")
-    st.markdown("### Daily Tableau Tracker Views Sign-Up")
+    ui.render_header("Daily Tableau Tracker Views Sign-Up")
     # After a successful submit, show ONLY the confirmation — the form (and
     # its submit button) is gone, so it can't be re-clicked into a duplicate.
     if st.session_state.get("_req_done"):
@@ -267,20 +204,10 @@ def request_view() -> None:
                 help="The channel where you want the boards posted each "
                      "morning.")
             cid = st.text_input(
-                "Slack Channel ID *", placeholder="C0ABC12DE", key=f"ch_id_{i}",
-                help="This is a CODE (letters + numbers) that starts with C — "
-                     "NOT the channel's name. To find it: in Slack, click the "
-                     "channel's name at the top of the screen, scroll to the "
-                     "very bottom of the pop-up, and copy the Channel ID "
-                     "shown there.")
-            if i == 0 and SLACK_ID_IMG.exists():
-                with st.expander("Where do I find my Channel ID?"):
-                    st.caption("In Slack, click the channel's name at the top "
-                               "of the screen, scroll to the bottom of the "
-                               "pop-up, and copy the Channel ID:")
-                    # 397 = half the source's 794px — pixel-perfect on retina
-                    # screens. Bigger = the browser upscales, it goes soft.
-                    st.image(str(SLACK_ID_IMG), use_container_width=True)
+                "Slack Channel ID *", placeholder="C0ABC12DE",
+                key=f"ch_id_{i}", help=ui.CHANNEL_ID_HELP)
+            if i == 0:
+                ui.channel_id_help_expander(SLACK_ID_IMG)
             st.caption("Boards to post in this channel:")
             here: list = []
             for t in catalog:
@@ -514,8 +441,7 @@ def _gate() -> bool:
 
 
 def confirm_view(key: str) -> None:
-    st.markdown("## 📊 Alphalete Reporting by Lucy")
-    st.markdown(f"### Confirm tracker sign-up — `{key}`")
+    ui.render_header(f"Confirm tracker sign-up — `{key}`")
     if not _gate():
         return
     d = store.load_one(key)

@@ -34,6 +34,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.office_onboarding import schema as S, store  # noqa: E402
 from automations.office_onboarding import request_notify        # noqa: E402
+from automations.shared import onboarding_ui as ui              # noqa: E402
 
 # Drag-and-drop ordering (same component the tracker sign-up + Thread Builder
 # use). Fall back to catalog order if the deploy doesn't have it installed.
@@ -63,37 +64,8 @@ def _preview_path(campaign: str, report_key: str) -> "Path | None":
 
 # --------------------------------------------------------------------------
 def _build_gs_client():
-    if os.environ.get("METRIC_REQUEST_LOCAL_ONLY") == "1":
-        return None
-    try:
-        import gspread
-    except Exception:
-        return None
-    try:
-        sa = st.secrets.get("gcp_service_account")
-    except Exception:
-        sa = None
-    if sa:
-        return gspread.service_account_from_dict(dict(sa))
-    try:
-        o = st.secrets.get("gcp_oauth")
-    except Exception:
-        o = None
-    if not o:
-        tok = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
-        if tok.exists():
-            import json
-            o = json.loads(tok.read_text())
-    if o:
-        from google.oauth2.credentials import Credentials
-        creds = Credentials(
-            token=o.get("token"), refresh_token=o.get("refresh_token"),
-            token_uri=o.get("token_uri", "https://oauth2.googleapis.com/token"),
-            client_id=o.get("client_id"), client_secret=o.get("client_secret"),
-            scopes=list(o.get("scopes") or
-                        ["https://www.googleapis.com/auth/spreadsheets"]))
-        return gspread.authorize(creds)
-    return None
+    gc, _diag = ui.build_gs_client("METRIC_REQUEST_LOCAL_ONLY")
+    return gc
 
 
 def _inject_client() -> None:
@@ -103,25 +75,16 @@ def _inject_client() -> None:
 
 
 def _inject_slack_token() -> None:
-    """On Streamlit Cloud there's no token file or SLACK_USER_TOKEN env var, so the
-    corrections ping can't post. If a `slack_user_token` secret is set, export it as
-    the env var the shared Slack poster reads (slack_metrics_post._load_token).
-    Best-effort — absent secret just means no ping (the request still saves)."""
-    try:
-        tok = st.secrets.get("slack_user_token")
-    except Exception:                                # noqa: BLE001
-        tok = None
-    if tok and not os.environ.get("SLACK_USER_TOKEN"):
-        os.environ["SLACK_USER_TOKEN"] = str(tok).strip()
+    ui.inject_slack_token()
 
 
 # --------------------------------------------------------------------------
 def form_view() -> None:
-    st.markdown("## 📊 Alphalete Reporting by Lucy")
-    st.markdown("### Daily Office Metrics Sign-Up")
-    st.caption("Tell us what you'd like to see in your Slack every morning. "
-               "Pick your campaign and check the metrics you want — "
-               "we'll set up the rest and get them posting for you.")
+    ui.render_header(
+        "Daily Office Metrics Sign-Up",
+        "Tell us what you'd like to see in your Slack every morning. "
+        "Pick your campaign and check the metrics you want — "
+        "we'll set up the rest and get them posting for you.")
 
     # ---- 1. Campaign -------------------------------------------------------
     st.divider()
@@ -192,20 +155,9 @@ def form_view() -> None:
                 key=f"chan_name_{i}", placeholder="#your-office-sales")
             cid = st.text_input(
                 "Slack Channel ID *", placeholder="C0ABC12DE",
-                key=f"chan_id_{i}",
-                help="This is a CODE (letters + numbers) that starts with C — "
-                     "NOT the channel's name. To find it: in Slack, click the "
-                     "channel's name at the top of the screen, scroll to the "
-                     "very bottom of the pop-up, and copy the Channel ID "
-                     "shown there.")
-            if i == 0 and SLACK_ID_IMG.exists():
-                with st.expander("Where do I find my Channel ID?"):
-                    st.caption("In Slack, click the channel's name at the top "
-                               "of the screen, scroll to the bottom of the "
-                               "pop-up, and copy the Channel ID:")
-                    # 397 = half the source's 794px — pixel-perfect on retina
-                    # screens. Bigger = the browser upscales, it goes soft.
-                    st.image(str(SLACK_ID_IMG), use_container_width=True)
+                key=f"chan_id_{i}", help=ui.CHANNEL_ID_HELP)
+            if i == 0:
+                ui.channel_id_help_expander(SLACK_ID_IMG)
             st.caption("Metrics to post in this channel:")
             keys_here: list = []
             for rk in fam_reports:
