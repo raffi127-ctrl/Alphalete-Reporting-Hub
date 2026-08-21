@@ -18,7 +18,18 @@ What it does (idempotent, safe to run any time):
      office_onboarding.apply --registry-only (schedule_config.json is HOT on
      the runners and is deliberately never auto-committed — schedule entries
      keep flowing through onboard_apply, status quo).
-  3. If — and only if — those registry files changed, commits JUST them and
+  3. Schedule self-heal — a registry office with NO entry at all in the
+     committed schedule_config.json is INVISIBLE to the 4am flow and nothing
+     alerts (the nii/drew failure: their mini-only working-tree entries were
+     wiped by the 2026-08-20 master-sequence pull and both Metrics threads
+     silently stopped). For each clean onboarding whose report_id is missing
+     from the schedule, re-add the entry (office_onboarding.apply's own
+     _schedule_entry) and commit it with the registries. ADD-ONLY: an entry
+     that exists is never touched (hand-tuned fields stay), so on a normal
+     day this leg is a no-op and the hot 335KB file is not rewritten. To
+     deliberately disable an office, set its entry's on_scheduler to false —
+     don't delete the entry (deletion reads as a wipe and gets healed back).
+  4. If — and only if — those files changed, commits JUST them and
      pushes (pull --rebase --autostash first). Other sessions' work-in-
      progress in the tree is never staged.
 
@@ -39,6 +50,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCHEDULE_CONFIG = "automations/day_orchestrator/schedule_config.json"
 TARGETS = [
     "automations/tableau_screenshots/onboarded_trackers.json",
     "automations/office_metrics/onboarded_offices.json",
@@ -46,6 +58,8 @@ TARGETS = [
     # apply pins owner -> OwnerVille account number here (knocks/Time Gaps
     # office resolution) — same durability need as the registries.
     "automations/recruiting_report/icd_office_mappings.json",
+    # only ever changed by the ADD-ONLY schedule self-heal (leg 3).
+    SCHEDULE_CONFIG,
 ]
 
 
@@ -74,6 +88,38 @@ def _git(*args: str) -> "subprocess.CompletedProcess":
                           capture_output=True)
 
 
+def heal_schedule(apply_mod) -> list:
+    """ADD-ONLY schedule reconcile: give every clean onboarded office whose
+    report_id has NO entry in schedule_config.json the standard entry apply
+    would have written, and return the added report_ids ([] = file untouched).
+    Existing entries are never modified — on_scheduler:false is respected as
+    the deliberate off switch. Fractional orders after the office-metrics
+    block (36.x) keep Megan's integer 1-60 master sequence unrenumbered."""
+    path = REPO_ROOT / SCHEDULE_CONFIG
+    raw = json.loads(path.read_text())
+    reports = raw.setdefault("reports", {})
+    healed = []
+    for i, p in enumerate(apply_mod.plan()):
+        if p["problems"]:
+            continue
+        rec = p["rec"]
+        rid = rec.report_id()
+        if rid in reports:
+            continue                      # exists (even disabled) -> hands off
+        entry = apply_mod._schedule_entry(rec, 36.5 + i * 0.01)
+        entry["_note"] += (" RE-ADDED by tracker_onboarding.auto_commit "
+                           "schedule self-heal: the entry was missing from "
+                           "the committed schedule (never committed, or "
+                           "wiped by a pull).")
+        reports[rid] = entry
+        healed.append(rid)
+    if healed:
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(raw, indent=2))
+        tmp.replace(path)
+    return healed
+
+
 def main() -> int:
     blocked = []
 
@@ -96,6 +142,16 @@ def main() -> int:
                            "above)")
     except Exception as e:                            # noqa: BLE001
         blocked.append(f"metrics: {type(e).__name__}: {e}")
+
+    # --- schedule self-heal leg (add-only; no-op when nothing is missing) --
+    try:
+        from automations.office_onboarding import apply as MA
+        healed = heal_schedule(MA)
+        if healed:
+            print(f"schedule self-heal: re-added missing entries "
+                  f"{', '.join(healed)}")
+    except Exception as e:                            # noqa: BLE001
+        blocked.append(f"schedule-heal: {type(e).__name__}: {e}")
 
     for b in blocked:
         print(f"BLOCKED — {b}")
