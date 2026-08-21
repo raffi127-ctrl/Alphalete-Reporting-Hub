@@ -176,7 +176,10 @@ def pull(page, rqst, weeks, today):
         if anchor in fetched:
             return
         fetched.add(anchor)
-        days.update(report_week(page, rqst, anchor, verbose=False))
+        # verbose=True: the one-line "week ... ok" per report submission is the
+        # only heartbeat a long backfill has — without it a timeout kill leaves
+        # a log that can't say whether the run was slow or stuck (2026-08-20).
+        days.update(report_week(page, rqst, anchor, verbose=True))
 
     got = {}
     for mon in weeks:
@@ -397,6 +400,11 @@ def main():
             still = []
             for name, oid, hint in todo:
                 try:
+                    # Say the office is STARTING, not just finished. A --weeks 34
+                    # backfill of a slow office can grind for the better part of
+                    # an hour, and with no line here a timeout kill reads as a
+                    # hang at "only: ..." with no trace of progress (2026-08-20).
+                    log("-> %s (office %s)…" % (name, oid))
                     if not switch(page, oid, hint, rqst):
                         raise RuntimeError("office switch failed after retries")
                     days = pull(page, rqst, weeks, today)
