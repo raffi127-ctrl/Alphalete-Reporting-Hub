@@ -98,6 +98,12 @@ REMOVALS: dict = {
     "Colten's Captainship": [
         ("Javeon Lara", "javeonterrell@gmail.com"),
         ("Selena Powers", "selena.powersmiami@gmail.com"),   # listed twice on the card
+        # 2026-08-21 (Eve): Milan Godbolt comes off Colten's captainship — a
+        # different reason from the two-week zero rule above, same removal. His
+        # three board rows went the same day and Tableau is pinned in
+        # shared/captainship_pins under "Colten". This group is NOT shared with
+        # the org board mail, so nothing else changes for him.
+        ("Milan Godbolt", "arisesolutions.milan@gmail.com"),
     ],
 }
 

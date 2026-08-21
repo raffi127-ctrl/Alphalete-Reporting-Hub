@@ -36,6 +36,7 @@ from pathlib import Path
 from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 from automations.owners_metrics_churn import pull, fill
+from automations.shared import captainship_pins as _pins
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
 
@@ -547,6 +548,18 @@ def main(argv=None) -> int:
                 print(f"  (diag: dumped {len(_raw_names)} raw rep name(s) to Inspect Out)")
             except Exception as _e:  # noqa: BLE001 — diag must never fail the run
                 print(f"  (diag dump failed: {type(_e).__name__}: {str(_e)[:80]})")
+        # Reps Tableau still files under a captain they are NOT on come out
+        # HERE, before the fill — `insert_missing_reps` adds a row for every
+        # owner the pull returns, so a row deleted by hand grows straight back
+        # the next morning. Keyed by captain, so the same name stays legitimate
+        # on another captain's tab. See automations/shared/captainship_pins.py.
+        #
+        # The slug is the captain key ('colten', 'wayne'); the fiber WIRELESS
+        # tabs carry a '-wl' suffix for the same captain, so it is stripped —
+        # a pin has to cover both of that captain's tabs, not just his NI one.
+        parsed["reps"] = _pins.drop_reps(parsed.get("reps", {}),
+                                         slug.split("-")[0], logfn=print,
+                                         where=label)
         _prog = _program_of(parse_fn)
         _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args,
                               program=_prog, aliases=aliases)

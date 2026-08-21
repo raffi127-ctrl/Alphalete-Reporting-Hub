@@ -453,7 +453,13 @@ RECIPIENTS: dict = {
         "josephdelgadosc@gmail.com", "coastalcreativeconcepts@yahoo.com",
         "campas.kyle@gmail.com", "lajaviusbrown@yahoo.com",
         "logan.waite24@gmail.com", "marcosbarbosa.entrepeneur@gmail.com",
-        "maudmiller4@gmail.com", "arisesolutions.milan@gmail.com",
+        # OUT 2026-08-21 (Eve): Milan Godbolt (arisesolutions.milan@gmail.com)
+        # comes off Colten's captainship. His three board rows went the same
+        # day and Tableau is pinned in shared/captainship_pins under "Colten".
+        # He must leave this list AND the live "Colten's Captainship" group —
+        # seed_groups REBUILDS that group from here, so a name left in code
+        # walks back in (the Jeremiah Minor pattern).
+        "maudmiller4@gmail.com",
         "nickopereira98@gmail.com", "dubalenoah@gmail.com",
         "raffi127@gmail.com", "taylor.4597@gmail.com",
     ],

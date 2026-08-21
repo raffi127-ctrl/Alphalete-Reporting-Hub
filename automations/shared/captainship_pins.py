@@ -49,8 +49,18 @@ from typing import Dict, Iterable, Optional
 # every daily pull would keep calling him. His rows came off the Org Sales
 # Board's two Raf captainship blocks + both delta boxes and off the six tabs of
 # Rafael's own metrics workbook the same day.
+#
+# 2026-08-21 (Eve): Milan Godbolt comes off Colten's captainship. Tableau's
+# NDS Captain Teams filter still files him under "Colten's Team", so the daily
+# roster scan would offer him back to Evelyn every morning and the churn pull
+# would re-insert his row. His three rows (leaderboard, daily block and the
+# COLTEN CAPTAINSHIP delta box) came off the Org Sales Board the same day, and
+# his address left the "Colten's Captainship" distro. He stays an NDS ICD
+# everywhere else — this pin is scoped to Colten, which is the whole point of
+# the key.
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
+    "Colten": ("Milan Godbolt",),
 }
 
 
