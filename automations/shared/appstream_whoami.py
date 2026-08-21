@@ -107,6 +107,13 @@ def main(argv=None):
                          "-s", svc, "-w"], capture_output=True, text=True)
             print("keychain %-38s: %s"
                   % (svc, r.stdout.strip() if r.returncode == 0 else "-not found-"))
+        # LAST line on purpose: the mini-control poller truncates a result to
+        # ~450 chars and keeps the TAIL, so the answer has to be the final line
+        # or it is exactly what gets cut off.
+        print("SUMMARY primary=%s alt=%s has_alt=%s"
+              % (blob.get("appstream_username") or "none",
+                 alt_blob.get("appstream_alt_username") or "none",
+                 creds.has_appstream_alt()))
         return 0
 
     if a.alt and not (a.user and a.pw):
