@@ -18,6 +18,7 @@ login should turn the deniels into OKs. Compare the two runs.
 from __future__ import annotations
 
 import argparse
+import pathlib
 import re
 import sys
 
@@ -42,14 +43,46 @@ def main(argv=None):
                     help="ignore the saved session and drive the login form")
     ap.add_argument("--offices", default=DEFAULT_OFFICES)
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--accounts", action="store_true",
+                    help="list which AppStream accounts this machine can use, "
+                         "then exit (names only — never a password)")
+    ap.add_argument("--user", help="log in as this account instead of the "
+                                   "configured one (needs --pass)")
+    ap.add_argument("--pass", dest="pw", help="password for --user")
     a = ap.parse_args(argv)
 
     from automations.shared import creds
     from automations.shared.tableau_patchright import (
         appstream_direct_session, APPSTREAM_STORAGE_STATE)
 
+    if a.accounts:
+        # WHICH accounts are usable here, by name only. Two machines using
+        # different logins is exactly how Lucy 2 ended up seeing 22 of 28
+        # offices, so this has to be answerable without a browser.
+        import json as _json, os as _os, subprocess as _sp
+        root = pathlib.Path(creds.__file__).resolve().parents[2]
+        f = root / "ownerville-creds.json"
+        try:
+            blob = _json.loads(f.read_text())
+        except Exception:
+            blob = {}
+        print("creds file          : %s (%s)"
+              % (f.name, "present" if f.exists() else "ABSENT"))
+        print("  appstream_username: %s" % (blob.get("appstream_username") or "-none-"))
+        print("  other keys        : %s"
+              % ", ".join(sorted(k for k in blob if "password" not in k.lower())))
+        print("env APPLICANTSTREAM_USERNAME: %s"
+              % (_os.environ.get("APPLICANTSTREAM_USERNAME") or "-unset-"))
+        for svc in ("applicantstream-username", "applicantstream-username-rcaptain",
+                    "applicantstream-username-alt"):
+            r = _sp.run(["security", "find-generic-password", "-a", "applicantstream",
+                         "-s", svc, "-w"], capture_output=True, text=True)
+            print("keychain %-38s: %s"
+                  % (svc, r.stdout.strip() if r.returncode == 0 else "-not found-"))
+        return 0
+
     try:
-        user = creds.appstream_username()
+        user = a.user or creds.appstream_username()
     except Exception as e:  # noqa: BLE001
         user = "<unreadable: %s>" % type(e).__name__
     print("configured username : %s" % user, flush=True)
@@ -61,9 +94,15 @@ def main(argv=None):
 
     ids = [o.strip() for o in a.offices.split(",") if o.strip()]
     ok, denied, other = [], [], []
-    with appstream_direct_session(headless=not a.headed, verbose=False,
-                                  allow_form_login=True,
-                                  force_form_login=a.force) as page:
+    kw = dict(headless=not a.headed, verbose=False, allow_form_login=True,
+              force_form_login=a.force or bool(a.user))
+    if a.user and a.pw:
+        # Separate profile, same reason daily_focus --alt-appstream uses one:
+        # a second account's cookies must not overwrite the primary's session.
+        from automations.shared.tableau_patchright import APPSTREAM_PROFILE_DIR
+        kw.update(username=a.user, password=a.pw,
+                  profile_dir=APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt")
+    with appstream_direct_session(**kw) as page:
         tok = (TOKRE.search(page.url) or TOKRE.search(page.content())).group(1)
         print("identity            : %s" % identity(page), flush=True)
         for oid in ids:
