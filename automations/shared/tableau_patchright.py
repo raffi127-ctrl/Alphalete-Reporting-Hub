@@ -1593,7 +1593,8 @@ def appstream_direct_session(headless: bool = False,
             ctx.close()
 
 
-def _capture_appstream_state(verbose: bool = True) -> bool:
+def _capture_appstream_state(verbose: bool = True,
+                             account: Optional[str] = None) -> bool:
     """One-time interactive capture of the AppStream session. Opens a HEADED
     browser on the persistent .appstream_profile; the human clears the
     Cloudflare check + logs in as rcaptain. Once the office console (#searchMC)
@@ -1601,8 +1602,23 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
     cookies) is written to APPSTREAM_STORAGE_STATE for the unattended runs to
     reuse. AppStream's own Cloudflare can't be cleared headlessly, so this
     interactive seed is the only way to (re)establish the session; the session
-    holder keeps it warm afterward."""
-    profile = APPSTREAM_PROFILE_DIR
+    holder keeps it warm afterward.
+
+    account: capture a DIFFERENT account's session (e.g. 'carlos' for Lucy 2's
+    CarlosNLR primary) without touching the default rcaptain slot — its own
+    capture profile (a clean profile shows the login form; the rcaptain
+    profile would silently auto-resume as rcaptain) and its own state file
+    (.appstream_storage_state_<account>.json), which --appstream-push-primary
+    --account <name> then ships to the runner."""
+    if account:
+        profile = APPSTREAM_PROFILE_DIR.parent / f".appstream_profile_cap_{account}"
+        state_path = APPSTREAM_STORAGE_STATE.with_name(
+            f".appstream_storage_state_{account}.json")
+        who = account
+    else:
+        profile = APPSTREAM_PROFILE_DIR
+        state_path = APPSTREAM_STORAGE_STATE
+        who = "rcaptain"
     profile.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, profile, headless=False,
@@ -1620,7 +1636,7 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
         print("\n" + "=" * 64)
         print("  LOG INTO APPLICANTSTREAM IN THE BROWSER WINDOW THAT OPENED")
         print("  • clear the Cloudflare check if shown")
-        print("  • sign in as rcaptain")
+        print(f"  • sign in as {who}")
         print("  • THEN go to:  applicantstream.com/index.cfm?p=701")
         print("    (that loads the office search box — which is what gets saved)")
         print("  Waiting for the office console to load (up to 5 min)…")
@@ -1646,11 +1662,11 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
             ctx.close()
             return False
         state = ctx.storage_state()
-        APPSTREAM_STORAGE_STATE.write_text(json.dumps(state))
+        state_path.write_text(json.dumps(state))
         cookies = state.get("cookies", [])
         n_rqst = sum(1 for c in cookies if c.get("name", "").startswith("rqst_"))
         print(f"✅ Saved AppStream session ({len(cookies)} cookies, {n_rqst} "
-              f"rqst token(s)) → {APPSTREAM_STORAGE_STATE.name}", flush=True)
+              f"rqst token(s)) → {state_path.name}", flush=True)
         if n_rqst == 0:
             print("⚠ No rqst_ token captured — the unattended reuse needs one. "
                   "Make sure you reached the office switcher before this saved.",
@@ -1705,14 +1721,29 @@ if __name__ == "__main__":
                          "session everywhere it belongs — Lucy 1 primary + "
                          "Lucy 2 alternate. This is the daily re-seed's second "
                          "half; the login is the first.")
+    ap.add_argument("--account", metavar="NAME", default=None,
+                    help="With --appstream-login / --appstream-push-primary: "
+                         "capture/push a DIFFERENT account's session (e.g. "
+                         "'carlos' for Lucy 2's CarlosNLR primary) in its own "
+                         "slot, never touching the rcaptain one.")
     args = ap.parse_args()
     if args.appstream_push_primary is not None or args.appstream_push_fleet:
         import sys as _sys
-        if not APPSTREAM_STORAGE_STATE.exists():
-            print(f"❌ no saved session ({APPSTREAM_STORAGE_STATE.name} missing) "
-                  "— run --appstream-login first")
+        _state_path = (APPSTREAM_STORAGE_STATE if not args.account else
+                       APPSTREAM_STORAGE_STATE.with_name(
+                           f".appstream_storage_state_{args.account}.json"))
+        if args.appstream_push_fleet and args.account:
+            print("❌ --appstream-push-fleet is the rcaptain routine — use "
+                  "--appstream-push-primary <machine> --account <name> for "
+                  "another account")
             _sys.exit(1)
-        _blob = APPSTREAM_STORAGE_STATE.read_text()
+        if not _state_path.exists():
+            print(f"❌ no saved session ({_state_path.name} missing) — run "
+                  "--appstream-login"
+                  + (f" --account {args.account}" if args.account else "")
+                  + " first")
+            _sys.exit(1)
+        _blob = _state_path.read_text()
         try:
             _n_rqst = sum(1 for c in json.loads(_blob).get("cookies", [])
                           if c.get("name", "").startswith("rqst_"))
@@ -1859,7 +1890,8 @@ if __name__ == "__main__":
         _sys.exit(0 if _ok else 1)
     if args.appstream_login:
         import sys as _sys
-        _sys.exit(0 if _capture_appstream_state(verbose=True) else 1)
+        _sys.exit(0 if _capture_appstream_state(verbose=True,
+                                                account=args.account) else 1)
     if args.ownerville_form_login:
         import sys as _sys
         # Throwaway profile so we NEVER touch the holder's / reports' shared

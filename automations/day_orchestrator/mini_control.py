@@ -1127,6 +1127,12 @@ def _action_set_appstream_state(args: str) -> tuple[bool, str]:
     ok, res = _run_cmd(
         [sys.executable, "-m", "automations.shared.appstream_whoami"],
         timeout_s=20 * 60, log_name="appstream-whoami.log")
+    # whoami exit 4 = LOGGED IN but some probe offices are denied — normal for
+    # an account that legitimately can't see them (Lucy 2's CarlosNLR primary).
+    # The session itself is live, which is all this action promises.
+    if not ok and res.lstrip().startswith("exit 4"):
+        return True, (f"primary session installed + live (some probe offices "
+                      f"denied to this account — expected) · {res[:280]}")
     if not ok:
         return False, (f"primary session installed ({n_rqst} rqst) but the "
                        f"verify FAILED: {res[:300]}")
