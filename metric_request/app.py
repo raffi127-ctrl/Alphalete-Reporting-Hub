@@ -97,19 +97,20 @@ def _inject_slack_token() -> None:
 def form_view() -> None:
     st.markdown("## 📊 Request your office metrics")
     st.caption("Tell us what you'd like to see in your Slack every morning. "
-               "Pick how your office sells and check the metrics you want — "
+               "Pick your campaign and check the metrics you want — "
                "we'll set up the rest and get them posting for you.")
 
-    # ---- 1. How you sell --------------------------------------------------
+    # ---- 1. Campaign -------------------------------------------------------
     st.divider()
-    st.markdown("### 1. How does your office sell?")
-    fam_label = st.radio(
-        "Choose one:",
-        ["🏠 Door-to-door (residential)", "🏢 Business-to-business (B2B)"],
-        help="This decides which set of metrics we can post for you.")
-    family = "d2d" if fam_label.startswith("🏠") else "b2b"
+    st.markdown("### 1. What campaign are you in?")
+    camp_label = st.radio(
+        "Choose one:", [c[1] for c in S.CAMPAIGNS],
+        help="Your campaign decides which metrics exist for your office — "
+             "you'll only be offered the ones we can actually pull for you.")
+    campaign = next(c[0] for c in S.CAMPAIGNS if c[1] == camp_label)
+    family = S.CAMPAIGNS_BY_KEY[campaign][2]
 
-    fam_reports = [r for r in S.REPORTS if r.family == family]
+    fam_reports = S.campaign_reports(campaign)
 
     # ---- 2. Who you are ---------------------------------------------------
     st.divider()
@@ -184,7 +185,7 @@ def form_view() -> None:
         sheet_id="", family=family, channels=channels,
         channel_plans=named_plans, ov_account=ov_account.strip(),
         owner_email=owner_email.strip(), pay_code="",
-        reports=enrolled)
+        reports=enrolled, campaign=campaign)
 
     if st.button("📨 Send my request", type="primary"):
         problems = S.validate_request(rec)

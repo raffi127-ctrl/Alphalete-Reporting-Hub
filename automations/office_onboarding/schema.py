@@ -88,10 +88,46 @@ REPORTS: List[ReportKind] = [
     ReportKind("b2b_order_log_att", "📄 AT&T Order Log",           "b2b", False, True,
                blurb="The day's AT&T B2B orders."),
     ReportKind("b2b_order_log_box", "📦 Box Order Log",            "b2b", False, True,
-               blurb="The day's Box B2B orders."),
+               blurb="The day's Box orders, posted as one morning thread: "
+                     "overall log + a tab per rep, Accepted by Supplier, "
+                     "and Box Tier Bonus Rep Level."),
 ]
 
 REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
+
+# What CAMPAIGN an office is in decides which metrics even exist for it
+# (Megan 2026-08-20: "it should be what campaign are you in — then list the
+# options; Isaiah is only wireless"). `family` stays the wiring backbone
+# (which runner family the office joins); the key-tuple narrows the menu —
+# None = every report in the family. The wireless/NDS subset mirrors the LIVE
+# isaiah/drew overrides in office_metrics.offices (knocks_gaps, churn,
+# rep_activations, order_log, cancels — no internet-only boards).
+# Taxonomy per Carlos + Raf (texts to Megan, 2026-08-20): D2D = Fiber or NDS
+# (hybrid deliberately excluded); B2B = AT&T or Box. Fiber = internet AND
+# phones (the current full D2D set — Raf: "everything you're pulling for the
+# fiber owners is currently good"). NDS = wireless/phones only, pulled from a
+# DIFFERENT workbook — its subset mirrors the live isaiah/drew overrides.
+CAMPAIGNS: "List[tuple]" = [
+    ("fiber_d2d", "🏠 D2D AT&T Fiber — internet & phones", "d2d", None),
+    ("nds_d2d", "📶 D2D NDS — wireless & phones", "d2d",
+     ("knocks", "order_log", "cancels", "churn_wl", "activations")),
+    ("b2b_att", "🏢 B2B AT&T", "b2b",
+     ("b2b_sales", "b2b_activation", "b2b_churn_wireless", "b2b_churn_int",
+      "b2b_churn_air", "b2b_customer_churn", "b2b_order_log_att")),
+    ("b2b_box", "📦 B2B Box", "b2b", ("b2b_order_log_box",)),
+]
+CAMPAIGNS_BY_KEY: "Dict[str, tuple]" = {c[0]: c for c in CAMPAIGNS}
+
+
+def campaign_reports(campaign_key: str) -> "List[ReportKind]":
+    """The reports actually available to an office in this campaign."""
+    c = CAMPAIGNS_BY_KEY.get(campaign_key)
+    if not c:
+        return list(REPORTS)
+    fam = [r for r in REPORTS if r.family == c[2]]
+    if c[3] is None:
+        return fam
+    return [r for r in fam if r.key in c[3]]
 
 # Which machine a saved Tableau view renders on. Expressed as the machine
 # directly (Lucy 1 / Lucy 2) rather than the person logged into it — Lucy 1 is
@@ -272,6 +308,8 @@ class OnboardingRecord:
     notes: str = ""
     submitted_at: str = ""        # ISO stamp, set by the store on write.
     submitted_by: str = ""        # who filled the form (audit).
+    campaign: str = ""            # CAMPAIGNS key ("att_d2d" | "wireless_nds" |
+                                  # "b2b"); legacy rows empty → family implies it.
 
     # ---- derivations -----------------------------------------------------
     def display_label(self) -> str:
