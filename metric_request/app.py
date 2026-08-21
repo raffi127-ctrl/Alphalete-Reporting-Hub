@@ -46,6 +46,19 @@ except Exception:                                    # noqa: BLE001
 st.set_page_config(page_title="Alphalete Reporting by Lucy", page_icon="📊",
                    layout="centered")
 
+PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
+
+
+def _preview_path(campaign: str, report_key: str) -> "Path | None":
+    """Preview image for a metric — campaign-specific file first (the same
+    report can look different per campaign, e.g. the NDS order log board vs
+    the fiber xlsx), then the generic one. None = no expander shown."""
+    for name in (f"{campaign}_{report_key}.png", f"{report_key}.png"):
+        p = PREVIEW_DIR / name
+        if p.exists():
+            return p
+    return None
+
 
 # --------------------------------------------------------------------------
 def _build_gs_client():
@@ -183,6 +196,12 @@ def form_view() -> None:
                 on = st.checkbox(rk.label, key=f"chan_met_{i}_{rk.key}")
                 if rk.blurb and i == 0:
                     st.caption(rk.blurb)
+                # previews once, in the first channel's list — same metrics.
+                if i == 0:
+                    pv = _preview_path(campaign, rk.key)
+                    if pv is not None:
+                        with st.expander("View preview"):
+                            st.image(str(pv), use_container_width=True)
                 if on:
                     keys_here.append(rk.key)
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
@@ -197,9 +216,11 @@ def form_view() -> None:
     picked_union = [rk.key for rk in fam_reports
                     if any(rk.key in p.report_keys for p in plans)]
     if picked_union and _HAS_SORT:
-        st.caption("This is the order the metrics will post in each morning "
-                   "in your Slack channel — drag to rearrange, top posts "
-                   "first.")
+        st.caption("This is the order the metrics will post in each morning, "
+                   "in every channel — drag to rearrange, top posts first. "
+                   "If a metric isn't checked in one of your channels, that "
+                   "channel simply skips it; the rest still post in this "
+                   "order.")
         # key includes the picked set so the drag list rebuilds when it changes
         sorted_labels = sort_items(
             [labels[k] for k in picked_union], direction="vertical",
@@ -230,13 +251,33 @@ def form_view() -> None:
     st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
             "listed above **BEFORE HITTING SUBMIT** — we can't start your "
             "posting without it!")
-    if st.button("📨 Send my request", type="primary"):
-        problems = ([] if requested_by.strip()
-                    else ["Please enter your name (what you go by)."])
-        if not ov_account.strip():
-            problems.append("Please enter your OwnerVille account number — "
-                            "it's how we match your office exactly.")
-        problems += S.validate_request(rec)
+    # The button stays OFF until every required field is filled, with a live
+    # list of what's still needed — same gate as the tracker sign-up.
+    missing: list = []
+    if not requested_by.strip():
+        missing.append("your name")
+    if not owner.strip():
+        missing.append("your OwnerVille name")
+    if not ov_account.strip():
+        missing.append("your OwnerVille account number")
+    if not business.strip():
+        missing.append("company / office name")
+    if not website.strip():
+        missing.append("website")
+    if not owner_email.strip():
+        missing.append("your email")
+    for i, p in enumerate(plans):
+        tag = "" if len(plans) == 1 else f" (channel {i + 1})"
+        if not p.channel_name:
+            missing.append(f"Slack channel name{tag}")
+        if not p.report_keys:
+            missing.append(f"at least one metric{tag}")
+    if missing:
+        st.warning("⚠️ **Still needed before you can submit:** "
+                   + ", ".join(missing) + ".")
+    if st.button("📨 Send my request", type="primary",
+                 disabled=bool(missing)):
+        problems = S.validate_request(rec)
         if problems:
             st.error("Almost there — please fix these:")
             for p in problems:

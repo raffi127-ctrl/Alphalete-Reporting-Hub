@@ -318,8 +318,10 @@ def request_view() -> None:
     st.markdown("### 3. Put them in order")
     if picked and _HAS_SORT:
         st.caption("This is the order the Tableau images will post in each "
-                   "morning in your Slack channel — drag to rearrange, top "
-                   "posts first.")
+                   "morning, in every channel — drag to rearrange, top posts "
+                   "first. If a board isn't checked in one of your channels, "
+                   "that channel simply skips it; the rest still post in "
+                   "this order.")
         # key includes the picked set so the drag list rebuilds when it changes
         sorted_labels = sort_items(
             [labels[i] for i in picked], direction="vertical",
