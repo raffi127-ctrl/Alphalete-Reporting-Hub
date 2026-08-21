@@ -520,22 +520,24 @@ def main(argv=None) -> int:
         # ALREADY POSTED? THEN DO NOTHING — and find that out BEFORE building.
         #
         # post_review is idempotent, but it only discovers "already posted"
-        # AFTER the caller has rendered the page, printed the PDF and pushed it
-        # to Drive. So every Friday pass past the first one paid the full build
-        # to throw it away, and a pass can outlast its own 25-minute slot.
-        # launchd will not start a second copy of a job that is still running,
-        # so those overlapping firings are dropped silently — no log, nothing in
-        # the launchd stdout, because the wrapper's own pgrep guard never even
-        # gets to run.
-        #
-        # That is what happened on Fri 2026-08-21: the 10:55 pass was still
-        # going at 11:20 and 11:45, both were dropped, and Eve's checkmark
-        # (~11:15) sat unread until 12:10. The send had to be fired by hand.
-        # The whole build was for a link that had been up since 10:24.
+        # AFTER the caller has rendered the page, printed the tall PDF and
+        # pushed it to Drive. Every Friday pass past the first one therefore
+        # paid a full build, and a Drive write, to throw the result away.
         #
         # One cheap read of the week header is all --post needs to know it has
         # nothing to do. --repost still rebuilds: replacing the message is the
-        # one case where the PDF must be refreshed too.
+        # one case where the PDF must be refreshed with it.
+        #
+        # NOT the cause of the 2026-08-21 miss, though it was written while
+        # chasing it — recorded here so nobody re-derives the wrong theory. That
+        # Friday exactly one firing went missing: 10:55 and 11:45 both ran and
+        # exited 0, there is no 11:20 log at all, and Eve's checkmark landed
+        # ~11:15. Overlap cannot explain it (a pass takes ~20s: 10:55:04 ->
+        # 10:55:23) and neither can the wrapper's pgrep guard, whose skip line
+        # would be in the launchd stdout log — that file is empty. Cause still
+        # unknown. What the schedule DID do correctly is self-heal: 11:45 would
+        # have found the checkmark and sent, 30 minutes late, if the send had
+        # not already been fired by hand at 11:35.
         if not args.repost:
             wk_now = week_label(tab=args.tab)
             if wk_now and _find_post(wk_now, args.channel):
