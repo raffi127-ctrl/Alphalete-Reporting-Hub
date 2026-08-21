@@ -308,9 +308,22 @@ elif _BAK.exists():
     PRIOR = json.loads(_BAK.read_text(encoding="utf-8"))
     print("Goals tab was empty — restored typed goals from %s" % _BAK.name)
 
+# Goals stays ONE tab, but in two sections (Carlos, 2026-08-21): the org above,
+# captainship-only below a divider. Carlos and Atef are in both rosters and get
+# exactly one row, in the org section — two goals rows for one person is how a
+# board ends up grading against the wrong one. Every lookup into Goals is a
+# VLOOKUP on the name column, so row order is cosmetic and the divider row is
+# invisible to them (PRIOR also skips it: no numeric cells).
+_GOALS_ORDER = ([m for m in MANAGERS if m in ORG_NAMES]
+                + [None]
+                + [m for m in MANAGERS if m not in ORG_NAMES])
+
 goal_rows = []
-for i, m in enumerate(MANAGERS):
-    r = i + 2
+for m in _GOALS_ORDER:
+    r = len(goal_rows) + 2
+    if m is None:
+        goal_rows.append(["", "— CAPTAINSHIP (oversight, not in org) —"] + [""] * 20)
+        continue
 
     def _keep(header, default):
         """A typed goal always wins over the seeded median."""
