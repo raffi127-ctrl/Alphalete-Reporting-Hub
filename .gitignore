@@ -21,12 +21,15 @@ __pycache__/
 # Browser profiles — all variants (.browser_profile, _holder, _zoho, …) hold
 # live session cookies (auth). Sensitive; never commit.
 .browser_profile*
-.appstream_profile/
-.appstream_profile_alt/
+# Wildcard on purpose: the multi-account capture (0c8def6) mints a NEW profile
+# and state file per account (.appstream_profile_cap_<name>,
+# .appstream_storage_state_<name>.json) — a per-name list here would leak the
+# next account added. Also covers the .launchlock siblings.
+.appstream_profile*
 # AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_appstream_export_state.py.
-.appstream_storage_state.json
-automations/shared/.appstream_storage_state.json
+.appstream_storage_state*.json
+automations/shared/.appstream_storage_state*.json
 # ownerville storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_ownerville_export_state.py.
 .ownerville_storage_state.json
