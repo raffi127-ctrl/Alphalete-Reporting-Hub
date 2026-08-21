@@ -136,14 +136,25 @@ def main(argv=None):
 
     ids = [o.strip() for o in a.offices.split(",") if o.strip()]
     ok, denied, other = [], [], []
+    # force_form_login only skips the storage_state REUSE — the persistent Chrome
+    # profile keeps its OWN cookies, so a profile already signed in as someone
+    # else stays signed in and the login never runs. That is why Lucy 2 answered
+    # account 6039 "Carlos Hidalgo" on a FORCED login while configured as
+    # rcaptain: the rcaptain login had never actually happened. funnel_board hit
+    # this and fixed it with a dedicated profile ("force_form_login is not enough
+    # on its own"). A scratch profile, emptied whenever a login is being forced,
+    # is the only way this proves anything.
+    from automations.shared.tableau_patchright import APPSTREAM_PROFILE_DIR
+    probe_profile = APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_whoami"
+    if a.force or a.user:
+        import shutil
+        shutil.rmtree(probe_profile, ignore_errors=True)
+        print("probe profile       : emptied so the login really runs", flush=True)
     kw = dict(headless=not a.headed, verbose=True, allow_form_login=True,
-              force_form_login=a.force or bool(a.user))
+              force_form_login=a.force or bool(a.user),
+              profile_dir=probe_profile)
     if a.user and a.pw:
-        # Separate profile, same reason daily_focus --alt-appstream uses one:
-        # a second account's cookies must not overwrite the primary's session.
-        from automations.shared.tableau_patchright import APPSTREAM_PROFILE_DIR
-        kw.update(username=a.user, password=a.pw,
-                  profile_dir=APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt")
+        kw.update(username=a.user, password=a.pw)
     with appstream_direct_session(**kw) as page:
         tok = (TOKRE.search(page.url) or TOKRE.search(page.content())).group(1)
         who = identity(page)
