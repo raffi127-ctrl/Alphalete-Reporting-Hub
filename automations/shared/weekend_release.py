@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-from typing import Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
 
 CENTRAL = ZoneInfo("America/Chicago")   # [[project_central-time-for-texas-reports]]
@@ -65,6 +65,31 @@ AUTO_WHO = "envío automático de fin de semana (nadie revisa sáb/dom)"
 HELD_MARK = "Weekend auto-send held"
 
 DONE = "DONE"
+SKIPPED = "SKIPPED"
+
+# UNA FALLA DE VERDAD. Eve 2026-08-21: "esos tres reportes se tienen que enviar
+# solos, a no ser que presenten una falla en la corrida directamente (por ej que
+# algun reporte de los captainship drafts no se haya completado o no se vea en
+# el correo)". Estos estados son exactamente eso -- el trabajo corrio y salio
+# mal, o quedo a medias, o alguien lo paro. Frenan siempre, esten donde esten
+# en la cadena.
+HARD_FAIL = {
+    "FAILED",                 # errored durante la corrida
+    "INCOMPLETE",             # exit 0 pero el verify encontro blancos
+    "BLOCKED_SESSION",        # la sesion murio y nunca volvio: no hay dato
+    "HALTED_FOR_FIX",         # lo paro una persona
+    "MANUAL_PENDING_UPLOAD",  # falta el archivo de entrada
+}
+
+# NO SON UNA FALLA: el trabajo no corrio (todavia, o nunca). Antes frenaban
+# igual, y ahi estaba el problema: el sabado 2026-08-15 `captainship_drafts`
+# figuraba MISSED_NOT_READY y su review PENDING **con los 12 borradores armados
+# igual** -- el agente de las 07:15 los arma si la cadena de la manana no los
+# dejo. La anotacion del orquestador decia "no corrio"; el entregable estaba
+# entero. Para la propia pierna del reporte eso ya no frena: manda el
+# ENTREGABLE, que es lo que Eve mira. Aguas arriba si frenan, porque un modulo
+# de metricas que nunca llego es contenido que le falta al correo.
+NOT_RUN = {"PENDING", "STILL_TRYING", "MISSED_NOT_READY", SKIPPED}
 
 
 def is_weekend(today: Optional[dt.date] = None) -> bool:
@@ -132,47 +157,102 @@ def _scheduled_today(today: dt.date) -> Set[str]:
         return set()
 
 
+def _resolve_ids(ids: Sequence[str]) -> Set[str]:
+    """Los ids tal cual Y con guion bajo. Un gate conoce su reporte por el id de
+    la TARJETA del Hub (`country-sales-board-email`) y el orquestador por el del
+    schedule (`country_sales_board_email`) - mismo trabajo, distinto guion, igual
+    que hace `dependency_closure.resolve`."""
+    out: Set[str] = set()
+    for i in ids:
+        out.add(i)
+        out.add(i.replace("-", "_"))
+    return out
+
+
 def day_is_clean(report_ids: Sequence[str],
-                 today: Optional[dt.date] = None) -> Tuple[bool, str]:
-    """¿Puede este correo salir sin que nadie lo mire? (ok, motivo)."""
+                 today: Optional[dt.date] = None,
+                 *,
+                 own_ids: Optional[Sequence[str]] = None,
+                 verify: Optional[Callable[[], Tuple[bool, str]]] = None) -> Tuple[bool, str]:
+    """Puede este correo salir sin que nadie lo mire? (ok, motivo).
+
+    La regla, en el orden en que se pregunta (Eve 2026-08-21):
+
+      1. Una FALLA REAL en cualquier parte de la cadena frena. Es la unica
+         condicion que Eve pidio explicitamente, y la que hizo lo correcto el
+         sabado 8/15: `captainship_cancel_rate` estaba FAILED y ese modulo
+         alimenta los drafts.
+      2. Aguas ARRIBA (todo lo que le da datos al correo) se sigue exigiendo
+         DONE. Un modulo de metricas que hoy tocaba y nunca llego es una seccion
+         que le falta al correo, aunque nada haya "fallado".
+      3. La PROPIA pierna del reporte (`own_ids`) ya no se juzga por su estado
+         sino por el ENTREGABLE, via `verify()`. El orquestador puede no haberla
+         corrido y el entregable existir igual -- es exactamente lo que pasa con
+         los drafts de captainship, que arma el agente de las 07:15.
+
+    `verify` devuelve (ok, motivo) y la escribe cada gate, porque solo el gate
+    sabe que es "completo" para SU correo. Sin `verify`, la pierna propia vuelve
+    a exigir DONE: un gate que no sepa mirar su entregable no se relaja solo.
+    """
     today = today or dt.datetime.now(CENTRAL).date()
     ds = _state(today)
     if ds is None:
-        return False, (f"no hay estado del día para {today.isoformat()} "
-                       f"(output/day_state/) — no puedo probar que el día esté "
-                       f"limpio, así que no se auto-envía")
+        # Sin estado no hay forma de mirar aguas arriba. Es el unico "falla
+        # cerrado" que queda, y no se activo ningun fin de semana hasta hoy.
+        return False, (f"no hay estado del dia para {today.isoformat()} "
+                       f"(output/day_state/) - no puedo revisar la cadena, "
+                       f"asi que no se auto-envia")
     reports = ds.get("reports") or {}
     chain = dependency_closure(report_ids)
+    own = _resolve_ids(own_ids if own_ids is not None else report_ids)
+    upstream = [r for r in chain if r not in own]
 
-    # Una dependencia que HOY no corre no puede ensuciar el día. El correo del
-    # Org board depende de all_campaigns_board, que no corre todos los días: sin
-    # esto, su SKIPPED (o su ausencia del estado) bloquearía el auto-envío todos
-    # los domingos, para siempre. Se exige registro sólo de lo que hoy tocaba.
-    due = _scheduled_today(today)
-    missing = sorted(r for r in chain if r not in reports and r in due)
-    if missing:
-        return False, (f"hoy tocaba {', '.join(missing)} y el estado del día no "
-                       f"lo registra — sin rastro no hay limpieza que probar")
-    checked = [r for r in chain if r in reports
-               and reports[r].get("status") != "SKIPPED"]
-    if not checked:
-        return False, ("ninguno de los jobs de este reporte figura corrido hoy — "
-                       "no se auto-envía")
-    not_done = sorted(f"{r} ({reports[r].get('status')})"
-                      for r in checked if reports[r].get("status") != DONE)
-    if not_done:
-        return False, f"no está todo en DONE: {', '.join(not_done)}"
-    chain = checked
+    # ---- 1. una falla de verdad, este donde este -----------------------------
+    broken = sorted(f"{r} ({reports[r].get('status')})" for r in chain
+                    if (reports.get(r) or {}).get("status") in HARD_FAIL)
+    if broken:
+        return False, f"fallo la corrida de: {', '.join(broken)}"
     alerted = sorted(set(chain) & set(ds.get("failure_alerts_sent") or []))
     if alerted:
-        return False, (f"hoy ya salió una alerta de falla por "
+        return False, (f"hoy ya salio una alerta de falla por "
                        f"{', '.join(alerted)}")
-    return True, (f"día limpio: {len(chain)} job(s) en DONE, sin alertas "
+
+    # ---- 2. aguas arriba: sigue haciendo falta DONE --------------------------
+    # Una dependencia que HOY no corre no puede ensuciar el dia (el correo del
+    # Org board depende de all_campaigns_board, que no corre todos los dias).
+    due = _scheduled_today(today)
+    missing = sorted(r for r in upstream if r not in reports and r in due)
+    if missing:
+        return False, (f"hoy tocaba {', '.join(missing)} y el estado del dia no "
+                       f"lo registra - sin rastro no hay limpieza que probar")
+    pending_up = sorted(f"{r} ({reports[r].get('status')})" for r in upstream
+                        if r in reports
+                        and reports[r].get("status") not in (DONE, SKIPPED))
+    if pending_up:
+        return False, (f"le falta contenido: {', '.join(pending_up)} no llego a "
+                       f"DONE y alimenta este correo")
+
+    # ---- 3. la pierna propia: manda el entregable ----------------------------
+    if verify is not None:
+        ok, why = verify()
+        if not ok:
+            return False, f"el reporte no esta completo: {why}"
+        return True, f"dia sin fallas y {why}"
+
+    own_bad = sorted(f"{r} ({reports[r].get('status')})" for r in own
+                     if r in reports
+                     and reports[r].get("status") not in (DONE, SKIPPED))
+    if own_bad:
+        return False, (f"no esta todo en DONE: {', '.join(own_bad)} "
+                       f"(este gate no sabe revisar su entregable)")
+    return True, (f"dia limpio: {len(chain)} job(s) sin fallas "
                   f"({', '.join(sorted(chain))})")
 
 
 def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
-                 *, enabled: bool = True) -> Tuple[bool, str]:
+                 *, enabled: bool = True,
+                 own_ids: Optional[Sequence[str]] = None,
+                 verify: Optional[Callable[[], Tuple[bool, str]]] = None) -> Tuple[bool, str]:
     """¿Se libera solo? (ok, motivo). El motivo se imprime SIEMPRE — un día que
     no se auto-envía tiene que decir por qué, en el log y en el hilo."""
     today = today or dt.datetime.now(CENTRAL).date()
@@ -181,7 +261,8 @@ def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
     if not is_weekend(today):
         return False, (f"{today.isoformat()} es "
                        f"{today.strftime('%A').lower()}: día hábil, el ✅ manda")
-    ok, why = day_is_clean(report_ids, today)
+    ok, why = day_is_clean(report_ids, today, own_ids=own_ids,
+                           verify=verify)
     if not ok:
         return False, f"fin de semana, pero {why}"
     return True, f"fin de semana sin revisores y {why}"

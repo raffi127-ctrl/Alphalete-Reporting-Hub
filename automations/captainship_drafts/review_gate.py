@@ -197,6 +197,71 @@ def preview_emls(today: dt.date) -> list[Tuple[str, Path]]:
             for cap in config.CAPTAINS]
 
 
+def previews_complete(today: dt.date) -> Tuple[bool, str]:
+    """Are the twelve reports actually READY TO MAIL? (ok, motivo).
+
+    This is what the weekend auto-send asks instead of "did the orchestrator
+    mark the job DONE" (Eve 2026-08-21: "se tienen que enviar solos, a no ser
+    que presenten una falla en la corrida directamente -- por ej que algun
+    reporte de los captainship drafts no se haya completado o no se vea en el
+    correo"). The orchestrator's bookkeeping is not the deliverable: on Sat
+    2026-08-15 `captainship_drafts` read MISSED_NOT_READY with all twelve
+    previews sitting on disk, because the 07:15 post agent builds them when the
+    morning chain has not. Asking the .eml files is asking the thing Eve is
+    actually describing.
+
+    Checked, per captain, on the .eml the send would mail (not the .html the PDF
+    is printed from):
+
+      * it exists and is not empty          -> "no se completo"
+      * it has an HTML body                 -> there is a mail to look at
+      * it carries inline images and every  -> "no se ve en el correo": this is
+        cid: the HTML points at resolves       the exact shape that made Gmail
+                                               render broken boxes before.
+
+    What this does NOT prove is that every SECTION made it in - a captain whose
+    section 2 was skipped still produces a valid, smaller email. That case is
+    caught one step earlier, by the metric module's own FAILED/INCOMPLETE status
+    in the day state, which weekend_release treats as a hard stop.
+    """
+    import re as _re
+    from email import policy as _policy
+    from email.parser import BytesParser as _BytesParser
+
+    want = len(config.CAPTAINS)
+    missing, broken = [], []
+    for key, path in preview_emls(today):
+        if not path.exists() or path.stat().st_size == 0:
+            missing.append(key)
+            continue
+        try:
+            msg = _BytesParser(policy=_policy.default).parsebytes(path.read_bytes())
+            html, cids = None, []
+            for part in msg.walk():
+                if part.get_content_type() == "text/html" and html is None:
+                    html = part.get_content()
+                if part.get_content_type().startswith("image/"):
+                    cids.append((part.get("Content-ID") or "").strip()[1:-1])
+            if not html:
+                broken.append(f"{key} (sin cuerpo HTML)")
+                continue
+            refs = _re.findall(r'src="cid:([^"]+)"', html)
+            if not cids:
+                broken.append(f"{key} (sin imagenes)")
+            elif [r for r in refs if r not in cids]:
+                broken.append(f"{key} (imagenes rotas: "
+                              f"{len([r for r in refs if r not in cids])} cid sin parte)")
+        except Exception as e:  # noqa: BLE001 - un .eml ilegible ES el problema
+            broken.append(f"{key} ({type(e).__name__})")
+
+    if missing:
+        return False, (f"faltan {len(missing)} de {want} borradores: "
+                       f"{', '.join(missing)}")
+    if broken:
+        return False, f"borradores con problemas: {', '.join(broken)}"
+    return True, f"los {want} borradores estan completos y con las imagenes bien"
+
+
 def eml_digest(today: dt.date) -> str:
     """Fingerprint of the day's .eml SET — what was reviewed, file for file.
 
@@ -777,8 +842,16 @@ def main(argv=None) -> int:
             # waiting for a human (Eve 2026-08-12). This gate matters most here:
             # a captainship day can exit 0 with a section quietly skipped, and
             # that shows up as its own job never reaching DONE.
+            # own_ids = LA PIERNA PROPIA de este reporte. Su estado ya no
+            # decide: lo decide `previews_complete`, que mira los .eml. El
+            # sabado 8/15 estos dos figuraban MISSED_NOT_READY con los doce
+            # borradores armados, y eso freno un dia que no tenia nada malo.
+            # Todo lo que esta AGUAS ARRIBA (los 8 modulos de metricas) sigue
+            # necesitando DONE, porque es contenido del correo.
             ok, why = wr.auto_release([REPORT_ID], today,
-                                      enabled=not args.no_auto)
+                                      enabled=not args.no_auto,
+                                      own_ids=[REPORT_ID, "captainship_drafts"],
+                                      verify=lambda: previews_complete(today))
             print(f"  weekend auto-send: {why}", flush=True)
             if not ok:
                 msg = _find_post(today, args.channel)
