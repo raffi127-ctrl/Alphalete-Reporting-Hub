@@ -77,9 +77,11 @@ else
     bold "[2/7] Apple's Command Line Tools already installed ✓"
 fi
 
-# ----- Never sleep (pmset works everywhere sudo does)
+# ----- Never sleep (pmset works everywhere sudo does). disablesleep 1 is
+# the hard switch — timers alone left Lucy 3 with 'sleep NOT prevented'
+# on the diag (2026-08-21).
 bold "[3/7] Disabling sleep"
-if ! sudo pmset -a sleep 0 displaysleep 0 disksleep 0 womp 1; then
+if ! sudo pmset -a sleep 0 displaysleep 0 disksleep 0 womp 1 disablesleep 1; then
     MANUAL+=("System Settings → Energy → turn off 'Put hard disks to sleep' / set sleep to Never")
 fi
 
