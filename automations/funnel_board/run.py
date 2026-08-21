@@ -307,6 +307,17 @@ def main():
     holding = False
     if not a.dry_run:
         if not acquire_lock():
+            # SAY SO. This used to `return 0` in silence, which is
+            # indistinguishable from a clean run: on 2026-08-20 a killed backfill
+            # left the lock behind and six consecutive batches "succeeded" while
+            # doing nothing at all. A skip is a non-event, not a success.
+            try:
+                age = (dt.datetime.now().timestamp() - LOCK.stat().st_mtime) / 60.0
+                extra = " (held %.0f min; auto-breaks at %d)" % (age, STALE_MIN)
+            except OSError:
+                extra = ""
+            log("SKIPPED — another run holds %s%s. Nothing was pulled or written."
+                % (LOCK, extra))
             return 0
         holding = True
         atexit.register(release_lock)

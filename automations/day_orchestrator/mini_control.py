@@ -4432,6 +4432,31 @@ def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     return ok, res[:900]
 
 
+def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
+    """Clear a stale funnel_board run lock left by a killed run.
+
+    run.py takes automations/funnel_board/state/run.lock and releases it via
+    atexit — which never fires when the poller's timeout SIGKILLs a long
+    backfill. The lock then blocks every later run for STALE_MIN (90) minutes,
+    and those runs exit 0, so the report looks healthy while doing nothing.
+
+    Reports the lock's age and removes it. Refuses if a funnel_board process is
+    actually alive, so this can't be used to break a lock that is doing its job."""
+    import shutil, time
+    lock = REPO_ROOT / "automations" / "funnel_board" / "state" / "run.lock"
+    if not lock.exists():
+        return True, "no lock present — nothing to clear"
+    alive = subprocess.run(["pgrep", "-f", "automations.funnel_board.run"],
+                           capture_output=True, text=True).stdout.strip()
+    age = (time.time() - lock.stat().st_mtime) / 60.0
+    if alive:
+        return False, ("lock is %.0f min old but funnel_board IS running (pid %s) "
+                       "— refusing to break a live lock"
+                       % (age, alive.replace("\n", ",")))
+    shutil.rmtree(lock, ignore_errors=True)
+    return not lock.exists(), "cleared a %.0f min old lock (no funnel_board running)" % age
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -4652,6 +4677,7 @@ ACTIONS = {
     "git_push_check": _action_git_push_check,
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
     "appstream_whoami": _action_appstream_whoami,
+    "funnel_board_unlock": _action_funnel_board_unlock,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
