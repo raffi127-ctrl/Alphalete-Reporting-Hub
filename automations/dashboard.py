@@ -7450,6 +7450,29 @@ if st.session_state.view == "home":
     # nothing at all when everything is green — no empty section.
     _now = dt.datetime.now()
     _statuses = _week_run_statuses([today])
+    # A "4 AM flow" card that hasn't run yet is only stuck if the FLOW is
+    # stuck. The flow runs in sequence, so on a delayed morning (2026-08-21:
+    # every AppStream session dead until the 7:26 re-seed) the whole back
+    # half of the sequence is unrun for hours while the flow is perfectly
+    # alive — and flagging each card individually painted a wall of false
+    # alarms (Megan). The flow counts as alive while any report is mid-run
+    # or finished within the last 45 minutes; queued flow cards are hidden
+    # until it goes quiet without having reached them.
+    _flow_alive = False
+    try:
+        for _ar in _hub_activity_rows():
+            _ts = _parse_hub_ts(_ar.get("Ended At") or _ar.get("Started At"))
+            if not _ts or _ts.date() != today:
+                continue
+            if str(_ar.get("Status", "")).lower() == "started" \
+                    and not _ar.get("Ended At"):
+                _flow_alive = True
+                break
+            if (_now - _ts) <= dt.timedelta(minutes=45):
+                _flow_alive = True
+                break
+    except Exception:
+        pass
     _attention = []
     for r in AUTOMATED_REPORTS:
         if not _is_due_today(r, today) or r.get("hide_schedule"):
@@ -7464,6 +7487,9 @@ if st.session_state.view == "home":
         # time plus its own estimated runtime plus a 60-minute grace, so a
         # long 4am batch mid-flight doesn't false-alarm.
         _sched = r.get("schedule") or {}
+        _tl = str(_sched.get("time") or "").lower()
+        if "flow" in _tl and _flow_alive:
+            continue    # still queued behind a live flow — not stuck
         _t = _sched_time_lenient(_sched.get("time") or "") or dt.time(8, 0)
         _late_after = dt.datetime.combine(today, _t) + dt.timedelta(
             minutes=int(_sched.get("estimated_minutes") or 0) + 60)
