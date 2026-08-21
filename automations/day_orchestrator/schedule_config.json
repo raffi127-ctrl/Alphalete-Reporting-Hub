@@ -6912,6 +6912,25 @@
       "_order_note": "4.9 (was 47 in the 2026-08-20 master sequence): Megan 2026-08-21 \u2014 AppStream is the first source ready in the morning while Tableau lags, so AppStream reports run up front with daily_focus/applicant_sync (orders 1-4), never behind the Tableau waves. A normal pass is ~3 min, so the early slot costs the flow nothing.",
       "timeout_minutes": 180,
       "_note_timeout": "180, not the 45-minute default. A normal pass is ~3 min for the current week; this ceiling exists for BACKFILLS (--weeks N), where 34 weeks across the slowest offices (Rafael 11280 / Khalil 11901 wait 240s per render) runs well past 45 min. On 2026-08-20 the 45-minute kill also left state/run.lock behind, and every later run then skipped for STALE_MIN minutes \u2014 so a too-short timeout did not just lose one pass, it wedged the report. Lower this back to ~60 once the recovery backfill is done."
+    },
+    "tracker_auto_commit": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Manual trigger for the 03:15/17:30 launchd job (com.alphalete.tracker-auto-commit on Lucy 1): `lucy rerun tracker_auto_commit` runs the same auto-commit pass on demand \u2014 harmless when nothing is pending (prints 'Nothing to do', exit 0). Added 2026-08-21 so a run can be triggered/verified without waiting for the next clock slot; the module logs every run to Hub Activity under this same id.",
+      "display_name": "Tracker Auto Commit",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.tracker_onboarding.auto_commit"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "timeout_minutes": 10,
+      "verify": null
     }
   },
   "read_only_standalone": {
