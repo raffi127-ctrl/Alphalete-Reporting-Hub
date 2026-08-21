@@ -480,8 +480,16 @@ def _incident_key(report_id: str, kind: str) -> str:
     morning, once from each layer. Same prefix + subject()'s finding namespace =
     one thread, whichever layer gets there first, and whichever id spelling it
     uses (this side has the dashed manifest id, notify.py the underscore
-    registry one; subject() canonicalises both)."""
-    return "{}-{}".format("finding" if kind == "finding" else "drop", report_id)
+    registry one; subject() canonicalises both).
+
+    `unfilled_icd` is the same shape one kind over — the run FILLED, one owner
+    had no number — and notify.py reports those very ICDs as `finding-<id>`
+    too. Keyed as `drop-` it sat in the outage namespace and 2026-08-21 the
+    captainship cancel rate said "2 ICDs didn't fill" twice in one minute,
+    once from each layer. Both nothing-failed kinds belong to the finding
+    family."""
+    return "{}-{}".format(
+        "finding" if kind in ("finding", "unfilled_icd") else "drop", report_id)
 
 
 def resolved(report_id: str, *, dry_run: bool = False) -> bool:

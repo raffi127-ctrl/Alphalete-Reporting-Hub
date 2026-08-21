@@ -889,7 +889,18 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
               f"{str(e)[:60]})", flush=True)
         return None
 
+    # The scan below may run on a history snapshot cached EARLIER in this
+    # process (the orchestrator resolves other reports all morning), and a
+    # sibling witness that posted seconds ago is invisible in it — 2026-08-21
+    # the vantura audit's own alert (4:01:31) and the orchestrator's finding
+    # (4:01:34) became two posts that way. So a cached "nothing open" is not
+    # allowed to open a post: look once more at the channel as it is NOW.
+    # Costs one fetch, only on the path that was about to double-post.
+    had_cache = channel in _HISTORY_CACHE
     inc = find(key, channel=channel, client=client, day=day)
+    if inc is None and had_cache:
+        _forget_history(channel)
+        inc = find(key, channel=channel, client=client, day=day)
 
     # A thread from a PREVIOUS day is rolled over: one line saying where it went,
     # and today opens a fresh post (see MAX_AGE_DAYS).

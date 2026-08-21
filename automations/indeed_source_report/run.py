@@ -25,7 +25,14 @@ from .offices import OFFICES, month_window
 # publish its runs, or silence and success look identical.
 CARD_ID = "indeed-source-report"
 CARD_NAME = "Indeed Ad Performance (Source Report)"
-INCIDENT_KEY = "indeed-source-report"
+# The `standalone-` family prefix matters: the mini's watcher files this
+# report's misses as `standalone-indeed-source-report` (notify.py builds
+# `standalone-<registry id>`), and a bare un-prefixed key lives outside every
+# incident family — on 2026-08-21 the 4:02 crash post and the watcher's 4:08
+# "didn't run clean" post couldn't find each other and the channel got both.
+# Same key = one thread, whichever side speaks first, and a clean run here
+# closes the watcher's post too.
+INCIDENT_KEY = "standalone-indeed-source-report"
 
 
 def _publish_outcome(status, headline, details, *, started_at=None,

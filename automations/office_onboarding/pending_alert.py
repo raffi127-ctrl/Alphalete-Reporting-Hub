@@ -66,13 +66,40 @@ def pending() -> Tuple[List[dict], List[dict]]:
     return ready, blocked
 
 
+def _log_run(started_at) -> None:
+    """One Hub Activity row per run — even (especially) the quiet ones.
+
+    Standing rule: LaunchAgent reports publish to the Hub. Until 2026-08-21 this
+    module never logged, so after the check moved off the 4am pass to the hourly
+    agent (2026-08-19) the Activity log went silent, machine_digest kept judging
+    it by the old mini-4am baseline, and the morning of 2026-08-21 opened a
+    "didn't run today" incident for an agent that was installed and healthy.
+    A quiet run logging `success` is exactly what tells the watcher it's alive.
+    Skipped under the orchestrator (HUB_REPORT_ID set): the pill row is its job."""
+    import os
+    if os.environ.get("HUB_REPORT_ID"):
+        return
+    try:
+        from automations.shared import hub_activity
+        hub_activity.log_completed("enrollment_pending_check",
+                                   "Pending enrollments check",
+                                   status="success", started_at=started_at)
+    except Exception as e:  # noqa: BLE001 — reporting never sinks the check
+        print("[pending_alert] activity log skipped ({}: {})".format(
+            type(e).__name__, e), file=sys.stderr)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="office_onboarding.pending_alert")
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would be posted, don't post")
     args = ap.parse_args(argv)
 
+    import datetime as dt
+    started_at = dt.datetime.now()
     ready, blocked = pending()
+    if not args.dry_run:
+        _log_run(started_at)
     if not ready and not blocked:
         print("[pending_alert] no pending enrollments.")
         return 0
