@@ -110,9 +110,17 @@ def main(argv=None):
         # LAST line on purpose: the mini-control poller truncates a result to
         # ~450 chars and keeps the TAIL, so the answer has to be the final line
         # or it is exactly what gets cut off.
-        print("SUMMARY primary=%s alt=%s has_alt=%s"
-              % (blob.get("appstream_username") or "none",
+        # Length only — never the password, never a hash of it. Enough to tell
+        # "they gave this machine a different credential" from "same credential,
+        # different behaviour", which is the question that keeps coming up.
+        try:
+            plen = len(creds.appstream_password())
+        except Exception:
+            plen = 0
+        print("SUMMARY primary=%s pw_len=%d alt=%s alt_pw_len=%d has_alt=%s"
+              % (blob.get("appstream_username") or "none", plen,
                  alt_blob.get("appstream_alt_username") or "none",
+                 len(alt_blob.get("appstream_alt_password") or ""),
                  creds.has_appstream_alt()))
         return 0
 
