@@ -1694,7 +1694,50 @@ if __name__ == "__main__":
                          "into THIS machine's alternate-account browser "
                          "profiles. Normally invoked by the mini-control action "
                          "set_appstream_alt_state, not by hand.")
+    ap.add_argument("--appstream-push-primary", nargs="?", const="Lucy 1",
+                    metavar="MACHINE", default=None,
+                    help="Push THIS machine's saved AppStream session to another "
+                         "machine as its PRIMARY session (default: Lucy 1, whose "
+                         "primary account is rcaptain). Run right after "
+                         "--appstream-login.")
+    ap.add_argument("--appstream-push-fleet", action="store_true",
+                    help="One shot after --appstream-login: push the saved "
+                         "session everywhere it belongs — Lucy 1 primary + "
+                         "Lucy 2 alternate. This is the daily re-seed's second "
+                         "half; the login is the first.")
     args = ap.parse_args()
+    if args.appstream_push_primary is not None or args.appstream_push_fleet:
+        import sys as _sys
+        if not APPSTREAM_STORAGE_STATE.exists():
+            print(f"❌ no saved session ({APPSTREAM_STORAGE_STATE.name} missing) "
+                  "— run --appstream-login first")
+            _sys.exit(1)
+        _blob = APPSTREAM_STORAGE_STATE.read_text()
+        try:
+            _n_rqst = sum(1 for c in json.loads(_blob).get("cookies", [])
+                          if c.get("name", "").startswith("rqst_"))
+        except Exception as _e:
+            print(f"❌ saved session unreadable: {_e}")
+            _sys.exit(1)
+        if _n_rqst == 0:
+            print("❌ saved session has no rqst_ token — re-run --appstream-login")
+            _sys.exit(1)
+        from automations.day_orchestrator import mini_control as _mc
+        # Where each machine wants the rcaptain session. Lucy 1's PRIMARY
+        # account is rcaptain; Lucy 2 runs CarlosNLR primary with rcaptain as
+        # the ALTERNATE. Extend here when Lucy 3 exists.
+        if args.appstream_push_fleet:
+            _dests = [("Lucy 1", "set_appstream_state"),
+                      ("Lucy 2", "set_appstream_alt_state")]
+        else:
+            _dests = [(args.appstream_push_primary, "set_appstream_state")]
+        for _m, _act in _dests:
+            _mc.enqueue(_act, _blob, by="appstream-push", machine=_m)
+            print(f"✅ queued → {_m} as {_act}")
+        print("Each machine installs + verifies on its own and blanks the "
+              "session from the queue when done. Check with the machine's "
+              "Mini Control status.")
+        _sys.exit(0)
     if args.appstream_push_alt is not None:
         import sys as _sys
         _machine = args.appstream_push_alt

@@ -139,8 +139,15 @@ def _next_4am(now: dt.datetime | None = None) -> dt.datetime:
 
 
 def _reseed_cmd() -> str:
-    return ("cd /Users/alphalete/recruiting-report && PYTHONPATH=. .venv/bin/python "
-            "-m automations.shared.tableau_patchright --appstream-login")
+    # Since AppStream's 2026-08-20 release the login form has an interactive
+    # human-check, so the re-seed happens on WHATEVER machine a human is at
+    # (laptop is fine) — the second command then pushes the fresh session to
+    # every runner (Lucy 1 primary + Lucy 2 alternate) via the control queue.
+    return ("# run from your repo folder, on any machine you're at:\n"
+            "PYTHONPATH=. .venv/bin/python -m automations.shared.tableau_patchright "
+            "--appstream-login\n"
+            "PYTHONPATH=. .venv/bin/python -m automations.shared.tableau_patchright "
+            "--appstream-push-fleet")
 
 
 def _ov_reseed_cmd() -> str:
@@ -206,7 +213,7 @@ def _reseed_alert_text(stale, when: str) -> str:
     lines = [f"⚠️ *Session re-seed needed* {when}."]
     for stt, reseed in stale:
         lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
-                     f"  Fix on the mini (clear the check once):\n```{reseed}```")
+                     f"  Fix from any machine you're at (clear the check once):\n```{reseed}```")
     lines.append("\nThe moment it's healthy I'll auto-run what I can — "
                  "you don't have to touch anything else.")
     return "\n".join(lines)
