@@ -314,7 +314,8 @@ def _done_view() -> None:
     st.success(f"Thanks, {first}! We got your request for "
                f"**{n_ch} channel{'s' if n_ch != 1 else ''}**.")
     for cname, labels in (d.get("summary") or []):
-        st.markdown(f"**{cname}** — {', '.join(labels) if labels else '(no metrics)'}")
+        st.markdown(f"**{cname}** will get, every morning:")
+        st.markdown("\n".join(f"- {l}" for l in labels) or "- (no metrics)")
     st.markdown(
         "\nHere's what happens next:\n"
         "1. Our team sets up your office's report sheet and wires it in.\n"
@@ -328,11 +329,6 @@ def _done_view() -> None:
         st.caption("(Saved — our team will pick it up.)")
         st.caption("⚙️ team note: notification didn't send — {}".format(
             d["alerted"][1]))
-    if st.button("Send another request"):
-        for k in list(st.session_state.keys()):
-            if isinstance(k, str) and (k.startswith("chan_") or k in ("_chan_count", "_req_done")):
-                del st.session_state[k]
-        st.rerun()
 
 
 # --------------------------------------------------------------------------
