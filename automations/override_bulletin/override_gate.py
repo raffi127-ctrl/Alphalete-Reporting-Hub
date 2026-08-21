@@ -517,6 +517,32 @@ def main(argv=None) -> int:
         # the approver, and a checkmark on it would publish the wrong week. The
         # fill agent (override_bulletin_fri.sh) rolls + fills earlier in the
         # morning; the pass after it picks this up. Exits 0 — a correct hold.
+        # ALREADY POSTED? THEN DO NOTHING — and find that out BEFORE building.
+        #
+        # post_review is idempotent, but it only discovers "already posted"
+        # AFTER the caller has rendered the page, printed the PDF and pushed it
+        # to Drive. So every Friday pass past the first one paid the full build
+        # to throw it away, and a pass can outlast its own 25-minute slot.
+        # launchd will not start a second copy of a job that is still running,
+        # so those overlapping firings are dropped silently — no log, nothing in
+        # the launchd stdout, because the wrapper's own pgrep guard never even
+        # gets to run.
+        #
+        # That is what happened on Fri 2026-08-21: the 10:55 pass was still
+        # going at 11:20 and 11:45, both were dropped, and Eve's checkmark
+        # (~11:15) sat unread until 12:10. The send had to be fired by hand.
+        # The whole build was for a link that had been up since 10:24.
+        #
+        # One cheap read of the week header is all --post needs to know it has
+        # nothing to do. --repost still rebuilds: replacing the message is the
+        # one case where the PDF must be refreshed too.
+        if not args.repost:
+            wk_now = week_label(tab=args.tab)
+            if wk_now and _find_post(wk_now, args.channel):
+                print(f"— {_title(wk_now)} is already posted; nothing to build "
+                      f"(use --refresh to update the PDF, --repost to replace "
+                      f"the message)", flush=True)
+                return 0
         html_path, wk, gaps = build_preview(args.tab)
         from automations.recruiting_report import fill as _fill
         ws = _fill._client().open_by_key(F.WORKBOOK_ID).worksheet(args.tab)
