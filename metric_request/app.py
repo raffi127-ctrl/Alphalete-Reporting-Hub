@@ -103,21 +103,32 @@ def form_view() -> None:
     # ---- 1. Campaign -------------------------------------------------------
     st.divider()
     st.markdown("### 1. What campaign are you in?")
+    # No default on purpose (Megan 2026-08-20): the owner must actually read
+    # and pick — the metric menu doesn't exist until they do.
     camp_label = st.radio(
-        "Choose one:", [c[1] for c in S.CAMPAIGNS],
+        "Choose one:", [c[1] for c in S.CAMPAIGNS], index=None,
         help="Your campaign decides which metrics exist for your office — "
              "you'll only be offered the ones we can actually pull for you.")
-    campaign = next(c[0] for c in S.CAMPAIGNS if c[1] == camp_label)
-    family = S.CAMPAIGNS_BY_KEY[campaign][2]
-
-    fam_reports = S.campaign_reports(campaign)
+    campaign = next((c[0] for c in S.CAMPAIGNS if c[1] == camp_label), None)
+    family = S.CAMPAIGNS_BY_KEY[campaign][2] if campaign else ""
+    fam_reports = S.campaign_reports(campaign) if campaign else []
 
     # ---- 2. Who you are ---------------------------------------------------
     st.divider()
     st.markdown("### 2. About your office")
+    requested_by = st.text_input(
+        "Your name (what you go by) *",
+        help="Just what we should call you — the official OwnerVille "
+             "spelling goes in the next box.")
     owner = st.text_input(
-        "Your name (the office owner) *",
-        help="However your name normally appears on our reports.")
+        "ICD Name as it appears in OwnerVille *",
+        help="JUST your name, spelled the way OwnerVille spells it — no "
+             "company name.")
+    ov_account = st.text_input(
+        "OwnerVille account number *",
+        help="The number on your OwnerVille account (e.g. 22583). This is "
+             "how we match your office exactly — names vary, the number "
+             "doesn't.")
     c1, c2 = st.columns(2)
     with c1:
         business = st.text_input("Company / office name *",
@@ -132,6 +143,10 @@ def form_view() -> None:
 
     # ---- 3. Channels & what goes in each ----------------------------------
     st.divider()
+    if not campaign:
+        st.info("👆 Pick your campaign in step 1 to see the metrics we can "
+                "post for you.")
+        return
     st.markdown("### 3. Where should we post — and what goes where?")
     st.caption("Add a channel and check the metrics you want in THAT channel. Most "
                "offices use one channel for everything — but you can add more and "
@@ -162,12 +177,6 @@ def form_view() -> None:
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
                                        report_keys=keys_here))
 
-    with st.expander("Optional: Ownerville account number"):
-        ov_account = st.text_input(
-            "Ownerville account number (optional)",
-            help="If you know your Ownerville account number, it helps us match "
-                 "your office. Leave blank if you're not sure.")
-
     # ---- build + submit ---------------------------------------------------
     st.divider()
     named_plans = [p for p in plans if p.channel_name]
@@ -188,14 +197,19 @@ def form_view() -> None:
         reports=enrolled, campaign=campaign)
 
     if st.button("📨 Send my request", type="primary"):
-        problems = S.validate_request(rec)
+        problems = ([] if requested_by.strip()
+                    else ["Please enter your name (what you go by)."])
+        if not ov_account.strip():
+            problems.append("Please enter your OwnerVille account number — "
+                            "it's how we match your office exactly.")
+        problems += S.validate_request(rec)
         if problems:
             st.error("Almost there — please fix these:")
             for p in problems:
                 st.markdown(f"- {p}")
             return
         rec.submitted_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        rec.submitted_by = rec.owner or "owner"
+        rec.submitted_by = requested_by.strip() or rec.owner or "owner"
         try:
             where = store.save_request(rec)
         except Exception as e:  # noqa: BLE001
