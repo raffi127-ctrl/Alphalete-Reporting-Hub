@@ -1446,6 +1446,32 @@ def appstream_direct_session(headless: bool = False,
             # Cloudflare Turnstile, so it stalls in unattended runs).
             user = username or creds.appstream_username()
             pwd  = password or creds.appstream_password()
+            # An explicit username override must NEVER silently ride a session
+            # some other account left in this profile: if the profile is already
+            # signed in, applicantstream.com shows no login form, the form-drive
+            # below is skipped, and the whole run proceeds as WHOEVER the
+            # profile was — which is exactly how Lucy 2's "rcaptain" verify
+            # actually ran as Carlos Hidalgo (2026-08-20). A marker file in the
+            # profile records who last form-logged-in here; on mismatch (or no
+            # marker) the cookies are cleared so the real form renders.
+            _acct_marker = Path(profile) / ".appstream_account"
+            if username:
+                try:
+                    _last = (_acct_marker.read_text().strip()
+                             if _acct_marker.exists() else "")
+                except Exception:
+                    _last = ""
+                if _last != username:
+                    try:
+                        ctx.clear_cookies()
+                        if verbose:
+                            print(f"-> profile last logged in as "
+                                  f"{_last or '<unknown>'} — cleared cookies to "
+                                  f"force a real {username} login", flush=True)
+                    except Exception as _e:
+                        if verbose:
+                            print(f"-> couldn't clear cookies ({_e}) — the "
+                                  "login may reuse the wrong account", flush=True)
             if verbose:
                 print("-> [allow_form_login] driving AppStream login form",
                       flush=True)
@@ -1455,6 +1481,10 @@ def appstream_direct_session(headless: bool = False,
             if (page.locator(_PASSWORD_SELECTOR).count() > 0
                     or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
                 _drive_login_form(page, verbose, username=user, password=pwd)
+                try:
+                    _acct_marker.write_text(user)
+                except Exception:
+                    pass
             elif verbose:
                 print("-> AppStream session reused from profile", flush=True)
             page.wait_for_timeout(3_000)
@@ -1462,14 +1492,18 @@ def appstream_direct_session(headless: bool = False,
             # same batch reuse it (fast) instead of each re-driving the login +
             # Cloudflare wait. Only save a real console session (carries an rqst_
             # cookie) — never clobber the last good export with a half-login.
+            # And NEVER when running as an explicit override account: saving an
+            # alternate login here would hand its identity to every primary
+            # report that reuses the shared state file.
             try:
-                _st = ctx.storage_state()
-                if sum(1 for c in _st.get("cookies", [])
-                       if c.get("name", "").startswith("rqst_")):
-                    APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
-                    if verbose:
-                        print("-> saved fresh AppStream session for reuse",
-                              flush=True)
+                if not username:
+                    _st = ctx.storage_state()
+                    if sum(1 for c in _st.get("cookies", [])
+                           if c.get("name", "").startswith("rqst_")):
+                        APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
+                        if verbose:
+                            print("-> saved fresh AppStream session for reuse",
+                                  flush=True)
             except Exception:
                 pass
             # The login lands on the HOME page (index.cfm), not the office
@@ -1481,7 +1515,23 @@ def appstream_direct_session(headless: bool = False,
                     if verbose:
                         print("-> login landed off the office switcher — hopping "
                               "to #searchMC via the fresh token", flush=True)
-                    _reuse_appstream_storage_state(ctx, page, verbose)
+                    if username:
+                        # Override-account login: hop via the CURRENT context's
+                        # just-minted rqst token. The shared storage-state file
+                        # belongs to the PRIMARY account — re-injecting it here
+                        # would silently flip the session back to that identity.
+                        for _tok in [c["name"][len("rqst_"):]
+                                     for c in ctx.cookies()
+                                     if c.get("name", "").startswith("rqst_")]:
+                            page.goto(f"{APPSTREAM_BASE}?rqst={_tok}&p=701",
+                                      wait_until="domcontentloaded")
+                            try:
+                                page.wait_for_selector("#searchMC", timeout=8_000)
+                                break
+                            except Exception:
+                                continue
+                    else:
+                        _reuse_appstream_storage_state(ctx, page, verbose)
             except Exception:
                 pass
             # Final guard: never yield a dead console. If #searchMC still isn't

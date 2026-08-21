@@ -49,9 +49,22 @@ def main(argv=None):
     ap.add_argument("--user", help="log in as this account instead of the "
                                    "configured one (needs --pass)")
     ap.add_argument("--pass", dest="pw", help="password for --user")
+    ap.add_argument("--alt", action="store_true",
+                    help="log in as the stored ALTERNATE account "
+                         "(set_appstream_alt_creds) — no password on the "
+                         "command line")
     a = ap.parse_args(argv)
 
     from automations.shared import creds
+
+    if a.alt:
+        # Resolve the second login from where set_appstream_alt_creds stored
+        # it, so a remote verify never has to put the password in a queue row.
+        if not creds.has_appstream_alt():
+            print("no alternate AppStream login on this machine — set one "
+                  "with the mini-control action set_appstream_alt_creds")
+            return 3
+        a.user, a.pw = creds.appstream_alt_username(), creds.appstream_alt_password()
     from automations.shared.tableau_patchright import (
         appstream_direct_session, APPSTREAM_STORAGE_STATE)
 
