@@ -203,13 +203,28 @@ def read_data(tab=None):
         if low == "total" or "credico" in low or not name:
             continue
         row = _mk_row(r, week_cols, year_cols, led_for(low))
-        # Keep an ICD unless they've had $0 for the last 4 weeks IN A ROW (Megan
+        # SHOW an ICD unless they've had $0 for the last 4 weeks IN A ROW (Megan
         # 2026-07-25). The old rule dropped anyone with $0 THIS week, which hid
         # people like Ryan McSpadden ($0 in 7.19 but active the weeks before);
-        # this keeps anyone with activity in the recent window and drops only
+        # this keeps anyone with activity in the recent window and hides only
         # those who've genuinely gone quiet.
-        if any((v or 0) > 0 for v in row["series"][:4]):
-            combined.append(row)
+        #
+        # HIDDEN, NOT DROPPED (Eve 2026-08-21). This is a rule about who gets a
+        # TABLE ROW, and it used to be applied by leaving the row out of
+        # `combined` entirely — which silently made it a rule about the YEAR
+        # TOTAL too, because build_html sums `combined` for the "Total 2026
+        # Overrides" headline. On WE 8.16.26 that headline read $4,943,354
+        # against the tab's own $4,988,926.23: five people who earned in 2026 and
+        # have since gone quiet (Zach Hogue, Ryan McSpadden, Rashad Reed, Jacob
+        # Dover, Valeria Tristan) were $45,565.99 of real override money that the
+        # org's year total simply did not count. Who we LIST and what we COUNT are
+        # different questions; the flag keeps them apart. `regular` copies the row
+        # dict, so it inherits the flag for free.
+        #
+        # This week's total is unaffected either way — a hidden row is hidden
+        # BECAUSE its last 4 weeks are $0, so it adds nothing to the week column.
+        row["hidden"] = not any((v or 0) > 0 for v in row["series"][:4])
+        combined.append(row)
     combined.sort(key=lambda x: (x["total"] or 0), reverse=True)
 
     # --- CAPTAINSHIP + PROGRAM: the sub-rows under each section-2 leader -------
@@ -334,7 +349,10 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
                    featured: set = frozenset()) -> str:
     """One branded section table: Leader · 2026 Total · last-N weeks · prior years.
     `years` is the subset of ('2025','2024','2023') this section carries.
-    Rows whose name is in `featured` (the top-10 shown as cards) are highlighted."""
+    Rows whose name is in `featured` (the top-10 shown as cards) are highlighted.
+    Rows flagged `hidden` (quiet for the last 4 weeks) are left out of the table —
+    the flag is a DISPLAY rule; the headline year total still counts them."""
+    rows = [r for r in rows if not r.get("hidden")]
     weeks = week_labels[:WOW_WEEKS]
     # `lastwk` is the weekly column that BUTTS the divider. Weekly figures are
     # right-aligned, so without extra room on this side the rule sat ~7px off the
@@ -395,7 +413,8 @@ def build_html(week_labels, combined, regular, captainship, program) -> str:
     # tables below; the featured 5 are highlighted there to tie back to the cards.
     # We still keep headshots for the whole roster so whoever lands in the top 5
     # any given week has a photo.
-    featured = sorted(combined, key=lambda x: (x["week"] or 0), reverse=True)[:5]
+    featured = sorted((r for r in combined if not r.get("hidden")),
+                      key=lambda x: (x["week"] or 0), reverse=True)[:5]
     featured_names = {r["name"] for r in featured}
     grid = "\n".join(_card(r, i + 1) for i, r in enumerate(featured))
     YRS = ["2025", "2024", "2023"]               # same 3 year cols so all line up
@@ -411,6 +430,9 @@ def build_html(week_labels, combined, regular, captainship, program) -> str:
                              YRS, lead_names)
     tbl_prog = _section_table("PROGRAM OVERRIDES", program, week_labels,
                               YRS, lead_names)
+    # The headline totals count EVERY org row, hidden ones included — see the
+    # `hidden` flag in read_data. These are the org's real 2026 and this-week
+    # numbers, and they have to tie out against the tab's own Total row.
     org_total = sum(r["total"] or 0 for r in combined)
     wk_total = sum(r["week"] or 0 for r in combined)
     return f"""<!doctype html><html><head><meta charset="utf-8">

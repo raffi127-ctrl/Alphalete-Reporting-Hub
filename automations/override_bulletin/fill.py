@@ -146,6 +146,12 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
 
     # Section 2 first — captain/special per captain — so section 1 can add them.
     cap_special_total = {}
+    zero_filled = []
+
+    def disp_of(k):
+        """Roster display name for a captain key, for the reported list."""
+        hit = roster.get(k)
+        return hit[2] if hit else k
     for key, rows in captains.items():
         cap = captain.get(key)
         # Raf's captain override comes from the Raf PNL, not the DD pull.
@@ -157,6 +163,29 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
             cap = _on_sheet(rows["captain"])
         if spc is None and rows.get("special"):
             spc = _on_sheet(rows["special"])
+        # ZERO-FILL THE CAPTAIN SUB-ROW, exactly like section 1 does below.
+        # The VA's hand-kept tab NEVER leaves a Captain Override cell blank — a
+        # captain who earned no bonus that week gets $0.00 (verified across the
+        # 10 newest columns of 'Org Overrides Ongoing Report': every captain,
+        # every week, has a number). We were leaving it blank whenever the DD
+        # pull carried no row for them, and a blank reads as "not sourced yet":
+        # on WE 8.16.26 that put a false "Jairo Ruiz — not sourced yet" gap on
+        # the review post for a captain whose real answer was zero.
+        #
+        # Only when the DD pull SUCCEEDED (it came back with other captains) —
+        # an empty pull means the source is down, and zeroing every captain then
+        # would publish six fake zeros. Rafael is excluded because his captain
+        # override comes from the Raf PNL, not this pull, so `captain` says
+        # nothing about whether HIS source answered.
+        #
+        # SPECIAL is deliberately NOT zero-filled: the VA leaves those blank when
+        # the captain has no special that week (Colten/Carlos are blank ~3 weeks
+        # in 4 — their special is a retail-PERIOD item), so a 0 there would be us
+        # inventing a number she does not write.
+        if (cap is None and rows.get("captain") and captain
+                and key != canon("Rafael Hidalgo", aliases)):
+            cap = 0.0
+            zero_filled.append(disp_of(key))
         if rows.get("captain") and cap is not None:
             section2[rows["captain"]] = cap
         if rows.get("special") and spc is not None:
@@ -180,6 +209,10 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
             unmatched.append(disp)
         total = (reg or 0) + cap_special_total.get(key, 0)
         section1[row] = round(total, 2)
+    # Same contract as the $0.00 above: a zero is written so the column matches
+    # the VA's, and the name is ALWAYS reported so a name mismatch can't hide in
+    # it. Suffixed so it reads differently from a missing ORG row.
+    unmatched.extend(f"{n} (captain override -> $0)" for n in zero_filled)
     return section1, section2, unmatched
 
 
