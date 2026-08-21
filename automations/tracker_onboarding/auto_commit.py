@@ -121,6 +121,33 @@ def heal_schedule(apply_mod) -> list:
 
 
 def main() -> int:
+    """_run + a Hub Activity row on every exit path.
+
+    Standing rule: LaunchAgent reports publish to the Hub. This job had never
+    logged a run, so its card sat on "no run logged" every single day — on
+    2026-08-21 the 03:15 run had provably happened (its commit was in git) while
+    the Hub said it hadn't run at all. The id must match the library card
+    (automations/uploaded/_shared/tracker_auto_commit.py)."""
+    import datetime as _dt
+    import os
+    started_at = _dt.datetime.now()
+    rc = 1
+    try:
+        rc = _run()
+        return rc
+    finally:
+        if not os.environ.get("HUB_REPORT_ID"):
+            try:
+                from automations.shared import hub_activity
+                hub_activity.log_completed(
+                    "tracker_auto_commit", "Tracker Auto Commit",
+                    status=("success" if rc == 0 else "failed"),
+                    started_at=started_at)
+            except Exception as e:                    # noqa: BLE001
+                print(f"(activity log skipped: {type(e).__name__}: {e})")
+
+
+def _run() -> int:
     blocked = []
 
     # --- tracker leg -----------------------------------------------------
