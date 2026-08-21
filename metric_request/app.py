@@ -275,7 +275,7 @@ def form_view() -> None:
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
-    if st.button("📨 Send my request", type="primary",
+    if st.button("📨 Send my sign-up to Megan", type="primary",
                  disabled=bool(missing)):
         problems = S.validate_request(rec)
         if problems:
@@ -300,6 +300,7 @@ def form_view() -> None:
             summary.append((p.channel_name, labels))
         st.session_state["_req_done"] = {
             "owner": rec.owner, "business": rec.business_name,
+            "goes_by": requested_by.strip(),
             "summary": summary, "where": where, "alerted": alerted}
         st.rerun()
 
@@ -307,7 +308,8 @@ def form_view() -> None:
 def _done_view() -> None:
     d = st.session_state["_req_done"]
     st.markdown("## ✅ Request sent!")
-    first = d["owner"].split()[0] if d["owner"] else "there"
+    goes_by = d.get("goes_by") or d.get("owner") or "there"
+    first = goes_by.split()[0]
     n_ch = len(d.get("summary") or [])
     st.success(f"Thanks, {first}! We got your request for "
                f"**{n_ch} channel{'s' if n_ch != 1 else ''}**.")
