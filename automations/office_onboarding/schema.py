@@ -165,16 +165,19 @@ def _tpl(gid: str) -> str:
 #      tab (Lucy OA Churn) and the 3 product churn-rate tabs. AIR is B2B only.
 #   report_key: [ {"tab": <template tab name>, "template": <copy link | "">} ]
 SHEET_TAB_TEMPLATES: "Dict[str, list]" = {
-    # --- D2D (no template tabs in the book yet — names only) ---
-    "churn_ni": [{"tab": "Local Office - New Internet Churn", "template": ""}],
-    "churn_wl": [{"tab": "Local Office - Wireless Churn",     "template": ""}],
-    "abp":      [{"tab": "Local Office - New Internet ABP%",  "template": ""}],
+    # --- D2D — the "Lucy …" tabs in the Master Metrics Templates workbook
+    # (the 2026-07-28 convention; apply auto-sets these names on every new
+    # office row, and the old "Local Office - …" names live only on the 7
+    # legacy hardcoded offices). Same physical tabs the B2B churns use.
+    "churn_ni": [{"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")}],
+    "churn_wl": [{"tab": "Lucy Wireless Churn", "template": _tpl("0")}],
+    "abp":      [{"tab": "Lucy New INT ABP%",   "template": ""}],
     # --- B2B (all in the Master Templates workbook) — one churn tab per product,
     # so an office only needs the tabs for the churn metrics it actually enrolls ---
     "b2b_churn_wireless": [{"tab": "Lucy Wireless Churn", "template": _tpl("0")}],
     "b2b_churn_int":      [{"tab": "Lucy New INT Churn",  "template": _tpl("1578352442")}],
     "b2b_churn_air":      [{"tab": "Lucy AIR Churn",      "template": _tpl("420276109")}],
-    "b2b_customer_churn": [{"tab": "Lucy OA Churn",       "template": _tpl("169198075")}],
+    "b2b_customer_churn": [{"tab": "LUCY CHURN",          "template": _tpl("169198075")}],
     "b2b_order_log_att": [{"tab": "Lucy At&t Order Log", "template": _tpl("1952579837")}],
     "b2b_order_log_box": [{"tab": "Lucy Box Order Log",  "template": _tpl("882492646")}],
 }

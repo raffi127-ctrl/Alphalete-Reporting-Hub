@@ -47,6 +47,7 @@ st.set_page_config(page_title="Alphalete Reporting by Lucy", page_icon="📊",
                    layout="centered")
 
 PREVIEW_DIR = Path(__file__).resolve().parent / "previews"
+SLACK_ID_IMG = Path(__file__).resolve().parent / "slack_id_help.png"
 
 
 def _preview_path(campaign: str, report_key: str) -> "Path | None":
@@ -189,6 +190,22 @@ def form_view() -> None:
             cname = st.text_input(
                 (f"Channel {i + 1}" if n_chan > 1 else "Channel") + " *",
                 key=f"chan_name_{i}", placeholder="#your-office-sales")
+            cid = st.text_input(
+                "Slack Channel ID *", placeholder="C0ABC12DE",
+                key=f"chan_id_{i}",
+                help="This is a CODE (letters + numbers) that starts with C — "
+                     "NOT the channel's name. To find it: in Slack, click the "
+                     "channel's name at the top of the screen, scroll to the "
+                     "very bottom of the pop-up, and copy the Channel ID "
+                     "shown there.")
+            if i == 0 and SLACK_ID_IMG.exists():
+                with st.expander("Where do I find my Channel ID?"):
+                    st.caption("In Slack, click the channel's name at the top "
+                               "of the screen, scroll to the bottom of the "
+                               "pop-up, and copy the Channel ID:")
+                    # 397 = half the source's 794px — pixel-perfect on retina
+                    # screens. Bigger = the browser upscales, it goes soft.
+                    st.image(str(SLACK_ID_IMG), width=397)
             st.caption("Metrics to post in this channel:")
             keys_here: list = []
             for rk in fam_reports:
@@ -205,7 +222,8 @@ def form_view() -> None:
                 if on:
                     keys_here.append(rk.key)
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
-                                       report_keys=keys_here))
+                                       report_keys=keys_here,
+                                       channel_id=cid.strip()))
 
     # ---- 4. Posting order (drag & drop) -----------------------------------
     st.divider()
@@ -242,7 +260,8 @@ def form_view() -> None:
         key=S.slug_from_owner(owner), owner=owner.strip(),
         knocks_office=owner.strip(),
         business_name=business.strip(), website=website.strip(),
-        channel_id="", channel_name=(channels[0] if channels else ""),
+        channel_id=(named_plans[0].channel_id if named_plans else ""),
+        channel_name=(channels[0] if channels else ""),
         sheet_id="", family=family, channels=channels,
         channel_plans=named_plans, ov_account=ov_account.strip(),
         owner_email=owner_email.strip(), pay_code="",
@@ -270,6 +289,8 @@ def form_view() -> None:
         tag = "" if len(plans) == 1 else f" (channel {i + 1})"
         if not p.channel_name:
             missing.append(f"Slack channel name{tag}")
+        if not p.channel_id:
+            missing.append(f"Slack Channel ID{tag}")
         if not p.report_keys:
             missing.append(f"at least one metric{tag}")
     if missing:

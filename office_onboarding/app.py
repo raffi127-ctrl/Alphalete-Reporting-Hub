@@ -205,11 +205,15 @@ def _seed_from_request(d: dict) -> None:
     """
     r = store.record_from_json(d)
     ss = st.session_state
-    ss["on_family"] = (_FAM_LABELS[0] if r.family == "d2d" else _FAM_LABELS[1])
+    _camp = r.campaign or ("fiber_d2d" if r.family == "d2d" else "b2b_att")
+    ss["on_campaign"] = S.CAMPAIGNS_BY_KEY.get(_camp, S.CAMPAIGNS[0])[1]
     ss["on_owner"] = r.owner
     ss["on_ov"] = r.ov_account
     ss["on_owner_office"] = r.owner_office
-    ss["on_knocks"] = "" if r.knocks_office == r.owner else r.knocks_office
+    # Always show the OwnerVille spelling Megan's side needs to verify — the
+    # owner form collects it as `owner`, so equal values are the GOOD case,
+    # not an omission (Megan 2026-08-20: it must fill here).
+    ss["on_knocks"] = r.knocks_office or r.owner
     ss["on_business"] = r.business_name
     ss["on_website"] = r.website
     ss["on_channel_id"] = r.channel_id
@@ -242,8 +246,6 @@ def _seed_from_request(d: dict) -> None:
     ss["_from_request_key"] = r.key
 
 
-_FAM_LABELS = ["D2D — Office Daily Metrics (Lucy 1)",
-               "B2B — B2B Metrics (Lucy 2)"]
 
 
 def form_view() -> None:
@@ -296,14 +298,16 @@ def form_view() -> None:
     # ---- 1. Campaign ------------------------------------------------------
     st.divider()
     st.markdown("### 1. Campaign")
-    st.session_state.setdefault("on_family", _FAM_LABELS[0])
-    fam_label = st.radio(
-        "Which campaign does this office run?", _FAM_LABELS, key="on_family",
-        help="Sets the report runner + which machine posts it — D2D runs on "
-             "Lucy 1, B2B on Lucy 2. Almost every office just uses the shared "
-             "team views; only add a per-office saved view under Advanced if one "
-             "is truly needed.")
-    family = "d2d" if fam_label.startswith("D2D") else "b2b"
+    st.session_state.setdefault("on_campaign", S.CAMPAIGNS[0][1])
+    camp_label = st.radio(
+        "Which campaign does this office run?",
+        [c[1] for c in S.CAMPAIGNS], key="on_campaign",
+        help="Sets the metric menu, the report runner and the machine — D2D "
+             "campaigns run on Lucy 1, B2B on Lucy 2. Almost every office "
+             "just uses the shared team views; only add a per-office saved "
+             "view under Advanced if one is truly needed.")
+    campaign = next(c[0] for c in S.CAMPAIGNS if c[1] == camp_label)
+    family = S.CAMPAIGNS_BY_KEY[campaign][2]
 
     # ---- 2. Office identity ----------------------------------------------
     st.divider()
@@ -454,7 +458,8 @@ def form_view() -> None:
     # Which tabs the office's sheet must contain (only the reports that WRITE to
     # the sheet — the Slack-only metrics like order log / knocks post images and
     # need none). Duplicate each from the template workbook.
-    tabs = S.needed_tabs(family)
+    tabs = S.needed_tabs(family,
+                         [rk.key for rk in S.campaign_reports(campaign)])
     if tabs:
         st.markdown("**This office's sheet needs these tabs** — duplicate each "
                     f"from the [template workbook]({S.TEMPLATE_WORKBOOK_URL}):")
@@ -470,7 +475,7 @@ def form_view() -> None:
     st.caption("Check the metrics this office posts. The number sets the order "
                "they appear in the thread (lower = earlier) — it's pre-filled, "
                "change it only if you want a different order.")
-    fam_reports = [r for r in S.REPORTS if r.family == family]
+    fam_reports = S.campaign_reports(campaign)
     picked: list = []            # (ReportKind, order)
     for i, rk in enumerate(fam_reports):
         st.session_state.setdefault(f"rep_{rk.key}", rk.default_on)
@@ -538,7 +543,8 @@ def form_view() -> None:
         knocks_office=knocks.strip() or owner.strip(),
         business_name=business.strip(), website=website.strip(),
         channel_id=channel_id.strip(), channel_name=channel_name.strip(),
-        sheet_id=sheet_id, family=family, channel_plans=built_plans,
+        sheet_id=sheet_id, family=family, campaign=campaign,
+        channel_plans=built_plans,
         ov_account=ov_account.strip(), owner_office=owner_office.strip(),
         owner_email=owner_email.strip(), pay_code=pay_code.strip(),
         reports=enrolled, header_label=header_label.strip())
