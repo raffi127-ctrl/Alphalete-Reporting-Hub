@@ -23,15 +23,28 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- FRIDAYS only (Weekday 5). 10 passes 09:00-12:55 CST, every 25 min. Starts
-         at 09:00 (earlier than the PNL agent) because the VA sends the bulletin by
-         10:00, so her sources are already published before then — this gives the
-         fill several attempts ahead of that deadline. The run holds (exit 75)
-         until the ORG Override Summary carries the new week, then fills once.
+    <!-- FRIDAYS only (Weekday 5). 12 passes 08:00-12:55 CST, every 25-30 min.
+
+         MOVED UP from 09:00 to 08:00 (Eve, 2026-08-21: the review link has to be
+         posted by 10:10 CST). A fill run takes ~25-30 min, and the wrapper's
+         pgrep guard skips a pass while the previous one is still going, so the
+         effective cadence is ~50 min: starting at 09:00 the first two real
+         chances finished ~09:30 and ~10:20, which put the 10:10 link one bad
+         morning away from being impossible. 08:00/08:30 add two earlier chances
+         so a normal Friday is done filling well before the gate's 09:50 pass.
+
+         Extra passes are cheap and safe: the run holds (exit 75) until the ORG
+         Override Summary carries the new week, then fills ONCE — a hold writes
+         nothing, and later passes no-op on an already-filled week. What it can't
+         fix is a source that publishes late; then both agents hold and the link
+         is late for a reason no schedule can move.
+
          TIME KNOB: edit these entries (Hour/Minute are machine LOCAL time; the
          mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>25</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>50</integer></dict>

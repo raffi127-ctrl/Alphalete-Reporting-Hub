@@ -21,7 +21,11 @@
 # approved stays orange (not a false green); an approved-but-failed send publishes
 # 'failed' (which also alerts #claudecorrections).
 #
-# launchd fires passes Friday 10:30-13:00 CST (after the ~10am fill window), q25m.
+# launchd fires passes Friday 09:10-13:00 CST: 09:10/09:30/09:50/10:05 tight, then
+# q25m to 13:00. THE LINK MUST BE UP BY 10:10 CST (Eve, 2026-08-21) — that is what
+# the four early passes buy. They no longer wait for the fill window to close: an
+# early pass over an unfilled tab HOLDS (exit 0, nothing posted, no Drive upload),
+# and --post is idempotent, so the tail passes never repost an existing link.
 # TIME KNOB: edit StartCalendarInterval in the plist.
 #
 # SOFT-LAUNCH FALLBACK: to go back to the 4-person email preview (no Slack, no

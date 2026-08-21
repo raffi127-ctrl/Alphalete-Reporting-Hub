@@ -1,8 +1,12 @@
 #!/bin/bash
 # Override Bulletin — weekly Friday FILL, on the mini (Lucy 1 = Raf's org logins).
-# launchd fires passes 09:00-12:55 CST every Friday, q25m. The run resolves which
+# launchd fires passes 08:00-12:55 CST every Friday, q25-30m. The run resolves which
 # week to fill from the ORG Override Summary itself and holds until that source has
 # published the new week; once it fills, later passes no-op.
+#
+# Starts at 08:00 (was 09:00) because the review link has to be posted by 10:10 CST
+# (Eve, 2026-08-21) and a run takes ~25-30 min — the pgrep guard below makes the
+# effective cadence ~50 min, so the fill needs its first chances well before 09:30.
 #
 # SANDBOX ONLY: --tab defaults to "Copy of Org Overrides Ongoing Report", and
 # fill.write_week REFUSES the live tab outright. Nothing is posted to Slack and

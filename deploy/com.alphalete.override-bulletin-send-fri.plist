@@ -23,15 +23,33 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- FRIDAYS only (Weekday 5). Passes 10:30-13:00 CST, every 25 min — AFTER the
-         ~10am fill window, so the week's numbers are on the live tab before the
-         first send attempt. SOFT LAUNCH: the wrapper runs `send --test --send`
-         (email the 4-person group, no Slack). The send holds if the week isn't
-         filled and records the week it sent, so the retries can't double-email.
+    <!-- FRIDAYS only (Weekday 5). Passes 09:10-13:00 CST.
+
+         THE LINK HAS TO BE UP BY 10:10 CST (Eve, 2026-08-21). That is why the
+         first four passes are tight (09:10 / 09:30 / 09:50 / 10:05) and only
+         then does it settle into the old q25m tail. It does NOT wait for the
+         fill window to close any more: the post pass reads the leftmost week
+         header and HOLDS (exit 0, nothing posted, no Drive upload) unless
+         fill.week_is_filled says that column has real numbers, so an early pass
+         over an unfilled tab is a silent no-op, never a blank/wrong-week link.
+         The fill writes the column in ONE batch_update, so there is no
+         half-filled column for an early pass to catch. The post is idempotent,
+         so the later passes never repost what an early one already put up.
+
+         Getting 10:10 also needs the FILL to have LANDED by ~10:05: a fill run
+         takes ~25-30 min, so its 08:00/08:30/09:00 passes are the ones that buy
+         the margin (see com.alphalete.override-bulletin-fri.plist). If the ORG
+         Override Summary publishes late, both agents hold and the link lands
+         late — that is the source, not the schedule.
+
          TIME KNOB: edit these entries (Hour/Minute are machine LOCAL time; the
          mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>20</integer></dict>
