@@ -6513,7 +6513,7 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 15,
-      "machine": "Lucy 1"
+      "machine": "Lucy 2"
     },
     "install_funnel_board_hourly_agent": {
       "on_scheduler": false,
@@ -6535,7 +6535,8 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 15,
-      "machine": "Lucy 1"
+      "machine": "Lucy 2",
+      "_off_scheduler_note": ""
     },
     "install_dd_gross_revenue_agent": {
       "on_scheduler": false,
@@ -6883,7 +6884,7 @@
     },
     "funnel_board": {
       "on_scheduler": true,
-      "machine": "Lucy 1",
+      "machine": "Lucy 2",
       "display_name": "Recruiting Funnel Board",
       "source_type": "appstream",
       "data_sources": [],
@@ -6906,7 +6907,7 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-10): moved Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
+      "_note": "Pulls AppStream 'Retention - Details (new)' (p=783) for the 14 tracked managers and rewrites the five Funnel Board tabs in the Alphalete Org Applicant Tracker (1nOuJ5kG...). RESTATEMENT RULE: never pulls 'yesterday only' - managers backfill late, so every run re-pulls the WHOLE current Mon-Sun week; on Mondays it also re-pulls the prior week one last time and then freezes it. History lives in the Daily Log tab (read back and merged each run), NOT in the repo, so nothing here conflicts with git pull --ff-only. Daily Log is the only tab written; Manager Board / Trend / Matrix are SUMIFS views that recalculate themselves, and Goals is hand-typed and preserved across rebuilds. Runs headed - headless trips a Cloudflare re-challenge on the rcaptain login. ~3 min for 14 offices. MACHINE (2026-08-21): moved BACK to Lucy 2 (Megan) \u2014 Lucy 2's primary is now rcaptain, which sees all 14 offices, and Lucy 1's morning carries far more reports. Sheets auth stays the applicant_tracker service account (installed on Lucy 2 too \u2014 indeed_source_report writes this same workbook from there). Earlier hop (2026-08-10): Lucy 2 -> Lucy 1. Lucy 2's AppStream session reached only 9 of the 14 offices - the other five came back 'This Office is not assigned to you!' on every run since this went on the scheduler, while Lucy 1 pulled 14/14 (it is also where applicant_tracker sweeps those same office ids daily). Sheets auth moved to the applicant_tracker service account at the same time, since Lucy 1's personal OAuth token is not shared on this workbook. `lucy rerun funnel_board --dry-run` pulls and reports without writing; `--weeks N` backfills N weeks.",
       "order": 4.9,
       "_order_note": "4.9 (was 47 in the 2026-08-20 master sequence): Megan 2026-08-21 \u2014 AppStream is the first source ready in the morning while Tableau lags, so AppStream reports run up front with daily_focus/applicant_sync (orders 1-4), never behind the Tableau waves. A normal pass is ~3 min, so the early slot costs the flow nothing.",
       "timeout_minutes": 180,
