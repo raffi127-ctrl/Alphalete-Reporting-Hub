@@ -1186,18 +1186,19 @@ MEMBERS = [
     # Not people — buckets for reports that run on a schedule with NO human
     # trigger (fully unattended via patchright auto-login). No email.
     # Lucy 1 = the main mini; Lucy 2 = Carlos's machine (his org's reports).
-    # The Lucys render as cocker spaniels (Megan 2026-08-21) — no emoji for
-    # the breed exists, so `spaniel` carries each machine's coat colors for
-    # _spaniel_svg. `emoji` stays as the text fallback (calendars, logs).
+    # The Lucys render as the real Lucy artwork (the Slack bot avatar) in a
+    # BRIGHT ring + number per machine (Megan 2026-08-21: "bright contrasting
+    # colors for each user") — the ring/badge reuse each member's `color`.
+    # `emoji` stays as the text fallback (calendars, logs).
     {"name": "Lucy 1", "emoji": "🐶", "color": "#10B981", "email": "",
-     "spaniel": {"coat": "#8B5A2B", "ears": "#6E4520"}},   # brown
-    {"name": "Lucy 2", "emoji": "🐶", "color": "#E76F51", "email": "",
-     "spaniel": {"coat": "#E3C58A", "ears": "#CFA95F"}},   # blond
+     "badge": "1"},   # bright green
+    {"name": "Lucy 2", "emoji": "🐶", "color": "#F59E0B", "email": "",
+     "badge": "2"},   # bright orange
     # Lucy 3 — rerun/overflow mini on Raf's accounts (provisioned 2026-08-21;
     # workflows/lucy3-provisioning.md). Takes daytime reruns + new-report
     # testing so Lucy 1's 4am flow stops fighting hand-queued work.
     {"name": "Lucy 3", "emoji": "🐶", "color": "#3B82F6", "email": "",
-     "spaniel": {"coat": "#A9432B", "ears": "#8B3220"}},   # red
+     "badge": "3"},   # bright blue
     # Office Operations — a functional profile (not a single person) that holds
     # office-run workflows anyone on staff can pick up: new-hire swag texts,
     # etc. People navigate here to find those cards. (Megan 2026-07-13)
@@ -1224,39 +1225,43 @@ def _gmail_compose_url(to: str = "", subject: str = "", body: str = "", cc: str 
     return parts[0] + ("&" + "&".join(parts[1:]) if len(parts) > 1 else "")
 
 
-def _spaniel_svg(coat: str, ears: str, size: int = 64) -> str:
-    """Flat cocker-spaniel head — the Lucy machines' icon (Megan 2026-08-21:
-    'cocker spaniel dogs — brown/blond/red'). No emoji exists for the breed,
-    so it's one inline drawing with per-Lucy coat colors from MEMBERS."""
-    return (
-        f'<svg width="{size}" height="{size}" viewBox="0 0 64 64" '
-        'xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">'
-        # long droopy ears, wavy outer edge
-        f'<path d="M19 19 C7 23 5 43 11 54 C15 61 24 59 24 50 '
-        f'C24 40 22 28 23 23 Z" fill="{ears}"/>'
-        f'<path d="M45 19 C57 23 59 43 53 54 C49 61 40 59 40 50 '
-        f'C40 40 42 28 41 23 Z" fill="{ears}"/>'
-        # head + fluffy topknot
-        f'<circle cx="32" cy="31" r="17" fill="{coat}"/>'
-        f'<ellipse cx="32" cy="15.5" rx="10" ry="5.5" fill="{ears}"/>'
-        # muzzle, nose, eyes, mouth
-        '<ellipse cx="32" cy="39" rx="8.5" ry="6.5" fill="#F3E4C8"/>'
-        '<ellipse cx="32" cy="35.5" rx="3.2" ry="2.6" fill="#3E2C23"/>'
-        '<circle cx="25.5" cy="28" r="2.2" fill="#2E1F18"/>'
-        '<circle cx="38.5" cy="28" r="2.2" fill="#2E1F18"/>'
-        '<path d="M32 38 L32 41 M32 41 C30 44 27 43.5 26.5 42 '
-        'M32 41 C34 44 37 43.5 37.5 42" stroke="#3E2C23" '
-        'stroke-width="1.3" fill="none" stroke-linecap="round"/>'
-        '</svg>')
+@st.cache_data(show_spinner=False)
+def _lucy_avatar_b64() -> str:
+    """The real Lucy artwork (cropped from the Slack bot avatar; Megan
+    2026-08-21: the flat drawings 'look too childish'). Cached base64 so
+    the page embeds it without file reads per rerun. Empty string if the
+    asset is missing — callers fall back to the emoji."""
+    try:
+        import base64
+        raw = (WORKSPACE / "resources" / "lucy-avatar.png").read_bytes()
+        return base64.b64encode(raw).decode()
+    except Exception:
+        return ""
 
 
 def _member_icon_html(member: dict, size: int = 64) -> str:
-    """A member's icon as HTML: the spaniel drawing when it has coat colors,
-    else its emoji (Office Operations, Unassigned)."""
-    sp = (member or {}).get("spaniel")
-    if sp:
-        return _spaniel_svg(sp["coat"], sp["ears"], size=size)
-    return member.get("emoji", "📊") if member else "📊"
+    """A member's icon as HTML. Lucys (anything with a `badge`) get the real
+    Lucy photo in a circle with a BRIGHT ring + machine number in the
+    member's `color`; everyone else (Office Operations, Unassigned) keeps
+    their emoji."""
+    n = (member or {}).get("badge")
+    ring = (member or {}).get("color") if n else None
+    b64 = _lucy_avatar_b64() if ring else ""
+    if not (ring and b64):
+        return member.get("emoji", "📊") if member else "📊"
+    badge_px = max(16, int(size * 0.34))
+    return (
+        f'<span style="position:relative;display:inline-block;'
+        f'width:{size}px;height:{size}px">'
+        f'<img src="data:image/png;base64,{b64}" alt="{member["name"]}" '
+        f'style="width:{size}px;height:{size}px;border-radius:50%;'
+        f'border:3px solid {ring};display:block"/>'
+        f'<span style="position:absolute;right:-2px;bottom:-2px;'
+        f'width:{badge_px}px;height:{badge_px}px;border-radius:50%;'
+        f'background:{ring};color:#fff;font-size:{int(badge_px * 0.62)}px;'
+        f'font-weight:800;line-height:{badge_px}px;text-align:center;'
+        f'font-family:-apple-system,Arial,sans-serif">{n}</span>'
+        '</span>')
 
 
 def _member_email(name: str) -> str:
