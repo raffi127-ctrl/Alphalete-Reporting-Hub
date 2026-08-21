@@ -31,16 +31,20 @@ from typing import List, Optional, Tuple
 from .backfill_tier import find_parent, header_title
 from .run import OUTPUT_DIR, TARGETS
 
-# The caption. Its first line is what people see in the thread; _MARK is the
-# part this script recognises as its own, so running twice can't double-post.
-_MARK = "updated pending tab"
-CAPTION = (
-    "\U0001F4E6 Re-posted with the {} — use this one, not the workbook "
-    "above.\n"
+# The caption is always LEAD + one line saying what changed. Building it that
+# way (rather than letting --note replace the whole thing) keeps _MARK in every
+# caption we send, and _MARK is how a second run recognises its own reply and
+# declines to double-post.
+_MARK = "re-posted"
+_LEAD = ("\U0001F4E6 Re-posted — use this one, not the workbook above.")
+DEFAULT_NOTE = (
     "Pending orders is now two sections, each grouped by sales rep: the ones "
     "that aren't yellow first, then the yellow ones. Ready For Booking now "
-    "shows yellow."
-).format(_MARK)
+    "shows yellow.")
+
+
+def caption_for(note: str = "") -> str:
+    return _LEAD + "\n" + (note.strip() or DEFAULT_NOTE)
 
 
 def workbook_for(day: dt.date) -> Path:
@@ -79,6 +83,9 @@ def main(argv: Optional[list] = None) -> int:
                     help="workbook to post (default: today's in output/)")
     ap.add_argument("--date", metavar="YYYY-MM-DD",
                     help="the thread's date (default: today)")
+    ap.add_argument("--note", metavar="TEXT", default="",
+                    help="one line saying what changed (default: the "
+                         "pending-tab layout note)")
     args = ap.parse_args(argv)
 
     day = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
@@ -97,6 +104,8 @@ def main(argv: Optional[list] = None) -> int:
         print("  ⚠ that file was built on {}, not {} — re-run "
               "`lucy rerun box_order_log` first if you want the day's own "
               "numbers.".format(stamp.date(), day))
+
+    caption = caption_for(args.note)
 
     from automations.shared import slack_metrics_post as smp
 
@@ -118,11 +127,12 @@ def main(argv: Optional[list] = None) -> int:
         if not args.post:
             print("  DRY RUN — would reply in {} (ts={}) with {}\n"
                   "    caption: {}".format(
-                      name, ts, book.name, CAPTION.replace("\n", "\n             ")))
+                      name, ts, book.name,
+                      caption.replace("\n", "\n             ")))
             continue
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(book),
-            filename=book.name, title=book.stem, initial_comment=CAPTION,
+            filename=book.name, title=book.stem, initial_comment=caption,
         )
         print("  ✓ {}: posted into today's thread".format(name))
 

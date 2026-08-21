@@ -150,18 +150,36 @@ SALE_EXEMPT_STATUSES = ("Incomplete",)
 #
 # Verification is ranked by its SUB-status, because he ranks TPV Passed above
 # "Submitted to Supplier" but TPV Failed below it.
+# REVISED 2026-08-21 from Carlos's own examples, which beat the hand-cleaned
+# tab wherever the two disagree (see the CAVEAT note below — Megan flagged that
+# tab as thin evidence for exactly these two lines).
+#
+#   1. "Accepted by Supplier" now beats "Ready For Booking". Rojero boots
+#      (contract 276666) reads Accepted by Supplier on 8/18 in Tableau and we
+#      were still showing Ready For Booking: "on tableau its already accepted
+#      by supplier so it should be green". 13 sales in the 8/17 pull.
+#   2. A sale that DIED beats anything still in flight. NS 35 barber shop
+#      (271728) and Alsadi group #5 (269644) are both Rejected + Verification –
+#      TPV Passed, and we surfaced the Verification: "it shows that the sale is
+#      rejected by supplier, but then on the Lucy report it shows that it's
+#      still pending". 105 sales in the 8/17 pull.
+#
+# Cancelled/Rejected/Dropped stay BELOW "Accepted by Supplier" on purpose. That
+# pairing (64 sales) is a different question — an accepted deal that later died
+# — Carlos has not ruled on it, and moving it would change what the payout
+# tables count as paid. Left alone until he says otherwise.
 LEVEL_PRIORITY = (
-    "Ready For Booking",
     "Accepted by Supplier",
+    "Cancelled by Broker",
+    "Rejected",
+    "Dropped",
+    "Ready For Booking",
     "Verification – TPV Passed",
     "Verification – Requires TPV Review",
     "Submitted to Supplier",
     "Verification – TPV Failed",
     "Verification – Rejected QC",
-    "Cancelled by Broker",
-    "Rejected",
     "Incomplete",
-    "Dropped",
     "Draft",
 )
 
