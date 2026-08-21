@@ -110,8 +110,8 @@ REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
 # fiber owners is currently good"). NDS = wireless/phones only, pulled from a
 # DIFFERENT workbook — its subset mirrors the live isaiah/drew overrides.
 CAMPAIGNS: "List[tuple]" = [
-    ("fiber_d2d", "🏠 D2D AT&T Fiber — internet & phones", "d2d", None),
-    ("nds_d2d", "📶 D2D NDS — wireless & phones", "d2d",
+    ("fiber_d2d", "🏠 D2D AT&T Fiber — Internet & Phones", "d2d", None),
+    ("nds_d2d", "📶 D2D NDS — Wireless & Phones", "d2d",
      ("knocks", "order_log", "cancels", "churn_wl", "activations")),
     ("b2b_att", "🏢 B2B AT&T", "b2b",
      ("b2b_sales", "b2b_activation", "b2b_churn_wireless", "b2b_churn_int",

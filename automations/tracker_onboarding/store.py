@@ -140,12 +140,22 @@ def existing_registry(exclude_key: Optional[str] = None) -> "Dict[str, object]":
     effort — a failed import just contributes nothing."""
     keys: List[str] = []
     channels: Dict[str, str] = {}
+
+    def _is_self(k: str) -> bool:
+        # A multi-channel enrollment with per-channel board subsets applies as
+        # one row PER channel (key, key2, key3, …) — all of them are "self" on
+        # a re-apply, or the office would collide with its own extra channels.
+        import re as _re
+        return bool(exclude_key) and (
+            k == exclude_key
+            or bool(_re.fullmatch(_re.escape(exclude_key) + r"\d+", k or "")))
+
     try:
         from automations.tableau_screenshots import slack_post as _sp
         for k, cids in getattr(_sp, "ORG_CHANNELS", {}).items():
             # An office already applied into ORG_CHANNELS must not collide with
             # ITSELF on a re-apply (idempotent onboard_apply / a Post-now re-click).
-            if exclude_key and k == exclude_key:
+            if _is_self(k):
                 continue
             keys.append(k)
             for cid in cids:
@@ -154,7 +164,7 @@ def existing_registry(exclude_key: Optional[str] = None) -> "Dict[str, object]":
         pass
     for d in load_all():
         k = d.get("key")
-        if k and k == exclude_key:
+        if k and _is_self(k):
             continue
         if k:
             keys.append(k)

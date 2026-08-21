@@ -35,6 +35,15 @@ def _lines(rec: TrackerRecord, lucy: "Optional[List[dict]]",
     thread = ["• Requested by: {}".format(rec.requested_by or who),
               "• Boards:"]
     thread += ["      ◦ {}".format(titles.get(t, t)) for t in rec.trackers]
+    plans = list(rec.channel_plans or [])
+    if plans and any(set(p.get("trackers") or []) != set(rec.trackers)
+                     for p in plans):
+        thread.append("• Per-channel picks:")
+        for p in plans:
+            thread.append("      ◦ {}: {}".format(
+                p.get("channel_name") or "?",
+                ", ".join(titles.get(t, t)
+                          for t in (p.get("trackers") or [])) or "—"))
     if change:
         thread.append("• This channel ALREADY gets trackers — confirming "
                       "REPLACES its current lineup with the boards above.")

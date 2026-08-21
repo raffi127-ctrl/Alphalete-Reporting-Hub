@@ -220,9 +220,9 @@ def request_view() -> None:
     st.caption("Pick the boards you want and Lucy will post fresh "
                "screenshots to your Slack channel every morning.")
 
-    # ---- 1. You & your channel -------------------------------------------
+    # ---- 1. You ----------------------------------------------------------
     st.divider()
-    st.markdown("### 1. Who are you & where do we post?")
+    st.markdown("### 1. Who are you?")
     requested_by = st.text_input(
         "Your name (what you go by) *",
         help="Just what we should call you — the official OwnerVille "
@@ -231,50 +231,16 @@ def request_view() -> None:
         "ICD Name as it appears in OwnerVille *",
         help="Your name exactly as OwnerVille shows it — this is how we file "
              "your office.")
-    n_ch = st.number_input(
-        "How many Slack channels should Lucy post in?", 1, 5, 1,
-        help="Most offices use 1. Add more if you also want the boards in "
-             "another channel (like a leaders channel). Every channel gets "
-             "the same boards.")
-    chan_pairs: list = []
-    for i in range(int(n_ch)):
-        if int(n_ch) > 1:
-            st.markdown(f"**Channel {i + 1}**")
-        cname = st.text_input(
-            "Slack channel name *", placeholder="#your-office-sales",
-            key=f"ch_name_{i}",
-            help="The channel where you want the boards posted each morning.")
-        cid = st.text_input(
-            "Slack Channel ID *", placeholder="C0ABC12DE", key=f"ch_id_{i}",
-            help="This is a CODE (letters + numbers) that starts with C — NOT "
-                 "the channel's name. To find it: in Slack, click the "
-                 "channel's name at the top of the screen, scroll to the very "
-                 "bottom of the pop-up, and copy the Channel ID shown there.")
-        if SLACK_ID_IMG.exists():
-            with st.expander("Where do I find my Channel ID?"):
-                st.caption("In Slack, click the channel's name at the top of "
-                           "the screen, scroll to the bottom of the pop-up, "
-                           "and copy the Channel ID:")
-                # 397 = half the source's 794px — pixel-perfect on retina
-                # screens. Bigger = the browser upscales and it goes soft.
-                st.image(str(SLACK_ID_IMG), width=397)
-        chan_pairs.append((cid.strip(), cname.strip()))
+    # ---- 2. Channels & the boards each one gets ---------------------------
+    st.divider()
+    st.markdown("### 2. Your Slack channel(s) & boards")
+    st.caption("Check what each channel gets. Most offices use one channel "
+               "for everything. If you want certain boards going somewhere "
+               "else too — like a leaders-only channel — add a second "
+               "channel and check just those.")
     st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
             "channel you want the Tableau trackers posted in — she'll add "
             "Lucy (the bot that posts the boards) from there.")
-
-    # Channel already enrolled? Turn this into a CHANGE request, not a dead end.
-    change_of = _org_owning(chan_pairs[0][0], chan_pairs[0][1])
-    if change_of:
-        st.info("ℹ️ **This channel is already getting trackers posted.** Need "
-                "to add more boards or change the lineup? Keep going — check "
-                "the **full** set of boards you want below (your picks "
-                "replace the current lineup) and submit. Megan will update "
-                "the existing setup.")
-
-    # ---- 2. Pick your boards ---------------------------------------------
-    st.divider()
-    st.markdown("### 2. Pick your tracker boards")
     # Only UNIVERSAL national boards are offered. Opt-in boards (opt_in_only in
     # tableau_screenshots.pages, e.g. order_tiered_bonus) are OWNER-SCOPED —
     # posting one to a different office's channel shows THAT owner's numbers
@@ -284,18 +250,66 @@ def request_view() -> None:
     if not catalog:
         st.error("Couldn't load the tracker list — please tell Megan the "
                  "sign-up form is down.")
-    st.caption("Check every board you want. Tap View preview to see exactly "
-               "what would land in your channel.")
-    picked: list = []
-    for t in catalog:
-        on = st.checkbox(f"{t['emoji']} **{t['title']}**", value=False,
-                         key=f"trk_{t['id']}")
-        pv = _preview_path(t["id"])
-        if pv is not None:
-            with st.expander("View preview"):
-                st.image(str(pv), use_container_width=True)
-        if on:
-            picked.append(t["id"])
+    n_ch = st.number_input(
+        "How many Slack channels should Lucy post in?", 1, 5, 1,
+        help="Most offices use 1. Add more if you want certain boards in "
+             "another channel too — each channel gets its own picks.")
+    chan_pairs: list = []
+    chan_plans: list = []
+    picked: list = []                    # ordered union across every channel
+    for i in range(int(n_ch)):
+        with st.container(border=True):
+            if int(n_ch) > 1:
+                st.markdown(f"**Channel {i + 1}**")
+            cname = st.text_input(
+                "Slack channel name *", placeholder="#your-office-sales",
+                key=f"ch_name_{i}",
+                help="The channel where you want the boards posted each "
+                     "morning.")
+            cid = st.text_input(
+                "Slack Channel ID *", placeholder="C0ABC12DE", key=f"ch_id_{i}",
+                help="This is a CODE (letters + numbers) that starts with C — "
+                     "NOT the channel's name. To find it: in Slack, click the "
+                     "channel's name at the top of the screen, scroll to the "
+                     "very bottom of the pop-up, and copy the Channel ID "
+                     "shown there.")
+            if i == 0 and SLACK_ID_IMG.exists():
+                with st.expander("Where do I find my Channel ID?"):
+                    st.caption("In Slack, click the channel's name at the top "
+                               "of the screen, scroll to the bottom of the "
+                               "pop-up, and copy the Channel ID:")
+                    # 397 = half the source's 794px — pixel-perfect on retina
+                    # screens. Bigger = the browser upscales, it goes soft.
+                    st.image(str(SLACK_ID_IMG), width=397)
+            st.caption("Boards to post in this channel:")
+            here: list = []
+            for t in catalog:
+                on = st.checkbox(f"{t['emoji']} **{t['title']}**", value=False,
+                                 key=f"trk_{i}_{t['id']}")
+                # previews once, in the first channel's list — same boards.
+                if i == 0:
+                    pv = _preview_path(t["id"])
+                    if pv is not None:
+                        with st.expander("View preview"):
+                            st.image(str(pv), use_container_width=True)
+                if on:
+                    here.append(t["id"])
+                    if t["id"] not in picked:
+                        picked.append(t["id"])
+            chan_pairs.append((cid.strip(), cname.strip()))
+            chan_plans.append({"channel_id": cid.strip(),
+                               "channel_name": cname.strip(),
+                               "trackers": here})
+    picked = [t["id"] for t in catalog if t["id"] in picked]  # catalog order
+
+    # Channel already enrolled? Turn this into a CHANGE request, not a dead end.
+    change_of = _org_owning(chan_pairs[0][0], chan_pairs[0][1])
+    if change_of:
+        st.info("ℹ️ **This channel is already getting trackers posted.** Need "
+                "to add more boards or change the lineup? Keep going — check "
+                "the **full** set of boards you want (your picks replace the "
+                "current lineup) and submit. Megan will update the existing "
+                "setup.")
 
     # ---- 3. Order them (drag & drop) -------------------------------------
     labels = {t["id"]: f"{t['emoji']} {t['title']}" for t in catalog}
@@ -328,6 +342,11 @@ def request_view() -> None:
         channel_id=chan_pairs[0][0], channel_name=chan_pairs[0][1],
         extra_channels=[{"channel_id": c, "channel_name": n}
                         for c, n in chan_pairs[1:]],
+        channel_plans=[{"channel_id": p["channel_id"],
+                        "channel_name": p["channel_name"],
+                        "trackers": [t for t in trackers
+                                     if t in p["trackers"]]}
+                       for p in chan_plans],
         trackers=trackers, status="pending",
         requested_by=requested_by.strip())
 
@@ -347,8 +366,10 @@ def request_view() -> None:
             missing.append(f"Slack channel name{tag}")
         if not cid:
             missing.append(f"Slack Channel ID{tag}")
-    if not trackers:
-        missing.append("at least one tracker board")
+    for i, p in enumerate(chan_plans):
+        tag = "" if len(chan_plans) == 1 else f" (channel {i + 1})"
+        if not p["trackers"]:
+            missing.append(f"at least one board{tag}")
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
@@ -382,6 +403,10 @@ def request_view() -> None:
             for j, c in enumerate(rec.extra_channels, start=1):
                 if lucy_all[j].get("channel_id") and not c.get("channel_id"):
                     c["channel_id"] = lucy_all[j]["channel_id"]
+            for j, p in enumerate(rec.channel_plans):
+                if (not p.get("channel_id") and j < len(lucy_all)
+                        and lucy_all[j].get("channel_id")):
+                    p["channel_id"] = lucy_all[j]["channel_id"]
             try:
                 where = store.update(rec) if updating else store.save(rec)
             except Exception as e:                   # noqa: BLE001
@@ -417,12 +442,23 @@ def _request_done_view() -> None:
                    "every morning. Nothing else for you to do — go sell "
                    "something. 🐾🚀")
     titles = {t["id"]: f"{t['emoji']} {t['title']}" for t in catalog}
-    ch_names = " + ".join(
-        [d["channel_name"]] + [c.get("channel_name", "?")
-                               for c in d.get("extra_channels", [])])
-    st.markdown(f"**{ch_names}** will get, every morning:")
-    st.markdown("\n".join(f"{i+1}. {titles.get(tid, tid)}"
-                          for i, tid in enumerate(d.get("trackers", []))))
+    plans = [p for p in (d.get("channel_plans") or [])]
+    differing = plans and any(set(p.get("trackers") or [])
+                              != set(d.get("trackers", [])) for p in plans)
+    if differing:
+        for p in plans:
+            st.markdown(f"**{p.get('channel_name', '?')}** will get, every "
+                        "morning:")
+            st.markdown("\n".join(
+                f"{i+1}. {titles.get(tid, tid)}"
+                for i, tid in enumerate(p.get("trackers", []))) or "—")
+    else:
+        ch_names = " + ".join(
+            [d["channel_name"]] + [c.get("channel_name", "?")
+                                   for c in d.get("extra_channels", [])])
+        st.markdown(f"**{ch_names}** will get, every morning:")
+        st.markdown("\n".join(f"{i+1}. {titles.get(tid, tid)}"
+                              for i, tid in enumerate(d.get("trackers", []))))
     # ICD-facing: keep it simple — the detailed per-channel diagnostics go to
     # Megan's ping/confirm view, not here.
     missing = [r for r in (res.get("lucy") or [])
@@ -538,6 +574,14 @@ def confirm_view(key: str) -> None:
         with c2:
             cname = st.text_input(f"Channel name *{tag}", value=cname0,
                                   key=f"_cf_cname_{i}")
+        if (rec.channel_plans and i < len(rec.channel_plans)
+                and set(rec.channel_plans[i].get("trackers") or [])
+                != set(rec.trackers)):
+            _t = {t["id"]: t["title"]
+                  for t in S.tracker_catalog()}
+            st.caption("This channel's picks: " + ", ".join(
+                _t.get(x, x)
+                for x in rec.channel_plans[i].get("trackers") or []))
         edited_pairs.append((cid.strip(), cname.strip()))
 
     # ---- trackers (editable, drag & drop) -------------------------------
@@ -583,11 +627,23 @@ def confirm_view(key: str) -> None:
         st.caption("You can confirm anyway, but nothing will actually post "
                    "to a channel until Lucy is invited to it.")
     if st.button("✅ Confirm + wire up", type="primary"):
+        # Per-channel board subsets ride through the confirm: same channels
+        # (with any id/name fixes), each keeping its own picks filtered to
+        # whatever survives Megan's final board set.
+        plans2 = []
+        if rec.channel_plans:
+            for i, (cid, cname) in enumerate(edited_pairs):
+                src = (rec.channel_plans[i]
+                       if i < len(rec.channel_plans) else {})
+                keep = src.get("trackers") or trackers
+                plans2.append({"channel_id": cid, "channel_name": cname,
+                               "trackers": [t for t in trackers if t in keep]})
         rec2 = S.TrackerRecord(
             key=key, owner=rec.owner, channel_id=edited_pairs[0][0],
             channel_name=edited_pairs[0][1],
             extra_channels=[{"channel_id": c, "channel_name": n}
                             for c, n in edited_pairs[1:]],
+            channel_plans=plans2,
             trackers=trackers,
             status="wired", requested_by=rec.requested_by,
             submitted_by="Megan (confirm)",

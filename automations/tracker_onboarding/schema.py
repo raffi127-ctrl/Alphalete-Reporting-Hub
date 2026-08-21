@@ -48,6 +48,12 @@ class TrackerRecord:
     # daily run already loops a per-org channel_ids LIST, so extra channels
     # ride along with no poster change. [{"channel_id": .., "channel_name": ..}]
     extra_channels: List[Dict[str, str]] = field(default_factory=list)
+    # Per-channel board subsets (Megan 2026-08-20: "per channel check and
+    # uncheck"): one plan per channel, PRIMARY FIRST —
+    # [{"channel_id","channel_name","trackers": [...]}]. Empty = every channel
+    # gets `trackers` (the pre-subset behavior). `trackers` stays the ORDERED
+    # UNION and defines posting order for every channel.
+    channel_plans: List[Dict] = field(default_factory=list)
 
     def channel_pairs(self) -> "List[tuple]":
         """[(channel_id, channel_name), ...] — primary first, extras after."""
@@ -106,6 +112,15 @@ def validate_request(rec: TrackerRecord, *,
         for tid in rec.trackers:
             if tid not in known or tid in opt_in:
                 problems.append(f"Tracker {tid!r} isn't available on this form.")
+    for i, p in enumerate(rec.channel_plans):
+        nm = p.get("channel_name") or f"channel {i + 1}"
+        if not p.get("trackers"):
+            problems.append(f"Pick at least one board for {nm}.")
+        elif known:
+            for tid in p["trackers"]:
+                if tid not in known or tid in opt_in:
+                    problems.append(f"Tracker {tid!r} ({nm}) isn't available "
+                                    "on this form.")
     return problems
 
 

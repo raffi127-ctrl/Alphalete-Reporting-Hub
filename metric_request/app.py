@@ -43,7 +43,7 @@ try:
 except Exception:                                    # noqa: BLE001
     _HAS_SORT = False
 
-st.set_page_config(page_title="Request Your Office Metrics", page_icon="📊",
+st.set_page_config(page_title="Alphalete Reporting by Lucy", page_icon="📊",
                    layout="centered")
 
 
@@ -103,7 +103,8 @@ def _inject_slack_token() -> None:
 
 # --------------------------------------------------------------------------
 def form_view() -> None:
-    st.markdown("## 📊 Request your office metrics")
+    st.markdown("## 📊 Alphalete Reporting by Lucy")
+    st.markdown("### Daily Office Metrics Sign-Up")
     st.caption("Tell us what you'd like to see in your Slack every morning. "
                "Pick your campaign and check the metrics you want — "
                "we'll set up the rest and get them posting for you.")
@@ -160,8 +161,9 @@ def form_view() -> None:
                "for everything. If you want certain metrics going somewhere "
                "else too — like a leaders-only channel — add a second "
                "channel and check just those.")
-    st.warning("**Important:** add **Megan Hidalgo** to every channel below — we "
-               "can't post to a channel she isn't in.")
+    st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
+            "channel you want the metrics posted in — she'll add Lucy (the "
+            "bot that posts them) from there.")
 
     n_chan = int(st.number_input(
         "How many Slack channels do you want to post in?",
@@ -225,6 +227,9 @@ def form_view() -> None:
         owner_email=owner_email.strip(), pay_code="",
         reports=enrolled, campaign=campaign)
 
+    st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
+            "listed above **BEFORE HITTING SUBMIT** — we can't start your "
+            "posting without it!")
     if st.button("📨 Send my request", type="primary"):
         problems = ([] if requested_by.strip()
                     else ["Please enter your name (what you go by)."])

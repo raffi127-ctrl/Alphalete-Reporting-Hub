@@ -30,12 +30,36 @@ ONBOARDED_JSON = (REPO_ROOT / "automations" / "tableau_screenshots"
                   / "onboarded_trackers.json")
 
 
-def _row(rec: TrackerRecord) -> dict:
-    # channel_ids is already a LIST everywhere downstream (ORG_CHANNELS), so a
-    # multi-channel enrollment just rides along — same boards to every channel.
-    return {"key": rec.key, "label": rec.label(), "owner": rec.owner,
-            "channel_ids": [cid for cid, _ in rec.channel_pairs()],
-            "trackers": rec.trackers}
+def _rows(rec: TrackerRecord) -> "List[dict]":
+    """One onboarded_trackers.json row per DISTINCT board subset.
+
+    No per-channel plans (or every plan identical) → the old single row, all
+    channel_ids together. Differing subsets → one row PER channel (keys key,
+    key2, key3 … — stable, [a-z0-9_] safe), each with only that channel's
+    boards, ordered by the union order in rec.trackers. The poster loops org
+    rows and captures each board once, so this costs nothing extra."""
+    plans = [p for p in (rec.channel_plans or []) if p.get("channel_id")]
+    order = {tid: i for i, tid in enumerate(rec.trackers)}
+
+    def _ordered(tids: "List[str]") -> "List[str]":
+        return sorted([t for t in tids if t in order], key=lambda t: order[t])
+
+    same = (not plans or
+            all(set(p.get("trackers") or []) == set(rec.trackers)
+                for p in plans))
+    if same:
+        return [{"key": rec.key, "label": rec.label(), "owner": rec.owner,
+                 "channel_ids": [cid for cid, _ in rec.channel_pairs()],
+                 "trackers": rec.trackers}]
+    out = []
+    for i, p in enumerate(plans):
+        out.append({
+            "key": rec.key if i == 0 else f"{rec.key}{i + 1}",
+            "label": p.get("channel_name") or rec.label(),
+            "owner": rec.owner,
+            "channel_ids": [p["channel_id"]],
+            "trackers": _ordered(p.get("trackers") or []) or rec.trackers})
+    return out
 
 
 def plan() -> "List[dict]":
@@ -52,27 +76,42 @@ def plan() -> "List[dict]":
         reg = store.existing_registry(exclude_key=rec.key)
         problems = validate(rec, existing_keys=[k for k in reg["keys"] if k != rec.key],
                             existing_channels=reg["channels"])
-        out.append({"rec": rec, "problems": problems, "row": _row(rec)})
+        out.append({"rec": rec, "problems": problems, "rows": _rows(rec)})
     return out
 
 
-def _merge_json(rows: "List[dict]", write: bool) -> str:
+def _merge_json(recs_rows: "List[tuple]", write: bool) -> str:
+    """Merge each office's row set, purging stale per-channel pseudo-rows
+    (key2, key3, …) left behind when an office goes back to identical boards
+    in every channel (or drops a channel)."""
+    import re
     existing: Dict[str, dict] = {}
     if ONBOARDED_JSON.exists():
         try:
             existing = {r["key"]: r for r in json.loads(ONBOARDED_JSON.read_text())}
         except Exception:
             existing = {}
-    added = [r["key"] for r in rows if r["key"] not in existing]
-    updated = [r["key"] for r in rows if r["key"] in existing]
-    for r in rows:
-        existing[r["key"]] = r
+    added: List[str] = []
+    updated: List[str] = []
+    removed: List[str] = []
+    for rec, rows in recs_rows:
+        new_keys = {r["key"] for r in rows}
+        for k in list(existing):
+            if (k == rec.key
+                    or re.fullmatch(re.escape(rec.key) + r"\d+", k)):
+                if k not in new_keys:
+                    removed.append(k)
+                    del existing[k]
+        for r in rows:
+            (updated if r["key"] in existing else added).append(r["key"])
+            existing[r["key"]] = r
     if write:
         ONBOARDED_JSON.parent.mkdir(parents=True, exist_ok=True)
         tmp = ONBOARDED_JSON.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(list(existing.values()), indent=2))
         tmp.replace(ONBOARDED_JSON)
-    return f"{ONBOARDED_JSON.relative_to(REPO_ROOT)}: +{added or '—'} ~{updated or '—'}"
+    return (f"{ONBOARDED_JSON.relative_to(REPO_ROOT)}: +{added or '—'} "
+            f"~{updated or '—'} -{removed or '—'}")
 
 
 def main(argv=None) -> int:
@@ -103,8 +142,12 @@ def main(argv=None) -> int:
         rec = p["rec"]
         print(f"  • {rec.key}: {rec.channel_name} — {len(rec.trackers)} trackers: "
               f"{', '.join(rec.trackers)}")
+        if len(p["rows"]) > 1:
+            for r in p["rows"]:
+                print(f"      {r['key']} -> {r['label']}: "
+                      f"{', '.join(r['trackers'])}")
     print()
-    print("  " + _merge_json([p["row"] for p in plans], args.write))
+    print("  " + _merge_json([(p["rec"], p["rows"]) for p in plans], args.write))
     if not args.write:
         print("\nDRY-RUN — nothing written. Re-run with --write, then review "
               "`git diff` and commit (the daily run + Hub card pick it up).")
