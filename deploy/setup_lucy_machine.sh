@@ -98,7 +98,7 @@ if ! sudo launchctl list 2>/dev/null | grep -q screensharing; then
 fi
 
 # ----- Team installer (idempotent: safe if partly installed already)
-bold "[6/7] Running the team installer (GitHub sign-in opens in the browser)"
+bold "[6/8] Running the team installer (GitHub sign-in opens in the browser)"
 curl -fsSL -o /tmp/Install-Recruiting-Report.command \
     https://github.com/raffi127-ctrl/Alphalete-Reporting-Hub/releases/download/v0.1.0/Install-Recruiting-Report.command
 bash /tmp/Install-Recruiting-Report.command || {
@@ -106,8 +106,20 @@ bash /tmp/Install-Recruiting-Report.command || {
     exit 1
 }
 
+# ----- Google Sheets sign-in (one-time; without it the Hub shows a red
+# token error and the run feed is blind — Lucy 3's first launch, 2026-08-21)
+if [ -f "$HOME/.config/recruiting-report/oauth-token.json" ]; then
+    bold "[7/8] Google Sheets already authorized ✓"
+else
+    bold "[7/8] Google Sheets sign-in — a browser will open"
+    echo "Sign in with the alphaletereporting@gmail.com Google account and click Allow."
+    (cd "$HOME/recruiting-report" \
+        && ./.venv/bin/python -m automations.recruiting_report.sheets_auth) || \
+        MANUAL+=("Google sign-in didn't finish — run: cd ~/recruiting-report && ./.venv/bin/python -m automations.recruiting_report.sheets_auth")
+fi
+
 # ----- Identity + poller
-bold "[7/7] Naming this machine '$NAME' + installing the remote-control poller"
+bold "[8/8] Naming this machine '$NAME' + installing the remote-control poller"
 echo "$NAME" > "$HOME/recruiting-report/.machine-profile"
 cd "$HOME/recruiting-report"
 ./.venv/bin/python automations/day_orchestrator/install_agent.py mini-control || {
