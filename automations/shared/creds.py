@@ -121,3 +121,40 @@ def doubleentry_username() -> str:
 
 def doubleentry_password() -> str:
     return _resolve_de("doubleentry_password", "DOUBLEENTRY_PASSWORD")
+
+
+# --- Alternate AppStream account -------------------------------------------
+# A machine may need a SECOND AppStream login: Lucy 2 runs as CarlosNLR, which
+# cannot see six of the 28 offices, while rcaptain can. Rather than overwrite the
+# primary (other reports on that machine depend on it), the alternate lives
+# beside it and each job picks the account it needs.
+_ALT_PATH = Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
+
+
+@lru_cache(maxsize=1)
+def _alt_file() -> dict:
+    # Outside the repo on purpose: the repo is public, and this is a live login.
+    try:
+        return json.loads(_ALT_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def appstream_alt_username() -> str:
+    return (str(_alt_file().get("appstream_alt_username") or "").strip()
+            or _resolve_as("appstream_alt_username", "APPLICANTSTREAM_ALT_USERNAME",
+                           "applicantstream-alt-username"))
+
+
+def appstream_alt_password() -> str:
+    return (str(_alt_file().get("appstream_alt_password") or "").strip()
+            or _resolve_as("appstream_alt_password", "APPLICANTSTREAM_ALT_PASSWORD",
+                           "applicantstream-alt-password"))
+
+
+def has_appstream_alt() -> bool:
+    """True if this machine has a second AppStream account configured."""
+    try:
+        return bool(appstream_alt_username() and appstream_alt_password())
+    except Exception:  # noqa: BLE001 — missing is a normal state, not an error
+        return False

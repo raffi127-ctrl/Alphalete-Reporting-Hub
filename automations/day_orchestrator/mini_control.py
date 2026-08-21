@@ -197,7 +197,8 @@ READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
-SECRET_ACTIONS = {"set_doubleentry_creds", "set_office_slack_token",
+SECRET_ACTIONS = {"set_appstream_alt_creds", "set_doubleentry_creds",
+                  "set_office_slack_token",
                   "set_gdocs_token", "set_slack_token",
                   # The xoxp- USER token is the one channel posts actually use
                   # and the more sensitive of the two — it was relying on the
@@ -4457,6 +4458,48 @@ def _action_funnel_board_unlock(args: str) -> tuple[bool, str]:
     return not lock.exists(), "cleared a %.0f min old lock (no funnel_board running)" % age
 
 
+def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
+    """Install a SECOND AppStream login on THIS machine, beside the primary.
+
+      set_appstream_alt_creds <username> <password>
+
+    Why a second one rather than replacing: Lucy 2 runs as CarlosNLR, which
+    cannot see six of the 28 offices, while rcaptain can. Other reports on that
+    machine already depend on the primary account and its saved session, so the
+    alternate is stored separately and jobs choose per run
+    (funnel_board --account alt). The alternate also gets its OWN browser profile
+    so its cookies never overwrite the primary's session.
+
+    Writes to ~/.config/recruiting-report/appstream-alt.json (chmod 600) and
+    verifies by actually logging in and reading the account back. NEVER echoes
+    the password. In SECRET_ACTIONS, so the poller blanks the Args cell the
+    moment the row ends."""
+    import json as _json
+    parts = (args or "").split()
+    if len(parts) < 2:
+        return False, "need: set_appstream_alt_creds <username> <password>"
+    user, pw = parts[0], " ".join(parts[1:])
+    path = pathlib.Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps({"appstream_alt_username": user,
+                                 "appstream_alt_password": pw}))
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    # Prove it before declaring success — a stored credential that cannot log in
+    # is worse than none, because it looks configured.
+    ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami",
+                        "--user", user, "--pass", pw,
+                        "--offices", "22583,19717,23607,22177,23411,21328"],
+                       timeout_s=20 * 60, log_name="appstream-alt-verify.log")
+    tail = res.split("·")[-1].strip()[:200]
+    if not ok:
+        return False, ("stored %s at %s but the login/office check FAILED: %s"
+                       % (user, path.name, tail))
+    return True, "stored %s and verified: %s" % (user, tail)
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -4678,6 +4721,7 @@ ACTIONS = {
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
     "appstream_whoami": _action_appstream_whoami,
     "funnel_board_unlock": _action_funnel_board_unlock,
+    "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,

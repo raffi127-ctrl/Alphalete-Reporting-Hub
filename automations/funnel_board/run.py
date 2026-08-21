@@ -298,6 +298,11 @@ def main():
     ap.add_argument("--weeks", type=int, default=0, help="backfill this many weeks instead")
     ap.add_argument("--today", help="override today (YYYY-MM-DD), for testing")
     ap.add_argument("--only", help="pipe-separated manager names, e.g. 'Rafael Hidalgo|Kash Rai'")
+    ap.add_argument("--account", choices=("primary", "alt"), default="primary",
+                    help="which AppStream login to use. 'alt' is the second "
+                         "account set by set_appstream_alt_creds — needed where "
+                         "the primary cannot see every office (Lucy 2 runs as "
+                         "CarlosNLR, which is denied 6 of the 28).")
     ap.add_argument("--allow-shrink", action="store_true",
                     help="permit a write that has fewer day-rows than the sheet already holds")
     a = ap.parse_args()
@@ -366,10 +371,27 @@ def main():
     # A profile of our own starts empty, so the rcaptain form login actually
     # runs. verbose=True so the log says which path it took — the silent reuse
     # is exactly what made this cost a day to find.
-    with appstream_direct_session(headless=False, verbose=True,
-                                  force_form_login=True,
-                                  profile_dir=(APPSTREAM_PROFILE_DIR.parent
-                                               / ".appstream_profile_funnel")) as page:
+    # --account alt logs in as the SECOND AppStream login (set_appstream_alt_creds)
+    # on its own profile, so the two accounts' cookies never mix. Needed where the
+    # primary cannot see every office: Lucy 2 runs as CarlosNLR, which is denied 6
+    # of the 28, while rcaptain reaches all of them.
+    _sess = dict(headless=False, verbose=True, force_form_login=True,
+                 profile_dir=(APPSTREAM_PROFILE_DIR.parent
+                              / ".appstream_profile_funnel"))
+    if getattr(a, "account", "primary") == "alt":
+        from automations.shared import creds as _creds
+        if not _creds.has_appstream_alt():
+            log("--account alt asked for, but no alternate AppStream login is "
+                "configured on this machine. Set one with the mini-control action "
+                "set_appstream_alt_creds. Refusing to fall back to the primary, "
+                "which would silently pull as the wrong account.")
+            return 1
+        _sess.update(username=_creds.appstream_alt_username(),
+                     password=_creds.appstream_alt_password(),
+                     profile_dir=(APPSTREAM_PROFILE_DIR.parent
+                                  / ".appstream_profile_funnel_alt"))
+        log("AppStream account: ALT (%s)" % _creds.appstream_alt_username())
+    with appstream_direct_session(**_sess) as page:
         rqst = re.search(r"rqst=([A-Za-z0-9-]+)", page.url).group(1)
         def attempt(todo):
             still = []
