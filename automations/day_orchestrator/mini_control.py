@@ -2665,11 +2665,16 @@ def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
     that cell once this shows 'done'."""
     import shutil
     token = (args or "").lstrip("﻿").strip()
-    # 'xoxe.xoxp-' / 'xoxe-' are Slack's ROTATED user tokens — as valid as
-    # classic 'xoxp-' (Lucy 1's real token, 2026-08-21).
-    if not token.startswith(("xoxp-", "xoxe.xoxp-", "xoxe-")):
-        return False, ("set_slack_user_token needs a Slack USER token (starts with "
-                       "'xoxp-' or 'xoxe.xoxp-') — use set_slack_token for a bot token")
+    # Accept any 'xox…' shape EXCEPT an obvious bot token — Slack keeps
+    # minting new prefixes (classic xoxp-, rotated xoxe.xoxp-, …) and a
+    # format guess rejected the real working token twice on 2026-08-21.
+    # The auth_test below is the verification that actually matters.
+    if token.startswith("xoxb-"):
+        return False, ("that's a BOT token (xoxb-) — use set_slack_token; "
+                       "this action wants the USER token Lucy posts with")
+    if not token.startswith("xox"):
+        return False, ("set_slack_user_token needs a Slack USER token "
+                       "('xox…') as the Args")
     path = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2722,13 +2727,13 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
     base = Path.home() / ".config" / "recruiting-report"
     pushed, skipped = [], []
     for fname, action, prefixes in (
-            # Rotated Slack tokens are 'xoxe.xoxp-…' / refresh 'xoxe-…' —
-            # every bit as valid as classic 'xoxp-' (Lucy 1's real file,
-            # 2026-08-21). Same for bot tokens.
-            ("slack-user-token", "set_slack_user_token",
-             ("xoxp-", "xoxe.xoxp-", "xoxe-")),
-            ("slack-bot-token", "set_slack_token",
-             ("xoxb-", "xoxe.xoxb-"))):
+            # Don't enumerate Slack's token formats (classic xoxp-, rotated
+            # xoxe.xoxp-, and whatever ships next) — 2026-08-21 the push
+            # rejected Lucy 1's REAL working token twice by guessing
+            # prefixes. Anything 'xox…' goes; the LANDING action verifies
+            # with a live auth_test, which is the test that matters.
+            ("slack-user-token", "set_slack_user_token", ("xox",)),
+            ("slack-bot-token", "set_slack_token", ("xoxb-", "xoxe.xoxb-"))):
         p = base / fname
         try:
             # utf-8-sig: Windows-written token files carry a BOM that
