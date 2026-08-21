@@ -4671,6 +4671,32 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_appstream_clear_session(args: str) -> tuple[bool, str]:
+    """Delete this machine's saved AppStream session so the next run must log in.
+
+    .appstream_storage_state.json is injected whenever it is still live, which is
+    how a machine keeps operating as an account nobody configured: Lucy 2 reads
+    configured=rcaptain and lands on account_no=6039 "Carlos Hidalgo" on every
+    probe, including forced ones. Removing the file leaves nothing to fall back
+    to, so the next login either authenticates with the stored credentials or
+    fails loudly — which is the distinction we actually need.
+
+    Safe: it is a cache. The next run rebuilds it. Refuses while an AppStream
+    automation is running so it cannot yank the session out from under one."""
+    alive = subprocess.run(["pgrep", "-f", "automations.funnel_board.run"],
+                           capture_output=True, text=True).stdout.strip()
+    if alive:
+        return False, ("a funnel_board run is active (pid %s) — not clearing the "
+                       "session under it" % alive.replace("\n", ","))
+    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
+    if not APPSTREAM_STORAGE_STATE.exists():
+        return True, "no saved session present — next run must log in already"
+    size = APPSTREAM_STORAGE_STATE.stat().st_size
+    APPSTREAM_STORAGE_STATE.unlink()
+    return True, ("removed %s (%d bytes). The next run has to log in with the "
+                  "stored credentials." % (APPSTREAM_STORAGE_STATE.name, size))
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -4895,6 +4921,7 @@ ACTIONS = {
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
     "appstream_whoami": _action_appstream_whoami,
     "funnel_board_unlock": _action_funnel_board_unlock,
+    "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
