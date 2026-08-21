@@ -7,3 +7,4 @@ gspread>=5.10          # write the request to the Metric Requests sheet tab
 google-auth>=2.20      # gcp_oauth credentials
 slack_sdk>=3.21        # post the corrections-channel ping
 certifi>=2023.7        # SSL bundle for the Slack client
+streamlit-sortables>=0.2   # drag-and-drop posting order

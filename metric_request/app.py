@@ -35,6 +35,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.office_onboarding import schema as S, store  # noqa: E402
 from automations.office_onboarding import request_notify        # noqa: E402
 
+# Drag-and-drop ordering (same component the tracker sign-up + Thread Builder
+# use). Fall back to catalog order if the deploy doesn't have it installed.
+try:
+    from streamlit_sortables import sort_items
+    _HAS_SORT = True
+except Exception:                                    # noqa: BLE001
+    _HAS_SORT = False
+
 st.set_page_config(page_title="Request Your Office Metrics", page_icon="📊",
                    layout="centered")
 
@@ -148,9 +156,10 @@ def form_view() -> None:
                 "post for you.")
         return
     st.markdown("### 3. Where should we post — and what goes where?")
-    st.caption("Add a channel and check the metrics you want in THAT channel. Most "
-               "offices use one channel for everything — but you can add more and "
-               "send, say, only Canceled Orders to a leaders channel.")
+    st.caption("Check what each channel gets. Most offices use one channel "
+               "for everything. If you want certain metrics going somewhere "
+               "else too — like a leaders-only channel — add a second "
+               "channel and check just those.")
     st.warning("**Important:** add **Megan Hidalgo** to every channel below — we "
                "can't post to a channel she isn't in.")
 
@@ -177,13 +186,33 @@ def form_view() -> None:
             plans.append(S.ChannelPlan(channel_name=cname.strip(),
                                        report_keys=keys_here))
 
+    # ---- 4. Posting order (drag & drop) -----------------------------------
+    st.divider()
+    st.markdown("### 4. Put them in order")
+    labels = {rk.key: rk.label for rk in fam_reports}
+    rev = {v: k for k, v in labels.items()}
+    # union of every metric asked for across all channels, in report order
+    picked_union = [rk.key for rk in fam_reports
+                    if any(rk.key in p.report_keys for p in plans)]
+    if picked_union and _HAS_SORT:
+        st.caption("This is the order the metrics will post in each morning "
+                   "in your Slack channel — drag to rearrange, top posts "
+                   "first.")
+        # key includes the picked set so the drag list rebuilds when it changes
+        sorted_labels = sort_items(
+            [labels[k] for k in picked_union], direction="vertical",
+            key="met_order_" + "_".join(sorted(picked_union)))
+        picked_union = [rev[l] for l in sorted_labels if l in rev]
+    elif not picked_union:
+        st.caption("Check some metrics above and they'll show up here for "
+                   "you to drag into order.")
+
     # ---- build + submit ---------------------------------------------------
     st.divider()
     named_plans = [p for p in plans if p.channel_name]
     channels = [p.channel_name for p in named_plans]
-    # union of every metric asked for across all channels, in report order
-    union = [rk.key for rk in fam_reports
-             if any(rk.key in p.report_keys for p in named_plans)]
+    union = [k for k in picked_union
+             if any(k in p.report_keys for p in named_plans)]
     enrolled = [S.EnrolledReport(key=k, order=idx + 1)
                 for idx, k in enumerate(union)]
     rec = S.OnboardingRecord(
