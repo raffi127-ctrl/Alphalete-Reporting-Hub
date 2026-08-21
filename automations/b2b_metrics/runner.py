@@ -242,6 +242,52 @@ def _write_manifest(per_office: list) -> None:
         pass
 
 
+def _office_channels_label(o: B2BOffice) -> str:
+    """'Office — #chan1 + #chan2' for the Hub card's per-office checklist row —
+    every channel this office posts into (fan-out plans, else primary +
+    mirrors), so a newly added channel is visible on the card (Megan
+    2026-08-20)."""
+    plans = getattr(o, "channel_plans", ()) or ()
+    names = [(p.get("channel_name") or p.get("channel_id") or "").strip()
+             for p in plans]
+    names = [n for n in names if n]
+    if not names:
+        names = [o.channel_name] if o.channel_name else []
+        for _cid, _n in (getattr(o, "mirror_channels", ()) or ()):
+            if _n and _n not in names:
+                names.append(_n)
+    return "{} — {}".format(o.label, " + ".join(names)) if names else o.label
+
+
+_STATUS_FILE = Path(__file__).resolve().parents[2] / "output" / "b2b_metrics" / "_posted_today.json"
+
+
+def _record_office_status(o: B2BOffice, *, ok: bool, error: str = "") -> None:
+    """Best-effort per-office ✅/❌ row for the Hub card (same shape the
+    office_metrics + tracker cards use: {date, channels: [{label, ok,
+    error}]}). Read-modify-write keyed by the office's row label; resets on a
+    new day; never fails the run."""
+    try:
+        import json as _json
+        _STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        today = dt.date.today().isoformat()
+        data = {}
+        if _STATUS_FILE.exists():
+            try:
+                data = _json.loads(_STATUS_FILE.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                data = {}
+        if data.get("date") != today:
+            data = {"date": today, "channels": []}
+        key = _office_channels_label(o)
+        rows = [r for r in (data.get("channels") or []) if r.get("label") != key]
+        rows.append({"label": key, "ok": bool(ok), "error": (error or "")[:200]})
+        data["channels"] = rows
+        _STATUS_FILE.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — the checklist must never fail a run
+        pass
+
+
 def header_title(o: B2BOffice, day: dt.date) -> str:
     return "{} {:02d}/{:02d}/{}".format(THREAD_TITLE, day.month, day.day, day.year)
 
@@ -654,8 +700,14 @@ def main(argv=None) -> int:
             per_office.append({"key": key, "present": present, "missed": missed,
                                "deferred": res.get("deferred") or [],
                                "failed": False})
+            if args.post:
+                _record_office_status(
+                    o, ok=not missed,
+                    error=("missed: " + ", ".join(missed)) if missed else "")
         except Exception:
             statuses.append("failed")
+            if args.post:
+                _record_office_status(o, ok=False, error="run crashed — see log")
             # The whole office run raised BEFORE (or mid) posting — treat every
             # section it was supposed to post as missing, so the manifest names
             # them rather than recording an empty (falsely-clean) office.

@@ -71,7 +71,9 @@ def _status_order() -> dict:
     order = {status_label(MAIN_OFFICE_LABEL, MAIN_OFFICE_CHANNEL): 0}
     for i, k in enumerate(_off.ORDER):
         o = _off.OFFICES[k]
-        order[status_label(o.label, o.channel_name)] = i + 1
+        # Same label the writer uses — a fan-out office's row key carries its
+        # full channel list, and the two must agree or ordering breaks.
+        order[status_label(o.label, _office_channels_label(o))] = i + 1
     return order
 
 
@@ -106,9 +108,22 @@ def record_status(label: str, channel_name: str, *, ok: bool,
         pass
 
 
+def _office_channels_label(o: Office) -> str:
+    """Every channel this office posts into, for its Hub checklist row — a
+    fan-out office reads 'Office — #main + #leaders', not just the primary
+    (Megan 2026-08-20: the card must list the added channels)."""
+    plans = getattr(o, "channel_plans", ()) or ()
+    names = [(p.get("channel_name") or p.get("channel_id") or "").strip()
+             for p in plans]
+    names = [n for n in names if n]
+    if len(names) > 1:
+        return " + ".join(names)
+    return o.channel_name
+
+
 def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
     """record_status for a registry Office."""
-    record_status(o.label, o.channel_name, ok=ok, error=error)
+    record_status(o.label, _office_channels_label(o), ok=ok, error=error)
 
 
 # Harvest-once CANARY for the Order Log ALLREPS pull — office keys whose order_log

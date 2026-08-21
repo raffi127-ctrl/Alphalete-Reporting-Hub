@@ -254,6 +254,9 @@ def _b2b_metrics_card() -> dict:
             "message_failed": (
                 "❌ A B2B Metrics item missed — check the log and re-run that "
                 "office from its button below."),
+            # Per-office ✅/❌ rows naming EVERY channel each office posts into
+            # (mirrors + fan-out included) — written by runner main()'s loop.
+            "channel_status_file": "output/b2b_metrics/_posted_today.json",
         },
         "actions": [
             {
