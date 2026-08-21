@@ -31,7 +31,12 @@
 #   * BOX — WEEK-PINNED (BOX_SPEC.week_pin), so a re-pull returns the correct
 #     reporting week even after its 'This Week' view would roll (verified
 #     re-pullable mid-week 2026-07-08: a 5pm re-pull filled the missing Tuesday).
-#   * Frontier — reads the emailed Credico PDF; fills whatever has landed.
+#   * Frontier — GONE from this list (Eve 2026-08-19): the campaign wound down
+#     and its Source moved to sources.RETIRED_SOURCES, so `--sections` could no
+#     longer match it and the name was a dead argument. Its board rows still
+#     exist (and 'frontier' stays in data_gate.LAGGING_SECTIONS while they do);
+#     frontier_pull.py + _adapter_frontier are untouched, so putting the
+#     campaign back is one Source entry plus this name.
 #
 # WHY THESE SECTIONS ONLY (--sections), no captainships: the automation only
 # WRITES the raw daily section cells; every Total / leaderboard / summary is a
@@ -153,7 +158,7 @@ if [ "$(date +%u)" = "1" ]; then
   if [ "$ST" -ne 0 ]; then
     echo "[$(date)] MONDAY: full fill exited $ST — alerting (the closed week rolls tomorrow)" >> "$LOG_FILE"
     catchup_alert "org-sales-board" "Alphalete Org Sales Board" \
-      "Monday's 14:30 refresh exited $ST — last week's Sunday may be missing from the day-behind sections (Retail JE / SARA / BOX / Frontier) and TUESDAY'S ROLLOVER will freeze it that way. Re-run: lucy rerun org_sales_board"
+      "Monday's 14:30 refresh exited $ST — last week's Sunday may be missing from the day-behind sections (Retail JE / SARA / BOX) and TUESDAY'S ROLLOVER will freeze it that way. Re-run: lucy rerun org_sales_board"
   fi
   # NO CAPTAINSHIP DRAFTS HERE ANY MORE (Eve 2026-08-10). They used to be built
   # and posted from this branch, because Monday was excluded from both
@@ -179,7 +184,7 @@ if [ "$(date +%u)" = "1" ]; then
   # had (it wrote no orchestrator row at all).
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
-    --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1
+    --sections "Retail NL,Retail Internet,Retail JE,BOX" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
 fi
 

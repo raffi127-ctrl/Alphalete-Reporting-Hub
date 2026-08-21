@@ -38,7 +38,7 @@
 # of a seven-hour-late link, one different habit a week for the approvers, on the
 # day the board IS the whole closed week. Now the link is at 07:00 like every
 # other day and board_catchup.sh's Monday branch became a SILENT refresh: it
-# re-fills Retail JE (~13:53) / SARA Retail NL+Internet (~14:00) / BOX / Frontier
+# re-fills Retail JE (~13:53) / SARA Retail NL+Internet (~14:00) / BOX
 # into the board before Tuesday's rollover freezes the week, and posts nowhere.
 # So Monday's emailed picture can undercount Sunday in those sections while the
 # BOARD itself is correct by ~14:45 — Eve's call, made knowing that. The link
