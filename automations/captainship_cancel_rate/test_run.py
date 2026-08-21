@@ -313,6 +313,9 @@ class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
         self.assertTrue(C.is_inactive("  mason   davis "))
         # 2026-08-19: same wind-down, Starr's Team (two-week zero rule).
         self.assertTrue(C.is_inactive("Jason Strid"))
+        # 2026-08-20: same wind-down, Sahil's Team — dropped out of the
+        # Metrics view on both reports the same morning.
+        self.assertTrue(C.is_inactive("Jeremiah Minor"))
 
     def test_melik_is_not_a_known_winddown(self):
         self.assertFalse(C.is_inactive("Melik El Jaiez"),

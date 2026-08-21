@@ -80,6 +80,20 @@ INACTIVE_ICDS: dict[str, str] = {
     # new_owners/captain_gate.EXCLUDE["Starr"]. Row stays for the history.
     "jason strid": "winding down — off the Metrics view since 2026-08-19, "
                    "two-week zero rule (Eve)",
+    # Sahil's Team. Third time this exact shape: 0-30 flat at 0.00% for five
+    # days (8/15-8/19), then 2026-08-20 BOTH sections went blank at once — on
+    # the Activation Rate tabs too (66.70% / 75.00% on 8/19, nothing since), so
+    # he left the Metrics view itself, not one report's filter. He is on no
+    # other captain's tab either, so it is not a move to another captainship.
+    # Three closed weeks at 0 on the board (WE 08.02, 08.09, 08.16) and Eve had
+    # already taken him out of the "Sahil's Captainship" group on 2026-07-30.
+    # He was held out of the 2026-08-19 two-week-zero batch because his WE
+    # 07.26 / 07.19 columns were BLANK, not 0 (new owner, no history yet) —
+    # that is no longer true. This entry only stops the daily false ping; the
+    # four-place removal (roster_remove x2 + captain_gate.EXCLUDE["Sahil"] +
+    # distro_remove) is still pending Eve's call.
+    "jeremiah minor": "winding down — off the Metrics view since 2026-08-20 "
+                      "(pending Eve's call on the full two-week-zero removal)",
 }
 
 
