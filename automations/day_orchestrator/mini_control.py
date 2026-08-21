@@ -2664,10 +2664,12 @@ def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
     Note: the token transits the control Sheet's Args cell to get here — clear
     that cell once this shows 'done'."""
     import shutil
-    token = (args or "").strip()
-    if not token.startswith("xoxp-"):
+    token = (args or "").lstrip("﻿").strip()
+    # 'xoxe.xoxp-' / 'xoxe-' are Slack's ROTATED user tokens — as valid as
+    # classic 'xoxp-' (Lucy 1's real token, 2026-08-21).
+    if not token.startswith(("xoxp-", "xoxe.xoxp-", "xoxe-")):
         return False, ("set_slack_user_token needs a Slack USER token (starts with "
-                       "'xoxp-') as the Args — use set_slack_token for a bot token")
+                       "'xoxp-' or 'xoxe.xoxp-') — use set_slack_token for a bot token")
     path = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2719,9 +2721,14 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
         return False, "target is THIS machine — nothing to push"
     base = Path.home() / ".config" / "recruiting-report"
     pushed, skipped = [], []
-    for fname, action, prefix in (
-            ("slack-user-token", "set_slack_user_token", "xoxp-"),
-            ("slack-bot-token", "set_slack_token", "xoxb-")):
+    for fname, action, prefixes in (
+            # Rotated Slack tokens are 'xoxe.xoxp-…' / refresh 'xoxe-…' —
+            # every bit as valid as classic 'xoxp-' (Lucy 1's real file,
+            # 2026-08-21). Same for bot tokens.
+            ("slack-user-token", "set_slack_user_token",
+             ("xoxp-", "xoxe.xoxp-", "xoxe-")),
+            ("slack-bot-token", "set_slack_token",
+             ("xoxb-", "xoxe.xoxb-"))):
         p = base / fname
         try:
             # utf-8-sig: Windows-written token files carry a BOM that
@@ -2732,8 +2739,9 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
             continue
         if not token:
             continue
-        if not token.startswith(prefix):
-            skipped.append(f"{fname} (doesn't look like a {prefix}… token)")
+        if not token.startswith(prefixes):
+            skipped.append(f"{fname} (doesn't look like a "
+                           f"{'/'.join(prefixes)}… token)")
             continue
         enqueue(action, token, by=f"push from {_machine_profile()}",
                 machine=target, auto=True)
