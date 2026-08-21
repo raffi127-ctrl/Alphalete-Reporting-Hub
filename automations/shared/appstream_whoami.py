@@ -107,7 +107,7 @@ def main(argv=None):
 
     ids = [o.strip() for o in a.offices.split(",") if o.strip()]
     ok, denied, other = [], [], []
-    kw = dict(headless=not a.headed, verbose=False, allow_form_login=True,
+    kw = dict(headless=not a.headed, verbose=True, allow_form_login=True,
               force_form_login=a.force or bool(a.user))
     if a.user and a.pw:
         # Separate profile, same reason daily_focus --alt-appstream uses one:

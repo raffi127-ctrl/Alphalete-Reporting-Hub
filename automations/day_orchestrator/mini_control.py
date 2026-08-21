@@ -168,6 +168,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "set_dd_bot_token", "set_dd_app_token", "install_jiraiya",
                     "set_contacts_token", "set_contacts_ro_token",
                     "set_credico_state", "set_alphalete_app_password",
+                    "set_appstream_alt_state",
                     "post_note",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
@@ -198,6 +199,9 @@ READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_doubleentry_creds",
+                  # A live AppStream browser session pushed to an alt profile —
+                  # same class of secret as set_credico_state.
+                  "set_appstream_alt_state",
                   "set_office_slack_token",
                   "set_gdocs_token", "set_slack_token",
                   # The xoxp- USER token is the one channel posts actually use
@@ -1076,6 +1080,64 @@ def _action_set_sheets_cookies(args: str) -> tuple[bool, str]:
     return ok, (f"{len(cookies)} cookie(s) replayed · " + res +
                 (" — profile is signed in" if ok else
                  " — Google rejected it; the human sheets_login is still needed"))
+
+
+def _action_set_appstream_alt_state(args: str) -> tuple[bool, str]:
+    """Seed the ALTERNATE AppStream account's live session onto THIS machine
+    from a storage-state JSON exported where a human cleared the login.
+
+    Why: AppStream's 2026-08-20 release (v2026.08.20.1) put an interactive
+    'Verify you are human' checkbox in front of the login form, so the
+    unattended form login is dead on every machine. The only way an account
+    reaches a runner nobody sits at is a replayed session — the same pattern
+    as set_sheets_cookies / set_credico_state.
+
+    Args is the CONTENTS of .appstream_storage_state.json from the source
+    machine. Don't paste it by hand — on the source machine (fresh from
+    --appstream-login) run:
+        python -m automations.shared.tableau_patchright --appstream-push-alt
+    which queues it here directly. Injects the cookies into BOTH alternate
+    browser profiles (whoami's and funnel_board's), stamps the identity
+    marker so the login guard keeps them, then VERIFIES with appstream_whoami
+    --alt against the six offices the primary can't see. In SECRET_ACTIONS —
+    the poller blanks the Args cell the moment the row finishes."""
+    import json
+    blob = (args or "").strip()
+    if not blob.startswith("{"):
+        return False, ("set_appstream_alt_state needs the storage-state JSON "
+                       "as Args — push it with --appstream-push-alt, don't "
+                       "paste by hand")
+    try:
+        n = len(json.loads(blob).get("cookies", []))
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args is not valid JSON: {str(e)[:120]}"
+    tmp = Path.home() / ".config" / "recruiting-report" / "appstream-alt-state.json"
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(blob, encoding="utf-8")
+        os.chmod(tmp, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {tmp}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd(
+        [sys.executable, "-m", "automations.shared.tableau_patchright",
+         "--appstream-seed-alt", str(tmp)],
+        timeout_s=5 * 60, log_name="appstream-seed-alt.log")
+    # The session is a live secret — never leave it lying on disk.
+    try:
+        tmp.unlink()
+    except Exception:  # noqa: BLE001
+        pass
+    if not ok:
+        return False, f"{n} cookie(s) received but the seed failed: {res[:300]}"
+    ok2, res2 = _run_cmd(
+        [sys.executable, "-m", "automations.shared.appstream_whoami", "--alt",
+         "--offices", "22583,19717,23607,22177,23411,21328"],
+        timeout_s=20 * 60, log_name="appstream-whoami.log")
+    if not ok2:
+        return False, (f"session seeded ({n} cookies) but the verify FAILED: "
+                       f"{res2[:300]} — AppStream may refuse a session "
+                       "replayed from another machine/IP")
+    return True, f"alt session seeded ({n} cookies) + verified · {res2[:300]}"
 
 
 def _action_ping(args: str) -> tuple[bool, str]:
@@ -4689,6 +4751,7 @@ ACTIONS = {
     "git_recover": _action_git_recover,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
+    "set_appstream_alt_state": _action_set_appstream_alt_state,
     "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,

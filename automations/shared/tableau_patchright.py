@@ -1455,6 +1455,7 @@ def appstream_direct_session(headless: bool = False,
             # profile records who last form-logged-in here; on mismatch (or no
             # marker) the cookies are cleared so the real form renders.
             _acct_marker = Path(profile) / ".appstream_account"
+            _restored = False
             if username:
                 try:
                     _last = (_acct_marker.read_text().strip()
@@ -1472,22 +1473,45 @@ def appstream_direct_session(headless: bool = False,
                         if verbose:
                             print(f"-> couldn't clear cookies ({_e}) — the "
                                   "login may reuse the wrong account", flush=True)
-            if verbose:
-                print("-> [allow_form_login] driving AppStream login form",
-                      flush=True)
-            page.goto("https://applicantstream.com/",
-                      wait_until="domcontentloaded")
-            page.wait_for_timeout(3_000)
-            if (page.locator(_PASSWORD_SELECTOR).count() > 0
-                    or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
-                _drive_login_form(page, verbose, username=user, password=pwd)
-                try:
-                    _acct_marker.write_text(user)
-                except Exception:
-                    pass
-            elif verbose:
-                print("-> AppStream session reused from profile", flush=True)
-            page.wait_for_timeout(3_000)
+                else:
+                    # The profile's session already belongs to this account
+                    # (seeded by --appstream-seed-alt, or left by a prior
+                    # login). A bare page load still shows the LOGIN form even
+                    # with live cookies — only the ?rqst=<TOKEN> URL restores
+                    # the console — so try the token hop BEFORE concluding a
+                    # form drive (dead since the 2026-08-20 release put an
+                    # interactive human-check on the form) is needed.
+                    for _tok in [c["name"][len("rqst_"):]
+                                 for c in ctx.cookies()
+                                 if c.get("name", "").startswith("rqst_")]:
+                        try:
+                            page.goto(f"{APPSTREAM_BASE}?rqst={_tok}&p=701",
+                                      wait_until="domcontentloaded")
+                            page.wait_for_selector("#searchMC", timeout=8_000)
+                            _restored = True
+                            if verbose:
+                                print(f"-> {username} console restored from the "
+                                      "profile's own session", flush=True)
+                            break
+                        except Exception:
+                            continue
+            if not _restored:
+                if verbose:
+                    print("-> [allow_form_login] driving AppStream login form",
+                          flush=True)
+                page.goto("https://applicantstream.com/",
+                          wait_until="domcontentloaded")
+                page.wait_for_timeout(3_000)
+                if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                        or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                    _drive_login_form(page, verbose, username=user, password=pwd)
+                    try:
+                        _acct_marker.write_text(user)
+                    except Exception:
+                        pass
+                elif verbose:
+                    print("-> AppStream session reused from profile", flush=True)
+                page.wait_for_timeout(3_000)
             # Persist the freshly-authenticated session so sibling reports in the
             # same batch reuse it (fast) instead of each re-driving the login +
             # Cloudflare wait. Only save a real console session (carries an rqst_
@@ -1540,10 +1564,25 @@ def appstream_direct_session(headless: bool = False,
             # and the one-time reseed fallback is used, instead of cascading a
             # #searchMC-timeout through every owner (Megan 2026-07-03).
             if page.locator("#searchMC").count() == 0:
+                # Say WHERE the failed login actually landed — "didn't complete"
+                # alone can't distinguish a Cloudflare challenge from a rejected
+                # password from a site change (2026-08-20: three blind probes).
+                _where = ""
+                try:
+                    _body = " ".join(page.inner_text("body").split())[:200]
+                    _where = f"\nlanded on: {(page.url or '?')[:100]}\npage says: {_body!r}"
+                    _shot = (Path(__file__).resolve().parents[2] / "output"
+                             / "appstream-login-fail.png")
+                    _shot.parent.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(_shot))
+                    _where += f"\nscreenshot: {_shot}"
+                except Exception:
+                    pass
                 raise RuntimeError(
                     "AppStream console never rendered #searchMC after login — "
-                    "the rcaptain login didn't complete (likely a Cloudflare "
-                    "re-challenge). Re-seed once with:\n"
+                    "the login didn't complete (Cloudflare re-challenge, "
+                    "rejected password, or a site change)." + _where + "\n"
+                    "Re-seed once with:\n"
                     "    PYTHONPATH=. .venv/bin/python -m "
                     "automations.shared.tableau_patchright --appstream-login")
             if verbose:
@@ -1642,7 +1681,91 @@ if __name__ == "__main__":
                          "extensions ENABLED so you can install the resume-"
                          "extractor plugin (the robot) into it. It then persists "
                          "for every scheduled resume_pushing run.")
+    ap.add_argument("--appstream-push-alt", nargs="?", const="Lucy 2",
+                    metavar="MACHINE", default=None,
+                    help="Push THIS machine's saved AppStream session to another "
+                         "machine's ALTERNATE-account profiles via the Mini "
+                         "Control queue (default machine: Lucy 2). Run it right "
+                         "after --appstream-login so the session is fresh. The "
+                         "session JSON goes file->queue directly; the queue "
+                         "blanks it once installed.")
+    ap.add_argument("--appstream-seed-alt", metavar="JSON_PATH", default=None,
+                    help="(runner side) Inject an exported AppStream session "
+                         "into THIS machine's alternate-account browser "
+                         "profiles. Normally invoked by the mini-control action "
+                         "set_appstream_alt_state, not by hand.")
     args = ap.parse_args()
+    if args.appstream_push_alt is not None:
+        import sys as _sys
+        _machine = args.appstream_push_alt
+        if not APPSTREAM_STORAGE_STATE.exists():
+            print(f"❌ no saved session ({APPSTREAM_STORAGE_STATE.name} missing) "
+                  "— run --appstream-login first")
+            _sys.exit(1)
+        _blob = APPSTREAM_STORAGE_STATE.read_text()
+        try:
+            _n_rqst = sum(1 for c in json.loads(_blob).get("cookies", [])
+                          if c.get("name", "").startswith("rqst_"))
+        except Exception as _e:
+            print(f"❌ saved session unreadable: {_e}")
+            _sys.exit(1)
+        if _n_rqst == 0:
+            print("❌ saved session has no rqst_ token — it wouldn't restore a "
+                  "console. Re-run --appstream-login first.")
+            _sys.exit(1)
+        from automations.day_orchestrator import mini_control as _mc
+        _mc.enqueue("set_appstream_alt_state", _blob,
+                    by="appstream-push-alt", machine=_machine)
+        print(f"✅ queued the saved session ({_n_rqst} rqst token) to "
+              f"'{_machine}' as set_appstream_alt_state — watch it with the "
+              "machine's Mini Control status. The queue blanks the session "
+              "from the sheet once the row finishes.")
+        _sys.exit(0)
+    if args.appstream_seed_alt:
+        import sys as _sys
+        _src = Path(args.appstream_seed_alt)
+        try:
+            _state = json.loads(_src.read_text())
+        except Exception as _e:
+            print(f"❌ couldn't read state JSON at {_src}: {_e}")
+            _sys.exit(1)
+        _cookies = _state.get("cookies", [])
+        _n_rqst = sum(1 for c in _cookies
+                      if c.get("name", "").startswith("rqst_"))
+        if not _cookies or _n_rqst == 0:
+            print(f"❌ state has {len(_cookies)} cookie(s) and {_n_rqst} rqst "
+                  "token(s) — refusing to seed a session that can't restore "
+                  "a console")
+            _sys.exit(1)
+        try:
+            from automations.shared import creds as _creds
+            _alt_user = _creds.appstream_alt_username()
+        except Exception:
+            print("❌ no alternate AppStream login configured here — run the "
+                  "set_appstream_alt_creds action first (the seeded session "
+                  "needs a username for the identity marker)")
+            _sys.exit(1)
+        # Both alternate-account profiles get the session: appstream_whoami
+        # --alt verifies on one, funnel_board --account alt runs on the other.
+        _targets = [APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt",
+                    APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_funnel_alt"]
+        with sync_playwright() as _p:
+            for _prof in _targets:
+                _prof.mkdir(exist_ok=True, parents=True)
+                _ctx = _launch_persistent(_p, _prof, headless=True,
+                                          label="seed_alt", verbose=False)
+                try:
+                    _ctx.clear_cookies()
+                    _ctx.add_cookies(_cookies)
+                finally:
+                    _ctx.close()
+                # Stamp who this session belongs to, so the form-login identity
+                # guard doesn't clear the cookies we just planted.
+                (_prof / ".appstream_account").write_text(_alt_user)
+                print(f"-> seeded {len(_cookies)} cookie(s) into {_prof.name} "
+                      f"(marker: {_alt_user})", flush=True)
+        print(f"✅ alternate session seeded for {_alt_user} on both profiles")
+        _sys.exit(0)
     if args.appstream_extension:
         import sys as _sys
         print("Opening the AppStream automation profile with extensions ENABLED.\n"
