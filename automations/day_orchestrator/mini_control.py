@@ -2709,29 +2709,41 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
     token should feed the fleet — same idea as --appstream-push-fleet.
 
     Args: the target machine name, e.g. 'Lucy 3'."""
-    target = (args or "").strip()
+    # The CLI passthrough shlex-quotes args with spaces ('Lucy 3' arrives
+    # WITH literal quotes) — strip them or the target tab lookup goes loose.
+    target = (args or "").strip().strip("'\"").strip()
     if not target:
         return False, ("push_slack_tokens needs the target machine name as "
                        "Args, e.g. 'Lucy 3'")
-    if target.strip().lower() == _machine_profile().strip().lower():
+    if target.lower() == _machine_profile().strip().lower():
         return False, "target is THIS machine — nothing to push"
     base = Path.home() / ".config" / "recruiting-report"
-    pushed = []
-    for fname, action in (("slack-user-token", "set_slack_user_token"),
-                          ("slack-bot-token", "set_slack_token")):
+    pushed, skipped = [], []
+    for fname, action, prefix in (
+            ("slack-user-token", "set_slack_user_token", "xoxp-"),
+            ("slack-bot-token", "set_slack_token", "xoxb-")):
         p = base / fname
         try:
-            token = p.read_text().strip()
+            # utf-8-sig: Windows-written token files carry a BOM that
+            # production's _load_token strips — a raw read pushed
+            # '﻿xoxp-…' and the target rejected it (2026-08-21).
+            token = p.read_text(encoding="utf-8-sig").lstrip("﻿").strip()
         except Exception:  # noqa: BLE001 — missing file just isn't pushed
             continue
-        if token:
-            enqueue(action, token, by=f"push from {_machine_profile()}",
-                    machine=target, auto=True)
-            pushed.append(fname)
+        if not token:
+            continue
+        if not token.startswith(prefix):
+            skipped.append(f"{fname} (doesn't look like a {prefix}… token)")
+            continue
+        enqueue(action, token, by=f"push from {_machine_profile()}",
+                machine=target, auto=True)
+        pushed.append(fname)
     if not pushed:
-        return False, "no Slack token files on this machine to push"
+        return False, ("nothing pushed — " + ("; ".join(skipped) if skipped
+                       else "no Slack token files on this machine"))
+    note = f" (skipped: {'; '.join(skipped)})" if skipped else ""
     return True, (f"queued {', '.join(pushed)} onto '{target}' — the target "
-                  "verifies each with auth_test; Args cells blank on landing")
+                  f"verifies each with auth_test; Args blank on landing{note}")
 
 
 def _action_set_office_slack_token(args: str) -> tuple[bool, str]:
