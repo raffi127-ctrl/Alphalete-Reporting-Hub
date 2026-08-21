@@ -4479,7 +4479,7 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     if len(parts) < 2:
         return False, "need: set_appstream_alt_creds <username> <password>"
     user, pw = parts[0], " ".join(parts[1:])
-    path = pathlib.Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
+    path = Path.home() / ".config" / "recruiting-report" / "appstream-alt.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_json.dumps({"appstream_alt_username": user,
                                  "appstream_alt_password": pw}))
