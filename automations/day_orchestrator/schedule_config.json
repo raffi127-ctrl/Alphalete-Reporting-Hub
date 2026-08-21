@@ -4669,6 +4669,84 @@
       "_note": "Office metrics for cody \u2192 #aeon-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15.",
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "nii_metrics": {
+      "order": 36.1,
+      "on_scheduler": true,
+      "display_name": "Nii's Daily Metrics (nii-teiko-tagoe-office)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "nii",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "nii_metrics"
+      },
+      "_note": "Office metrics for nii -> nii-teiko-tagoe-office (C0BMETPJT70), owner Nii Tagoe, full D2D 11-board thread, pure config (shared views). Onboarded via office_onboarding (form-applied on Lucy 1); the schedule entry lived ONLY in the mini's working tree and was wiped when the mini took the 2026-08-20 master-sequence rewrite of this file, so the thread silently stopped while his trackers kept posting. COMMITTED 2026-08-21 so no pull can drop it again.",
+      "_onboarded": true,
+      "_order_note": "fractional slot after the office-metrics block (27-36), no renumbering of Megan's 2026-08-20 integer master sequence"
+    },
+    "drew_metrics": {
+      "order": 36.2,
+      "on_scheduler": true,
+      "display_name": "Drew's Daily Metrics (Precision management-att-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "drew",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "drew_metrics"
+      },
+      "_note": "Office metrics for drew -> Precision management-att-sales (C0A7871FAUV), owner Drew Tepper, NDS/wireless subset via SECTION_OVERRIDES (knocks_gaps, churn, rep_activations, order_log, cancels). Same wipe as nii_metrics: mini-only working-tree entry lost to the 2026-08-20 master-sequence rewrite. COMMITTED 2026-08-21 so no pull can drop it again.",
+      "_onboarded": true,
+      "_order_note": "fractional slot after the office-metrics block (27-36), no renumbering of Megan's 2026-08-20 integer master sequence"
+    },
     "metrics_shot_preview": {
       "order": 99,
       "on_scheduler": false,
