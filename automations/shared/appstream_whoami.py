@@ -1,0 +1,94 @@
+"""Which AppStream account is this machine actually using, and what can it see?
+
+Written because Lucy 2 reached only 22 of 28 offices while the laptop reached 28
+with the SAME credentials file. "This Office is not assigned to you!" is an
+account-level permission, so the machines were not acting as the same account —
+and the likely reason is the SAVED SESSION: appstream_direct_session reuses
+.appstream_storage_state.json when it is still live, so a session minted by a
+different login keeps working and the configured username is never used.
+
+  python -m automations.shared.appstream_whoami                 # as it runs today
+  python -m automations.shared.appstream_whoami --force         # ignore the saved
+                                                                # session, log in fresh
+  python -m automations.shared.appstream_whoami --offices 22583,19717
+
+--force is the interesting one: if the configured creds are rcaptain, a forced
+login should turn the deniels into OKs. Compare the two runs.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+
+BASE = "https://applicantstream.com/index.cfm"
+TOKRE = re.compile(r"rqst=([A-Za-z0-9\-]+)")
+# The six Lucy 2 denied on 2026-08-20, plus two it reached, as a control.
+DEFAULT_OFFICES = "22583,19717,23607,22177,23411,21328,11580,23318"
+
+
+def identity(page) -> str:
+    body = page.inner_text("body")[:400].replace("\n", " ")
+    acct = re.search(r"Account No:\s*(\d+)", body)
+    who = re.search(r"Account No:\s*\d+\s*\)?\s*\|?\s*([^|]{2,40}?)\s*\|", body)
+    return "account_no=%s  label=%r" % (
+        acct.group(1) if acct else "?",
+        (who.group(1).strip() if who else body[:60]))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--force", action="store_true",
+                    help="ignore the saved session and drive the login form")
+    ap.add_argument("--offices", default=DEFAULT_OFFICES)
+    ap.add_argument("--headed", action="store_true")
+    a = ap.parse_args(argv)
+
+    from automations.shared import creds
+    from automations.shared.tableau_patchright import (
+        appstream_direct_session, APPSTREAM_STORAGE_STATE)
+
+    try:
+        user = creds.appstream_username()
+    except Exception as e:  # noqa: BLE001
+        user = "<unreadable: %s>" % type(e).__name__
+    print("configured username : %s" % user, flush=True)
+    print("saved session file  : %s (%s)"
+          % (APPSTREAM_STORAGE_STATE.name,
+             "present" if APPSTREAM_STORAGE_STATE.exists() else "ABSENT"), flush=True)
+    print("mode                : %s" % ("FORCED fresh login" if a.force
+                                        else "reuse saved session if live"), flush=True)
+
+    ids = [o.strip() for o in a.offices.split(",") if o.strip()]
+    ok, denied, other = [], [], []
+    with appstream_direct_session(headless=not a.headed, verbose=False,
+                                  allow_form_login=True,
+                                  force_form_login=a.force) as page:
+        tok = (TOKRE.search(page.url) or TOKRE.search(page.content())).group(1)
+        print("identity            : %s" % identity(page), flush=True)
+        for oid in ids:
+            page.goto("%s?p=104&rqst=%s&newOfficeId=%s" % (BASE, tok, oid), timeout=60000)
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(900)
+            body = page.inner_text("body")
+            if "not assigned to you" in body.lower():
+                denied.append(oid)
+                mark = "DENIED"
+            else:
+                m = re.search(r"Office ID:\s*(\d+)\s*Owner:\s*([^|\n]+)", body)
+                if m and m.group(1) == oid:
+                    ok.append(oid)
+                    mark = "OK   %s" % m.group(2).strip()[:26]
+                else:
+                    other.append(oid)
+                    mark = "?    (did not land on %s)" % oid
+            print("  %-7s %s" % (oid, mark), flush=True)
+
+    print("\nreachable %d/%d  denied=%s%s"
+          % (len(ok), len(ids), ",".join(denied) or "none",
+             ("  unclear=" + ",".join(other)) if other else ""), flush=True)
+    return 0 if not denied else 4
+
+
+if __name__ == "__main__":
+    sys.exit(main())

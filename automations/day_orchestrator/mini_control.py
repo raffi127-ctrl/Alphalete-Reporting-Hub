@@ -4415,6 +4415,23 @@ def _action_install_indeed_source_report(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
+def _action_appstream_whoami(args: str) -> tuple[bool, str]:
+    """Which AppStream account is THIS machine using, and which offices can it see?
+
+      appstream_whoami                 as it runs today (reuses the saved session)
+      appstream_whoami --force         ignore the saved session, log in fresh
+      appstream_whoami --offices 1,2   probe specific office ids
+
+    Read-only: it switches office and reads the page back, nothing is written.
+    Exists because a stale .appstream_storage_state.json keeps a session minted by
+    a DIFFERENT login working forever — so the configured username is never used
+    and the machine silently sees fewer offices than it should."""
+    cmd = [sys.executable, "-m", "automations.shared.appstream_whoami"] + (args or "").split()
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
+                       log_name="appstream-whoami.log")
+    return ok, res[:900]
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -4634,6 +4651,7 @@ ACTIONS = {
     "git_push_setup": _action_git_push_setup,
     "git_push_check": _action_git_push_check,
     "install_tracker_auto_commit": _action_install_tracker_auto_commit,
+    "appstream_whoami": _action_appstream_whoami,
     "install_indeed_source_report": _action_install_indeed_source_report,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
