@@ -88,9 +88,11 @@ REPORTS: List[ReportKind] = [
     ReportKind("b2b_order_log_att", "📄 AT&T Order Log",           "b2b", False, True,
                blurb="The day's AT&T B2B orders."),
     ReportKind("b2b_order_log_box", "📦 Box Order Log",            "b2b", False, True,
-               blurb="The day's Box orders, posted as one morning thread: "
-                     "overall log + a tab per rep, Accepted by Supplier, "
-                     "and Box Tier Bonus Rep Level."),
+               blurb="The day's Box orders — overall log + a tab per rep."),
+    ReportKind("b2b_box_accepted", "💵 Accepted by Supplier",      "b2b", False, True,
+               blurb="Which Box orders the supplier accepted."),
+    ReportKind("b2b_box_tier_bonus", "🏆 Box Tier Bonus Rep Level", "b2b", False, True,
+               blurb="Where each rep sits on the Box tier bonus levels."),
 ]
 
 REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
@@ -114,7 +116,8 @@ CAMPAIGNS: "List[tuple]" = [
     ("b2b_att", "🏢 B2B AT&T", "b2b",
      ("b2b_sales", "b2b_activation", "b2b_churn_wireless", "b2b_churn_int",
       "b2b_churn_air", "b2b_customer_churn", "b2b_order_log_att")),
-    ("b2b_box", "📦 B2B Box", "b2b", ("b2b_order_log_box",)),
+    ("b2b_box", "📦 B2B Box", "b2b",
+     ("b2b_order_log_box", "b2b_box_accepted", "b2b_box_tier_bonus")),
 ]
 CAMPAIGNS_BY_KEY: "Dict[str, tuple]" = {c[0]: c for c in CAMPAIGNS}
 
