@@ -2665,15 +2665,13 @@ def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
     that cell once this shows 'done'."""
     import shutil
     token = (args or "").lstrip("﻿").strip()
-    # Accept any 'xox…' shape EXCEPT an obvious bot token — Slack keeps
-    # minting new prefixes (classic xoxp-, rotated xoxe.xoxp-, …) and a
-    # format guess rejected the real working token twice on 2026-08-21.
-    # The auth_test below is the verification that actually matters.
-    if token.startswith("xoxb-"):
-        return False, ("that's a BOT token (xoxb-) — use set_slack_token; "
-                       "this action wants the USER token Lucy posts with")
+    # Accept whatever Slack accepts — 2026-08-21's lesson: the fleet's
+    # PRODUCTION posting file on Lucy 1 is xoxb-prefixed yet auth_tests as
+    # lucy_reporting with full posting scopes, and three rounds of prefix
+    # guessing rejected it. The auth_test below is the only real gate; its
+    # result names the authed account so a wrong identity is VISIBLE.
     if not token.startswith("xox"):
-        return False, ("set_slack_user_token needs a Slack USER token "
+        return False, ("set_slack_user_token needs a Slack token "
                        "('xox…') as the Args")
     path = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
     try:
