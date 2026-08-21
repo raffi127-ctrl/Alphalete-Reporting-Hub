@@ -146,7 +146,8 @@ def main(argv=None):
                   profile_dir=APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt")
     with appstream_direct_session(**kw) as page:
         tok = (TOKRE.search(page.url) or TOKRE.search(page.content())).group(1)
-        print("identity            : %s" % identity(page), flush=True)
+        who = identity(page)
+        print("identity            : %s" % who, flush=True)
         for oid in ids:
             page.goto("%s?p=104&rqst=%s&newOfficeId=%s" % (BASE, tok, oid), timeout=60000)
             page.wait_for_load_state("domcontentloaded")
@@ -165,9 +166,12 @@ def main(argv=None):
                     mark = "?    (did not land on %s)" % oid
             print("  %-7s %s" % (oid, mark), flush=True)
 
-    print("\nreachable %d/%d  denied=%s%s"
-          % (len(ok), len(ids), ",".join(denied) or "none",
-             ("  unclear=" + ",".join(other)) if other else ""), flush=True)
+    # Same tail-truncation rule as --accounts: whoever is asking needs WHICH
+    # ACCOUNT this was, and that is printed near the top where it gets cut. Repeat
+    # it here. "Configured as rcaptain" and "logged in as rcaptain" are different
+    # claims, and only the second one explains a denial.
+    print("\nSUMMARY configured=%s session=%s reachable=%d/%d denied=%s"
+          % (user, who, len(ok), len(ids), ",".join(denied) or "none"), flush=True)
     return 0 if not denied else 4
 
 
