@@ -280,7 +280,7 @@ def request_view() -> None:
                                "pop-up, and copy the Channel ID:")
                     # 397 = half the source's 794px — pixel-perfect on retina
                     # screens. Bigger = the browser upscales, it goes soft.
-                    st.image(str(SLACK_ID_IMG), width=550)
+                    st.image(str(SLACK_ID_IMG), use_container_width=True)
             st.caption("Boards to post in this channel:")
             here: list = []
             for t in catalog:
