@@ -67,6 +67,7 @@ def _office_row(rec: OnboardingRecord) -> dict:
         "report_order": {er.key: er.order for er in rec.ordered_reports()},
         "per_office_views": views,      # {report_key: url} — usually empty
         "machine": rec.machine(),
+        "campaign": rec.campaign,       # fiber_d2d | nds_d2d | b2b_att | b2b_box
         "notes": rec.notes,
     }
     # Per-channel fan-out plans (channel + its metric subset). The runner only

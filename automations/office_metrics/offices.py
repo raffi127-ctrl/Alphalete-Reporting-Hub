@@ -352,7 +352,22 @@ def _merge_onboarded() -> None:
             abp_tab=r.get("abp_tab", ""),
             slack_token_file=CROSS_WS_TOKEN_FILES.get(
                 key, r.get("slack_token_file", "")),
-            nds=(key in NDS_OFFICES))
+            # NDS either by the committed set (isaiah/drew, pre-campaign) or by
+            # the office's own campaign from the onboarding form.
+            nds=(key in NDS_OFFICES or r.get("campaign") == "nds_d2d"))
+        # A campaign-onboarded NDS office runs the same section subset drew
+        # does — derived from what they actually enrolled, so the runner never
+        # fires fiber-only boards at a wireless office. Owner-facing report
+        # keys -> runner slugs (the NDS flavor of OWNER_KEY_TO_SLUG).
+        if r.get("campaign") == "nds_d2d" and key not in SECTION_OVERRIDES:
+            _NDS_KEY_TO_SLUG = {"knocks": "knocks_gaps", "order_log": "order_log",
+                                "cancels": "cancels", "churn_wl": "churn",
+                                "activations": "rep_activations"}
+            _slugs = tuple(_NDS_KEY_TO_SLUG[k]
+                           for k in (r.get("enrolled_reports") or [])
+                           if k in _NDS_KEY_TO_SLUG)
+            if _slugs:
+                SECTION_OVERRIDES[key] = _slugs
         for rk, url in (r.get("per_office_views") or {}).items():
             fld = _VIEW_FIELD.get(rk)
             if fld and url:
