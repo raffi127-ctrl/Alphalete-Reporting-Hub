@@ -28,7 +28,10 @@ def _lines(rec: OnboardingRecord,
     _c = CAMPAIGNS_BY_KEY.get(rec.campaign)
     fam = _c[1] if _c else ("D2D" if rec.family == "d2d" else "B2B")
     who = rec.owner or rec.business_name or rec.key
-    title = ":sparkles: *New metrics request — {}*  ({})".format(who, fam)
+    # @-mention Megan so the ping BUZZES her even with the channel on
+    # "Just mentions" (her actual setting, 2026-08-20).
+    title = ":sparkles: *New metrics request — {}*  ({}) <@U04G5HJBGFN>".format(
+        who, fam)
     body: List[str] = []
     if lucy:
         from automations.tracker_onboarding.slack_check import human_line
