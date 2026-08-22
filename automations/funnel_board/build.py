@@ -1060,15 +1060,27 @@ def build_trend(sid, title, heading, roster):
         "properties": {"pixelSize": 32}, "fields": "pixelSize"}})
 
     trend = [[None] * ncols for _ in range(THDR + len(METRICS))]
-    trend[0][0] = heading
-    # keep whoever is currently picked — an hourly rebuild that resets B1 to
-    # the first org name would silently flip a captainship view mid-morning.
+    # Pickers live in A1 (manager) and B1 (group): columns A/B are frozen and
+    # the only ones a collapsed week group can never swallow — the old E1
+    # group dropdown sat inside the first week's group, so selecting a view
+    # meant expanding a week first (Carlos, 2026-08-22). No heading cell; the
+    # tab name already says what this is. Keep whoever is currently picked —
+    # an hourly rebuild that resets the pickers would silently flip a
+    # captainship view mid-morning. Read A1:E1 so the values also survive the
+    # one-time move from the old B1/E1 layout.
+    _names = set(ORG_NAMES) | set(CAPTAINSHIP_NAMES)
+    _cur = _grp = ""
     try:
-        _b1 = S.get(API + "/values/'%s'!B1" % title).json().get("values", [[""]])
-        _cur = (_b1[0][0] if _b1 and _b1[0] else "").strip()
+        _r1 = S.get(API + "/values/'%s'!A1:E1" % title).json().get("values", [[]])
+        _r1 = [str(v).strip() for v in (_r1[0] if _r1 else [])]
+        _cur = next((v for v in _r1 if v in _names), "")
+        _grp = next((v for v in _r1 if v in ("Org", "Captainship")), "")
     except Exception:  # noqa: BLE001
-        _cur = ""
-    trend[0][1] = _cur if _cur in set(ORG_NAMES) | set(CAPTAINSHIP_NAMES) else roster[0]
+        pass
+    trend[0][0] = _cur or roster[0]
+    trend[0][1] = _grp or "Org"
+    trend[0][3] = ""                     # old "GROUP:" label — wiped
+    trend[0][4] = ""                     # old E1 group dropdown — wiped
     trend[1][0] = "Click + above a week to open Mon–Sun" + NOTE
     trend[THDR - 1][0] = "METRIC"
     trend[THDR - 1][1] = "GOAL"
@@ -1091,16 +1103,16 @@ def build_trend(sid, title, heading, roster):
         if kind == "grp":
             continue
         if kind == "pctd":
-            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),"")'
                                % (GOAL_AT["ret2cl"]))
         elif kind == "derived":
-            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),"")'
                                % (GOAL_AT["applies"]))
         elif kind == "n":
-            trend[r - 1][1] = ("=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),\"\")"
+            trend[r - 1][1] = ("=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),\"\")"
                                % (GOAL_AT[key]))
         elif lab in TREND_PCT_GOAL:
-            trend[r - 1][1] = ('=IFERROR(VLOOKUP($B$1,Goals!$B:$U,%d,FALSE),"")'
+            trend[r - 1][1] = ('=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),"")'
                                % GOAL_AT[TREND_PCT_GOAL[lab]])
         else:
             n, d = key
@@ -1111,7 +1123,7 @@ def build_trend(sid, title, heading, roster):
                 c = a1(b + di)
                 if kind == "pctd":
                     n, d = key
-                    col_c = ("SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,"
+                    col_c = ("SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$A$1,"
                              "'Daily Log'!$%s:$%s,%s$2)")
                     ax = "A" if di > 0 else "B"        # day cells match the date, WK the week
                     f = "=IFERROR(%s/%s,\"\")" % (
@@ -1120,7 +1132,7 @@ def build_trend(sid, title, heading, roster):
                     f = "=%s%d+%s%d" % (c, REM_R, c, SENT_R)
                 elif kind == "n":
                     f = ("=SUM(%s%d:%s%d)" % (a1(b + 1), r, a1(b + 7), r) if di == 0 else
-                         "=SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$B$1,'Daily Log'!$A:$A,%s$2)"
+                         "=SUMIFS('Daily Log'!$%s:$%s,'Daily Log'!$C:$C,$A$1,'Daily Log'!$A:$A,%s$2)"
                          % (COL[key], COL[key], c))
                 else:
                     n, d = key
@@ -1128,40 +1140,37 @@ def build_trend(sid, title, heading, roster):
                 trend[r - 1][b + di] = f
 
     values.append({"range": "'%s'!A1" % title, "values": trend})
-    # A100 is the picker's source list; it now FILTERs whichever roster the
-    # preserved GROUP cell (E1) names, from the two hidden lists in E100/F100.
+    # A100 is the picker's source list; it FILTERs whichever roster the
+    # preserved GROUP cell (B1) names, from the two hidden lists in D100/E100.
     values.append({"range": "'%s'!A100" % title, "values": [[
-        '=IF($E$1="Captainship",FILTER($E$100:$E$140,$E$100:$E$140<>""),'
+        '=IF($B$1="Captainship",FILTER($E$100:$E$140,$E$100:$E$140<>""),'
         'FILTER($D$100:$D$140,$D$100:$D$140<>""))']]})
     values.append({"range": "'%s'!D100" % title, "values":
                    [[o if i < len(ORG_NAMES) else "",
                      CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
                     for i, o in enumerate(
                         ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
-    try:
-        _g = S.get(API + "/values/'%s'!E1" % title).json().get("values", [[""]])
-        _grp = (_g[0][0] if _g and _g[0] else "").strip()
-    except Exception:  # noqa: BLE001
-        _grp = ""
-    if _grp not in ("Org", "Captainship"):
-        _grp = "Org"
-    values.append({"range": "'%s'!D1" % title, "values": [["GROUP:", _grp]]})
-    F.append({"setDataValidation": {"range": gr(sid, 0, 1, 4, 5), "rule": {
+    F.append({"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": "Org"},
                                  {"userEnteredValue": "Captainship"}]},
         "showCustomUi": True, "strict": True}}})
+    # the group dropdown used to be E1 — clear its rule and paint so a stale
+    # chip doesn't linger inside the first collapsed week group
+    F.append({"setDataValidation": {"range": gr(sid, 0, 1, 3, 5)}})
     F.append(fmt(sid, 0, 1, 3, 5, {"userEnteredFormat": {
-        "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},
-        "userEnteredFormat(textFormat,backgroundColor)"))
+        "backgroundColor": rgb("#FFFFFF"), "textFormat": txt()}},
+        "userEnteredFormat(backgroundColor,textFormat)"))
 
     # ---- Trend formatting
     F += [
-        fmt(sid, 0, 1, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK, True, 20)}}, "userEnteredFormat.textFormat"),
-        fmt(sid, 0, 1, 1, 2, {"userEnteredFormat": {
+        fmt(sid, 0, 1, 0, 1, {"userEnteredFormat": {
             "textFormat": txt(PICK, True, 14), "backgroundColor": rgb(ACCENT_BG), "horizontalAlignment": "LEFT",
             "borders": {"top": bd(ACCENT), "bottom": bd(ACCENT), "left": bd(ACCENT), "right": bd(ACCENT)}}},
             "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment,borders)"),
+        fmt(sid, 0, 1, 1, 2, {"userEnteredFormat": {
+            "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG), "horizontalAlignment": "CENTER"}},
+            "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)"),
         fmt(sid, 1, 2, 0, 1, {"userEnteredFormat": {"textFormat": txt(INK_2, False, 11)}}, "userEnteredFormat.textFormat"),
         fmt(sid, 1, 2, TC0, ncols, {"userEnteredFormat": {
             "textFormat": txt(INK_2, False, 10, FONT), "horizontalAlignment": "CENTER",
@@ -1271,7 +1280,7 @@ def build_trend(sid, title, heading, roster):
         # The picker reads this tab's OWN hidden name list (row 100 down), not a
         # slice of Goals. Goals is ordered by the org board, so a captainship — a
         # scattered subset of those rows — cannot be expressed as a range there.
-        {"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
+        {"setDataValidation": {"range": gr(sid, 0, 1, 0, 1), "rule": {
             "condition": {"type": "ONE_OF_RANGE",
                           "values": [{"userEnteredValue": "='%s'!$A$100:$A$%d"
                                       % (title, 99 + max(len(ORG_NAMES),
@@ -1492,6 +1501,39 @@ F += [
                                    "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
     {"updateDimensionProperties": {"range": {"sheetId": GOALS, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 2},
                                    "properties": {"pixelSize": 208}, "fields": "pixelSize"}},
+]
+
+# ---- Goals: draw the two sections as real boxes (Carlos, 2026-08-22) — a
+# bordered ORG box, a clean gap, and a bordered CAPTAINSHIP box with its own
+# title bar, instead of bare rows separated by empty space. Appended after the
+# amber/grey striping so these repaints win where they overlap.
+_GN = len(GOALS_HEAD)
+_CAP_TITLE_R = _CAP_HEADER_AT - 1          # 1-based title-bar row (31)
+F += [
+    # the gap between the boxes: the column striping above runs rows 2..NG and
+    # would otherwise band straight through the empty rows
+    fmt(GOALS, len(_ORG_PART) + 1, _CAP_TITLE_R - 1, 0, _GN, {"userEnteredFormat": {
+        "backgroundColor": rgb("#FFFFFF"), "borders": {}}},
+        "userEnteredFormat(backgroundColor,borders)"),
+    # captainship title bar
+    fmt(GOALS, _CAP_TITLE_R - 1, _CAP_TITLE_R, 1, _GN, {"userEnteredFormat": {
+        "backgroundColor": rgb(ACCENT), "textFormat": txt("#FFFFFF", True, 12),
+        "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"}},
+        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"),
+    {"updateDimensionProperties": {"range": {"sheetId": GOALS, "dimension": "ROWS",
+                                             "startIndex": _CAP_TITLE_R - 1,
+                                             "endIndex": _CAP_TITLE_R},
+                                   "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
+    # its header row gets the same dark treatment as the org header in row 1
+    fmt(GOALS, _CAP_HEADER_AT - 1, _CAP_HEADER_AT, 1, _GN, {"userEnteredFormat": {
+        "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+        "horizontalAlignment": "RIGHT", "wrapStrategy": "WRAP"}},
+        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,wrapStrategy)"),
+    # a medium border box around each section
+    {"updateBorders": {"range": gr(GOALS, 0, len(_ORG_PART) + 1, 1, _GN),
+                       "top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}},
+    {"updateBorders": {"range": gr(GOALS, _CAP_TITLE_R - 1, NG, 1, _GN),
+                       "top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}},
 ]
 
 # ---- Manager Matrix: the metric is chosen at runtime, so each rule is gated on
