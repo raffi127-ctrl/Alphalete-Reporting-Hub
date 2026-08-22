@@ -1458,28 +1458,44 @@ for _rc in (GOAL_AT[k] for k in ("rmvpct", "ret2cl", "sh1pct", "bk2pct",
         "numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
         "userEnteredFormat.numberFormat"))
 
+# The colour key sits BETWEEN the two boxes (Carlos, 2026-08-22) — rows 46-54
+# under the captainship box were dead scroll. _LG is its top row, inside the
+# gap the boxes leave open; the old below-the-box rows are scrubbed each run.
+_LG = len(_ORG_PART) + 3
 GKEY = 0
 F += [
-    fmt(GOALS, NG + 2, NG + 3, 1, 6, {"userEnteredFormat": {
+    # clean the gap first: the amber/grey column striping above runs rows 2..NG
+    # and would otherwise band straight through the space between the boxes
+    fmt(GOALS, len(_ORG_PART) + 1, _CAP_HEADER_AT - 2, 0, len(GOALS_HEAD),
+        {"userEnteredFormat": {"backgroundColor": rgb("#FFFFFF"), "borders": {}}},
+        "userEnteredFormat(backgroundColor,borders)"),
+    fmt(GOALS, _LG - 1, _LG, 1, 6, {"userEnteredFormat": {
         "textFormat": txt(INK, True, 12), "horizontalAlignment": "LEFT"}},
         "userEnteredFormat(textFormat,horizontalAlignment)"),
-    fmt(GOALS, NG + 3, NG + 4, 1, 6, {"userEnteredFormat": {
+    fmt(GOALS, _LG, _LG + 1, 1, 6, {"userEnteredFormat": {
         "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
         "horizontalAlignment": "LEFT"}},
         "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
-    fmt(GOALS, NG + 4, NG + 5, 1, 2, {"userEnteredFormat": {
+    fmt(GOALS, _LG + 1, _LG + 2, 1, 2, {"userEnteredFormat": {
         "backgroundColor": rgb(PICK_BG), "textFormat": txt(PICK, True, 11, FONT),
         "borders": {"left": bdm(PICK), "right": bdm(PICK)}}},
         "userEnteredFormat(backgroundColor,textFormat,borders)"),
-    fmt(GOALS, NG + 5, NG + 6, 1, 2, {"userEnteredFormat": {
+    fmt(GOALS, _LG + 2, _LG + 3, 1, 2, {"userEnteredFormat": {
         "backgroundColor": rgb(SUNKEN), "textFormat": txt(INK_3, False, 11, FONT)}},
         "userEnteredFormat(backgroundColor,textFormat)"),
-    fmt(GOALS, NG + 4, NG + 7, 2, 6, {"userEnteredFormat": {
+    fmt(GOALS, _LG + 1, _LG + 4, 2, 6, {"userEnteredFormat": {
         "textFormat": txt(INK_2, False, 11), "horizontalAlignment": "LEFT",
         "wrapStrategy": "CLIP"}},
         "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
+    # scrub the key's old home below the captainship box: values are blanked
+    # via LEGEND_VALUES, formats here
+    fmt(GOALS, NG + 1, NG + 12, 0, 8, {"userEnteredFormat": {
+        "backgroundColor": rgb("#FFFFFF"), "borders": {}}},
+        "userEnteredFormat(backgroundColor,borders)"),
 ]
-LEGEND_VALUES.append({"range": "Goals!B%d" % (NG + 3), "values": [
+LEGEND_VALUES.append({"range": "Goals!B%d" % (NG + 3),
+                      "values": [[""] * 6 for _ in range(9)]})
+LEGEND_VALUES.append({"range": "Goals!B%d" % _LG, "values": [
     ["WHICH CELLS MATTER"],
     ["CELL LOOK", "MEANING"],
     ["amber", "You edit these. They grade the Manager Board — each manager against their OWN row."],
@@ -1510,11 +1526,6 @@ F += [
 _GN = len(GOALS_HEAD)
 _CAP_TITLE_R = _CAP_HEADER_AT - 1          # 1-based title-bar row (31)
 F += [
-    # the gap between the boxes: the column striping above runs rows 2..NG and
-    # would otherwise band straight through the empty rows
-    fmt(GOALS, len(_ORG_PART) + 1, _CAP_TITLE_R - 1, 0, _GN, {"userEnteredFormat": {
-        "backgroundColor": rgb("#FFFFFF"), "borders": {}}},
-        "userEnteredFormat(backgroundColor,borders)"),
     # captainship title bar
     fmt(GOALS, _CAP_TITLE_R - 1, _CAP_TITLE_R, 1, _GN, {"userEnteredFormat": {
         "backgroundColor": rgb(ACCENT), "textFormat": txt("#FFFFFF", True, 12),
