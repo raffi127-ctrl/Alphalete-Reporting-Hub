@@ -3535,6 +3535,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "uninstall_brand_audit_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — one-shot agent REMOVER, run via `lucy rerun uninstall_brand_audit_agent` on the machine that should STOP running the noon brand audit (Lucy 1 after the 2026-08-22 move to Lucy 3). Mirror of install_brand_audit_agent; weekdays [] so the orchestrator never auto-runs it.",
+      "display_name": "Uninstall: remove brand-audit noon agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.uninstall_agent"
+      ],
+      "base_args": [
+        "brand-audit-noon"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "daily_rep_breakdown": {
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
       "on_scheduler": true,
@@ -3605,6 +3626,8 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "brand_audit": {
+      "machine": "Lucy 3",
+      "_machine_note": "Noon agent moved to Lucy 3 2026-08-22 (Megan) — daytime browser work off Lucy 1 so hand-queued reruns stop colliding. Installed there via install_brand_audit_agent; removed from Lucy 1 via uninstall_brand_audit_agent.",
       "on_scheduler": false,
       "runs_at": "12:00 PM CST",
       "_disabled_reason": "Not a priority \u2014 excluded from the orchestrator so its noon slot doesn't hold the morning final email. Runs on its own standalone noon launchd job (com.alphalete.brand-audit-noon); listed in the summary email as REMAINING via runs_at.",
