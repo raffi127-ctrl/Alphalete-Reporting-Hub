@@ -249,6 +249,50 @@ def day_is_clean(report_ids: Sequence[str],
                   f"({', '.join(sorted(chain))})")
 
 
+def blocking_reports(report_ids: Sequence[str],
+                     today: Optional[dt.date] = None,
+                     *,
+                     own_ids: Optional[Sequence[str]] = None
+                     ) -> Optional[List[str]]:
+    """QUE ids frenan el dia (los mismos que mira `day_is_clean`), o None.
+
+    `day_is_clean` contesta si/no y arma una frase; esto devuelve la lista cruda
+    para el que quiera acotar el freno en vez de tragarselo entero — hoy, el
+    gate de captainship, que mapea cada id a los capitanes que toca
+    (`captainship_drafts.scope`) y manda igual a los que no.
+
+    None = no se puede saber (no hay estado del dia): frenar todo, igual que
+    `day_is_clean`. Lista vacia = nada frena por estado; lo que decide entonces
+    es `verify()`, que este helper no juzga porque no habla del entregable.
+    """
+    today = today or dt.datetime.now(CENTRAL).date()
+    ds = _state(today)
+    if ds is None:
+        return None
+    reports = ds.get("reports") or {}
+    chain = dependency_closure(report_ids)
+    own = _resolve_ids(own_ids if own_ids is not None else report_ids)
+    upstream = [r for r in chain if r not in own]
+    due = _scheduled_today(today)
+
+    out: List[str] = []
+    for rid in chain:
+        st = (reports.get(rid) or {}).get("status")
+        if st in HARD_FAIL:
+            out.append(rid)
+    out.extend(set(chain) & set(ds.get("failure_alerts_sent") or []))
+    for rid in upstream:
+        if rid not in reports:
+            if rid in due:
+                out.append(rid)
+            continue
+        if reports[rid].get("status") not in (DONE, SKIPPED):
+            out.append(rid)
+    # Orden estable y sin repetidos: un id puede caer por dos motivos a la vez
+    # (FAILED y ademas con alerta) y es UN solo reporte que arreglar.
+    return sorted(set(out))
+
+
 def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
                  *, enabled: bool = True,
                  own_ids: Optional[Sequence[str]] = None,

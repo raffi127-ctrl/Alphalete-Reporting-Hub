@@ -200,5 +200,56 @@ class OnlyOnWeekends(Base):
         self.assertIn("--no-auto", why)
 
 
+class NamesWhatBlocksTheDay(Base):
+    """`blocking_reports` = los MISMOS motivos, pero como lista de ids.
+
+    Es lo que lee el envio parcial (Eve 2026-08-22) para preguntar a que
+    destinatarios toca cada falla en vez de frenar el dia entero."""
+
+    def ids(self, reports, *, alerts=(), day=SAT, due=None, chain=None):
+        wr._state = lambda today: {"reports": reports,
+                                   "failure_alerts_sent": list(alerts)}
+        wr.dependency_closure = lambda i: list(chain or reports)
+        wr._scheduled_today = lambda today: set(
+            due if due is not None else reports)
+        return wr.blocking_reports(["captainship_drafts_review"], day,
+                                   own_ids=OWN)
+
+    def test_the_real_saturday(self):
+        """8/22: owners_metrics_churn INCOMPLETE, todo lo demas DONE."""
+        self.assertEqual(self.ids({
+            "owners_metrics_churn": {"status": "INCOMPLETE"},
+            "captainship_cancel_rate": {"status": "DONE"},
+            "captainship_drafts": {"status": "DONE"},
+            "captainship_drafts_review": {"status": "DONE"},
+        }), ["owners_metrics_churn"])
+
+    def test_a_clean_day_blocks_nothing(self):
+        self.assertEqual(self.ids({
+            "owners_metrics_churn": {"status": "DONE"},
+            "captainship_drafts": {"status": "DONE"},
+            "captainship_drafts_review": {"status": "DONE"},
+        }), [])
+
+    def test_own_leg_is_not_a_blocker(self):
+        """MISSED_NOT_READY en la pierna propia no es falla — lo dice el
+        entregable (`verify`), no la contabilidad."""
+        self.assertEqual(self.ids({
+            "captainship_drafts": {"status": "MISSED_NOT_READY"},
+            "captainship_drafts_review": {"status": "PENDING"},
+        }), [])
+
+    def test_an_id_that_falls_twice_is_listed_once(self):
+        self.assertEqual(self.ids({
+            "captainship_cancel_rate": {"status": "FAILED"},
+            "captainship_drafts_review": {"status": "DONE"},
+        }, alerts=["captainship_cancel_rate"]), ["captainship_cancel_rate"])
+
+    def test_no_day_state_cannot_be_scoped(self):
+        wr._state = lambda today: None
+        self.assertIsNone(wr.blocking_reports(["captainship_drafts_review"],
+                                              SAT, own_ids=OWN))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

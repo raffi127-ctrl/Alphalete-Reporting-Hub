@@ -35,9 +35,10 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 from automations.captainship_drafts import config
+from automations.captainship_drafts import scope as _scope
 # Publishes the "approved" phase row the Hub card colours green.
 from automations.shared import review_approval as RA
 # Sat/Sun: a clean day releases itself — nobody is in the channel to tick it.
@@ -102,6 +103,12 @@ REMIND_MARKER = "CAPTAINSHIP-REVIEW-REMINDER"
 # be triggered from either machine and output/ gets wiped, so a local file would
 # be a lock only one of them can see.
 SENT_MARKER = "CAPTAINSHIP-SENT"
+# El mismo candado, pero cuando salio SOLO UNA PARTE (Eve 2026-08-22: «si falla
+# uno... los que estan ok se envien»). Lleva las claves que YA salieron, porque
+# el candado tiene que ser por capitan: sin eso, o se retiene a los doce hasta
+# que se arregle el que fallo, o el tick de los 15 minutos les manda el reporte
+# de nuevo a los que ya lo recibieron. Se lee con `sent_keys`.
+PARTIAL_SENT_MARKER = "CAPTAINSHIP-SENT-ONLY"
 # The scheduler id of the job that BUILDS these drafts' review post.
 # weekend_release walks its dependency chain (the 8 metric modules included) to
 # decide whether a Sat/Sun day is clean enough to release itself.
@@ -197,7 +204,8 @@ def preview_emls(today: dt.date) -> list[Tuple[str, Path]]:
             for cap in config.CAPTAINS]
 
 
-def previews_complete(today: dt.date) -> Tuple[bool, str]:
+def previews_complete(today: dt.date,
+                      keys: Optional[Sequence[str]] = None) -> Tuple[bool, str]:
     """Are the twelve reports actually READY TO MAIL? (ok, motivo).
 
     This is what the weekend auto-send asks instead of "did the orchestrator
@@ -228,9 +236,16 @@ def previews_complete(today: dt.date) -> Tuple[bool, str]:
     from email import policy as _policy
     from email.parser import BytesParser as _BytesParser
 
-    want = len(config.CAPTAINS)
+    # `keys` = mirar SOLO esos capitanes. Lo usa el envio parcial: si hoy sale
+    # una tanda de doce, lo que tiene que estar completo son esos doce — el
+    # borrador del que quedo retenido puede estar a medias, es justamente por lo
+    # que se lo retiene.
+    wanted = set(keys) if keys is not None else None
+    pairs = [(k, p) for k, p in preview_emls(today)
+             if wanted is None or k in wanted]
+    want = len(pairs)
     missing, broken = [], []
-    for key, path in preview_emls(today):
+    for key, path in pairs:
         if not path.exists() or path.stat().st_size == 0:
             missing.append(key)
             continue
@@ -551,36 +566,119 @@ def close_day(today: dt.date, channel: Optional[str] = None,
             print("— already closed once", flush=True)
         return False
     n = len(config.CAPTAINS)
+    # UN DIA PARCIAL NO SE CIERRA COMO SI NO HUBIERA SALIDO NADA. Si hoy hubo
+    # una tanda, lo que falta son los capitanes retenidos, y decirlo asi es la
+    # unica forma de que el lunes se vea quien quedo debiendo — el mismo error
+    # que el 8/16, cuando esto decia "were NOT sent" sobre un dia que se habia
+    # auto-enviado entero.
+    done = {k for r in replies[1:] for k in _keys_in_marker(r.get("text") or "")}
+    if done:
+        names = {c.key: c.display_name for c in config.CAPTAINS}
+        waiting = ", ".join(names.get(k, k) for k in
+                            sorted({c.key for c in config.CAPTAINS} - done))
+        text = (f"{_mentions()} — {len(done)} of {n} captainship reports went "
+                f"out today; *{waiting}* never did. The preview is still on the "
+                f"mini: fix the source, rebuild, `--refresh`, and the next check "
+                f"mails only that one.\n`{CLOSED_MARKER}`")
+    else:
+        text = (f"{_mentions()} — nobody approved this today, so the {n} "
+                f"captainship reports were NOT sent. The previews are still on "
+                f"the mini: approve here and they go out, or leave it and "
+                f"tomorrow's run replaces them.\n`{CLOSED_MARKER}`")
     _client().chat_postMessage(
-        channel=_channel(channel), thread_ts=msg["ts"],
-        text=(f"{_mentions()} — nobody approved this today, so the {n} "
-              f"captainship reports were NOT sent. The previews are still on "
-              f"the mini: approve here and they go out, or leave it and "
-              f"tomorrow's run replaces them.\n`{CLOSED_MARKER}`"))
+        channel=_channel(channel), thread_ts=msg["ts"], text=text)
     if verbose:
         print("✓ day closed unapproved — said so in the thread", flush=True)
     return True
 
 
 def already_sent(msg: dict, channel: Optional[str] = None) -> bool:
-    """Has today's send already been attempted? Reads the thread for the lock."""
+    """Has today's WHOLE send already been attempted? The all-or-nothing lock.
+
+    Un envio parcial no cierra el dia: los capitanes retenidos siguen debiendo
+    su correo, asi que esto es False y quien decide es `sent_keys`."""
     replies = _client().conversations_replies(
         channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
     return any(SENT_MARKER in (r.get("text") or "") for r in replies[1:])
 
 
-def mark_sent(msg: dict, failures: int, channel: Optional[str] = None) -> None:
+def _keys_in_marker(text: str) -> Set[str]:
+    """Las claves anotadas en una linea `CAPTAINSHIP-SENT-ONLY a,b,c`."""
+    for line in (text or "").splitlines():
+        if PARTIAL_SENT_MARKER in line:
+            tail = line.split(PARTIAL_SENT_MARKER, 1)[1]
+            return {k.strip(" `,") for k in tail.replace("`", "").split(",")
+                    if k.strip(" `,")}
+    return set()
+
+
+def sent_keys(msg: dict, channel: Optional[str] = None) -> Set[str]:
+    """Que capitanes YA recibieron su reporte hoy, segun el hilo.
+
+    El candado por capitan. `SENT_MARKER` (envio completo) devuelve a los trece;
+    cada `PARTIAL_SENT_MARKER` suma los suyos, asi que un dia que salio en dos
+    tandas (doce ahora, el que fallo despues del arreglo) queda bien contado y
+    nadie recibe el correo dos veces."""
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    out: Set[str] = set()
+    for r in replies[1:]:
+        text = r.get("text") or ""
+        if SENT_MARKER in text and PARTIAL_SENT_MARKER not in text:
+            return {c.key for c in config.CAPTAINS}
+        out |= _keys_in_marker(text)
+    return out
+
+
+def mark_sent(msg: dict, failures: int, channel: Optional[str] = None,
+              *, sent: Optional[Sequence[str]] = None,
+              held: Optional[Sequence[str]] = None,
+              reason: str = "") -> None:
     """Close the day in the thread, cleanly or not.
 
     Posted after ANY completed attempt, including one with failures, and that is
     deliberate. Leaving it unlocked so a partial failure can retry means the
     captains who DID get their report get it again every 15 minutes; a send that
     needs a human is the lesser problem, and this message is how they find out.
+
+    `sent` + `held` = envio PARCIAL: se anota el candado por capitan y se dice
+    quien falta y por que, etiquetando a los aprobadores — un capitan retenido
+    en silencio es exactamente el agujero que esto viene a tapar.
     """
-    note = ("✅ Sent — the reports are on their way to the captains."
-            if not failures else
-            f"⚠️ Sent with {failures} failure(s) — see the run log. Nothing will "
-            f"retry on its own; trigger the rest by hand once it's fixed.")
+    if held:
+        names = {c.key: c.display_name for c in config.CAPTAINS}
+        went = ", ".join(names.get(k, k) for k in sorted(sent or ()))
+        waiting = ", ".join(names.get(k, k) for k in sorted(held))
+        head = (f"✅ Sent {len(sent or ())} of {len(config.CAPTAINS)} — {went}."
+                if not failures else
+                f"⚠️ Sent {len(sent or ())} of {len(config.CAPTAINS)} with "
+                f"{failures} failure(s) — see the run log.")
+        _client().chat_postMessage(
+            channel=_channel(channel), thread_ts=msg["ts"],
+            text=(f"{head}\n{_mentions()} — *{waiting}* held back: {reason}. "
+                  f"Fix it, rebuild the drafts and run `review_gate.py "
+                  f"--refresh` (same link); the next check mails only the "
+                  f"held one — nobody gets a second copy.\n"
+                  f"`{PARTIAL_SENT_MARKER} {','.join(sorted(sent or ()))}`"))
+        return
+    if sent is not None and len(sent) < len(config.CAPTAINS):
+        # LA SEGUNDA TANDA: el que quedo retenido a la mañana, ya arreglado.
+        # Cierra el dia con el marcador entero (ahora si estan los trece), pero
+        # diciendo que salio solo lo que faltaba — un "Sent" a secas se leeria
+        # como que se remandaron los trece.
+        names = {c.key: c.display_name for c in config.CAPTAINS}
+        who_now = ", ".join(names.get(k, k) for k in sorted(sent))
+        note = (f"✅ Sent the remaining {len(sent)} of {len(config.CAPTAINS)} — "
+                f"{who_now}. Everyone has today's report now."
+                if not failures else
+                f"⚠️ Sent the remaining {len(sent)} with {failures} failure(s) — "
+                f"see the run log.")
+    else:
+        note = ("✅ Sent — the reports are on their way to the captains."
+                if not failures else
+                f"⚠️ Sent with {failures} failure(s) — see the run log. Nothing "
+                f"will retry on its own; trigger the rest by hand once it's "
+                f"fixed.")
     _client().chat_postMessage(channel=_channel(channel), thread_ts=msg["ts"],
                                text=f"{note}\n`{SENT_MARKER}`")
 
@@ -626,12 +724,35 @@ def find_approval(today: dt.date, channel: Optional[str] = None,
 # --------------------------------------------------------------------------
 # 4. the send
 # --------------------------------------------------------------------------
-def send_reviewed(today: dt.date, verbose: bool = True) -> int:
+def scope_today(today: dt.date, *, enabled: bool = True
+                ) -> Tuple[Optional[Set[str]], str]:
+    """A que capitanes toca lo que hoy frena el dia. (claves | None, motivo).
+
+    None = no se puede acotar, asi que frena todo (ver `scope.held_captains`).
+    Un set vacio = nada frena, o lo que frenaba ya se recupero.
+    """
+    if not enabled:
+        return None, "--no-partial: el dia se juzga entero, como antes"
+    ids = wr.blocking_reports([REPORT_ID], today,
+                              own_ids=[REPORT_ID, "captainship_drafts"])
+    if ids is None:
+        return None, "no hay estado del dia: no se puede acotar la falla"
+    return _scope.held_captains(ids, today)
+
+
+def send_reviewed(today: dt.date, verbose: bool = True,
+                  only: Optional[Sequence[str]] = None) -> int:
     """Shell out to run.py --send-reviewed for `today`. A separate process on
     purpose: the sender stays the one command that has ever mailed these, and
-    this module never grows its own path to a recipient list."""
+    this module never grows its own path to a recipient list.
+
+    `only` = las claves que salen en esta tanda (envio parcial). Es el `--only`
+    que run.py ya tenia; el guardian del digest sigue mirando el SET completo de
+    .eml del dia, asi que mandar a doce no lo afloja."""
     cmd = [sys.executable, "-m", "automations.captainship_drafts.run",
            "--send-reviewed", "--date", today.isoformat()]
+    if only:
+        cmd += ["--only", ",".join(only)]
     if verbose:
         print(f"→ {' '.join(cmd)}", flush=True)
     return subprocess.call(cmd)
@@ -785,6 +906,16 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true",
                     help="with --check: actually send. Without it, --check only "
                          "reports what it found.")
+    ap.add_argument("--mark-sent-only", default=None, metavar="KEYS",
+                    help="anotar en el hilo que estos capitanes YA recibieron "
+                         "su reporte, SIN mandar nada. Para cuando la tanda "
+                         "salio por fuera del gate (run.py --send-reviewed "
+                         "--only a mano): sin esa marca, un ✅ posterior les "
+                         "manda una segunda copia.")
+    ap.add_argument("--no-partial", action="store_true",
+                    help="con --check: no acotar. Si algo fallo, frena a los "
+                         "trece como antes en vez de mandar a los que no "
+                         "estan tocados.")
     ap.add_argument("--no-auto", action="store_true",
                     help="never release without a checkmark, not even on the "
                          "weekend (weekend_release).")
@@ -844,8 +975,27 @@ def main(argv=None) -> int:
     if args.close_day:
         close_day(today, args.channel)
         return 0
+    if args.mark_sent_only:
+        # Solo bookkeeping: pone el candado por capitan en el hilo. Corre en la
+        # MINI para que la linea salga como Lucy, igual que el resto del hilo.
+        keys = [k.strip() for k in args.mark_sent_only.split(",") if k.strip()]
+        unknown = sorted(set(keys) - {c.key for c in config.CAPTAINS})
+        if unknown:
+            print(f"Unknown captain key(s): {unknown}", flush=True)
+            return 1
+        msg = _find_post(today, args.channel)
+        if msg is None:
+            print("— no review post for today; nothing to mark", flush=True)
+            return 1
+        mark_sent(msg, 0, args.channel, sent=keys,
+                  held=sorted({c.key for c in config.CAPTAINS} - set(keys)),
+                  reason="sent by hand outside the gate")
+        print(f"✓ marked {len(keys)} captain(s) as already sent", flush=True)
+        return 0
     if args.check:
         who = find_approval(today, args.channel)
+        held_keys: Set[str] = set()
+        held_why = ""
         if not who:
             # Sat/Sun nobody is in the channel to tick it. A day whose whole
             # chain is DONE releases itself; anything short of that keeps
@@ -864,12 +1014,36 @@ def main(argv=None) -> int:
                                       verify=lambda: previews_complete(today))
             print(f"  weekend auto-send: {why}", flush=True)
             if not ok:
-                msg = _find_post(today, args.channel)
-                if (msg is not None and args.send and wr.is_weekend(today)
-                        and not args.no_auto):
-                    hold_weekend(msg, why, args.channel)
-                return 1
-            who = (wr.AUTO_ID, wr.AUTO_WHO)
+                # UNA FALLA QUE TOCA A UN CAPITAN NO FRENA A LOS OTROS DOCE
+                # (Eve 2026-08-22). Se pregunta a quien afecta lo que freno el
+                # dia; si cae en un subconjunto, sale el resto y ese espera.
+                # `None` = no se puede acotar -> el hold de siempre.
+                held, scope_why = scope_today(today, enabled=not args.no_partial)
+                weekend_auto = wr.is_weekend(today) and not args.no_auto
+                going = [k for k in _scope.other_keys(held or ())]
+                ready, ready_why = (previews_complete(today, going)
+                                    if held is not None and weekend_auto
+                                    else (False, "sin envio parcial"))
+                if held is None or not weekend_auto or not ready:
+                    msg = _find_post(today, args.channel)
+                    if (msg is not None and args.send and wr.is_weekend(today)
+                            and not args.no_auto):
+                        detail = why if held is None else f"{why} ({ready_why})"
+                        hold_weekend(msg, detail, args.channel)
+                    return 1
+                held_keys, held_why = set(held), f"{why} — {scope_why}"
+                print(f"  envio parcial: {scope_why}; salen {len(going)} de "
+                      f"{len(config.CAPTAINS)} ({ready_why})", flush=True)
+            who = who or (wr.AUTO_ID, wr.AUTO_WHO)
+        elif not args.no_partial:
+            # Dia habil, con ✅. La misma regla: el capitan cuyo contenido se
+            # cayo espera el arreglo y los demas salen ahora. Si no se puede
+            # acotar (`None`), manda la aprobacion humana y sale todo, como
+            # siempre — un ✅ no se reinterpreta.
+            hit, scope_why = scope_today(today, enabled=True)
+            if hit:
+                held_keys, held_why = set(hit), scope_why
+                print(f"  envio parcial: {scope_why}", flush=True)
         print(f"✓ approved by {who[1]}", flush=True)
         # Tell the Hub the human said yes — this is what turns the card's phase
         # pill from purple (awaiting ✅) to green. Idempotent, so the 15-minute
@@ -892,12 +1066,21 @@ def main(argv=None) -> int:
             print("— the day has no review post yet; waiting for it before "
                   "sending (the send lock lives in its thread)", flush=True)
             return 1
-        if already_sent(msg, args.channel):
-            print("— already sent today (the thread carries the lock); "
-                  "nothing to do", flush=True)
+        # El candado es POR CAPITAN: `sent_keys` cuenta lo que ya salio hoy
+        # (todo, o la tanda parcial de un rato antes), asi que el que quedo
+        # retenido puede salir mas tarde sin que nadie reciba dos copias.
+        done = sent_keys(msg, args.channel)
+        going = [k for k in _scope.other_keys(held_keys) if k not in done]
+        if not going:
+            print("— nothing left to send today (the thread carries the lock "
+                  f"for {len(done)} captain(s)); nothing to do", flush=True)
             return 0
-        failures = send_reviewed(today)
-        mark_sent(msg, failures, args.channel)
+        partial = bool(held_keys) or len(going) < len(config.CAPTAINS)
+        failures = send_reviewed(today, only=going if partial else None)
+        mark_sent(msg, failures, args.channel,
+                  sent=going if partial else None,
+                  held=sorted(held_keys) if held_keys else None,
+                  reason=held_why)
         return failures
     ap.print_help()
     return 2
