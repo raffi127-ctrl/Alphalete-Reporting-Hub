@@ -1963,7 +1963,7 @@
     "weekly_knock_dispositions": {
       "order": 11.1,
       "on_scheduler": true,
-      "_on_scheduler_note": "LIVE 2026-08-22 (Megan: 'commit this and wire it up' after Raf's preview round — formula settled total-talk-tos/apps, dispo breakdown added, TM metadata dropped). Fires Sundays for RAF'S OFFICE ONLY: the enrolled knocks/gaps offices stay behind offices.INCLUDE_ENROLLED=False until Raf says take it wide. Raf's Loom 2026-08-21; name 'Weekly Knock Dispositions' is Raf's.",
+      "_on_scheduler_note": "LIVE-WIDE 2026-08-22 (Raf same day: 'for everyone else's metrics thread, let's go ahead and do this for them on Sunday' + 'Just Chan'). Fires Sundays for Raf + Chan Park (both into the #alphalete-sales Metrics thread) + every enrolled knocks/gaps office into ITS OWN Sunday Metrics thread (offices.INCLUDE_ENROLLED=True). Structural skips, logged not failed: trang (cross-workspace token not wired), isaiah (NDS: no disposition table + apps not wired), drew (EXCLUDED — reworking their Slack workspace, Megan 2026-08-22). Raf's Loom 2026-08-21.",
       "display_name": "Weekly Knock Dispositions (Sunday)",
       "source_type": "appstream",
       "data_sources": [],
@@ -1984,7 +1984,8 @@
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 40,
+      "timeout_minutes": 150,
+      "_timeout_note": "~12 pulled offices x (6 single-day disposition loads + 6 Time Tracker calls) in one session, plus one org-wide PSS crosstab — a full-fleet run is ~60-90m; 150 leaves headroom without masking a hang forever.",
       "verify": {
         "type": "manifest",
         "report_id": "weekly_knock_dispositions"

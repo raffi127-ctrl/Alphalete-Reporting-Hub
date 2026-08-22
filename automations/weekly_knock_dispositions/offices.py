@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import os
 
-INCLUDE_ENROLLED = False    # ← Raf's go-live flip for the enrolled offices
+INCLUDE_ENROLLED = True     # Raf's go-wide, 2026-08-22: "for everyone
+                            # else's metrics thread, let's go ahead and do
+                            # this for them on Sunday"
 
 RAF = {
     "name": "Rafael Hidalgo", "ov": "master", "campaign_id": "3",
@@ -45,9 +47,25 @@ RAF = {
     "header_label": "", "slack_token_file": "",
 }
 
+# Chan Park has no metrics thread of his own (his daily knocks ride the
+# 'Knocks for other offices' thread) — Raf 2026-08-22: "can we also do Chan
+# in there" → his weekly board posts into the SAME #alphalete-sales Metrics
+# thread as Raf's. Empty channel_id = the default channel.
+CHAN = {
+    "name": "Chan Park", "ov": "impersonate", "campaign_id": "3",
+    "pss_owner": "Chan Park",
+    "channel_id": "", "channel_name": "#alphalete-sales",
+    "header_label": "", "slack_token_file": "",
+}
+
 # Both spellings of the enrollment key resolve to the knocks/gaps board
 # (runner's OWNER_KEY_TO_SLUG maps "knocks" → "knocks_gaps").
 _KG = {"knocks", "knocks_gaps"}
+
+# Enrolled offices EXCLUDED from this report by name (office_metrics keys).
+# drew: Precision Management is reworking their Slack workspace (Megan
+# 2026-08-22) — back in by deleting the line once they've settled.
+_EXCLUDED_KEYS = {"drew"}
 
 
 def enrolled_offices() -> list[dict]:
@@ -59,6 +77,8 @@ def enrolled_offices() -> list[dict]:
     from automations.office_metrics import offices as OM
     out: list[dict] = []
     for key, o in OM.OFFICES.items():
+        if key in _EXCLUDED_KEYS:
+            continue
         if key in OM.SECTION_OVERRIDES:
             has_kg = bool(_KG & {str(s) for s in OM.SECTION_OVERRIDES[key]})
         else:
@@ -88,9 +108,9 @@ def enrolled_offices() -> list[dict]:
 def all_offices() -> list[dict]:
     include = (INCLUDE_ENROLLED
                or os.environ.get("WKD_INCLUDE_ENROLLED", "") == "1")
-    rows = [dict(RAF)]
+    rows = [dict(RAF), dict(CHAN)]
     if include:
-        seen = {rows[0]["name"].lower()}
+        seen = {r["name"].lower() for r in rows}
         for r in enrolled_offices():
             if r["name"].lower() in seen:
                 continue

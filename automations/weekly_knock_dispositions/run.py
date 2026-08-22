@@ -45,7 +45,7 @@ REPORT_ID = "weekly_knock_dispositions"
 # report_id there too, so the orchestrator pill can't auto-create a dupe.
 CARD_ID = "office-metrics"
 CARD_NAME = "Weekly Knock Dispositions"
-ESTIMATED_MINUTES = 18   # 1 office ≈ 6 day pulls + 6 gap calls + 1 crosstab
+ESTIMATED_MINUTES = 90   # ~12 offices × (6 day pulls + 6 gap calls) + 1 crosstab
 
 REPORT_BREAKDOWN = """\
 Every Sunday, for each configured office (offices.py):
@@ -59,8 +59,10 @@ Every Sunday, for each configured office (offices.py):
    | Total Apps | Avg Talk To's per App | First/Last Knock | Avg Gap/Day
    | Total Gap Hours — plus an OFFICE TOTALS row.
 4. Posts each board as Lucy into that office's EXISTING Sunday Metrics
-   thread ("Metrics for: <date>") — Raf's in #alphalete-sales; enrolled
-   offices (gated off until Raf's go) in their own metrics channels.
+   thread ("Metrics for: <date>") — Raf + Chan Park share #alphalete-sales
+   (Raf 2026-08-22); every enrolled knocks/gaps office posts in its own
+   metrics channel (LIVE-WIDE per Raf, same day). Structural skips (cross-
+   workspace, NDS) log and never fail the run.
    Needs a browser login? YES (warm ownerville session — runs on Lucy 1)."""
 INCIDENT_KEY = f"standalone-{REPORT_ID}"     # prefix is load-bearing (notify)
 # Raf 2026-08-22 (via Megan): the boards go into the EXISTING daily Metrics
@@ -210,11 +212,22 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     from automations.shared.tableau_patchright import ownerville_session
     boards: list[tuple[dict, Path | None, str]] = []  # (cfg, png, comment_extra)
     failed: list[str] = []
+    skipped: list[str] = []     # structural (cross-ws / NDS) — never "failed"
     try:
         with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
             for cfg in offices:
                 name = cfg["name"]
                 try:
+                    if cfg.get("slack_token_file"):
+                        # Cross-workspace office (trang/FRESH SUCCESS): its
+                        # bot-token posting isn't wired here yet — skip BEFORE
+                        # spending an impersonated pull on it. A structural
+                        # skip, not a failure: no weekly red card for it.
+                        print(f"[wkd] ⤳ {name}: cross-workspace posting "
+                              f"({cfg['slack_token_file']}) not wired — "
+                              "SKIPPED.", flush=True)
+                        skipped.append(name)
+                        continue
                     ov_rows, dispo_cols = P.pull_office_week(
                         page, cfg, aliases_raw, monday, saturday)
                     office_apps, extra = None, ""
@@ -228,6 +241,17 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                         office_apps = A.rep_apps_for_owner(
                             pss_path, cfg["pss_owner"], aliases_map)
                     if not ov_rows and not office_apps:
+                        if cfg.get("pss_owner") is None:
+                            # Gaps-only wireless office (no Disposition page,
+                            # no D2D apps): a weekly "No data available" line
+                            # in their thread would be structural noise, not
+                            # a visible absence — skip until NDS sourcing is
+                            # wired.
+                            print(f"[wkd] ⤳ {name}: no disposition table + "
+                                  "apps not wired (NDS) — SKIPPED.",
+                                  flush=True)
+                            skipped.append(name)
+                            continue
                         # Visible absence, never a blank board (standing rule).
                         boards.append((cfg, None, extra))
                         continue
@@ -288,7 +312,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     print(f"[wkd]   ⚠ preview DM {cfg['name']} failed: "
                           f"{type(e).__name__}: {str(e)[:160]}", flush=True)
         print(f"[wkd] {'⚠' if failed else '✅'} finished (dry-run)"
-              + (f" — failed: {', '.join(failed)}" if failed else ""),
+              + (f" — failed: {', '.join(failed)}" if failed else "")
+              + (f" — skipped: {', '.join(skipped)}" if skipped else ""),
               flush=True)
         return 1 if failed else 0
 
@@ -312,15 +337,6 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     slack_today = central_today()
     for cfg, png, extra in boards:
         name = cfg["name"]
-        if cfg.get("slack_token_file"):
-            # Cross-workspace office (e.g. trang/FRESH SUCCESS): posting with
-            # its bot token is not wired here yet — loud skip, counted missing.
-            print(f"[wkd] ⚠ {name}: cross-workspace posting "
-                  f"({cfg['slack_token_file']}) not wired — SKIPPED.",
-                  flush=True)
-            if name not in failed:
-                failed.append(name)
-            continue
         keep_chan, keep_label = smp.CHANNEL_ID, smp.HEADER_LABEL
         try:
             if cfg.get("channel_id"):
@@ -358,14 +374,21 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         finally:
             smp.CHANNEL_ID, smp.HEADER_LABEL = keep_chan, keep_label
 
-    _write_manifest(all_names, [o["name"] for o in offices], failed)
+    ran = [o["name"] for o in offices if o["name"] not in skipped]
+    # Structural skips aren't "expected" either — else every full run would
+    # look like a scoped re-run to the manifest merge.
+    _write_manifest([n for n in all_names if n not in skipped], ran, failed,
+                    note_extra=(f"; ⤳ skipped (not wired): "
+                                f"{', '.join(skipped)}" if skipped else ""))
     _publish_outcome(
         "success" if not failed else "failed",
         f"{CARD_NAME} — {len(failed)} office(s) missing",
         [f"Missing: {', '.join(failed)}"] if failed else [],
         started_at=started_at)
     print(f"[wkd] {'⚠' if failed else '✅'} finished"
-          + (f" — failed: {', '.join(failed)}" if failed else ""), flush=True)
+          + (f" — failed: {', '.join(failed)}" if failed else "")
+          + (f" — skipped: {', '.join(skipped)}" if skipped else ""),
+          flush=True)
     return 1 if failed else 0
 
 
