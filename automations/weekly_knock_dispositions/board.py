@@ -79,6 +79,33 @@ def _hm(minutes: int) -> str:
     return f"{minutes // 60}h {minutes % 60}m"
 
 
+def _knock_min(v: str) -> int | None:
+    """'2:35 PM' → minutes since midnight; None when blank/unparsable.
+    strptime %I (never %-I) so it runs on Windows too."""
+    try:
+        t = dt.datetime.strptime((v or "").strip(), "%I:%M %p")
+        return t.hour * 60 + t.minute
+    except ValueError:
+        return None
+
+
+def _fmt_knock(minutes: int) -> str:
+    """Minutes since midnight → '2:35 PM', leading zero stripped by hand
+    (no %-I — glibc-only)."""
+    h24, mm = divmod(minutes, 60)
+    ampm = "AM" if h24 < 12 else "PM"
+    h12 = h24 % 12 or 12
+    return f"{h12}:{mm:02d} {ampm}"
+
+
+def _avg_knock(ov_rows: list[dict], col: str) -> str:
+    """Average of the reps' knock times for `col` (reps with a parsable
+    time only); '' when none have one."""
+    mins = [m for m in (_knock_min(str(r.get(col, ""))) for r in ov_rows)
+            if m is not None]
+    return _fmt_knock(round(sum(mins) / len(mins))) if mins else ""
+
+
 def _display_name(rep: str) -> str:
     """House standard: title-cased names. Only all-lower / all-upper words
     are touched ('rhea mckee' → 'Rhea Mckee'); mixed-case spellings like
@@ -181,7 +208,9 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
         (_num(tot_talk / tot_apps) if tot_apps else ""),
-        "", "",
+        # Avg first/last knock across reps with a time (Megan 2026-08-22).
+        _avg_knock(ov_rows, COL_FIRST_KNOCK),
+        _avg_knock(ov_rows, COL_LAST_KNOCK),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
     ] + ["" if not t else str(t) for t in dispo_tots])
