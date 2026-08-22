@@ -4717,6 +4717,22 @@ def _action_install_indeed_source_report(args: str) -> tuple[bool, str]:
     return ok, msg[:400]
 
 
+def _action_install_day_orchestrator(args: str) -> tuple[bool, str]:
+    """Install the 4am day-orchestrator LaunchAgent on THIS machine.
+
+    Born 2026-08-22 for Lucy 3: reports get assigned to a machine via
+    schedule_config's per-report "machine" field, but a machine can't run
+    its share of the morning without the orchestrator agent — and until
+    now installing it meant hands on the box. Idempotent — reinstalling
+    re-locks the plist. `update` must have landed the plist first."""
+    from automations.day_orchestrator import install_agent
+    try:
+        ok, msg = install_agent.install("day-orchestrator")
+    except Exception as e:  # noqa: BLE001 — report the reason, never a stack trace
+        return False, f"{type(e).__name__}: {str(e)[:120]}"
+    return ok, msg[:400]
+
+
 def _action_appstream_whoami(args: str) -> tuple[bool, str]:
     """Which AppStream account is THIS machine using, and which offices can it see?
 
@@ -5057,6 +5073,7 @@ ACTIONS = {
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "install_indeed_source_report": _action_install_indeed_source_report,
+    "install_day_orchestrator": _action_install_day_orchestrator,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
