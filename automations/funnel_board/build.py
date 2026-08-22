@@ -51,6 +51,11 @@ INK, INK_2, INK_3 = "#0B1220", "#334155", "#475569"
 LINE, LINE_HARD, SURF_2, SUNKEN = "#C2CCD6", "#64748B", "#F1F5F9", "#DDE4EC"
 ACCENT, ACCENT_BG = "#1E293B", "#E6ECF3"          # derived cells: weight, not hue
 PICK, PICK_BG = "#92400E", "#FEF3C7"              # editable pickers read as inputs
+EDIT, EDIT_BG = "#5B21B6", "#EDE9FE"              # editable GOAL cells — violet on purpose:
+                                                  # the old amber (#FEF3C7) was one shade off
+                                                  # the WARN band (#FDF0C8) and read as "close
+                                                  # to goal" instead of "type here" (Carlos,
+                                                  # 2026-08-22)
 GOOD, GOOD_BG = "#14532D", "#D6F5DF"
 WARN, WARN_BG = "#854D0E", "#FDF0C8"
 BAD, BAD_BG = "#991B1B", "#FBDDDD"
@@ -1202,8 +1207,8 @@ def build_trend(sid, title, heading, roster):
                  or (kind == "pct" and lab in TREND_PCT_GOAL))
         if amber:
             F.append(fmt(sid, TF + i - 1, TF + i, 1, 2, {"userEnteredFormat": {
-                "backgroundColor": rgb(PICK_BG), "textFormat": txt(PICK, True, 12, FONT),
-                "borders": {"left": bdm(PICK), "right": bdm(PICK)}}},
+                "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 12, FONT),
+                "borders": {"left": bdm(EDIT), "right": bdm(EDIT)}}},
                 "userEnteredFormat(backgroundColor,textFormat,borders)"))
 
     for wi in range(len(WEEK_ENDS)):
@@ -1450,11 +1455,11 @@ NG = len(goal_rows) + 1
 for k in GOALS_AMBER:                                   # amber = edit me, I grade
     ci = GOAL_AT[k]
     F.append(fmt(GOALS, 1, NG, ci, ci + 1, {"userEnteredFormat": {
-        "backgroundColor": rgb(PICK_BG), "textFormat": txt(PICK, True, 12, FONT),
-        "borders": {"left": bdm(PICK), "right": bdm(PICK)}}},
+        "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 12, FONT),
+        "borders": {"left": bdm(EDIT), "right": bdm(EDIT)}}},
         "userEnteredFormat(backgroundColor,textFormat,borders)"))
     F.append(fmt(GOALS, 0, 1, ci, ci + 1, {"userEnteredFormat": {
-        "backgroundColor": rgb(PICK), "textFormat": txt("#FFFFFF", True, 11)}},
+        "backgroundColor": rgb(EDIT), "textFormat": txt("#FFFFFF", True, 11)}},
         "userEnteredFormat(backgroundColor,textFormat)"))
 for h in GOALS_COMPUTED:                                 # grey = formula, hands off
     ci = GOALS_HEAD.index(h)
@@ -1489,8 +1494,8 @@ F += [
         "horizontalAlignment": "LEFT"}},
         "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"),
     fmt(GOALS, _LG + 1, _LG + 2, 1, 2, {"userEnteredFormat": {
-        "backgroundColor": rgb(PICK_BG), "textFormat": txt(PICK, True, 11, FONT),
-        "borders": {"left": bdm(PICK), "right": bdm(PICK)}}},
+        "backgroundColor": rgb(EDIT_BG), "textFormat": txt(EDIT, True, 11, FONT),
+        "borders": {"left": bdm(EDIT), "right": bdm(EDIT)}}},
         "userEnteredFormat(backgroundColor,textFormat,borders)"),
     fmt(GOALS, _LG + 2, _LG + 3, 1, 2, {"userEnteredFormat": {
         "backgroundColor": rgb(SUNKEN), "textFormat": txt(INK_3, False, 11, FONT)}},
@@ -1510,7 +1515,7 @@ LEGEND_VALUES.append({"range": "Goals!B%d" % (NG + 3),
 LEGEND_VALUES.append({"range": "Goals!B%d" % _LG, "values": [
     ["WHICH CELLS MATTER"],
     ["CELL LOOK", "MEANING"],
-    ["amber", "You edit these. They grade the Manager Board — each manager against their OWN row."],
+    ["violet", "You edit these. They grade the Recruiting Dashboard — each manager against their OWN row. Also editable straight on the Focus Report's GOAL column."],
     ["grey", "Formulas. Removal % = Removed / Applies. 1st Booked = Sent to Call List x Retention to Call List. Don't type over them."],
     ["plain", "You may edit. Shown on the Manager Trend GOAL column, but grades nothing today."],
     [""],
