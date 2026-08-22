@@ -3188,7 +3188,7 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
-            "time": "9:30 AM CST",   # Tue-Sun sort anchor; per-day text in time_label
+            "time": "~7:00 AM (send on Eve's checkmark)",   # real cadence since Eve's 8/12 rework — card said 9:30 (stale, Megan 2026-08-22)
             "time_label": {
                 "0": "Mon 2:30 PM CST",
                 "1": "AM flow · sends on ✅",
@@ -3263,7 +3263,7 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
-            "time": "8:30 AM",
+            "time": "~6:55 AM (after fill + Box)",   # real cadence since Eve's 8/12 rework — card said 8:30 (stale, Megan 2026-08-22)
             "estimated_minutes": 2,
         },
         "checklist": [],
