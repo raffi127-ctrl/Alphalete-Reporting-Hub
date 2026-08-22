@@ -93,3 +93,21 @@ have bitten already:
 A full 28-office pass takes roughly 12 minutes and about 90 Sheets writes; the
 Sheets API allows 60 writes per minute per user, so the run batches its writes
 rather than one call per manager.
+
+## Dashboard picker cells — date-coercion trap (fixed 2026-08-22)
+
+The visible tab's period picker (`'Indeed Ad Performance'!B2`) is a ONE_OF_RANGE dropdown over
+text values like "July 2026". Sheets coerces that into a DATE on entry (UI pick or USER_ENTERED
+write) unless the cell carries a plain-text (`@`) number format — and a coerced write also
+*replaces* the `@` format, so the protection erodes. A date-valued B2 displays identically but
+matches nothing in the data tab, so the dashboard silently blanks and both dropdowns look dead.
+
+If the visible tab is ever rebuilt, reproduce all three layers:
+1. `@` number format on B2:B3;
+2. validation `strict: false` (a coerced pick must land, not bounce);
+3. the A6 filter matches the period BOTH ways:
+   `('Indeed Ad Data'!$B$2:$B=$B$2) + ('Indeed Ad Data'!$B$2:$B=IFERROR(TEXT($B$2,"mmmm yyyy"),""))`
+   — works whether B2 holds text or a coerced date. (IFERROR guards "YTD (all months)", where
+   TEXT() errors.)
+
+The scheduled job writes only the hidden data tab; it cannot regress this.
