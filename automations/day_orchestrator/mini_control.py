@@ -200,6 +200,11 @@ READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_doubleentry_creds",
+                  # The applicant_tracker service-account PRIVATE KEY rides the
+                  # Args cell as base64. It relied on hand-redaction — and on
+                  # 2026-08-22 two old pushes were found still readable in the
+                  # Sheet while re-pushing the key to Lucy 2.
+                  "set_applicant_service_account",
                   # A live AppStream browser session pushed to this machine —
                   # same class of secret as set_credico_state.
                   "set_appstream_state", "set_appstream_alt_state",
