@@ -237,11 +237,12 @@ _NDS_COLUMNS_TO_KEEP = [
     "spe.Status",
     "spe.Install Date",
     "Ported From",                   # computed below
+    "Rep Tier Bonus Amount",         # Raf 2026-08-22: tier bonus $ at the end
 ]
 _NDS_FRIENDLY_HEADERS = [
     "Rep", "Order Date", "Activation Date", "Customer Phone", "Customer Name",
     "SPM Number", "Type", "Next Up", "Package", "Status", "Install Date",
-    "Ported From",
+    "Ported From", "Tier Bonus $",
 ]
 # Pass-through columns: raw source name -> NDS export finder candidates.
 _NDS_ORDERLOG_SRC = {
@@ -254,6 +255,7 @@ _NDS_ORDERLOG_SRC = {
     "Package": ("package",),
     "spe.Status": ("spe.status",),
     "spe.Install Date": ("spe.install date",),
+    "Rep Tier Bonus Amount": ("rep tier bonus amount", "rep tier bonus"),
 }
 
 
@@ -326,7 +328,8 @@ def _render_order_log(owner, header, rows, target, out_dir):
     tsv = out_dir / f"nds_order_log_src_{target.isoformat()}.csv"
     tsv.write_text("\n".join(lines), encoding="utf-16")
     with _house.column_profile(_NDS_COLUMNS_TO_KEEP, _NDS_FRIENDLY_HEADERS,
-                               optional_raw={"Type", "Next Up", "Ported From"}):
+                               optional_raw={"Type", "Next Up", "Ported From",
+                                             "Rep Tier Bonus Amount"}):
         return _house.csv_to_xlsx(tsv, out_dir, owner=owner), len(line_rows)
 
 

@@ -1221,6 +1221,12 @@ COLUMNS_TO_KEEP = [
     "spe.Install Date",
     "Activatoin Date (order log)",  # typo matches source data
     "Tech Install",
+    # Raf's Loom 2026-08-22 (payout clarity): both drive what a rep is paid.
+    "Auto Bill Pay",
+    "Next Up",
+    # Raf 2026-08-22: tier bonus $ lands in the source "with FAI on Monday"
+    # (Smart Circle) — OPTIONAL below, so it rides blank until it exists.
+    "Rep Tier Bonus Amount",
 ]
 
 FRIENDLY_HEADERS = [
@@ -1236,13 +1242,18 @@ FRIENDLY_HEADERS = [
     "Install Date",
     "Activation Date",
     "Tech Install",
+    "Auto Bill Pay",
+    "Next Up",
+    "Tier Bonus $",
 ]
 
 # Columns we KEEP if present but never REQUIRE — a view export that lacks one is
 # backfilled blank rather than treated as an empty/caption-only export. Device
 # (spe.Phone) is here so adding it can never blank a channel whose crosstab view
-# doesn't carry it (e.g. if Raf's custom view differs from ALLREPS).
-OPTIONAL_RAW_COLUMNS = {"spe.Phone"}
+# doesn't carry it (e.g. if Raf's custom view differs from ALLREPS); Auto Bill
+# Pay / Next Up ride the same guard.
+OPTIONAL_RAW_COLUMNS = {"spe.Phone", "Auto Bill Pay", "Next Up",
+                        "Rep Tier Bonus Amount"}
 
 STATUS_ORDER = [
     "Active",
@@ -1286,6 +1297,63 @@ def _status_sort_key(value) -> int:
     return STATUS_ORDER.index(cleaned) if cleaned in STATUS_ORDER else 999
 
 
+# --- Payout-clarity display names (Raf's Loom 2026-08-22) --------------------
+# The Package cell is what a rep reads to know what they sold and what they're
+# paid on — the raw SKUs ("AT&T Extra 2.0", "Internet 1000 (Fiber 1 GIG)",
+# "DIRECTV Streaming App CHOICE") made that a conversation. Display names line
+# up with the commission sheet: Phone - <plan>, NEW INT <gig>, UPG INT <gig>,
+# AIR, DTV <package>. Anything unrecognized passes through UNCHANGED — never
+# hide what the source said.
+
+def _pkg_speed(package_upper: str) -> str:
+    for token, disp in (("5000", "5 GIG"), ("5 GIG", "5 GIG"),
+                        ("1000", "1 GIG"), ("1 GIG", "1 GIG"),
+                        ("500", "500"), ("300", "300")):
+        if token in package_upper:
+            return disp
+    return ""
+
+
+def _display_package(product_type, package) -> str:
+    pt = str(product_type or "").strip().upper()
+    pk = str(package or "").strip()
+    if not pk:
+        return pk
+    up = pk.upper()
+    if pt == "WIRELESS":
+        plan = pk[5:] if up.startswith("AT&T ") else pk
+        if plan.endswith(" 2.0"):
+            plan = plan[:-4]
+        return f"Phone - {plan.strip()}"
+    if pt == "NEW INTERNET":
+        s = _pkg_speed(up)
+        return f"NEW INT {s}" if s else f"NEW INT - {pk}"
+    if pt == "UPGRADE INTERNET":
+        s = _pkg_speed(up)
+        return f"UPG INT {s}" if s else f"UPG INT - {pk}"
+    if pt == "AIR":
+        s = _pkg_speed(up)
+        return f"AIR {s}".strip()
+    if pt == "VIDEO" and "DIRECTV" in up:
+        # "DIRECTV Streaming App CHOICE" -> "DTV Choice" (matches the
+        # commission sheet; there's only one DTV product, the package is
+        # what matters).
+        tail = pk[up.find("APP") + 3:].strip() if "APP" in up else ""
+        return f"DTV {tail.title()}" if tail else pk
+    return pk
+
+
+def _display_next_up(product_type, next_up) -> str:
+    """Wireless only — Next Up has nothing to do with internet (blank there).
+    Source values are NEXT UP / OTHER."""
+    if str(product_type or "").strip().upper() != "WIRELESS":
+        return ""
+    v = str(next_up or "").strip().upper()
+    if not v:
+        return ""
+    return "Next Up" if v == "NEXT UP" else "No Next Up"
+
+
 def _load_and_clean(csv_path: Path) -> pd.DataFrame:
     # Tableau exports UTF-16 LE with tab separators despite the .csv name.
     # 2026-05-30: the ORDER LOG view now prepends a title/caption line
@@ -1312,9 +1380,16 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
         return pd.DataFrame(columns=FRIENDLY_HEADERS)
 
     df = pd.read_csv(csv_path, encoding="utf-16", sep="\t", skiprows=header_idx)
+    # Tableau pads some header cells ("Next Up " with a trailing space in the
+    # live ORDER LOG export) — normalize so name-based selection can't miss.
+    df.columns = [str(c).strip() for c in df.columns]
 
     rep_blank = df["Rep"].isna() | (df["Rep"].astype(str).str.strip() == "")
     df = df.loc[~rep_blank].copy()
+    # The crosstab appends a grand-total row (every cell literally "Total") —
+    # it leaked into the Cleaned sheet AND spawned a phantom "Total" rep tab
+    # (present in production copies through 2026-08-22). Drop it.
+    df = df.loc[df["Rep"].astype(str).str.strip() != "Total"].copy()
 
     # Belt-and-suspenders: if the export has a "Rep" header but is missing some
     # expected columns (another sparse-export shape), don't KeyError on the
@@ -1341,6 +1416,18 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
         kind="mergesort",
         na_position="last",
     ).drop(columns="_status_order")
+
+    # Payout-clarity display names (fiber only — an alternate column profile
+    # like the NDS log computes its own values and has no raw Product Type
+    # column, so this block naturally skips it).
+    if "Product Type (Broken Out)" in df.columns and "Package" in df.columns:
+        df["Package"] = [
+            _display_package(pt, pk)
+            for pt, pk in zip(df["Product Type (Broken Out)"], df["Package"])]
+        if "Next Up" in df.columns:
+            df["Next Up"] = [
+                _display_next_up(pt, nu)
+                for pt, nu in zip(df["Product Type (Broken Out)"], df["Next Up"])]
 
     df.columns = FRIENDLY_HEADERS
     return df
@@ -1388,15 +1475,20 @@ def _owner_file_suffix(owner_name: str) -> str:
 #  Scopes itself automatically per channel because the frame is already
 #  filtered to one owner upstream.
 # --------------------------------------------------------------------
-# Columns shown on each per-rep tab (drop Rep — it's in the tab name — and the
-# noisier Customer Phone / Tech Install; keep it to the sale line detail).
+# Columns shown on each per-rep tab, in Raf's order (his mock, Loom
+# 2026-08-22): payout-relevant fields (Package, install type, Auto Bill Pay,
+# Next Up) up front with the customer's number; SPM at the end. Rep is in the
+# tab name. The old Code column (A/P/D/C) is gone — the Status column and row
+# colors already say it (Raf: "if it's nothing related to us, remove it").
 _REP_TAB_COLUMNS = [
-    "Order Date", "Customer Name", "SPM Number", "Product Type",
-    "Package", "Device", "Status", "Install Date", "Activation Date",
+    "Order Date", "Customer Name", "Package", "Customer Phone",
+    "Install Date", "Activation Date", "Status", "Tech Install",
+    "Auto Bill Pay", "Next Up", "Product Type", "Device", "SPM Number",
+    "Tier Bonus $",
 ]
-# A leading Code column (A/P/D/C) prefixes every section so the columns line up
-# top-to-bottom in the single rep tab and the legend applies throughout.
-_REP_FULL_HEADER = ["Code"] + _REP_TAB_COLUMNS
+# Display-only header renames on the rep tabs (data keys stay canonical).
+_REP_TAB_DISPLAY = {"Customer Phone": "Customer Number"}
+_REP_FULL_HEADER = list(_REP_TAB_COLUMNS)
 _REP_NCOL = len(_REP_FULL_HEADER)
 _REP_TAB_DATE_COLS = {"Order Date", "Install Date", "Activation Date"}
 _INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
@@ -1431,7 +1523,7 @@ def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset()):
                                 if n in FRIENDLY_HEADERS)
     _REP_TAB_COLUMNS = [h for h in FRIENDLY_HEADERS
                         if h not in ("Rep", "Customer Phone", "Tech Install")]
-    _REP_FULL_HEADER = ["Code"] + _REP_TAB_COLUMNS
+    _REP_FULL_HEADER = list(_REP_TAB_COLUMNS)
     _REP_NCOL = len(_REP_FULL_HEADER)
     try:
         yield
@@ -1531,7 +1623,7 @@ def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
         cell.fill, cell.alignment, cell.border = fill, _OL_CENTER, border
         cell.font = font
         if is_date:
-            cell.number_format = "m/d/yyyy"
+            cell.number_format = "m/d"
 
 
 # The AUTOMATION MASTER workbook — where the self-serve Pay Structure editor
@@ -1618,7 +1710,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
 
     def _header(sh, r):
         for c, h in enumerate(_full_header, start=1):
-            cell = sh.cell(row=r, column=c, value=h)
+            cell = sh.cell(row=r, column=c, value=_REP_TAB_DISPLAY.get(h, h))
             cell.font, cell.fill = header_font, header_fill
             cell.alignment, cell.border = _OL_CENTER, border
 
@@ -1657,7 +1749,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
             banner_rows.add(r); r += 1
             _header(sh, r); r += 1
             for rec in sorted(weeks[(ws_, we_, paid)], key=_week_key):
-                _write_rep_row(sh, r, [("Code", "A")] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
+                _write_rep_row(sh, r, [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, "57BB8A", "000000")
                 if pay_grid:
                     _write_pay_cells(sh, r, rec, pay_grid, len(_REP_FULL_HEADER) + 1,
@@ -1668,20 +1760,22 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
                                       len(_REP_FULL_HEADER), _ncol, border, banner_rows)
             r += 2   # spacer between sections
 
-        # Pending / Disconnect / Cancel section — legend lives here, where the
-        # P/D/C codes actually apply (week sections are all Active).
+        # Pending / Disconnect / Cancel section. The old Code letters are gone
+        # (Raf 2026-08-22) — the Status column + row colors say it; the legend
+        # survives only to explain NYP when the office prices its sales.
         if pdc:
             _banner(sh, r, "Pending / Disconnect / Cancel", pend_fill, banner_font)
             banner_rows.add(r); r += 1
-            _legend = ("Legend:  A = Active   P = Pending   D = Disconnect   C = Cancel"
-                       + ("    NYP = Not Yet Priced (office hasn't set a rate; not in the total)"
-                          if pay_grid else ""))
-            _banner(sh, r, _legend, PatternFill("solid", fgColor="FFF2CC"), legend_font)
-            banner_rows.add(r); r += 1
+            if pay_grid:
+                _legend = ("Legend:  NYP = Not Yet Priced (office hasn't set "
+                           "a rate; not in the total)")
+                _banner(sh, r, _legend, PatternFill("solid", fgColor="FFF2CC"),
+                        legend_font)
+                banner_rows.add(r); r += 1
             _header(sh, r); r += 1
             for code, rec in sorted(pdc, key=lambda x: (x[0], _week_key(x[1]))):
                 bg = STATUS_COLORS.get(str(rec["Status"]).strip(), "FFD666")
-                _write_rep_row(sh, r, [("Code", code)] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
+                _write_rep_row(sh, r, [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, bg, "000000")
                 if pay_grid:
                     _write_pay_cells(sh, r, rec, pay_grid, len(_REP_FULL_HEADER) + 1,
@@ -1816,7 +1910,7 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "",
             cell.alignment = _OL_CENTER
             cell.border = border
             if col_idx in DATE_COLUMN_INDEXES:
-                cell.number_format = "m/d/yyyy"
+                cell.number_format = "m/d"
 
     _autosize_columns(ws, df)
     ws.freeze_panes = "A2"
