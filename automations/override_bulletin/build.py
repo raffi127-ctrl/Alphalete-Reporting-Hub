@@ -86,8 +86,9 @@ EMAIL_GROUPS = ["Alphalete Org Owners", "Raf's Captain Team",
                 "Carlos' Captain Team", "Bulletins",
                 "Jairo's Captainship", "Starr's Captainship",
                 "Colten's Captainship"]
-# Slack targets for the posted image (VA sent to both).
-SLACK_CHANNELS = ["#alphalete-sales", "#rafs-office-recruiting",
+# Slack targets for the posted image (informational — send.py owns the real
+# lists). #rafs-office-recruiting dropped 2026-08-22: channel being retired.
+SLACK_CHANNELS = ["#alphalete-sales",
                   "#11280-alphalete-marketing-inc-rafael-hidalgo"]
 
 

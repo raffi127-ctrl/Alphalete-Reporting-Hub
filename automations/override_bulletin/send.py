@@ -65,12 +65,10 @@ from pathlib import Path
 from automations.override_bulletin import build as B
 from automations.override_bulletin import fill as F
 
-# Slack targets — Lucy is a member of both (the VA posted the bulletin to both).
-# Eve 2026-08-20: the bulletin goes to BOTH recruiting rooms — the original
-# #rafs-office-recruiting (C06881A7WLV) AND Raf's office channel
-# #11280-alphalete-marketing-inc-rafael-hidalgo (C0AUAS88FGW), in BOTH lists
-# below. Same workspace org (AO). The new one is private; lucy_reporting
-# (U0BCG8F9B5Z) is a member (confirmed 2026-08-20).
+# Slack targets — Lucy must be a member of every room listed.
+# 2026-08-22 (Raf): #rafs-office-recruiting (C06881A7WLV) is being RETIRED —
+# dropped from BOTH lists; #11280-alphalete-marketing-inc-rafael-hidalgo
+# (C0AUAS88FGW, private, lucy_reporting is a member) replaced it 2026-08-20.
 # Set OVERRIDE_BULLETIN_CHANNEL_ID to a scratch channel to test a real post
 # safely; it replaces ALL the real channels (same knob as pnl_office).
 # Eve 2026-08-07: the override bulletin posts to the SAME rooms as the
@@ -78,17 +76,14 @@ from automations.override_bulletin import fill as F
 CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
-    ("#rafs-office-recruiting", "C06881A7WLV"),
     ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
 ]
 # DD bulletin rooms — DD_SOURCES.md: the VA posted it to #alphalete-sales and
 # #alphalete-lvl1-chat, and Megan also lists the recruiting room. Every id
-# was resolved against the workspace on 2026-07-24, not copied from a doc
-# (C0AUAS88FGW joined the list on 2026-08-20, see above).
+# was resolved against the workspace on 2026-07-24, not copied from a doc.
 DD_CHANNELS = [
     ("#alphalete-sales",        "C068PH3RFSM"),
     ("#alphalete-lvl1-chat",    "C09JG28CD27"),
-    ("#rafs-office-recruiting", "C06881A7WLV"),
     ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
 ]
 # Preview recipient for --preview (Megan only, before the distro goes live).
