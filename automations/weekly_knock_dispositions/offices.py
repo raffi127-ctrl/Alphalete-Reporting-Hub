@@ -50,15 +50,17 @@ RAF = {
     "header_label": "", "slack_token_file": "",
 }
 
-# Chan Park has no metrics thread of his own (his daily knocks ride the
-# 'Knocks for other offices' thread) — Raf 2026-08-22: "can we also do Chan
-# in there" → his weekly board posts into the SAME #alphalete-sales Metrics
-# thread as Raf's. Empty channel_id = the default channel.
+# Chan Park has no metrics thread of his own — his daily knocks ride the
+# 'Knocks for other offices' thread in #alphalete-sales, and his weekly
+# board goes into THAT same thread on Sundays (Megan 2026-08-22: "chans
+# should be in this thread on sundays"). thread_title switches the post
+# from the day's Metrics thread to that named thread.
 CHAN = {
     "name": "Chan Park", "ov": "impersonate", "campaign_id": "3",
     "pss_owner": "Chan Park",
     "channel_id": "", "channel_name": "#alphalete-sales",
     "header_label": "", "slack_token_file": "",
+    "thread_title": "Knocks for other offices",
 }
 
 # Both spellings of the enrollment key resolve to the knocks/gaps board

@@ -389,17 +389,27 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 # its own workspace token; restored in the finally.
                 os.environ["SLACK_USER_TOKEN"] = cfg["_token_path"].read_text(
                     encoding="utf-8-sig").strip()
-            head = smp.ensure_metrics_thread(slack_today)
+            if cfg.get("thread_title"):
+                # Chan: his board rides the same named thread his daily
+                # knocks post to ('Knocks for other offices'), not the
+                # Metrics thread. other_office_knocks (order 11) normally
+                # opens it before we run; ensure_named_thread reuses it.
+                head = smp.ensure_named_thread(
+                    cfg["thread_title"], slack_today,
+                    lines=[f":door: {name} — weekly knock dispositions"])
+            else:
+                head = smp.ensure_metrics_thread(slack_today)
             thread_ts = head.get("thread_ts")
             if not thread_ts:
-                print(f"[wkd] ❌ {name}: couldn't open the {THREAD_NAME} "
-                      "thread in "
+                print(f"[wkd] ❌ {name}: couldn't open the "
+                      f"{cfg.get('thread_title') or THREAD_NAME} thread in "
                       f"{cfg.get('channel_name') or '#alphalete-sales'}: "
                       f"{head}", flush=True)
                 if name not in failed:
                     failed.append(name)
                 continue
-            if slack_today <= NEW_BADGE_UNTIL:
+            # NEW banner rides only the Metrics headers (Megan 2026-08-22).
+            if not cfg.get("thread_title") and slack_today <= NEW_BADGE_UNTIL:
                 _tag_header_new(smp, thread_ts)
             comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
             if term_flag:
