@@ -120,11 +120,16 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
     else:
         img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows)
     posts.append((img_tk, POST_TOTAL_KNOCKS))
-    img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
-    posts.append((img_tg, POST_TIME_GAPS))
+    # Fiber (house shape): the combined board CARRIES Gaps + Total Gaps now
+    # (Raf's Loom 2026-08-22) — no separate Time Gaps post. The NDS shapes
+    # keep their Time Gaps post: their knocks board is the Time Tracker
+    # mirror / wireless dispositions, approved as a pair.
+    if wireless or gaps_only:
+        img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
+        posts.append((img_tg, POST_TIME_GAPS))
     shape = ("wireless" if wireless else
-             "telemapper-knocks fallback" if gaps_only else "house")
-    print(f"[rashad_knocks] Rendered both ({shape} knocks board) -> "
+             "telemapper-knocks fallback" if gaps_only else "house combined")
+    print(f"[rashad_knocks] Rendered {shape} -> "
           f"{'; '.join(str(p[0]) for p in posts)}", flush=True)
 
     if dry_run:

@@ -239,7 +239,7 @@ METRICS: list[Metric] = [
                      "0d5c97aa-d39e-4541-bf88-a8e599ab5e69/ALLEXP?:iid=1"),
            notes="Must use an EXPANDED view — the collapsed default drops the "
                  "'Rep Name' column and ABP crashes for every office."),
-    Metric("knocks_gaps", "🚪 Total Knocks + 🕐 Time Gaps", (WIRELESS, INTERNET, B2B),
+    Metric("knocks_gaps", "🚪 Total Knocks (with Time Gaps)", (WIRELESS, INTERNET, B2B),
            source="ownerville (impersonate → Disposition + Time Tracker)",
            scope="ownerville",
            notes="NOT Tableau — the only metric that isn't. Needs the office's "

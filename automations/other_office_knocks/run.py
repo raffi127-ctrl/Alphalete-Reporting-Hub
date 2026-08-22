@@ -190,29 +190,29 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
             print(f"[other_knocks] {office} — data date {day.isoformat()} — "
                   f"{len(rows)} rep(s).", flush=True)
             if not rows:
-                # Visible absence, not a silent gap — same rule as Raf's run:
-                # BOTH metrics say so, so neither reads as quietly skipped.
-                rendered.append((office, POST_TIME_GAPS, None, day))
+                # Visible absence, not a silent gap — same rule as Raf's run.
                 rendered.append((office, POST_TOTAL_KNOCKS, None, day))
                 continue
             # Per-office out dir: the renderers name their files by DATE only,
             # so two offices in one run would overwrite each other.
             out_dir = OUT_DIR / _slug(office)
             out_dir.mkdir(parents=True, exist_ok=True)
-            img_tg = _render.render_time_gaps(day, out_dir=out_dir, rows=rows,
-                                              title_suffix=office)
-            rendered.append((office, POST_TIME_GAPS, img_tg, day))
             if COL_TOTAL_KNOCKS in rows[0]:
+                # Raf's Loom 2026-08-22: ONE combined board — Total Knocks now
+                # carries Gaps + Total Gaps, so no separate Time Gaps post.
                 img_tk = _render.render_total_knocks(day, out_dir=out_dir,
                                                      rows=rows,
                                                      title_suffix=office)
                 rendered.append((office, POST_TOTAL_KNOCKS, img_tk, day))
-                print(f"[other_knocks] Rendered {office} -> {img_tg} ; {img_tk}",
+                print(f"[other_knocks] Rendered {office} -> {img_tk}",
                       flush=True)
             else:
-                # Gaps-only (wireless/NDS) office: no Disposition rows, so a
-                # Total Knocks image would be all blanks. Time Gaps still draws
-                # on its own (it comes from the Time Tracker).
+                # Gaps-only (wireless/NDS) office: no Disposition rows — Time
+                # Gaps still draws on its own (it comes from the Time Tracker).
+                img_tg = _render.render_time_gaps(day, out_dir=out_dir,
+                                                  rows=rows,
+                                                  title_suffix=office)
+                rendered.append((office, POST_TIME_GAPS, img_tg, day))
                 print(f"[other_knocks] ⚠ {office} has no Disposition data "
                       f"(gaps-only office) — Time Gaps only.", flush=True)
                 rendered.append((office, POST_TOTAL_KNOCKS, None, day))

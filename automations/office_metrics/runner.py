@@ -245,7 +245,9 @@ def metrics_for(o: Office) -> list[dict]:
                    "CHURN_SHEET_ID": o.sheet_id,
                    "CHURN_NI_TAB": o.churn_ni_tab, "CHURN_WL_TAB": o.churn_wl_tab}),
              dry_flag="--dry-run", post_flag=None),
-        dict(slug="knocks_gaps", label="🚪 Total Knocks + 🕐 Time Gaps",
+        # ONE combined post since Raf's Loom 2026-08-22: the Total Knocks
+        # board carries Gaps + Total Gaps, no separate Time Gaps image.
+        dict(slug="knocks_gaps", label="🚪 Total Knocks (with Time Gaps)",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              # knocks_pull reads KNOCKS_OFFICE first (office-agnostic), then the
              # legacy RASHAD_KNOCKS_OFFICE. Use the agnostic one for every office.

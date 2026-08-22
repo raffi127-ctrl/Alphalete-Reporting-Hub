@@ -125,13 +125,12 @@ def _office_metrics_card() -> dict:
             "the per-office buttons to re-run just one."),
         "breakdown": (
             "WHAT IT DOES\n"
-            f"For each office below, runs all 12 daily metrics and posts them "
+            f"For each office below, runs all the daily metrics and posts them "
             "into today's Metrics thread in that office's channel (one header "
             "thread per office per day, created first if it isn't up yet).\n\n"
             f"OFFICES\n{office_bullets}\n\n"
             "METRICS POSTED (in thread order)\n"
-            "• 🚪 Telemapper Knocks\n"
-            "• ⏰ Time Gaps\n"
+            "• 🚪 Total Knocks (one combined board — knocks + time gaps)\n"
             "• 📋 Order Log\n"
             "• 📅 Sales Scheduled 6+ Days Out\n"
             "• 🚫 Canceled Orders\n"
@@ -2158,20 +2157,17 @@ AUTOMATED_REPORTS = [
         "emoji": "📸",
         "color": "#C1651B",
         "category": "📊 Metrics",
-        "description": "Posts the SAME Time Gaps + Total Knocks images the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. Two images per office, same layout and columns as Raf's.",
+        "description": "Posts the SAME combined Total Knocks board (knocks + time gaps in one image) the main report posts for Rafael Hidalgo's office, but for the offices that don't have a metrics thread of their own — Sahil Multani and Chan Park — into their own 'Knocks for other offices' thread in #alphalete-sales. One image per office, same layout and columns as Raf's.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Opens ownerville as each office in turn (impersonation), scrapes "
             "'Disposition by Rep' + Time Tracker for yesterday, and draws the "
-            "same two tables Raf's Time Gaps + Telemapper Knocks images use — "
-            "same columns, same themes, same sorting.\n\n"
+            "same combined Total Knocks board Raf's report posts — knocks + "
+            "gaps in one image, same columns, same theme, alphabetical.\n\n"
             "WHERE IT POSTS\n"
-            "#alphalete-sales, in its OWN dated thread, grouped by office with "
-            "Time Gaps first:\n"
+            "#alphalete-sales, in its OWN dated thread, one image per office:\n"
             "'Knocks for other offices — <Month> <day> <year>'\n"
-            "• 🕐 Time Gaps — Sahil Multani\n"
             "• 🚪 Total Knocks — Sahil Multani\n"
-            "• 🕐 Time Gaps — Chan Park\n"
             "• 🚪 Total Knocks — Chan Park\n\n"
             "It never replies into the Metrics thread — that one stays exactly "
             "as it is. The office name is in each image's title too, so a "

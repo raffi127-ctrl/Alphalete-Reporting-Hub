@@ -30,12 +30,12 @@ from automations.total_knocks import fill as _fill
 from automations.total_knocks import render as _render
 from automations.total_knocks.pull import central_today, pull_disposition_day
 
-# Two posts to the same Metrics thread, in order: (comment label, reaction
-# short-name). Each comment leads with the workflow emoji + Title Case title,
-# matching every other metrics post (🚫 Canceled Orders, 🌐 New Internet Churn);
-# the same emoji is also added as a reaction on the parent.
+# ONE post to the Metrics thread: (comment label, reaction short-name). The
+# comment leads with the workflow emoji + Title Case title, matching every
+# other metrics post; the same emoji is also added as a reaction on the parent.
+# Raf's Loom 2026-08-22: the Total Knocks board now CARRIES Gaps + Total Gaps,
+# so the separate Time Gaps post retired (the Sheet tab still fills both).
 POST_TOTAL_KNOCKS = ("🚪 Total Knocks", "door")
-POST_TIME_GAPS    = ("🕐 Time Gaps", "clock1")
 
 
 def _yesterday() -> dt.date:
@@ -64,23 +64,22 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
         if dry_run or no_slack:
             why = "--dry-run" if dry_run else "--no-slack"
             print(f"[total_knocks] {why} — would post 'No data available' "
-                  f"for {POST_TOTAL_KNOCKS[0]} + {POST_TIME_GAPS[0]}.",
-                  flush=True)
+                  f"for {POST_TOTAL_KNOCKS[0]}.", flush=True)
             print("[total_knocks] ✅ Finished (no data).", flush=True)
             return 0
         from automations.shared.slack_metrics_post import post_reply_text_only
         slack_today = central_today()   # post into TODAY's thread (Texas time)
-        for label, emoji in [POST_TOTAL_KNOCKS, POST_TIME_GAPS]:
-            text = (f"{label} — {target.strftime('%b')} {target.day} "
-                    f"— No data available")
-            resp = post_reply_text_only(text, react_emoji=emoji,
-                                        today=slack_today)
-            if resp.get("ok"):
-                print(f"[total_knocks] ✅ Posted '{label}' no-data notice.",
-                      flush=True)
-            else:
-                print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
-                      flush=True)
+        label, emoji = POST_TOTAL_KNOCKS
+        text = (f"{label} — {target.strftime('%b')} {target.day} "
+                f"— No data available")
+        resp = post_reply_text_only(text, react_emoji=emoji,
+                                    today=slack_today)
+        if resp.get("ok"):
+            print(f"[total_knocks] ✅ Posted '{label}' no-data notice.",
+                  flush=True)
+        else:
+            print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
+                  flush=True)
         print("[total_knocks] ✅ Finished (no data).", flush=True)
         return 0
 
@@ -94,12 +93,11 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
     print(f"[total_knocks] Wrote {stats['reps']} rep(s) to "
           f"{stats['write_range']}.", flush=True)
 
-    # 3. Render both images from the filled tab.
+    # 3. Render the ONE combined board (knocks + gaps) from the filled tab.
     img_tk = _render.render_total_knocks(target, tab=tab)
-    img_tg = _render.render_time_gaps(target, tab=tab)
-    print(f"[total_knocks] Rendered -> {img_tk} ; {img_tg}", flush=True)
+    print(f"[total_knocks] Rendered -> {img_tk}", flush=True)
 
-    # 4. Slack — Total Knocks first, then Time Gaps in the same thread.
+    # 4. Slack — the single combined post.
     if no_slack:
         print("[total_knocks] Skipping Slack post (--no-slack).", flush=True)
         print("[total_knocks] ✅ Finished.", flush=True)
@@ -107,17 +105,16 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
 
     from automations.shared.slack_metrics_post import post_reply_with_image
     slack_today = central_today()   # post into TODAY's thread in Texas time
-    for img, (label, emoji) in [(img_tk, POST_TOTAL_KNOCKS),
-                                (img_tg, POST_TIME_GAPS)]:
-        comment = f"{label} — {target.strftime('%b')} {target.day}"
-        resp = post_reply_with_image(Path(img), comment=comment,
-                                     react_emoji=emoji, today=slack_today)
-        if resp.get("ok"):
-            print(f"[total_knocks] ✅ Posted '{label}' (file {resp.get('file')}).",
-                  flush=True)
-        else:
-            print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
-                  flush=True)
+    label, emoji = POST_TOTAL_KNOCKS
+    comment = f"{label} — {target.strftime('%b')} {target.day}"
+    resp = post_reply_with_image(Path(img_tk), comment=comment,
+                                 react_emoji=emoji, today=slack_today)
+    if resp.get("ok"):
+        print(f"[total_knocks] ✅ Posted '{label}' (file {resp.get('file')}).",
+              flush=True)
+    else:
+        print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
+              flush=True)
     print("[total_knocks] ✅ Finished.", flush=True)
     return 0
 

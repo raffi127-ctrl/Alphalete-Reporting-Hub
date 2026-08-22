@@ -51,7 +51,8 @@ REPORTS: List[ReportKind] = [
     # needs_view=False — a plain D2D office is pure config. needs_view stays a
     # knob for the rare office that can't use a shared view.
     ReportKind("knocks",         "🚪 Telemapper Knocks",           "d2d", False, True,
-               blurb="How many doors your reps knocked (pulled from Telemapper)."),
+               blurb="How many doors your reps knocked, with their time gaps — "
+                     "one combined board (pulled from Telemapper)."),
     ReportKind("order_log",      "📋 Order Log",                   "d2d", False, True,
                blurb="The day's orders — a tab per rep, with each rep's estimated payout."),
     ReportKind("sales_6plus",    "📅 Sales Scheduled 6+ Days Out", "d2d", False, True,

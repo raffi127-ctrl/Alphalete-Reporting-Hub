@@ -26,7 +26,8 @@ from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_R
 from automations.total_knocks.pull import (
     COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
     COL_TT_BREAKS, COL_TT_SALES_TIME, COL_TT_SALES,
-    COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_NO_ANSWER,
+    COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+    COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_SALE,
     COL_NOT_INTERESTED, COL_COME_BACK, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
     SHEET_COLUMNS,
     _norm,
@@ -52,6 +53,15 @@ NAME_FG   = (20, 18, 16)
 
 # Total Knocks shows columns A–N (the first 14); Gaps / Total Gaps are excluded.
 TOTAL_KNOCKS_NCOL = 14
+# The COMBINED fiber Total Knocks board (Raf's Loom 2026-08-22): no ID, Gaps +
+# Total Gaps folded in ahead of Last Knock — it replaces the separate Time
+# Gaps post for fiber offices. Alphabetical by rep, headers wrapped tight.
+COMBINED_KNOCKS_COLUMNS = [
+    COL_REP, COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+    COL_FIRST_KNOCK, COL_GAPS, COL_TOTAL_GAPS, COL_LAST_KNOCK,
+    COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_COME_BACK, COL_SALE,
+    COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
+]
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -142,9 +152,34 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, font) -> int:
     return int(draw.textlength(text or "", font=font))
 
 
+def _wrap_header(probe, text: str, fit_w: int, font) -> list[str]:
+    """Wrap a header into lines no wider than fit_w (words never split).
+    Returns at least one line; a single word wider than fit_w stays whole."""
+    words = text.split()
+    lines: list[str] = []
+    cur = ""
+    for w in words:
+        cand = f"{cur} {w}".strip()
+        if cur and _text_w(probe, cand, font) > fit_w:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = cand
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
 def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
-          out_path: Path, name_col: int = 1) -> Path:
-    """Generic table → PNG. `name_col` (0-based) is left-aligned + bold."""
+          out_path: Path, name_col: int = 1,
+          wrap_headers: bool = False) -> Path:
+    """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
+
+    wrap_headers=False (default): every existing board unchanged — column
+    width fits the one-line header.
+    wrap_headers=True (Raf's Loom 2026-08-22, fiber Total Knocks): columns are
+    sized to the DATA, and the header words wrap onto extra lines instead of
+    stretching the box — "shorten up these boxes … make the number fit"."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
@@ -153,11 +188,29 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     ncol = len(header)
     col_w = []
+    head_lines: list[list[str]] = []
     for ci in range(ncol):
-        w = _text_w(probe, header[ci], f_head)
+        w_cells = 0
+        cell_font = f_name if ci == name_col else f_cell  # names draw bold
         for r in rows:
-            w = max(w, _text_w(probe, r[ci] if ci < len(r) else "", f_cell))
+            w_cells = max(w_cells,
+                          _text_w(probe, r[ci] if ci < len(r) else "", cell_font))
+        if wrap_headers:
+            # Floor: widest cell, but never narrower than the header's longest
+            # single word (words don't split).
+            longest_word = max((_text_w(probe, wd, f_head)
+                                for wd in header[ci].split()), default=0)
+            fit = max(w_cells, longest_word, MIN_COL_W)
+            lines = _wrap_header(probe, header[ci], fit, f_head)
+            w = max([fit] + [_text_w(probe, ln, f_head) for ln in lines])
+            head_lines.append(lines)
+        else:
+            w = max(_text_w(probe, header[ci], f_head), w_cells)
+            head_lines.append([header[ci]])
         col_w.append(min(MAX_COL_W, max(MIN_COL_W, w + 2 * CELL_PAD_X)))
+
+    n_head_lines = max(len(ls) for ls in head_lines) if head_lines else 1
+    header_h = HEADER_H if n_head_lines == 1 else 14 + 16 * n_head_lines
 
     table_w = sum(col_w)
 
@@ -178,7 +231,7 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     banner_w = max(table_w,
                    _text_w(probe, title, f_title) + 2 * CELL_PAD_X)
 
-    img_h = PAD + TITLE_H + HEADER_H + ROW_H * len(rows) + PAD
+    img_h = PAD + TITLE_H + header_h + ROW_H * len(rows) + PAD
     img = Image.new("RGB", (banner_w + 2 * PAD, img_h), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
@@ -188,12 +241,16 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
 
     y, x = PAD + TITLE_H, PAD
     for ci in range(ncol):
-        d.rectangle([x, y, x + col_w[ci], y + HEADER_H], fill=theme["header_bg"])
-        d.text((x + CELL_PAD_X, y + (HEADER_H - 13) // 2),
-               header[ci], font=f_head, fill=HEADER_FG)
+        d.rectangle([x, y, x + col_w[ci], y + header_h], fill=theme["header_bg"])
+        lines = head_lines[ci]
+        block_h = 16 * len(lines)
+        ty = y + (header_h - block_h) // 2 + 1
+        for ln in lines:
+            d.text((x + CELL_PAD_X, ty), ln, font=f_head, fill=HEADER_FG)
+            ty += 16
         x += col_w[ci]
 
-    y += HEADER_H
+    y += header_h
     for ri, r in enumerate(rows):
         bg = ROW_BG_A if ri % 2 == 0 else theme["stripe"]
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
@@ -217,7 +274,7 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
             x += col_w[ci]
     yy = PAD + TITLE_H
     d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
-    yy += HEADER_H
+    yy += header_h
     for _ in range(len(rows) + 1):
         d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
         yy += ROW_H
@@ -236,13 +293,14 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         out_dir: Path = OUT_DIR_DEFAULT,
                         rows: list[dict] | None = None,
                         title_suffix: str = "") -> Path:
-    """PNG 1 — columns A–N, in tab order (First Knock asc), amber theme.
+    """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
+    disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
+    column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
+    Replaces the separate Time Gaps post for fiber offices. Amber theme.
 
     `rows` (optional): in-memory records keyed by SHEET_COLUMNS. When given,
-    render straight from them (sorted the same way fill.py orders the tab —
-    First Knock asc) instead of reading the Sheet, so callers can render a
-    fresh pull without writing a production tab. Default (None) preserves the
-    exact Sheet-reading behaviour.
+    render straight from them instead of reading the Sheet, so callers can
+    render a fresh pull without writing a production tab.
 
     `title_suffix` (optional): office name added to the title —
     'TOTAL KNOCKS — SAHIL MULTANI — August 17, 2026'. Needed when SEVERAL
@@ -250,18 +308,36 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     still says whose office it is. Default ('') keeps the original title.
     """
     if rows is not None:
-        from automations.total_knocks.fill import _sorted_rows
-        header, rows = _table_from_rows(_sorted_rows(rows))
+        header, rows = _table_from_rows(rows)
     else:
         header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
-    n = min(TOTAL_KNOCKS_NCOL, len(header))
-    header = header[:n]
-    rows = [r[:n] for r in rows]
+    # Raf's Loom 2026-08-22 — ONE combined fiber board: drop ID, pull Gaps +
+    # Total Gaps in (in front of Last Knock) so the separate Time Gaps post
+    # retires, alphabetical by rep, and wrapped headers so the boxes hug the
+    # numbers instead of the header text.
+    idx = {}
+    for i, h in enumerate(header):
+        k = _norm(h)
+        if k and k not in idx:
+            idx[k] = i
+    missing = [c for c in COMBINED_KNOCKS_COLUMNS if _norm(c) not in idx]
+    if missing:
+        raise RuntimeError(f"Tab {tab!r} missing column(s) for Total Knocks: "
+                           f"{missing}. Header: {header}")
+    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
+    sub = [[(r[i] if i < len(r) else "") for i in sel] for r in rows]
+    rep_pos = COMBINED_KNOCKS_COLUMNS.index(COL_REP)
+    tg_pos = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
+    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
+    for r in sub:
+        r[tg_pos] = _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    return _draw(header, rows, f"TOTAL KNOCKS — {_office}{_title_date(target)}",
-                 THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png")
+    return _draw(list(COMBINED_KNOCKS_COLUMNS), sub,
+                 f"TOTAL KNOCKS — {_office}{_title_date(target)}",
+                 THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
+                 name_col=0, wrap_headers=True)
 
 
 def _gap_min(v: str) -> int:
