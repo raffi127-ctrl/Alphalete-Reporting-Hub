@@ -1962,8 +1962,8 @@
     },
     "weekly_knock_dispositions": {
       "order": 11.1,
-      "on_scheduler": false,
-      "_on_scheduler_note": "BUILT READY 2026-08-22, deliberately OFF until Raf approves the preview — flip to true and it fires Sundays. Raf's Loom 2026-08-21 ('Weekly Rep Productivity Metrics and Averages'); name 'Weekly Knock Dispositions' is Raf's, via Megan. Multi-office by design: offices are config rows in automations/weekly_knock_dispositions/offices.py (Raf's office enabled; adding one is one row).",
+      "on_scheduler": true,
+      "_on_scheduler_note": "LIVE 2026-08-22 (Megan: 'commit this and wire it up' after Raf's preview round — formula settled total-talk-tos/apps, dispo breakdown added, TM metadata dropped). Fires Sundays for RAF'S OFFICE ONLY: the enrolled knocks/gaps offices stay behind offices.INCLUDE_ENROLLED=False until Raf says take it wide. Raf's Loom 2026-08-21; name 'Weekly Knock Dispositions' is Raf's.",
       "display_name": "Weekly Knock Dispositions (Sunday)",
       "source_type": "appstream",
       "data_sources": [],
