@@ -62,6 +62,13 @@ COMBINED_KNOCKS_COLUMNS = [
     COL_NO_ANSWER, COL_TALK_TO_NI, COL_PRES_NI, COL_COME_BACK, COL_SALE,
     COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
 ]
+# Display-only header shortening on the combined board — the two Not
+# Interested labels each carry a long word that alone held their columns
+# open (Megan 2026-08-22). Data keys stay the full canonical names.
+COMBINED_KNOCKS_DISPLAY = {
+    COL_TALK_TO_NI: "Talk To - Not Int",
+    COL_PRES_NI: "Pres - Not Int",
+}
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -184,6 +191,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
     f_name  = _font(13, bold=True)
+    # Wrapped headers draw smaller (11px, line height 14) — the header is a
+    # label, the number is the data, so the label never dictates the box
+    # (Megan 2026-08-22: "still too much extra space in these columns").
+    f_head_w = _font(11, bold=True)
+    head_font = f_head_w if wrap_headers else f_head
+    head_lh = 14 if wrap_headers else 16
+    head_pad = 4 if wrap_headers else CELL_PAD_X
 
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     ncol = len(header)
@@ -198,19 +212,29 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         if wrap_headers:
             # Floor: widest cell, but never narrower than the header's longest
             # single word (words don't split).
-            longest_word = max((_text_w(probe, wd, f_head)
+            longest_word = max((_text_w(probe, wd, head_font)
                                 for wd in header[ci].split()), default=0)
             fit = max(w_cells, longest_word, MIN_COL_W)
-            lines = _wrap_header(probe, header[ci], fit, f_head)
-            w = max([fit] + [_text_w(probe, ln, f_head) for ln in lines])
+            lines = _wrap_header(probe, header[ci], fit, head_font)
+            while len(lines) > 3:      # cap the stack — widen a touch instead
+                fit += 6
+                lines = _wrap_header(probe, header[ci], fit, head_font)
+            w_head = max(_text_w(probe, ln, head_font) for ln in lines)
             head_lines.append(lines)
+            # The header gets its own tighter padding, so a long label only
+            # widens the box by what the label truly needs.
+            col_w.append(min(MAX_COL_W,
+                             max(w_cells + 2 * CELL_PAD_X,
+                                 w_head + 2 * head_pad,
+                                 MIN_COL_W)))
         else:
-            w = max(_text_w(probe, header[ci], f_head), w_cells)
+            w = max(_text_w(probe, header[ci], head_font), w_cells)
             head_lines.append([header[ci]])
-        col_w.append(min(MAX_COL_W, max(MIN_COL_W, w + 2 * CELL_PAD_X)))
+            col_w.append(min(MAX_COL_W, max(MIN_COL_W, w + 2 * CELL_PAD_X)))
 
     n_head_lines = max(len(ls) for ls in head_lines) if head_lines else 1
-    header_h = HEADER_H if n_head_lines == 1 else 14 + 16 * n_head_lines
+    header_h = (HEADER_H if n_head_lines == 1
+                else 12 + head_lh * n_head_lines)
 
     table_w = sum(col_w)
 
@@ -243,11 +267,12 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     for ci in range(ncol):
         d.rectangle([x, y, x + col_w[ci], y + header_h], fill=theme["header_bg"])
         lines = head_lines[ci]
-        block_h = 16 * len(lines)
+        block_h = head_lh * len(lines)
         ty = y + (header_h - block_h) // 2 + 1
         for ln in lines:
-            d.text((x + CELL_PAD_X, ty), ln, font=f_head, fill=HEADER_FG)
-            ty += 16
+            d.text((x + head_pad if wrap_headers else x + CELL_PAD_X, ty), ln,
+                   font=head_font, fill=HEADER_FG)
+            ty += head_lh
         x += col_w[ci]
 
     y += header_h
@@ -334,7 +359,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    return _draw(list(COMBINED_KNOCKS_COLUMNS), sub,
+    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_COLUMNS]
+    return _draw(disp, sub,
                  f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
                  name_col=0, wrap_headers=True)
