@@ -264,7 +264,16 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
     odate_i = _find(header, "sp.order date", "order date")
     sdate_i = _find(header, "status date")
     spm_i = _find(header, "sp.spm number", "spm number", "spm")
-    phone_i = _find(header, "customer phone", "phone")
+    # Wireless columns (Raf's Loom, 2026-08-22: the board must say WHAT was
+    # canceled — package, phone vs tablet, port vs new + from where, and the
+    # customer's number — like the order log does). All present in the NDS-SN
+    # ORDERLOG export.
+    pkg_i = _find(header, "package")
+    ptype_i = _find(header, "product type (broken out)", "product type")
+    dev_i = _find(header, "spe.wireless type", "wireless type")
+    tntype_i = _find(header, "spe.tn type", "tn type")
+    carrier_i = _find(header, "spe.port carrier", "port carrier")
+    tn_i = _find(header, "spe.tn", "customer phone", "phone")
     # Only NEWLY canceled/disconnected orders — those whose Status Date (when the
     # order reached that status) is within the last _RECENT_STATUS_DAYS. The pull
     # window is two weeks (for Rep Activations), so without this the board would
@@ -292,14 +301,48 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
 
     hits = [r for r in rows
             if keyword in _cell(r, st_i).lower() and _recent(r)]
+    # The crosstab emits one row PER MEASURE ("Unit Count" + "Sales (All)")
+    # per line — the duplicate rows in Raf's Loom. Dedupe on what identifies a
+    # LINE (SPM + its TN + status date); distinct lines of one order stay,
+    # each with its own number/type.
+    seen: set = set()
+    lines = []
+    for r in hits:
+        k = (_cell(r, spm_i), _cell(r, tn_i), _cell(r, sdate_i),
+             _cell(r, cust_i))
+        if k in seen:
+            continue
+        seen.add(k)
+        lines.append(r)
+
+    def _port(r) -> str:
+        t = _cell(r, tntype_i).lower()
+        if t == "port":
+            # carrier names run long ("VERIZON WIRELESS-TSI…") — keep the
+            # recognizable head so the column never bleeds into its neighbor.
+            car = _cell(r, carrier_i).split(",")[0].strip()[:16]
+            return f"port ({car})" if car else "port"
+        return t or ""
+
     house_rows = [{
         "Rep": _cell(r, rep_i), "Customer Name": _cell(r, cust_i),
+        "Package": _cell(r, pkg_i), "Type": _cell(r, ptype_i),
+        "Device": _cell(r, dev_i), "Port / New": _port(r),
+        "Customer #": _cell(r, tn_i),
         "SPM #": _cell(r, spm_i), "Order Date": _cell(r, odate_i),
-        "Status Date": _cell(r, sdate_i), "Customer Phone": _cell(r, phone_i),
-    } for r in hits]
+        "Status Date": _cell(r, sdate_i),
+    } for r in lines]
+    # Wireless layout — what was canceled and whose number it was, per line.
+    nds_cols = [
+        ("Rep", 130), ("Customer Name", 130), ("Package", 150),
+        ("Type", 90), ("Device", 70), ("Port / New", 170),
+        ("Customer #", 105), ("SPM #", 125), ("Order Date", 90),
+        ("Status Date", 90),
+    ]
     out = out_dir / f"nds_{slug}_{target.isoformat()}.png"
     core = label.split(" ", 1)[1] if " " in label else label
-    return _house_render(house_rows, out, title=f"{owner} — {core}"), len(hits)
+    return (_house_render(house_rows, out, title=f"{owner} — {core}",
+                          cols=nds_cols), len(lines))
 
 
 def run(owner: str, board: str, *, target: dt.date | None = None,

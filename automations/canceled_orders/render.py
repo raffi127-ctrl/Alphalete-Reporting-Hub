@@ -40,8 +40,12 @@ def _font(size: int, bold: bool = False):
 
 
 def render(rows: List[Dict[str, str]], out_path: Path,
-           title: str = "Local Office — Canceled Orders") -> Path:
-    cols = COLS
+           title: str = "Local Office — Canceled Orders",
+           cols: "List[tuple] | None" = None) -> Path:
+    """`cols` overrides the column set (label, min-width) — the NDS wireless
+    boards pass their own (device/port/TN columns instead of the internet-only
+    install fields). Default None = the house internet layout, unchanged."""
+    cols = cols or COLS
     total_w = sum(w for _, w in cols) + PAD * 2
     h = HEADER_H + ROW_H * (max(len(rows), 1) + 1) + PAD * 2
 
