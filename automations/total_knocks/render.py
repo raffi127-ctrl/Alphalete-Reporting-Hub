@@ -394,17 +394,29 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     tg_pos = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
     sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
 
-    # TOTAL footer (Megan 2026-08-22): every count column sums; the knock
-    # times stay blank; Total Gaps sums in minutes and shows as 'Xh Ym'.
+    # TOTAL footer (Megan 2026-08-22): every count column sums; the knock-time
+    # cells show the office AVERAGE first/last knock (reps with a parsable
+    # time only — same convention as the weekly dispositions board); Total
+    # Gaps sums in minutes and shows as 'Xh Ym'.
     def _int0(v) -> int:
         v = str(v).strip()
         return int(v) if v.isdigit() else 0
+
+    def _avg_time(pos: int) -> str:
+        mins = [m for m in (_knock_time_key(str(r[pos])) for r in sub)
+                if m < 24 * 60]
+        if not mins:
+            return ""
+        m = round(sum(mins) / len(mins))
+        h, mm = divmod(m, 60)
+        return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
+
     totals: list[str] = []
     for ci, c in enumerate(COMBINED_KNOCKS_COLUMNS):
         if c == COL_REP:
             totals.append("TOTAL")
         elif c in (COL_FIRST_KNOCK, COL_LAST_KNOCK):
-            totals.append("")
+            totals.append(_avg_time(ci))
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
 
