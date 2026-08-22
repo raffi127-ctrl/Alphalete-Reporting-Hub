@@ -35,13 +35,16 @@ CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C0AUAS88FGW")
 # ordering broke the day Tiffani's post shadowed Aisha's.
 # `required`: a week where Aisha doesn't post is a failure; a week where
 # Tiffani doesn't post just means no 2nd-funnel starts — skip quietly.
+# `tag`: whether Lucy's roll call @-mentions the leaders. Tiffani hand-tags her
+# own funnel, so Lucy's post there carries plain names + counts — the marker
+# and the counts without re-pinging anyone (Megan 2026-08-22).
 FUNNELS = [
     {"key": "main", "label": "Main funnel",
      "poster": "U083X5ZJWSH",           # Aisha Ceron
-     "required": True, "snapshot": "roster_snapshot.json"},
+     "required": True, "tag": True, "snapshot": "roster_snapshot.json"},
     {"key": "second", "label": "2nd funnel (Tiffani)",
      "poster": "U0B9924FHCL",           # Tiffani Brown
-     "required": False, "snapshot": "roster_snapshot_2nd.json"},
+     "required": False, "tag": False, "snapshot": "roster_snapshot_2nd.json"},
 ]
 
 
@@ -61,8 +64,9 @@ ANCHOR_PATTERN = re.compile(r"new starts scheduled for monday", re.I)
 # those too -- Tiffani wrote "Done!" on the 7/27 week and got nudged again
 # because Lucy didn't read it as a confirmation).
 SENT_PATTERN = re.compile(r"\b(?:sen+t+|done)\b", re.I)
-# Trailing multiplier: "x4", "X 4", "×4".
-COUNT_PATTERN = re.compile(r"[x×]\s*(\d+)", re.I)
+# Trailing multiplier: "x4", "X 4", "×4" — and the flipped "4x" / "5 x"
+# (Pranish + Bill both wrote it that way on the 8/24 week).
+COUNT_PATTERN = re.compile(r"[x×]\s*(\d+)|(\d+)\s*[x×]", re.I)
 
 MENTION_PATTERN = re.compile(r"<@([UW][A-Z0-9]+)>")
 
@@ -160,15 +164,19 @@ def find_our_rollcall(replies: List[dict]) -> Optional[dict]:
 
 
 def find_roll_call(replies: List[dict], anchor_ts: str) -> Optional[dict]:
-    """The Saturday reply that kicks the leaders off.
+    """The Saturday reply that kicks the leaders off — the EARLIEST roll call.
 
-    Lucy's own roll call wins when present. Otherwise falls back to Aisha's
-    hand-typed version -- the first reply that is essentially nothing but
-    mentions, since her other replies are prose or image uploads.
+    A thread can hold both a hand-typed roll call (Tiffani tags her own funnel;
+    Aisha did in the transition weeks) and Lucy's own. Confirmations count from
+    the FIRST one — a leader who replied "Sent" right after the hand tags must
+    not lose credit because Lucy's post landed later. A hand-typed roll call is
+    the first reply that is essentially nothing but mentions, since the other
+    replies are prose or image uploads.
     """
+    candidates = []
     ours = find_our_rollcall(replies)
     if ours is not None:
-        return ours
+        candidates.append(ours)
 
     for msg in replies:
         if msg["ts"] == anchor_ts:
@@ -180,8 +188,11 @@ def find_roll_call(replies: List[dict], anchor_ts: str) -> Optional[dict]:
         remainder = MENTION_PATTERN.sub("", text).strip()
         if len(remainder) > 40:  # mostly prose that happens to tag people
             continue
-        return msg
-    return None
+        candidates.append(msg)
+        break
+    if not candidates:
+        return None
+    return min(candidates, key=lambda m: float(m["ts"]))
 
 
 def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
@@ -215,8 +226,16 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
     # OBCL either way. With no roll call, confirmations are counted from the
     # anchor down.
     roll = find_roll_call(replies, anchor["ts"])
+    ours = find_our_rollcall(replies)
     boundary_ts = roll["ts"] if roll else anchor["ts"]
+    # Tags come from every roll call in the thread (hand-typed AND Lucy's) —
+    # in the no-tag funnel Lucy's post has no mentions, so the hand-typed one
+    # is what says who got pinged.
     tagged = MENTION_PATTERN.findall(_strip(roll.get("text", ""))) if roll else []
+    if ours is not None and roll is not None and ours["ts"] != roll["ts"]:
+        for sid in MENTION_PATTERN.findall(_strip(ours.get("text", ""))):
+            if sid not in tagged:
+                tagged.append(sid)
 
     confirmations = {}  # type: Dict[str, Confirmation]
     for msg in replies:
@@ -229,7 +248,7 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
         if not user or not SENT_PATTERN.search(text):
             continue
         m = COUNT_PATTERN.search(text)
-        claimed = int(m.group(1)) if m else None
+        claimed = int(m.group(1) or m.group(2)) if m else None
         # Keep the FIRST confirmation -- that's when they actually did it.
         if user not in confirmations:
             confirmations[user] = Confirmation(user, msg["ts"], text, claimed)
@@ -240,6 +259,9 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
         "roll_call_ts": roll["ts"] if roll else None,
         "roll_call_at": dt.datetime.fromtimestamp(float(roll["ts"])) if roll else None,
         "roll_call_is_ours": roll is not None and ROLLCALL_MARKER in _strip(roll.get("text", "")),
+        # Lucy's own roll call, independent of which one is the boundary —
+        # the idempotency check ("did WE already post?") keys off this.
+        "our_rollcall_ts": ours["ts"] if ours else None,
         "tagged": tagged,
         "confirmations": confirmations,
         "replies": replies,

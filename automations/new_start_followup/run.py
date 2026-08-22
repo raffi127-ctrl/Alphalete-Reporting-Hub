@@ -99,17 +99,22 @@ def _run_funnel(args, funnel, monday, when) -> int:
         return 0
 
     if args.mode == "rollcall":
-        # One roll call per week PER THREAD. Re-running the 8am job (or a
-        # manual retry) must not tag 22 people a second time — and a HAND-TYPED
-        # roll call counts too (Tiffani tags her own funnel some weeks; a
-        # second list in the thread means people answer the wrong one).
-        if rec.thread["roll_call_ts"] and not args.force:
-            print("Roll call already in the thread at {} ({}). Nothing to do "
-                  "(use --force to post another).".format(
-                      roll_at.strftime("%a %H:%M"),
-                      "Lucy's" if rec.thread["roll_call_is_ours"] else "hand-typed"))
+        # One Lucy roll call per week PER THREAD — a re-run must not repeat it.
+        if rec.thread["our_rollcall_ts"] and not args.force:
+            print("Lucy's roll call is already in this thread. Nothing to do "
+                  "(use --force to post another).")
             return 0
-        return _post(rec, report_mod.render_rollcall(rec), args.live)
+        # In a TAGGING funnel a hand-typed roll call also blocks: a second
+        # @-list makes people answer the wrong one. In the no-tag funnel
+        # (Tiffani hand-tags her own) Lucy's plain-name counts post goes up
+        # anyway — that's the point of it (Megan 2026-08-22).
+        if funnel["tag"] and rec.thread["roll_call_ts"] and not args.force:
+            print("A hand-typed roll call is already in this thread at {}. "
+                  "Nothing to do (use --force to post another).".format(
+                      roll_at.strftime("%a %H:%M")))
+            return 0
+        return _post(rec, report_mod.render_rollcall(rec, tag=funnel["tag"]),
+                     args.live)
 
     body = (report_mod.render_nudge(rec, when) if args.mode == "nudge"
             else report_mod.render_checklist(rec))

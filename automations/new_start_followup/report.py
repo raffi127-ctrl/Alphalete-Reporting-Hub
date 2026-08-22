@@ -390,13 +390,17 @@ def _covers(confirmations, ros) -> Dict[str, object]:
 # Rendering
 # --------------------------------------------------------------------------
 
-def render_rollcall(rec: Reconciliation) -> str:
+def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
     """Saturday 8am roll call — Lucy's replacement for Aisha's hand-typed tags.
 
     Built from OBCL column B, so it's complete by construction. Each leader is
     tagged WITH their new-start count, which is what makes a later "Sent x2"
     against 3 owed obvious to everyone in the thread rather than something only
     this report notices.
+
+    tag=False posts plain names instead of @-mentions — for a thread whose
+    recruiter already hand-tagged everyone (Tiffani), so the counts and the
+    marker land without pinging the same people twice (Megan 2026-08-22).
     """
     from automations.new_start_followup import thread as thread_mod
 
@@ -416,7 +420,8 @@ def render_rollcall(rec: Reconciliation) -> str:
     ]
     for s in owing:
         lines.append("{}  —  {} new start{}".format(
-            s.leader.mention, s.owed, "" if s.owed == 1 else "s"))
+            s.leader.mention if tag else s.label,
+            s.owed, "" if s.owed == 1 else "s"))
 
     lines.append("")
     lines.append("_Reply *Sent* (or *Sent x{}*) once you're done · "

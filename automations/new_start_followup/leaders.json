@@ -2,6 +2,16 @@
   "_note": "Leader roster for the New-Start Follow-Up report. Add a leader here when someone new starts running 2nd-round interviews. 'obcl_names' holds every spelling that shows up in OBCL column B. 'phone' is E.164 (+15551234567) and is only used for the Sunday texts.",
   "leaders": [
     {
+      "slack_id": "U0BJNECE00H",
+      "name": "Alfredo Lopez",
+      "short": "Alfredo",
+      "obcl_names": [
+        "Alfredo Lopez"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
+    },
+    {
       "slack_id": "U0BEUK74PCY",
       "name": "Alyssa Moreno",
       "short": "Alyssa M",
@@ -80,6 +90,17 @@
       "phone": ""
     },
     {
+      "slack_id": "U0A80F907N3",
+      "name": "Edgar Camunez",
+      "short": "Edgar",
+      "obcl_names": [
+        "Edgar Camunez",
+        "Edgar Camunez RT"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
+    },
+    {
       "slack_id": "U0B8N2Q83PS",
       "name": "Eli Rodriguez",
       "short": "Eli",
@@ -88,6 +109,16 @@
         "Elijah Rodriguez"
       ],
       "phone": ""
+    },
+    {
+      "slack_id": "U083XNMHD39",
+      "name": "Hayden Wilson",
+      "short": "Hayden",
+      "obcl_names": [
+        "Hayden Wilson"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
     },
     {
       "slack_id": "U0ACM3GLAG4",
@@ -167,6 +198,17 @@
       "phone": ""
     },
     {
+      "slack_id": "U0BH2F6R6NN",
+      "name": "Justin Avila",
+      "short": "Justin A",
+      "obcl_names": [
+        "Justin Avila",
+        "Justin G Carlos Avila"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
+    },
+    {
       "slack_id": "U0B4RUR83J9",
       "name": "Kaleb Muvunyi",
       "short": "Kaleb M",
@@ -203,6 +245,18 @@
       "phone": ""
     },
     {
+      "slack_id": "U0B4HKKSMQA",
+      "name": "Miguel Vargas",
+      "short": "Miguel",
+      "obcl_names": [
+        "Miguel Vargas",
+        "Miguel Angel Vargas",
+        "Miguel Angel Vargas RT"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
+    },
+    {
       "slack_id": "U0B02SXBS5T",
       "name": "Mustafa Alzaidy",
       "short": "Mustafa",
@@ -211,6 +265,17 @@
         "Mustafa A"
       ],
       "phone": ""
+    },
+    {
+      "slack_id": "U09RNEP07DW",
+      "name": "Noemi Rivera",
+      "short": "Noemi",
+      "obcl_names": [
+        "Noemi Rivera",
+        "Noemi Ontiveros"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
     },
     {
       "slack_id": "U0A64Q4KZM0",
@@ -320,6 +385,26 @@
       ],
       "phone": "",
       "_note": "Added 2026-08-08 from Megan's manual tag reply in the 8/10 thread — was in the roll-call 'unable to tag' list; id confirmed via users.info."
+    },
+    {
+      "slack_id": "U060MNFQLJ1",
+      "name": "Willie Henderson",
+      "short": "Willie H",
+      "obcl_names": [
+        "Willie Henderson"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
+    },
+    {
+      "slack_id": "U0BG5MXP6HZ",
+      "name": "Willvim Marte",
+      "short": "Willvim",
+      "obcl_names": [
+        "Willvim Marte"
+      ],
+      "phone": "",
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread."
     },
     {
       "slack_id": "U08LSELLCGY",

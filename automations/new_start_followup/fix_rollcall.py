@@ -125,7 +125,7 @@ def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None) -> int:
 
     rec = report_mod.build(monday=monday, client=client, roster_json=path,
                            funnel=funnel)
-    corrected = report_mod.render_rollcall(rec)
+    corrected = report_mod.render_rollcall(rec, tag=funnel["tag"])
     if not corrected.strip():
         print("The corrected roll call came out empty — refusing to blank the "
               "posted message.", file=sys.stderr)
