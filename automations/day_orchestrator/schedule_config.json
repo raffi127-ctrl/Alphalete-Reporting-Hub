@@ -1961,7 +1961,8 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "weekly_knock_dispositions": {
-      "order": 11.1,
+      "order": 36.5,
+      "_order_position_note": "Directly AFTER the per-office Daily Metrics block (27-36.2) and NOT last (Megan 2026-08-22): every office's Sunday Metrics thread then already exists with the header its own runner writes (isaiah's NDS section list is not the default checklist — if this report ran earlier, its find-or-create would plant the wrong header and the office runner would reuse it). Chan's 'Knocks for other offices' thread (11) is up long before. Only the org boards (40+) start later, absorbing the 45-75m fleet runtime.",
       "on_scheduler": true,
       "_on_scheduler_note": "LIVE-WIDE 2026-08-22 (Raf same day: 'for everyone else's metrics thread, let's go ahead and do this for them on Sunday' + 'Just Chan'). Fires Sundays for Raf + Chan Park (both into the #alphalete-sales Metrics thread) + every enrolled knocks/gaps office into ITS OWN Sunday Metrics thread (offices.INCLUDE_ENROLLED=True). trang posts cross-workspace with her FRESH SUCCESS token file (skipped only if the file's missing); isaiah (wireless) gets the reduced knock-times+gaps board from the Time Tracker; drew is EXCLUDED (reworking their Slack workspace, Megan 2026-08-22). Raf's Loom 2026-08-21.",
       "display_name": "Weekly Knock Dispositions (Sunday)",
