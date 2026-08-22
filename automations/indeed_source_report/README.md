@@ -111,3 +111,9 @@ If the visible tab is ever rebuilt, reproduce all three layers:
    TEXT() errors.)
 
 The scheduled job writes only the hidden data tab; it cannot regress this.
+
+Pickers moved to C2 (period) / C3 (manager) on 2026-08-22 — Carlos keeps column B hidden.
+C1 is a Group dropdown (Org/Captainship): 'Indeed Ad Data' Y = org roster (17), Z = captainship
+roster (13, incl. Carlos & Atef), AA = the active list spilled by a FILTER on C1, and the C3
+manager validation points at AA2:AA40. The job clears only A2:U and rewrites W:X, so Y-AA are
+safe; a from-scratch rebuild must recreate them (rosters come from funnel_board/roster.py).
