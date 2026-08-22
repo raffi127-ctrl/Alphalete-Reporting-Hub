@@ -29,8 +29,11 @@ Row fields (the explicit row and derived rows share this shape):
   channel_id/channel_name/header_label
                    where this office's Sunday Metrics thread lives; empty
                    channel_id = the default #alphalete-sales.
-  slack_token_file cross-workspace bot token file (trang) — posting with it
-                   is NOT wired here yet; run.py skips such offices loudly.
+  slack_token_file cross-workspace bot token file (trang → FRESH SUCCESS):
+                   run.py posts that office with the token from
+                   ~/.config/recruiting-report/<file> (same file the office
+                   runner uses); if the file's missing on the machine the
+                   office is skipped loudly, never failed.
 """
 from __future__ import annotations
 

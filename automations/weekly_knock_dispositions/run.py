@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
@@ -193,9 +194,10 @@ def _tag_header_new(smp, thread_ts: str) -> None:
 
 
 def _print_board(office: str, rows: list[list[str]],
-                 dispo_cols: list[str] | None = None) -> None:
+                 dispo_cols: list[str] | None = None,
+                 gaps_only: bool = False) -> None:
     print(f"\n=== {office} ===")
-    print("  " + " | ".join(B.headers_for(dispo_cols)))
+    print("  " + " | ".join(B.headers_for(dispo_cols, gaps_only)))
     for r in rows:
         print("  " + " | ".join(r))
 
@@ -247,19 +249,30 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 name = cfg["name"]
                 try:
                     if cfg.get("slack_token_file"):
-                        # Cross-workspace office (trang/FRESH SUCCESS): its
-                        # bot-token posting isn't wired here yet — skip BEFORE
-                        # spending an impersonated pull on it. A structural
-                        # skip, not a failure: no weekly red card for it.
-                        print(f"[wkd] ⤳ {name}: cross-workspace posting "
-                              f"({cfg['slack_token_file']}) not wired — "
-                              "SKIPPED.", flush=True)
-                        skipped.append(name)
-                        continue
+                        # Cross-workspace office (trang/FRESH SUCCESS): posts
+                        # with its OWN workspace bot token, kept under
+                        # ~/.config/recruiting-report/ (same file the office
+                        # runner uses). Missing file = structural skip BEFORE
+                        # spending an impersonated pull — never a red card.
+                        tok_path = (Path.home() / ".config"
+                                    / "recruiting-report"
+                                    / cfg["slack_token_file"])
+                        if not tok_path.exists():
+                            print(f"[wkd] ⤳ {name}: cross-workspace token "
+                                  f"missing ({tok_path}) — SKIPPED.",
+                                  flush=True)
+                            skipped.append(name)
+                            continue
+                        cfg["_token_path"] = tok_path
                     ov_rows, dispo_cols = P.pull_office_week(
                         page, cfg, aliases_raw, monday, saturday)
+                    gaps_only = B.is_gaps_only(ov_rows)
                     office_apps, extra = None, ""
-                    if cfg.get("pss_owner") is None:
+                    if gaps_only:
+                        # Wireless office: knock times + gaps are all
+                        # TeleMapper records — reduced board, own title.
+                        extra = " — knock times + gaps (wireless office)"
+                    elif cfg.get("pss_owner") is None:
                         # NDS office: sales live in the NDS workbook, not the
                         # D2D PSS — blank apps, flagged (fill-but-flag).
                         extra = " — ⚠ INCOMPLETE: apps not wired (NDS)"
@@ -270,13 +283,11 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                             pss_path, cfg["pss_owner"], aliases_map)
                     if not ov_rows and not office_apps:
                         if cfg.get("pss_owner") is None:
-                            # Gaps-only wireless office (no Disposition page,
-                            # no D2D apps): a weekly "No data available" line
-                            # in their thread would be structural noise, not
-                            # a visible absence — skip until NDS sourcing is
-                            # wired.
-                            print(f"[wkd] ⤳ {name}: no disposition table + "
-                                  "apps not wired (NDS) — SKIPPED.",
+                            # Nothing in the Disposition table OR the Time
+                            # Tracker, and no apps source: a weekly "No data"
+                            # line would be structural noise — skip.
+                            print(f"[wkd] ⤳ {name}: no disposition or Time "
+                                  "Tracker data + apps not wired — SKIPPED.",
                                   flush=True)
                             skipped.append(name)
                             continue
@@ -286,12 +297,13 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
                     out_dir = OUT_DIR / _slug(name)
                     png = B.render(name, monday, saturday, rows, out_dir,
-                                   dispo_cols)
+                                   dispo_cols, gaps_only=gaps_only)
                     boards.append((cfg, png, extra))
-                    if (cfg.get("pss_owner") is not None and pss_path is None
-                            and name not in failed):
+                    if (not gaps_only and cfg.get("pss_owner") is not None
+                            and pss_path is None and name not in failed):
                         failed.append(name)     # retry posts the full board
-                    _print_board(name, rows, dispo_cols)
+                    _print_board(name, rows, dispo_cols,
+                                 gaps_only=gaps_only)
                     print(f"[wkd] rendered {name} -> {png}", flush=True)
                 except Exception as e:  # noqa: BLE001 — one office ≠ the run
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
@@ -366,10 +378,17 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     for cfg, png, extra in boards:
         name = cfg["name"]
         keep_chan, keep_label = smp.CHANNEL_ID, smp.HEADER_LABEL
+        keep_tok = os.environ.get("SLACK_USER_TOKEN")
         try:
             if cfg.get("channel_id"):
                 smp.CHANNEL_ID = cfg["channel_id"]
                 smp.HEADER_LABEL = cfg.get("header_label", "")
+            if cfg.get("_token_path"):
+                # Cross-workspace: _client() reads SLACK_USER_TOKEN per call,
+                # so this office's posts (thread + banner + image) all ride
+                # its own workspace token; restored in the finally.
+                os.environ["SLACK_USER_TOKEN"] = cfg["_token_path"].read_text(
+                    encoding="utf-8-sig").strip()
             head = smp.ensure_metrics_thread(slack_today)
             thread_ts = head.get("thread_ts")
             if not thread_ts:
@@ -403,6 +422,10 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     failed.append(name)
         finally:
             smp.CHANNEL_ID, smp.HEADER_LABEL = keep_chan, keep_label
+            if keep_tok is None:
+                os.environ.pop("SLACK_USER_TOKEN", None)
+            else:
+                os.environ["SLACK_USER_TOKEN"] = keep_tok
 
     ran = [o["name"] for o in offices if o["name"] not in skipped]
     # Structural skips aren't "expected" either — else every full run would

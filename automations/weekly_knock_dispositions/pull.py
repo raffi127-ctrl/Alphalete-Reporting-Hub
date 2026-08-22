@@ -197,24 +197,35 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
     return out, [h for h, _ in dispo], talk_to_cols
 
 
-def _week_gaps(page, rqst: str, monday: dt.date, saturday: dt.date,
-               verbose: bool = True) -> dict[str, int]:
-    """{badge_id: total gap minutes, Mon–Sat}. Six p=510 calls — the endpoint
-    has no range mode (dateToSearch= is one date)."""
-    totals: dict[str, int] = {}
+def _week_tt(page, rqst: str, monday: dt.date, saturday: dt.date,
+             verbose: bool = True) -> dict[str, dict]:
+    """Time Tracker aggregates, Mon–Sat: {badge_id: {rep, first[], last[],
+    gap_min}} — six p=510 calls (the endpoint has no range mode). Carries
+    names + daily knock times so a WIRELESS office (no Disposition page at
+    all) can still get a knock-times + gaps board."""
+    out: dict[str, dict] = {}
     day = monday
     while day <= saturday:
-        tt = knocks._scrape_time_tracker(page, rqst,
-                                         day.strftime("%m/%d/%Y"),
-                                         verbose=False)
-        for rid, rec in tt.items():
-            totals[rid] = totals.get(rid, 0) + int(
-                rec.get(knocks.COL_TOTAL_GAPS) or 0)
+        rows = knocks._scrape_time_tracker_rows(
+            page, rqst, day.strftime("%m/%d/%Y"), verbose=False)
+        for rec in rows:
+            rid = str(rec.get(knocks.COL_ID, "")).strip()
+            if not rid:
+                continue
+            a = out.setdefault(rid, {"rep": rec.get(knocks.COL_REP, ""),
+                                     "first": [], "last": [], "gap_min": 0})
+            a["gap_min"] += int(rec.get(knocks.COL_TOTAL_GAPS) or 0)
+            fm = _knock_min(str(rec.get(knocks.COL_FIRST_KNOCK, "")))
+            lm = _knock_min(str(rec.get(knocks.COL_LAST_KNOCK, "")))
+            if fm is not None:
+                a["first"].append(fm)
+            if lm is not None:
+                a["last"].append(lm)
         day += dt.timedelta(days=1)
     if verbose:
-        print(f"[wkd] Time Tracker: weekly gap minutes for "
-              f"{len(totals)} rep(s)", flush=True)
-    return totals
+        print(f"[wkd] Time Tracker: weekly data for {len(out)} rep(s)",
+              flush=True)
+    return out
 
 
 def _pin_campaign(page, rqst: str, campaign_id: str,
@@ -320,7 +331,7 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
         if verbose:
             print(f"[wkd] {len(rows)} rep(s) across the week; talk-to = "
                   "sum of: " + ", ".join(talk_to_cols), flush=True)
-        gaps = _week_gaps(page, rqst, monday, saturday, verbose=verbose)
+        tt = _week_tt(page, rqst, monday, saturday, verbose=verbose)
     finally:
         if impersonated:
             if _exit_impersonation(page):
@@ -330,11 +341,33 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                 print("[wkd]   ⚠ exit-impersonation call didn't succeed",
                       flush=True)
 
+    if not rows and tt:
+        # WIRELESS / gaps-only office (no Disposition page): build the rep
+        # rows straight from the Time Tracker — knock times + gaps are all
+        # TeleMapper records for them. NO K_TALK_TO key on these records is
+        # what tells the board to draw the reduced gaps-only column set.
+        for rid, a in tt.items():
+            rows.append({
+                COL_ID: rid,
+                COL_REP: a["rep"],
+                COL_FIRST_KNOCK: (_fmt_knock(round(sum(a["first"])
+                                                   / len(a["first"])))
+                                  if a["first"] else ""),
+                COL_LAST_KNOCK: (_fmt_knock(round(sum(a["last"])
+                                                  / len(a["last"])))
+                                 if a["last"] else ""),
+                K_GAP_MIN: a["gap_min"],
+            })
+        if verbose:
+            print(f"[wkd] gaps-only office: {len(rows)} rep(s) from the "
+                  "Time Tracker", flush=True)
+        return rows, []
+
     matched = 0
     for rec in rows:
         rid = str(rec.get(COL_ID, "")).strip()
-        if rid in gaps:
-            rec[K_GAP_MIN] = gaps[rid]
+        if rid in tt:
+            rec[K_GAP_MIN] = tt[rid]["gap_min"]
             matched += 1
     if verbose:
         print(f"[wkd] merged weekly gaps onto {matched}/{len(rows)} rep(s)",

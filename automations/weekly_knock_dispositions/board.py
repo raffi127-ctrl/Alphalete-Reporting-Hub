@@ -53,7 +53,20 @@ DISPO_DISPLAY = {
 }
 
 
-def headers_for(dispo_cols: list[str] | None) -> list[str]:
+# A WIRELESS / gaps-only office (no Disposition page — records carry no
+# K_TALK_TO) draws just what TeleMapper knows about it.
+GAPS_ONLY_HEADERS = ["Rep", "Avg First Knock", "Avg Last Knock",
+                     "Avg Gap / Day", "Total Gap Hours"]
+
+
+def is_gaps_only(ov_rows: list[dict]) -> bool:
+    return bool(ov_rows) and not any(K_TALK_TO in r for r in ov_rows)
+
+
+def headers_for(dispo_cols: list[str] | None,
+                gaps_only: bool = False) -> list[str]:
+    if gaps_only:
+        return list(GAPS_ONLY_HEADERS)
     return list(HEADERS) + [DISPO_DISPLAY.get(c, c) for c in (dispo_cols or [])]
 
 THEME_PLUM = {               # distinct from the amber daily knocks board
@@ -151,6 +164,30 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
     (fill-but-flag; the caller marks INCOMPLETE). PSS reps with sales but
     no knock row still appear, knock cells blank."""
     dispo_cols = dispo_cols or []
+    if is_gaps_only(ov_rows):
+        rows = []
+        for r in sorted(ov_rows,
+                        key=lambda r: str(r.get(COL_REP, "")).lower()):
+            gap_min = r.get(K_GAP_MIN)
+            rows.append([
+                _display_name(str(r.get(COL_REP, "")).strip()),
+                str(r.get(COL_FIRST_KNOCK, "")).strip(),
+                str(r.get(COL_LAST_KNOCK, "")).strip(),
+                (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
+                (_hm(int(gap_min)) if gap_min is not None else ""),
+            ])
+        gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
+                    if r.get(K_GAP_MIN) is not None]
+        tot_gaps = sum(gap_reps)
+        rows.append([
+            TOTALS_LABEL,
+            _avg_knock(ov_rows, COL_FIRST_KNOCK),
+            _avg_knock(ov_rows, COL_LAST_KNOCK),
+            (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
+            _hm(tot_gaps),
+        ])
+        return rows
+
     matched, consumed = (match_apps([r.get(COL_REP, "") for r in ov_rows],
                                     apps)
                          if apps else ({}, set()))
@@ -219,11 +256,14 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
 
 def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
-           dispo_cols: list[str] | None = None) -> Path:
+           dispo_cols: list[str] | None = None,
+           gaps_only: bool = False) -> Path:
     span = (f"{monday.strftime('%b')} {monday.day} – "
             f"{saturday.strftime('%b')} {saturday.day}, {saturday.year}")
-    title = f"WEEKLY KNOCK DISPOSITIONS — {office.upper()} — {span}"
+    what = ("WEEKLY KNOCK TIMES & GAPS" if gaps_only
+            else "WEEKLY KNOCK DISPOSITIONS")
+    title = f"{what} — {office.upper()} — {span}"
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
-    return knocks_render._draw(headers_for(dispo_cols), rows, title,
-                               THEME_PLUM, out, name_col=0,
+    return knocks_render._draw(headers_for(dispo_cols, gaps_only), rows,
+                               title, THEME_PLUM, out, name_col=0,
                                wrap_headers=True, highlight_last_row=True)
