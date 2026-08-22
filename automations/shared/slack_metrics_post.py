@@ -281,8 +281,10 @@ def ensure_metrics_thread(today: dt.date | None = None,
     _first = (f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} "
               f"{today.year}{_label_suffix}*")
     _default = [
-        ":door: Telemapper Knocks",
-        ":clock1: Time Gaps",
+        # ONE combined board since Raf's Loom 2026-08-22 (knocks + time gaps
+        # in a single image — the separate Time Gaps post retired), so ONE
+        # header line (Megan 2026-08-22).
+        ":door: Total Knocks (with Time Gaps)",
         ":clipboard: Order Log",
         ":date: Sales scheduled 6+ days out",
         ":no_entry_sign: Canceled Orders",
