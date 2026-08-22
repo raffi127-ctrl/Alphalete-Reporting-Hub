@@ -46,7 +46,7 @@ from automations.recruiting_report import fetch_office
 from automations.funnel_board.fetch import report_week
 
 HERE = Path(__file__).resolve().parent
-SSID = os.environ.get("FUNNEL_SSID", "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo")
+SSID = os.environ.get("FUNNEL_SSID", "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 # Sheets credentials live in auth.py — shared with build.py, service account
 # first. See the note there on why the personal token is only a fallback.

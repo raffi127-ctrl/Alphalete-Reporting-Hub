@@ -23,7 +23,7 @@ from google.auth.transport.requests import AuthorizedSession, Request
 # with 2R / Call List / Apps, which append daily — see README before adding
 # anything wide here.
 SPREADSHEET_ID = os.environ.get(
-    "INDEED_SOURCE_SPREADSHEET_ID", "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo")
+    "INDEED_SOURCE_SPREADSHEET_ID", "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA")
 DATA_TAB = os.environ.get("INDEED_SOURCE_DATA_TAB", "Indeed Ad Data")
 
 

@@ -4,7 +4,7 @@ One Google Sheet tab where you pick a **Manager** and a **Period** and see that
 manager's Indeed ads for that month, merged to one row per real ad.
 
 Workbook: the **Alphalete Org Applicant Tracker**
-(`1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo`), tab **Indeed Ad Performance**.
+(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`), tab **Indeed Ad Performance**.
 The hidden **Indeed Ad Data** tab holds the rows and is the only thing this job
 writes.
 

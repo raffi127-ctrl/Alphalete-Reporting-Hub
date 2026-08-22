@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
 from automations.funnel_board.roster import AD_TABS, AD_VIEW_TITLE  # noqa: E402
 
-SSID = os.environ.get("FUNNEL_SSID", "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo")
+SSID = os.environ.get("FUNNEL_SSID", "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 SOURCE = "Manager View"
 LIST_COL = "E"          # 0Config column A is Manager View's list; E is ours
