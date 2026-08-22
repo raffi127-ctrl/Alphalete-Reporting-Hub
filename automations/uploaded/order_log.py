@@ -84,7 +84,7 @@ import json
 import os
 import re
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import AsyncIterator, Optional
@@ -1405,6 +1405,42 @@ _INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
 # Georgia 12pt bold, centered horizontally + vertically, borders on every
 # filled cell, columns auto-fit. Georgia 12 renders ~1.3x wider than the
 # width unit (Calibri 11), so autofit scales char count by _OL_WIDTH_FACTOR.
+@contextmanager
+def column_profile(columns_to_keep, friendly_headers, optional_raw=frozenset()):
+    """Swap the order-log column set for ONE build, then restore the house
+    fiber layout — for a campaign whose lines have a different shape (the NDS
+    wireless log). Everything the pipeline reads at call time is swapped
+    together: the raw-column select, friendly headers, optional backfills, the
+    date-format column indexes, and the per-rep-tab column list (derived the
+    same way the house list is: drop Rep / Customer Phone / Tech Install).
+
+    Date parsing in _load_and_clean keys off the house RAW names, so an
+    alternate set must reuse them for its date columns ("sp.Order Date
+    (copy)", "spe.Install Date", "Activatoin Date (order log)") — likewise
+    "spe.Status" for the status sort/colors. When this isn't active the house
+    globals are untouched, so every fiber office's log stays byte-identical."""
+    global COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS
+    global DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL
+    saved = (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
+             DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER, _REP_NCOL)
+    COLUMNS_TO_KEEP = list(columns_to_keep)
+    FRIENDLY_HEADERS = list(friendly_headers)
+    OPTIONAL_RAW_COLUMNS = set(optional_raw)
+    DATE_COLUMN_INDEXES = tuple(FRIENDLY_HEADERS.index(n) + 1
+                                for n in DATE_COLUMN_NAMES
+                                if n in FRIENDLY_HEADERS)
+    _REP_TAB_COLUMNS = [h for h in FRIENDLY_HEADERS
+                        if h not in ("Rep", "Customer Phone", "Tech Install")]
+    _REP_FULL_HEADER = ["Code"] + _REP_TAB_COLUMNS
+    _REP_NCOL = len(_REP_FULL_HEADER)
+    try:
+        yield
+    finally:
+        (COLUMNS_TO_KEEP, FRIENDLY_HEADERS, OPTIONAL_RAW_COLUMNS,
+         DATE_COLUMN_INDEXES, _REP_TAB_COLUMNS, _REP_FULL_HEADER,
+         _REP_NCOL) = saved
+
+
 _OL_FONT_NAME = "Georgia"
 _OL_FONT_SIZE = 12
 _OL_WIDTH_FACTOR = 1.3

@@ -120,7 +120,9 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
     table_w = sum(col_w)
 
     title_h, header_h, row_h = TITLE_H * S, HEADER_H * S, ROW_H * S
-    img_h = title_h + header_h + row_h * max(len(rows), 1)
+    # +1 row for the TOTAL footer (only drawn when there are data rows).
+    img_h = (title_h + header_h + row_h * max(len(rows), 1)
+             + (row_h if rows else 0))
     img = Image.new("RGB", (table_w, img_h), WHITE)
     d = ImageDraw.Draw(img)
 
@@ -152,6 +154,18 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
                 _cell(d, x, y, w, row_h, val, f_cell, "center", band)
             x += w
         y += row_h
+
+    # TOTAL row (Raf 2026-08-22): sum each numeric column under both weekly
+    # tables, bold on the header gray so it reads as a footer, not a rep.
+    if rows:
+        x = 0
+        for (_header, key, _align), w in zip(COLS, col_w):
+            if key == "rep":
+                _cell(d, x, y, w, row_h, "TOTAL", f_rep, "left", HEADER_BG)
+            else:
+                tot = sum(int(r.get(key) or 0) for r in rows)
+                _cell(d, x, y, w, row_h, str(tot), f_head, "center", HEADER_BG)
+            x += w
 
     return img
 

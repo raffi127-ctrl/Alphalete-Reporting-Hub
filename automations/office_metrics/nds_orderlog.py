@@ -209,47 +209,125 @@ def _render_rep_summary(owner, header, rows, target, out_dir):
     return _house_render(summary, out)
 
 
-# House Order Log column layout (raw source name -> NDS finder candidates). We
-# emit a file in EXACTLY the house column order so csv_to_xlsx/_load_and_clean
-# style it identically to every other office's Order Log .xlsx. spe.Status uses
-# the same vocabulary in the NDS book (Active/Shipped/Delivered/Cancelled/Pending
-# Shipment), so the house status coloring/sort just works.
-_HOUSE_ORDERLOG_SRC = {
+# NDS wireless Order Log layout (Raf's Loom, 2026-08-22). Same house xlsx
+# writer/styling — the wireless column set is swapped in via
+# order_log.column_profile for THIS build only, so every fiber office's log
+# stays byte-identical. What changed from the house layout:
+#   - Activation Date (DTR Active Date) + the customer's number (spe.TN)
+#     moved IN FRONT of Customer Name; Install Date kept ("in case for
+#     whatever reason they sell AIR").
+#   - Type = spe.Wireless Type (Phone/Tablet); "Unknown" falls back to
+#     Product Type so the cell always says what was sold.
+#   - Next Up (from Wireless Installment Plan) in front of Package:
+#     "Next Up" / "No Next Up", a dash for tablets (no installment plan).
+#   - Ported From (spe.Port Carrier, port lines only) at the end.
+#   - Product Type / Device / Tech Install columns dropped.
+# The date columns and spe.Status REUSE the house raw names — that's what
+# _load_and_clean keys its date parsing and status sort/colors off.
+_NDS_COLUMNS_TO_KEEP = [
+    "Rep",
+    "sp.Order Date (copy)",
+    "Activatoin Date (order log)",   # house typo kept on purpose
+    "sp.Customer Phone",
+    "Customer Name",
+    "sp.SPM Number",
+    "Type",                          # computed below
+    "Next Up",                       # computed below
+    "Package",
+    "spe.Status",
+    "spe.Install Date",
+    "Ported From",                   # computed below
+]
+_NDS_FRIENDLY_HEADERS = [
+    "Rep", "Order Date", "Activation Date", "Customer Phone", "Customer Name",
+    "SPM Number", "Type", "Next Up", "Package", "Status", "Install Date",
+    "Ported From",
+]
+# Pass-through columns: raw source name -> NDS export finder candidates.
+_NDS_ORDERLOG_SRC = {
     "Rep": ("rep",),
     "sp.Order Date (copy)": ("sp.order date", "order date"),
-    "Customer Name": ("customer name",),
+    "Activatoin Date (order log)": ("dtr active date",),
     "sp.Customer Phone": ("spe.tn", "customer phone"),   # line TN = customer #
+    "Customer Name": ("customer name",),
     "sp.SPM Number": ("sp.spm number", "spm number", "spm"),
-    "Product Type (Broken Out)": ("product type (broken out)", "product type"),
     "Package": ("package",),
-    "spe.Phone": ("spe.wireless type",),                 # device (OPTIONAL house col)
     "spe.Status": ("spe.status",),
     "spe.Install Date": ("spe.install date",),
-    "Activatoin Date (order log)": ("dtr active date",),  # house typo kept on purpose
-    "Tech Install": ("tech install",),
 }
 
 
 def _render_order_log(owner, header, rows, target, out_dir):
-    """Isaiah's Order Log as the SAME color-coded .xlsx every office gets: emit
-    his wireless orders in the house column layout (UTF-16 tab, like a Tableau
-    crosstab export) and run it through the house csv_to_xlsx writer — so the
-    styling, status colors, sort, and columns are identical. Returns the .xlsx."""
-    from automations.uploaded.order_log import COLUMNS_TO_KEEP, csv_to_xlsx
+    """Isaiah's Order Log as the SAME color-coded .xlsx every office gets, in
+    the wireless column layout above: emit his order lines as a UTF-16 tab
+    file (like a Tableau crosstab export) and run it through the house
+    csv_to_xlsx writer under the NDS column profile — styling, status colors,
+    sort, and per-rep tabs all house. Returns (xlsx_path, line_count)."""
+    from automations.uploaded import order_log as _house
     idx = {col: _find(header, *cands)
-           for col, cands in _HOUSE_ORDERLOG_SRC.items()}
+           for col, cands in _NDS_ORDERLOG_SRC.items()}
+    wt_i = _find(header, "spe.wireless type", "wireless type")
+    pt_i = _find(header, "product type (broken out)", "product type")
+    wip_i = _find(header, "wireless installment plan")
+    tnt_i = _find(header, "spe.tn type", "tn type")
+    car_i = _find(header, "spe.port carrier", "port carrier")
+    line_i = _find(header, "spe.name")           # SPE-xxxxx line-item id
+
+    # The crosstab emits one row PER MEASURE ("Unit Count" + "Sales (All)")
+    # per line — same duplication the cancels board had. One row per line item:
+    # distinct lines of one order stay, each with its own number/type.
+    seen: set = set()
+    line_rows = []
+    for r in rows:
+        k = (_cell(r, idx["sp.SPM Number"]), _cell(r, line_i),
+             _cell(r, idx["sp.Customer Phone"]))
+        if k in seen:
+            continue
+        seen.add(k)
+        line_rows.append(r)
+
+    def _type(r) -> str:
+        wt = _cell(r, wt_i)
+        return _cell(r, pt_i) if (not wt or wt.lower() == "unknown") else wt
+
+    def _next_up(r) -> str:
+        if _cell(r, wt_i).lower() == "tablet":
+            return "-"                # tablets carry no Next Up plan (Raf)
+        v = _cell(r, wip_i)
+        lv = v.lower()
+        if not v:
+            return ""
+        if "w/o" in lv or "without" in lv or "no next" in lv or lv == "wo":
+            return "No Next Up"
+        if "next up" in lv or lv in ("w", "with"):
+            return "Next Up"
+        return v                      # unrecognized value — show it, don't guess
+
+    def _ported(r) -> str:
+        if _cell(r, tnt_i).lower() != "port":
+            return ""
+        return _cell(r, car_i).split(",")[0].strip()
+
+    computed = {"Type": _type, "Next Up": _next_up, "Ported From": _ported}
 
     def _san(v: str) -> str:                     # tabs/newlines would break the TSV
         return (v or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
-    lines = ["\t".join(COLUMNS_TO_KEEP)]
-    for r in rows:
-        lines.append("\t".join(
-            _san(_cell(r, idx[col])) if idx.get(col) is not None else ""
-            for col in COLUMNS_TO_KEEP))
+    def _val(r, col: str) -> str:
+        fn = computed.get(col)
+        if fn is not None:
+            return _san(fn(r))
+        i = idx.get(col)
+        return _san(_cell(r, i)) if i is not None else ""
+
+    lines = ["\t".join(_NDS_COLUMNS_TO_KEEP)]
+    for r in line_rows:
+        lines.append("\t".join(_val(r, col) for col in _NDS_COLUMNS_TO_KEEP))
     tsv = out_dir / f"nds_order_log_src_{target.isoformat()}.csv"
     tsv.write_text("\n".join(lines), encoding="utf-16")
-    return csv_to_xlsx(tsv, out_dir, owner=owner)
+    with _house.column_profile(_NDS_COLUMNS_TO_KEEP, _NDS_FRIENDLY_HEADERS,
+                               optional_raw={"Type", "Next Up", "Ported From"}):
+        return _house.csv_to_xlsx(tsv, out_dir, owner=owner), len(line_rows)
 
 
 def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, slug):
@@ -368,8 +446,8 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
     if board == "rep_summary":
         img, count = _render_rep_summary(owner, header, rows, target, out_dir), len(rows)
     elif board == "order_log":
-        img, count, is_file = (_render_order_log(owner, header, rows, target,
-                                                 out_dir), len(rows), True)
+        img, count = _render_order_log(owner, header, rows, target, out_dir)
+        is_file = True
     else:  # cancels or disconnects — status-keyword filtered order lists
         img, count = _render_status_orders(owner, header, rows, target, out_dir,
                                            _STATUS_KEYWORD[board], label, board)
