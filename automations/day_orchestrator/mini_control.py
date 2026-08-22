@@ -204,7 +204,7 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_doubleentry_creds",
                   # same class of secret as set_credico_state.
                   "set_appstream_state", "set_appstream_alt_state",
                   "set_office_slack_token",
-                  "set_gdocs_token", "set_slack_token",
+                  "set_gdocs_token", "set_slack_token", "set_cred_file",
                   # The xoxp- USER token is the one channel posts actually use
                   # and the more sensitive of the two — it was relying on the
                   # queuer clearing the cell by hand (2026-08-08).
@@ -2757,6 +2757,71 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
                   f"verifies each with auth_test; Args blank on landing{note}")
 
 
+# Credential FILES the fleet can push machine-to-machine. Whitelisted key ->
+# path, so a pushed secret can only ever land at a known location (same
+# principle as set_office_slack_token's registered filenames). Extend here as
+# new cred files earn fleet distribution.
+_CRED_FILES = {
+    "gmail-app-password":
+        lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password",
+    "gmail-app-password-raffi127":
+        lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127",
+    "ownerville-creds":
+        lambda: REPO_ROOT / "ownerville-creds.json",
+}
+
+
+def _action_push_cred_file(args: str) -> tuple[bool, str]:
+    """Push one whitelisted credential FILE from THIS machine to another
+    runner (zero-touch, like push_slack_tokens — born 2026-08-21 when Lucy
+    3's first dry tracker run died on a missing gmail-app-password that
+    only existed on Lucy 1). Args: '<file-key> <target machine>'."""
+    parts = (args or "").strip().strip("'\"").split(None, 1)
+    if len(parts) < 2:
+        return False, ("push_cred_file needs '<file-key> <target machine>' — "
+                       f"known keys: {', '.join(sorted(_CRED_FILES))}")
+    key, target = parts[0], parts[1].strip().strip("'\"").strip()
+    if key not in _CRED_FILES:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
+    if target.lower() == _machine_profile().strip().lower():
+        return False, "target is THIS machine — nothing to push"
+    path = _CRED_FILES[key]()
+    try:
+        content = path.read_text(encoding="utf-8-sig")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read {path.name} here: {str(e).splitlines()[0][:100]}"
+    if not content.strip():
+        return False, f"{path.name} is empty on this machine — not pushing"
+    enqueue("set_cred_file", f"{key} {content}",
+            by=f"push from {_machine_profile()}", machine=target, auto=True)
+    return True, (f"queued {key} ({len(content)} chars) onto '{target}' — "
+                  "Args blank on landing")
+
+
+def _action_set_cred_file(args: str) -> tuple[bool, str]:
+    """Install a pushed credential file at its whitelisted path (see
+    _CRED_FILES). In SECRET_ACTIONS, so the Args cell blanks on finish.
+    Backs up any existing file first; never echoes the contents."""
+    parts = (args or "").split(None, 1)
+    if len(parts) < 2:
+        return False, "set_cred_file needs '<file-key> <contents>'"
+    key, content = parts[0], parts[1]
+    if key not in _CRED_FILES:
+        return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
+    path = _CRED_FILES[key]()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            import shutil
+            stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+            shutil.copy2(path, path.with_name(path.name + f".bak.{stamp}"))
+        path.write_text(content, encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    return True, f"{path.name} installed ({len(content)} chars, chmod 600)"
+
+
 def _action_set_office_slack_token(args: str) -> tuple[bool, str]:
     """set_office_slack_token <office_key> <xoxb-token>: install the WORKSPACE bot
     token for an office whose Slack channel lives in a non-AO workspace (e.g.
@@ -4958,6 +5023,8 @@ ACTIONS = {
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
     "push_slack_tokens": _action_push_slack_tokens,
+    "push_cred_file": _action_push_cred_file,
+    "set_cred_file": _action_set_cred_file,
     "set_office_slack_token": _action_set_office_slack_token,
     "set_dd_bot_token": _action_set_dd_bot_token,
     "set_dd_app_token": _action_set_dd_app_token,
