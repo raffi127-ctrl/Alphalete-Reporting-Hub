@@ -10,9 +10,10 @@ Column order is Raf's own spreadsheet's, left to right (his worked example,
 and an OFFICE TOTALS bottom row (computed properly — his sheet's =SUM(B1:B39)
 had drifted off the data range; ours is the whole rep list by construction).
 
-'Avg Talk To's per App' is RAF'S formula: avg-talk-tos-per-DAY ÷ apps (both
-his sheet and the Loom compute it that way — flagged at preview in case he
-meant total ÷ apps). Averages divide by 6 (Mon–Sat) and round to 2 decimals.
+'Avg Talk To's per App' = TOTAL talk-tos ÷ apps (Raf 2026-08-22: his sheet's
+=C2/D2 "should have been Total Too's / Total apps, my bad" — so Alyssa is
+83 ÷ 6 = 13.83, the how-many-talk-tos-per-app read). Averages divide by 6
+(Mon–Sat) and round to 2 decimals.
 
 Rendering reuses the house PNG table (total_knocks.render._draw) with
 data-fitted columns + wrapped headers; plum theme so it reads as its own
@@ -145,7 +146,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             str(talk),
             _num(avg_day),
             "" if apps is None else str(n_apps or 0),
-            (_num(avg_day / n_apps) if n_apps else ""),
+            (_num(talk / n_apps) if n_apps else ""),
             str(r.get(COL_FIRST_KNOCK, "")).strip(),
             str(r.get(COL_LAST_KNOCK, "")).strip(),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
@@ -173,7 +174,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         str(tot_talk),
         _num(avg_day_tot),
         "" if apps is None else str(tot_apps),
-        (_num(avg_day_tot / tot_apps) if tot_apps else ""),
+        (_num(tot_talk / tot_apps) if tot_apps else ""),
         "", "",
         _hm(round(tot_gaps / DAYS)),
         _hm(tot_gaps),
