@@ -649,6 +649,18 @@
         "type": "not_configured"
       }
     },
+    "captainship_boards": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Captainship owner boards daily fill (Carlos 2026-08-23). Order-log-only by design (outside-org owners have no readable workbook): pulls the current week's ATTTRACKER-B2B ORDERLOG via the shared CDP Chrome (same 9246 lock as att_order_log), then per owner upserts WeekData (Rep|WE keys) + RollCallData raise-only Here marks + roster appends on the 11 owner boards, and rewrites the current-week Focus Report block (apps, product mix, VoIP, rolling HC/SPR, cumulative CRU/ABP/BYOD pcts, rolling rank) on the Captainship Dashboard's hidden 'MT - <First>' storage tabs (boards + the dashboard dropdown view display them live). Recruiting rows 5-27 come from the Alphalete Recruiting Dashboard's Daily Log (111Bmxx... = the LIVE hourly one; NOT 1Y3Rx). Monday auto-rolls the week block. DRY-RUN by default; the 6:30 AM Report Library card runs --write. Docs: ~/Desktop/captainship-sales-boards/README.md on the mini. `lucy rerun captainship_boards` = dry preview; add --write to apply.",
+      "display_name": "Captainship Boards Daily Fill",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_boards.run"
+      ],
+      "base_args": []
+    },
     "car_rides": {
       "on_scheduler": false,
       "machine": "Lucy 2",
