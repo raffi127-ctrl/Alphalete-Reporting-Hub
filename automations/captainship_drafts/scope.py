@@ -79,9 +79,33 @@ def captain_of(section: str) -> Optional[str]:
     return hits[0] if len(hits) == 1 else None
 
 
+def _manifest_id(rid: str) -> str:
+    """El id bajo el que ESTE reporte escribe su manifest.
+
+    Casi nunca es el id del schedule: `owners_metrics_churn` escribe
+    `owners-metrics-churn`, `captainship_churn` escribe
+    `captainship-new-internet-wireless-churn` — hoy los 23 reportes con verify
+    de manifest usan otro nombre. El orquestador ya conoce ese mapeo
+    (`verify.report_id` en schedule_config.json), asi que se lee de ahi y no de
+    una tabla nueva que haya que mantener. Sin esto, el mismo sabado que motivo
+    este modulo el manifest de la falla EXISTIA pero con otro nombre,
+    `held_captains` contestaba «no dejo manifest» y el freno volvia a ser
+    todo-o-nada.
+    """
+    try:
+        from automations.day_orchestrator import registry as reg
+        entry = reg.load_config().raw.get("reports", {}).get(rid) or {}
+        v = entry.get("verify") or {}
+        if v.get("type") == "manifest" and v.get("report_id"):
+            return str(v["report_id"])
+    except Exception:  # noqa: BLE001 — sin config, el id del schedule tal cual
+        pass
+    return rid
+
+
 def _manifest_of_today(report_id: str, today: dt.date) -> Optional[dict]:
     """El manifest de `report_id` SOLO si lo escribio una corrida de hoy."""
-    m = run_manifest.read_manifest(report_id)
+    m = run_manifest.read_manifest(_manifest_id(report_id))
     if not m:
         return None
     if (m.get("run_ts") or "")[:10] != today.isoformat():

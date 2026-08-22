@@ -68,8 +68,14 @@ class MapsSectionToCaptain(Base):
 
 
 class HeldCaptains(Base):
+    # OJO CON LAS CLAVES de self.manifests: van bajo el id del MANIFEST
+    # (verify.report_id, con guiones), no el del schedule. Los modulos escriben
+    # con otro nombre — `owners_metrics_churn` escribe `owners-metrics-churn` —
+    # y la version original de estos tests los mockeaba bajo el id del
+    # schedule, con lo cual pasaban mientras produccion no encontraba NINGUN
+    # manifest y frenaba todo (el sabado 2026-08-22, otra vez).
     def test_one_captain_holds_only_that_captain(self):
-        self.manifests["owners_metrics_churn"] = manifest(
+        self.manifests["owners-metrics-churn"] = manifest(
             ok=False, failed=["Tony Chavez (ATT Fiber)"])
         held, why = scope.held_captains(["owners_metrics_churn"], TODAY)
         self.assertEqual(held, {"tony"})
@@ -78,13 +84,30 @@ class HeldCaptains(Base):
         self.assertNotIn("tony", scope.other_keys(held))
 
     def test_two_modules_two_captains(self):
-        self.manifests["owners_metrics_churn"] = manifest(
+        self.manifests["owners-metrics-churn"] = manifest(
             ok=False, failed=["Tony Chavez (ATT Fiber)"])
-        self.manifests["captainship_cancel_rate"] = manifest(
+        self.manifests["captainship-cancel-rate"] = manifest(
             ok=False, failed=["Cancel Rate - Starr Rodenhurst (ATT Fiber)"])
         held, _ = scope.held_captains(
             ["owners_metrics_churn", "captainship_cancel_rate"], TODAY)
         self.assertEqual(held, {"tony", "starr"})
+
+    def test_schedule_id_reads_the_modules_own_manifest_name(self):
+        # El caso real completo: el gate frena por el id del SCHEDULE y el
+        # modulo escribio su manifest bajo verify.report_id. Un manifest bajo
+        # el id del schedule NO debe encontrarse (ese archivo no existe en
+        # produccion).
+        self.assertEqual(scope._manifest_id("owners_metrics_churn"),
+                         "owners-metrics-churn")
+        self.assertEqual(scope._manifest_id("captainship_churn"),
+                         "captainship-new-internet-wireless-churn")
+        self.assertEqual(scope._manifest_id("un-id-que-no-existe"),
+                         "un-id-que-no-existe")
+        self.manifests["owners_metrics_churn"] = manifest(
+            ok=False, failed=["Tony Chavez (ATT Fiber)"])
+        held, why = scope.held_captains(["owners_metrics_churn"], TODAY)
+        self.assertIsNone(held)
+        self.assertIn("manifest", why)
 
     def test_no_manifest_holds_everything(self):
         held, why = scope.held_captains(["captainship_activations"], TODAY)
@@ -105,13 +128,13 @@ class HeldCaptains(Base):
         self.assertIn("que parte", why)
 
     def test_unmappable_part_holds_everything(self):
-        self.manifests["org_sales_board"] = manifest(
+        self.manifests["org-sales-board"] = manifest(
             ok=False, failed=["Retail JE"])
         held, _ = scope.held_captains(["org_sales_board"], TODAY)
         self.assertIsNone(held)
 
     def test_everybody_broken_waits_for_a_new_link(self):
-        self.manifests["captainship_activations"] = manifest(
+        self.manifests["captainship-activations"] = manifest(
             ok=False, failed=[c.display_name for c in config.CAPTAINS])
         held, why = scope.held_captains(["captainship_activations"], TODAY)
         self.assertIsNone(held)
@@ -120,7 +143,7 @@ class HeldCaptains(Base):
     def test_a_rerun_that_fixed_it_holds_nobody(self):
         # El day_state seguira diciendo INCOMPLETE toda la vida; el manifest es
         # el unico que sabe como esta el reporte AHORA.
-        self.manifests["owners_metrics_churn"] = manifest(ok=True)
+        self.manifests["owners-metrics-churn"] = manifest(ok=True)
         held, why = scope.held_captains(["owners_metrics_churn"], TODAY)
         self.assertEqual(held, set())
         self.assertIn("recuperaron", why)
