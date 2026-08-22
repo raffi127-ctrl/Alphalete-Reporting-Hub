@@ -463,6 +463,7 @@ def update_focus(master, label, rep_days, agg, all_owner_day, monday, upto, writ
 
 
 def update_recruiting(master, monday, write):
+    time.sleep(20)   # let the per-board read burst's quota window clear
     org = open_sheet(C.ORG_TRACKER_ID)
     rows = values_get(org, "'Daily Log'!A2:Q9000", render="UNFORMATTED_VALUE")
     daily = {label: {} for label in C.OWNERS}
@@ -561,7 +562,7 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001
             failures.append(f"{label}: {type(e).__name__}: {e}")
             log(f"  !! {label} FAILED: {type(e).__name__}: {e}")
-        time.sleep(2 if args.write else 0)
+        time.sleep(2)   # pace reads too — a dry-run burst can 403-quota
     if not args.skip_recruiting and master is not None:
         try:
             update_recruiting(master, monday, args.write)
