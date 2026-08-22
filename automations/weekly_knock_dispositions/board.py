@@ -40,6 +40,21 @@ HEADERS = [
     "Avg Gap / Day", "Total Gap Hours",
 ]
 
+# After the summary columns comes the full disposition breakdown (Raf
+# 2026-08-22 — his sheet's green columns; the aggregate red ones stay off).
+# Column names arrive LIVE from the scrape (dispo_cols), so a disposition
+# Ownerville adds appears on its own; these are display-only shortenings so
+# a long label doesn't hold its column open.
+DISPO_DISPLAY = {
+    "Talk To - Not Interested": "Talk To - Not Int",
+    "Presentation – Not Interested": "Pres - Not Int",
+    "Presentation - Not Interested": "Pres - Not Int",
+}
+
+
+def headers_for(dispo_cols: list[str] | None) -> list[str]:
+    return list(HEADERS) + [DISPO_DISPLAY.get(c, c) for c in (dispo_cols or [])]
+
 THEME_PLUM = {               # distinct from the amber daily knocks board
     "title_bg": (86, 44, 122),
     "header_bg": (46, 27, 63),
@@ -99,15 +114,24 @@ def match_apps(ov_reps: list[str],
     return out, taken
 
 
-def compute_rows(ov_rows: list[dict],
-                 apps: dict[str, int] | None) -> list[list[str]]:
-    """The board's string rows (reps alphabetical + TOTALS last). `apps` is
-    the office's {rep: apps} — None means the PSS pull failed and the two
-    apps columns stay blank (fill-but-flag; the caller marks INCOMPLETE).
-    PSS reps with sales but no knock row still appear, knock cells blank."""
+def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
+                 dispo_cols: list[str] | None = None) -> list[list[str]]:
+    """The board's string rows (reps alphabetical + TOTALS last), summary
+    columns first, then one column per disposition in `dispo_cols` (zeros
+    blank, like the live table). `apps` is the office's {rep: apps} — None
+    means the PSS pull failed and the two apps columns stay blank
+    (fill-but-flag; the caller marks INCOMPLETE). PSS reps with sales but
+    no knock row still appear, knock cells blank."""
+    dispo_cols = dispo_cols or []
     matched, consumed = (match_apps([r.get(COL_REP, "") for r in ov_rows],
                                     apps)
                          if apps else ({}, set()))
+
+    def _dispo_cells(rec: dict | None) -> list[str]:
+        if rec is None:
+            return [""] * len(dispo_cols)
+        return ["" if not int(rec.get(c) or 0) else str(int(rec.get(c) or 0))
+                for c in dispo_cols]
 
     rows: list[list[str]] = []
     for r in sorted(ov_rows, key=lambda r: str(r.get(COL_REP, "")).lower()):
@@ -126,7 +150,7 @@ def compute_rows(ov_rows: list[dict],
             str(r.get(COL_LAST_KNOCK, "")).strip(),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
-        ])
+        ] + _dispo_cells(r))
 
     # Sales with no knock row — visible, not silently dropped. `consumed`
     # keeps a PSS name a prefix-match already claimed from re-appearing.
@@ -135,13 +159,15 @@ def compute_rows(ov_rows: list[dict],
             if _norm_name(rep) in consumed or not n_apps:
                 continue
             rows.append([_display_name(rep), "", "", str(n_apps),
-                         "", "", "", "", ""])
+                         "", "", "", "", ""] + _dispo_cells(None))
 
     tot_talk = sum(int(r.get(K_TALK_TO) or 0) for r in ov_rows)
     tot_apps = (sum(apps.values()) if apps else 0)
     tot_gaps = sum(int(r.get(K_GAP_MIN) or 0) for r in ov_rows
                    if r.get(K_GAP_MIN) is not None)
     avg_day_tot = tot_talk / DAYS
+    dispo_tots = [
+        sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
     rows.append([
         TOTALS_LABEL,
         str(tot_talk),
@@ -151,15 +177,17 @@ def compute_rows(ov_rows: list[dict],
         "", "",
         _hm(round(tot_gaps / DAYS)),
         _hm(tot_gaps),
-    ])
+    ] + ["" if not t else str(t) for t in dispo_tots])
     return rows
 
 
 def render(office: str, monday: dt.date, saturday: dt.date,
-           rows: list[list[str]], out_dir: Path) -> Path:
+           rows: list[list[str]], out_dir: Path,
+           dispo_cols: list[str] | None = None) -> Path:
     span = (f"{monday.strftime('%b')} {monday.day} – "
             f"{saturday.strftime('%b')} {saturday.day}, {saturday.year}")
     title = f"WEEKLY KNOCK DISPOSITIONS — {office.upper()} — {span}"
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
-    return knocks_render._draw(list(HEADERS), rows, title, THEME_PLUM, out,
-                               name_col=0, wrap_headers=True)
+    return knocks_render._draw(headers_for(dispo_cols), rows, title,
+                               THEME_PLUM, out, name_col=0,
+                               wrap_headers=True)

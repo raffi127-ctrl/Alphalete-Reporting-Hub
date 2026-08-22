@@ -43,12 +43,15 @@ K_GAP_MIN = "Gap Minutes"          # summed Time Tracker minutes, Mon–Sat
 # Identity columns — scraped as-is, never counted.
 _IDENTITY = {_norm(c) for c in (COL_ID, COL_REP, COL_FIRST_KNOCK,
                                 COL_LAST_KNOCK)}
-# Count columns that are NOT talk-tos: nobody answered / nobody reachable,
-# plus the table's own aggregates.
-_NOT_TALK_TO = {_norm(c) for c in (
-    "No answer", "Inaccessible",
+# The table's own aggregates — off the board entirely (Raf 2026-08-22:
+# "remove what's in red") and never talk-tos.
+_AGGREGATES = {_norm(c) for c in (
     "Total Leads Knocked", "Total Knocks", "Total Scheduled",
 )}
+# Disposition columns that are NOT talk-tos (nobody answered / nobody
+# reachable) — still SHOWN on the board (Raf's green columns include them),
+# just excluded from the Total Talk To's sum.
+_NO_CONTACT = {_norm(c) for c in ("No answer", "Inaccessible")}
 
 
 def _navigate_week(page, rqst: str, monday: dt.date, saturday: dt.date,
@@ -84,10 +87,29 @@ def _navigate_week(page, rqst: str, monday: dt.date, saturday: dt.date,
         pass
 
 
-def _scrape_week_rows(page, idx: dict) -> tuple[list[dict], list[str]]:
-    """One record per rep from the ranged table. Returns (rows,
-    talk_to_columns) — the live header names that were summed into
-    K_TALK_TO, so the caller can log the rule actually applied."""
+def _raw_headers(page) -> list[str]:
+    """The live header row's display text, in table order."""
+    return page.evaluate(
+        """() => {
+            const t = document.querySelector('#table-dispositions');
+            if (!t) return [];
+            return Array.from(t.querySelectorAll('thead th, thead td'))
+                .map(th => (th.innerText||'').trim());
+        }""") or []
+
+
+def _scrape_week_rows(page) -> tuple[list[dict], list[str], list[str]]:
+    """One record per rep from the ranged table. Returns
+    (rows, dispo_columns, talk_to_columns):
+
+    * dispo_columns — every disposition column's LIVE display name in table
+      order (identity + aggregate columns excluded). These all render on the
+      board (Raf 2026-08-22: the green columns), and each record carries its
+      count under that name.
+    * talk_to_columns — the subset summed into K_TALK_TO (everything except
+      No answer / Inaccessible), logged so the applied rule is visible."""
+    raws = _raw_headers(page)
+    idx = {_norm(h): i for i, h in enumerate(raws)}
     need = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK]
     missing = [c for c in need if _norm(c) not in idx]
     if missing:
@@ -96,10 +118,10 @@ def _scrape_week_rows(page, idx: dict) -> tuple[list[dict], list[str]]:
             + ", ".join(missing)
             + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
 
-    # Every non-identity column is a count; counts not in _NOT_TALK_TO are
-    # talk-tos (Raf's rule: everything except No answer / Inaccessible).
-    talk_to_cols = [h for h, i in sorted(idx.items(), key=lambda kv: kv[1])
-                    if h and h not in _IDENTITY and h not in _NOT_TALK_TO]
+    dispo = [(h, i) for i, h in enumerate(raws)
+             if h and _norm(h) not in _IDENTITY
+             and _norm(h) not in _AGGREGATES]
+    talk_to_cols = [h for h, _ in dispo if _norm(h) not in _NO_CONTACT]
 
     try:
         page.wait_for_function(
@@ -107,7 +129,7 @@ def _scrape_week_rows(page, idx: dict) -> tuple[list[dict], list[str]]:
             "'#table-dispositions tbody tr').length >= 1",
             timeout=10000)
     except Exception:
-        return [], talk_to_cols
+        return [], [h for h, _ in dispo], talk_to_cols
 
     table = page.locator("table#table-dispositions")
     out: list[dict] = []
@@ -125,7 +147,9 @@ def _scrape_week_rows(page, idx: dict) -> tuple[list[dict], list[str]]:
                 COL_FIRST_KNOCK: cells[idx[_norm(COL_FIRST_KNOCK)]],
                 COL_LAST_KNOCK: cells[idx[_norm(COL_LAST_KNOCK)]],
             }
-            rec[K_TALK_TO] = sum(_to_int(cells[idx[h]]) for h in talk_to_cols)
+            for h, i in dispo:
+                rec[h] = _to_int(cells[i])
+            rec[K_TALK_TO] = sum(rec[h] for h in talk_to_cols)
             rid = str(rec[COL_ID]).strip()
             if rid and rid in seen_ids:
                 continue
@@ -140,7 +164,7 @@ def _scrape_week_rows(page, idx: dict) -> tuple[list[dict], list[str]]:
             page.wait_for_load_state("networkidle", timeout=8000)
         except Exception:
             pass
-    return out, talk_to_cols
+    return out, [h for h, _ in dispo], talk_to_cols
 
 
 def _week_gaps(page, rqst: str, monday: dt.date, saturday: dt.date,
@@ -183,12 +207,15 @@ def _pin_campaign(page, rqst: str, campaign_id: str,
 
 
 def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
-                     saturday: dt.date, *, verbose: bool = True) -> list[dict]:
+                     saturday: dt.date, *, verbose: bool = True
+                     ) -> tuple[list[dict], list[str]]:
     """One office's week on an already-open ownerville page. For an
     "impersonate" office the impersonation is entered and ALWAYS exited, so
-    the next office starts from master. Returns rep records carrying
-    COL_ID / COL_REP / COL_FIRST_KNOCK / COL_LAST_KNOCK / K_TALK_TO /
-    K_GAP_MIN (K_GAP_MIN absent when the rep has no Time Tracker rows)."""
+    the next office starts from master. Returns (rows, dispo_columns): rep
+    records carrying COL_ID / COL_REP / COL_FIRST_KNOCK / COL_LAST_KNOCK /
+    K_TALK_TO / K_GAP_MIN (absent when the rep has no Time Tracker rows) +
+    one count per dispo column name; dispo_columns is that name list in
+    table order, for the board's dynamic columns."""
     page.set_default_timeout(60_000)
     page.set_default_navigation_timeout(60_000)
 
@@ -221,8 +248,7 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
             print(f"[wkd] Disposition by Rep {monday} → {saturday} "
                   f"({cfg['name']})", flush=True)
         _navigate_week(page, rqst, monday, saturday, verbose=verbose)
-        idx = knocks._header_index(page)
-        rows, talk_to_cols = _scrape_week_rows(page, idx)
+        rows, dispo_cols, talk_to_cols = _scrape_week_rows(page)
         if verbose:
             print(f"[wkd] {len(rows)} rep(s); talk-to = sum of: "
                   + ", ".join(talk_to_cols), flush=True)
@@ -245,4 +271,4 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
     if verbose:
         print(f"[wkd] merged weekly gaps onto {matched}/{len(rows)} rep(s)",
               flush=True)
-    return rows
+    return rows, dispo_cols

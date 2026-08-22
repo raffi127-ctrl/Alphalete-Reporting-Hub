@@ -162,9 +162,10 @@ def _publish_outcome(status: str, headline: str, details: list[str], *,
         print(f"  (corrections post skipped: {e})", flush=True)
 
 
-def _print_board(office: str, rows: list[list[str]]) -> None:
+def _print_board(office: str, rows: list[list[str]],
+                 dispo_cols: list[str] | None = None) -> None:
     print(f"\n=== {office} ===")
-    print("  " + " | ".join(B.HEADERS))
+    print("  " + " | ".join(B.headers_for(dispo_cols)))
     for r in rows:
         print("  " + " | ".join(r))
 
@@ -214,8 +215,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             for cfg in offices:
                 name = cfg["name"]
                 try:
-                    ov_rows = P.pull_office_week(page, cfg, aliases_raw,
-                                                 monday, saturday)
+                    ov_rows, dispo_cols = P.pull_office_week(
+                        page, cfg, aliases_raw, monday, saturday)
                     office_apps, extra = None, ""
                     if cfg.get("pss_owner") is None:
                         # NDS office: sales live in the NDS workbook, not the
@@ -230,14 +231,15 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                         # Visible absence, never a blank board (standing rule).
                         boards.append((cfg, None, extra))
                         continue
-                    rows = B.compute_rows(ov_rows, office_apps)
+                    rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
                     out_dir = OUT_DIR / _slug(name)
-                    png = B.render(name, monday, saturday, rows, out_dir)
+                    png = B.render(name, monday, saturday, rows, out_dir,
+                                   dispo_cols)
                     boards.append((cfg, png, extra))
                     if (cfg.get("pss_owner") is not None and pss_path is None
                             and name not in failed):
                         failed.append(name)     # retry posts the full board
-                    _print_board(name, rows)
+                    _print_board(name, rows, dispo_cols)
                     print(f"[wkd] rendered {name} -> {png}", flush=True)
                 except Exception as e:  # noqa: BLE001 — one office ≠ the run
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
