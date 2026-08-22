@@ -1,20 +1,25 @@
-"""Pull one office's Mon–Sat week from Ownerville.
+"""Pull one office's Mon–Sat week from Ownerville — ONE DAY AT A TIME.
 
-Disposition by Rep (p=89) filters via URL ?startDate=&endDate= server-side —
-the same mechanism the daily knocks pull uses with start == end; here they
-span the week, so the whole Mon–Sat window comes back as ONE table (First /
-Last Knock are the view's own week-level times, exactly what Raf reads off
-the screen when he builds this by hand).
+Disposition by Rep (p=89) filters via URL ?startDate=&endDate= server-side.
+We deliberately do NOT pull the whole week as one ranged table: the ranged
+view's First/Last Knock are NOT averages — observed 2026-08-22, Last Knock
+tracked the current afternoon clock across three same-day pulls (1:51 →
+2:45 → ~3:03 PM), which no 6-day average can do; they're the window's
+first and most-recent knock timestamps. (Raf's Loom guessed "average… I
+think" — the guess doesn't survive contact.) So the week is SIX single-day
+pulls in one session: counts sum across days, and each rep's First / Last
+Knock become the true AVERAGE of their daily times, computed here.
 
 Talk-to rule (verified against Raf's own worked spreadsheet, 2026-08-22):
 EVERY disposition column counts EXCEPT 'No answer' and 'Inaccessible' —
 nobody was talked to in either. The columns are discovered from the live
 header row, never listed by position, so a new disposition type Ownerville
 adds starts counting on its own (and the run log names the columns summed,
-so a surprise addition is visible, not silent).
+so a surprise addition is visible, not silent). TeleMapper metadata
+columns (% Coverage, Device, …) are excluded from both.
 
-Gaps come from the Time Tracker (p=510) JSON, which is single-date only —
-the week is 6 calls, summed per badge ID.
+Gaps come from the Time Tracker (p=510) JSON, also single-date — 6 calls,
+summed per badge ID, riding the same per-day loop cadence.
 """
 from __future__ import annotations
 
@@ -62,14 +67,30 @@ _METADATA = {_norm(c) for c in (
 )}
 
 
-def _navigate_week(page, rqst: str, monday: dt.date, saturday: dt.date,
-                   *, attempts: int = 3, verbose: bool = True) -> None:
+def _knock_min(v: str) -> int | None:
+    """'2:35 PM' → minutes since midnight; None when blank/unparsable.
+    strptime %I (never %-I) so it runs on Windows too."""
+    try:
+        t = dt.datetime.strptime((v or "").strip(), "%I:%M %p")
+        return t.hour * 60 + t.minute
+    except ValueError:
+        return None
+
+
+def _fmt_knock(minutes: int) -> str:
+    """Minutes since midnight → '2:35 PM' (leading zero stripped by hand)."""
+    h24, mm = divmod(int(minutes), 60)
+    ampm = "AM" if h24 < 12 else "PM"
+    return f"{h24 % 12 or 12}:{mm:02d} {ampm}"
+
+
+def _navigate_day(page, rqst: str, day: dt.date,
+                  *, attempts: int = 3, verbose: bool = True) -> None:
     """Same grid-not-built guard as the daily pull's _navigate (DataTables
-    builds from an AJAX call that fires AFTER networkidle), with the week's
-    range in the URL instead of a single day."""
+    builds from an AJAX call that fires AFTER networkidle)."""
+    mdy = day.strftime("%m/%d/%Y")
     url = (f"https://v2.ownerville.com/index.cfm?p=89&rqst={rqst}"
-           f"&startDate={monday.strftime('%m/%d/%Y')}"
-           f"&endDate={saturday.strftime('%m/%d/%Y')}")
+           f"&startDate={mdy}&endDate={mdy}")
     for attempt in range(1, attempts + 1):
         page.goto(url, wait_until="networkidle", timeout=25000)
         try:
@@ -106,8 +127,8 @@ def _raw_headers(page) -> list[str]:
         }""") or []
 
 
-def _scrape_week_rows(page) -> tuple[list[dict], list[str], list[str]]:
-    """One record per rep from the ranged table. Returns
+def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
+    """One record per rep from the CURRENT page's (single-day) table. Returns
     (rows, dispo_columns, talk_to_columns):
 
     * dispo_columns — every disposition column's LIVE display name in table
@@ -218,13 +239,15 @@ def _pin_campaign(page, rqst: str, campaign_id: str,
 def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                      saturday: dt.date, *, verbose: bool = True
                      ) -> tuple[list[dict], list[str]]:
-    """One office's week on an already-open ownerville page. For an
-    "impersonate" office the impersonation is entered and ALWAYS exited, so
-    the next office starts from master. Returns (rows, dispo_columns): rep
-    records carrying COL_ID / COL_REP / COL_FIRST_KNOCK / COL_LAST_KNOCK /
+    """One office's week on an already-open ownerville page, aggregated from
+    six single-day pulls. For an "impersonate" office the impersonation is
+    entered and ALWAYS exited, so the next office starts from master.
+    Returns (rows, dispo_columns): rep records carrying COL_ID / COL_REP /
     K_TALK_TO / K_GAP_MIN (absent when the rep has no Time Tracker rows) +
-    one count per dispo column name; dispo_columns is that name list in
-    table order, for the board's dynamic columns."""
+    one summed count per dispo column name; COL_FIRST_KNOCK /
+    COL_LAST_KNOCK are each rep's AVERAGE daily first/last knock time
+    (days they knocked). dispo_columns is the column-name list in table
+    order, for the board's dynamic columns."""
     page.set_default_timeout(60_000)
     page.set_default_navigation_timeout(60_000)
 
@@ -255,12 +278,48 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                           verbose=verbose)
         if verbose:
             print(f"[wkd] Disposition by Rep {monday} → {saturday} "
-                  f"({cfg['name']})", flush=True)
-        _navigate_week(page, rqst, monday, saturday, verbose=verbose)
-        rows, dispo_cols, talk_to_cols = _scrape_week_rows(page)
+                  f"({cfg['name']}) — day by day", flush=True)
+        # SIX single-day pulls, aggregated here — counts sum; First/Last
+        # Knock per rep = the AVERAGE of their daily times (see module
+        # docstring: the ranged view's times are not averages).
+        agg: dict[str, dict] = {}          # badge id → aggregate record
+        first_t: dict[str, list[int]] = {}
+        last_t: dict[str, list[int]] = {}
+        dispo_cols: list[str] = []
+        talk_to_cols: list[str] = []
+        day = monday
+        while day <= saturday:
+            _navigate_day(page, rqst, day, verbose=verbose)
+            day_rows, day_cols, day_talk = _scrape_day_rows(page)
+            dispo_cols = day_cols or dispo_cols
+            talk_to_cols = day_talk or talk_to_cols
+            if verbose:
+                print(f"[wkd]   {day} — {len(day_rows)} rep(s)", flush=True)
+            for rec in day_rows:
+                rid = (str(rec.get(COL_ID, "")).strip()
+                       or str(rec.get(COL_REP, "")).strip())
+                a = agg.setdefault(rid, {COL_ID: rec.get(COL_ID, ""),
+                                         COL_REP: rec.get(COL_REP, "")})
+                for c in day_cols:
+                    a[c] = int(a.get(c) or 0) + int(rec.get(c) or 0)
+                fm = _knock_min(str(rec.get(COL_FIRST_KNOCK, "")))
+                lm = _knock_min(str(rec.get(COL_LAST_KNOCK, "")))
+                if fm is not None:
+                    first_t.setdefault(rid, []).append(fm)
+                if lm is not None:
+                    last_t.setdefault(rid, []).append(lm)
+            day += dt.timedelta(days=1)
+        rows = list(agg.values())
+        for rid, a in agg.items():
+            a[K_TALK_TO] = sum(int(a.get(c) or 0) for c in talk_to_cols)
+            fs, ls = first_t.get(rid), last_t.get(rid)
+            a[COL_FIRST_KNOCK] = (_fmt_knock(round(sum(fs) / len(fs)))
+                                  if fs else "")
+            a[COL_LAST_KNOCK] = (_fmt_knock(round(sum(ls) / len(ls)))
+                                 if ls else "")
         if verbose:
-            print(f"[wkd] {len(rows)} rep(s); talk-to = sum of: "
-                  + ", ".join(talk_to_cols), flush=True)
+            print(f"[wkd] {len(rows)} rep(s) across the week; talk-to = "
+                  "sum of: " + ", ".join(talk_to_cols), flush=True)
         gaps = _week_gaps(page, rqst, monday, saturday, verbose=verbose)
     finally:
         if impersonated:

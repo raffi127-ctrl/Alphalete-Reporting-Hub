@@ -37,7 +37,7 @@ DAYS = 6                     # Mon–Sat
 
 HEADERS = [
     "Rep", "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
-    "Avg Talk To's per App", "First Knock", "Last Knock",
+    "Avg Talk To's per App", "Avg First Knock", "Avg Last Knock",
     "Avg Gap / Day", "Total Gap Hours",
 ]
 

@@ -45,7 +45,7 @@ REPORT_ID = "weekly_knock_dispositions"
 # report_id there too, so the orchestrator pill can't auto-create a dupe.
 CARD_ID = "office-metrics"
 CARD_NAME = "Weekly Knock Dispositions"
-ESTIMATED_MINUTES = 15   # 1 office ≈ 6-8m (6 gap calls) + 1 Tableau crosstab
+ESTIMATED_MINUTES = 18   # 1 office ≈ 6 day pulls + 6 gap calls + 1 crosstab
 
 REPORT_BREAKDOWN = """\
 Every Sunday, for each configured office (offices.py):
