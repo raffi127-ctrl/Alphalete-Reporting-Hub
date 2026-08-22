@@ -53,7 +53,11 @@ def main(argv=None):
 
     synced, skipped = [], []
     for name in names:
-        r = S.get("%s/%s/values/%s" % (API, OLD, q("'MIRROR %s'!A1:Z1000" % name)))
+        # UNFORMATTED_VALUE is load-bearing: the default FORMATTED_VALUE turns
+        # date serials and numbers into display strings, and the boards' AD
+        # BUDGET box does MAX() over Report Date — text dates make it $0.
+        r = S.get("%s/%s/values/%s" % (API, OLD, q("'MIRROR %s'!A1:Z1000" % name)),
+                  params={"valueRenderOption": "UNFORMATTED_VALUE"})
         if r.status_code != 200:
             skipped.append((name, "mirror read HTTP %d" % r.status_code))
             continue
