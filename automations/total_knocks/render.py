@@ -270,8 +270,10 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         block_h = head_lh * len(lines)
         ty = y + (header_h - block_h) // 2 + 1
         for ln in lines:
-            d.text((x + head_pad if wrap_headers else x + CELL_PAD_X, ty), ln,
-                   font=head_font, fill=HEADER_FG)
+            # Center each header line in its cell (Megan 2026-08-22).
+            tx = x + max((col_w[ci] - _text_w(d, ln, head_font)) // 2,
+                         head_pad if wrap_headers else CELL_PAD_X)
+            d.text((tx, ty), ln, font=head_font, fill=HEADER_FG)
             ty += head_lh
         x += col_w[ci]
 
