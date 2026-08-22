@@ -1609,14 +1609,14 @@ F.append(fmt(GOALS, 1, 900, 0, 2, BOLD, FB))
 
 batch(F)
 print("formatting applied")
-# Collapse every week EXCEPT the newest — the current week's dailies are what
-# gets looked at daily, and Sheets draws a collapsed group's toggle flush against
-# the left edge of the following column, which reads as if it belongs to the week
-# before. Opening it by default sidesteps the ambiguity.
+# Collapse EVERY week, the newest included — Carlos wants the tab to open with
+# all dailies tucked away (2026-08-22); the week-total columns tell the story
+# and any week opens with its + when needed. (This used to leave the newest
+# week expanded, which read as the sheet "ungrouping itself" on every open.)
 for _tsid in (TREND,):
     batch([{"updateDimensionGroup": {"dimensionGroup": {
         "range": {"sheetId": _tsid, "dimension": "COLUMNS",
                   "startIndex": TC0 + wi * WW + 1, "endIndex": TC0 + wi * WW + 8},
-        "depth": 1, "collapsed": wi != 0}, "fields": "collapsed"}}
+        "depth": 1, "collapsed": True}, "fields": "collapsed"}}
         for wi in range(len(WEEK_ENDS))])
 print("done -> https://docs.google.com/spreadsheets/d/%s/edit" % SSID)
