@@ -1,0 +1,333 @@
+"""Weekly Knock Dispositions — Sunday runner.
+
+    python -m automations.weekly_knock_dispositions.run             # DRY-RUN
+    python -m automations.weekly_knock_dispositions.run --live      # post
+    python -m automations.weekly_knock_dispositions.run --office "Rafael Hidalgo"
+    python -m automations.weekly_knock_dispositions.run 2026-08-22  # that week
+
+Dry-run is the DEFAULT — a bare run pulls + renders to output/ and cannot
+post by accident (--live opts in; the two flags are mutually exclusive).
+
+The date positional is ANY day inside the wanted Mon–Sat window; no date
+means the completed week (shared.report_week — on Sunday that's the Mon–Sat
+that just ended, and a Monday catch-up rerun still resolves to the same
+week, not the empty new one).
+
+Order of work: the org-wide PSS crosstab downloads FIRST in its own Tableau
+session, then ONE ownerville session (own Chrome profile — the shared one is
+first-come-first-served) walks the offices. One office failing never aborts
+the rest; the manifest says exactly who's missing and the retry re-runs only
+them.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import sys
+from pathlib import Path
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:  # noqa: BLE001
+    pass
+
+from automations.shared.report_week import week_ending
+from automations.total_knocks.pull import central_today
+from automations.weekly_knock_dispositions import apps as A
+from automations.weekly_knock_dispositions import board as B
+from automations.weekly_knock_dispositions import pull as P
+from automations.weekly_knock_dispositions.offices import enabled
+
+REPORT_ID = "weekly_knock_dispositions"
+CARD_ID = "weekly-knock-dispositions"
+CARD_NAME = "Weekly Knock Dispositions"
+ESTIMATED_MINUTES = 15   # 1 office ≈ 6-8m (6 gap calls) + 1 Tableau crosstab
+
+REPORT_BREAKDOWN = """\
+Every Sunday, for each configured office (offices.py):
+1. Downloads ONE org-wide rep-level PRODUCT SALES SUMMARY crosstab
+   (DailyRepBDreportpull) for the completed Mon–Sat week.
+2. In one ownerville session: Disposition by Rep filtered to Mon–Sat via
+   URL (?startDate/endDate), plus 6 daily Time Tracker calls for gap
+   minutes. Talk-to = every disposition EXCEPT No answer / Inaccessible
+   (Raf's rule, verified against his own sheet).
+3. Renders one board per office — Rep | Total Talk To's | Avg/Day (÷6)
+   | Total Apps | Avg Talk To's per App | First/Last Knock | Avg Gap/Day
+   | Total Gap Hours — plus an OFFICE TOTALS row.
+4. Posts each board into this week's 'Weekly Knock Dispositions' thread
+   in #alphalete-sales as Lucy. Needs a browser login? YES (warm
+   ownerville session — runs on Lucy 1)."""
+INCIDENT_KEY = f"standalone-{REPORT_ID}"     # prefix is load-bearing (notify)
+THREAD_TITLE = "Weekly Knock Dispositions"   # find_named_thread matches on it
+
+OUT_DIR = Path("output") / "weekly_knock_dispositions"
+# Own Chrome profile — the shared .browser_profile is first-come-first-served
+# and this run may overlap other browser reports (same escape hatch
+# other_office_knocks uses; login comes from the shared storage_state).
+PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
+               / ".browser_profile_weekly_knock_dispo")
+
+
+def _slug(name: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+
+
+def _week(anchor: dt.date | None) -> tuple[dt.date, dt.date, dt.date]:
+    """(monday, saturday, we_sunday) for the board's window."""
+    sunday = (week_ending(anchor) if anchor
+              else week_ending(central_today() - dt.timedelta(days=1)))
+    return sunday - dt.timedelta(days=6), sunday - dt.timedelta(days=1), sunday
+
+
+def _retry_args(offices: list[str]) -> list[str]:
+    out = ["--live"]
+    for o in offices:
+        out += ["--office", o]
+    return out
+
+
+def _write_manifest(all_names: list[str], ran: list[str],
+                    failed: list[str], note_extra: str = "") -> None:
+    """Best-effort record for the Hub card + failure alert. A scoped re-run
+    (--office X) merges into today's manifest, same rules as
+    other_office_knocks."""
+    try:
+        from automations.shared import run_manifest as _rm
+        ok = [o for o in ran if o not in failed]
+        if set(ran) != set(all_names):          # scoped re-run → merge
+            prior = _rm.read_manifest(REPORT_ID) or {}
+            if str(prior.get("run_ts") or "").startswith(
+                    dt.date.today().isoformat()):
+                failed = [o for o in prior.get("failed", [])
+                          if o not in ran] + failed
+                ok = [o for o in prior.get("succeeded", [])
+                      if o not in ran] + ok
+        rem = None
+        if failed:
+            rem = _rm.make_remediation(
+                reason=f"{len(failed)} office(s) missing from this week's "
+                       f"'{THREAD_TITLE}' thread in #alphalete-sales: "
+                       f"{', '.join(failed)}.",
+                fix="Re-run ONLY the missing office(s): "
+                    f"lucy rerun {REPORT_ID} " + " ".join(_retry_args(failed)),
+                message=f"The '{THREAD_TITLE}' thread is missing "
+                        f"{', '.join(failed)}. Usual causes: ownerville "
+                        "session/impersonation, or the PSS crosstab pull — "
+                        "the run log names which.")
+        _rm.write_manifest(
+            REPORT_ID, kind="office", failed=failed, succeeded=ok,
+            retry_args=(_retry_args(failed) if failed else []),
+            note=(f"{len(ok)}/{len(set(ok) | set(failed))} office board(s) "
+                  f"posted to the '{THREAD_TITLE}' thread"
+                  + (f"; ⚠ MISSING: {', '.join(failed)}" if failed else "")
+                  + note_extra),
+            remediation=rem)
+    except Exception:  # noqa: BLE001 — manifest must never fail the run
+        pass
+
+
+def _publish_outcome(status: str, headline: str, details: list[str], *,
+                     started_at=None, dry_run: bool = False) -> None:
+    """Hub run row + corrections alert, both best-effort (indeed_source_report
+    pattern). Skipped on --dry-run; pill row skipped under the orchestrator."""
+    if dry_run:
+        return
+    import os
+    if not os.environ.get("HUB_REPORT_ID"):
+        try:
+            from automations.shared import hub_activity
+            hub_activity.log_completed(CARD_ID, CARD_NAME, status=status,
+                                       started_at=started_at)
+        except Exception:  # noqa: BLE001 — reporting never sinks the report
+            pass
+    try:
+        if status == "success":
+            from automations.shared import incident_thread as _inc
+            _inc.resolve_if_open(INCIDENT_KEY, what=f"*{CARD_NAME}*",
+                                 detail="Clean run — every office posted.")
+        else:
+            from automations.day_orchestrator import notify
+            notify.post_alert(headline, details, tag=INCIDENT_KEY,
+                              incident=INCIDENT_KEY, label=f"*{CARD_NAME}*")
+    except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+        print(f"  (corrections post skipped: {e})", flush=True)
+
+
+def _print_board(office: str, rows: list[list[str]]) -> None:
+    print(f"\n=== {office} ===")
+    print("  " + " | ".join(B.HEADERS))
+    for r in rows:
+        print("  " + " | ".join(r))
+
+
+def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
+        dry_run: bool = True) -> int:
+    started_at = dt.datetime.now()
+    offices = enabled(only)
+    all_names = [o["name"] for o in enabled(None)]
+    monday, saturday, we_sunday = _week(anchor)
+    print(f"[wkd] {CARD_NAME} — {monday} → {saturday} "
+          f"({len(offices)} office(s): "
+          f"{', '.join(o['name'] for o in offices)}) — "
+          f"{'DRY-RUN' if dry_run else 'LIVE'}", flush=True)
+
+    # Terminated-ICD guard (standing rule): flag, never block.
+    term_flag = None
+    try:
+        from automations.shared.terminated_icds import alert_terminated
+        _, term_flag = alert_terminated([o["name"] for o in offices],
+                                        CARD_NAME)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # --- 1. The org-wide PSS crosstab, once for every office ---------------
+    pss_path = None
+    try:
+        pss_path = A.download(we_sunday)
+    except Exception as e:  # noqa: BLE001 — apps go blank, boards still post
+        print(f"[wkd] ⚠ PSS crosstab failed ({type(e).__name__}: "
+              f"{str(e)[:160]}) — apps columns will be blank, boards flagged "
+              "INCOMPLETE.", flush=True)
+
+    from automations.focus_office_att.aliases import load_aliases
+    aliases_raw = load_aliases()
+    try:
+        aliases_map = dict(aliases_raw)
+    except Exception:  # noqa: BLE001
+        aliases_map = {}
+
+    # --- 2. One ownerville session, offices in turn ------------------------
+    from automations.shared.tableau_patchright import ownerville_session
+    boards: list[tuple[str, Path | None, str]] = []   # (office, png, comment_extra)
+    failed: list[str] = []
+    try:
+        with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
+            for cfg in offices:
+                name = cfg["name"]
+                try:
+                    ov_rows = P.pull_office_week(page, cfg, aliases_raw,
+                                                 monday, saturday)
+                    office_apps = None
+                    if pss_path is not None:
+                        office_apps = A.rep_apps_for_owner(pss_path, name,
+                                                           aliases_map)
+                    if not ov_rows and not office_apps:
+                        # Visible absence, never a blank board (standing rule).
+                        boards.append((name, None, ""))
+                        continue
+                    rows = B.compute_rows(ov_rows, office_apps)
+                    out_dir = OUT_DIR / _slug(name)
+                    png = B.render(name, monday, saturday, rows, out_dir)
+                    extra = ("" if pss_path is not None
+                             else " — ⚠ INCOMPLETE: apps unavailable")
+                    boards.append((name, png, extra))
+                    if pss_path is None and name not in failed:
+                        failed.append(name)     # retry posts the full board
+                    _print_board(name, rows)
+                    print(f"[wkd] rendered {name} -> {png}", flush=True)
+                except Exception as e:  # noqa: BLE001 — one office ≠ the run
+                    print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
+                          f"{str(e)[:200]}", flush=True)
+                    failed.append(name)
+    except Exception as e:  # noqa: BLE001 — the session itself never opened
+        print(f"[wkd] ❌ ownerville session failed: {type(e).__name__}: {e}",
+              flush=True)
+        failed = [o["name"] for o in offices]
+        if not dry_run:
+            _write_manifest(all_names, [o["name"] for o in offices], failed)
+            _publish_outcome("failed", f"{CARD_NAME} — ownerville session "
+                             "failed", [str(e)[:300]], started_at=started_at)
+        return 1
+
+    if dry_run:
+        print("[wkd] --dry-run — rendered only, NO Slack post.", flush=True)
+        for name, png, extra in boards:
+            what = str(png) if png else "'No data available' line"
+            print(f"[wkd]   would post: {name}: {what}{extra}", flush=True)
+        print(f"[wkd] {'⚠' if failed else '✅'} finished (dry-run)"
+              + (f" — failed: {', '.join(failed)}" if failed else ""),
+              flush=True)
+        return 1 if failed else 0
+
+    if not boards:
+        print("[wkd] ❌ nothing to post — every office failed.", flush=True)
+        _write_manifest(all_names, [o["name"] for o in offices], failed)
+        _publish_outcome("failed", f"{CARD_NAME} — nothing posted",
+                         [f"Every office failed: {', '.join(failed)}"],
+                         started_at=started_at)
+        return 1
+
+    # --- 3. Post: the week's own thread + one board per office -------------
+    from automations.shared import slack_metrics_post as smp
+    slack_today = central_today()
+    span = f"{monday.strftime('%b')} {monday.day}–{saturday.day}"
+    head = smp.ensure_named_thread(
+        THREAD_TITLE, slack_today,
+        lines=[f":door: {name} — Mon–Sat {span}"
+               for name, _, _ in boards])
+    thread_ts = head.get("thread_ts")
+    if not thread_ts:
+        print(f"[wkd] ❌ couldn't open the '{THREAD_TITLE}' thread: {head}",
+              flush=True)
+        _write_manifest(all_names, [o["name"] for o in offices],
+                        [o["name"] for o in offices])
+        _publish_outcome("failed", f"{CARD_NAME} — Slack thread failed",
+                         [str(head)[:300]], started_at=started_at)
+        return 1
+
+    for name, png, extra in boards:
+        comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
+        if term_flag:
+            comment += f"\n{term_flag}"
+        if png is None:
+            resp = smp.post_reply_text_only(f"{comment} — No data available",
+                                            today=slack_today,
+                                            thread_ts=thread_ts)
+        else:
+            resp = smp.post_reply_with_image(
+                Path(png), comment=comment, today=slack_today,
+                thread_ts=thread_ts, wait_visible=True,
+                file_name=f"{Path(png).stem}_{_slug(name)}.png")
+        if resp.get("ok"):
+            print(f"[wkd] ✅ posted {name}.", flush=True)
+        else:
+            print(f"[wkd] ⚠ Slack response for {name}: {resp}", flush=True)
+            if name not in failed:
+                failed.append(name)
+
+    _write_manifest(all_names, [o["name"] for o in offices], failed)
+    _publish_outcome(
+        "success" if not failed else "failed",
+        f"{CARD_NAME} — {len(failed)} office(s) missing",
+        [f"Missing: {', '.join(failed)}"] if failed else [],
+        started_at=started_at)
+    print(f"[wkd] {'⚠' if failed else '✅'} finished"
+          + (f" — failed: {', '.join(failed)}" if failed else ""), flush=True)
+    return 1 if failed else 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="weekly_knock_dispositions",
+        description="Sunday per-rep knock/talk-to productivity board(s) → "
+                    "#alphalete-sales.")
+    ap.add_argument("date", nargs="?", default=None,
+                    help="any day inside the wanted Mon–Sat week "
+                         "(default: the completed week)")
+    ap.add_argument("--office", action="append", default=None,
+                    help="run ONE configured office (repeatable)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="pull + render to output/, NO Slack post (default)")
+    ap.add_argument("--live", action="store_true",
+                    help="pull + render + POST into this week's thread")
+    args = ap.parse_args(argv)
+    if args.live and args.dry_run:
+        print("✗ --live and --dry-run are mutually exclusive.")
+        return 2
+    anchor = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
+              if args.date else None)
+    return run(anchor, only=args.office, dry_run=not args.live)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

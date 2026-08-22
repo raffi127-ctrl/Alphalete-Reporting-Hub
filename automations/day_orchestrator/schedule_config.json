@@ -1960,6 +1960,38 @@
       },
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "weekly_knock_dispositions": {
+      "order": 11.1,
+      "on_scheduler": false,
+      "_on_scheduler_note": "BUILT READY 2026-08-22, deliberately OFF until Raf approves the preview — flip to true and it fires Sundays. Raf's Loom 2026-08-21 ('Weekly Rep Productivity Metrics and Averages'); name 'Weekly Knock Dispositions' is Raf's, via Megan. Multi-office by design: offices are config rows in automations/weekly_knock_dispositions/offices.py (Raf's office enabled; adding one is one row).",
+      "display_name": "Weekly Knock Dispositions (Sunday)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "_sources_note": "Sources are OWNERVILLE (Disposition by Rep ?startDate/endDate Mon–Sat + Time Tracker p=510 per day) and ONE org-wide Tableau PSS rep-level crosstab (DailyRepBDreportpull). source_type 'appstream' for its BEHAVIOUR, same reasoning as other_office_knocks: no readiness probe (the completed week is done at any hour) + the stray-Chrome guard. The Tableau pull rides the report's own session and inherits the freshness gate.",
+      "command": [
+        "automations.weekly_knock_dispositions.run"
+      ],
+      "base_args": [
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls the configured offices + posts one board each into this week's 'Weekly Knock Dispositions' thread in #alphalete-sales. Bare runs are dry-run by default (render to output/, no post). Scoped re-run: `--live --office \"Rafael Hidalgo\"` — the manifest's retry_args build exactly that.",
+      "cadence": {
+        "weekdays": [
+          6
+        ]
+      },
+      "_cadence_note": "Sunday: the board's Mon–Sat window is complete only then (same shape as att_cancels' Saturday-ending weeks). A Monday catch-up rerun still resolves to the SAME completed week via shared.report_week.",
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 40,
+      "verify": {
+        "type": "manifest",
+        "report_id": "weekly_knock_dispositions"
+      },
+      "machine": "Lucy 1",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+    },
     "daily_metrics": {
       "order": 9,
       "on_scheduler": true,
