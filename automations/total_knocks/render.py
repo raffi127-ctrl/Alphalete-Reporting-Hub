@@ -25,6 +25,9 @@ from automations.recruiting_report.fill import open_by_key
 from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_ROW
 from automations.total_knocks.pull import (
     COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
+    COL_TT_BREAKS, COL_TT_SALES_TIME, COL_TT_SALES,
+    COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_NO_ANSWER,
+    COL_NOT_INTERESTED, COL_COME_BACK, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
     SHEET_COLUMNS,
     _norm,
 )
@@ -52,6 +55,18 @@ TOTAL_KNOCKS_NCOL = 14
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
+# TeleMapper Knocks (the gaps-only/NDS stand-in for Total Knocks): mirrors the
+# ownerville Time Tracker table itself — Raf's reference screen (2026-08-22) —
+# since a wireless office has no Disposition page to count knocks from.
+TELEMAPPER_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_TT_BREAKS, COL_GAPS, COL_TOTAL_GAPS,
+                             COL_TT_SALES_TIME, COL_TT_SALES]
+# Wireless (NDS) Total Knocks: the house board's shape, with the wireless
+# disposition set — one Not Interested bucket, no Talk-To split, no Sale.
+WIRELESS_KNOCKS_COLUMNS = [COL_ID, COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                           COL_TOTAL_KNOCKS, COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                           COL_NO_ANSWER, COL_NOT_INTERESTED, COL_COME_BACK,
+                           COL_INACCESSIBLE, COL_DO_NOT_KNOCK]
 
 # ---- layout ----
 PAD        = 16
@@ -308,6 +323,74 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
     return _draw(list(TIME_GAPS_COLUMNS), sub,
                  f"TIME GAPS — {_office}{_title_date(target)}",
                  THEME_TEAL, out_dir / f"time_gaps_{target.isoformat()}.png")
+
+
+def _knock_time_key(v: str) -> int:
+    """'2:31 PM' -> minutes since midnight for sorting; blank/unparsable last.
+    strptime %I (not %-I) so it runs on Windows too."""
+    v = (v or "").strip()
+    try:
+        t = dt.datetime.strptime(v, "%I:%M %p")
+        return t.hour * 60 + t.minute
+    except ValueError:
+        return 24 * 60 + 1
+
+
+def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
+                             out_dir: Path = OUT_DIR_DEFAULT,
+                             title_suffix: str = "") -> Path:
+    """The gaps-only (NDS/wireless) office's stand-in for the Total Knocks
+    board: the ownerville Time Tracker table itself, amber theme (it fills the
+    Total Knocks slot in the thread). A wireless office has no Disposition
+    page, so there are no knock COUNTS anywhere — what TeleMapper records for
+    them is knock activity: first/last knock, breaks, gaps, sales time, sales
+    (Raf's reference screenshot, 2026-08-22). Rows sorted First Knock asc,
+    matching the live page; Total Gaps shown as 'Xh Ym'."""
+    recs = sorted(rows, key=lambda r: _knock_time_key(str(r.get(COL_FIRST_KNOCK, ""))))
+    table = []
+    for rec in recs:
+        row = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
+               for c in TELEMAPPER_KNOCKS_COLUMNS]
+        if any(c.strip() for c in row):
+            table.append(row)
+    if not table:
+        raise RuntimeError("No Time Tracker rows to render.")
+    # Blank the zero gap cells like the live page does, then 'Xh Ym' the rest.
+    g_pos = TELEMAPPER_KNOCKS_COLUMNS.index(COL_GAPS)
+    tg_pos = TELEMAPPER_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
+    for r in table:
+        if r[g_pos].strip() == "0":
+            r[g_pos] = ""
+        r[tg_pos] = "" if r[tg_pos].strip() == "0" else _fmt_hm(r[tg_pos])
+    _office = f"{title_suffix.upper()} — " if title_suffix else ""
+    return _draw(list(TELEMAPPER_KNOCKS_COLUMNS), table,
+                 f"TELEMAPPER KNOCKS — {_office}{_title_date(target)}",
+                 THEME_AMBER,
+                 out_dir / f"telemapper_knocks_{target.isoformat()}.png")
+
+
+def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
+                                 out_dir: Path = OUT_DIR_DEFAULT,
+                                 title_suffix: str = "") -> Path:
+    """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
+    house one, but the wireless disposition column set (one Not Interested
+    bucket, no Talk-To split, no Sale). Rows come from the wireless-shaped
+    Disposition by Rep table (rashad_metrics.knocks_pull scrapes it when the
+    house columns aren't there). Sorted First Knock asc like the house board."""
+    recs = sorted(rows, key=lambda r: _knock_time_key(str(r.get(COL_FIRST_KNOCK, ""))))
+    table = []
+    for rec in recs:
+        row = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
+               for c in WIRELESS_KNOCKS_COLUMNS]
+        if any(c.strip() for c in row):
+            table.append(row)
+    if not table:
+        raise RuntimeError("No wireless disposition rows to render.")
+    _office = f"{title_suffix.upper()} — " if title_suffix else ""
+    return _draw(list(WIRELESS_KNOCKS_COLUMNS), table,
+                 f"TOTAL KNOCKS — {_office}{_title_date(target)}",
+                 THEME_AMBER,
+                 out_dir / f"total_knocks_{target.isoformat()}.png")
 
 
 def main() -> int:

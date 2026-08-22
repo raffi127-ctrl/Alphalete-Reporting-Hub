@@ -49,9 +49,19 @@ COL_COME_BACK           = "Come Back"
 COL_SALE                = "Sale"
 COL_INACCESSIBLE        = "Inaccessible"
 COL_DO_NOT_KNOCK        = "Do Not Knock"
+# Wireless (NDS) dispositions collapse the Talk-To split into one bucket and
+# have no Sale column. Only the wireless-shaped scrape/board uses this.
+COL_NOT_INTERESTED      = "Not Interested"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)
+# Extra Time Tracker fields, carried ONLY on the standalone gaps-only rows
+# (NDS/wireless offices) — the TeleMapper Knocks board mirrors the p=510
+# table (Raf's reference screen, 2026-08-22). Not in SHEET_COLUMNS: the
+# production Sheet and every fiber board are untouched.
+COL_TT_BREAKS           = "Breaks (min)"
+COL_TT_SALES_TIME       = "Sales Time (min)"
+COL_TT_SALES            = "Sales"
 
 # Left→right order the Sheet expects (A→P).
 SHEET_COLUMNS = [
@@ -240,6 +250,19 @@ def _gaps_count(s) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _blank_zero(v) -> str:
+    """'0' / 0 / '' / None -> '' (the p=510 table leaves zero cells empty);
+    anything else -> its trimmed string ('273.0' -> '273')."""
+    s = str(v if v is not None else "").strip()
+    if not s:
+        return ""
+    try:
+        n = float(s)
+        return "" if n == 0 else str(int(n))
+    except ValueError:
+        return s
+
+
 def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dict:
     """Fetch Time Tracker (p=510) data for `mdy` from its JSON endpoint and
     return {id_str: {Gaps, Total Gaps (min)}}. The page's own same-origin
@@ -309,6 +332,11 @@ def _scrape_time_tracker_rows(page, rqst: str, mdy: str,
             COL_LAST_KNOCK: row.get("lastKnockDate") or "",
             COL_GAPS: _gaps_count(row.get("gaps")),
             COL_TOTAL_GAPS: int(row.get("totalGapMinutes") or 0),
+            # Blank zeros like the live p=510 table does, so the rendered
+            # board reads the same as Raf's reference screen.
+            COL_TT_BREAKS: _blank_zero(row.get("breaks")),
+            COL_TT_SALES_TIME: _blank_zero(row.get("salesTimeTotal")),
+            COL_TT_SALES: _blank_zero(row.get("sales")),
         })
     if verbose:
         print(f"-> Time Tracker standalone gap rows: {len(out)} rep(s)", flush=True)

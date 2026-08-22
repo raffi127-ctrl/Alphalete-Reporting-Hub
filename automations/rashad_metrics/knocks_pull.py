@@ -58,6 +58,81 @@ from automations.total_knocks.pull import (
     SHEET_COLUMNS,  # re-exported for callers (Sheet column order)
 )
 
+# The WIRELESS (NDS) Disposition by Rep table has a different shape from the
+# house one: one "Not Interested" bucket (no Talk-To/Presentation split), no
+# Sale column, plus wireless-only columns we don't board (battery, coverage,
+# device, territory name, tm version, vl, total hours, total scheduled).
+# Discovered live 2026-08-22 (Isaiah Revelle): the house scrape raised
+# "missing expected column(s)" and the live-headers diagnostic showed this set.
+_WIRELESS_COLUMNS = [
+    knocks.COL_ID, knocks.COL_REP, knocks.COL_TOTAL_LEADS_KNOCKED,
+    knocks.COL_TOTAL_KNOCKS, knocks.COL_FIRST_KNOCK, knocks.COL_LAST_KNOCK,
+    knocks.COL_NO_ANSWER, knocks.COL_NOT_INTERESTED, knocks.COL_COME_BACK,
+    knocks.COL_INACCESSIBLE, knocks.COL_DO_NOT_KNOCK,
+]
+_WIRELESS_COUNTS = {
+    knocks.COL_TOTAL_LEADS_KNOCKED, knocks.COL_TOTAL_KNOCKS,
+    knocks.COL_NO_ANSWER, knocks.COL_NOT_INTERESTED, knocks.COL_COME_BACK,
+    knocks.COL_INACCESSIBLE, knocks.COL_DO_NOT_KNOCK,
+}
+
+
+def _is_wireless_dispo(idx: dict) -> bool:
+    """Wireless-shaped Disposition: has Total Knocks but not the house
+    Talk-To split — the signature that separates the two table shapes."""
+    return (knocks._norm(knocks.COL_TOTAL_KNOCKS) in idx
+            and knocks._norm(knocks.COL_TALK_TO_NI) not in idx)
+
+
+def _scrape_wireless_rows(page, idx: dict) -> list[dict]:
+    """Walk the DataTables pages of a WIRELESS-shaped Disposition table and
+    return one dict per rep keyed by _WIRELESS_COLUMNS. Same pagination walk
+    as the house _scrape_rows, minus the Talk-To calculation."""
+    want = {c: idx.get(knocks._norm(c)) for c in _WIRELESS_COLUMNS}
+    missing = [c for c, i in want.items() if i is None]
+    if missing:
+        raise RuntimeError(
+            "Wireless disposition table is missing expected column(s): "
+            + ", ".join(missing)
+            + ". Live headers were: " + ", ".join(sorted(idx)) + ".")
+
+    table = page.locator("#table-dispositions")
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll('#table-dispositions tbody tr')"
+            ".length >= 1", timeout=10000)
+    except Exception:  # noqa: BLE001 — an empty day renders no body rows
+        return []
+
+    out: list = []
+    seen_ids: set = set()
+    for _ in range(20):  # safety cap on pagination
+        for tr in table.locator("tbody tr").all():
+            cells = [c.inner_text().strip() for c in tr.locator("td").all()]
+            if not cells or cells[0].lower().startswith("no data"):
+                continue
+            if max(want.values()) >= len(cells):
+                continue
+            rec = {}
+            for col, i in want.items():
+                raw = cells[i]
+                rec[col] = knocks._to_int(raw) if col in _WIRELESS_COUNTS else raw
+            rid = str(rec.get(knocks.COL_ID, "")).strip()
+            if rid and rid in seen_ids:
+                continue
+            if rid:
+                seen_ids.add(rid)
+            out.append(rec)
+        nxt = page.locator("#table-dispositions_next").first
+        if nxt.count() == 0 or "disabled" in (nxt.get_attribute("class") or ""):
+            break
+        nxt.click()
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:  # noqa: BLE001 — same tolerance as the house walk
+            pass
+    return out
+
 # Default office to impersonate. Env-targetable so the same module can be
 # pointed at another office without a code change (mirrors the churn
 # module's CHURN_*_VIEW_URL env overrides).
@@ -65,6 +140,33 @@ from automations.total_knocks.pull import (
 # RASHAD_KNOCKS_OFFICE stays as Rashad's back-compat name.
 DEFAULT_OFFICE = (os.environ.get("KNOCKS_OFFICE")
                   or os.environ.get("RASHAD_KNOCKS_OFFICE", "Rashad Reed"))
+
+# TeleMapper pages AND its JSON endpoints (Time Tracker included) are scoped
+# to the session's STICKY current campaign — whatever was last selected, by
+# anyone, survives into the next visit. Proven 2026-08-22: with Isaiah's
+# session stuck on RES-ENERGYWELL the Time Tracker returned 0 rows for a day
+# with 7 knocking reps; one navigation pinned to RES AT&T brought them back.
+# So every scrape PINS the campaign first. 3 = "RES AT&T", the campaign all
+# current knocks offices (fiber D2D and NDS wireless) knock under.
+KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
+
+
+def _pin_campaign(page, rqst: str, verbose: bool = True) -> None:
+    """Force the impersonated session's TeleMapper campaign so a stale sticky
+    selection can't silently blank the whole pull. Best-effort: a failure here
+    leaves us exactly where we were before this guard existed."""
+    try:
+        page.goto(f"https://v2.ownerville.com/index.cfm?p=88&rqst={rqst}"
+                  f"&invD2DClientId={KNOCKS_CAMPAIGN_ID}",
+                  wait_until="networkidle", timeout=45000)
+        page.wait_for_timeout(1000)
+        if verbose:
+            print(f"  ✓ Pinned TeleMapper campaign (invD2DClientId="
+                  f"{KNOCKS_CAMPAIGN_ID})", flush=True)
+    except Exception as e:  # noqa: BLE001
+        if verbose:
+            print(f"  ⚠ Campaign pin failed ({type(e).__name__}) — "
+                  "continuing with the session's current campaign", flush=True)
 
 
 def pull_office_knocks(office_name: Optional[str] = None,
@@ -146,13 +248,26 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
         # back to the value we already have.
         rqst = page_rqst(page) or rqst
 
+        # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above.
+        _pin_campaign(page, rqst, verbose=verbose)
+
         # --- SCRAPE (identical to pull_disposition_day) ---------------
         if verbose:
             print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
                   flush=True)
         knocks._navigate(page, rqst, mdy)
         idx = knocks._header_index(page)
-        rows = knocks._scrape_rows(page, idx)
+        # A WIRELESS (NDS) office's Disposition table has its own shape —
+        # scrape it with the wireless column set instead of letting the house
+        # scrape raise "missing expected column(s)". The wireless rows keep
+        # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
+        if _is_wireless_dispo(idx):
+            rows = _scrape_wireless_rows(page, idx)
+            if verbose:
+                print(f"-> Wireless-shaped disposition: {len(rows)} rep(s)",
+                      flush=True)
+        else:
+            rows = knocks._scrape_rows(page, idx)
         tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
         if verbose:
             print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",

@@ -96,18 +96,35 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
         print("[rashad_knocks] ✅ Finished (no data).", flush=True)
         return 0
 
-    # 2. Render straight from the in-memory rows — no Sheet read/write. A
-    #    gaps-only (NDS/wireless) office has no Disposition, so its rows carry no
-    #    knock counts (COL_TOTAL_KNOCKS absent) — render ONLY Time Gaps then, since
-    #    a Total Knocks image would be all blanks.
+    # 2. Render straight from the in-memory rows — no Sheet read/write.
+    #    Three Disposition shapes (Raf 2026-08-22: "telemapper knocks … should
+    #    be on there for the NDS guys"):
+    #      house    — the standard amber Total Knocks board;
+    #      wireless — an NDS office's own disposition shape (one Not
+    #                 Interested bucket, no Sale): REAL knock counts, rendered
+    #                 as Total Knocks with the wireless columns;
+    #      gaps-only — no disposition rows at all: the Total Knocks slot gets
+    #                 the TELEMAPPER KNOCKS board (the ownerville Time Tracker
+    #                 table — first/last knock, breaks, gaps, sales time,
+    #                 sales), so the thread never silently drops the metric.
+    from automations.total_knocks.pull import COL_TALK_TO_NI
+    wireless = (COL_TOTAL_KNOCKS in rows[0] and COL_TALK_TO_NI not in rows[0])
     gaps_only = COL_TOTAL_KNOCKS not in rows[0]
     posts = []
-    if not gaps_only:
+    if wireless:
+        img_tk = _render.render_wireless_total_knocks(target, rows=rows,
+                                                      out_dir=OUT_DIR)
+    elif gaps_only:
+        img_tk = _render.render_telemapper_knocks(target, rows=rows,
+                                                  out_dir=OUT_DIR)
+    else:
         img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows)
-        posts.append((img_tk, POST_TOTAL_KNOCKS))
+    posts.append((img_tk, POST_TOTAL_KNOCKS))
     img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
     posts.append((img_tg, POST_TIME_GAPS))
-    print(f"[rashad_knocks] Rendered {'gaps-only' if gaps_only else 'both'} -> "
+    shape = ("wireless" if wireless else
+             "telemapper-knocks fallback" if gaps_only else "house")
+    print(f"[rashad_knocks] Rendered both ({shape} knocks board) -> "
           f"{'; '.join(str(p[0]) for p in posts)}", flush=True)
 
     if dry_run:

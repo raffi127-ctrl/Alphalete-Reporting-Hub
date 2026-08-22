@@ -144,9 +144,12 @@ def _nds_metrics(o: Office) -> list[dict]:
     absent from the thread. Same dict shape as metrics_for so build_destinations /
     _run_one treat them identically. SECTION_OVERRIDES still gates which post."""
     return [
-        # 🕐 Time Gaps — knocks_run renders gaps-only when the Disposition is empty
-        # (every NDS owner: no door-knock campaign). Skips the blank Total Knocks.
-        dict(slug="knocks_gaps", label="🕐 Time Gaps",
+        # 🚪 TeleMapper Knocks + 🕐 Time Gaps — an NDS owner has no Disposition
+        # page (no door-knock campaign), so knocks_run fills the Total Knocks
+        # slot with the TELEMAPPER KNOCKS board (the ownerville Time Tracker
+        # table: first/last knock, breaks, gaps, sales time, sales — Raf's
+        # reference screen, 2026-08-22) and posts Time Gaps as usual.
+        dict(slug="knocks_gaps", label="🚪 TeleMapper Knocks + 🕐 Time Gaps",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              env={"KNOCKS_OFFICE": o.knocks_office},
              retry_on_fail=1, dry_flag="--dry-run", post_flag="--live"),
