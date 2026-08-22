@@ -59,8 +59,12 @@ there, so a re-fire can't tag 21 people twice. `--force` overrides.
   (the one whose A1 holds the Monday date) → header row 2 → column B
   **"2ND Round Interviewer"**, one row per new start. Rows whose column J
   "Final Status" is declined/cancelled/no-show/rescheduled don't count.
-- **Who already sent** — `#rafs-office-recruiting` (`C06881A7WLV`) → Aisha's
+- **Who already sent** — `#11280-alphalete-marketing-inc-rafael-hidalgo`
+  (`C0AUAS88FGW`; moved from `#rafs-office-recruiting` on 2026-08-21) → Aisha's
   Friday anchor post → replies after the Saturday roll call matching
+  (there can be TWO same-titled Friday posts now — Aisha's main-funnel thread
+  first, Tiffani's 2nd-funnel copy later that evening; the report takes the
+  EARLIEST and covers the main funnel only) —
   `/sent|done/i` (some leaders reply "Done!" instead of "Sent").
   The `xN` in "sent x4" is read as the claimed count. Aisha's hand-typed roll
   call is still recognised if she posts one, so a transition week parses either

@@ -1704,6 +1704,28 @@
       "depends_on": [],
       "verify": null
     },
+    "new_start_rollcall": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun new_start_rollcall` posts the Saturday roll call as Lucy \u2014 the recovery when the 8am launchd slot failed (e.g. 8/22: the weekly thread moved channels). Idempotent: no-ops if a roll call is already in the thread. weekdays [] = manual only, never auto-run.",
+      "display_name": "New-Start Follow-Up \u2014 post roll call (recovery)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.new_start_followup.run"
+      ],
+      "base_args": [
+        "--mode",
+        "rollcall",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "new_start_followup": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun new_start_followup` prints who has/hasn't texted their new starts. READ-ONLY \u2014 posts nothing (no --live); the Saturday/Sunday posts run off their own launchd agents. Also the Hub card's run_rerun_id. weekdays [] = manual only.",

@@ -139,6 +139,10 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
         last = cell(row, i_last)
         if not interviewer and not first:
             continue
+        if interviewer.lower() == INTERVIEWER_HEADER.lower():
+            # A repeated header row pasted into the data area (week of 8/24) —
+            # not a person, and it leaked into the posted "unable to tag" list.
+            continue
         name = " ".join(p for p in (first, last) if p)
         starts.append(
             NewStart(

@@ -24,7 +24,9 @@ from typing import Dict, List, Optional
 
 from automations.shared import slack_metrics_post as smp
 
-CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C06881A7WLV")  # #rafs-office-recruiting
+# Moved from #rafs-office-recruiting (C06881A7WLV) on 2026-08-21 — Aisha now
+# posts the weekly thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
+CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C0AUAS88FGW")
 
 # Aisha's Friday post. Matched loosely (case-insensitive substring on the
 # de-formatted text) so bold markers or a trailing date don't break it.
@@ -65,8 +67,15 @@ def _strip(text: str) -> str:
 
 
 def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200) -> Optional[dict]:
-    """Aisha's 'New Starts Scheduled for Monday' post from `friday`."""
+    """Aisha's 'New Starts Scheduled for Monday' post from `friday`.
+
+    Since the week of 8/24 there can be TWO same-titled Friday posts: Aisha's
+    main-funnel thread (~4:51pm) and Tiffani's 2nd-funnel copy later that
+    evening. This report covers the MAIN funnel — Tiffani runs her own roll
+    call by hand — so take the EARLIEST match, not the newest.
+    """
     resp = client.conversations_history(channel=channel, limit=lookback)
+    matches = []
     for msg in resp.get("messages", []):
         if msg.get("subtype"):
             continue
@@ -74,8 +83,10 @@ def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200) -> O
         if when != friday:
             continue
         if ANCHOR_PATTERN.search(_strip(msg.get("text", ""))):
-            return msg
-    return None
+            matches.append(msg)
+    if not matches:
+        return None
+    return min(matches, key=lambda m: float(m["ts"]))
 
 
 # Aisha's intro line above the copy/paste script.

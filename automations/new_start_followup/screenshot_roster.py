@@ -25,7 +25,9 @@ import requests
 from automations.shared import slack_metrics_post as smp
 from automations.brand_audit import credentials
 
-CHANNEL_ID = os.environ.get("NSF_CHANNEL_ID", "C06881A7WLV")  # #rafs-office-recruiting
+# Moved from #rafs-office-recruiting (C06881A7WLV) on 2026-08-21 — Aisha now
+# posts the weekly thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
+CHANNEL_ID = os.environ.get("NSF_CHANNEL_ID", "C0AUAS88FGW")
 # Aisha's weekly post — matched loosely on wording (she has some variance).
 POST_RE = re.compile(r"new\s*starts?.*scheduled.*monday", re.I)
 MODEL = "claude-opus-4-8"
@@ -98,13 +100,37 @@ def _find_roster_image(client, monday_iso: Optional[str] = None) -> Optional[dic
     Returns the Slack file dict (with url_private_download) for the LARGEST image
     in that post's thread (the roster table, not the small funnel-count image)."""
     hist = client.conversations_history(channel=CHANNEL_ID, limit=200)
-    parent = None
-    for m in hist.get("messages", []):
-        if POST_RE.search(m.get("text", "") or ""):
-            parent = m
-            break  # history is newest-first
-    if not parent:
+    matches = [m for m in hist.get("messages", [])
+               if POST_RE.search(m.get("text", "") or "")]
+    if not matches:
         return None
+    if monday_iso:
+        # Two guards, both learned the week of 8/24:
+        #  - A week where Aisha hasn't posted yet would otherwise find LAST
+        #    week's roster — which reads fine and stamps itself as this week
+        #    (that almost shipped a wrong-week snapshot on 2026-08-22). Her
+        #    post lands the Friday before, so only this week's window counts.
+        #  - There can now be TWO same-titled Friday posts: Aisha's main-funnel
+        #    thread (~4:51pm) and Tiffani's 2nd-funnel copy later that evening.
+        #    This report covers the MAIN funnel, so take the EARLIEST in-window
+        #    match, not the newest.
+        import datetime as dt
+        monday = dt.date.fromisoformat(monday_iso)
+
+        def _posted(m):
+            return dt.datetime.fromtimestamp(float(m["ts"])).date()
+
+        in_week = [m for m in matches
+                   if monday - dt.timedelta(days=6) <= _posted(m) <= monday]
+        if not in_week:
+            raise RuntimeError(
+                "Newest roster post in {} is from {} — the week of a different "
+                "Monday, not {}. Aisha hasn't posted this week's roster yet; "
+                "refusing to read last week's screenshot.".format(
+                    CHANNEL_ID, _posted(matches[0]).isoformat(), monday_iso))
+        parent = min(in_week, key=lambda m: float(m["ts"]))
+    else:
+        parent = matches[0]  # history is newest-first
     ts = parent["ts"]
     files = list(parent.get("files", []) or [])
     replies = client.conversations_replies(channel=CHANNEL_ID, ts=ts, limit=100)
