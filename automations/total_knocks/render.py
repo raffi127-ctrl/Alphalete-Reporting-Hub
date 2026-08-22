@@ -284,8 +284,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
             val = r[ci] if ci < len(r) else ""
             font = f_name if ci == name_col else f_cell
             fg = NAME_FG if ci == name_col else TEXT
-            if val.strip().isdigit() and ci != 0:    # right-align counts (not ID)
-                tx = x + col_w[ci] - CELL_PAD_X - _text_w(d, val, font)
+            if val.strip().isdigit() and ci != 0:    # center counts (not ID)
+                tx = x + (col_w[ci] - _text_w(d, val, font)) // 2
             else:
                 tx = x + CELL_PAD_X
             d.text((tx, y + (ROW_H - 13) // 2), val, font=font, fill=fg)
