@@ -1,5 +1,11 @@
 # Recruiting Funnel Board — full runbook
 
+> **Tab renames (2026-08-22), current names in the Alphalete Manager Boards workbook:**
+> Manager Board → **Recruiting Dashboard** · Manager Trend → **Focus Report** ·
+> Manager View → **Ad Plan** · the captainship twin tabs are merged away (Org/Captainship
+> picker on each board). "Manager View" below = today's **Ad Plan** tab. WE and Daily Log
+> are hidden tabs.
+
 Everything about the Funnel Board: where the numbers come from, what Lucy runs,
 what every tab does, and how to change it. Written 2026-08-18.
 
