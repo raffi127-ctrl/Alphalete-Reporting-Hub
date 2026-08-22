@@ -9,7 +9,7 @@ tests pin both it and the weekend false-positives it must NOT create.
 import datetime as dt
 import unittest
 
-from automations.machine_digest.run import _historical_expected
+from automations.machine_digest.run import _historical_expected, _offday_standalone_ids
 
 
 def _rows(card, days, hour=7, name=None, machine="Lucys-MacBook-Neo.local"):
@@ -76,6 +76,48 @@ class HistoricalExpected(unittest.TestCase):
         rows = _rows("applicant-push", _span(target, 1, 6), hour=7)
         rows += _rows("applicant-push", [target - dt.timedelta(days=7)], hour=3)
         self.assertEqual(_historical_expected(rows, target)["applicant-push"]["start_hour"], 7)
+
+
+class _Cfg:
+    def __init__(self, reports):
+        self.raw = {"reports": reports}
+
+
+class OffdayStandaloneIds(unittest.TestCase):
+    """Regression cover for 2026-08-22: dd_gross_revenue runs the 1st & 15th at
+    noon (plist Day 1/15), and in August 2026 both fell on Saturdays — so the
+    weekday baseline learned 'weekly Saturday report' and posted 'didn't run
+    today' on Sat 8/22 while nothing was wrong. `standalone_monthdays` pins the
+    real day-of-month schedule the way `standalone_weekdays` pins vantura's
+    Wednesday."""
+
+    MONTHLY = _Cfg({"dd_gross_revenue": {"standalone_monthdays": [1, 15]}})
+
+    def test_monthdays_report_is_exempt_on_an_off_day(self):
+        # Sat 8/22 — the false-alarm day.
+        self.assertIn("dd_gross_revenue",
+                      _offday_standalone_ids(self.MONTHLY, dt.date(2026, 8, 22)))
+
+    def test_monthdays_report_is_watched_on_its_run_days(self):
+        for d in (dt.date(2026, 8, 15), dt.date(2026, 9, 1), dt.date(2026, 9, 15)):
+            self.assertNotIn("dd_gross_revenue",
+                             _offday_standalone_ids(self.MONTHLY, d))
+
+    def test_weekday_pin_still_works_alone(self):
+        cfg = _Cfg({"vantura_payroll": {"standalone_weekdays": [2]}})   # Wed
+        self.assertIn("vantura_payroll", _offday_standalone_ids(cfg, dt.date(2026, 8, 20)))
+        self.assertNotIn("vantura_payroll", _offday_standalone_ids(cfg, dt.date(2026, 8, 19)))
+
+    def test_both_pins_declared_means_both_must_match(self):
+        # launchd's Day+Weekday AND rule: 9/15/2026 is a Tuesday (weekday 1).
+        cfg = _Cfg({"r": {"standalone_weekdays": [1], "standalone_monthdays": [15]}})
+        self.assertNotIn("r", _offday_standalone_ids(cfg, dt.date(2026, 9, 15)))
+        self.assertIn("r", _offday_standalone_ids(cfg, dt.date(2026, 9, 14)))   # Mon the 14th
+        self.assertIn("r", _offday_standalone_ids(cfg, dt.date(2026, 9, 22)))   # Tue the 22nd
+
+    def test_undeclared_report_keeps_the_historical_guess(self):
+        cfg = _Cfg({"plain": {}})
+        self.assertNotIn("plain", _offday_standalone_ids(cfg, dt.date(2026, 8, 22)))
 
 
 if __name__ == "__main__":

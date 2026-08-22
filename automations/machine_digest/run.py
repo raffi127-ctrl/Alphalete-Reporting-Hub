@@ -288,8 +288,9 @@ def _oneshot_utility_ids(cfg) -> set:
 
 def _offday_standalone_ids(cfg, target_date) -> set:
     """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
-    on `target_date`'s weekday, per an explicit `standalone_weekdays` list in
-    schedule_config (Python weekday(): Mon=0 … Sun=6).
+    on `target_date`, per an explicit `standalone_weekdays` list (Python weekday():
+    Mon=0 … Sun=6) and/or `standalone_monthdays` list (calendar day-of-month 1–31)
+    in schedule_config.
 
     on_scheduler:false reports have no usable `cadence.weekdays` — their real
     schedule lives in a plist the watcher can't read — so the "didn't run today"
@@ -306,8 +307,17 @@ def _offday_standalone_ids(cfg, target_date) -> set:
     INCOMPLETE / STUCK on every day — an off-day hand-rerun that crashes (as
     vantura_payroll's did on 2026-08-06) must still alert. Undeclared reports keep
     the historical guess, so this changes nothing for anyone who doesn't opt in.
-    Matched by the same id/card-alias fan-out as _orchestrator_ids, since Activity
-    rows are written under the CARD id."""
+
+    `standalone_monthdays` is the same pin for a DAY-OF-MONTH schedule, which
+    weekdays can't express: dd_gross_revenue fires the 1st & 15th at noon
+    (com.alphalete.dd-gross-revenue, StartCalendarInterval Day 1/15), but in
+    August 2026 the 1st and the 15th were BOTH Saturdays, so its two real runs
+    taught _historical_expected it was a weekly Saturday-noon report and it
+    posted "didn't run today" on Sat 8/22 while nothing was wrong (Megan
+    2026-08-22). When both lists are declared, today must match BOTH to be a
+    run day — same AND rule as launchd's Day+Weekday. Matched by the same
+    id/card-alias fan-out as _orchestrator_ids, since Activity rows are written
+    under the CARD id."""
     try:
         from automations.day_orchestrator.hub_publish import _HUB_CARD
     except Exception:  # noqa: BLE001
@@ -319,10 +329,13 @@ def _offday_standalone_ids(cfg, target_date) -> set:
     wd = target_date.weekday()
     ids = set()
     for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
-        days = rep_raw.get("standalone_weekdays")
-        if not isinstance(days, list) or not days:
+        wdays = rep_raw.get("standalone_weekdays")
+        mdays = rep_raw.get("standalone_monthdays")
+        wdays = wdays if isinstance(wdays, list) and wdays else None
+        mdays = mdays if isinstance(mdays, list) and mdays else None
+        if wdays is None and mdays is None:
             continue   # not declared → keep the historical-expected guess
-        if wd in days:
+        if (wdays is None or wd in wdays) and (mdays is None or target_date.day in mdays):
             continue   # it IS supposed to run today → a missing run is a real miss
         ids.add(rid)
         for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):

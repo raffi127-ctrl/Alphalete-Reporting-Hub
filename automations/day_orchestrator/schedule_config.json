@@ -6527,6 +6527,8 @@
     },
     "dd_gross_revenue": {
       "on_scheduler": false,
+      "standalone_monthdays": [1, 15],
+      "_standalone_monthdays_note": "Calendar day-of-month. The REAL schedule is com.alphalete.dd-gross-revenue (plist Day 1/15, 12:00 noon CST). Declared so machine_digest's error watcher stops guessing this report's cadence from the Activity log: in August 2026 the 1st and 15th BOTH fell on Saturdays, so the two real runs taught _historical_expected it was a weekly Saturday-noon report and it posted 'didn't run today' on Sat 8/22 while nothing was wrong (Megan 2026-08-22). Off-day exemption covers the DIDN'T-RUN check only \u2014 an off-day hand-rerun that FAILS still alerts. Keep in sync with the plist's Day array if the dates ever move.",
       "_note": "Pulls each office's base-tier GROSS REVENUE (Total $ to ICD) + activation from DD DETAIL (ORG) for the pay-structure gross-profit model (Raf). Manual: `lucy rerun dd_gross_revenue`. Auto 1st & 15th at noon via its OWN launchd plist (com.alphalete.dd-gross-revenue, StartCalendarInterval Day 1/15) \u2014 NOT the weekday scheduler; install with `lucy rerun install_dd_gross_revenue_agent`.",
       "display_name": "Pay Structure: ICD gross revenue (DD)",
       "source_type": "tableau",
