@@ -52,6 +52,14 @@ _AGGREGATES = {_norm(c) for c in (
 # reachable) — still SHOWN on the board (Raf's green columns include them),
 # just excluded from the Total Talk To's sum.
 _NO_CONTACT = {_norm(c) for c in ("No answer", "Inaccessible")}
+# TeleMapper metadata the live table carries that Raf's sheet doesn't
+# (Megan 2026-08-22: "remove these ones") — never on the board, and NEVER
+# in the talk-to sum: a numeric one ("Total Hours", a bare "% Coverage")
+# would silently inflate it.
+_METADATA = {_norm(c) for c in (
+    "% Coverage", "Coverage", "Device", "TM Version", "Battery",
+    "Total Hours", "Territory Name",
+)}
 
 
 def _navigate_week(page, rqst: str, monday: dt.date, saturday: dt.date,
@@ -120,7 +128,8 @@ def _scrape_week_rows(page) -> tuple[list[dict], list[str], list[str]]:
 
     dispo = [(h, i) for i, h in enumerate(raws)
              if h and _norm(h) not in _IDENTITY
-             and _norm(h) not in _AGGREGATES]
+             and _norm(h) not in _AGGREGATES
+             and _norm(h) not in _METADATA]
     talk_to_cols = [h for h, _ in dispo if _norm(h) not in _NO_CONTACT]
 
     try:

@@ -190,4 +190,4 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
     return knocks_render._draw(headers_for(dispo_cols), rows, title,
                                THEME_PLUM, out, name_col=0,
-                               wrap_headers=True)
+                               wrap_headers=True, highlight_last_row=True)

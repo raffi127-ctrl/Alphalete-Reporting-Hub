@@ -202,14 +202,19 @@ def _wrap_header(probe, text: str, fit_w: int, font) -> list[str]:
 
 def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           out_path: Path, name_col: int = 1,
-          wrap_headers: bool = False) -> Path:
+          wrap_headers: bool = False,
+          highlight_last_row: bool = False) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
     width fits the one-line header.
     wrap_headers=True (Raf's Loom 2026-08-22, fiber Total Knocks): columns are
     sized to the DATA, and the header words wrap onto extra lines instead of
-    stretching the box — "shorten up these boxes … make the number fit"."""
+    stretching the box — "shorten up these boxes … make the number fit".
+    highlight_last_row=True (Megan 2026-08-22, Weekly Knock Dispositions):
+    the LAST row (a totals row) draws on the theme's header colour in bold
+    white, so it reads apart from the rep rows. Default False = every
+    existing board byte-identical."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
@@ -306,13 +311,16 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
 
     y += header_h
     for ri, r in enumerate(rows):
-        bg = ROW_BG_A if ri % 2 == 0 else theme["stripe"]
+        is_total = highlight_last_row and ri == len(rows) - 1
+        bg = (theme["header_bg"] if is_total
+              else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
         for ci in range(ncol):
             val = r[ci] if ci < len(r) else ""
-            font = f_name if ci == name_col else f_cell
-            fg = NAME_FG if ci == name_col else TEXT
+            font = f_name if (ci == name_col or is_total) else f_cell
+            fg = (HEADER_FG if is_total
+                  else NAME_FG if ci == name_col else TEXT)
             if val.strip().isdigit() and ci != 0:    # center counts (not ID)
                 tx = x + (col_w[ci] - _text_w(d, val, font)) // 2
             else:
