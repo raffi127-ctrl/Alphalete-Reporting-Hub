@@ -70,6 +70,12 @@ def _publish_outcome(status, headline, details, *, started_at=None,
 
 
 YTD_LABEL = "YTD (all months)"
+
+# Managers whose dashboard merges an ad across cities: same account + same
+# role = one row, cities listed together in the City column (their own call —
+# Carlos, 2026-08-22). Everyone else keeps the per-city split, which is what
+# exposes a dead posting in one metro next to a producing one in another.
+CITY_AGNOSTIC = {"Carlos Hidalgo"}
 def rows_for(manager, period, ads):
     out, tot = [], parse.blank()
     for g in ads:
@@ -134,6 +140,8 @@ def main(argv=None):
                 fetch.select_office(page, tok, oid)
                 html, owner, nrows = fetch.source_report(page, tok, start, end)
                 ads, fl = parse.ads_for_month(html)
+                if name in CITY_AGNOSTIC:
+                    ads, fl = parse.merge_across_cities(ads), []
                 fresh[name] = ads
                 for f in fl:
                     flags.append((name, period) + f)

@@ -208,6 +208,32 @@ def apply_city_rule(groups):
     return out, flags
 
 
+def merge_across_cities(groups):
+    """One row per (inbox, base role) regardless of city — the cities are
+    listed together in the City column instead. Carlos's rule for his own
+    dashboard (2026-08-22): same account + same role = one ad, no matter
+    where it runs; different accounts stay separate. Blank-city pieces fold
+    in too, so nothing needs flagging."""
+    out = OrderedDict()
+    for g in groups:
+        k = (g['inbox'], g['base'].lower())
+        t = out.setdefault(k, dict(g, rec=blank(), variants=0, titles=[],
+                                   cities=[]))
+        for f in FIELDS:
+            t['rec'][f] += g['rec'][f]
+        t['variants'] += g['variants']
+        t['titles'].extend(g['titles'])
+        if g['city'] and g['city'] not in t['cities']:
+            t['cities'].append(g['city'])
+    res = []
+    for t in out.values():
+        t['title'] = show(min(t['titles'], key=len))
+        t['city'] = ' + '.join(t.pop('cities'))
+        res.append(t)
+    res.sort(key=lambda g: -g['rec']['apps'])
+    return res
+
+
 def ads_for_month(html):
     """Merged, city-resolved ad rows for one office-month, plus any flags."""
     ads = load_table(html)
