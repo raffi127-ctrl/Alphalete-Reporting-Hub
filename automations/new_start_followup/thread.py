@@ -28,6 +28,30 @@ from automations.shared import slack_metrics_post as smp
 # posts the weekly thread in #11280-alphalete-marketing-inc-rafael-hidalgo.
 CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C0AUAS88FGW")
 
+# TWO FUNNELS since the week of 8/24 (Megan 2026-08-22: "apply this to
+# tiffani's thread each week as well"). Each recruiter posts her own
+# same-titled Friday thread and the report runs the full roll-call/nudge/
+# checklist cycle in EACH. Anchors are told apart by AUTHOR, not order —
+# ordering broke the day Tiffani's post shadowed Aisha's.
+# `required`: a week where Aisha doesn't post is a failure; a week where
+# Tiffani doesn't post just means no 2nd-funnel starts — skip quietly.
+FUNNELS = [
+    {"key": "main", "label": "Main funnel",
+     "poster": "U083X5ZJWSH",           # Aisha Ceron
+     "required": True, "snapshot": "roster_snapshot.json"},
+    {"key": "second", "label": "2nd funnel (Tiffani)",
+     "poster": "U0B9924FHCL",           # Tiffani Brown
+     "required": False, "snapshot": "roster_snapshot_2nd.json"},
+]
+
+
+def funnel_by_key(key: str) -> dict:
+    for f in FUNNELS:
+        if f["key"] == key:
+            return f
+    raise KeyError("no funnel {!r} — known: {}".format(
+        key, ", ".join(f["key"] for f in FUNNELS)))
+
 # Aisha's Friday post. Matched loosely (case-insensitive substring on the
 # de-formatted text) so bold markers or a trailing date don't break it.
 ANCHOR_PATTERN = re.compile(r"new starts scheduled for monday", re.I)
@@ -66,13 +90,15 @@ def _strip(text: str) -> str:
     return (text or "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
 
-def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200) -> Optional[dict]:
-    """Aisha's 'New Starts Scheduled for Monday' post from `friday`.
+def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200,
+                poster: Optional[str] = None) -> Optional[dict]:
+    """The 'New Starts Scheduled for Monday' post from `friday`.
 
-    Since the week of 8/24 there can be TWO same-titled Friday posts: Aisha's
-    main-funnel thread (~4:51pm) and Tiffani's 2nd-funnel copy later that
-    evening. This report covers the MAIN funnel — Tiffani runs her own roll
-    call by hand — so take the EARLIEST match, not the newest.
+    Since the week of 8/24 there are TWO same-titled Friday posts — one per
+    funnel (see FUNNELS). With `poster` given, only that author's post counts;
+    without it, the EARLIEST match wins (Aisha posts before Tiffani), never
+    the newest — ordering by newest broke the day Tiffani's post shadowed
+    Aisha's.
     """
     resp = client.conversations_history(channel=channel, limit=lookback)
     matches = []
@@ -81,6 +107,8 @@ def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200) -> O
             continue
         when = dt.datetime.fromtimestamp(float(msg["ts"])).date()
         if when != friday:
+            continue
+        if poster and msg.get("user") != poster:
             continue
         if ANCHOR_PATTERN.search(_strip(msg.get("text", ""))):
             matches.append(msg)
@@ -156,7 +184,8 @@ def find_roll_call(replies: List[dict], anchor_ts: str) -> Optional[dict]:
     return None
 
 
-def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID, client=None):
+def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
+                client=None, poster: Optional[str] = None):
     """-> dict with the anchor, roll-call, tagged ids and confirmations.
 
     Raises if the anchor or roll call is missing -- posting a nudge against the
@@ -167,12 +196,14 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID, cli
         today = dt.date.today()
         friday = today - dt.timedelta(days=(today.weekday() - 4) % 7)
 
-    anchor = find_anchor(client, channel, friday)
+    anchor = find_anchor(client, channel, friday, poster=poster)
     if anchor is None:
         raise RuntimeError(
-            "No 'New Starts Scheduled for Monday' post found in {} on {}. "
-            "Aisha posts it Friday afternoon -- check the channel before "
-            "re-running.".format(channel, friday.isoformat())
+            "No 'New Starts Scheduled for Monday' post found in {} on {}{}. "
+            "It goes up Friday afternoon -- check the channel before "
+            "re-running.".format(
+                channel, friday.isoformat(),
+                " by <@{}>".format(poster) if poster else "")
         )
 
     replies = client.conversations_replies(

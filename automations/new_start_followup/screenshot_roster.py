@@ -95,25 +95,28 @@ def extract_rows(image_path) -> List[dict]:
     return json.loads(text).get("rows", [])
 
 
-def _find_roster_image(client, monday_iso: Optional[str] = None) -> Optional[dict]:
-    """Newest 'New Starts Scheduled for Monday' post's roster image.
+def _find_roster_image(client, monday_iso: Optional[str] = None,
+                       poster: Optional[str] = None) -> Optional[dict]:
+    """The 'New Starts Scheduled for Monday' post's roster image.
     Returns the Slack file dict (with url_private_download) for the LARGEST image
-    in that post's thread (the roster table, not the small funnel-count image)."""
+    in that post's thread (the roster table, not the small funnel-count image).
+    With `poster` given, only that author's post counts (one post per funnel
+    since the week of 8/24 — see thread.FUNNELS)."""
     hist = client.conversations_history(channel=CHANNEL_ID, limit=200)
     matches = [m for m in hist.get("messages", [])
-               if POST_RE.search(m.get("text", "") or "")]
+               if POST_RE.search(m.get("text", "") or "")
+               and (not poster or m.get("user") == poster)]
     if not matches:
         return None
     if monday_iso:
         # Two guards, both learned the week of 8/24:
-        #  - A week where Aisha hasn't posted yet would otherwise find LAST
-        #    week's roster — which reads fine and stamps itself as this week
-        #    (that almost shipped a wrong-week snapshot on 2026-08-22). Her
+        #  - A week where the roster hasn't been posted yet would otherwise
+        #    find LAST week's — which reads fine and stamps itself as this week
+        #    (that almost shipped a wrong-week snapshot on 2026-08-22). The
         #    post lands the Friday before, so only this week's window counts.
-        #  - There can now be TWO same-titled Friday posts: Aisha's main-funnel
-        #    thread (~4:51pm) and Tiffani's 2nd-funnel copy later that evening.
-        #    This report covers the MAIN funnel, so take the EARLIEST in-window
-        #    match, not the newest.
+        #  - There are TWO same-titled Friday posts now (one per funnel), so
+        #    without a poster filter take the EARLIEST in-window match (the
+        #    main funnel posts first), never the newest.
         import datetime as dt
         monday = dt.date.fromisoformat(monday_iso)
 
@@ -124,10 +127,12 @@ def _find_roster_image(client, monday_iso: Optional[str] = None) -> Optional[dic
                    if monday - dt.timedelta(days=6) <= _posted(m) <= monday]
         if not in_week:
             raise RuntimeError(
-                "Newest roster post in {} is from {} — the week of a different "
-                "Monday, not {}. Aisha hasn't posted this week's roster yet; "
+                "Newest roster post in {}{} is from {} — the week of a "
+                "different Monday, not {}. This week's roster isn't up yet; "
                 "refusing to read last week's screenshot.".format(
-                    CHANNEL_ID, _posted(matches[0]).isoformat(), monday_iso))
+                    CHANNEL_ID,
+                    " by <@{}>".format(poster) if poster else "",
+                    _posted(matches[0]).isoformat(), monday_iso))
         parent = min(in_week, key=lambda m: float(m["ts"]))
     else:
         parent = matches[0]  # history is newest-first
@@ -173,14 +178,17 @@ def _download(file_obj: dict, token: str) -> Path:
     return Path(path)
 
 
-def fetch_roster_rows(monday_iso: Optional[str] = None) -> List[dict]:
-    """End-to-end: find Aisha's weekly screenshot, download it, OCR it.
+def fetch_roster_rows(monday_iso: Optional[str] = None,
+                      poster: Optional[str] = None) -> List[dict]:
+    """End-to-end: find the weekly screenshot, download it, OCR it.
     Returns [{'interviewer','name','last_name'}]. Raises if no post/image found."""
     client = smp._client()
-    img = _find_roster_image(client, monday_iso)
+    img = _find_roster_image(client, monday_iso, poster=poster)
     if not img:
-        raise RuntimeError("No 'New Starts Scheduled for Monday' roster image found "
-                           f"in {CHANNEL_ID}. Did Aisha post it yet?")
+        raise RuntimeError(
+            "No 'New Starts Scheduled for Monday' roster image found in "
+            "{}{}. Has it been posted yet?".format(
+                CHANNEL_ID, " by <@{}>".format(poster) if poster else ""))
     path = _download(img, smp._load_token())
     try:
         rows = extract_rows(path)

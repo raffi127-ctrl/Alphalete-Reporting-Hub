@@ -49,24 +49,23 @@ def _post(rec, body: str, live: bool) -> int:
     return 0
 
 
-def _run(args) -> int:
-    monday = dt.date.fromisoformat(args.monday) if args.monday else None
-    when = args.when
-    if when == "auto":
-        # One Saturday launchd job fires at 10:00 / 13:00 / 17:00; the wording
-        # is picked from the clock rather than from three separate jobs.
-        hour = dt.datetime.now().hour
-        when = "morning" if hour < 12 else ("midday" if hour < 16 else "evening")
-
+def _run_funnel(args, funnel, monday, when) -> int:
+    """One full pass (status/rollcall/nudge/checklist) for ONE funnel's thread."""
+    print("=== {} ===".format(funnel["label"]))
     try:
         rec = report_mod.build(monday=monday,
-                               allow_sheet_roster=args.allow_sheet_roster)
+                               allow_sheet_roster=args.allow_sheet_roster,
+                               funnel=funnel)
     except RuntimeError as exc:
+        if not funnel["required"]:
+            # A week with no 2nd-funnel post just means no 2nd-funnel starts.
+            print("Skipping {} this week — {}".format(funnel["label"], exc))
+            return 0
         print("INCOMPLETE — {}".format(exc), file=sys.stderr)
         return 2
 
     roll_at = rec.thread["roll_call_at"]
-    print("OBCL tab      : {}".format(rec.tab))
+    print("Roster source : {}".format(rec.tab))
     print("Start week    : Monday {}".format(rec.monday.isoformat()))
     print("Roll call     : {}".format(
         "{} ({})".format(roll_at.strftime("%a %Y-%m-%d %H:%M"),
@@ -100,18 +99,40 @@ def _run(args) -> int:
         return 0
 
     if args.mode == "rollcall":
-        # One roll call per week. Re-running the 8am job (or a manual retry)
-        # must not tag 22 people a second time.
-        if rec.thread["roll_call_is_ours"] and not args.force:
-            print("Roll call already posted at {}. Nothing to do "
+        # One roll call per week PER THREAD. Re-running the 8am job (or a
+        # manual retry) must not tag 22 people a second time — and a HAND-TYPED
+        # roll call counts too (Tiffani tags her own funnel some weeks; a
+        # second list in the thread means people answer the wrong one).
+        if rec.thread["roll_call_ts"] and not args.force:
+            print("Roll call already in the thread at {} ({}). Nothing to do "
                   "(use --force to post another).".format(
-                      roll_at.strftime("%a %H:%M")))
+                      roll_at.strftime("%a %H:%M"),
+                      "Lucy's" if rec.thread["roll_call_is_ours"] else "hand-typed"))
             return 0
         return _post(rec, report_mod.render_rollcall(rec), args.live)
 
     body = (report_mod.render_nudge(rec, when) if args.mode == "nudge"
             else report_mod.render_checklist(rec))
     return _post(rec, body, args.live)
+
+
+def _run(args) -> int:
+    monday = dt.date.fromisoformat(args.monday) if args.monday else None
+    when = args.when
+    if when == "auto":
+        # One Saturday launchd job fires at 10:00 / 13:00 / 17:00; the wording
+        # is picked from the clock rather than from three separate jobs.
+        hour = dt.datetime.now().hour
+        when = "morning" if hour < 12 else ("midday" if hour < 16 else "evening")
+
+    from automations.new_start_followup import thread as thread_mod
+    funnels = (thread_mod.FUNNELS if args.funnel == "all"
+               else [thread_mod.funnel_by_key(args.funnel)])
+    rc = 0
+    for funnel in funnels:
+        rc = max(rc, _run_funnel(args, funnel, monday, when))
+        print()
+    return rc
 
 
 def _hub_done(live_post: bool, hub_run_id, ok: bool) -> None:
@@ -140,6 +161,9 @@ def main(argv=None) -> int:
                     help="which Saturday nudge to send (wording differs); "
                          "auto picks by clock time so one launchd job covers all three")
     ap.add_argument("--monday", help="start-week Monday as YYYY-MM-DD (default: next Monday)")
+    ap.add_argument("--funnel", choices=["all", "main", "second"], default="all",
+                    help="which recruiter funnel's thread to work (default: all "
+                         "— Aisha's main thread AND Tiffani's 2nd-funnel thread)")
     ap.add_argument("--allow-sheet-roster", action="store_true",
                     help="if Aisha's screenshot can't be read, build the roster "
                          "from the OBCL sheet anyway. OFF by default: the sheet "

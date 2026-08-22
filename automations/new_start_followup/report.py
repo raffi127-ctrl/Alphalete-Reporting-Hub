@@ -22,10 +22,16 @@ from automations.new_start_followup import (
 
 DEPARTED_NOTE = "No longer a channel member"
 
-# Last roster taken off Aisha's screenshot by a machine that can read it, used
-# when THIS machine can't (the mini's Slack token has no files:read). Written by
-# fix_rollcall.py --snapshot. Only ever used for its own week.
+# Last roster taken off the weekly screenshot by a machine that can read it,
+# used when THIS machine can't (the mini's Slack token has no files:read).
+# Written by fix_rollcall.py --snapshot. Only ever used for its own week.
+# One snapshot file per funnel (thread.FUNNELS names them); this constant stays
+# as the main funnel's path because fix_rollcall imports it.
 SNAPSHOT_PATH = Path(__file__).resolve().parent / "roster_snapshot.json"
+
+
+def snapshot_path(funnel: dict) -> Path:
+    return Path(__file__).resolve().parent / funnel["snapshot"]
 
 
 class LeaderStatus:
@@ -124,7 +130,10 @@ class Reconciliation:
 
 def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
           client=None, allow_sheet_roster: bool = False,
-          roster_json=None) -> Reconciliation:
+          roster_json=None, funnel: Optional[dict] = None) -> Reconciliation:
+    if funnel is None:
+        funnel = thread_mod.FUNNELS[0]  # main funnel — the pre-8/24 behaviour
+    poster = funnel["poster"]
     ros = roster_mod.load()
     if monday is None:
         monday = obcl.upcoming_monday()
@@ -151,25 +160,34 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         # and the needs-a-manual-reach-out names (Quigley Nolan) live only on the
         # sheet. Skipping this silently dropped him from the corrected roll call.
         return _assemble(monday, friday, client, ros, owed, tab,
-                         _sheet_only_untaggable(monday, owed, ros))
+                         _sheet_only_untaggable(monday, owed, ros)
+                         if funnel["key"] == "main" else {},
+                         poster=poster)
 
     # Roster source = Aisha's weekly SCREENSHOT (the true reach-out list), read
     # via Claude vision. The live OBCL tab carries people we're NOT moving forward
     # with + duplicate rows, so we no longer derive the roster from it (Raf
     # 2026-08-03).
     from automations.new_start_followup import screenshot_roster
+    # The OBCL sheet cross-read only runs for the MAIN funnel: the sheet mixes
+    # both funnels' rows, so checking it against one funnel's screenshot would
+    # flag the OTHER funnel's people as needing a manual reach-out in the
+    # wrong thread.
+    tab = "{} screenshot".format("Aisha's" if funnel["key"] == "main"
+                                 else "Tiffani's")
     sheet_only = {}  # type: Dict[str, int]
     try:
-        rows = screenshot_roster.fetch_roster_rows(monday.isoformat())
+        rows = screenshot_roster.fetch_roster_rows(monday.isoformat(),
+                                                   poster=poster)
         owed = {}
         for r in rows:
             intv = (r.get("interviewer") or "").strip()
             if intv:
                 owed[intv] = owed.get(intv, 0) + 1
-        tab = "Aisha's screenshot"
-        print("[roster] Aisha's screenshot: {} new starts across {} interviewers"
-              .format(sum(owed.values()), len(owed)))
-        sheet_only = _sheet_only_untaggable(monday, owed, ros)
+        print("[roster] {}: {} new starts across {} interviewers"
+              .format(tab, sum(owed.values()), len(owed)))
+        if funnel["key"] == "main":
+            sheet_only = _sheet_only_untaggable(monday, owed, ros)
     except Exception as exc:  # noqa: BLE001
         # The OBCL sheet is NOT a safe stand-in for the screenshot: it holds
         # not-moving-forward + duplicate rows, so building a TAG list from it
@@ -186,23 +204,25 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         # A snapshot for THIS week is the screenshot's own data, just taken
         # elsewhere — so it's a real answer, not a guess like the sheet. Lets the
         # weekend keep running on a machine that can't do the file download.
-        snap_owed = _snapshot_for(monday)
+        snap_owed = _snapshot_for(monday, snapshot_path(funnel))
         if snap_owed:
             print("WARNING: screenshot roster unavailable ({}); using the roster "
                   "snapshot for {} instead ({} new starts across {} interviewers)."
                   .format(exc, monday.isoformat(), sum(snap_owed.values()),
                           len(snap_owed)))
             return _assemble(monday, friday, client, ros, snap_owed,
-                             "Aisha's screenshot (snapshot)",
-                             _sheet_only_untaggable(monday, snap_owed, ros))
+                             tab + " (snapshot)",
+                             _sheet_only_untaggable(monday, snap_owed, ros)
+                             if funnel["key"] == "main" else {},
+                             poster=poster)
         if not allow_sheet_roster:
             raise RuntimeError(
-                "Couldn't read Aisha's roster screenshot ({}). Refusing to build "
+                "Couldn't read the {} roster screenshot ({}). Refusing to build "
                 "the roll call from the OBCL sheet -- it carries not-moving-"
                 "forward and duplicate rows, so it tags leaders who have no new "
                 "start. Nothing was posted; the next scheduled pass will post it "
                 "once the screenshot reads. To override anyway, re-run with "
-                "--allow-sheet-roster.".format(exc))
+                "--allow-sheet-roster.".format(funnel["label"], exc))
         print("WARNING: screenshot roster unavailable ({}); --allow-sheet-roster "
               "given, so falling back to the OBCL sheet. Counts and tags may "
               "include rows Aisha's screenshot excludes -- CHECK BEFORE POSTING."
@@ -210,15 +230,17 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
         monday, tab, starts = obcl.read_new_starts(monday)
         owed = obcl.counts_by_interviewer(starts)
 
-    return _assemble(monday, friday, client, ros, owed, tab, sheet_only)
+    return _assemble(monday, friday, client, ros, owed, tab, sheet_only,
+                     poster=poster)
 
 
-def _assemble(monday, friday, client, ros, owed, tab, sheet_only) -> Reconciliation:
+def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
+              poster=None) -> Reconciliation:
     """Join the chosen roster against the thread. Shared by every roster source
     so they can't drift apart."""
     if friday is None:
         friday = monday - dt.timedelta(days=3)
-    th = thread_mod.read_thread(friday=friday, client=client)
+    th = thread_mod.read_thread(friday=friday, client=client, poster=poster)
 
     rec = Reconciliation()
     rec.monday = monday
@@ -286,16 +308,16 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only) -> Reconciliat
     return rec
 
 
-def _snapshot_for(monday: dt.date) -> Dict[str, int]:
+def _snapshot_for(monday: dt.date, path: Path = SNAPSHOT_PATH) -> Dict[str, int]:
     """The roster snapshot, but ONLY if it's for `monday`. {} otherwise.
 
     Week-matched on purpose: last week's snapshot would tag last week's leaders
     about last week's new starts, which is worse than not posting.
     """
     try:
-        if not SNAPSHOT_PATH.exists():
+        if not path.exists():
             return {}
-        snap = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        snap = json.loads(path.read_text(encoding="utf-8"))
         if snap.get("monday") != monday.isoformat():
             print("[roster] ignoring the snapshot — it's for the week of {}, "
                   "not {}.".format(snap.get("monday"), monday.isoformat()))
@@ -478,7 +500,7 @@ def render_checklist(rec: Reconciliation) -> str:
     lines.append("")
     # Only a real OBCL tab title gets the "OBCL tab" prefix; the screenshot and
     # its snapshot already read as a source ("Aisha's screenshot (snapshot)").
-    src = (rec.tab if rec.tab.startswith("Aisha's screenshot")
+    src = (rec.tab if "screenshot" in rec.tab
            else "OBCL tab '{}'".format(rec.tab))
     lines.append("_auto by Lucy · source: {}_".format(src))
     return "\n".join(lines)

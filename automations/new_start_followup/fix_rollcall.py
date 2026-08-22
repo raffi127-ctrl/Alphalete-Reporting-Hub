@@ -47,11 +47,13 @@ from automations.shared import slack_metrics_post as smp
 SNAPSHOT_PATH = report_mod.SNAPSHOT_PATH
 
 
-def take_snapshot(monday: dt.date, path: Path) -> Path:
-    """Read Aisha's screenshot and write interviewer -> count. Laptop-side."""
+def take_snapshot(monday: dt.date, path: Path, funnel=None) -> Path:
+    """Read the weekly screenshot and write interviewer -> count. Laptop-side."""
     from automations.new_start_followup import screenshot_roster
 
-    rows = screenshot_roster.fetch_roster_rows(monday.isoformat())
+    funnel = funnel or thread_mod.FUNNELS[0]
+    rows = screenshot_roster.fetch_roster_rows(monday.isoformat(),
+                                               poster=funnel["poster"])
     owed = {}
     for r in rows:
         intv = (r.get("interviewer") or "").strip()
@@ -60,13 +62,15 @@ def take_snapshot(monday: dt.date, path: Path) -> Path:
     if not owed:
         raise RuntimeError("The screenshot produced no interviewers — refusing "
                            "to write an empty snapshot.")
+    src = "{} screenshot".format("Aisha's" if funnel["key"] == "main"
+                                 else "Tiffani's")
     body = {
-        "_note": ("Roster snapshot for the New-Start roll call, taken from "
-                  "Aisha's weekly screenshot on a machine that can read it. "
+        "_note": ("Roster snapshot for the New-Start roll call ({}), taken "
+                  "from the weekly screenshot on a machine that can read it. "
                   "Interviewer -> new-start COUNT only — new-start names must "
-                  "never be added, this repo is public."),
+                  "never be added, this repo is public.".format(funnel["label"])),
         "monday": monday.isoformat(),
-        "source": "Aisha's screenshot",
+        "source": src,
         "owed": dict(sorted(owed.items(), key=lambda kv: kv[0].lower())),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,23 +82,26 @@ def take_snapshot(monday: dt.date, path: Path) -> Path:
     return path
 
 
-def _find_rollcall(client, friday: dt.date):
+def _find_rollcall(client, friday: dt.date, funnel=None):
     """Lucy's roll-call message in this week's thread, or None."""
-    th = thread_mod.read_thread(friday=friday, client=client)
+    funnel = funnel or thread_mod.FUNNELS[0]
+    th = thread_mod.read_thread(friday=friday, client=client,
+                                poster=funnel["poster"])
     for m in th["replies"]:
         if thread_mod.ROLLCALL_MARKER in thread_mod._strip(m.get("text", "")):
             return th, m
     return th, None
 
 
-def apply_fix(monday: dt.date, path: Path, post: bool) -> int:
+def apply_fix(monday: dt.date, path: Path, post: bool, funnel=None) -> int:
+    funnel = funnel or thread_mod.FUNNELS[0]
     client = smp._client()
     me = client.auth_test()
     print("[identity] this machine is Slack user {} ({})".format(
         me.get("user"), me.get("user_id")))
 
     friday = monday - dt.timedelta(days=3)
-    th, msg = _find_rollcall(client, friday)
+    th, msg = _find_rollcall(client, friday, funnel=funnel)
     if msg is None:
         print("No roll call found in the week-of-{} thread — nothing to fix."
               .format(monday.isoformat()), file=sys.stderr)
@@ -116,7 +123,8 @@ def apply_fix(monday: dt.date, path: Path, post: bool) -> int:
               "the screenshot: --snapshot".format(path), file=sys.stderr)
         return 2
 
-    rec = report_mod.build(monday=monday, client=client, roster_json=path)
+    rec = report_mod.build(monday=monday, client=client, roster_json=path,
+                           funnel=funnel)
     corrected = report_mod.render_rollcall(rec)
     if not corrected.strip():
         print("The corrected roll call came out empty — refusing to blank the "
@@ -162,19 +170,42 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="with --apply, actually edit the message (default: dry-run)")
     ap.add_argument("--monday", help="start-week Monday as YYYY-MM-DD (default: next Monday)")
-    ap.add_argument("--path", default=str(SNAPSHOT_PATH), help="snapshot file path")
+    ap.add_argument("--funnel", choices=["all", "main", "second"], default="all",
+                    help="which funnel to snapshot/fix (--snapshot default: all; "
+                         "--apply uses main unless told otherwise)")
+    ap.add_argument("--path", default="", help="snapshot file path override "
+                    "(single-funnel runs only; default: the funnel's own file)")
     args = ap.parse_args(argv)
 
     from automations.new_start_followup import obcl
     monday = (dt.date.fromisoformat(args.monday) if args.monday
               else obcl.upcoming_monday())
-    path = Path(args.path)
 
     if args.snapshot:
-        take_snapshot(monday, path)
+        funnels = (thread_mod.FUNNELS if args.funnel == "all"
+                   else [thread_mod.funnel_by_key(args.funnel)])
+        for funnel in funnels:
+            path = Path(args.path) if (args.path and len(funnels) == 1) \
+                else report_mod.snapshot_path(funnel)
+            try:
+                take_snapshot(monday, path, funnel=funnel)
+            except RuntimeError as exc:
+                if funnel["required"]:
+                    raise
+                # A week with no 2nd-funnel post just means no 2nd-funnel
+                # starts — and a stale old snapshot must not linger, or the
+                # mini would resurrect it the next week the Mondays line up.
+                print("[snapshot] {}: {} — skipping{}".format(
+                    funnel["label"], exc,
+                    "; removed the stale snapshot" if path.exists() else ""))
+                if path.exists():
+                    path.unlink()
         return 0
     if args.apply:
-        return apply_fix(monday, path, args.post)
+        funnel = thread_mod.funnel_by_key(
+            "main" if args.funnel == "all" else args.funnel)
+        path = Path(args.path) if args.path else report_mod.snapshot_path(funnel)
+        return apply_fix(monday, path, args.post, funnel=funnel)
     ap.error("choose --snapshot (laptop) or --apply (the machine that posted it)")
 
 
