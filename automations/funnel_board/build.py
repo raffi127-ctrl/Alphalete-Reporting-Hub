@@ -1104,7 +1104,7 @@ def build_trend(sid, title, heading, roster):
             continue
         if kind == "pctd":
             trend[r - 1][1] = ('=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),"")'
-                               % (GOAL_AT["ret2cl"]))
+                               % (GOAL_AT[TREND_PCT_GOAL[lab]]))
         elif kind == "derived":
             trend[r - 1][1] = ('=IFERROR(VLOOKUP($A$1,Goals!$B:$U,%d,FALSE),"")'
                                % (GOAL_AT["applies"]))
@@ -1194,6 +1194,18 @@ def build_trend(sid, title, heading, roster):
             "borders": {"right": bdm(), "bottom": bd(LINE)}}},
             "userEnteredFormat(backgroundColor,textFormat,borders)"),
     ]
+    # GOAL cells whose Goals-tab source is amber (typed, gradable) get the same
+    # amber here — Carlos edits these; grey ones are computed (2026-08-22).
+    for i, (kind, lab, key) in enumerate(METRICS):
+        amber = ((kind == "n" and key in GOALS_AMBER)
+                 or kind == "pctd"
+                 or (kind == "pct" and lab in TREND_PCT_GOAL))
+        if amber:
+            F.append(fmt(sid, TF + i - 1, TF + i, 1, 2, {"userEnteredFormat": {
+                "backgroundColor": rgb(PICK_BG), "textFormat": txt(PICK, True, 12, FONT),
+                "borders": {"left": bdm(PICK), "right": bdm(PICK)}}},
+                "userEnteredFormat(backgroundColor,textFormat,borders)"))
+
     for wi in range(len(WEEK_ENDS)):
         b = TC0 + wi * WW
         # week total is now the FIRST column of the block
