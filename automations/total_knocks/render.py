@@ -203,7 +203,8 @@ def _wrap_header(probe, text: str, fit_w: int, font) -> list[str]:
 def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           out_path: Path, name_col: int = 1,
           wrap_headers: bool = False,
-          highlight_last_row: bool = False) -> Path:
+          highlight_last_row: bool = False,
+          highlight_first_row: bool = False) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -311,7 +312,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
 
     y += header_h
     for ri, r in enumerate(rows):
-        is_total = highlight_last_row and ri == len(rows) - 1
+        is_total = ((highlight_last_row and ri == len(rows) - 1)
+                    or (highlight_first_row and ri == 0))
         bg = (theme["header_bg"] if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
@@ -423,13 +425,15 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
     totals[tg_pos] = _fmt_hm(totals[tg_pos])
-    sub.append(totals)
+    # Office row at the TOP, right under the header (Raf 2026-08-22:
+    # "averages of the whole office at the top").
+    sub.insert(0, totals)
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_COLUMNS]
     return _draw(disp, sub,
                  f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
-                 name_col=0, wrap_headers=True, highlight_last_row=True)
+                 name_col=0, wrap_headers=True, highlight_first_row=True)
 
 
 def _gap_min(v: str) -> int:
