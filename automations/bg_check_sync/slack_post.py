@@ -1,8 +1,8 @@
-"""Weekly BG-status post to BOTH recruiting rooms, as Lucy.
+"""Weekly BG-status post to #11280-alphalete-marketing-inc-rafael-hidalgo, as Lucy.
 
-#rafs-office-recruiting AND #11280-alphalete-marketing-inc-rafael-hidalgo:
-each room gets its OWN parent thread + reply, tracked separately, so the
-edit-in-place model works per room.
+CHANNELS supports multiple rooms (each gets its OWN parent thread + reply,
+tracked separately, so the edit-in-place model works per room) — currently
+just the one.
 
 Model (Raf's design): ONE parent thread per start-week; a single reply under it
 lists every scheduled new start + current status; each daily run REBUILDS the
@@ -22,14 +22,13 @@ from pathlib import Path
 from automations.shared import slack_metrics_post as smp
 from automations.bg_check_sync import parse
 
-# Eve 2026-08-20: the post goes to BOTH rooms -- the original recruiting channel
-# AND Raf's office channel. Same workspace org (AO), so nothing leaves the org.
-# The new room is PRIVATE: lucy_reporting (U0BCG8F9B5Z) must be invited or its
-# post dies with channel_not_found -- which is tolerated per-room (see
-# post_or_update) so a missing invite can't take the other room's update down.
+# 2026-08-22: Raf is retiring #rafs-office-recruiting (C06881A7WLV), so the post
+# now goes ONLY to his office channel. The room is PRIVATE: lucy_reporting
+# (U0BCG8F9B5Z) must be invited or the post dies with channel_not_found --
+# tolerated per-room (see post_or_update) so a missing invite can't take
+# another room's update down.
 # BGSYNC_SLACK_CHANNEL overrides, comma-separated, for a scratch-channel test.
 CHANNELS = [
-    ("#rafs-office-recruiting", "C06881A7WLV"),
     ("#11280-alphalete-marketing-inc-rafael-hidalgo", "C0AUAS88FGW"),
 ]
 _env = os.environ.get("BGSYNC_SLACK_CHANNEL", "").strip()

@@ -78,6 +78,11 @@ def roster_from_dated_tab(values: list[list[str]], tab_name: str) -> list[Person
         last = (row[LAST_COL - 1] if len(row) >= LAST_COL else "").strip()
         if not (first and last):  # real candidates have both; skips legend rows (Megan/JD/…)
             continue
+        # A tab can hold a SECOND stacked block (date row + its own header row),
+        # e.g. Tiffani's applicant stream appended under 8.24 — skip that
+        # header's "Name"/"Last Name" cells or it becomes a fake person.
+        if _looks_like_header(row):
+            continue
         cur = (row[STATUS_COL - 1] if len(row) >= STATUS_COL else "").strip()
         out.append(Person(first, last, _norm_key(first, last), cur, [(tab_name, i + 1)]))
     return out

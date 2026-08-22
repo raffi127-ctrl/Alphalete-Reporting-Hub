@@ -2,8 +2,7 @@
 
 Reads First Advantage / Sterling emails, updates col K "BG Status" on both D2D
 OBCL tabs for the current start-week (forward-only), and posts/updates the weekly
-#rafs-office-recruiting + #11280-alphalete-marketing-inc-rafael-hidalgo
-threads as Lucy (one per room).
+#11280-alphalete-marketing-inc-rafael-hidalgo thread as Lucy.
 
 Safe by default: --dry-run makes NO sheet writes; Slack only posts with --post.
 Both off = a pure preview. Nothing goes live until explicitly enabled.
