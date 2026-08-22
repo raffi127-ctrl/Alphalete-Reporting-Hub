@@ -214,8 +214,9 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                                f"{page.url!r} after login.")
 
     try:
-        _pin_campaign(page, rqst, str(cfg.get("campaign_id", "3")),
-                      verbose=verbose)
+        if cfg.get("campaign_id"):     # NDS offices have no fiber campaign
+            _pin_campaign(page, rqst, str(cfg["campaign_id"]),
+                          verbose=verbose)
         if verbose:
             print(f"[wkd] Disposition by Rep {monday} → {saturday} "
                   f"({cfg['name']})", flush=True)

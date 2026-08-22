@@ -1,8 +1,9 @@
 """Weekly Knock Dispositions — Raf's Sunday board (Loom 2026-08-21).
 
-One PNG per office in a Sunday '#alphalete-sales' thread: per-rep weekly
-knock/talk-to productivity for Mon–Sat, joined with the rep's total apps
-from the Tableau PRODUCT SALES SUMMARY.
+One PNG per office, posted into the office's EXISTING Sunday Metrics
+thread (Raf 2026-08-22 — "Metrics for: <date>", his in #alphalete-sales):
+per-rep weekly knock/talk-to productivity for Mon–Sat, joined with the
+rep's total apps from the Tableau PRODUCT SALES SUMMARY.
 
     Rep | Total Talk To's | Avg Talk To's / Day | Total Apps
         | Avg Talk To's per App | First Knock | Last Knock
@@ -17,7 +18,9 @@ Sources (each pulled fresh by this report — no cross-report reuse):
   * Tableau DailyRepBDreportpull (PRODUCT SALES SUMMARY 4WK, rep-level) —
     ONE org-wide crosstab serves every office in the run.
 
-Built multi-office from day one (Megan 2026-08-22): offices are config rows
-in offices.py — Raf's office ships enabled, adding another is one entry
-(canonical ICD name + how to reach its Ownerville view), no code change.
+Built multi-office from day one (Megan 2026-08-22): Raf's office ships
+enabled; every office already enrolled for the daily Knocks/Time-Gaps board
+in its metrics thread is DERIVED from office_metrics' table behind the
+offices.INCLUDE_ENROLLED gate — flip it when Raf says take it live and the
+enrolled offices (current AND future enrollees) join automatically.
 """

@@ -54,11 +54,16 @@ Every Sunday, for each configured office (offices.py):
 3. Renders one board per office — Rep | Total Talk To's | Avg/Day (÷6)
    | Total Apps | Avg Talk To's per App | First/Last Knock | Avg Gap/Day
    | Total Gap Hours — plus an OFFICE TOTALS row.
-4. Posts each board into this week's 'Weekly Knock Dispositions' thread
-   in #alphalete-sales as Lucy. Needs a browser login? YES (warm
-   ownerville session — runs on Lucy 1)."""
+4. Posts each board as Lucy into that office's EXISTING Sunday Metrics
+   thread ("Metrics for: <date>") — Raf's in #alphalete-sales; enrolled
+   offices (gated off until Raf's go) in their own metrics channels.
+   Needs a browser login? YES (warm ownerville session — runs on Lucy 1)."""
 INCIDENT_KEY = f"standalone-{REPORT_ID}"     # prefix is load-bearing (notify)
-THREAD_TITLE = "Weekly Knock Dispositions"   # find_named_thread matches on it
+# Raf 2026-08-22 (via Megan): the boards go into the EXISTING daily Metrics
+# thread ("Metrics for: <date>"), not a thread of their own — Sunday's board
+# reads as one more metric in the morning stack.
+THREAD_NAME = "Metrics"                      # for log/manifest wording only
+MEGAN = "U04G5HJBGFN"                        # --preview DM recipient
 
 OUT_DIR = Path("output") / "weekly_knock_dispositions"
 # Own Chrome profile — the shared .browser_profile is first-come-first-served
@@ -105,12 +110,12 @@ def _write_manifest(all_names: list[str], ran: list[str],
         rem = None
         if failed:
             rem = _rm.make_remediation(
-                reason=f"{len(failed)} office(s) missing from this week's "
-                       f"'{THREAD_TITLE}' thread in #alphalete-sales: "
+                reason=f"{len(failed)} office(s) missing from Sunday's "
+                       f"{THREAD_NAME} thread in #alphalete-sales: "
                        f"{', '.join(failed)}.",
                 fix="Re-run ONLY the missing office(s): "
                     f"lucy rerun {REPORT_ID} " + " ".join(_retry_args(failed)),
-                message=f"The '{THREAD_TITLE}' thread is missing "
+                message=f"Sunday's {THREAD_NAME} thread is missing "
                         f"{', '.join(failed)}. Usual causes: ownerville "
                         "session/impersonation, or the PSS crosstab pull — "
                         "the run log names which.")
@@ -118,7 +123,7 @@ def _write_manifest(all_names: list[str], ran: list[str],
             REPORT_ID, kind="office", failed=failed, succeeded=ok,
             retry_args=(_retry_args(failed) if failed else []),
             note=(f"{len(ok)}/{len(set(ok) | set(failed))} office board(s) "
-                  f"posted to the '{THREAD_TITLE}' thread"
+                  f"posted to the {THREAD_NAME} thread"
                   + (f"; ⚠ MISSING: {', '.join(failed)}" if failed else "")
                   + note_extra),
             remediation=rem)
@@ -161,7 +166,7 @@ def _print_board(office: str, rows: list[list[str]]) -> None:
 
 
 def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
-        dry_run: bool = True) -> int:
+        dry_run: bool = True, preview_dm: str | None = None) -> int:
     started_at = dt.datetime.now()
     offices = enabled(only)
     all_names = [o["name"] for o in enabled(None)]
@@ -198,7 +203,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
 
     # --- 2. One ownerville session, offices in turn ------------------------
     from automations.shared.tableau_patchright import ownerville_session
-    boards: list[tuple[str, Path | None, str]] = []   # (office, png, comment_extra)
+    boards: list[tuple[dict, Path | None, str]] = []  # (cfg, png, comment_extra)
     failed: list[str] = []
     try:
         with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
@@ -207,21 +212,26 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 try:
                     ov_rows = P.pull_office_week(page, cfg, aliases_raw,
                                                  monday, saturday)
-                    office_apps = None
-                    if pss_path is not None:
-                        office_apps = A.rep_apps_for_owner(pss_path, name,
-                                                           aliases_map)
+                    office_apps, extra = None, ""
+                    if cfg.get("pss_owner") is None:
+                        # NDS office: sales live in the NDS workbook, not the
+                        # D2D PSS — blank apps, flagged (fill-but-flag).
+                        extra = " — ⚠ INCOMPLETE: apps not wired (NDS)"
+                    elif pss_path is None:
+                        extra = " — ⚠ INCOMPLETE: apps unavailable"
+                    else:
+                        office_apps = A.rep_apps_for_owner(
+                            pss_path, cfg["pss_owner"], aliases_map)
                     if not ov_rows and not office_apps:
                         # Visible absence, never a blank board (standing rule).
-                        boards.append((name, None, ""))
+                        boards.append((cfg, None, extra))
                         continue
                     rows = B.compute_rows(ov_rows, office_apps)
                     out_dir = OUT_DIR / _slug(name)
                     png = B.render(name, monday, saturday, rows, out_dir)
-                    extra = ("" if pss_path is not None
-                             else " — ⚠ INCOMPLETE: apps unavailable")
-                    boards.append((name, png, extra))
-                    if pss_path is None and name not in failed:
+                    boards.append((cfg, png, extra))
+                    if (cfg.get("pss_owner") is not None and pss_path is None
+                            and name not in failed):
                         failed.append(name)     # retry posts the full board
                     _print_board(name, rows)
                     print(f"[wkd] rendered {name} -> {png}", flush=True)
@@ -239,11 +249,30 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                              "failed", [str(e)[:300]], started_at=started_at)
         return 1
 
+    span = f"{monday.strftime('%b')} {monday.day}–{saturday.day}"
+
     if dry_run:
-        print("[wkd] --dry-run — rendered only, NO Slack post.", flush=True)
-        for name, png, extra in boards:
+        print("[wkd] --dry-run — rendered only, NO channel post.", flush=True)
+        for cfg, png, extra in boards:
             what = str(png) if png else "'No data available' line"
-            print(f"[wkd]   would post: {name}: {what}{extra}", flush=True)
+            where = cfg.get("channel_name") or "#alphalete-sales"
+            print(f"[wkd]   would post: {cfg['name']} → {where} Metrics "
+                  f"thread: {what}{extra}", flush=True)
+        if preview_dm:
+            # DM the rendered board(s) to Megan as Lucy — the gated-preview
+            # path, so she can see the real image without a channel post.
+            from automations.shared import slack_metrics_post as smp
+            for cfg, png, extra in boards:
+                if png is None:
+                    continue
+                resp = smp.dm_user_with_file(
+                    Path(png), user=preview_dm,
+                    comment=f"📋 PREVIEW — {CARD_NAME} — {cfg['name']} — "
+                            f"{span}{extra} (dry-run; nothing posted to the "
+                            "channel)",
+                    file_name=f"{Path(png).stem}_{_slug(cfg['name'])}.png")
+                print(f"[wkd]   preview DM {cfg['name']}: "
+                      f"{'✅' if resp.get('ok') else resp}", flush=True)
         print(f"[wkd] {'⚠' if failed else '✅'} finished (dry-run)"
               + (f" — failed: {', '.join(failed)}" if failed else ""),
               flush=True)
@@ -257,43 +286,63 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                          started_at=started_at)
         return 1
 
-    # --- 3. Post: the week's own thread + one board per office -------------
+    # --- 3. Post into each office's EXISTING Sunday Metrics thread ---------
+    # (Raf 2026-08-22: no thread of its own — the board is one more metric in
+    # the morning stack.) ensure_metrics_thread is find-or-create with the
+    # exact header daily_metrics posts, so whichever report gets there first
+    # on Sunday opens the one thread and the other reuses it. Per-office
+    # channels (enrolled offices) post into THEIR thread by overriding the
+    # smp module channel/label around the calls — the same values the office
+    # runner injects via env for its subprocesses.
     from automations.shared import slack_metrics_post as smp
     slack_today = central_today()
-    span = f"{monday.strftime('%b')} {monday.day}–{saturday.day}"
-    head = smp.ensure_named_thread(
-        THREAD_TITLE, slack_today,
-        lines=[f":door: {name} — Mon–Sat {span}"
-               for name, _, _ in boards])
-    thread_ts = head.get("thread_ts")
-    if not thread_ts:
-        print(f"[wkd] ❌ couldn't open the '{THREAD_TITLE}' thread: {head}",
-              flush=True)
-        _write_manifest(all_names, [o["name"] for o in offices],
-                        [o["name"] for o in offices])
-        _publish_outcome("failed", f"{CARD_NAME} — Slack thread failed",
-                         [str(head)[:300]], started_at=started_at)
-        return 1
-
-    for name, png, extra in boards:
-        comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
-        if term_flag:
-            comment += f"\n{term_flag}"
-        if png is None:
-            resp = smp.post_reply_text_only(f"{comment} — No data available",
-                                            today=slack_today,
-                                            thread_ts=thread_ts)
-        else:
-            resp = smp.post_reply_with_image(
-                Path(png), comment=comment, today=slack_today,
-                thread_ts=thread_ts, wait_visible=True,
-                file_name=f"{Path(png).stem}_{_slug(name)}.png")
-        if resp.get("ok"):
-            print(f"[wkd] ✅ posted {name}.", flush=True)
-        else:
-            print(f"[wkd] ⚠ Slack response for {name}: {resp}", flush=True)
+    for cfg, png, extra in boards:
+        name = cfg["name"]
+        if cfg.get("slack_token_file"):
+            # Cross-workspace office (e.g. trang/FRESH SUCCESS): posting with
+            # its bot token is not wired here yet — loud skip, counted missing.
+            print(f"[wkd] ⚠ {name}: cross-workspace posting "
+                  f"({cfg['slack_token_file']}) not wired — SKIPPED.",
+                  flush=True)
             if name not in failed:
                 failed.append(name)
+            continue
+        keep_chan, keep_label = smp.CHANNEL_ID, smp.HEADER_LABEL
+        try:
+            if cfg.get("channel_id"):
+                smp.CHANNEL_ID = cfg["channel_id"]
+                smp.HEADER_LABEL = cfg.get("header_label", "")
+            head = smp.ensure_metrics_thread(slack_today)
+            thread_ts = head.get("thread_ts")
+            if not thread_ts:
+                print(f"[wkd] ❌ {name}: couldn't open the {THREAD_NAME} "
+                      "thread in "
+                      f"{cfg.get('channel_name') or '#alphalete-sales'}: "
+                      f"{head}", flush=True)
+                if name not in failed:
+                    failed.append(name)
+                continue
+            comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
+            if term_flag:
+                comment += f"\n{term_flag}"
+            if png is None:
+                resp = smp.post_reply_text_only(
+                    f"{comment} — No data available",
+                    today=slack_today, thread_ts=thread_ts)
+            else:
+                resp = smp.post_reply_with_image(
+                    Path(png), comment=comment, today=slack_today,
+                    thread_ts=thread_ts, wait_visible=True,
+                    file_name=f"{Path(png).stem}_{_slug(name)}.png")
+            if resp.get("ok"):
+                print(f"[wkd] ✅ posted {name}.", flush=True)
+            else:
+                print(f"[wkd] ⚠ Slack response for {name}: {resp}",
+                      flush=True)
+                if name not in failed:
+                    failed.append(name)
+        finally:
+            smp.CHANNEL_ID, smp.HEADER_LABEL = keep_chan, keep_label
 
     _write_manifest(all_names, [o["name"] for o in offices], failed)
     _publish_outcome(
@@ -319,7 +368,11 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="pull + render to output/, NO Slack post (default)")
     ap.add_argument("--live", action="store_true",
-                    help="pull + render + POST into this week's thread")
+                    help="pull + render + POST into the Sunday Metrics "
+                         "thread(s)")
+    ap.add_argument("--preview", action="store_true",
+                    help="dry-run, then DM the rendered board(s) to Megan "
+                         "as Lucy (no channel post)")
     args = ap.parse_args(argv)
     if args.live and args.dry_run:
         # `lucy rerun` appends extra args AFTER the scheduler entry's
@@ -331,7 +384,8 @@ def main(argv=None) -> int:
     anchor = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
               if args.date else None)
     return run(anchor, only=args.office,
-               dry_run=(args.dry_run or not args.live))
+               dry_run=(args.dry_run or args.preview or not args.live),
+               preview_dm=(MEGAN if args.preview else None))
 
 
 if __name__ == "__main__":

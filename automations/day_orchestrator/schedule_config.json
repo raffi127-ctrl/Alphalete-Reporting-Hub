@@ -1974,7 +1974,7 @@
       "base_args": [
         "--live"
       ],
-      "_base_args_note": "LIVE: pulls the configured offices + posts one board each into this week's 'Weekly Knock Dispositions' thread in #alphalete-sales. Bare runs are dry-run by default (render to output/, no post). Scoped re-run: `--live --office \"Rafael Hidalgo\"` — the manifest's retry_args build exactly that.",
+      "_base_args_note": "LIVE: pulls the active offices + posts one board each into that office's EXISTING Sunday Metrics thread (Raf 2026-08-22 — no thread of its own; his = #alphalete-sales, enrolled offices = their metrics channels once offices.INCLUDE_ENROLLED flips). Bare runs are dry-run by default; `--preview` dry-runs then DMs Megan the boards as Lucy. Scoped re-run: `--live --office \"Rafael Hidalgo\"` — the manifest's retry_args build exactly that.",
       "cadence": {
         "weekdays": [
           6
