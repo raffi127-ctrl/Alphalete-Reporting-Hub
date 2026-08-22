@@ -70,6 +70,11 @@ INCIDENT_KEY = f"standalone-{REPORT_ID}"     # prefix is load-bearing (notify)
 # reads as one more metric in the morning stack.
 THREAD_NAME = "Metrics"                      # for log/manifest wording only
 MEGAN = "U04G5HJBGFN"                        # --preview DM recipient
+# NEW-report banner on the Metrics header, first two Sundays only (Megan
+# 2026-08-22: "a NEW notification in the header thread for just tomorrow
+# and next week"). 8/23 + 8/30 fire; from 9/6 the header is back to normal.
+NEW_BADGE_UNTIL = dt.date(2026, 8, 31)
+NEW_BADGE_LINE = ":new: 📋 *Weekly Knock Dispositions* — every Sunday"
 
 OUT_DIR = Path("output") / "weekly_knock_dispositions"
 # Own Chrome profile — the shared .browser_profile is first-come-first-served
@@ -162,6 +167,29 @@ def _publish_outcome(status: str, headline: str, details: list[str], *,
                               incident=INCIDENT_KEY, label=f"*{CARD_NAME}*")
     except Exception as e:  # noqa: BLE001 — Slack must not fail the run
         print(f"  (corrections post skipped: {e})", flush=True)
+
+
+def _tag_header_new(smp, thread_ts: str) -> None:
+    """Append the NEW-report line to the day's Metrics header (parent
+    message). Idempotent (skips if already tagged) and best-effort — every
+    header is posted by the same Lucy user token this report posts with, so
+    chat_update on it is allowed regardless of which report created it."""
+    try:
+        client = smp._client()
+        chan = smp.CHANNEL_ID
+        cur = client.conversations_replies(channel=chan, ts=thread_ts,
+                                           limit=1)
+        msgs = cur.get("messages") or []
+        text = (msgs[0].get("text") or "") if msgs else ""
+        if not text or "Weekly Knock Dispositions" in text:
+            return
+        client.chat_update(channel=chan, ts=thread_ts,
+                           text=text + "\n\n" + NEW_BADGE_LINE)
+        print("[wkd]   header tagged :new: (through "
+              f"{NEW_BADGE_UNTIL})", flush=True)
+    except Exception as e:  # noqa: BLE001 — a banner must never fail the run
+        print(f"[wkd]   ⚠ NEW banner skipped: {type(e).__name__}: "
+              f"{str(e)[:120]}", flush=True)
 
 
 def _print_board(office: str, rows: list[list[str]],
@@ -352,6 +380,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 if name not in failed:
                     failed.append(name)
                 continue
+            if slack_today <= NEW_BADGE_UNTIL:
+                _tag_header_new(smp, thread_ts)
             comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
             if term_flag:
                 comment += f"\n{term_flag}"
