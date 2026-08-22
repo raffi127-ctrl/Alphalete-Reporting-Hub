@@ -1,8 +1,8 @@
-"""Sync the per-manager ad tracker tabs in Alphalete Manager Boards.
+"""Sync the per-manager ad tracker tabs in Alphalete Recruiting Dashboard.
 
 WHY THIS EXISTS. The manager tabs used to be live IMPORTRANGE mirrors of each
 manager's personal tracker. IMPORTRANGE authorization is scoped to the
-DESTINATION workbook, so moving the tabs to Alphalete Manager Boards
+DESTINATION workbook, so moving the tabs to Alphalete Recruiting Dashboard
 (2026-08-22) silently disconnected all 21 — and no credential we hold can read
 the managers' personal spreadsheets directly (403 for every one; the original
 Allow-access grants were made by someone else entirely).
