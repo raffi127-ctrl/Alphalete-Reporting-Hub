@@ -537,12 +537,20 @@ def main(argv=None) -> int:
         pull_orderlog(monday, upto, src)
     reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
 
-    master = open_sheet(C.MASTER_ID)
+    try:
+        master = open_sheet(C.MASTER_ID)
+    except Exception as e:  # noqa: BLE001 — dashboard not shared to this
+        # machine's Sheets user yet: still update the 11 sales boards, skip
+        # the Focus Report sections loudly.
+        master = None
+        log(f"!! cannot open the Captainship Dashboard ({type(e).__name__}) "
+            "— Focus Report sections SKIPPED; share the dashboard to this "
+            "machine's Sheets account to enable them")
     failures = []
     for label, (export_name, board_id) in C.OWNERS.items():
         rep_days = reps_all.get(export_name, {})
         try:
-            if not args.skip_focus:
+            if not args.skip_focus and master is not None:
                 ensure_week_block(master, label, monday, args.write)
                 update_focus(master, label, rep_days,
                              agg_all.get(export_name, {}), all_owner_day,
@@ -554,7 +562,7 @@ def main(argv=None) -> int:
             failures.append(f"{label}: {type(e).__name__}: {e}")
             log(f"  !! {label} FAILED: {type(e).__name__}: {e}")
         time.sleep(2 if args.write else 0)
-    if not args.skip_recruiting:
+    if not args.skip_recruiting and master is not None:
         try:
             update_recruiting(master, monday, args.write)
         except Exception as e:  # noqa: BLE001
