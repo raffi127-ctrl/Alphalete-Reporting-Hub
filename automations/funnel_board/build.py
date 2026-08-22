@@ -398,8 +398,9 @@ GCOL = {k: a1(i) for k, i in GOAL_AT.items()}
 meta = S.get(API).json()
 SID = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
 # create any of our five tabs that are missing, appended at the far right
-_want = ["Recruiting Dashboard", "Focus Report", "Manager Matrix", "Daily Log", "Goals",
-         CAP_BOARD_TITLE, CAP_TREND_TITLE]
+# The captainship twins are gone: every view is group-switchable in place
+# (F1/E1 pickers). One board, one trend, one matrix.
+_want = ["Recruiting Dashboard", "Focus Report", "Manager Matrix", "Daily Log", "Goals"]
 _missing = [t for t in _want if t not in SID]
 if _missing:
     _res = batch([{"addSheet": {"properties": {
@@ -425,11 +426,10 @@ if "Manager Matrix" not in SID:
     SID["Manager Matrix"] = res["replies"][0]["addSheet"]["properties"]["sheetId"]
 BOARD, TREND, LOG, GOALS = SID["Recruiting Dashboard"], SID["Focus Report"], SID["Daily Log"], SID["Goals"]
 MATRIX = SID["Manager Matrix"]
-CAPBOARD, CAPTREND = SID[CAP_BOARD_TITLE], SID[CAP_TREND_TITLE]
 
 # A Trend tab is 2 + 8 columns per week and keeps growing; a freshly created
 # sheet only has 60, and writing past the grid is a 400, not a resize.
-for _t in (TREND, CAPTREND):
+for _t in (TREND,):
     batch([{"updateSheetProperties": {"properties": {
         "sheetId": _t,
         "gridProperties": {"columnCount": max(60, 2 + 8 * len(WEEK_ENDS) + 4)}},
@@ -437,13 +437,13 @@ for _t in (TREND, CAPTREND):
 
 # wipe the illustrative data
 batch([{"updateCells": {"range": {"sheetId": s}, "fields": "*"} }
-       for s in (BOARD, TREND, LOG, GOALS, MATRIX, CAPBOARD, CAPTREND)]
+       for s in (BOARD, TREND, LOG, GOALS, MATRIX)]
       + [{"deleteConditionalFormatRule": {"sheetId": s, "index": 0}}
          for s in (BOARD, TREND) for _ in range(0)])
 # drop every existing CF rule + column group
 info = S.get(API, params={"fields": "sheets(properties.sheetId,conditionalFormats,columnGroups,bandedRanges)"}).json()
 clear = []
-OURS = {BOARD, TREND, MATRIX, LOG, GOALS, CAPBOARD, CAPTREND}
+OURS = {BOARD, TREND, MATRIX, LOG, GOALS}
 for s in info["sheets"]:
     sid = s["properties"]["sheetId"]
     if sid not in OURS:
@@ -570,19 +570,24 @@ MX_DEFS = [
 MX_H = "$A$100:$G$%d" % (99 + len(MX_DEFS))
 MX_M0 = 4                                        # first manager row
 MXN = len(WEEK_ENDS) + 2                         # manager col + weeks + ALL WEEKS
-MX_TOT = MX_M0 + len(ORG_ROSTER)
+MX_MAXR = 17                                     # the longer roster
+MX_TOT = MX_M0 + MX_MAXR
 
 
 def mx(mgr_ref, week_ref):
     def sumifs(col):
         s = ("SUMIFS(INDEX('Daily Log'!$E:$Q,0,MATCH(VLOOKUP($B$1,%s,%d,FALSE),"
              "'Daily Log'!$E$1:$Q$1,0))" % (MX_H, col))
-        # SUMIFS needs at least one criterion pair, so the office-total / all-weeks
-        # cell gets an always-true "manager is not blank" rather than none at all.
-        s += ",'Daily Log'!$C:$C,%s" % (mgr_ref or '"<>"')
+        # The TOTAL row passes the whole name column ($A$4:$A$20): SUMIFS with a
+        # range criterion returns an array, and the SUM around it collapses it —
+        # so the total is the sum of the ROSTER ON SCREEN. The old '"<>"'
+        # fallback summed every manager in the log, which silently included all
+        # eleven captainship offices in the org total the moment the log grew
+        # to 28 (2026-08-21).
+        s += ",'Daily Log'!$C:$C,%s" % (mgr_ref or '$A$%d:$A$%d' % (MX_M0, MX_M0 + 16))
         if week_ref:
             s += ",'Daily Log'!$B:$B,%s" % week_ref
-        return s + ")"
+        return "SUM(" + s + "))"
     return ('=IFERROR(LET(n,' + sumifs(2) + ',d,' + sumifs(3) +
             ',m,VLOOKUP($B$1,' + MX_H + ',4,FALSE),'
             'IFS(m="pct",IF(d=0,"",TEXT(n/d,"0%")),'
@@ -593,14 +598,33 @@ def mx(mgr_ref, week_ref):
 matrix = [["Manager Matrix", MX_DEFS[6][0]],
           ["Every manager × every week. Pick the metric in B1." + NOTE],
           ["MANAGER"] + [w.strftime("%m/%d/%Y") for w in reversed(WEEK_ENDS)] + ["ALL WEEKS"]]
-for i, m in enumerate(ORG_ROSTER):
+_MX_SPILL = ('=IF($E$1="Captainship",'
+             'FILTER($AA$100:$AA$140,$AA$100:$AA$140<>""),'
+             'FILTER($Z$100:$Z$140,$Z$100:$Z$140<>""))')
+for i in range(MX_MAXR):
     r = MX_M0 + i
-    matrix.append([m] + [mx("$A%d" % r, "%s$3" % a1(1 + wi)) for wi in range(len(WEEK_ENDS))]
-                  + [mx("$A%d" % r, None)])
-matrix.append(["OFFICE TOTAL"]
+    matrix.append([_MX_SPILL if i == 0 else ""]
+                  + ['=IF($A%d="","",%s)' % (r, mx("$A%d" % r, "%s$3" % a1(1 + wi))[1:])
+                     for wi in range(len(WEEK_ENDS))]
+                  + ['=IF($A%d="","",%s)' % (r, mx("$A%d" % r, None)[1:])])
+matrix.append(['=IF($E$1="Captainship","CAPTAINSHIP TOTAL","OFFICE TOTAL")']
               + [mx(None, "%s$3" % a1(1 + wi)) for wi in range(len(WEEK_ENDS))]
               + [mx(None, None)])
 values.append({"range": "'Manager Matrix'!A1", "values": matrix})
+# both rosters for the column-A spill, parked right of the definition block
+values.append({"range": "'Manager Matrix'!Z100", "values":
+               [[o if i < len(ORG_NAMES) else "",
+                 CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
+                for i, o in enumerate(
+                    ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
+try:
+    _mg = S.get(API + "/values/'Manager Matrix'!E1").json().get("values", [[""]])
+    _mgrp = (_mg[0][0] if _mg and _mg[0] else "").strip()
+except Exception:  # noqa: BLE001
+    _mgrp = ""
+if _mgrp not in ("Org", "Captainship"):
+    _mgrp = "Org"
+values.append({"range": "'Manager Matrix'!D1", "values": [["GROUP:", _mgrp]]})
 MX_GRADE = {"Sent to Call List": ("sent", "count"),
             "Removal %": ("rmvpct", "rate_low"),
             "Retention to Call List": ("ret2cl", "rate"), "1st Show %": ("sh1pct", "rate"),
@@ -661,13 +685,18 @@ FC, FB = "userEnteredFormat.horizontalAlignment", "userEnteredFormat.textFormat.
 # Whichever rows carry the newest Report Date are the current picture, so the
 # box takes MAX(date) per manager and sums Daily Budget on that date only. No
 # status filter — every ad on the latest report date counts.
-def budget(sid, title, roster, row0):
-    first, last = row0 + 2, row0 + 1 + len(roster)
-    day = ("=IFERROR(LET(d,INDIRECT(\"'\"&$A%d&\"'!$B$2:$B\"),"
+def budget(sid, title, nrows, row0):
+    first, last = row0 + 2, row0 + 1 + nrows
+    day = ("=IF($A%d=\"\",\"\",IFERROR(LET(d,INDIRECT(\"'\"&$A%d&\"'!$B$2:$B\"),"
            "b,INDIRECT(\"'\"&$A%d&\"'!$S$2:$S\"),"
-           "IF(MAX(d)=0,0,SUMIF(d,MAX(d),b))),0)")
-    rows = [[m, day % (r, r), "=$B%d*7" % r, "=$B%d*DAY(EOMONTH(TODAY(),0))" % r]
-            for r, m in enumerate(roster, start=first)]
+           "IF(MAX(d)=0,0,SUMIF(d,MAX(d),b))),0))")
+    # names mirror the board's column A, so the box follows the GROUP picker;
+    # blank slots stay blank instead of rendering $0 rows.
+    rows = [["=IF($A%d=\"\",\"\",$A%d)" % (M0 + i, M0 + i),
+             day % (r, r, r),
+             "=IF($A%d=\"\",\"\",$B%d*7)" % (r, r),
+             "=IF($A%d=\"\",\"\",$B%d*DAY(EOMONTH(TODAY(),0)))" % (r, r)]
+            for i, r in enumerate(range(first, first + nrows))]
     LEGEND_VALUES.append({"range": "'%s'!A%d" % (title, row0), "values":
                           [["AD BUDGET — latest report date on each manager's tracker tab"],
                            ["MANAGER", "DAILY", "WEEKLY", "MONTHLY"]]
@@ -764,7 +793,14 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     reads zero and starts filling itself in the hour their first pull lands.
     """
     global F                       # the blocks below build it with `F += [...]`
-    M1 = M0 + len(roster) - 1
+    # GROUP-SWITCHABLE (Carlos, 2026-08-22): one tab serves both rosters. F1
+    # picks Org/Captainship; column A is a FILTER spill off hidden per-tab
+    # roster lists (AA/AB from row 100), and every figure was already keyed on
+    # the name in column A, so the whole grid follows the picker. Rows are laid
+    # out for the longer roster; blank-name rows render empty via guards and
+    # contribute nothing to the SUBTOTAL totals.
+    MAXR = max(len(ORG_NAMES), len(CAPTAINSHIP_NAMES))
+    M1 = M0 + MAXR - 1
     TOTR = M1 + 1
     # Hidden ingredient columns for the TOTAL row's ratios. SUMIFS cannot take a
     # range of names as a criterion — it returns one sum, not an array — so the
@@ -795,11 +831,18 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
 
 
 
-    for mi, m in enumerate(roster):
+    _SPILL = ('=IF($F$1="Captainship",'
+              'FILTER($AB$100:$AB$140,$AB$100:$AB$140<>""),'
+              'FILTER($AA$100:$AA$140,$AA$100:$AA$140<>""))')
+    for mi in range(MAXR):
         r = M0 + mi
-        board.append([m] + [cell(k, key, r) for (_, k, key) in BCOLS])
+        namecell = _SPILL if mi == 0 else ""
+        board.append([namecell]
+                     + ['=IF($A%d="","",%s)' % (r, cell(k, key, r)[1:])
+                        for (_, k, key) in BCOLS])
 
-    trow = [total_label]
+    trow = ['=IF($F$1="Captainship","CAPTAINSHIP TOTAL","OFFICE TOTAL")'
+            if total_label else total_label]
     for i, (h, kind, key) in enumerate(BCOLS):
         c = a1(B0 + i)
         if kind == "pctd":
@@ -817,6 +860,33 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     values.append({"range": "'%s'!A1" % title, "values": board})
     values.append({"range": "'%s'!A100" % title,
                    "values": [[w.strftime("%m/%d/%Y")] for w in reversed(WEEK_ENDS)]})
+    # both rosters, parked in hidden rows far right of the data (AA/AB); the
+    # column-A spill FILTERs whichever one F1 names.
+    values.append({"range": "'%s'!AA100" % title, "values":
+                   [[o if i < len(ORG_NAMES) else "",
+                     CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
+                    for i, o in enumerate(
+                        ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
+    # The GROUP picker is the USER'S cell: a rebuild must never reset it, or
+    # the hourly pass flips whoever is looking at Captainship back to Org.
+    # Read what is there and write the same thing back (default Org only when
+    # genuinely empty), same philosophy as the typed-Goals preserve.
+    try:
+        _g = S.get(API + "/values/'%s'!F1" % title).json().get("values", [[""]])
+        _grp = (_g[0][0] if _g and _g[0] else "").strip()
+    except Exception:  # noqa: BLE001 — an unreadable picker must not kill the build
+        _grp = ""
+    if _grp not in ("Org", "Captainship"):
+        _grp = "Org"
+    values.append({"range": "'%s'!E1" % title, "values": [["GROUP:", _grp]]})
+    F.append({"setDataValidation": {"range": gr(sid, 0, 1, 5, 6), "rule": {
+        "condition": {"type": "ONE_OF_LIST",
+                      "values": [{"userEnteredValue": "Org"},
+                                 {"userEnteredValue": "Captainship"}]},
+        "showCustomUi": True, "strict": True}}})
+    F.append(fmt(sid, 0, 1, 4, 6, {"userEnteredFormat": {
+        "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},
+        "userEnteredFormat(textFormat,backgroundColor)"))
     values.append({"range": "'%s'!B%d" % (title, PACE_ROW), "values": [[
         ('=IFERROR(VLOOKUP(%s$%d,$A$%d:$H$%d,$L$1+1,FALSE),1)' % (a1(B0 + i), HDR, CURVE0, CURVE0 + 20)
          if c[0] in PACE_KEY else "") for i, c in enumerate(BCOLS)]]})
@@ -828,20 +898,21 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     # grew to 19 columns, and silently blanked it on every build.
 
     mirror = []
-    for mi, m in enumerate(roster):
+    for mi in range(MAXR):
         r = M0 + mi
-        mirror.append([('=IFERROR(VLOOKUP($A%d,Goals!$B:$U,%d,FALSE),0)'
-                        % (r, GOAL_AT[MIRROR_KEY[c[0]]]))
+        mirror.append([('=IF($A%d="","",IFERROR(VLOOKUP($A%d,Goals!$B:$U,%d,FALSE),0))'
+                        % (r, r, GOAL_AT[MIRROR_KEY[c[0]]]))
                        if c[0] in MIRROR_KEY else "" for c in BCOLS])
     values.append({"range": "'%s'!%s%d" % (title, a1(MIRROR0), M0), "values": mirror})
 
     helper = []
-    for mi, m in enumerate(roster):
+    for mi in range(MAXR):
         r = M0 + mi
         row = []
         for i in PCTD:
             n, d = BCOLS[i][2]
-            row += [cell("n", n, r), cell("n", d, r)]
+            row += ['=IF($A%d="","",%s)' % (r, cell("n", n, r)[1:]),
+                    '=IF($A%d="","",%s)' % (r, cell("n", d, r)[1:])]
         helper.append(row)
     values.append({"range": "'%s'!%s%d" % (title, a1(HELP0), M0), "values": helper})
 
@@ -970,8 +1041,8 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
 
     # the ad budget box, then the colour key underneath it
     if ad_box:
-        budget(sid, title, roster, TOTR + 3)
-        legend(sid, title, TOTR + 3 + 2 + len(roster) + 3)
+        budget(sid, title, MAXR, TOTR + 3)
+        legend(sid, title, TOTR + 3 + 2 + MAXR + 3)
     else:
         legend(sid, title, TOTR + 3)
     F.append(fmt(sid, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, CENTER, FC))
@@ -990,7 +1061,14 @@ def build_trend(sid, title, heading, roster):
 
     trend = [[None] * ncols for _ in range(THDR + len(METRICS))]
     trend[0][0] = heading
-    trend[0][1] = roster[0]
+    # keep whoever is currently picked — an hourly rebuild that resets B1 to
+    # the first org name would silently flip a captainship view mid-morning.
+    try:
+        _b1 = S.get(API + "/values/'%s'!B1" % title).json().get("values", [[""]])
+        _cur = (_b1[0][0] if _b1 and _b1[0] else "").strip()
+    except Exception:  # noqa: BLE001
+        _cur = ""
+    trend[0][1] = _cur if _cur in set(ORG_NAMES) | set(CAPTAINSHIP_NAMES) else roster[0]
     trend[1][0] = "Click + above a week to open Mon–Sun" + NOTE
     trend[THDR - 1][0] = "METRIC"
     trend[THDR - 1][1] = "GOAL"
@@ -1050,7 +1128,32 @@ def build_trend(sid, title, heading, roster):
                 trend[r - 1][b + di] = f
 
     values.append({"range": "'%s'!A1" % title, "values": trend})
-    values.append({"range": "'%s'!A100" % title, "values": [[m] for m in roster]})
+    # A100 is the picker's source list; it now FILTERs whichever roster the
+    # preserved GROUP cell (E1) names, from the two hidden lists in E100/F100.
+    values.append({"range": "'%s'!A100" % title, "values": [[
+        '=IF($E$1="Captainship",FILTER($E$100:$E$140,$E$100:$E$140<>""),'
+        'FILTER($D$100:$D$140,$D$100:$D$140<>""))']]})
+    values.append({"range": "'%s'!D100" % title, "values":
+                   [[o if i < len(ORG_NAMES) else "",
+                     CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
+                    for i, o in enumerate(
+                        ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
+    try:
+        _g = S.get(API + "/values/'%s'!E1" % title).json().get("values", [[""]])
+        _grp = (_g[0][0] if _g and _g[0] else "").strip()
+    except Exception:  # noqa: BLE001
+        _grp = ""
+    if _grp not in ("Org", "Captainship"):
+        _grp = "Org"
+    values.append({"range": "'%s'!D1" % title, "values": [["GROUP:", _grp]]})
+    F.append({"setDataValidation": {"range": gr(sid, 0, 1, 4, 5), "rule": {
+        "condition": {"type": "ONE_OF_LIST",
+                      "values": [{"userEnteredValue": "Org"},
+                                 {"userEnteredValue": "Captainship"}]},
+        "showCustomUi": True, "strict": True}}})
+    F.append(fmt(sid, 0, 1, 3, 5, {"userEnteredFormat": {
+        "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},
+        "userEnteredFormat(textFormat,backgroundColor)"))
 
     # ---- Trend formatting
     F += [
@@ -1171,7 +1274,8 @@ def build_trend(sid, title, heading, roster):
         {"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
             "condition": {"type": "ONE_OF_RANGE",
                           "values": [{"userEnteredValue": "='%s'!$A$100:$A$%d"
-                                      % (title, 99 + len(roster))}]},
+                                      % (title, 99 + max(len(ORG_NAMES),
+                                                         len(CAPTAINSHIP_NAMES)))}]},
             "showCustomUi": True, "strict": True}}},
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
                                                  "startIndex": 97, "endIndex": 140},
@@ -1201,9 +1305,6 @@ def build_trend(sid, title, heading, roster):
 # order is only about what a reader sees in the request log.
 build_board(BOARD, "Recruiting Dashboard", "Recruiting Dashboard", ORG_ROSTER, "OFFICE TOTAL")
 build_trend(TREND, "Focus Report", "Focus Report", ORG_ROSTER)
-build_board(CAPBOARD, CAP_BOARD_TITLE, "Captainship Funnel Board", CAP_ROSTER,
-            "CAPTAINSHIP TOTAL")
-build_trend(CAPTREND, CAP_TREND_TITLE, "Captainship Focus Report", CAP_ROSTER)
 
 
 call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": values})
@@ -1276,6 +1377,11 @@ F += [
         "condition": {"type": "ONE_OF_RANGE",
                       "values": [{"userEnteredValue": "='Manager Matrix'!$A$100:$A$%d"
                                   % (99 + len(MX_DEFS))}]},
+        "showCustomUi": True, "strict": True}}},
+    {"setDataValidation": {"range": gr(MATRIX, 0, 1, 4, 5), "rule": {
+        "condition": {"type": "ONE_OF_LIST",
+                      "values": [{"userEnteredValue": "Org"},
+                                 {"userEnteredValue": "Captainship"}]},
         "showCustomUi": True, "strict": True}}},
 ]
 
@@ -1437,7 +1543,7 @@ print("formatting applied")
 # gets looked at daily, and Sheets draws a collapsed group's toggle flush against
 # the left edge of the following column, which reads as if it belongs to the week
 # before. Opening it by default sidesteps the ambiguity.
-for _tsid in (TREND, CAPTREND):
+for _tsid in (TREND,):
     batch([{"updateDimensionGroup": {"dimensionGroup": {
         "range": {"sheetId": _tsid, "dimension": "COLUMNS",
                   "startIndex": TC0 + wi * WW + 1, "endIndex": TC0 + wi * WW + 8},
