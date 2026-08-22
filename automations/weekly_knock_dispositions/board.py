@@ -162,21 +162,27 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             rows.append([_display_name(rep), "", "", str(n_apps),
                          "", "", "", "", ""] + _dispo_cells(None))
 
+    # Totals row: the Total columns SUM; the Avg columns stay AVERAGES —
+    # per rep, not office-level (Megan 2026-08-22: 505.83 in an "Avg / Day"
+    # cell reads as a sum). Avg/Day = office talk-tos ÷ 6 ÷ reps; Avg Gap/Day
+    # averages only reps with Time Tracker data; per-App = office talk-tos ÷
+    # office apps (the office's real talk-tos-per-app ratio).
     tot_talk = sum(int(r.get(K_TALK_TO) or 0) for r in ov_rows)
     tot_apps = (sum(apps.values()) if apps else 0)
-    tot_gaps = sum(int(r.get(K_GAP_MIN) or 0) for r in ov_rows
-                   if r.get(K_GAP_MIN) is not None)
-    avg_day_tot = tot_talk / DAYS
+    gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
+                if r.get(K_GAP_MIN) is not None]
+    tot_gaps = sum(gap_reps)
+    n_reps = len(ov_rows)
     dispo_tots = [
         sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
     rows.append([
         TOTALS_LABEL,
         str(tot_talk),
-        _num(avg_day_tot),
+        (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
         (_num(tot_talk / tot_apps) if tot_apps else ""),
         "", "",
-        _hm(round(tot_gaps / DAYS)),
+        (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
     ] + ["" if not t else str(t) for t in dispo_tots])
     return rows
