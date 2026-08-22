@@ -40,6 +40,10 @@ _HUB_CARD = {
     # Raf's local office — folded onto the shared card with the other offices
     # (Megan 2026-07-16); it just still runs its own older module.
     "daily_metrics": "office-metrics",
+    # Sunday Weekly Knock Dispositions board — NO card of its own (Megan
+    # 2026-08-22): it posts into the same per-office Metrics threads, so its
+    # runs land on the same shared card.
+    "weekly_knock_dispositions": "office-metrics",
     "fiber_activations": "fiber-activations",
     "captainship_activations": "captainship-activations",
     "captainship_churn": "captainship-new-internet-wireless-churn",

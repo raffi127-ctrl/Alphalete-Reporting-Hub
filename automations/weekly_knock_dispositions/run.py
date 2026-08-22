@@ -39,7 +39,11 @@ from automations.weekly_knock_dispositions import pull as P
 from automations.weekly_knock_dispositions.offices import enabled
 
 REPORT_ID = "weekly_knock_dispositions"
-CARD_ID = "weekly-knock-dispositions"
+# NO card of its own (Megan 2026-08-22): the Sunday board reports onto the
+# shared Metrics card — same card daily_metrics + the office runner publish
+# to. The curated map in day_orchestrator/hub_publish.py points this
+# report_id there too, so the orchestrator pill can't auto-create a dupe.
+CARD_ID = "office-metrics"
 CARD_NAME = "Weekly Knock Dispositions"
 ESTIMATED_MINUTES = 15   # 1 office ≈ 6-8m (6 gap calls) + 1 Tableau crosstab
 
@@ -265,14 +269,22 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             for cfg, png, extra in boards:
                 if png is None:
                     continue
-                resp = smp.dm_user_with_file(
-                    Path(png), user=preview_dm,
-                    comment=f"📋 PREVIEW — {CARD_NAME} — {cfg['name']} — "
-                            f"{span}{extra} (dry-run; nothing posted to the "
-                            "channel)",
-                    file_name=f"{Path(png).stem}_{_slug(cfg['name'])}.png")
-                print(f"[wkd]   preview DM {cfg['name']}: "
-                      f"{'✅' if resp.get('ok') else resp}", flush=True)
+                try:
+                    # as_bot=False: Lucy 1 has no BOT token file — its xoxp
+                    # USER token IS Lucy, so the DM still arrives from Lucy
+                    # (the bot-token path crashed the first preview,
+                    # 2026-08-22). A DM problem never fails the run.
+                    resp = smp.dm_user_with_file(
+                        Path(png), user=preview_dm, as_bot=False,
+                        comment=f"📋 PREVIEW — {CARD_NAME} — {cfg['name']} — "
+                                f"{span}{extra} (dry-run; nothing posted to "
+                                "the channel)",
+                        file_name=f"{Path(png).stem}_{_slug(cfg['name'])}.png")
+                    print(f"[wkd]   preview DM {cfg['name']}: "
+                          f"{'✅' if resp.get('ok') else resp}", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[wkd]   ⚠ preview DM {cfg['name']} failed: "
+                          f"{type(e).__name__}: {str(e)[:160]}", flush=True)
         print(f"[wkd] {'⚠' if failed else '✅'} finished (dry-run)"
               + (f" — failed: {', '.join(failed)}" if failed else ""),
               flush=True)

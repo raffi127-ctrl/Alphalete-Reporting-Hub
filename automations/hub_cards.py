@@ -122,7 +122,8 @@ def _office_metrics_card() -> dict:
             f"thread: {channels}. Every metric slices a shared org-wide view and "
             "filters to the office's owner, so adding an office is config only — "
             "no new Tableau views. Each office runs + posts independently; use "
-            "the per-office buttons to re-run just one."),
+            "the per-office buttons to re-run just one. Sundays add the "
+            "Weekly Knock Dispositions board to the same threads."),
         "breakdown": (
             "WHAT IT DOES\n"
             f"For each office below, runs all the daily metrics and posts them "
@@ -141,6 +142,15 @@ def _office_metrics_card() -> dict:
             "• 🆕 Rep Activations\n"
             "• 💳 New Internet ABP %\n"
             "• 📸 Tableau Metrics (screenshot of the ATT TRACKER Metrics view, scoped to the office)\n\n"
+            "SUNDAYS ONLY (extra board, same thread)\n"
+            "• 📋 Weekly Knock Dispositions — per-rep Mon–Sat talk-to "
+            "productivity + total apps (Raf's ask, 2026-08-22): talk-to "
+            "totals/averages, apps from the Product Sales Summary, first/last "
+            "knock, gap time, office totals. Runs as its own scheduler entry "
+            "(weekly_knock_dispositions) but reports onto THIS card — no card "
+            "of its own. Raf's office now; offices enrolled for Knocks/Time "
+            "Gaps join when the rollout flag flips "
+            "(weekly_knock_dispositions/offices.py INCLUDE_ENROLLED).\n\n"
             "WHEN IT RUNS\n"
             "Daily in the 4am batch, each office in turn."),
         "assignees": ["Lucy 1"],
