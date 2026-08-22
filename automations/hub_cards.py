@@ -365,7 +365,7 @@ def _tableau_trackers_card() -> dict:
             "The card shows a per-channel checklist after the run. Use "
             "'Retry failed only' to re-post just the channels that missed, or "
             "the per-channel buttons under More actions."),
-        "assignees": ["Lucy 1"],
+        "assignees": ["Lucy 3"],  # runner since 2026-08-22 (schedule_config machine field is the source of truth)
         "schedule": {
             "frequency": "daily",
             "time": "4 AM flow (when data's ready)",
@@ -463,7 +463,7 @@ def _tableau_box_card() -> dict:
             "Per-channel checklist, same as the main tracker card. Re-running "
             "is safe — a channel that already has today's Box image is left "
             "alone."),
-        "assignees": ["Lucy 1"],
+        "assignees": ["Lucy 3"],  # runner since 2026-08-22 (schedule_config machine field is the source of truth)
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",

@@ -1351,6 +1351,46 @@ for _r in AUTOMATED_REPORTS:
     if str(_r.get("id")) in _library_overrides:
         _r["assignees"] = list(_library_overrides[str(_r["id"])])
 
+
+def _machine_card_assignments() -> dict:
+    """{card id: machine} from schedule_config entries with an explicit
+    'machine'. The card follows the RUNNER (Megan 2026-08-22: 'cards/pills
+    on the correct profile of which lucy is running them') — one source of
+    truth, so migrating a report between Lucys is ONLY the schedule_config
+    edit and the Hub re-profiles it by itself. Resolution is offline
+    (curated map + alias + slug against cards already in memory) — no
+    library-sheet reads at boot."""
+    out = {}
+    try:
+        cfg = json.loads((WORKSPACE / "automations" / "day_orchestrator"
+                          / "schedule_config.json").read_text())
+        from automations.day_orchestrator import hub_coverage as _cov
+        curated = _cov._curated_map()
+        present = {str(r.get("id")) for r in AUTOMATED_REPORTS}
+        for rid, entry in (cfg.get("reports") or {}).items():
+            machine = (entry or {}).get("machine")
+            if not machine:
+                continue
+            for cand in (curated.get(rid), _cov.CURATED_ALIAS.get(rid),
+                         _cov.slug(rid)):
+                if cand and cand in present:
+                    out[cand] = machine
+                    break
+    except Exception:
+        pass
+    return out
+
+
+# Only cards already living on a Lucy follow the runner — human / Office
+# Operations assignments are never stolen by a schedule entry.
+_machine_assign = _machine_card_assignments()
+for _r in AUTOMATED_REPORTS:
+    _m = _machine_assign.get(str(_r.get("id")))
+    if _m and _r.get("assignees") \
+            and all(str(a).startswith("Lucy") for a in _r["assignees"]) \
+            and _r["assignees"] != [_m]:
+        _r["assignees"] = [_m]
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
