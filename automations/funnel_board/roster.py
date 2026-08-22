@@ -98,6 +98,6 @@ CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
 AD_TABS = ["Atef Choudhury", "Jackie LeRoy", "Jamis Garay",
            "Justin Wood", "Noah Dubale"]
 
-BOARD_TITLE = "Captainship Board"
-TREND_TITLE = "Captainship Manager Trend"
+BOARD_TITLE = "Captainship Recruiting Dashboard"
+TREND_TITLE = "Captainship Focus Report"
 AD_VIEW_TITLE = "Captain Ship Ad View"

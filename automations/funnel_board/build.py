@@ -308,21 +308,34 @@ elif _BAK.exists():
     PRIOR = json.loads(_BAK.read_text(encoding="utf-8"))
     print("Goals tab was empty — restored typed goals from %s" % _BAK.name)
 
-# Goals stays ONE tab, but in two sections (Carlos, 2026-08-21): the org above,
-# captainship-only below a divider. Carlos and Atef are in both rosters and get
-# exactly one row, in the org section — two goals rows for one person is how a
-# board ends up grading against the wrong one. Every lookup into Goals is a
-# VLOOKUP on the name column, so row order is cosmetic and the divider row is
-# invisible to them (PRIOR also skips it: no numeric cells).
-_GOALS_ORDER = ([m for m in MANAGERS if m in ORG_NAMES]
-                + [None]
-                + [m for m in MANAGERS if m not in ORG_NAMES])
+# Goals stays ONE tab, in two boxes (Carlos, 2026-08-22): the ORG box at the
+# top, and a separate CAPTAINSHIP box that starts at row 32 — captainship-only
+# people never sit in the org grid. Carlos and Atef are in both rosters and get
+# exactly one row, in the org box: two goals rows for one person is how a board
+# ends up grading against the wrong one. Every lookup into Goals is a VLOOKUP on
+# the name column, so layout is cosmetic to the boards; PRIOR read-back skips
+# the spacer/title rows (no numeric cells) and harmlessly records the repeated
+# header row. The legend anchors off len(goal_rows), so it follows the second
+# box down automatically.
+_ORG_PART = [m for m in MANAGERS if m in ORG_NAMES]
+_CAP_PART = [m for m in MANAGERS if m not in ORG_NAMES]
+_CAP_HEADER_AT = 32            # row where the captainship box header lands
+_GOALS_ORDER = (_ORG_PART
+                + ["__BLANK__"] * (_CAP_HEADER_AT - 3 - len(_ORG_PART))
+                + ["__TITLE__", "__HEADER__"]
+                + _CAP_PART)
 
 goal_rows = []
 for m in _GOALS_ORDER:
     r = len(goal_rows) + 2
-    if m is None:
-        goal_rows.append(["", "— CAPTAINSHIP (oversight, not in org) —"] + [""] * 20)
+    if m == "__BLANK__":
+        goal_rows.append([""] * len(GOALS_HEAD))
+        continue
+    if m == "__TITLE__":
+        goal_rows.append(["", "CAPTAINSHIP — oversight, not in the org"] + [""] * (len(GOALS_HEAD) - 2))
+        continue
+    if m == "__HEADER__":
+        goal_rows.append(list(GOALS_HEAD))
         continue
 
     def _keep(header, default):
@@ -385,7 +398,7 @@ GCOL = {k: a1(i) for k, i in GOAL_AT.items()}
 meta = S.get(API).json()
 SID = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
 # create any of our five tabs that are missing, appended at the far right
-_want = ["Manager Board", "Manager Trend", "Manager Matrix", "Daily Log", "Goals",
+_want = ["Recruiting Dashboard", "Focus Report", "Manager Matrix", "Daily Log", "Goals",
          CAP_BOARD_TITLE, CAP_TREND_TITLE]
 _missing = [t for t in _want if t not in SID]
 if _missing:
@@ -410,7 +423,7 @@ if "Manager Matrix" not in SID:
         "title": "Manager Matrix", "index": len(meta["sheets"]),
         "gridProperties": {"rowCount": 200, "columnCount": 60}}}}])
     SID["Manager Matrix"] = res["replies"][0]["addSheet"]["properties"]["sheetId"]
-BOARD, TREND, LOG, GOALS = SID["Manager Board"], SID["Manager Trend"], SID["Daily Log"], SID["Goals"]
+BOARD, TREND, LOG, GOALS = SID["Recruiting Dashboard"], SID["Focus Report"], SID["Daily Log"], SID["Goals"]
 MATRIX = SID["Manager Matrix"]
 CAPBOARD, CAPTREND = SID[CAP_BOARD_TITLE], SID[CAP_TREND_TITLE]
 
@@ -1186,11 +1199,11 @@ def build_trend(sid, title, heading, roster):
 # ---- the two cuts of the same data.
 # Org first so its formatting lands first; they touch different tabs, so the
 # order is only about what a reader sees in the request log.
-build_board(BOARD, "Manager Board", "Manager Funnel Board", ORG_ROSTER, "OFFICE TOTAL")
-build_trend(TREND, "Manager Trend", "Manager Trend", ORG_ROSTER)
+build_board(BOARD, "Recruiting Dashboard", "Recruiting Dashboard", ORG_ROSTER, "OFFICE TOTAL")
+build_trend(TREND, "Focus Report", "Focus Report", ORG_ROSTER)
 build_board(CAPBOARD, CAP_BOARD_TITLE, "Captainship Funnel Board", CAP_ROSTER,
             "CAPTAINSHIP TOTAL")
-build_trend(CAPTREND, CAP_TREND_TITLE, "Captainship Manager Trend", CAP_ROSTER)
+build_trend(CAPTREND, CAP_TREND_TITLE, "Captainship Focus Report", CAP_ROSTER)
 
 
 call("/values:batchUpdate", {"valueInputOption": "USER_ENTERED", "data": values})
@@ -1306,7 +1319,7 @@ F += [
         "userEnteredFormat(horizontalAlignment,textFormat)"),
 ]
 # ---- mark the Goals tab so it is obvious which cells actually drive a colour
-NG = len(MANAGERS) + 1
+NG = len(goal_rows) + 1
 for k in GOALS_AMBER:                                   # amber = edit me, I grade
     ci = GOAL_AT[k]
     F.append(fmt(GOALS, 1, NG, ci, ci + 1, {"userEnteredFormat": {
