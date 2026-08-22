@@ -35,6 +35,14 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.office_onboarding import schema as S, store  # noqa: E402
 
+# Drag-and-drop posting order (same component the ICD request form + tracker
+# sign-up use). Fall back to checkbox order if the deploy doesn't have it.
+try:
+    from streamlit_sortables import sort_items
+    _HAS_SORT = True
+except Exception:                                    # noqa: BLE001
+    _HAS_SORT = False
+
 st.set_page_config(page_title="Metrics Onboarding", page_icon="🏢",
                    layout="centered")
 
@@ -492,29 +500,38 @@ def form_view() -> None:
     # ---- 5. Reports to enroll --------------------------------------------
     st.divider()
     st.markdown("### 5. Reports to enroll")
-    st.caption("Check the metrics this office posts. The number sets the order "
-               "they appear in the thread (lower = earlier) — it's pre-filled, "
-               "change it only if you want a different order.")
+    st.caption("Check the metrics this office posts, then drag them into "
+               "posting order below — top posts first.")
     fam_reports = S.campaign_reports(campaign)
-    picked: list = []            # (ReportKind, order)
+    picked_kinds: list = []
     for i, rk in enumerate(fam_reports):
         st.session_state.setdefault(f"rep_{rk.key}", rk.default_on)
+        # ord_ seeds still come in from an owner request pre-fill — they set
+        # the INITIAL drag order below, so the owner's asked-for order sticks.
         st.session_state.setdefault(f"ord_{rk.key}", i + 1)
-        oc1, oc2 = st.columns([6, 1])
-        with oc1:
-            on = st.checkbox(rk.label, key=f"rep_{rk.key}")
-        with oc2:
-            order = st.number_input("order", 1, 99, key=f"ord_{rk.key}",
-                                    label_visibility="collapsed", disabled=not on)
-        if on:
-            picked.append((rk, int(order)))
+        if st.checkbox(rk.label, key=f"rep_{rk.key}"):
+            picked_kinds.append(rk)
+    picked_kinds.sort(key=lambda rk: int(st.session_state.get(f"ord_{rk.key}", 99)))
+
+    if picked_kinds and _HAS_SORT:
+        st.caption("This is the order they'll post in each morning — drag to "
+                   "rearrange.")
+        _labels = {rk.key: rk.label for rk in picked_kinds}
+        _rev = {v: k for k, v in _labels.items()}
+        # key includes the picked set so the drag list rebuilds when it changes
+        _sorted = sort_items([_labels[rk.key] for rk in picked_kinds],
+                             direction="vertical",
+                             key="onb_order_" + "_".join(sorted(_labels)))
+        _order_keys = [_rev[l] for l in _sorted if l in _rev]
+    else:
+        _order_keys = [rk.key for rk in picked_kinds]
 
     # Every office uses the shared team views (sliced to its owner), so the
     # machine is set by the campaign — D2D on Lucy 1, B2B on Lucy 2. No per-office
     # view picker: the only offices that ever needed their own view are the two
     # hardcoded B2B ones, which don't come through this form.
-    enrolled = [S.EnrolledReport(key=rk.key, order=order)
-                for rk, order in sorted(picked, key=lambda t: t[1])]
+    enrolled = [S.EnrolledReport(key=k, order=i + 1)
+                for i, k in enumerate(_order_keys)]
 
     # Box Order Log posts its OWN per-ICD thread from the team ALLEXP energy export,
     # sliced to this office's exact "Owner & Office" value (box_order_log.per_office).
