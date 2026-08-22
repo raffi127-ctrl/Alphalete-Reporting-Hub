@@ -38,11 +38,15 @@ THEME_AMBER = {        # Total Knocks (matches the Hub card #B45309)
     "title_bg": (180, 83, 9),
     "header_bg": (60, 47, 36),
     "stripe": (248, 244, 239),
+    # TOTAL row pops against the dark header + white rows (Megan 2026-08-22:
+    # "more of a contrasting color") — the title bar's burnt orange.
+    "total_bg": (180, 83, 9),
 }
 THEME_TEAL = {         # Time Gaps — distinct colour (🕐)
     "title_bg": (13, 110, 139),
     "header_bg": (15, 52, 67),
     "stripe": (234, 243, 246),
+    "total_bg": (13, 110, 139),
 }
 TITLE_FG  = (255, 255, 255)
 HEADER_FG = (255, 255, 255)
@@ -314,7 +318,7 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     for ri, r in enumerate(rows):
         is_total = ((highlight_last_row and ri == len(rows) - 1)
                     or (highlight_first_row and ri == 0))
-        bg = (theme["header_bg"] if is_total
+        bg = (theme.get("total_bg", theme["header_bg"]) if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
