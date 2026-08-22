@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.tracker-mirror</string>
+    <key>ProgramArguments</key>
+    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/tracker_mirror.sh</string></array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- every 2 hours through the workday; Google refreshes the IMPORTRANGE
+         staging on its own, this only ferries values across. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>35</integer></dict>
+    </array>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.tracker-mirror.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.tracker-mirror.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>

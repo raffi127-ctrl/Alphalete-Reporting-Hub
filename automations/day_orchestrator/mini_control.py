@@ -4843,6 +4843,19 @@ def _action_appstream_clear_session(args: str) -> tuple[bool, str]:
                   "stored credentials." % (APPSTREAM_STORAGE_STATE.name, size))
 
 
+def _action_install_tracker_mirror(args: str) -> tuple[bool, str]:
+    """Install the tracker-mirror agent on THIS machine (Lucy 2): ferries each
+    manager's ad tracker values from the org tracker's authorized IMPORTRANGE
+    staging tabs into Alphalete Manager Boards, every 2h through the workday.
+    Idempotent; `update` must have landed the plist first."""
+    from automations.day_orchestrator import install_agent
+    try:
+        ok, msg = install_agent.install("tracker-mirror")
+    except Exception as e:  # noqa: BLE001
+        return False, "%s: %s" % (type(e).__name__, str(e)[:120])
+    return ok, msg[:400]
+
+
 def _action_chrome_unstick(args: str) -> tuple[bool, str]:
     """Kill an AUTOMATION Chrome left holding a shared browser profile.
 
@@ -5073,6 +5086,7 @@ ACTIONS = {
     "appstream_clear_session": _action_appstream_clear_session,
     "set_appstream_alt_creds": _action_set_appstream_alt_creds,
     "install_indeed_source_report": _action_install_indeed_source_report,
+    "install_tracker_mirror": _action_install_tracker_mirror,
     "install_day_orchestrator": _action_install_day_orchestrator,
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
