@@ -1439,18 +1439,30 @@ def _thin_border() -> Border:
 
 
 def _autosize_columns(ws, df: pd.DataFrame) -> None:
+    """Column width comes from the DATA, not the header (Raf 2026-08-22:
+    "cells too wide for the data") — the header wraps onto extra lines
+    instead. A header word longer than the data still sets the floor so it
+    never clips mid-word."""
     for col_idx, header in enumerate(FRIENDLY_HEADERS, start=1):
         col_series = df[header]
         # Use a defensive str() conversion per-cell. pandas's .astype(str)
         # leaves Arrow-backed nulls as `None`/NaN floats on newer pandas
         # versions, and .map(len) then trips on TypeError: 'float' has no
         # len. A plain generator + str() per value is bulletproof.
-        max_len = max(
-            (len(header),)
-            + tuple(len(str(v)) for v in col_series if v is not None
+        data_len = max(
+            (4,)
+            + tuple(5 if hasattr(v, "to_pydatetime")
+                    or isinstance(v, (date, datetime)) else len(str(v))
+                    for v in col_series if v is not None
                     and not (isinstance(v, float) and pd.isna(v)))
         )
-        ws.column_dimensions[get_column_letter(col_idx)].width = _ol_width(max_len)
+        longest_word = max((len(w) for w in header.split()), default=0)
+        ws.column_dimensions[get_column_letter(col_idx)].width = (
+            _ol_width(max(data_len, longest_word)))
+    # Header cells wrap; give the row room for two lines.
+    for cell in ws[1]:
+        cell.alignment = _OL_CENTER_WRAP
+    ws.row_dimensions[1].height = 34
 
 
 def _owner_file_suffix(owner_name: str) -> str:
@@ -1537,6 +1549,8 @@ _OL_FONT_NAME = "Georgia"
 _OL_FONT_SIZE = 12
 _OL_WIDTH_FACTOR = 1.3
 _OL_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=False)
+_OL_CENTER_WRAP = Alignment(horizontal="center", vertical="center",
+                            wrap_text=True)
 
 
 def _ol_font(color: str = "000000", italic: bool = False) -> Font:
@@ -1740,6 +1754,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
 
         sh = wb.create_sheet(_unique_sheet_title(rep, used))   # full name; tab per rep
         banner_rows: set = set()
+        header_rows: set = set()
         r = 1
 
         # Week sections (Active), earliest first. A blank row between sections.
@@ -1747,7 +1762,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
             _banner(sh, r, f"Week {_md(ws_)} to {_md(we_)}  •  Paid Friday {_md(paid)}",
                     week_fill, banner_font)
             banner_rows.add(r); r += 1
-            _header(sh, r); r += 1
+            _header(sh, r); header_rows.add(r); r += 1
             for rec in sorted(weeks[(ws_, we_, paid)], key=_week_key):
                 _write_rep_row(sh, r, [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, "57BB8A", "000000")
@@ -1772,7 +1787,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
                 _banner(sh, r, _legend, PatternFill("solid", fgColor="FFF2CC"),
                         legend_font)
                 banner_rows.add(r); r += 1
-            _header(sh, r); r += 1
+            _header(sh, r); header_rows.add(r); r += 1
             for code, rec in sorted(pdc, key=lambda x: (x[0], _week_key(x[1]))):
                 bg = STATUS_COLORS.get(str(rec["Status"]).strip(), "FFD666")
                 _write_rep_row(sh, r, [(h, rec[h]) for h in _REP_TAB_COLUMNS],
@@ -1782,7 +1797,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
                                      bg, border, active=False)
                 r += 1
 
-        _autosize_rep_tab(sh, banner_rows)
+        _autosize_rep_tab(sh, banner_rows, header_rows)
         added += 1
 
     return added
@@ -1842,17 +1857,32 @@ def _write_week_total(sh, r, recs, pay_grid, base_ncol, ncol, border, banner_row
     return r + 1
 
 
-def _autosize_rep_tab(ws, banner_rows: set) -> None:
+def _autosize_rep_tab(ws, banner_rows: set, header_rows: set = frozenset()) -> None:
+    """Widths come from the DATA rows (Raf 2026-08-22) — header rows wrap
+    onto two lines instead of stretching their columns. A header's longest
+    single word still floors the width so nothing clips mid-word."""
     widths: dict = {}
+    head_word: dict = {}
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
         for cell in row:
             if cell.row in banner_rows or cell.value in (None, ""):
                 continue
-            length = 10 if isinstance(cell.value, (date, datetime)) else len(str(cell.value))
             col = cell.column_letter
+            if cell.row in header_rows:
+                longest = max((len(w) for w in str(cell.value).split()),
+                              default=0)
+                head_word[col] = max(head_word.get(col, 0), longest)
+                continue
+            length = 5 if isinstance(cell.value, (date, datetime)) else len(str(cell.value))
             widths[col] = max(widths.get(col, 0), length)
-    for col, L in widths.items():
-        ws.column_dimensions[col].width = _ol_width(L)
+    for col in set(widths) | set(head_word):
+        ws.column_dimensions[col].width = _ol_width(
+            max(widths.get(col, 0), head_word.get(col, 0), 4))
+    for hr in header_rows:
+        for cell in ws[hr]:
+            if cell.value not in (None, ""):
+                cell.alignment = _OL_CENTER_WRAP
+        ws.row_dimensions[hr].height = 34
 
 
 # Set by csv_to_xlsx when the per-rep breakdown tabs failed to build. The .xlsx

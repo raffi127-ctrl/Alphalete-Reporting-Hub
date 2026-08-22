@@ -159,14 +159,36 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, font) -> int:
     return int(draw.textlength(text or "", font=font))
 
 
+def _split_word(probe, word: str, fit_w: int, font) -> list[str]:
+    """Hyphenate a single too-wide word into chunks that fit fit_w — the
+    only way a long word ("Inaccessible") stops dictating its column width."""
+    out: list[str] = []
+    cur = ""
+    for ch in word:
+        if cur and _text_w(probe, cur + ch + "-", font) > fit_w:
+            out.append(cur + "-")
+            cur = ch
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out or [word]
+
+
 def _wrap_header(probe, text: str, fit_w: int, font) -> list[str]:
-    """Wrap a header into lines no wider than fit_w (words never split).
-    Returns at least one line; a single word wider than fit_w stays whole."""
-    words = text.split()
+    """Wrap a header into lines no wider than fit_w; a word wider than fit_w
+    hyphenates rather than widening the column."""
+    words: list[str] = []
+    for w in text.split():
+        if _text_w(probe, w, font) > fit_w:
+            words.extend(_split_word(probe, w, fit_w, font))
+        else:
+            words.append(w)
     lines: list[str] = []
     cur = ""
     for w in words:
-        cand = f"{cur} {w}".strip()
+        joined = w if (cur.endswith("-") or not cur) else f" {w}"
+        cand = cur + joined
         if cur and _text_w(probe, cand, font) > fit_w:
             lines.append(cur)
             cur = w
@@ -210,11 +232,15 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
             w_cells = max(w_cells,
                           _text_w(probe, r[ci] if ci < len(r) else "", cell_font))
         if wrap_headers:
-            # Floor: widest cell, but never narrower than the header's longest
-            # single word (words don't split).
-            longest_word = max((_text_w(probe, wd, head_font)
-                                for wd in header[ci].split()), default=0)
-            fit = max(w_cells, longest_word, MIN_COL_W)
+            # Floor: widest cell — the DATA sets the box. A header word only a
+            # little wider than the data widens the box to stay whole ("Gaps",
+            # "Knocks"); a truly oversize word ("Inaccessible") hyphenates
+            # instead of holding the column open (Megan 2026-08-22).
+            fit = max(w_cells, MIN_COL_W)
+            for wd in header[ci].split():
+                ww = _text_w(probe, wd, head_font)
+                if fit < ww <= int(fit * 1.8) + 8:
+                    fit = ww
             lines = _wrap_header(probe, header[ci], fit, head_font)
             while len(lines) > 3:      # cap the stack — widen a touch instead
                 fit += 6
