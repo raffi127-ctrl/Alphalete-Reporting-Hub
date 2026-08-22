@@ -951,6 +951,26 @@ def main(argv=None) -> int:
     # Before --post: the deadline agent passes only this flag, but keeping it
     # ahead of --post means a queued `--post --ensure-posted` can never turn
     # into a second post for a day that is already asked.
+    # ANTES de --post: el scheduler pasa --post como base_args, asi que
+    # `lucy rerun captainship_drafts_review --mark-sent-only a,b` llega aca
+    # como "--post --mark-sent-only a,b" y tiene que significar la marca.
+    if args.mark_sent_only:
+        # Solo bookkeeping: pone el candado por capitan en el hilo. Corre en la
+        # MINI para que la linea salga como Lucy, igual que el resto del hilo.
+        keys = [k.strip() for k in args.mark_sent_only.split(",") if k.strip()]
+        unknown = sorted(set(keys) - {c.key for c in config.CAPTAINS})
+        if unknown:
+            print(f"Unknown captain key(s): {unknown}", flush=True)
+            return 1
+        msg = _find_post(today, args.channel)
+        if msg is None:
+            print("— no review post for today; nothing to mark", flush=True)
+            return 1
+        mark_sent(msg, 0, args.channel, sent=keys,
+                  held=sorted({c.key for c in config.CAPTAINS} - set(keys)),
+                  reason="sent by hand outside the gate")
+        print(f"✓ marked {len(keys)} captain(s) as already sent", flush=True)
+        return 0
     if args.ensure_posted:
         return ensure_posted(today, args.channel)
     # Checked BEFORE --post on purpose. The scheduler entry's base_args are
@@ -974,23 +994,6 @@ def main(argv=None) -> int:
         return 0 if remind(today, args.after_hours, args.channel) else 1
     if args.close_day:
         close_day(today, args.channel)
-        return 0
-    if args.mark_sent_only:
-        # Solo bookkeeping: pone el candado por capitan en el hilo. Corre en la
-        # MINI para que la linea salga como Lucy, igual que el resto del hilo.
-        keys = [k.strip() for k in args.mark_sent_only.split(",") if k.strip()]
-        unknown = sorted(set(keys) - {c.key for c in config.CAPTAINS})
-        if unknown:
-            print(f"Unknown captain key(s): {unknown}", flush=True)
-            return 1
-        msg = _find_post(today, args.channel)
-        if msg is None:
-            print("— no review post for today; nothing to mark", flush=True)
-            return 1
-        mark_sent(msg, 0, args.channel, sent=keys,
-                  held=sorted({c.key for c in config.CAPTAINS} - set(keys)),
-                  reason="sent by hand outside the gate")
-        print(f"✓ marked {len(keys)} captain(s) as already sent", flush=True)
         return 0
     if args.check:
         who = find_approval(today, args.channel)
