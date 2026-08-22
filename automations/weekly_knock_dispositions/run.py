@@ -322,11 +322,16 @@ def main(argv=None) -> int:
                     help="pull + render + POST into this week's thread")
     args = ap.parse_args(argv)
     if args.live and args.dry_run:
-        print("✗ --live and --dry-run are mutually exclusive.")
-        return 2
+        # `lucy rerun` appends extra args AFTER the scheduler entry's
+        # base_args (--live), so the safe probe arrives as `--live --dry-run`.
+        # The safe flag wins — treating this as an error failed the very
+        # first mini dry-run (2026-08-22, exit 2 → incident).
+        print("[wkd] both --live and --dry-run given — dry-run wins.",
+              flush=True)
     anchor = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
               if args.date else None)
-    return run(anchor, only=args.office, dry_run=not args.live)
+    return run(anchor, only=args.office,
+               dry_run=(args.dry_run or not args.live))
 
 
 if __name__ == "__main__":
