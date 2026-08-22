@@ -7,11 +7,9 @@ Thread (posted by this module, once a day):
       :door: Sahil Multani
       :door: Chan Park
 
-Replies — TWO images per office, grouped by office, Time Gaps first
-(Eve 2026-08-18: "Time Gaps + Knocks Sahil, Time Gaps + Knocks Chan"):
-    🕐 Time Gaps   — Sahil Multani — Aug 17
+Replies — ONE combined image per office (Raf's Loom 2026-08-22: Total
+Knocks carries Gaps + Total Gaps + a TOTAL row, Time Gaps retired):
     🚪 Total Knocks — Sahil Multani — Aug 17
-    🕐 Time Gaps   — Chan Park — Aug 17
     🚪 Total Knocks — Chan Park — Aug 17
 
 Nothing here is new machinery — every piece is the one Raf's / Rashad's knocks
@@ -243,7 +241,7 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
     from automations.shared import slack_metrics_post as smp
     head = smp.ensure_named_thread(
         THREAD_TITLE, slack_today,
-        lines=[f":clock1: Time Gaps + :door: Total Knocks — {o}"
+        lines=[f":door: Total Knocks — {o}"
                for o in offices])
     thread_ts = head.get("thread_ts")
     if not thread_ts:

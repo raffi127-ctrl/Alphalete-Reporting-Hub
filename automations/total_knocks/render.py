@@ -393,14 +393,31 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     rep_pos = COMBINED_KNOCKS_COLUMNS.index(COL_REP)
     tg_pos = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
     sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
+
+    # TOTAL footer (Megan 2026-08-22): every count column sums; the knock
+    # times stay blank; Total Gaps sums in minutes and shows as 'Xh Ym'.
+    def _int0(v) -> int:
+        v = str(v).strip()
+        return int(v) if v.isdigit() else 0
+    totals: list[str] = []
+    for ci, c in enumerate(COMBINED_KNOCKS_COLUMNS):
+        if c == COL_REP:
+            totals.append("TOTAL")
+        elif c in (COL_FIRST_KNOCK, COL_LAST_KNOCK):
+            totals.append("")
+        else:
+            totals.append(str(sum(_int0(r[ci]) for r in sub)))
+
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
+    totals[tg_pos] = _fmt_hm(totals[tg_pos])
+    sub.append(totals)
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_COLUMNS]
     return _draw(disp, sub,
                  f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
-                 name_col=0, wrap_headers=True)
+                 name_col=0, wrap_headers=True, highlight_last_row=True)
 
 
 def _gap_min(v: str) -> int:
