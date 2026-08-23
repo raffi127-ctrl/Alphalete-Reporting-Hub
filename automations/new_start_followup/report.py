@@ -393,14 +393,15 @@ def _covers(confirmations, ros) -> Dict[str, object]:
 def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
     """Saturday 8am roll call — Lucy's replacement for Aisha's hand-typed tags.
 
-    Built from OBCL column B, so it's complete by construction. Each leader is
-    tagged WITH their new-start count, which is what makes a later "Sent x2"
-    against 3 owed obvious to everyone in the thread rather than something only
-    this report notices.
+    Format per Raf 2026-08-23: numbered names (matches his hand-posted lists,
+    copy/paste-friendly), NO per-leader counts, and only the "reply Sent"
+    instruction. The owed counts still drive the short-count check — a "Sent x2"
+    against 3 owed is flagged in the Sunday checklist, it's just not printed
+    here anymore.
 
     tag=False posts plain names instead of @-mentions — for a thread whose
-    recruiter already hand-tagged everyone (Tiffani), so the counts and the
-    marker land without pinging the same people twice (Megan 2026-08-22).
+    recruiter already hand-tagged everyone (Tiffani), so the marker lands
+    without pinging the same people twice (Megan 2026-08-22).
     """
     from automations.new_start_followup import thread as thread_mod
 
@@ -408,24 +409,18 @@ def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
     if not owing:
         return ""
 
-    total = sum(s.owed for s in owing)
     lines = [
         "📣 *{}* — week of {}/{}".format(
             thread_mod.ROLLCALL_MARKER, rec.monday.month, rec.monday.day),
-        "*{} new start{}* across *{} leader{}*. Please text yours today and "
-        "reply *Sent* below.".format(
-            total, "" if total == 1 else "s",
-            len(owing), "" if len(owing) == 1 else "s"),
+        "Please text your new starts today and reply *Sent* "
+        "(or *Sent x2*) in this thread.",
         "",
     ]
-    for s in owing:
-        lines.append("{}  —  {} new start{}".format(
-            s.leader.mention if tag else s.label,
-            s.owed, "" if s.owed == 1 else "s"))
+    for i, s in enumerate(owing, 1):
+        lines.append("{}. {}".format(i, s.leader.mention if tag else s.label))
 
     lines.append("")
-    lines.append("_Reply *Sent* (or *Sent x{}*) once you're done · "
-                 "auto by Lucy from the OBCL sheet_".format(max(s.owed for s in owing)))
+    lines.append("_auto by Lucy_")
 
     # No follow-through flags at 8am -- nobody has sent yet. But anyone we
     # couldn't tag goes in, so their new start doesn't fall through.
@@ -438,11 +433,13 @@ def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
 
 def render_nudge(rec: Reconciliation, when: str) -> str:
     """Saturday reminder. Tags ONLY the people who still haven't replied, so
-    the leaders who already sent theirs stop getting pinged."""
+    the leaders who already sent theirs stop getting pinged.
+
+    One numbered name per line (Raf 2026-08-23) — he copies this list into his
+    own Sunday post, so it has to paste as a list, not a run-on of mentions."""
     pending = rec.pending
     if not pending:
         return ""
-    tags = " ".join(s.leader.mention for s in pending)
     headline = {
         "morning": "Reminder — if you haven't texted your new starts yet, please send it now.",
         "midday": "Second reminder — please text your new starts and reply *Sent* here.",
@@ -453,10 +450,11 @@ def render_nudge(rec: Reconciliation, when: str) -> str:
         "⏰ *New-Start Texts — {} still to go*".format(len(pending)),
         headline,
         "",
-        tags,
-        "",
-        "_Reply *Sent* (or *Sent x3*) in this thread once you're done · auto by Lucy_",
     ]
+    for i, s in enumerate(pending, 1):
+        lines.append("{}. {}".format(i, s.leader.mention))
+    lines.append("")
+    lines.append("_Reply *Sent* (or *Sent x3*) in this thread once you're done · auto by Lucy_")
     return "\n".join(lines)
 
 
