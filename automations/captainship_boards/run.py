@@ -288,6 +288,20 @@ def update_board(label, board_id, rep_days, monday, upto, write):
         + ("" if write else "  (dry-run)"))
     if write and data:
         values_batch_update(sh, data)
+    if write:
+        # Blank-rep filter (Carlos 8/24): hide empty roster slots on every
+        # refresh, so newly-added reps surface and the board stays compact.
+        # Owners can Data > Remove filter to type a name into a blank slot;
+        # the next morning's run re-applies it.
+        try:
+            sb_id = sh.worksheet("Sales Board").id
+            sh.batch_update({"requests": [{"setBasicFilter": {"filter": {
+                "range": {"sheetId": sb_id, "startRowIndex": 3,
+                          "endRowIndex": 43, "startColumnIndex": 0,
+                          "endColumnIndex": 16},
+                "criteria": {"1": {"condition": {"type": "NOT_BLANK"}}}}}}]})
+        except Exception as e:  # noqa: BLE001
+            log(f"  !! {label}: blank-filter reapply failed: {str(e)[:80]}")
     return len(data)
 
 
