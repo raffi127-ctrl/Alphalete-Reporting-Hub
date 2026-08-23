@@ -170,11 +170,11 @@ def _publish_outcome(status: str, headline: str, details: list[str], *,
         print(f"  (corrections post skipped: {e})", flush=True)
 
 
-def _tag_header_new(smp, thread_ts: str) -> None:
-    """Append the NEW-report line to the day's Metrics header (parent
-    message). Idempotent (skips if already tagged) and best-effort — every
-    header is posted by the same Lucy user token this report posts with, so
-    chat_update on it is allowed regardless of which report created it."""
+def _append_header_line(smp, thread_ts: str, line: str, marker: str) -> None:
+    """Append `line` to a thread's parent message unless `marker` is already
+    in it. Idempotent and best-effort — every header is posted by the same
+    Lucy user token this report posts with, so chat_update on it is allowed
+    regardless of which report created it."""
     try:
         client = smp._client()
         chan = smp.CHANNEL_ID
@@ -182,15 +182,30 @@ def _tag_header_new(smp, thread_ts: str) -> None:
                                            limit=1)
         msgs = cur.get("messages") or []
         text = (msgs[0].get("text") or "") if msgs else ""
-        if not text or "Weekly Knock Dispositions" in text:
+        if not text or marker in text:
             return
-        client.chat_update(channel=chan, ts=thread_ts,
-                           text=text + "\n\n" + NEW_BADGE_LINE)
-        print("[wkd]   header tagged :new: (through "
-              f"{NEW_BADGE_UNTIL})", flush=True)
+        client.chat_update(channel=chan, ts=thread_ts, text=text + line)
+        print(f"[wkd]   header tagged: {marker}", flush=True)
     except Exception as e:  # noqa: BLE001 — a banner must never fail the run
-        print(f"[wkd]   ⚠ NEW banner skipped: {type(e).__name__}: "
+        print(f"[wkd]   ⚠ header tag skipped: {type(e).__name__}: "
               f"{str(e)[:120]}", flush=True)
+
+
+def _tag_thread_header(smp, cfg: dict, thread_ts: str,
+                       slack_today: dt.date) -> None:
+    """The header lines this report owns. Metrics headers: the :new: banner,
+    first two Sundays only. Named threads (Chan's 'Knocks for other
+    offices'): a permanent Sunday line saying his weekly board is in the
+    replies (Megan 2026-08-23) — that header is rebuilt daily by
+    other_office_knocks, which doesn't know about this report."""
+    if cfg.get("thread_title"):
+        _append_header_line(
+            smp, thread_ts,
+            f"\n📋 Weekly Knock Dispositions — {cfg['name']} (Sundays)",
+            f"Weekly Knock Dispositions — {cfg['name']}")
+    elif slack_today <= NEW_BADGE_UNTIL:
+        _append_header_line(smp, thread_ts, "\n\n" + NEW_BADGE_LINE,
+                            "Weekly Knock Dispositions")
 
 
 def _print_board(office: str, rows: list[list[str]],
@@ -200,6 +215,37 @@ def _print_board(office: str, rows: list[list[str]],
     print("  " + " | ".join(B.headers_for(dispo_cols, gaps_only)))
     for r in rows:
         print("  " + " | ".join(r))
+
+
+def fix_headers(only: list[str] | None = None) -> int:
+    """Tag today's thread headers ONLY — no pulls, no board posts. For
+    patching a header after the boards already went out (e.g. today's
+    'Knocks for other offices' header predates the Chan line)."""
+    from automations.shared import slack_metrics_post as smp
+    slack_today = central_today()
+    for cfg in enabled(only):
+        if cfg.get("slack_token_file"):
+            continue                      # cross-ws headers: theirs to own
+        keep_chan, keep_label = smp.CHANNEL_ID, smp.HEADER_LABEL
+        try:
+            if cfg.get("channel_id"):
+                smp.CHANNEL_ID = cfg["channel_id"]
+                smp.HEADER_LABEL = cfg.get("header_label", "")
+            if cfg.get("thread_title"):
+                ts = smp.find_named_thread_ts(smp._client(),
+                                              cfg["thread_title"],
+                                              slack_today)
+            else:
+                ts = smp.find_metrics_thread_ts(smp._client(), slack_today)
+            if not ts:
+                print(f"[wkd] ⤳ {cfg['name']}: no header thread today — "
+                      "nothing to tag.", flush=True)
+                continue
+            _tag_thread_header(smp, cfg, ts, slack_today)
+        finally:
+            smp.CHANNEL_ID, smp.HEADER_LABEL = keep_chan, keep_label
+    print("[wkd] ✅ header pass done.", flush=True)
+    return 0
 
 
 def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
@@ -408,9 +454,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 if name not in failed:
                     failed.append(name)
                 continue
-            # NEW banner rides only the Metrics headers (Megan 2026-08-22).
-            if not cfg.get("thread_title") and slack_today <= NEW_BADGE_UNTIL:
-                _tag_header_new(smp, thread_ts)
+            _tag_thread_header(smp, cfg, thread_ts, slack_today)
             comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
             if term_flag:
                 comment += f"\n{term_flag}"
@@ -473,7 +517,12 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", action="store_true",
                     help="dry-run, then DM the rendered board(s) to Megan "
                          "as Lucy (no channel post)")
+    ap.add_argument("--fix-headers", action="store_true",
+                    help="tag today's thread headers only — no pulls, no "
+                         "board posts (safe after boards already went out)")
     args = ap.parse_args(argv)
+    if args.fix_headers:
+        return fix_headers(args.office)
     if args.live and args.dry_run:
         # `lucy rerun` appends extra args AFTER the scheduler entry's
         # base_args (--live), so the safe probe arrives as `--live --dry-run`.
