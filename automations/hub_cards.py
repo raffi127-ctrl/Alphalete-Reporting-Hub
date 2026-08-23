@@ -1617,66 +1617,11 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "frontier-opt-data-pull",
-        "name": "Frontier OPT Data Pull",
-        "creator": "Megan",
-        "emoji": "📄",
-        "color": "#10B981",
-        "category": "🎯 Recruiting",
-        "self_scheduled": True,
-        "description": "Auto-ingests the Frontier PDF reports (Daily "
-                       "Sales by Store, Daily Sales Events, Quality "
-                       "Scorecard) straight from email "
-                       "(reports@credicousa.com) and fills the OPT section "
-                       "on every ' - Frontier' tab of the Alphalete Org "
-                       "1on1s focus report. No manual upload — the upload "
-                       "below is only a fallback.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Pulls the Frontier PDFs from email and fills each Frontier tab:\n"
-            "- **Daily Sales - by Store** → per-store production, Total "
-            "Sales, Total Store Count, AVG/Store, Active Headcount\n"
-            "- **Daily Sales - Events** → GIG % / VAS % / ABP %\n"
-            "- **Quality Scorecard** → Approval / Canceled / Pending "
-            "(Four Weeks Rolling)\n\n"
-            "WHEN IT RUNS\n"
-            "**Sunday at 6:00 PM CST**.\n\n"
-            "PARTIAL DATA IS SAFE\n"
-            "Whichever of the 3 PDFs have arrived get filled — only their "
-            "rows change; every other cell is left untouched. Each PDF "
-            "carries its week-ending, so data lands in the correct week "
-            "column automatically (re-runs refresh to the latest numbers)."
-        ),
-        "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [6],   # Sunday
-            "time": "6:00 PM",
-            "estimated_minutes": 3,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Frontier OPT filled from the emailed "
-                               "PDF(s). Rows without a matching PDF were "
-                               "left untouched.",
-            "message_failed": "❌ Run failed. Check the log above.",
-        },
-        "actions": [
-            {
-                "label": "Run Frontier OPT Data Pull",
-                "icon": "▶",
-                "primary": True,
-                "help": "FALLBACK run — parses whatever Frontier PDF(s) you "
-                        "uploaded above and fills the Frontier tabs. The "
-                        "scheduled Sunday 6pm run instead auto-pulls the PDFs "
-                        "from email, so you normally don't need this.",
-                "module": "automations.alphalete_org_report.opt_frontier",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
+    # "Frontier OPT Data Pull" card REMOVED 2026-08-23 (Megan: "we no longer
+    # use anything with frontier"). The Sunday 6pm LaunchAgent was uninstalled
+    # and frontier_opt RETIRED in schedule_config the same day; the module
+    # (alphalete_org_report.opt_frontier) is kept for history. Frontier
+    # sections inside other reports come out in a separate pass.
     {
         "id": "leaders-call",
         "name": "Leader's Call - Weekly Recognition",
@@ -3899,6 +3844,10 @@ AUTOMATED_REPORTS = [
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=1118523233#gid=1118523233"),
         "assignees": ["Lucy 1"],
+        # Week-grid blue 'scanned' pill wording: this card's scan is an inbox
+        # check for Adriana's tracker email, so an empty scan means no new email
+        # (either none arrived or every week it holds is already on the tab).
+        "scan_empty_label": "no new email",
         # The 'complete' note posts to #l10-alphalete as Lucy via the xoxp user
         # token, which on the mini IS Lucy — so the run has to happen there or the
         # post lands under whoever clicked Run instead.

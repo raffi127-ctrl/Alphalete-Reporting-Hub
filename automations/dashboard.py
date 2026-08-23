@@ -1082,7 +1082,12 @@ def _read_shared_library() -> list[dict]:
                             "vantura_sara_recon",
                             # b2b_quality: renamed to "B2B Metrics" 7/20 and now
                             # posted by the consolidated B2B Metrics run — superseded.
-                            "b2b_quality"}):
+                            "b2b_quality",
+                            # Sunday board posted into each office's Metrics
+                            # thread — lives on the D2D Office Daily Metrics
+                            # card ("no card of its own"), so hide its
+                            # auto-registered library dupe (Megan 8/23).
+                            "weekly_knock_dispositions"}):
             continue
         module = report.get("module")
         if not module:
@@ -3270,6 +3275,11 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # a pass count nobody can act on (Megan 2026-08-10).
                     elif _stat == "review":
                         _label += " (awaiting ✅)"
+                    # Blue 'scanned' pill: say WHAT the scan came up empty on,
+                    # right on the pill (Megan 2026-08-22). Cards name their own
+                    # scan via scan_empty_label (SCI Campaigns: "no new email").
+                    elif _stat == "scanned":
+                        _label += f" (🔵 {_r.get('scan_empty_label') or 'nothing new'})"
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
@@ -3312,6 +3322,9 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     }.get(_stat, "Open this report to run it")
                     # Name the parts that missed right in the tooltip, so you can
                     # see WHICH channel failed without opening the card.
+                    if _stat == "scanned" and _r.get("scan_empty_label"):
+                        _help = (f"Ran its scan — {_r['scan_empty_label']}, "
+                                 "nothing to do today (healthy)")
                     if _stat == "partial" and _day == today:
                         _missed = _manifest_failed_parts(_r["id"])
                         if _missed:
