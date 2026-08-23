@@ -294,6 +294,10 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
         existing[key] = row
         ldate = f"{c['day'].month}/{c['day'].day}"
         data.append({"range": f"'{tab}'!A{row}", "values": [[status]]})
+        # Campaign (col F) — the owner boards are single-campaign, so stamp it
+        # (Carlos 8/24). The Vantura master runs B2B AND BOX; the VA sorts it.
+        if name_label not in NO_ROLLCALL_SYNC:
+            data.append({"range": f"'{tab}'!F{row}", "values": [["AT&T B2B"]]})
         data.append({"range": f"'{tab}'!I{row}:S{row}", "values": [[
             c["name"], c["email"], c["phone"], ldate, c["first_round"],
             c["second_round"], c["show"], c["offered"], c["bob_status"],
