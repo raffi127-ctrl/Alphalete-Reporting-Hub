@@ -1,0 +1,10 @@
+# Headshot bot. rembg pulls onnxruntime; the u2net_human_seg model file
+# downloads once to ~/.u2net/ on first run (~170 MB).
+# NOTE for the Lucy mini (Python 3.9): recent rembg needs Python >=3.10 —
+# install `rembg==2.0.50 onnxruntime==1.16.3` there, or run this bot on a
+# 3.10+ machine.
+rembg
+onnxruntime
+pillow
+pillow-heif
+numpy
