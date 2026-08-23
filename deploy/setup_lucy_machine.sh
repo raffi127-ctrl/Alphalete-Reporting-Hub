@@ -120,25 +120,65 @@ else
         MANUAL+=("Google sign-in didn't finish — run: cd ~/recruiting-report && ./.venv/bin/python -m automations.recruiting_report.sheets_auth")
 fi
 
-# ----- Identity + poller
-bold "[8/8] Naming this machine '$NAME' + installing the remote-control poller"
+# ----- Identity + always-on agents
+#
+# WHY THE HOLDER IS INSTALLED HERE (Megan 2026-08-23). This step used to install
+# ONLY mini-control, and the closing note waved at site sign-ins as something
+# that "happens later". Lucy 3 was provisioned that way on 8/21, passed every
+# check, took the Country Trackers on 8/22 — and on its debut morning ran NOTHING.
+# Its day-orchestrator fired dead on time (morning_diag DRIFT=+0m) and then held
+# all 5 of its reports for 4+ hours, once per pass:
+#     still trying — no ownerville session yet
+#     (.ownerville_storage_state.json missing) — seed the holder on the mini
+# readiness.session_status() is a MACHINE-GLOBAL gate: the holder-exported
+# session file must exist AND be under 20 minutes old, or EVERY report on the
+# box is refused, whether or not it touches ownerville. No holder = a machine
+# that looks perfectly healthy and silently does nothing. So the holder goes in
+# with the poller, and the seed is a loud required step below, not a footnote.
+bold "[8/8] Naming this machine '$NAME' + installing the always-on agents"
 echo "$NAME" > "$HOME/recruiting-report/.machine-profile"
 cd "$HOME/recruiting-report"
-./.venv/bin/python automations/day_orchestrator/install_agent.py mini-control || {
-    MANUAL+=("Poller install failed — from ~/recruiting-report run: ./.venv/bin/python automations/day_orchestrator/install_agent.py mini-control")
-}
+# mini-control        remote-control poller (how Megan's Claude reaches this box)
+# session-holder      keeps ownerville warm + exports the session file the
+#                     readiness gate reads — WITHOUT THIS, NO REPORT EVER RUNS
+# keep-awake          caffeinate -s, so launchd's 4am job isn't deferred
+# orchestrator-schedule-guard  nightly 02:45 re-bootstrap so launchd can't hold
+#                     a stale schedule after a git pull
+# day-orchestrator is deliberately NOT installed here — putting a machine on the
+# 4am clock is a separate "this box is live now" decision:
+#     lucy rerun install_orchestrator_agent --machine "<name>"
+for agent in mini-control session-holder keep-awake orchestrator-schedule-guard; do
+    if ./.venv/bin/python automations/day_orchestrator/install_agent.py "$agent"; then
+        echo "  $agent ✓"
+    else
+        MANUAL+=("$agent install failed — from ~/recruiting-report run: ./.venv/bin/python automations/day_orchestrator/install_agent.py $agent")
+    fi
+done
 
 bold "══════════════════════════════════════"
 bold "✅ '$NAME' base setup done."
 echo ""
-echo "Manual steps left (one minute):"
+bold "⚠️  REQUIRED — SEED OWNERVILLE BEFORE LEAVING THIS MACHINE"
+echo "Installing the holder just opened an ownerville window on this screen."
+echo "Log in there and clear the 'verify you're human' box. Nothing else is"
+echo "needed — no button to press, it detects the session on its own."
+echo ""
+echo "This is NOT optional and NOT 'later': until it's done, this machine will"
+echo "refuse every scheduled report it is given, with no visible error except"
+echo "one line per pass buried in the orchestrator log. Cloudflare's check is"
+echo "interactive, so a person has to do it once — Screen Sharing counts, but"
+echo "it can never be automated. If the window closed, reopen it with:"
+echo "    lucy restart_holder --machine \"$NAME\""
+echo ""
+echo "Other manual steps (one minute):"
 echo "  • System Settings → Users & Groups → turn ON automatic login (not"
 echo "    scripted on purpose — doing it in code would store your password)."
 for m in "${MANUAL[@]+"${MANUAL[@]}"}"; do
     echo "  • $m"
 done
 echo ""
-echo "Then tell Megan's Claude 'done' — it verifies the rest remotely."
-echo "(Site sign-ins — AppStream/ownerville/Tableau — happen later, guided,"
-echo " with a person at this keyboard. Reports can't run here until then.)"
+echo "Then tell Megan's Claude 'done' — it verifies the rest remotely and will"
+echo "confirm the seed took (\`lucy diag\` must stop saying 'OV session: MISSING',"
+echo "and \`lucy rerun probe_readiness\` must report sources READY)."
+echo "(AppStream/Tableau sign-ins are still guided separately, with a person here.)"
 read -p "Press Enter to close."

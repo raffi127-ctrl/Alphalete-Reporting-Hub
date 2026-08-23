@@ -2773,6 +2773,14 @@ _CRED_FILES = {
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127",
     "ownerville-creds":
         lambda: REPO_ROOT / "ownerville-creds.json",
+    # Cross-workspace Slack bot tokens (office_metrics.offices.CROSS_WS_TOKEN_FILES).
+    # push_slack_tokens moves only the MAIN workspace pair, so an office whose
+    # channel lives in another Slack (trang -> FRESH SUCCESS) was silently left
+    # behind on every new machine: Lucy 3 posted the 8/23 trackers to all 15 orgs
+    # except trang's, which failed 'channel unreadable' on both runs. Add a key
+    # here whenever CROSS_WS_TOKEN_FILES gains one, or the next machine repeats it.
+    "slack-token-freshsuccess":
+        lambda: Path.home() / ".config" / "recruiting-report" / "slack-token-freshsuccess",
 }
 
 
