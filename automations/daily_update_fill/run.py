@@ -69,6 +69,11 @@ STATUS_ACTIVE = "Active"
 STATUS_CR = "Showed to Classroom"
 STATUS_NOT_ACTIVE = "Not Active"
 STATUS_ADMIN = "Admin"
+# Vantura master (Carlos, 2026-08-24): terminations and classroom flips ONLY —
+# no sale=>Active automation of ANY flavor there (the WeekData-history variant
+# inflated his Actives to 162). Actives on the master are set by hand. The
+# captainship boards keep the full lifecycle.
+NO_SALE_ACTIVE = {"Carlos Hidalgo"}
 OLD_LADDER_ACTIVE = ("3", "4", "5", "6", "7")   # '3 - In Training'.. prefixes
 CR_SHOW, CR_NOSHOW = "Showed To CR", "CR No Show"
 
@@ -350,11 +355,16 @@ def terminated_names(sh) -> set:
                     out.add(name.lower())
     if "Roll Call" in tabs:
         rows = tabs["Roll Call"].get_values("A1:L250")
+        # Owner boards head the name column "Rep Name"; the Vantura master
+        # heads it "Roll Call" (exact match only — the tab TITLE also contains
+        # the words "roll call", so containment would grab the title row).
+        def _is_name_hdr(h):
+            return "rep name" in h or h == "roll call"
         hdr_i = next((i for i, r in enumerate(rows)
-                      if any("rep name" in _n(c).lower() for c in r)), None)
+                      if any(_is_name_hdr(_n(c).lower()) for c in r)), None)
         if hdr_i is not None:
             hdr = [_n(c).lower() for c in rows[hdr_i]]
-            rep_c = next(i for i, h in enumerate(hdr) if "rep name" in h)
+            rep_c = next(i for i, h in enumerate(hdr) if _is_name_hdr(h))
             st_c = next((i for i, h in enumerate(hdr) if h == "status"), None)
             att_cs = [i for i, h in enumerate(hdr) if h in (
                 "mon", "tue", "wed", "thu", "fri", "sat")]
@@ -439,6 +449,8 @@ def sync_statuses(name_label, sh, tab, write) -> int:
     Admin rows are never touched. Nickname-tolerant matching (will~william)."""
     term = terminated_names(sh)
     sellers, roster = board_sellers_and_roster(sh)
+    if name_label in NO_SALE_ACTIVE:
+        sellers, roster = set(), set()
     term_f = {k for k in (_fuzzy_key(x) for x in term) if k}
     sellers_f = {k for k in (_fuzzy_key(x) for x in sellers) if k}
     roster_f = {k for k in (_fuzzy_key(x) for x in roster) if k}
