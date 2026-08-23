@@ -394,10 +394,9 @@ def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
     """Saturday 8am roll call — Lucy's replacement for Aisha's hand-typed tags.
 
     Format per Raf 2026-08-23: numbered names (matches his hand-posted lists,
-    copy/paste-friendly), NO per-leader counts, and only the "reply Sent"
-    instruction. The owed counts still drive the short-count check — a "Sent x2"
-    against 3 owed is flagged in the Sunday checklist, it's just not printed
-    here anymore.
+    copy/paste-friendly), NO per-leader counts anywhere, and only the "reply
+    Sent" instruction. Counts are still tracked internally (who owes a text,
+    ops_flags) — they're just never printed in a Slack post.
 
     tag=False posts plain names instead of @-mentions — for a thread whose
     recruiter already hand-tagged everyone (Tiffani), so the marker lands
@@ -471,17 +470,15 @@ def render_checklist(rec: Reconciliation) -> str:
         "*{} of {} leaders have sent*".format(done, len(active)),
         "",
     ]
+    # No per-leader counts anywhere in the post (Raf 2026-08-23) — just the
+    # name, the check mark, and anything someone has to act on.
     for i, s in enumerate(statuses, 1):
         mark = " ✅" if s.sent else ""
         detail = []
-        if s.owed:
-            detail.append("{} new start{}".format(s.owed, "" if s.owed == 1 else "s"))
         if s.departed:
             detail.append(DEPARTED_NOTE)
         if s.covered_by is not None:
             detail.append("sent by {}".format(s.covered_by.short or s.covered_by.name))
-        if s.short:
-            detail.append("said *x{}*".format(s.claimed))
         tail = "  _({})_".format(", ".join(detail)) if detail else ""
         lines.append("{}. {}{}{}".format(i, s.label, mark, tail))
 
@@ -516,10 +513,9 @@ def _departed_lines(rec: Reconciliation) -> List[str]:
     """
     if not rec.departed:
         return []
-    out = ["", "⚠️ *{}* — someone else needs to cover these".format(DEPARTED_NOTE)]
+    out = ["", "⚠️ *{}* — someone else needs to cover their new starts".format(DEPARTED_NOTE)]
     for s in rec.departed:
-        out.append("   •  {} — {} new start{}".format(
-            s.leader.name, s.owed, "" if s.owed == 1 else "s"))
+        out.append("   •  {}".format(s.leader.name))
     return out
 
 
@@ -534,28 +530,21 @@ def _untaggable_lines(rec: Reconciliation) -> List[str]:
         return []
     out = ["", "⚠️ *Unable to tag — needs a manual reach-out*"]
     for name in sorted(rec.unmatched_obcl):
-        count = rec.unmatched_obcl[name]
-        out.append("   •  {} — {} new start{}".format(
-            name, count, "" if count == 1 else "s"))
+        out.append("   •  {}".format(name))
     return out
 
 
 def _team_flags(rec: Reconciliation) -> List[str]:
     """Flags that belong in the Slack post — they're about people's follow-through
     and the team should see them."""
+    # The "said x2 vs OBCL 3" short-count flag used to post here too — dropped
+    # 2026-08-23 with the counts (Megan: assume leaders text all their people).
     out = []  # type: List[str]
-    if rec.short:
-        out.append("")
-        out.append("⚠️ *Count looks short vs OBCL*")
-        for s in rec.short:
-            out.append("   •  {} — said *x{}*, OBCL shows *{}*".format(
-                s.label, s.claimed, s.owed))
     if rec.untagged:
         out.append("")
         out.append("⚠️ *Has new starts but wasn't tagged*")
         for s in rec.untagged:
-            out.append("   •  {} — {} new start{}".format(
-                s.label, s.owed, "" if s.owed == 1 else "s"))
+            out.append("   •  {}".format(s.label))
     return out
 
 
