@@ -44,6 +44,23 @@ from automations.focus_office_att.step5_fill_one_owner import page_rqst
 # Computed / merged keys carried on each rep record next to the COL_* ones.
 K_TALK_TO = "Total Talk To's"
 K_GAP_MIN = "Gap Minutes"          # summed Time Tracker minutes, Mon–Sat
+# Saturday's own knock times (Raf's mockup 2026-08-23: Saturday's schedule
+# differs, so it leaves the averages and gets its own columns).
+K_SAT_FIRST = "Sat First Knock"
+K_SAT_LAST = "Sat Last Knock"
+
+
+def _avg_weekday(entries):
+    """(day, minutes) list → 'h:mm AM/PM' average over Mon–Fri only (Raf's
+    mockup 2026-08-23 — Saturday's later start skewed the average)."""
+    wk = [m for d, m in entries if d.weekday() < 5]
+    return _fmt_knock(round(sum(wk) / len(wk))) if wk else ""
+
+
+def _sat_time(entries):
+    """(day, minutes) list → Saturday's time (one Saturday per window)."""
+    st = [m for d, m in entries if d.weekday() == 5]
+    return _fmt_knock(st[-1]) if st else ""
 
 # Identity columns — scraped as-is, never counted.
 _IDENTITY = {_norm(c) for c in (COL_ID, COL_REP, COL_FIRST_KNOCK,
@@ -218,9 +235,9 @@ def _week_tt(page, rqst: str, monday: dt.date, saturday: dt.date,
             fm = _knock_min(str(rec.get(knocks.COL_FIRST_KNOCK, "")))
             lm = _knock_min(str(rec.get(knocks.COL_LAST_KNOCK, "")))
             if fm is not None:
-                a["first"].append(fm)
+                a["first"].append((day, fm))
             if lm is not None:
-                a["last"].append(lm)
+                a["last"].append((day, lm))
         day += dt.timedelta(days=1)
     if verbose:
         print(f"[wkd] Time Tracker: weekly data for {len(out)} rep(s)",
@@ -316,18 +333,19 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                 fm = _knock_min(str(rec.get(COL_FIRST_KNOCK, "")))
                 lm = _knock_min(str(rec.get(COL_LAST_KNOCK, "")))
                 if fm is not None:
-                    first_t.setdefault(rid, []).append(fm)
+                    first_t.setdefault(rid, []).append((day, fm))
                 if lm is not None:
-                    last_t.setdefault(rid, []).append(lm)
+                    last_t.setdefault(rid, []).append((day, lm))
             day += dt.timedelta(days=1)
         rows = list(agg.values())
         for rid, a in agg.items():
             a[K_TALK_TO] = sum(int(a.get(c) or 0) for c in talk_to_cols)
-            fs, ls = first_t.get(rid), last_t.get(rid)
-            a[COL_FIRST_KNOCK] = (_fmt_knock(round(sum(fs) / len(fs)))
-                                  if fs else "")
-            a[COL_LAST_KNOCK] = (_fmt_knock(round(sum(ls) / len(ls)))
-                                 if ls else "")
+            fs, ls = first_t.get(rid, []), last_t.get(rid, [])
+            # Mon–Fri averages + Saturday's own times (Raf 2026-08-23).
+            a[COL_FIRST_KNOCK] = _avg_weekday(fs)
+            a[COL_LAST_KNOCK] = _avg_weekday(ls)
+            a[K_SAT_FIRST] = _sat_time(fs)
+            a[K_SAT_LAST] = _sat_time(ls)
         if verbose:
             print(f"[wkd] {len(rows)} rep(s) across the week; talk-to = "
                   "sum of: " + ", ".join(talk_to_cols), flush=True)
@@ -350,12 +368,10 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
             rows.append({
                 COL_ID: rid,
                 COL_REP: a["rep"],
-                COL_FIRST_KNOCK: (_fmt_knock(round(sum(a["first"])
-                                                   / len(a["first"])))
-                                  if a["first"] else ""),
-                COL_LAST_KNOCK: (_fmt_knock(round(sum(a["last"])
-                                                  / len(a["last"])))
-                                 if a["last"] else ""),
+                COL_FIRST_KNOCK: _avg_weekday(a["first"]),
+                COL_LAST_KNOCK: _avg_weekday(a["last"]),
+                K_SAT_FIRST: _sat_time(a["first"]),
+                K_SAT_LAST: _sat_time(a["last"]),
                 K_GAP_MIN: a["gap_min"],
             })
         if verbose:

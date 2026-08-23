@@ -31,14 +31,19 @@ from automations.total_knocks.pull import (
     COL_LAST_KNOCK,
     COL_REP,
 )
-from automations.weekly_knock_dispositions.pull import K_GAP_MIN, K_TALK_TO
+from automations.weekly_knock_dispositions.pull import (
+    K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST, K_TALK_TO)
 
 DAYS = 6                     # Mon–Sat
 
+# Raf's mockup 2026-08-23: knock averages are Mon–Fri (Saturday's schedule
+# skews them), the gap columns SAY Mon–Sat, and Saturday's own knock times
+# get their own two columns after the gaps.
 HEADERS = [
     "Rep", "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
-    "Avg Talk To's per App", "Avg First Knock", "Avg Last Knock",
-    "Avg Gap / Day", "Total Gap Hours",
+    "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
+    "Mon\u2013Fri Avg Last Knock", "Mon\u2013Sat Avg Gap / Day",
+    "Mon\u2013Sat Total Gap Hours", "Sat First Knock", "Sat Last Knock",
 ]
 
 # After the summary columns comes the full disposition breakdown (Raf
@@ -55,8 +60,11 @@ DISPO_DISPLAY = {
 
 # A WIRELESS / gaps-only office (no Disposition page — records carry no
 # K_TALK_TO) draws just what TeleMapper knows about it.
-GAPS_ONLY_HEADERS = ["Rep", "Avg First Knock", "Avg Last Knock",
-                     "Avg Gap / Day", "Total Gap Hours"]
+GAPS_ONLY_HEADERS = ["Rep", "Mon\u2013Fri Avg First Knock",
+                     "Mon\u2013Fri Avg Last Knock",
+                     "Mon\u2013Sat Avg Gap / Day",
+                     "Mon\u2013Sat Total Gap Hours",
+                     "Sat First Knock", "Sat Last Knock"]
 
 
 def is_gaps_only(ov_rows: list[dict]) -> bool:
@@ -175,6 +183,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                 str(r.get(COL_LAST_KNOCK, "")).strip(),
                 (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
                 (_hm(int(gap_min)) if gap_min is not None else ""),
+                str(r.get(K_SAT_FIRST, "")).strip(),
+                str(r.get(K_SAT_LAST, "")).strip(),
             ])
         gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
                     if r.get(K_GAP_MIN) is not None]
@@ -185,6 +195,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             _avg_knock(ov_rows, COL_LAST_KNOCK),
             (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
             _hm(tot_gaps),
+            _avg_knock(ov_rows, K_SAT_FIRST),
+            _avg_knock(ov_rows, K_SAT_LAST),
         ])
         return rows
 
@@ -215,6 +227,8 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             str(r.get(COL_LAST_KNOCK, "")).strip(),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
+            str(r.get(K_SAT_FIRST, "")).strip(),
+            str(r.get(K_SAT_LAST, "")).strip(),
         ] + _dispo_cells(r))
 
     # Sales with no knock row — visible, not silently dropped. `consumed`
@@ -224,7 +238,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             if _norm_name(rep) in consumed or not n_apps:
                 continue
             rows.append([_display_name(rep), "", "", str(n_apps),
-                         "", "", "", "", ""] + _dispo_cells(None))
+                         "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
     return rows
@@ -261,6 +275,8 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         _avg_knock(ov_rows, COL_LAST_KNOCK),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
+        _avg_knock(ov_rows, K_SAT_FIRST),
+        _avg_knock(ov_rows, K_SAT_LAST),
     ] + ["" if not t else str(t) for t in dispo_tots])
 
 
