@@ -228,7 +228,9 @@ def update_board(label, board_id, rep_days, monday, upto, write):
                     pass
     data.append({"range": "Sales Board!B45",
                  "values": [[f"LAST WEEK ({last_lbl})"]]})
-    data.append({"range": "Sales Board!E45:K45", "values": [[v or 0 for v in lw]]})
+    # D45 = last week's TOTAL, then the Mon-Sun day cells (Carlos 8/24)
+    data.append({"range": "Sales Board!D45:K45",
+                 "values": [[sum(lw)] + [v or 0 for v in lw]]})
 
     # roster append (Sales Board B4:B43 + Roll Call D)
     roster = [(_n(r[0]) if r else "") for r in values_get(sh, "Sales Board!B4:B43")]
