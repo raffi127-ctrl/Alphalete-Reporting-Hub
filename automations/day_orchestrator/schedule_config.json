@@ -169,6 +169,27 @@
     }
   },
   "reports": {
+    "owner_chat_texts": {
+      "on_scheduler": false,
+      "machine": "Lucy 1",
+      "display_name": "Owner Chat Texts (iMessage)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.owner_chat_texts.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "_note": "Raf 8/23: trackers + the WOW delta chart into the owner iMessage chats, from THIS machine (Messages = alphaletereporting@). Registered off-scheduler first so `lucy rerun owner_chat_texts` works for the proving runs; the module is dry-run by default and only --send texts anyone. Flip on_scheduler + add --send to base_args + a not_before once the live send is proven.",
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "helen_residential": {
       "on_scheduler": true,
       "_note": "Helen Assefaw (tab 'Helen Assefaw (Vz)' on the ATT Program - Focus Report) is a RESIDENTIAL Verizon Wireless ICD \u2014 Edge Concepts, Falls Church VA, ownerville 13382, confirmed by her captain Starr Rodenhurst 2026-08-17. She is in NO AppStream office and in NO ATT-program Tableau view, so att_focus_raf/opt_phase can never write a number on her tab: those sources are D2D/B2B and she is residential. This report is the only thing that fills it, from THREE weekly emails to alphaletereporting \u2014 RANKED Residential Wireless tracker (anowrouzi@aptel.com, sales), Residential Rep Count (rarchey@thesmartcircle.com, headcount) and Headcount and Recruiting Totals (mdanesi3@gmail.com, funnel). Ordered with `after` and NOT `depends_on`: att_focus_raf touches none of her sources, so its failure must not skip her. ONLY the recruiting mail has landed by Monday \u2014 the rep count arrives Thursday night and the sales tracker runs 8-15 days behind its week and sometimes skips an edition. That is by design: the run scans a 75-day window and writes ONLY still-empty cells, so a late edition is picked up by the next Monday without disturbing anything already filled. Re-running is always safe. Not a Hub card.",
