@@ -39,6 +39,12 @@ a box with no data for today shows a per-section 'pending' note.
 Rafael / B2B / NDS still take their §2 from Tableau (Cancel Rates / Team Stats
 Breakout). Fiber no longer does, so a fiber-only run needs no Tableau session
 at all.
+
+Since 2026-08-23 Rafael's draft also carries the per-owner Weekly Knock
+Dispositions boards (knock_dispo_images.py — the wkd Sunday board, once per
+owner in his captainship). That capture needs a warm ownerville session, so a
+full rafael build runs where the Sunday board does (Lucy 1); elsewhere the
+section degrades to per-owner 'pending' notes and the rest still builds.
 """
 from __future__ import annotations
 
@@ -293,6 +299,22 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
     churn_ni = [c for c in churn if not c[0].lower().startswith("wireless")]
 
+    # Per-owner Weekly Knock Dispositions boards (Raf's Loom 2026-08-23).
+    # Captured ONLY for flavors whose SECTION_KINDS declare "knock_dispo" —
+    # scoping another flavor in or out is a config.py edit; nothing here
+    # changes. Never fatal: capture() already isolates per owner, and a
+    # roster/session-level crash degrades to the section's pending note.
+    knock_dispo: list = []
+    if any(k == "knock_dispo" for _, k in captain.sections):
+        try:
+            from automations.captainship_drafts import knock_dispo_images
+            knock_dispo = knock_dispo_images.capture(
+                captain, today, render_dir, logfn=logfn, errors=errors)
+        except Exception as e:  # noqa: BLE001
+            logfn(f"  ⚠ knock dispo boards skipped for {captain.key}: "
+                  f"{type(e).__name__}: {e}")
+            errors["knock_dispo"] = f"{type(e).__name__}: {e}"
+
     if skip_sheets:
         logfn("  (‑‑skip-sheets) Sales Board screenshots skipped")
         ps, units = None, []
@@ -328,6 +350,10 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         "cancel_tableau": cancel_tableau,
         "teamstats_tableau": teamstats_tableau,
         "boxes": boxes,
+        # (owner, png|None) per captainship owner — same (title, path) list
+        # shape the churn/units keys ride, so the bundle plumbing (and
+        # _normalize_sizes' per-index handling, if ever wanted) fits as-is.
+        "knock_dispo": knock_dispo,
         "fiber_activation": (fiber_png.fiber_activation_png(
             captain.key, today, render_dir, logfn=logfn)
             if captain.flavor == "fiber" else None),
@@ -340,6 +366,7 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         if _k.startswith("box:") and _k.split(":", 1)[1] not in boxes:
             errors.setdefault(_k, "no box rendered for this slot on this run")
     n_imgs = sum([ps is not None, len(units), len(churn), len(boxes),
+                  len([1 for _o, _p in knock_dispo if _p]),
                   cancel_tableau is not None, teamstats_tableau is not None,
                   bundle["fiber_activation"] is not None])
     if not n_imgs:
@@ -390,6 +417,8 @@ def _normalize_sizes(built, *, logfn=print) -> None:
         # 7-day one's width would put back exactly the empty strip on the right
         # that Eve asked us to remove. Only the sheet SCREENSHOTS get matched,
         # which is what this step was built for (per-captain column widths).
+        # The per-owner knock-dispo boards stay out for the same reason: their
+        # width is the office's live disposition-column count.
         #
         # (caption, path) lists — normalize per index so fiber's New-Internet and
         # All-Units unit charts each match their counterpart across captains.

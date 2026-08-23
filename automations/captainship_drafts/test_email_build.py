@@ -73,6 +73,13 @@ def _bundle(tmp: Path, captain) -> dict:
         # silently drop out of the image-contract check.
         "boxes": {kind.split(":", 1)[1]: _png(tmp, f"{k}_{kind.split(':', 1)[1]}")
                   for _, kind in captain.sections if kind.startswith("box:")},
+        # Per-owner knock-dispo boards (rafael flavor, 2026-08-23) — driven by
+        # the captain's own SECTION_KINDS like the boxes above, so any flavor
+        # that gains the section is covered here the moment config.py says so.
+        "knock_dispo": ([(f"Owner {i}", _png(tmp, f"{k}_kd{i}"))
+                         for i in range(2)]
+                        if any(kind == "knock_dispo"
+                               for _, kind in captain.sections) else []),
     }
 
 

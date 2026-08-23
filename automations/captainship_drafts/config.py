@@ -18,6 +18,11 @@ Where each kind comes from:
   box:<slot>                   box_images.py + daily_box_render.py — the
                                one-column-per-day boxes the cancel-rate,
                                activation-rate and ABP/6-days runs fill
+  knock_dispo                  knock_dispo_images.py — one Weekly Knock
+                               Dispositions board per OWNER in the captainship
+                               (weekly_knock_dispositions reused as a library;
+                               rafael-only for now — add the kind + intro line
+                               to another flavor and it joins, nothing else)
 
 Churn sources reference the EXISTING open_ws_* helpers + tab constants so
 tab names are never hardcoded (and we don't trip on the en-dash/hyphen
@@ -59,6 +64,10 @@ _INTRO = {
         "0-30 Day Ongoing Activation Rate ▶️",
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
+        # 2026-08-23 (Raf's Loom): the Sunday per-rep knock board, once per
+        # owner in his captainship. Stays index-aligned with the
+        # "knock_dispo" kind appended to SECTION_KINDS["rafael"] below.
+        "Weekly Knock Dispositions (per owner) 🚪",
     ]),
     # Fiber went from 4 sections to 10 on 2026-07-29 (Eve's list, verbatim
     # including the emoji): the Tableau Cancel-Rates shot is replaced by the
@@ -101,12 +110,17 @@ _INTRO = {
 #   churn_ni / churn_wireless -> the rendered churn bucket images
 #   box:<slot>         -> a one-column-per-day metrics box (see BOX_SOURCES),
 #                         rendered by box_images/daily_box_render
+#   knock_dispo        -> per-owner Weekly Knock Dispositions boards
+#                         (knock_dispo_images.py) — sub-heading + board PNG per
+#                         owner in the captainship. Scope another flavor in by
+#                         adding this kind (+ its intro line) to that flavor.
 SECTION_KINDS = {
     "rafael": ["product_summary",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days"],
+               "box:six-days",
+               "knock_dispo"],
     "fiber":  ["product_summary", "fiber_activation",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",

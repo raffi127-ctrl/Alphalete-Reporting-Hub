@@ -206,6 +206,24 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
                 body += imgs.img(path, slot=f"{kind.replace('_', '-')}-{i}")
         else:
             body += _pending("churn images", err.get(kind, ""))
+    elif kind == "knock_dispo":
+        # Per-owner Weekly Knock Dispositions boards (Raf's Loom 2026-08-23):
+        # a small owner sub-heading, then that owner's board. A single owner's
+        # failed pull renders as a pending note under THEIR name — the other
+        # owners' boards still show (mirror of the capture's per-owner
+        # isolation). An empty list means the roster/session itself failed,
+        # so the section carries ONE note with that reason instead.
+        items = bundle.get("knock_dispo") or []
+        if not items:
+            body += _pending("Weekly Knock Dispositions boards",
+                             err.get("knock_dispo", ""))
+        for i, (owner, path) in enumerate(items):
+            body += (f'<div style="font-size:14px;font-weight:bold;'
+                     f'margin:14px 0 4px">{_html.escape(owner)}</div>')
+            body += (imgs.img(path, slot=f"knock-dispo-{i}") if path
+                     else _pending(f"{_html.escape(owner)}'s Weekly Knock "
+                                   f"Dispositions board",
+                                   err.get(f"knock_dispo:{owner}", "")))
     return head + body
 
 
@@ -250,9 +268,9 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     bundle keys: product_summary(Path), units([(cap,Path)]),
     fiber_activation(Path), cancel_tableau(Path), teamstats_tableau(Path),
     churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]),
-    boxes({slot: Path}), errors({bundle key: reason}).  Missing keys render as
-    a per-section 'pending' note, carrying that key's reason when there is
-    one."""
+    boxes({slot: Path}), knock_dispo([(owner, Path|None)]),
+    errors({bundle key: reason}).  Missing keys render as a per-section
+    'pending' note, carrying that key's reason when there is one."""
     msg = EmailMessage()
     msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR
