@@ -4842,38 +4842,6 @@
       "_onboarded": true,
       "_order_note": "fractional slot after the office-metrics block (27-36), no renumbering of Megan's 2026-08-20 integer master sequence"
     },
-    "drew_metrics": {
-      "order": 36.2,
-      "on_scheduler": false,
-      "_paused": "PAUSED 2026-08-23 (Megan): Drew Tepper moved to ANOTHER SLACK WORKSPACE, so this can't post to C0A7871FAUV any more — it just fails every morning and alerts about it (drop-drew_metrics + failure-drew_metrics at 06:46 on 8/23). 'I already asked for him to be removed from this for now.' on_scheduler false + weekdays [] stops the run and therefore the alerts; nothing is deleted, so re-enabling is flipping these two back. NOT THE DURABLE FIX: office_onboarding/apply.py writes on_scheduler true whenever it re-applies an office, so if Drew is still on the onboarding Sheet the next apply turns this back on. The real removal is taking him off that Sheet (and out of office_metrics/onboarded_offices.json, which is DERIVED from it — hand-edits there get regenerated away).",
-      "display_name": "Drew's Daily Metrics (Precision management-att-sales)",
-      "source_type": "tableau",
-      "data_sources": [
-        "tableau:order_log"
-      ],
-      "command": [
-        "automations.office_metrics.runner"
-      ],
-      "base_args": [
-        "--office",
-        "drew",
-        "--live"
-      ],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P1",
-      "freshness_target": null,
-      "depends_on": [],
-      "timeout_minutes": 60,
-      "verify": {
-        "type": "manifest",
-        "report_id": "drew_metrics"
-      },
-      "_note": "Office metrics for drew -> Precision management-att-sales (C0A7871FAUV), owner Drew Tepper, NDS/wireless subset via SECTION_OVERRIDES (knocks_gaps, churn, rep_activations, order_log, cancels). Same wipe as nii_metrics: mini-only working-tree entry lost to the 2026-08-20 master-sequence rewrite. COMMITTED 2026-08-21 so no pull can drop it again.",
-      "_onboarded": true,
-      "_order_note": "fractional slot after the office-metrics block (27-36), no renumbering of Megan's 2026-08-20 integer master sequence"
-    },
     "metrics_shot_preview": {
       "order": 99,
       "on_scheduler": false,
