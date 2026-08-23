@@ -174,13 +174,16 @@ def main(argv=None) -> int:
     if res["ok"] and not dry and res["sent"]:
         try:  # the Hub must never fail a delivered text
             from automations.day_orchestrator import hub_publish
-            rid, title = {
-                "trackers": ("owner_chat_texts_trackers",
-                             "Owner Chat Texts — Trackers (iMessage)"),
-                "board": ("owner_chat_texts_board",
-                          "Owner Chat Texts — WOW Board (iMessage)"),
-            }.get(args.only, ("owner_chat_texts", "Owner Chat Texts (iMessage)"))
-            hub_publish.publish_done(rid, title, status="success")
+            # ONE id for both halves, on purpose: the Hub card is daily_runs:2
+            # keyed to "owner_chat_texts", so the 7:30 trackers pass shows 1/2
+            # and the 7:45 board pass turns it green. Publishing the scheduler
+            # ids here instead would auto-register two phantom cards and leave
+            # the real one permanently short. The half that ran is in the title.
+            title = {
+                "trackers": "Owner Chat Texts — Trackers (iMessage)",
+                "board": "Owner Chat Texts — WOW Board (iMessage)",
+            }.get(args.only, "Owner Chat Texts (iMessage)")
+            hub_publish.publish_done("owner_chat_texts", title, status="success")
         except Exception:  # noqa: BLE001
             pass
     if res["ok"]:

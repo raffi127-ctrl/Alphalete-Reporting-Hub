@@ -1995,6 +1995,68 @@ AUTOMATED_REPORTS = [
     _tableau_trackers_card(),
     _tableau_box_card(),
     {
+        "id": "owner-chat-texts",
+        "name": "Owner Chat Texts → iMessage owner chats",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F4AC",
+        # Same blue as the Tableau Country Trackers card above — this is their
+        # delivery arm, so they read as one artwork family.
+        "color": "#1F4E79",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Texts the morning boards into the owner iMessage group chats as "
+            "alphaletereporting@gmail.com (Lucy 1): every Country Tracker into "
+            "\"Alphalete Owners \U0001F525 - Real\" at 7:30 AM, then the All "
+            "Units WOW delta chart (owners numbered 1-n, sorted most-to-least "
+            "apps) into that chat AND \"Alphalete A-Team Chat\U0001F525\U0001F525\" "
+            "at 7:45 AM."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Two passes each morning, both from **Lucy 1** (Messages is signed "
+            "in there as **alphaletereporting@gmail.com**):\n"
+            "• **7:30 AM — Trackers.** Downloads the tracker PNGs already "
+            "posted in **#alphalete-sales** (no second Tableau pull) and texts "
+            "each one, captioned, into **Alphalete Owners \U0001F525 - Real**.\n"
+            "• **7:45 AM — WOW board.** Re-sorts the All Units board "
+            "most-to-least apps, renders the delta chart with the 1-n owner "
+            "numbering, and texts it into **both** owner chats.\n\n"
+            "IF SOMETHING'S LATE\n"
+            "A tracker not yet in the Slack thread, or a board still short of "
+            "yesterday (data gate), leaves the pass unfinished — the scheduler "
+            "retries through the morning and each straggler texts as it lands. "
+            "Per-day sent-markers make retries duplicate-proof: nothing ever "
+            "texts twice.\n\n"
+            "IF IT FAILS\n"
+            "A pass that never completes posts a failure incident to "
+            "**#claudecorrections-and-requests**, same as every scheduled "
+            "report.\n\n"
+            "SAFETY\n"
+            "Chats are resolved by NAME on every send and the send refuses to "
+            "guess between lookalikes. The Run button is a full DRY-RUN "
+            "rehearsal — it fetches, renders, and resolves both chats but "
+            "texts no one; only the two scheduled passes send."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        # Base registry entry = the module WITHOUT --send: a safe full rehearsal.
+        "run_rerun_id": "owner_chat_texts",
+        "self_scheduled": True,
+        # BOTH passes publish success under this one id (run.py collapses them
+        # on purpose): 1 success = 1/2 after the 7:30 trackers, 2 = green after
+        # the 7:45 board. daily_runs (not `phases`) so no phantom second card
+        # auto-registers. The second pass is a machine, not an approval —
+        # the orange work-in-progress mid-state is correct, no approval_final_run.
+        "daily_runs": 2,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:30 AM",
+            "time_label": "7:30 AM trackers · 7:45 AM WOW board",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+    },
+    {
         "id": "lucy-weather-forecast",
         "name": "Lucy Weather Forecast",
         "creator": "Megan",
