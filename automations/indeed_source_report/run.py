@@ -106,7 +106,7 @@ def push_boards(new_rows, periods):
     bs = AuthorizedSession(creds)
     for ssid, managers in BOARD_PUSH:
         mgrs = managers or CAPTAINSHIP_NAMES
-        rows = [r for r in new_rows if r and r[0] in mgrs]
+        rows = _numeric([r for r in new_rows if r and r[0] in mgrs])
         if not rows:
             print("  board %s: empty slice, left alone" % ssid[:10], flush=True)
             continue
@@ -135,6 +135,34 @@ def push_boards(new_rows, periods):
 # Carlos, 2026-08-22). Everyone else keeps the per-city split, which is what
 # exposes a dead posting in one metro next to a producing one in another.
 CITY_AGNOSTIC = {"Carlos Hidalgo"}
+
+
+def _numeric(rows):
+    """Re-type numeric strings in the data columns (G.. = index 6+).
+
+    Fresh parses produce real ints/floats, but rows recycled from the sheet
+    ("kept existing rows") arrive however the sheet holds them — and the
+    early seeds were written as text. Text numbers kill the dashboard's
+    traffic-light conditional formats (numeric CF conditions skip strings),
+    which is exactly the all-white Source Report Carlos reported 8/23. RAW
+    input never date-mangles, so real numbers here are coercion-safe; the
+    text columns (Manager..City, index 0-5) are never touched.
+    """
+    out = []
+    for r in rows:
+        rr = list(r)
+        for i in range(6, len(rr)):
+            v = rr[i]
+            if isinstance(v, str) and v.strip():
+                try:
+                    f = float(v)
+                    rr[i] = int(f) if f == int(f) else f
+                except ValueError:
+                    pass
+        out.append(rr)
+    return out
+
+
 def rows_for(manager, period, ads):
     out, tot = [], parse.blank()
     for g in ads:
@@ -260,6 +288,7 @@ def main(argv=None):
     for r in new:
         porder.setdefault(r[1], len(porder))
     new.sort(key=lambda r: (order.get(r[0], 999), r[1] == YTD_LABEL, porder.get(r[1], 0)))
+    new = _numeric(new)
 
     managers = sorted({r[0] for r in new}, key=lambda m: order.get(m, 999))
     periods = sorted({r[1] for r in new if r[1] != YTD_LABEL}) + [YTD_LABEL]
