@@ -651,7 +651,7 @@
     },
     "daily_update_fill": {
       "on_scheduler": false,
-      "machine": "Lucy 1",
+      "machine": "Lucy 2",
       "_note": "Daily Update fill (Carlos 2026-08-23) \u2014 automates the VA's evening 'New DU' pass on the Vantura Master Sales Board from ApplicantStream (office 11580): today's second-round roster/showed/offered/BOB from Retention detail pages + calendar follow-up wording and 'Brought on Board' orientation dates (best-effort), appended in the VA's exact column layout/vocabulary (A status, I-S data). Dedup by name so re-runs and VA overlap are safe. DRY-RUN default; the 8:45 PM Report Library card runs --write. Needs AppStream creds (ownerville-creds.json) + the applicant_tracker session store on the machine. Verified 8/21 vs the VA's own entries (9/9 roster, statuses match; LM nuance needs the live calendar day). `lucy rerun daily_update_fill` = dry preview.",
       "display_name": "Daily Update Fill (New DU)",
       "source_type": "appstream",

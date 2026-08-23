@@ -1,33 +1,32 @@
 """Daily Update fill — automates the VA's New DU runbook (Carlos 2026-08-23).
 
-Replaces the manual evening pass ("claude prompts.pdf"): for an office, read
-today's second-round interviews from ApplicantStream and append one row per
-NEW candidate to the board's Daily Update tab.
+For each office, reads ApplicantStream's Retention Details and fills the
+board's Daily Update tab exactly the way the VA does it by hand:
 
-Source (per office, one Retention Details load — applicant_tracker driver):
-  * Total Second Interviews detail  -> name/email/phone/done-by-1st/
-                                       done-by-2nd/ad (the CSV the VA exports)
-  * Second Interviews Showed Up     -> 2nd Show / No Show
-  * Offered Job From Second Round   -> Offered Y/N
-  * Total Daily Bob                 -> BOB status fallback
-  * Calendar day view (best-effort) -> follow-up wording (BOB/LM/Letting us
-    know/Declined) + 'Brought on Board (<date>)' orientation dates. On warm
-    patchright sessions the calendar can't navigate — those fields degrade
-    gracefully (logged), everything else still fills.
+  APPEND (per interview day): one row per NEW second-round candidate —
+    A Status · I Name · J Email · K Phone · L 2nd-round date · M 1st Round ·
+    N 2nd Round · O Showed/No Show · P Offered Y/N (blank for no-shows) ·
+    Q BOB Status · R Orientation Date · S Job Ad.
+  CLASSROOM RETENTION (col T, Carlos 2026-08-23): the same report's
+    'Total Training' / 'Training Showed Up' rows say who had their first day
+    (new starts) and who showed — existing rows get 'Showed To CR' /
+    'CR No Show' filled in when column T is blank. A candidate we append who
+    later shows to training also gets R = that training date and
+    A = '2 - Showed to classroom'.
 
-Row written (columns of the Vantura 'New DU' / the boards' 'Daily Update'):
-  A Status ('1 - Orientation Scheduled' when a BOB date exists, else
-  'Not Active') · I Name · J Email · K Phone · L 2nd-round date (m/d) ·
-  M 1st Round · N 2nd Round · O Showed/No Show · P Y/N · Q BOB Status
-  ('BOB'/'LM'/'Letting us know'/'Declined'/"Didn't offer them ") ·
-  R Orientation Date · S Job Ad.  B-H and T-V are left for the office.
+Offices: Carlos's own (11580 -> Vantura 'New DU') and the 11 captainship
+owners (funnel_board roster ids -> their boards' 'Daily Update').
 
-DEDUP: a candidate whose name is already on the tab is skipped, so re-runs
-and VA overlap are safe.  DRY-RUN by default; --write appends.
+DEDUP by name per tab — re-runs and VA overlap are safe. DRY-RUN by default.
 
-    python -m automations.daily_update_fill.run                    # dry, today
-    python -m automations.daily_update_fill.run --date 2026-08-21  # dry, past
-    python -m automations.daily_update_fill.run --write
+    python -m automations.daily_update_fill.run                       # today, all
+    python -m automations.daily_update_fill.run --offices vantura
+    python -m automations.daily_update_fill.run --start 2026-07-27 \\
+        --end 2026-08-23 --offices captainship --write               # backfill
+
+Calendar-only nuances (nightly runs only, calendar shows today): follow-up
+wording LM/Letting us know/Declined, and orientation dates for people who
+have not reached training yet.
 """
 from __future__ import annotations
 
@@ -38,7 +37,9 @@ from zoneinfo import ZoneInfo
 
 from automations.applicant_tracker.applicantstream import session
 from automations.applicant_tracker.run import (
-    L_2ND_ROSTER, L_2ND_SHOWED, L_OFFERED, L_BOB, N_2R_COLS, date_header_for)
+    L_2ND_ROSTER, L_2ND_SHOWED, L_OFFERED, L_BOB, L_TRAINING,
+    L_TRAINING_SHOWED, N_2R_COLS, date_header_for)
+from automations.captainship_boards.config import OWNERS as BOARD_IDS
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -47,14 +48,24 @@ except Exception:  # noqa: BLE001
 
 CENTRAL = ZoneInfo("America/Chicago")
 VANTURA = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
-DEFAULT_OFFICE = "11580"          # Carlos Hidalgo
-DEFAULT_TAB = "New DU"
-NAME_COL = "I"                    # Name column of the DU schema
-NAME_COL_IDX = 9
 
-Q_DIDNT_OFFER = "Didn't offer them "     # trailing space matches the dropdown
+# name -> (appstream office id, sheet id, tab)
+OFFICES = {"Carlos Hidalgo": ("11580", VANTURA, "New DU")}
+_ROSTER_OIDS = {
+    "Atef Choudhury": "23467", "Jamis Garay": "19592", "Jackie LeRoy": "22358",
+    "Jeff Starr": "15031", "Kinsey Guenther": "11906", "Vincent Smith": "23318",
+    "George Hipolito": "11296", "Justin Wood": "22192",
+    "Joshua Murphy": "21770", "Joey Ramirez": "23206", "Dhyey Patel": "22767",
+}
+for _n_, _oid in _ROSTER_OIDS.items():
+    OFFICES[_n_] = (_oid, BOARD_IDS[_n_][1], "Daily Update")
+
+NAME_COL_IDX = 9                          # column I
+Q_DIDNT_OFFER = "Didn't offer them "      # trailing space = the dropdown value
 STATUS_ORIENT = "1 - Orientation Scheduled"
+STATUS_CR = "2 - Showed to classroom"
 STATUS_NOT_ACTIVE = "Not Active"
+CR_SHOW, CR_NOSHOW = "Showed To CR", "CR No Show"
 
 
 def log(msg: str) -> None:
@@ -66,9 +77,57 @@ def _n(s) -> str:
     return " ".join(str(s or "").split()).strip()
 
 
+def pick_sunday(d: dt.date) -> dt.date:
+    """The week-anchor Sunday whose picked week (Sun..Sat) contains d."""
+    return d - dt.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def ensure_week(app, sun: dt.date) -> bool:
+    """Drive the report to the Sun-Sat week starting `sun` (the datepicker
+    only accepts Sundays; the Get Report button reloads the grid)."""
+    probe = date_header_for(sun)
+    try:
+        if app.page.evaluate("(h) => document.body.innerText.includes(h)", probe):
+            return True
+        app.page.click("#weekStart", timeout=15000)
+        app.page.wait_for_timeout(1000)
+        app.page.evaluate(
+            """(t) => {
+                const d = document.getElementById('ui-datepicker-div');
+                if (!d) return;
+                const mSel = d.querySelector('.ui-datepicker-month');
+                const ySel = d.querySelector('.ui-datepicker-year');
+                if (mSel && +mSel.value !== t.m) {
+                    mSel.value = String(t.m);
+                    mSel.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+                if (ySel && +ySel.value !== t.y) {
+                    ySel.value = String(t.y);
+                    ySel.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+                const a = [...d.querySelectorAll('a')]
+                    .find(x => x.textContent.trim() === String(t.d));
+                if (!a) return;
+                a.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                a.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                a.click();
+            }""", {"m": sun.month - 1, "y": sun.year, "d": sun.day})
+        app.page.wait_for_timeout(1200)
+        app.page.click("text=Get Report", timeout=10000)
+        app.page.wait_for_load_state("domcontentloaded", timeout=60000)
+        app.page.wait_for_timeout(4000)
+        ok = app.page.evaluate(
+            "(h) => document.body.innerText.includes(h)", probe)
+        if not ok:
+            log(f"  !! week picker did not land on week of {sun}")
+        return bool(ok)
+    except Exception as e:  # noqa: BLE001
+        log(f"  !! ensure_week failed ({type(e).__name__}: {e})")
+        return False
+
+
 def scrape_calendar_details(app) -> dict:
-    """Best-effort: {name_lower: {'follow': str, 'bob_date': str}} from the
-    currently-shown calendar day (second-interview rows)."""
+    """Best-effort {name_lower: {'follow','bob_date'}} from the shown day."""
     try:
         pairs = app.page.evaluate(
             """() => {
@@ -103,54 +162,8 @@ def scrape_calendar_details(app) -> dict:
             }""")
         return {n.strip().lower(): {"follow": f, "bob_date": b}
                 for n, f, b in pairs}
-    except Exception as e:  # noqa: BLE001
-        log(f"  calendar detail scrape unavailable ({type(e).__name__})")
+    except Exception:  # noqa: BLE001
         return {}
-
-
-def ensure_week(app, day: dt.date, header: str) -> None:
-    """The retention report shows one Sat-Fri week. Its #weekStart datepicker
-    only allows SUNDAY picks (the runbook's "select the right Sunday"). If the
-    target day's column isn't on the page, click the right Sunday."""
-    try:
-        if app.page.evaluate(
-                "(h) => document.body.innerText.includes(h)", header):
-            return
-        sat = day - dt.timedelta(days=(day.weekday() - 5) % 7)
-        sun = sat + dt.timedelta(days=1)
-        app.page.click("#weekStart", timeout=15000)
-        app.page.wait_for_timeout(1000)
-        ok = app.page.evaluate(
-            """(t) => {
-                const d = document.getElementById('ui-datepicker-div');
-                if (!d) return 'no datepicker';
-                const mSel = d.querySelector('.ui-datepicker-month');
-                const ySel = d.querySelector('.ui-datepicker-year');
-                if (mSel && +mSel.value !== t.m) {
-                    mSel.value = String(t.m);
-                    mSel.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-                if (ySel && +ySel.value !== t.y) {
-                    ySel.value = String(t.y);
-                    ySel.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-                const a = [...d.querySelectorAll('a')]
-                    .find(x => x.textContent.trim() === String(t.d));
-                if (!a) return 'day link not found';
-                a.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-                a.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
-                a.click();
-                return 'clicked';
-            }""", {"m": sun.month - 1, "y": sun.year, "d": sun.day})
-        app.page.wait_for_timeout(1200)
-        app.page.click("text=Get Report", timeout=10000)
-        app.page.wait_for_load_state("domcontentloaded", timeout=60000)
-        app.page.wait_for_timeout(4000)
-        if not app.page.evaluate(
-                "(h) => document.body.innerText.includes(h)", header):
-            log(f"  !! week picker did not land on {header} ({ok})")
-    except Exception as e:  # noqa: BLE001
-        log(f"  !! ensure_week failed ({type(e).__name__}: {e})")
 
 
 def map_bob_status(offered: bool, follow: str, in_bob: bool) -> str:
@@ -168,102 +181,178 @@ def map_bob_status(offered: bool, follow: str, in_bob: bool) -> str:
     return "BOB" if in_bob else ""
 
 
+def harvest_office(app, oid: str, days: list, use_calendar: bool):
+    """One office: navigate week by week, collect per-day hrefs from each
+    single report load, then visit them. Returns (candidates, cr_map)."""
+    owner = app.select_office(oid)
+    log(f"  office {oid}: {owner}")
+    per_day = {}
+    for sun in sorted({pick_sunday(d) for d in days}):
+        app.open_retention_details()
+        if not ensure_week(app, sun):
+            continue
+        for d in days:
+            if pick_sunday(d) != sun:
+                continue
+            h = date_header_for(d)
+            per_day[d] = {lbl: app.detail_href(lbl, h) for lbl in (
+                L_2ND_ROSTER, L_2ND_SHOWED, L_OFFERED, L_BOB,
+                L_TRAINING, L_TRAINING_SHOWED)}
+    cands, cr_map = [], {}
+    for d in sorted(per_day):
+        hs = per_day[d]
+        rows = (app.scrape_at(hs[L_2ND_ROSTER], N_2R_COLS)
+                if hs[L_2ND_ROSTER] else [])
+        showed = {n.strip().lower() for n in (
+            app.names_at(hs[L_2ND_SHOWED]) if hs[L_2ND_SHOWED] else [])}
+        offered = {n.strip().lower() for n in (
+            app.names_at(hs[L_OFFERED]) if hs[L_OFFERED] else [])}
+        bob = {n.strip().lower() for n in (
+            app.names_at(hs[L_BOB]) if hs[L_BOB] else [])}
+        train = [_n(x) for x in (
+            app.names_at(hs[L_TRAINING]) if hs[L_TRAINING] else [])]
+        tshow = {n.strip().lower() for n in (
+            app.names_at(hs[L_TRAINING_SHOWED]) if hs[L_TRAINING_SHOWED]
+            else [])}
+        for name in train:
+            cr_map[name.lower()] = (d, name.lower() in tshow)
+        cal = {}
+        if use_calendar and rows and d == dt.datetime.now(CENTRAL).date():
+            if app.open_calendar_for(d):
+                cal = scrape_calendar_details(app)
+        for r in rows:
+            r = list(r) + [""] * (10 - len(r))
+            name = f"{_n(r[0])} {_n(r[1])}".strip()
+            key = name.lower()
+            info = cal.get(key, {})
+            off, did_show = key in offered, key in showed
+            cands.append({
+                "day": d, "name": name, "email": _n(r[2]), "phone": _n(r[3]),
+                "first_round": _n(r[5]), "second_round": _n(r[6]),
+                "ad": _n(r[9]),
+                "show": "Showed" if did_show else "No Show",
+                "offered": ("Y" if off else "N") if did_show else "",
+                "bob_status": (map_bob_status(off, info.get("follow", ""),
+                                              key in bob) if did_show else ""),
+                "orientation": _n(info.get("bob_date", "")),
+            })
+        if rows or train:
+            log(f"    {d}: interviews={len(rows)} showed={len(showed)} "
+                f"offered={len(offered)} bob={len(bob)} "
+                f"training={len(train)} tshowed={len(tshow)}")
+    return cands, cr_map
+
+
+def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
+    from automations.recruiting_report.fill import _retry, open_by_key
+    sh = _retry(lambda: open_by_key(sheet_id))
+    ws = sh.worksheet(tab)
+    col_i = [_n(c) for c in ws.col_values(NAME_COL_IDX)]
+    col_t = [_n(c) for c in ws.col_values(20)]           # T
+    n_before = len(col_i)
+    existing = {}
+    for idx, nm in enumerate(col_i):
+        if nm:
+            existing[nm.lower()] = idx + 1               # last wins
+    data, appended = [], 0
+    next_row = max(n_before + 1, 3)                      # data starts row 2/3
+    for c in cands:
+        key = c["name"].lower()
+        if not key or key in existing:
+            continue
+        cr = cr_map.get(key)
+        orientation = c["orientation"]
+        status = STATUS_ORIENT if orientation else STATUS_NOT_ACTIVE
+        t_val = ""
+        if cr:
+            t_val = CR_SHOW if cr[1] else CR_NOSHOW
+            if not orientation:
+                orientation = f"{cr[0].month}/{cr[0].day}"
+            if cr[1]:
+                status = STATUS_CR
+        row = next_row
+        next_row += 1
+        existing[key] = row
+        ldate = f"{c['day'].month}/{c['day'].day}"
+        data.append({"range": f"'{tab}'!A{row}", "values": [[status]]})
+        data.append({"range": f"'{tab}'!I{row}:S{row}", "values": [[
+            c["name"], c["email"], c["phone"], ldate, c["first_round"],
+            c["second_round"], c["show"], c["offered"], c["bob_status"],
+            orientation, c["ad"]]]})
+        if t_val:
+            data.append({"range": f"'{tab}'!T{row}", "values": [[t_val]]})
+        appended += 1
+    cr_updates = 0
+    for key, (d, shown) in cr_map.items():
+        row = existing.get(key)
+        if not row or row > n_before:                    # only pre-existing rows
+            continue
+        cur_t = col_t[row - 1] if row <= len(col_t) else ""
+        if cur_t:
+            continue
+        data.append({"range": f"'{tab}'!T{row}",
+                     "values": [[CR_SHOW if shown else CR_NOSHOW]]})
+        cr_updates += 1
+    log(f"  {name_label:<17} append={appended} cr-updates={cr_updates}"
+        + ("" if write else "  (dry-run)"))
+    if write and data:
+        sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
+    return appended, cr_updates
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--office", default=DEFAULT_OFFICE)
-    ap.add_argument("--sheet-id", default=VANTURA)
-    ap.add_argument("--tab", default=DEFAULT_TAB)
-    ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today CT)")
+    ap.add_argument("--offices", default="all",
+                    choices=["all", "vantura", "captainship"])
+    ap.add_argument("--only", default=None, help="one owner name")
+    ap.add_argument("--start", default=None)
+    ap.add_argument("--end", default=None)
+    ap.add_argument("--date", default=None, help="single day (default today)")
     ap.add_argument("--write", action="store_true")
     args = ap.parse_args(argv)
 
-    day = (dt.date.fromisoformat(args.date) if args.date
-           else dt.datetime.now(CENTRAL).date())
-    header = date_header_for(day)
-    log(f"=== daily update fill | office {args.office} | {header} | "
-        f"{'WRITE' if args.write else 'DRY-RUN'} ===")
+    today = dt.datetime.now(CENTRAL).date()
+    if args.start:
+        start = dt.date.fromisoformat(args.start)
+        end = dt.date.fromisoformat(args.end) if args.end else today
+    else:
+        start = end = (dt.date.fromisoformat(args.date) if args.date
+                       else today)
+    days = [start + dt.timedelta(days=i)
+            for i in range((end - start).days + 1)]
+    targets = {}
+    for name, cfg in OFFICES.items():
+        if args.only and name != args.only:
+            continue
+        if args.offices == "vantura" and name != "Carlos Hidalgo":
+            continue
+        if args.offices == "captainship" and name == "Carlos Hidalgo":
+            continue
+        targets[name] = cfg
+    log(f"=== daily update fill | {start}..{end} | "
+        f"{len(targets)} office(s) | {'WRITE' if args.write else 'DRY-RUN'} ===")
 
+    use_cal = start == end == today
+    failures = []
+    results = {}
     with session() as app:
-        owner = app.select_office(args.office)
-        log(f"  office: {owner}")
-        app.open_retention_details()
-        ensure_week(app, day, header)
-        # collect EVERY detail link from this one report load FIRST —
-        # scrape_at/names_at navigate away (the applicant_tracker pattern)
-        h_roster = app.detail_href(L_2ND_ROSTER, header)
-        h_showed = app.detail_href(L_2ND_SHOWED, header)
-        h_offered = app.detail_href(L_OFFERED, header)
-        h_bob = app.detail_href(L_BOB, header)
-        rows = app.scrape_at(h_roster, N_2R_COLS) if h_roster else []
-        if not rows:
-            log("  no second interviews today — nothing to fill")
-            return 0
-        showed = {n.strip().lower()
-                  for n in (app.names_at(h_showed) if h_showed else [])}
-        offered = {n.strip().lower()
-                   for n in (app.names_at(h_offered) if h_offered else [])}
-        bob = {n.strip().lower()
-               for n in (app.names_at(h_bob) if h_bob else [])}
-        cal = {}
-        if app.open_calendar_for(day):
-            cal = scrape_calendar_details(app)
-        log(f"  roster={len(rows)} showed={len(showed)} offered={len(offered)}"
-            f" bob={len(bob)} calendar-rows={len(cal)}")
-
-    # rows: First, Last, Email, Phone, Rating, 1STR, 2ND, Job Board, DT, Ad
-    cands = []
-    for r in rows:
-        r = list(r) + [""] * (10 - len(r))
-        first, last = _n(r[0]), _n(r[1])
-        name = f"{first} {last}".strip()
-        key = name.lower()
-        info = cal.get(key, {})
-        off = key in offered
-        did_show = key in showed
-        bobdate = _n(info.get("bob_date", ""))
-        cands.append({
-            "name": name, "email": _n(r[2]), "phone": _n(r[3]),
-            "first_round": _n(r[5]), "second_round": _n(r[6]),
-            "ad": _n(r[9]),
-            "show": "Showed" if did_show else "No Show",
-            # VA convention: a no-show's Offered / BOB Status stay blank
-            "offered": ("Y" if off else "N") if did_show else "",
-            "bob_status": (map_bob_status(off, info.get("follow", ""),
-                                          key in bob) if did_show else ""),
-            "orientation": bobdate,
-            "status": STATUS_ORIENT if bobdate else STATUS_NOT_ACTIVE,
-        })
-
-    from automations.recruiting_report.fill import _retry, open_by_key
-    sh = _retry(lambda: open_by_key(args.sheet_id))
-    ws = sh.worksheet(args.tab)
-    existing = {(_n(c)).lower() for c in ws.col_values(NAME_COL_IDX) if _n(c)}
-    new = [c for c in cands if c["name"].lower() not in existing]
-    for c in cands:
-        dup = " (already on sheet — skipped)" \
-            if c["name"].lower() in existing else ""
-        log(f"  {c['name']:<28} {c['show']:<8} offered={c['offered']} "
-            f"bob={c['bob_status']!r:<20} orient={c['orientation'] or '-'}"
-            f"{dup}")
-    if not new:
-        log("  nothing new to append")
-        return 0
-    if not args.write:
-        log(f"  DRY-RUN: would append {len(new)} row(s)")
-        return 0
-
-    start = len(ws.col_values(NAME_COL_IDX)) + 1
-    ldate = f"{day.month}/{day.day}"
-    data = []
-    for i, c in enumerate(new):
-        row = start + i
-        data.append({"range": f"'{args.tab}'!A{row}", "values": [[c["status"]]]})
-        data.append({"range": f"'{args.tab}'!I{row}:S{row}", "values": [[
-            c["name"], c["email"], c["phone"], ldate, c["first_round"],
-            c["second_round"], c["show"], c["offered"], c["bob_status"],
-            c["orientation"], c["ad"]]]})
-    sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
-    log(f"  appended {len(new)} row(s) at {start}")
+        for name, (oid, sheet_id, tab) in targets.items():
+            try:
+                cands, cr_map = harvest_office(app, oid, days, use_cal)
+                results[name] = (sheet_id, tab, cands, cr_map)
+            except Exception as e:  # noqa: BLE001
+                failures.append(f"{name}: {type(e).__name__}: {e}")
+                log(f"  !! {name} harvest FAILED: {type(e).__name__}: {e}")
+    for name, (sheet_id, tab, cands, cr_map) in results.items():
+        try:
+            apply_to_sheet(name, sheet_id, tab, cands, cr_map, args.write)
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{name} write: {type(e).__name__}: {e}")
+            log(f"  !! {name} write FAILED: {type(e).__name__}: {e}")
+    if failures:
+        log(f"finished with {len(failures)} FAILURE(S): {failures}")
+        return 1
+    log("finished clean")
     return 0
 
 
