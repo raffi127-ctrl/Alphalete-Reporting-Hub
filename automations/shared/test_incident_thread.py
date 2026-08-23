@@ -217,6 +217,60 @@ class IncidentThreadTest(unittest.TestCase):
                       "\n".join(self.c.replies).lower())
         self.assertIn("· resolved 2026-08-15", self.c.updates[-1][1])
 
+    def test_a_thread_is_only_rolled_over_once_ever(self):
+        """Megan 2026-08-23: "these alerts don't make any sense posting on a
+        fixed header thread from Wed". drop-tableau-screenshots-box's parent was
+        posted from a LAPTOP on 08-19, so Lucy could never chat.update it — the
+        marker stayed `open`, and the thread collected FOUR "Still open after N
+        day(s)" lines (08-20, then 08-23 at 08:06, 08:12 and 12:00) on top of
+        five resolutions. The marker can only be written by whoever posted the
+        parent; the THREAD can be read by anyone, so that is the signal."""
+        first = self._open(dt.date(2026, 8, 19))
+        self.c.refuse_updates()                  # a parent this token can't edit
+        parent = {"ts": first["ts"], "text": self.c.top_level[0],
+                  "marker_key": "failure-r"}
+        # The same stale-open parent, found again on four separate runs — the
+        # real shape: three of drop-tableau-screenshots-box's four lines landed
+        # on ONE day, 08:06 / 08:12 / 12:00, because nothing about it had changed.
+        for age, dayn in ((1, 20), (4, 23), (4, 23), (4, 23)):
+            inc._HISTORY_CACHE.clear()
+            inc.STATE_PATH.unlink(missing_ok=True)   # each run, another machine
+            inc._roll_over(self.c, "C1", parent, "failure-r", age,
+                           dt.date(2026, 8, dayn))
+        rolled = [r for r in self.c.replies if "thread ends here" in r]
+        self.assertEqual(len(rolled), 1, "one roll-over line, however many runs")
+        # The marker really is still `open` — the edit was refused every time,
+        # exactly as Slack does it. Silence has to come from the THREAD instead.
+        self.assertIn("· open 2026-08-19", self.c.top_level[0])
+
+    def test_a_resolved_thread_is_never_rolled_over(self):
+        """It isn't "still open after 4 days" — it was closed on day one. That
+        thread had five resolution replies when the fourth roll-over landed."""
+        self._open(dt.date(2026, 8, 19))
+        self.c.refuse_updates()
+        inc.resolve(key="failure-r", lines=[
+            ":white_check_mark: *r* — RESOLVED. It just ran clean.",
+            "_Closed. If it happens again it opens a fresh post, not this "
+            "thread._"], channel="C1", day=dt.date(2026, 8, 19), client=self.c)
+        inc._HISTORY_CACHE.clear()
+        inc.STATE_PATH.unlink(missing_ok=True)
+        self._open(dt.date(2026, 8, 23))
+        self.assertEqual([r for r in self.c.replies if "thread ends here" in r],
+                         [], "a closed thread is not rolled over")
+
+    def test_an_unreadable_thread_stays_quiet(self):
+        """The reverse of resolve()'s tie-break, on purpose: a missing roll-over
+        line is a lost pointer to a post in the same channel, a repeated one is
+        the noise being complained about."""
+        self._open(dt.date(2026, 8, 19))
+
+        def _boom(**_kw):
+            raise RuntimeError("ratelimited")
+        self.c.conversations_replies = _boom
+        self._open(dt.date(2026, 8, 20))
+        self.assertEqual([r for r in self.c.replies if "thread ends here" in r],
+                         [])
+
     def test_yesterdays_thread_is_found_and_rolled_over_with_no_local_index(self):
         """Another machine opened it — the marker in the message is the state,
         so the rollover has to work off the channel scan alone."""

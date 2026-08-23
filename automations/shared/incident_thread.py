@@ -701,6 +701,34 @@ def _remember(key: str, *, ts: str, channel: str, opened: str, count: int,
     _save_index(idx)
 
 
+# The words the roll-over line is recognised by later. Kept short and matched
+# case-insensitively: this is read back out of Slack, so it has to survive the
+# emoji and the bolding around it.
+_ROLLOVER_SENTENCE = "this thread ends here"
+
+
+def _thread_already_spoke(client, channel: str, ts: str) -> Optional[bool]:
+    """Has this thread already been rolled over, or resolved?
+
+    True = yes (a roll-over line or a resolution reply is under it), False = no,
+    None = the read failed. The THREAD is the only state every machine can both
+    write and read: the local index is per-machine, and the parent's marker can
+    only be rewritten by whoever posted it. See _roll_over."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=ts, limit=200)
+    except Exception as e:  # noqa: BLE001
+        print("  - incident: couldn't read thread {} ({}: {})".format(
+            ts, type(e).__name__, str(e)[:60]))
+        return None
+    for msg in (resp.get("messages") or []):
+        if msg.get("ts") == ts:
+            continue                      # the parent, not a reply
+        text = msg.get("text") or ""
+        if _ROLLOVER_SENTENCE in text.lower() or _is_resolution_reply(text):
+            return True
+    return False
+
+
 def _roll_over(client, channel: str, inc: dict, key: str, age: int,
                day: dt.date) -> None:
     """Yesterday's thread ends here; today gets its own post.
@@ -719,14 +747,39 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
     That is half of why the channel looked worked-on when nothing was: a report
     failing two mornings running rolls its post over wearing yesterday's mark.
     Strip both here, while we still have the ts, before the marker closes the
-    door on it."""
-    try:
-        _post(client, channel,
-              ":arrows_counterclockwise: *Still open after {} day(s)* — this "
-              "thread ends here; today's occurrence has its own post in the "
-              "channel.".format(age), thread_ts=inc["ts"])
-    except Exception:  # noqa: BLE001
-        pass
+    door on it.
+
+    SAY IT ONCE, EVEN WHEN THE MARKER CAN'T BE WRITTEN (Megan 2026-08-23:
+    "these alerts don't make any sense posting on a fixed header thread from
+    Wed"). The "otherwise every machine keeps finding that old post" above is
+    exactly right, and it has a hole: flipping the marker is a chat.update, and
+    chat.update only touches your OWN messages. A parent posted from a laptop
+    belongs to that person, so Lucy is refused — the marker stays `open`, and
+    nothing about tomorrow is different. drop-tableau-screenshots-box's parent
+    went up under Megan's token on 08-19 and collected FOUR "Still open after N
+    day(s)" lines (08-20, then 08-23 at 08:06, 08:12 and 12:00) on a thread that
+    had already been resolved five times over.
+
+    The local index can't fix it either — it is per machine, and this is three
+    machines. The one piece of state every machine CAN both write and read is
+    the THREAD, so that is what we ask: if the thread already carries this line
+    (or a resolution), the story has been told and we stay quiet. The marker
+    edit is still attempted; when it lands, this thread is done for good."""
+    if _thread_already_spoke(client, channel, inc["ts"]) is False:
+        try:
+            _post(client, channel,
+                  ":arrows_counterclockwise: *Still open after {} day(s)* — this "
+                  "thread ends here; today's occurrence has its own post in the "
+                  "channel.".format(age), thread_ts=inc["ts"])
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        # True (already said) or None (couldn't read). Unknown stays QUIET here,
+        # the opposite of resolve()'s choice, because the costs are reversed: a
+        # missing roll-over line is a lost pointer to a post sitting in the same
+        # channel, while a repeated one is the noise being complained about.
+        print("[incident] {}: thread {} has already been rolled over or "
+              "resolved — not repeating the line".format(key, inc["ts"]))
     # Superseded, not fixed: no ✅. But it is no longer being worked either.
     _react(client, channel, inc["ts"], WORKING_REACTION, remove=True)
     _react(client, channel, inc["ts"], WAITING_REACTION, remove=True)

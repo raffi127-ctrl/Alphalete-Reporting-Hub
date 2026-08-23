@@ -4844,7 +4844,8 @@
     },
     "drew_metrics": {
       "order": 36.2,
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_paused": "PAUSED 2026-08-23 (Megan): Drew Tepper moved to ANOTHER SLACK WORKSPACE, so this can't post to C0A7871FAUV any more — it just fails every morning and alerts about it (drop-drew_metrics + failure-drew_metrics at 06:46 on 8/23). 'I already asked for him to be removed from this for now.' on_scheduler false + weekdays [] stops the run and therefore the alerts; nothing is deleted, so re-enabling is flipping these two back. NOT THE DURABLE FIX: office_onboarding/apply.py writes on_scheduler true whenever it re-applies an office, so if Drew is still on the onboarding Sheet the next apply turns this back on. The real removal is taking him off that Sheet (and out of office_metrics/onboarded_offices.json, which is DERIVED from it — hand-edits there get regenerated away).",
       "display_name": "Drew's Daily Metrics (Precision management-att-sales)",
       "source_type": "tableau",
       "data_sources": [
@@ -4859,15 +4860,7 @@
         "--live"
       ],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
+        "weekdays": []
       },
       "priority": "P1",
       "freshness_target": null,
