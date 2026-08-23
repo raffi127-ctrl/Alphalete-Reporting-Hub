@@ -26,6 +26,13 @@ NOISE = re.compile(
     # Indeed's own account / marketing mail lands in these inboxes too.
     r'indeed\s*[:|]|your indeed|employer account|what\'s new|impressions|'
     r'offer letter|digest ready|more replies|profiles like|client ask|'
+    # 2026-08-23 sweep (Jamis's tab): transactional/marketing subjects that got
+    # past the first net. \w\? catches mojibake-apostrophe sentences
+    # ("you?ve") and marketing questions ("texts? Sona...") — a REAL title's
+    # "?" separator is always space-padded, which this deliberately skips.
+    r'indeed\.com|your account\b|\bpassword\b|apple account|missed calls|'
+    r'agency partnership|white.?label|sports craft|promotional events|'
+    r'\w\?|'
     # " @ Employer" is a resume-scooper artifact naming the candidate's CURRENT
     # job, never one of our own ad titles.
     r'\s@\s', re.I)
@@ -121,6 +128,8 @@ def load_table(html):
             continue
         if NOISE.search(subj):
             continue
+        if not re.search(r'[A-Z]', subj):
+            continue                       # all-lowercase = a sentence, not an ad title
         title, city = split_city(clean(subj))
 
         def col(*names):
