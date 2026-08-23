@@ -279,7 +279,7 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
 
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
                     today: dt.date, args, program: str = "fiber",
-                    aliases: dict | None = None) -> dict:
+                    aliases: dict | None = None, slug: str = "") -> dict:
     """Fill one tab. Returns {period: [went_dark_rep, ...]} — reps on the tab +
     recently active but absent from today's pull (empty dict = clean)."""
     print(f"\n--- {label}: parse + fill ---")
@@ -338,6 +338,15 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
         # missing-data finding — so don't flag it (and don't waste a backfill
         # pull chasing a rep who's already filling).
         went_dark = _drop_aliased_present(went_dark, parsed, aliases)
+        # A rep who is really on this captainship but sells nothing THIS source
+        # measures is absent from every pull of it, forever — blank rows that
+        # match the source. Left in, the went-dark heuristic re-fires every
+        # morning until their last numbers age out of the tab's recent window,
+        # holding the report INCOMPLETE and the captain's draft back from the
+        # send. Keyed by the FULL slug (the '-wl' wireless tabs are a different
+        # source from the NI ones), and done here — before the backfill — so it
+        # also saves an all-teams pull that could never find them.
+        went_dark = _pins.drop_expected_absent(went_dark, slug, logfn=print)
         if went_dark:
             for p, names in went_dark.items():
                 print(f"  ⚠ {p}-day WENT DARK (on tab + recent data, absent from "
@@ -361,9 +370,11 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
             # Re-detect: backfilled reps are now present in `parsed`, so they
             # clear. Re-apply _drop_aliased_present too — a raw re-detect puts
             # the stale-label rows straight back and undoes the filter above.
-            went_dark = _drop_aliased_present(
-                fill.detect_went_dark(tab_values, sections, parsed),
-                parsed, aliases)
+            went_dark = _pins.drop_expected_absent(
+                _drop_aliased_present(
+                    fill.detect_went_dark(tab_values, sections, parsed),
+                    parsed, aliases),
+                slug, logfn=print)
 
     already_filled = fill.today_already_filled(ws, sections, today)
     skip_insert = already_filled and not args.force_insert
@@ -562,7 +573,7 @@ def main(argv=None) -> int:
                                          where=label)
         _prog = _program_of(parse_fn)
         _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args,
-                              program=_prog, aliases=aliases)
+                              program=_prog, aliases=aliases, slug=slug)
         if _wd:
             went_dark_all[label] = _wd
             went_dark_program[label] = _prog
