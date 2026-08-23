@@ -74,6 +74,15 @@ COMBINED_KNOCKS_DISPLAY = {
     COL_TALK_TO_NI: "Talk To - Not Int",
     COL_PRES_NI: "Pres - Not Int",
 }
+# Derived at render time (Raf 2026-08-23: "AVG Hrs knocking per day"):
+# (last knock − first knock) − total gaps, the same formula his weekly
+# dispositions board uses. Rep rows show that day's hours; the TOTAL rows
+# show the office average.
+COL_HRS_KNOCKING = "Hrs Knocking"
+COMBINED_KNOCKS_HEADERS = (
+    COMBINED_KNOCKS_COLUMNS[:COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1]
+    + [COL_HRS_KNOCKING]
+    + COMBINED_KNOCKS_COLUMNS[COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1:])
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -207,8 +216,8 @@ def _wrap_header(probe, text: str, fit_w: int, font) -> list[str]:
 def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           out_path: Path, name_col: int = 1,
           wrap_headers: bool = False,
-          highlight_last_row: bool = False,
-          highlight_first_row: bool = False,
+          highlight_last_row: "bool | int" = False,
+          highlight_first_row: "bool | int" = False,
           repeat_header_before: int = 0) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
@@ -332,8 +341,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     for ri, r in enumerate(rows):
         if ri == _rep_at:
             y = _header_band(y)            # the bottom header band
+        # highlight_first_row mirrors highlight_last_row: True==1; int N =
+        # the first N rows (a board carrying other offices' totals above its
+        # own, Raf 2026-08-23).
         is_total = ((_n_hl and ri >= len(rows) - _n_hl)
-                    or (highlight_first_row and ri == 0))
+                    or ri < int(highlight_first_row or 0))
         bg = (theme.get("total_bg", theme["header_bg"]) if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
@@ -378,7 +390,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sheet_id: str = SHEET_ID,
                         out_dir: Path = OUT_DIR_DEFAULT,
                         rows: list[dict] | None = None,
-                        title_suffix: str = "") -> Path:
+                        title_suffix: str = "",
+                        extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -399,63 +412,37 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
         header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
-    # Raf's Loom 2026-08-22 — ONE combined fiber board: drop ID, pull Gaps +
-    # Total Gaps in (in front of Last Knock) so the separate Time Gaps post
-    # retires, alphabetical by rep, and wrapped headers so the boxes hug the
-    # numbers instead of the header text.
-    idx = {}
-    for i, h in enumerate(header):
-        k = _norm(h)
-        if k and k not in idx:
-            idx[k] = i
-    missing = [c for c in COMBINED_KNOCKS_COLUMNS if _norm(c) not in idx]
-    if missing:
-        raise RuntimeError(f"Tab {tab!r} missing column(s) for Total Knocks: "
-                           f"{missing}. Header: {header}")
-    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
-    sub = [[(r[i] if i < len(r) else "") for i in sel] for r in rows]
-    rep_pos = COMBINED_KNOCKS_COLUMNS.index(COL_REP)
-    tg_pos = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
-    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
+    sub = _combined_sub(header, rows, where=f"tab {tab!r}")
+    totals = _combined_totals("TOTAL", sub)
 
-    # TOTAL footer (Megan 2026-08-22): every count column sums; the knock-time
-    # cells show the office AVERAGE first/last knock (reps with a parsable
-    # time only — same convention as the weekly dispositions board); Total
-    # Gaps sums in minutes and shows as 'Xh Ym'.
-    def _int0(v) -> int:
-        v = str(v).strip()
-        return int(v) if v.isdigit() else 0
+    # Extra offices' totals rows ABOVE ours (Raf 2026-08-23: "add Chan's
+    # totals above ours daily") — each is (office name, records keyed by
+    # SHEET_COLUMNS); only their TOTAL line shows, not their reps.
+    extra_rows: list[list[str]] = []
+    for name, recs in (extra_totals or []):
+        x_header, x_rows = _table_from_rows(recs)
+        if not x_rows:
+            continue
+        x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}")
+        extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub))
 
-    def _avg_time(pos: int) -> str:
-        mins = [m for m in (_knock_time_key(str(r[pos])) for r in sub)
-                if m < 24 * 60]
-        if not mins:
-            return ""
-        m = round(sum(mins) / len(mins))
-        h, mm = divmod(m, 60)
-        return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
-
-    totals: list[str] = []
-    for ci, c in enumerate(COMBINED_KNOCKS_COLUMNS):
-        if c == COL_REP:
-            totals.append("TOTAL")
-        elif c in (COL_FIRST_KNOCK, COL_LAST_KNOCK):
-            totals.append(_avg_time(ci))
-        else:
-            totals.append(str(sum(_int0(r[ci]) for r in sub)))
-
+    hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
+    tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
     for r in sub:
         r[tg_pos] = _fmt_hm(r[tg_pos])
-    totals[tg_pos] = _fmt_hm(totals[tg_pos])
-    # Office row at the TOP, right under the header (Raf 2026-08-22:
-    # "averages of the whole office at the top").
-    sub.insert(0, totals)
+        r[hrs_pos] = _fmt_hm(r[hrs_pos])
+    for t in extra_rows + [totals]:
+        t[tg_pos] = _fmt_hm(t[tg_pos])
+        t[hrs_pos] = _fmt_hm(t[hrs_pos])
+    # Office rows at the TOP, right under the header (Raf 2026-08-22).
+    table = extra_rows + [totals] + sub
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_COLUMNS]
-    return _draw(disp, sub,
+    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
+    return _draw(disp, table,
                  f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
-                 name_col=0, wrap_headers=True, highlight_first_row=True)
+                 name_col=0, wrap_headers=True,
+                 highlight_first_row=1 + len(extra_rows))
 
 
 def _gap_min(v: str) -> int:
@@ -517,6 +504,71 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
     return _draw(list(TIME_GAPS_COLUMNS), sub,
                  f"TIME GAPS — {_office}{_title_date(target)}",
                  THEME_TEAL, out_dir / f"time_gaps_{target.isoformat()}.png")
+
+
+def _combined_sub(header: list[str], rows: list[list[str]],
+                  where: str = "") -> list[list[str]]:
+    """Select + order one office's rows into the combined-board shape:
+    COMBINED_KNOCKS_HEADERS order (Hrs Knocking computed), alphabetical by
+    rep. Gap/hour cells stay raw minutes — the caller formats them."""
+    idx = {}
+    for i, h in enumerate(header):
+        k = _norm(h)
+        if k and k not in idx:
+            idx[k] = i
+    missing = [c for c in COMBINED_KNOCKS_COLUMNS if _norm(c) not in idx]
+    if missing:
+        raise RuntimeError(f"{where or 'data'} missing column(s) for Total "
+                           f"Knocks: {missing}. Header: {header}")
+    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
+    sub = [[(r[i] if i < len(r) else "") for i in sel] for r in rows]
+    rep_pos = COMBINED_KNOCKS_COLUMNS.index(COL_REP)
+    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
+    # Insert the derived Hrs Knocking cell: (last − first) − total gaps.
+    fk = COMBINED_KNOCKS_COLUMNS.index(COL_FIRST_KNOCK)
+    lk = COMBINED_KNOCKS_COLUMNS.index(COL_LAST_KNOCK)
+    tg = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
+    hrs_at = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
+    for r in sub:
+        f, l = _knock_time_key(str(r[fk])), _knock_time_key(str(r[lk]))
+        gaps_min = str(r[tg]).strip()
+        gaps_min = int(gaps_min) if gaps_min.isdigit() else 0
+        if f >= 24 * 60 or l >= 24 * 60 or l <= f:
+            r.insert(hrs_at, "")
+        else:
+            r.insert(hrs_at, str(max(l - f - gaps_min, 0)))
+    return sub
+
+
+def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
+    """One office's TOTAL line for the combined board: counts sum, the knock
+    times average (reps with a parsable time only), Total Gaps sums, Hrs
+    Knocking averages. Gap/hour cells stay raw minutes for the caller."""
+    def _int0(v) -> int:
+        v = str(v).strip()
+        return int(v) if v.isdigit() else 0
+
+    def _avg_time(pos: int) -> str:
+        mins = [m for m in (_knock_time_key(str(r[pos])) for r in sub)
+                if m < 24 * 60]
+        if not mins:
+            return ""
+        m = round(sum(mins) / len(mins))
+        h, mm = divmod(m, 60)
+        return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
+
+    totals: list[str] = []
+    for ci, c in enumerate(COMBINED_KNOCKS_HEADERS):
+        if c == COL_REP:
+            totals.append(label)
+        elif c in (COL_FIRST_KNOCK, COL_LAST_KNOCK):
+            totals.append(_avg_time(ci))
+        elif c == COL_HRS_KNOCKING:
+            vals = [_int0(r[ci]) for r in sub if str(r[ci]).strip() != ""]
+            totals.append(str(round(sum(vals) / len(vals))) if vals else "")
+        else:
+            totals.append(str(sum(_int0(r[ci]) for r in sub)))
+    return totals
 
 
 def _knock_time_key(v: str) -> int:

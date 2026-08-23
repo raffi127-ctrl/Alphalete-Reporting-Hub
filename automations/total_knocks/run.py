@@ -37,6 +37,15 @@ from automations.total_knocks.pull import central_today, pull_disposition_day
 # so the separate Time Gaps post retired (the Sheet tab still fills both).
 POST_TOTAL_KNOCKS = ("🚪 Total Knocks", "door")
 
+# Offices whose TOTAL line rides ABOVE ours on the daily board (Raf
+# 2026-08-23: "add Chan's totals above ours daily"). Their reps don't show —
+# just the one totals row each. Best-effort: a pull failure here never blocks
+# the Local Office post. Comma-separated env override, blank disables.
+import os as _os
+EXTRA_TOTALS_OFFICES = [o.strip() for o in
+                        _os.environ.get("KNOCKS_EXTRA_TOTALS",
+                                        "Chan Park").split(",") if o.strip()]
+
 
 def _yesterday() -> dt.date:
     return central_today() - dt.timedelta(days=1)
@@ -93,8 +102,28 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
     print(f"[total_knocks] Wrote {stats['reps']} rep(s) to "
           f"{stats['write_range']}.", flush=True)
 
-    # 3. Render the ONE combined board (knocks + gaps) from the filled tab.
-    img_tk = _render.render_total_knocks(target, tab=tab)
+    # 3. Extra offices' totals (Chan) for the rows above ours — pulled in
+    #    their own ownerville session AFTER ours closed. Best-effort.
+    extra_totals = []
+    for extra_office in EXTRA_TOTALS_OFFICES:
+        try:
+            from automations.rashad_metrics.knocks_pull import pull_office_knocks
+            _, x_rows = pull_office_knocks(extra_office, target)
+            if x_rows:
+                extra_totals.append((extra_office, x_rows))
+                print(f"[total_knocks] {extra_office}: {len(x_rows)} rep(s) "
+                      "for the totals row.", flush=True)
+            else:
+                print(f"[total_knocks] ⚠ {extra_office}: no rows — posting "
+                      "without that totals line.", flush=True)
+        except Exception as e:                        # noqa: BLE001
+            print(f"[total_knocks] ⚠ {extra_office} totals pull failed "
+                  f"({type(e).__name__}: {e}) — posting without it.",
+                  flush=True)
+
+    # 4. Render the ONE combined board (knocks + gaps) from the filled tab.
+    img_tk = _render.render_total_knocks(target, tab=tab,
+                                         extra_totals=extra_totals)
     print(f"[total_knocks] Rendered -> {img_tk}", flush=True)
 
     # 4. Slack — the single combined post.
