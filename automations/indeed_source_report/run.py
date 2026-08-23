@@ -86,7 +86,8 @@ BOARD_PUSH = [
     ("1-gJfYtz8teNIMpYpMPVk5bBqomZWqu5yRfUGTfjqTlQ", ["Dhyey Patel"]),
     ("1CmUEyC_rwidScsLeuE1WywKUvqHE7avtytFLQgzD1pU", ["Jeff Starr"]),
     ("1MxORzw6WFGxSXCuJf1hVok68eMOvRX02T9fhauVDFq0", ["Kinsey Guenther"]),
-    ("1XtKmB-C_hXFgBKyyBWbW9h8fG5riVXAM5ckaOClxQAs", ["Atef Choudhury"]),
+    ("1XtKmB-C_hXFgBKyyBWbW9h8fG5riVXAM5ckaOClxQAs", ["George Hipolito"]),
+    ("1PZwxUYDodOJ6LkxGrgB5ytDi0Fbd4h-mZJdM5q4ADnU", ["Atef Choudhury"]),
     ("1n2d5vDiwwj6d3bFBIe5OcuEWEEc1OFn2Hp28wuaSFOY", ["Joey Ramirez"]),
     ("1LOi7JPQ8j0qlbe3PvgZumaHuWCd2HKLNYDRGZOBxrnE", ["Vincent Smith"]),
     ("14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8", None),   # None = captainship
