@@ -2042,12 +2042,12 @@ AUTOMATED_REPORTS = [
         # Base registry entry = the module WITHOUT --send: a safe full rehearsal.
         "run_rerun_id": "owner_chat_texts",
         "self_scheduled": True,
-        # BOTH passes publish success under this one id (run.py collapses them
-        # on purpose): 1 success = 1/2 after the 7:30 trackers, 2 = green after
-        # the 7:45 board. daily_runs (not `phases`) so no phantom second card
-        # auto-registers. The second pass is a machine, not an approval —
-        # the orange work-in-progress mid-state is correct, no approval_final_run.
-        "daily_runs": 2,
+        # PHASE card (Megan 2026-08-23: "2 colors"): each pass publishes its own
+        # scheduler id, and these strings must match the stored Report IDs
+        # exactly or the pill sticks on the mid-colour. Listing both ids here is
+        # also what keeps the second one from auto-registering a phantom card.
+        # No approval_phase — the second pass is a machine, not a checkmark.
+        "phases": ["owner_chat_texts_trackers", "owner_chat_texts_board"],
         "schedule": {
             "frequency": "daily",
             "time": "7:30 AM",

@@ -174,16 +174,26 @@ def main(argv=None) -> int:
     if res["ok"] and not dry and res["sent"]:
         try:  # the Hub must never fail a delivered text
             from automations.day_orchestrator import hub_publish
-            # ONE id for both halves, on purpose: the Hub card is daily_runs:2
-            # keyed to "owner_chat_texts", so the 7:30 trackers pass shows 1/2
-            # and the 7:45 board pass turns it green. Publishing the scheduler
-            # ids here instead would auto-register two phantom cards and leave
-            # the real one permanently short. The half that ran is in the title.
-            title = {
-                "trackers": "Owner Chat Texts — Trackers (iMessage)",
-                "board": "Owner Chat Texts — WOW Board (iMessage)",
-            }.get(args.only, "Owner Chat Texts (iMessage)")
-            hub_publish.publish_done("owner_chat_texts", title, status="success")
+            # The Hub card is a PHASE card (Megan 2026-08-23: "2 colors"):
+            # phases = ["owner_chat_texts_trackers", "owner_chat_texts_board"],
+            # so each half publishes ITS OWN id — the strings must match the
+            # card's phases exactly or the pill sticks mid-colour
+            # [[reference_phase_pill_id_match]]. Listing them in `phases` is
+            # also what stops the second id auto-registering a phantom card.
+            # A full run (no --only) delivered both halves, so it lights both.
+            halves = {
+                "trackers": [("owner_chat_texts_trackers",
+                              "Owner Chat Texts — Trackers (iMessage)")],
+                "board": [("owner_chat_texts_board",
+                           "Owner Chat Texts — WOW Board (iMessage)")],
+            }.get(args.only) or [
+                ("owner_chat_texts_trackers",
+                 "Owner Chat Texts — Trackers (iMessage)"),
+                ("owner_chat_texts_board",
+                 "Owner Chat Texts — WOW Board (iMessage)"),
+            ]
+            for rid, title in halves:
+                hub_publish.publish_done(rid, title, status="success")
         except Exception:  # noqa: BLE001
             pass
     if res["ok"]:
