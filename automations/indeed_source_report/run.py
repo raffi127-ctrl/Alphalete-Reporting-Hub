@@ -1,4 +1,4 @@
-"""Refresh the CURRENT month of the Indeed Ad Performance dashboard.
+"""Refresh the CURRENT month of the Source Report - Indeed dashboard.
 
   python -m automations.indeed_source_report.run            # live, all offices
   python -m automations.indeed_source_report.run --dry-run  # pull + report, write nothing
@@ -24,7 +24,7 @@ from .offices import OFFICES, month_window
 # needs-attention strip) — Megan's standing rule: a LaunchAgent report must
 # publish its runs, or silence and success look identical.
 CARD_ID = "indeed-source-report"
-CARD_NAME = "Indeed Ad Performance (Source Report)"
+CARD_NAME = "Source Report - Indeed (Source Report)"
 # The `standalone-` family prefix matters: the mini's watcher files this
 # report's misses as `standalone-indeed-source-report` (notify.py builds
 # `standalone-<registry id>`), and a bare un-prefixed key lives outside every

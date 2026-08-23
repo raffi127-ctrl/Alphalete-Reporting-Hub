@@ -4708,9 +4708,9 @@ def _action_install_b2b_dispositions(args: str) -> tuple[bool, str]:
 
 
 def _action_install_indeed_source_report(args: str) -> tuple[bool, str]:
-    """Install the Indeed Ad Performance refresh agent on THIS machine (Lucy 2).
+    """Install the Source Report - Indeed refresh agent on THIS machine (Lucy 2).
 
-    Rebuilds the CURRENT month of the "Indeed Ad Performance" tab in the Alphalete
+    Rebuilds the CURRENT month of the "Source Report - Indeed" tab in the Alphalete
     Org Applicant Tracker from AppStream's Source Report, for all 28 offices, at
     4:00am / 12:00pm / 5:00pm. Idempotent — reinstalling re-locks the plist.
     `git pull` (update) must have landed the plist first."""

@@ -1,4 +1,4 @@
-"""Read/write the Indeed Ad Performance dashboard's hidden data tab.
+"""Read/write the Source Report - Indeed dashboard's hidden data tab.
 
 Auth prefers the applicant_tracker SERVICE ACCOUNT, same as funnel_board and for
 the same reason: the dashboard now lives in the Alphalete Org Applicant Tracker,

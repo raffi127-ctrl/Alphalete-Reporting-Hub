@@ -1,10 +1,10 @@
-# Indeed Ad Performance dashboard
+# Source Report - Indeed dashboard
 
 One Google Sheet tab where you pick a **Manager** and a **Period** and see that
 manager's Indeed ads for that month, merged to one row per real ad.
 
 Workbook: the **Alphalete Org Applicant Tracker**
-(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`), tab **Indeed Ad Performance**.
+(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`), tab **Source Report - Indeed**.
 The hidden **Indeed Ad Data** tab holds the rows and is the only thing this job
 writes.
 
@@ -96,7 +96,7 @@ rather than one call per manager.
 
 ## Dashboard picker cells — date-coercion trap (fixed 2026-08-22)
 
-The visible tab's period picker (`'Indeed Ad Performance'!B2`) is a ONE_OF_RANGE dropdown over
+The visible tab's period picker (`'Source Report - Indeed'!B2`) is a ONE_OF_RANGE dropdown over
 text values like "July 2026". Sheets coerces that into a DATE on entry (UI pick or USER_ENTERED
 write) unless the cell carries a plain-text (`@`) number format — and a coerced write also
 *replaces* the `@` format, so the protection erodes. A date-valued B2 displays identically but
