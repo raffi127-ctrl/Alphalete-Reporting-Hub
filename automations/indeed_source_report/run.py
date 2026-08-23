@@ -15,6 +15,7 @@ import argparse
 import datetime as dt
 import sys
 import traceback
+import urllib.parse
 
 from . import fetch, parse, sheet
 from .offices import OFFICES, month_window
@@ -70,6 +71,52 @@ def _publish_outcome(status, headline, details, *, started_at=None,
 
 
 YTD_LABEL = "YTD (all months)"
+
+# Board mirrors: after every refresh, each target workbook's hidden
+# 'Indeed Ad Data' gets that roster's slice of the freshly written data
+# (values only — no IMPORTRANGE auth, no other managers' numbers leak onto
+# an owner's board). These sheets are NOT shared with the service account,
+# so the push authenticates with the personal OAuth token explicitly.
+# Targets: Jamis's sales board + Carlos's Captainship Dashboard (2026-08-23).
+BOARD_PUSH = [
+    ("1wDWeiS0IuzwsYFGF-s6mA6by8CtBtI5eOEnNmahBd6s", ["Jamis Garay"]),
+    ("14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8", None),   # None = captainship
+]
+
+
+def push_boards(new_rows, periods):
+    """Mirror manager slices into the captainship board workbooks. Best-effort:
+    a board failure must never sink the main refresh."""
+    from automations.funnel_board.roster import CAPTAINSHIP_NAMES
+    creds = sheet._oauth()
+    if creds is None:
+        print("[indeed_source_report] board push skipped — no OAuth token here", flush=True)
+        return
+    from google.auth.transport.requests import AuthorizedSession
+    bs = AuthorizedSession(creds)
+    for ssid, managers in BOARD_PUSH:
+        mgrs = managers or CAPTAINSHIP_NAMES
+        rows = [r for r in new_rows if r and r[0] in mgrs]
+        if not rows:
+            print("  board %s: empty slice, left alone" % ssid[:10], flush=True)
+            continue
+        try:
+            rng = lambda a1: urllib.parse.quote("'Indeed Ad Data'!%s" % a1, safe="")
+            bs.post("%s/%s/values/%s:clear" % (sheet.API, ssid, rng("A2:U6000")), json={}).raise_for_status()
+            bs.put("%s/%s/values/%s" % (sheet.API, ssid, rng("A2")),
+                   params={"valueInputOption": "RAW"},
+                   json={"majorDimension": "ROWS", "values": rows}).raise_for_status()
+            n = max(len(mgrs), len(periods))
+            bs.put("%s/%s/values/%s" % (sheet.API, ssid, rng("W2")),
+                   params={"valueInputOption": "RAW"},
+                   json={"majorDimension": "ROWS", "values":
+                         [[mgrs[i] if i < len(mgrs) else "",
+                           periods[i] if i < len(periods) else ""] for i in range(n)]}
+                   ).raise_for_status()
+            print("  board %s: %d rows" % (ssid[:10], len(rows)), flush=True)
+        except Exception as e:  # noqa: BLE001
+            print("  !! board %s push failed: %s" % (ssid[:10], str(e)[:120]), flush=True)
+
 
 # Managers whose dashboard merges an ad across cities: same account + same
 # role = one row, cities listed together in the City column (their own call —
@@ -215,6 +262,7 @@ def main(argv=None):
                                             periods[i] if i < len(periods) else ""]
                                            for i in range(max(len(managers), len(periods)))])
         print("[indeed_source_report] wrote %d rows" % len(new), flush=True)
+        push_boards(new, periods)
 
     if flags:
         print("\nCity-less pieces left unmerged (wording could not pick a city):", flush=True)
