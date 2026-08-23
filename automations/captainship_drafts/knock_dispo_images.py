@@ -204,6 +204,9 @@ def capture(captain, today: dt.date, render_dir,
     from automations.shared.tableau_patchright import ownerville_session
 
     out: List[Tuple[str, Optional[Path]]] = []
+    # Everything the combined summary needs, kept as pulled: (display,
+    # ov_rows, apps, dispo_cols) per owner that produced a board.
+    captured: List[tuple] = []
     out_root = Path(render_dir) / f"knock_dispo_{captain.key}"
     try:
         with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
@@ -236,6 +239,8 @@ def capture(captain, today: dt.date, render_dir,
                     label = (display if pss_path is not None
                              else f"{display} — ⚠ INCOMPLETE: apps unavailable")
                     out.append((label, png))
+                    captured.append((display, ov_rows, office_apps,
+                                     dispo_cols))
                     logfn(f"    ✓ {display}: {len(ov_rows)} rep(s) → {png.name}")
                 except Exception as e:  # noqa: BLE001 — one owner ≠ the section
                     logfn(f"    ✗ {display}: {type(e).__name__}: "
@@ -255,4 +260,48 @@ def capture(captain, today: dt.date, render_dir,
                                   "ownerville session failed before this "
                                   "owner's pull")
                 out.append((display, None))
+
+    # Raf's email reply 2026-08-23 ("1 report of each ICD's averages so the
+    # captain can look at one report for his whole captainship") + Megan
+    # ("put this combined overall view before the individual ones"): ONE
+    # summary board FIRST — each owner as a single row of their week's
+    # totals/averages (the same totals-row math their own board's bottom row
+    # shows), with a CAPTAINSHIP TOTALS row under them. Built from the data
+    # already pulled above — zero extra pulls; an owner whose pull failed has
+    # no row here (their pending note below says why).
+    if captured:
+        try:
+            from automations.weekly_knock_dispositions.board import (
+                THEME_PLUM, headers_for, totals_row)
+            from automations.total_knocks import render as knocks_render
+            common_cols = next((c for _d, _r, _a, c in captured if c), [])
+            sum_rows = [totals_row(r, a, common_cols, label=d)
+                        for d, r, a, _c in captured]
+            all_rows = [rec for _d, r, _a, _c in captured for rec in r]
+            merged_apps: dict = {}
+            has_apps = False
+            for _d, _r, a, _c in captured:
+                if a:
+                    has_apps = True
+                    merged_apps.update(a)
+            sum_rows.append(totals_row(
+                all_rows, merged_apps if has_apps else None, common_cols,
+                label="CAPTAINSHIP TOTALS"))
+            span = (f"{monday.strftime('%b')} {monday.day} – "
+                    f"{saturday.strftime('%b')} {saturday.day}, "
+                    f"{saturday.year}")
+            png = knocks_render._draw(
+                headers_for(common_cols), sum_rows,
+                f"CAPTAINSHIP SUMMARY — {span}", THEME_PLUM,
+                out_root / "summary"
+                / f"knock_dispo_summary_{saturday.isoformat()}.png",
+                name_col=0, wrap_headers=True, highlight_last_row=1)
+            out.insert(0, ("Captainship Summary", png))
+            logfn(f"    ✓ captainship summary: {len(captured)} owner row(s)")
+        except Exception as e:  # noqa: BLE001 — summary ≠ the section
+            errors["knock_dispo:Captainship Summary"] = (
+                f"{type(e).__name__}: {str(e)[:200]}")
+            out.insert(0, ("Captainship Summary", None))
+            logfn(f"    ✗ captainship summary: {type(e).__name__}: "
+                  f"{str(e)[:160]}")
     return out
