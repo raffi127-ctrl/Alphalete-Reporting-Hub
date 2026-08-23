@@ -78,7 +78,7 @@ COMBINED_KNOCKS_DISPLAY = {
 # (last knock − first knock) − total gaps, the same formula his weekly
 # dispositions board uses. Rep rows show that day's hours; the TOTAL rows
 # show the office average.
-COL_HRS_KNOCKING = "Hrs Knocking"
+COL_HRS_KNOCKING = "Avg. Hrs Knocking"
 COMBINED_KNOCKS_HEADERS = (
     COMBINED_KNOCKS_COLUMNS[:COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1]
     + [COL_HRS_KNOCKING]
