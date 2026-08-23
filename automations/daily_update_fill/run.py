@@ -62,9 +62,14 @@ for _n_, _oid in _ROSTER_OIDS.items():
 
 NAME_COL_IDX = 9                          # column I
 Q_DIDNT_OFFER = "Didn't offer them "      # trailing space = the dropdown value
-STATUS_ORIENT = "1 - Orientation Scheduled"
-STATUS_CR = "2 - Showed to classroom"
+# Simplified lifecycle (Carlos 2026-08-23): terminated -> Not Active; any
+# sale -> Active; showed to classroom/orientation -> Showed to Classroom;
+# Admin is manual and never touched. The old numbered ladder is retired.
+STATUS_ACTIVE = "Active"
+STATUS_CR = "Showed to Classroom"
 STATUS_NOT_ACTIVE = "Not Active"
+STATUS_ADMIN = "Admin"
+OLD_LADDER_ACTIVE = ("3", "4", "5", "6", "7")   # '3 - In Training'.. prefixes
 CR_SHOW, CR_NOSHOW = "Showed To CR", "CR No Show"
 
 
@@ -262,7 +267,7 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
             continue
         cr = cr_map.get(key)
         orientation = c["orientation"]
-        status = STATUS_ORIENT if orientation else STATUS_NOT_ACTIVE
+        status = STATUS_NOT_ACTIVE
         t_val = ""
         if cr:
             t_val = CR_SHOW if cr[1] else CR_NOSHOW
@@ -363,35 +368,124 @@ def terminated_names(sh) -> set:
     return out
 
 
-def sync_terminated(name_label, sh, tab, write) -> int:
-    """Board says terminated => Daily Update Status (A) = Not Active (and
-    Secondary Status B = Terminated when blank)."""
+def board_sellers_and_roster(sh):
+    """(sellers, roster) from this workbook: WeekData when present (any
+    positive day => that rep sold), else the Sales Board's numeric cells."""
+    sellers, roster = set(), set()
+    try:
+        tabs = {ws.title for ws in sh.worksheets()}
+    except Exception:  # noqa: BLE001
+        return sellers, roster
+    if "Sales Board" in tabs:
+        rows = sh.worksheet("Sales Board").get_values("A1:P250")
+        hdr_i = next((i for i, r in enumerate(rows)
+                      if any(_n(c).upper() == "REP" for c in r)), None)
+        if hdr_i is not None:
+            hdr = [_n(c).lower() for c in rows[hdr_i]]
+            rep_c = hdr.index("rep")
+            num_cs = [i for i, h in enumerate(hdr) if h.startswith(
+                ("current week", "last wk", "monday", "tuesday", "wednesday",
+                 "thursday", "friday", "saturday", "sunday"))]
+            for r in rows[hdr_i + 1:]:
+                r += [""] * (16 - len(r))
+                name = _n(r[rep_c])
+                if not name:
+                    continue
+                roster.add(name.lower())
+                for c in num_cs:
+                    v = _n(r[c]).replace(",", "")
+                    try:
+                        if float(v) > 0:
+                            sellers.add(name.lower())
+                            break
+                    except ValueError:
+                        continue
+    if "WeekData" in tabs:
+        for r in sh.worksheet("WeekData").get_values("A2:H5000"):
+            if not r or "|" not in (r[0] or ""):
+                continue
+            rep = _n(r[0].split("|")[0])
+            for v in r[1:8]:
+                try:
+                    if float(_n(v) or 0) > 0:
+                        sellers.add(rep.lower())
+                        break
+                except ValueError:
+                    continue
+    return sellers, roster
+
+
+def _fuzzy_key(name: str):
+    parts = _n(name).lower().split()
+    if len(parts) < 2:
+        return None
+    return (parts[-1], parts[0][:3])
+
+
+def _member(key_name: str, exact: set, fuzzy: set) -> bool:
+    if key_name in exact:
+        return True
+    fk = _fuzzy_key(key_name)
+    return fk is not None and fk in fuzzy
+
+
+def sync_statuses(name_label, sh, tab, write) -> int:
+    """Enforce the simplified lifecycle (Active / Not Active / Admin /
+    Showed to Classroom) on every Daily Update row.
+    Order: terminated -> Not Active; sale seen -> Active; old numbered
+    ladder -> Active if still on the board roster else Not Active;
+    '1 - Orientation' -> Not Active; '2 - Showed'/fresh CR-shown -> Showed
+    to Classroom. 'Not Active' rows are never resurrected except by a sale;
+    Admin rows are never touched. Nickname-tolerant matching (will~william)."""
     term = terminated_names(sh)
-    if not term:
-        return 0
+    sellers, roster = board_sellers_and_roster(sh)
+    term_f = {k for k in (_fuzzy_key(x) for x in term) if k}
+    sellers_f = {k for k in (_fuzzy_key(x) for x in sellers) if k}
+    roster_f = {k for k in (_fuzzy_key(x) for x in roster) if k}
     ws = sh.worksheet(tab)
     col_i = [_n(c) for c in ws.col_values(NAME_COL_IDX)]
     col_a = [_n(c) for c in ws.col_values(1)]
     col_b = [_n(c) for c in ws.col_values(2)]
-    data, hits = [], 0
+    col_t = [_n(c) for c in ws.col_values(20)]
+    data, flips = [], 0
     for idx, nm in enumerate(col_i):
-        if not nm or nm.lower() not in term:
+        if not nm:
             continue
-        row = idx + 1
-        a = col_a[idx] if idx < len(col_a) else ""
-        b = col_b[idx] if idx < len(col_b) else ""
-        if a != STATUS_NOT_ACTIVE:
-            data.append({"range": f"'{tab}'!A{row}",
-                         "values": [[STATUS_NOT_ACTIVE]]})
-            hits += 1
-        if not b:
-            data.append({"range": f"'{tab}'!B{row}",
+        key = nm.lower()
+        cur = col_a[idx] if idx < len(col_a) else ""
+        if cur == STATUS_ADMIN:
+            continue
+        t = col_t[idx] if idx < len(col_t) else ""
+        cl = cur.lower()
+        old_ladder = cur[:1] in OLD_LADDER_ACTIVE and " - " in cur
+        if _member(key, term, term_f):
+            want = STATUS_NOT_ACTIVE
+        elif _member(key, sellers, sellers_f):
+            want = STATUS_ACTIVE
+        elif old_ladder:
+            if _member(key, roster, roster_f):
+                want = STATUS_ACTIVE
+            elif cur.startswith("3"):        # still in training, no sale yet
+                want = STATUS_CR
+            else:
+                want = STATUS_NOT_ACTIVE
+        elif cl.startswith("1 - orientation"):
+            want = STATUS_NOT_ACTIVE
+        elif cl.startswith("2 - showed") or (not cur and t == CR_SHOW):
+            want = STATUS_CR
+        else:
+            continue                     # Not Active / Active / blank stand
+        if cur != want:
+            data.append({"range": f"'{tab}'!A{idx + 1}", "values": [[want]]})
+            flips += 1
+        if _member(key, term, term_f) and                 not (col_b[idx] if idx < len(col_b) else ""):
+            data.append({"range": f"'{tab}'!B{idx + 1}",
                          "values": [["Terminated"]]})
-    log(f"  {name_label:<17} terminated on board={len(term)} "
-        f"du-status-flips={hits}" + ("" if write else "  (dry-run)"))
+    log(f"  {name_label:<17} term={len(term)} sellers={len(sellers)} "
+        f"status-flips={flips}" + ("" if write else "  (dry-run)"))
     if write and data:
         sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
-    return hits
+    return flips
 
 
 def main(argv=None) -> int:
@@ -446,7 +540,7 @@ def main(argv=None) -> int:
             log(f"  !! {name} write FAILED: {type(e).__name__}: {e}")
         try:
             sh = _retry(lambda sid=sheet_id: open_by_key(sid))
-            sync_terminated(name, sh, tab, args.write)
+            sync_statuses(name, sh, tab, args.write)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} term-sync: {type(e).__name__}: {e}")
             log(f"  !! {name} term-sync FAILED: {type(e).__name__}: {e}")
