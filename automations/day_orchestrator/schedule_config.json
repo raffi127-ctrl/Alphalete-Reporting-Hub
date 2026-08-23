@@ -1336,6 +1336,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_session_holder_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays []). `lucy rerun install_session_holder_agent --machine \"<machine>\"` installs com.alphalete.session-holder, which keeps the ownerville login warm and EXPORTS .ownerville_storage_state.json every 6 min. WHY THIS ENTRY EXISTS (Megan 2026-08-23): every other LaunchAgent had an install_* entry but the holder did not, so a new machine could be fully provisioned and still never run a single scheduled report. readiness.session_status() is a MACHINE-GLOBAL gate — the exported file must exist AND be <20 min old (settings.session_stale_after_minutes) — so a machine with no holder fails EVERY report at every pass with 'still trying — no ownerville session yet'. That is exactly what happened on Lucy 3's debut morning 2026-08-23: day-orchestrator fired on time (morning_diag DRIFT=+0m) and then held all 5 of its reports for 4+ hours; the Country Trackers reached no channel until a manual rerun. Do NOT be fooled by a manual `lucy rerun` succeeding on an unseeded machine — _ensure_ownerville_logged_in falls back to the persistent PROFILE cookie, but the readiness gate only ever checks the holder's FILE. AFTER INSTALLING, A HUMAN MUST SEED IT ONCE at that machine's screen: the holder opens ownerville and waits up to 15 min for a human to log in and clear Cloudflare's Turnstile (there is no unattended path past a forced interactive challenge). Until seeded, the plist's KeepAlive + ThrottleInterval 30 just relaunches it every 30s. Confirmed 2026-08-23 that two machines CAN hold Raf's ownerville concurrently (Megan), so Lucy 3 does not need its own account. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent.",
+      "display_name": "Install session-holder agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "session-holder"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "set_wake": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays []). `lucy rerun set_wake` sets a daily 03:55 pmset wakeorpoweron schedule on the mini so the 4am orchestrator isn't deferred to ~6am (the mini deep-sleeps overnight; diagnosed via morning_diag 2026-07-06 \u2014 START=06:00 with daily_focus clean in 1 try, so NOT an AppStream issue). Uses sudo -n (needs passwordless sudo for pmset). Reversible: sudo pmset repeat cancel.",
