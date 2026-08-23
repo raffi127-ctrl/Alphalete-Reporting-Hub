@@ -71,6 +71,20 @@ def tracker_caption(spec: dict, day) -> str:
     return "%s - %s %d" % (title, day.strftime("%b"), day.day)
 
 
+# The 7:30 pass sends ONE PDF (Raf 8/23: "so it's not a bunch of messages").
+# It waits for every routed tracker to be in the Slack thread; from this time
+# (CST) on it stops waiting and sends what's there, naming the gaps in the
+# caption — a broken tracker must not hold the post hostage all day.
+PDF_PARTIAL_AFTER = "09:00"
+
+
+def trackers_pdf_caption(day, missing) -> str:
+    cap = "Country Trackers — %s %d" % (day.strftime("%b"), day.day)
+    if missing:
+        cap += "  (not posted yet: %s)" % ", ".join(missing)
+    return cap
+
+
 def board_caption(day) -> str:
     """Dated for the day the numbers are FOR — yesterday, same rule as the
     board email's subject (the board only carries completed days)."""

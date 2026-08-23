@@ -52,6 +52,17 @@ def _today() -> dt.date:
     return (dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()).date()
 
 
+def _past_partial_backstop(day: dt.date) -> bool:
+    """True once the wait-for-every-tracker window is over: past
+    PDF_PARTIAL_AFTER Central on the day itself, or any run for a prior day
+    (yesterday's stragglers are never coming)."""
+    now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
+    if day < now.date():
+        return True
+    hh, mm = (int(x) for x in cfg.PDF_PARTIAL_AFTER.split(":"))
+    return now.time() >= dt.time(hh, mm)
+
+
 def _marker(key: str, day: dt.date) -> Path:
     """One marker per (item, day): a double text is a duplicate to every owner
     in the chat, not a harmless retry."""
@@ -92,12 +103,27 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
 
     if only in (None, "trackers"):
         from automations.owner_chat_texts.slack_fetch import fetch_tracker_pngs
+        from automations.owner_chat_texts import pdf_build
         try:
             found, missing = fetch_tracker_pngs(day, out_dir)
             out["missing"] = missing              # late/failed on Lucy 3 — flagged
-            for spec, png in found:               # send what IS there
-                _send_item("tracker_%s" % spec["id"],
-                           cfg.tracker_caption(spec, day), png,
+            if not found:
+                raise RuntimeError("none of the trackers are in today's Slack "
+                                   "thread yet")
+            # ONE PDF, not nine messages (Raf 8/23). A PDF can't trickle in
+            # stragglers, so: wait while trackers are still missing (exit 1 →
+            # the scheduler retries), and from PDF_PARTIAL_AFTER send what's
+            # there with the gaps named in the caption.
+            if missing and not (force or _past_partial_backstop(day)):
+                out["skipped"].append(
+                    "trackers (WAITING — %d/%d posted; one PDF sends when all "
+                    "are in, or partial after %s)" % (
+                        len(found), len(found) + len(missing),
+                        cfg.PDF_PARTIAL_AFTER))
+            else:
+                pdf = pdf_build.build(found, out_dir, day)
+                _send_item("trackers_pdf",
+                           cfg.trackers_pdf_caption(day, missing), pdf,
                            cfg.TRACKER_GROUPS, day, dry_run, out)
         except Exception as e:  # noqa: BLE001 — trackers down must not block the board
             out["errors"].append("trackers: %s: %s" % (type(e).__name__,
@@ -130,13 +156,16 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                 out["errors"].append("board: %s: %s" % (type(e).__name__,
                                                         str(e)[:240]))
 
-    # ok = EVERYTHING due was delivered (or would be, on a dry run). A tracker
-    # missing from the Slack thread or a board data-gate HOLD is not an error,
-    # but it IS undelivered — return non-ok so the scheduled run exits 1 and
-    # the orchestrator retries later in the morning. Retries are safe: each
-    # delivered item has a per-day .sent marker, so only the stragglers send.
-    held = [s for s in out["skipped"] if s.startswith("board (HOLD")]
-    out["ok"] = not (out["errors"] or out["missing"] or held)
+    # ok = EVERYTHING due was delivered (or would be, on a dry run). The PDF
+    # still WAITING on missing trackers, or a board data-gate HOLD, is not an
+    # error but it IS undelivered — return non-ok so the scheduled run exits 1
+    # and the orchestrator retries later in the morning. Retries are safe: each
+    # delivered item has a per-day .sent marker. A PARTIAL PDF sent past the
+    # backstop counts as delivered (the caption names the gaps), so `missing`
+    # alone doesn't fail the run once the send has happened.
+    undelivered = [s for s in out["skipped"]
+                   if s.startswith(("board (HOLD", "trackers (WAITING"))]
+    out["ok"] = not (out["errors"] or undelivered)
     return out
 
 
