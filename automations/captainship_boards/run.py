@@ -213,6 +213,23 @@ def update_board(label, board_id, rep_days, monday, upto, write):
         data.append({"range": f"WeekData!J{len(weeks) + 2}", "values": [[we]]})
         data.append({"range": "Sales Board!B2", "values": [[we]]})
 
+    # LAST WEEK row (Sales Board r45, Carlos 8/24): the finished week's
+    # day-by-day totals, refreshed every morning so Monday's fresh board
+    # still answers "what did we do last Tuesday?".
+    last_lbl = C.week_label(monday - dt.timedelta(days=7))
+    lw = [0] * 7
+    for row in wd:
+        if row and row[0].endswith(f"|{last_lbl}"):
+            for i in range(7):
+                v = row[i + 1] if len(row) > i + 1 else ""
+                try:
+                    lw[i] += int(float(v or 0))
+                except (TypeError, ValueError):
+                    pass
+    data.append({"range": "Sales Board!B45",
+                 "values": [[f"LAST WEEK ({last_lbl})"]]})
+    data.append({"range": "Sales Board!E45:K45", "values": [[v or 0 for v in lw]]})
+
     # roster append (Sales Board B4:B43 + Roll Call D)
     roster = [(_n(r[0]) if r else "") for r in values_get(sh, "Sales Board!B4:B43")]
     roster += [""] * (40 - len(roster))

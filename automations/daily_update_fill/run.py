@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from zoneinfo import ZoneInfo
 
@@ -74,6 +75,9 @@ STATUS_ADMIN = "Admin"
 # inflated his Actives to 162). Actives on the master are set by hand. The
 # captainship boards keep the full lifecycle.
 NO_SALE_ACTIVE = {"Carlos Hidalgo"}
+# The master also keeps its orientation->Roll Call flow MANUAL; the daily
+# rollcall_sync below is for the 11 owner boards only (Carlos 8/24).
+NO_ROLLCALL_SYNC = {"Carlos Hidalgo"}
 OLD_LADDER_ACTIVE = ("3", "4", "5", "6", "7")   # '3 - In Training'.. prefixes
 CR_SHOW, CR_NOSHOW = "Showed To CR", "CR No Show"
 
@@ -500,6 +504,133 @@ def sync_statuses(name_label, sh, tab, write) -> int:
     return flips
 
 
+def rollcall_sync(name_label, sh, tab, write) -> int:
+    """Owner boards only (Carlos 8/24; the Vantura master keeps its manual
+    flow): anyone the Daily Update shows as classroom-shown (T='Showed To
+    CR') who has no Roll Call row gets appended as Status='New Start' with
+    their week-ending, campaign and 2nd Rounder; once a NEW week starts,
+    the previous weeks' 'New Start' rows flip to 'Active'. Blank 'Week
+    Ending' / '2nd Rounder' cells on existing rows are backfilled from the
+    DU — typed values are never overwritten."""
+    if name_label in NO_ROLLCALL_SYNC:
+        return 0
+    ws = sh.worksheet("Roll Call")
+    rc = ws.get_values("A1:F250")
+    du = sh.worksheet(tab).get_values("A2:T6000")
+    today = dt.datetime.now(CENTRAL).date()
+    cur_we = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=6)
+
+    def we_label(d):
+        return f"{d.month}.{d.day}"
+
+    def parse_lbl(s):
+        m = re.match(r"^(\d{1,2})[./](\d{1,2})$", _n(s))
+        if not m:
+            return None
+        try:
+            return dt.date(today.year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            return None
+
+    def orient_we(orient):
+        m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(orient))
+        if m:
+            try:
+                d = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+                return we_label(d - dt.timedelta(days=d.weekday())
+                                + dt.timedelta(days=6))
+            except ValueError:
+                pass
+        return we_label(cur_we)
+
+    by_name = {}
+    for row in du:
+        row = list(row) + [""] * 20
+        nm = _n(row[8])
+        if not nm:
+            continue
+        e = {"n2": _n(row[13]), "orient": _n(row[17]), "cr": _n(row[19])}
+        by_name[nm.lower()] = e
+        fk = _fuzzy_key(nm)
+        if fk:
+            by_name.setdefault(fk, e)
+
+    rc_names, campaigns, first_empty = {}, [], None
+    for i, row in enumerate(rc[2:], 3):
+        row = list(row) + [""] * 6
+        nm = _n(row[3])
+        if nm:
+            rc_names[nm.lower()] = i
+            fk = _fuzzy_key(nm)
+            if fk:
+                rc_names.setdefault(fk, i)
+            if _n(row[2]):
+                campaigns.append(_n(row[2]))
+        elif first_empty is None:
+            first_empty = i
+    campaign = (max(set(campaigns), key=campaigns.count)
+                if campaigns else "AT&T B2B")
+    if first_empty is None:
+        first_empty = len(rc) + 1
+
+    data, added, flipped, filled = [], 0, 0, 0
+    # append classroom-shown people missing from the Roll Call — RECENT ones
+    # only (last 14 days by orientation date): the DU carries months of
+    # historical CR marks from the backfill, and those people are long gone
+    # (first dry-run wanted +53 on Justin). No parseable date = not recent.
+    seen_new, skipped_old = set(), 0
+    for row in du:
+        row = list(row) + [""] * 20
+        nm = _n(row[8])
+        if not nm or _n(row[19]) != CR_SHOW:
+            continue
+        key = nm.lower()
+        if key in seen_new or _member(key, set(rc_names), set(rc_names)):
+            continue
+        m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(row[17]))
+        try:
+            od = dt.date(today.year, int(m.group(1)), int(m.group(2))) if m else None
+        except ValueError:
+            od = None
+        if od is None or not (today - dt.timedelta(days=14) <= od <= today
+                              + dt.timedelta(days=7)):
+            skipped_old += 1
+            continue
+        seen_new.add(key)
+        r = first_empty + added
+        data.append({"range": f"'Roll Call'!A{r}:F{r}",
+                     "values": [[orient_we(row[17]), "New Start", campaign,
+                                 nm, _n(row[13]), ""]]})
+        added += 1
+    # week rollover: previous weeks' New Starts become Active; backfills
+    for i, row in enumerate(rc[2:], 3):
+        row = list(row) + [""] * 6
+        nm = _n(row[3])
+        if not nm:
+            continue
+        if _n(row[1]) == "New Start":
+            wed = parse_lbl(row[0])
+            if wed is not None and wed < cur_we:
+                data.append({"range": f"'Roll Call'!B{i}",
+                             "values": [["Active"]]})
+                flipped += 1
+        e = by_name.get(nm.lower()) or by_name.get(_fuzzy_key(nm))
+        if e:
+            if not _n(row[4]) and e["n2"]:
+                data.append({"range": f"'Roll Call'!E{i}", "values": [[e["n2"]]]})
+                filled += 1
+            if not _n(row[0]) and e["orient"]:
+                data.append({"range": f"'Roll Call'!A{i}",
+                             "values": [[orient_we(e["orient"])]]})
+                filled += 1
+    log(f"  {name_label:<17} rollcall: +{added} new-start, {flipped} -> Active, "
+        f"{filled} backfilled, {skipped_old} historical skipped"
+        + ("" if write else "  (dry-run)"))
+    if write and data:
+        sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
+    return added + flipped
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offices", default="all",
@@ -556,6 +687,11 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} term-sync: {type(e).__name__}: {e}")
             log(f"  !! {name} term-sync FAILED: {type(e).__name__}: {e}")
+        try:
+            rollcall_sync(name, sh, tab, args.write)
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{name} rollcall: {type(e).__name__}: {e}")
+            log(f"  !! {name} rollcall FAILED: {type(e).__name__}: {e}")
     if failures:
         log(f"finished with {len(failures)} FAILURE(S): {failures}")
         return 1
