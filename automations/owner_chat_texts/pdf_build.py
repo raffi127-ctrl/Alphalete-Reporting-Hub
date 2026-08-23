@@ -30,10 +30,16 @@ def build(found: List[Tuple[dict, Path]], out_dir: Path, day: dt.date) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     pdf = out_dir / ("country_trackers_%s.pdf" % day.isoformat())
     doc = fitz.open()
-    scale = 72.0 / 150.0     # page points per image pixel — nominal 150dpi
+    # EVERY page gets the SAME width (Raf 8/23: "PDF is pretty zoomed out").
+    # PDF viewers pick one zoom for the whole document and fit the WIDEST
+    # page, so sizing pages to their raw pixels let the Verizon board (3728px
+    # vs ~1600 for the rest) shrink every other board to ~40% of the screen.
+    # One shared width = every page fills the screen; heights scale per board.
+    PAGE_W = 800.0
     for _spec, p in found:
         pix = fitz.Pixmap(str(p))
-        page = doc.new_page(width=pix.width * scale, height=pix.height * scale)
+        page = doc.new_page(width=PAGE_W,
+                            height=PAGE_W * pix.height / pix.width)
         page.insert_image(page.rect, pixmap=pix)
         pix = None
     doc.save(str(pdf), deflate=True)
