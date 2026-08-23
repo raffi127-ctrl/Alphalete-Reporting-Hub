@@ -141,6 +141,21 @@ WRAP_UP_PHRASES = [
     "reminder that your appointment is set for tomorrow",
     "your new install schedule is today",
     "friendly reminder that your box should be coming today",
+    # High-volume rep templates found in a 7-day inbound scan (all rep-outbound;
+    # customer-reply-after skip still protects answered threads):
+    "reaching out to check on your internet install",   # "AT&T CHECK-IN" blast (50x/wk)
+    "smarthome manager: manage anything regarding your internet connection",
+    "just checking in to see how everything is going with your at&t service",
+    "you can reach out to this group chat with any questions or concerns",
+    "how was your appointment today",
+    "glad to hear that everything is going well and that you're happy",
+    "i truly appreciate your business, your trust, and every referral",
+    "quick reminder for tomorrows installation",
+    "remind you on your installation today",
+    # Rep billing explainers (proactive; a customer's follow-up keeps it unread)
+    "1st bill: prorated with a partial month charge",
+    "this is not a double charge, the pending hold will fall off",
+    "promotional credits and trade-in credits typically take",
 ]
 
 
