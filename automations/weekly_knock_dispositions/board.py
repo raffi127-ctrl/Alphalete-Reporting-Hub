@@ -226,11 +226,23 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             rows.append([_display_name(rep), "", "", str(n_apps),
                          "", "", "", "", ""] + _dispo_cells(None))
 
-    # Totals row: the Total columns SUM; the Avg columns stay AVERAGES —
-    # per rep, not office-level (Megan 2026-08-22: 505.83 in an "Avg / Day"
-    # cell reads as a sum). Avg/Day = office talk-tos ÷ 6 ÷ reps; Avg Gap/Day
-    # averages only reps with Time Tracker data; per-App = office talk-tos ÷
-    # office apps (the office's real talk-tos-per-app ratio).
+    rows.append(totals_row(ov_rows, apps, dispo_cols))
+    return rows
+
+
+def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
+               dispo_cols: list[str],
+               label: str = TOTALS_LABEL) -> list[str]:
+    """The totals row: the Total columns SUM; the Avg columns stay AVERAGES
+    — per rep, not office-level (Megan 2026-08-22: 505.83 in an "Avg / Day"
+    cell reads as a sum). Avg/Day = office talk-tos ÷ 6 ÷ reps; Avg Gap/Day
+    averages only reps with Time Tracker data; per-App = office talk-tos ÷
+    office apps; First/Last Knock average reps with a time.
+
+    `label`/`dispo_cols` are parameters so ANOTHER office's totals can be
+    appended under a host board for comparison (dispo counts are keyed by
+    live header name, so summing against the HOST's column list keeps the
+    row aligned even if the two tables ever differ)."""
     tot_talk = sum(int(r.get(K_TALK_TO) or 0) for r in ov_rows)
     tot_apps = (sum(apps.values()) if apps else 0)
     gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
@@ -239,31 +251,35 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
     n_reps = len(ov_rows)
     dispo_tots = [
         sum(int(r.get(c) or 0) for r in ov_rows) for c in dispo_cols]
-    rows.append([
-        TOTALS_LABEL,
+    return ([
+        label,
         str(tot_talk),
         (_num(tot_talk / DAYS / n_reps) if n_reps else ""),
         "" if apps is None else str(tot_apps),
         (_num(tot_talk / tot_apps) if tot_apps else ""),
-        # Avg first/last knock across reps with a time (Megan 2026-08-22).
         _avg_knock(ov_rows, COL_FIRST_KNOCK),
         _avg_knock(ov_rows, COL_LAST_KNOCK),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
     ] + ["" if not t else str(t) for t in dispo_tots])
-    return rows
 
 
 def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
            dispo_cols: list[str] | None = None,
-           gaps_only: bool = False) -> Path:
+           gaps_only: bool = False, n_totals: int = 1) -> Path:
+    """`office` in the title ONLY when non-empty — an office posting in its
+    own channel doesn't repeat its name (Megan 2026-08-23). `n_totals`:
+    how many trailing rows draw as highlighted totals (host + appended
+    comparison rows)."""
     span = (f"{monday.strftime('%b')} {monday.day} – "
             f"{saturday.strftime('%b')} {saturday.day}, {saturday.year}")
     what = ("WEEKLY KNOCK TIMES & GAPS" if gaps_only
             else "WEEKLY KNOCK DISPOSITIONS")
-    title = f"{what} — {office.upper()} — {span}"
+    _office = f"{office.upper()} — " if office else ""
+    title = f"{what} — {_office}{span}"
     out = out_dir / f"weekly_knock_dispositions_{saturday.isoformat()}.png"
     return knocks_render._draw(headers_for(dispo_cols, gaps_only), rows,
                                title, THEME_PLUM, out, name_col=0,
-                               wrap_headers=True, highlight_last_row=True)
+                               wrap_headers=True,
+                               highlight_last_row=n_totals)

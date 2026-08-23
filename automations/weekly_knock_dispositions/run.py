@@ -284,8 +284,11 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     except Exception:  # noqa: BLE001
         aliases_map = {}
 
-    # --- 2. One ownerville session, offices in turn ------------------------
+    # --- 2a. One ownerville session: PULL every office first ---------------
+    # (render comes after, so a host board can append ANOTHER office's
+    # totals for comparison — COMPARE_TOTALS.)
     from automations.shared.tableau_patchright import ownerville_session
+    pulled: dict[str, tuple[dict, list, list]] = {}  # name → (cfg, rows, cols)
     boards: list[tuple[dict, Path | None, str]] = []  # (cfg, png, comment_extra)
     failed: list[str] = []
     skipped: list[str] = []     # structural (cross-ws / NDS) — never "failed"
@@ -312,45 +315,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                         cfg["_token_path"] = tok_path
                     ov_rows, dispo_cols = P.pull_office_week(
                         page, cfg, aliases_raw, monday, saturday)
-                    gaps_only = B.is_gaps_only(ov_rows)
-                    office_apps, extra = None, ""
-                    if gaps_only:
-                        # Wireless office: knock times + gaps are all
-                        # TeleMapper records — reduced board, own title.
-                        extra = " — knock times + gaps (wireless office)"
-                    elif cfg.get("pss_owner") is None:
-                        # NDS office: sales live in the NDS workbook, not the
-                        # D2D PSS — blank apps, flagged (fill-but-flag).
-                        extra = " — ⚠ INCOMPLETE: apps not wired (NDS)"
-                    elif pss_path is None:
-                        extra = " — ⚠ INCOMPLETE: apps unavailable"
-                    else:
-                        office_apps = A.rep_apps_for_owner(
-                            pss_path, cfg["pss_owner"], aliases_map)
-                    if not ov_rows and not office_apps:
-                        if cfg.get("pss_owner") is None:
-                            # Nothing in the Disposition table OR the Time
-                            # Tracker, and no apps source: a weekly "No data"
-                            # line would be structural noise — skip.
-                            print(f"[wkd] ⤳ {name}: no disposition or Time "
-                                  "Tracker data + apps not wired — SKIPPED.",
-                                  flush=True)
-                            skipped.append(name)
-                            continue
-                        # Visible absence, never a blank board (standing rule).
-                        boards.append((cfg, None, extra))
-                        continue
-                    rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
-                    out_dir = OUT_DIR / _slug(name)
-                    png = B.render(name, monday, saturday, rows, out_dir,
-                                   dispo_cols, gaps_only=gaps_only)
-                    boards.append((cfg, png, extra))
-                    if (not gaps_only and cfg.get("pss_owner") is not None
-                            and pss_path is None and name not in failed):
-                        failed.append(name)     # retry posts the full board
-                    _print_board(name, rows, dispo_cols,
-                                 gaps_only=gaps_only)
-                    print(f"[wkd] rendered {name} -> {png}", flush=True)
+                    pulled[name] = (cfg, ov_rows, dispo_cols)
                 except Exception as e:  # noqa: BLE001 — one office ≠ the run
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
                           f"{str(e)[:200]}", flush=True)
@@ -364,6 +329,71 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             _publish_outcome("failed", f"{CARD_NAME} — ownerville session "
                              "failed", [str(e)[:300]], started_at=started_at)
         return 1
+
+    # --- 2b. Compute + render, with cross-office comparison rows -----------
+    from automations.weekly_knock_dispositions.offices import COMPARE_TOTALS
+    apps_cache: dict[str, dict | None] = {}
+
+    def _office_apps(cfg: dict):
+        name = cfg["name"]
+        if name not in apps_cache:
+            apps_cache[name] = (
+                A.rep_apps_for_owner(pss_path, cfg["pss_owner"], aliases_map)
+                if (cfg.get("pss_owner") is not None and pss_path is not None)
+                else None)
+        return apps_cache[name]
+
+    for name, (cfg, ov_rows, dispo_cols) in pulled.items():
+        try:
+            gaps_only = B.is_gaps_only(ov_rows)
+            extra = ""
+            if gaps_only:
+                extra = " — knock times + gaps (wireless office)"
+            elif cfg.get("pss_owner") is None:
+                extra = " — ⚠ INCOMPLETE: apps not wired (NDS)"
+            elif pss_path is None:
+                extra = " — ⚠ INCOMPLETE: apps unavailable"
+            office_apps = _office_apps(cfg)
+            if not ov_rows and not office_apps:
+                if cfg.get("pss_owner") is None:
+                    print(f"[wkd] ⤳ {name}: no disposition or Time Tracker "
+                          "data + apps not wired — SKIPPED.", flush=True)
+                    skipped.append(name)
+                    continue
+                # Visible absence, never a blank board (standing rule).
+                boards.append((cfg, None, extra))
+                continue
+            rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
+            # TEMPORARY comparison rows (offices.COMPARE_TOTALS — delete
+            # the entry there to remove): the other office's totals, summed
+            # against THIS board's columns, appended under OFFICE TOTALS.
+            n_totals = 1
+            for other in COMPARE_TOTALS.get(name, []):
+                if other in pulled and not gaps_only:
+                    o_cfg, o_rows, _ = pulled[other]
+                    rows.append(B.totals_row(
+                        o_rows, _office_apps(o_cfg), dispo_cols,
+                        label=f"{other.upper()} TOTALS"))
+                    n_totals += 1
+            # Office name in title/comment only when the board lands
+            # somewhere that isn't the office's own thread (Chan) — saying
+            # it in their own channel is redundant (Megan 2026-08-23).
+            title_office = name if cfg.get("thread_title") else ""
+            out_dir = OUT_DIR / _slug(name)
+            png = B.render(title_office, monday, saturday, rows, out_dir,
+                           dispo_cols, gaps_only=gaps_only,
+                           n_totals=n_totals)
+            boards.append((cfg, png, extra))
+            if (not gaps_only and cfg.get("pss_owner") is not None
+                    and pss_path is None and name not in failed):
+                failed.append(name)     # retry posts the full board
+            _print_board(name, rows, dispo_cols, gaps_only=gaps_only)
+            print(f"[wkd] rendered {name} -> {png}", flush=True)
+        except Exception as e:  # noqa: BLE001 — one office ≠ the run
+            print(f"[wkd] ❌ {name} render failed: {type(e).__name__}: "
+                  f"{str(e)[:200]}", flush=True)
+            if name not in failed:
+                failed.append(name)
 
     span = f"{monday.strftime('%b')} {monday.day}–{saturday.day}"
 
@@ -455,7 +485,11 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     failed.append(name)
                 continue
             _tag_thread_header(smp, cfg, thread_ts, slack_today)
-            comment = f"📋 {CARD_NAME} — {name} — {span}{extra}"
+            # Office name only where the board isn't in the office's own
+            # thread (Chan's rides a shared thread) — redundant otherwise
+            # (Megan 2026-08-23).
+            _who = f"{name} — " if cfg.get("thread_title") else ""
+            comment = f"📋 {CARD_NAME} — {_who}{span}{extra}"
             if term_flag:
                 comment += f"\n{term_flag}"
             if png is None:

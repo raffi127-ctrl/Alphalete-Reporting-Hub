@@ -216,10 +216,12 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     wrap_headers=True (Raf's Loom 2026-08-22, fiber Total Knocks): columns are
     sized to the DATA, and the header words wrap onto extra lines instead of
     stretching the box — "shorten up these boxes … make the number fit".
-    highlight_last_row=True (Megan 2026-08-22, Weekly Knock Dispositions):
-    the LAST row (a totals row) draws on the theme's header colour in bold
-    white, so it reads apart from the rep rows. Default False = every
-    existing board byte-identical."""
+    highlight_last_row (Megan 2026-08-22, Weekly Knock Dispositions): the
+    last N rows (totals rows) draw on the theme's header colour in bold
+    white, so they read apart from the rep rows — True/1 = just the last
+    row, an int = that many trailing rows (a host board carrying another
+    office's comparison totals). Default False = every existing board
+    byte-identical."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
@@ -315,8 +317,9 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         x += col_w[ci]
 
     y += header_h
+    _n_hl = int(highlight_last_row or 0)   # True==1; int N = last N rows
     for ri, r in enumerate(rows):
-        is_total = ((highlight_last_row and ri == len(rows) - 1)
+        is_total = ((_n_hl and ri >= len(rows) - _n_hl)
                     or (highlight_first_row and ri == 0))
         bg = (theme.get("total_bg", theme["header_bg"]) if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])

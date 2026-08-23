@@ -72,6 +72,14 @@ _KG = {"knocks", "knocks_gaps"}
 # 2026-08-22) — back in by deleting the line once they've settled.
 _EXCLUDED_KEYS = {"drew"}
 
+# TEMPORARY (Megan 2026-08-23, "we will prob want this removed in a few
+# weeks"): host office → other offices whose TOTALS row is appended under
+# the host's OFFICE TOTALS, so Raf can compare against Chan without
+# switching channels. REMOVE by deleting the entry — nothing else to touch.
+COMPARE_TOTALS: dict[str, list[str]] = {
+    "Rafael Hidalgo": ["Chan Park"],
+}
+
 
 def enrolled_offices() -> list[dict]:
     """WKD rows for every office whose metrics thread already carries the
