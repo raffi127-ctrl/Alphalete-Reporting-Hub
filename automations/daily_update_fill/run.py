@@ -305,6 +305,95 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
     return appended, cr_updates
 
 
+def _is_term(v: str) -> bool:
+    v = _n(v).lower()
+    return v == "t" or "termin" in v
+
+
+def terminated_names(sh) -> set:
+    """Names marked T/Terminated on this workbook's Sales Board (Field
+    Status col or a literal T in a day cell) or Roll Call (Status col or a
+    T in the Mon-Sat attendance cells). Carlos 2026-08-23."""
+    out = set()
+    try:
+        tabs = {ws.title: ws for ws in sh.worksheets()}
+    except Exception:  # noqa: BLE001
+        return out
+    if "Sales Board" in tabs:
+        rows = tabs["Sales Board"].get_values("A1:P250")
+        hdr_i = next((i for i, r in enumerate(rows)
+                      if any(_n(c).upper() == "REP" for c in r)), None)
+        if hdr_i is not None:
+            hdr = [_n(c).lower() for c in rows[hdr_i]]
+            rep_c = hdr.index("rep")
+            try:
+                fs_c = next(i for i, h in enumerate(hdr)
+                            if "field status" in h)
+            except StopIteration:
+                fs_c = None
+            day_cs = [i for i, h in enumerate(hdr) if h.startswith(
+                ("monday", "tuesday", "wednesday", "thursday", "friday",
+                 "saturday", "sunday"))]
+            for r in rows[hdr_i + 1:]:
+                r += [""] * (16 - len(r))
+                name = _n(r[rep_c])
+                if not name:
+                    continue
+                if fs_c is not None and _is_term(r[fs_c]):
+                    out.add(name.lower())
+                elif any(_n(r[c]).lower() == "t" for c in day_cs):
+                    out.add(name.lower())
+    if "Roll Call" in tabs:
+        rows = tabs["Roll Call"].get_values("A1:L250")
+        hdr_i = next((i for i, r in enumerate(rows)
+                      if any("rep name" in _n(c).lower() for c in r)), None)
+        if hdr_i is not None:
+            hdr = [_n(c).lower() for c in rows[hdr_i]]
+            rep_c = next(i for i, h in enumerate(hdr) if "rep name" in h)
+            st_c = next((i for i, h in enumerate(hdr) if h == "status"), None)
+            att_cs = [i for i, h in enumerate(hdr) if h in (
+                "mon", "tue", "wed", "thu", "fri", "sat")]
+            for r in rows[hdr_i + 1:]:
+                r += [""] * (12 - len(r))
+                name = _n(r[rep_c])
+                if not name:
+                    continue
+                if (st_c is not None and _is_term(r[st_c])) or                         any(_n(r[c]).lower() == "t" for c in att_cs):
+                    out.add(name.lower())
+    return out
+
+
+def sync_terminated(name_label, sh, tab, write) -> int:
+    """Board says terminated => Daily Update Status (A) = Not Active (and
+    Secondary Status B = Terminated when blank)."""
+    term = terminated_names(sh)
+    if not term:
+        return 0
+    ws = sh.worksheet(tab)
+    col_i = [_n(c) for c in ws.col_values(NAME_COL_IDX)]
+    col_a = [_n(c) for c in ws.col_values(1)]
+    col_b = [_n(c) for c in ws.col_values(2)]
+    data, hits = [], 0
+    for idx, nm in enumerate(col_i):
+        if not nm or nm.lower() not in term:
+            continue
+        row = idx + 1
+        a = col_a[idx] if idx < len(col_a) else ""
+        b = col_b[idx] if idx < len(col_b) else ""
+        if a != STATUS_NOT_ACTIVE:
+            data.append({"range": f"'{tab}'!A{row}",
+                         "values": [[STATUS_NOT_ACTIVE]]})
+            hits += 1
+        if not b:
+            data.append({"range": f"'{tab}'!B{row}",
+                         "values": [["Terminated"]]})
+    log(f"  {name_label:<17} terminated on board={len(term)} "
+        f"du-status-flips={hits}" + ("" if write else "  (dry-run)"))
+    if write and data:
+        sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
+    return hits
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offices", default="all",
@@ -348,12 +437,19 @@ def main(argv=None) -> int:
             except Exception as e:  # noqa: BLE001
                 failures.append(f"{name}: {type(e).__name__}: {e}")
                 log(f"  !! {name} harvest FAILED: {type(e).__name__}: {e}")
+    from automations.recruiting_report.fill import _retry, open_by_key
     for name, (sheet_id, tab, cands, cr_map) in results.items():
         try:
             apply_to_sheet(name, sheet_id, tab, cands, cr_map, args.write)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{name} write: {type(e).__name__}: {e}")
             log(f"  !! {name} write FAILED: {type(e).__name__}: {e}")
+        try:
+            sh = _retry(lambda sid=sheet_id: open_by_key(sid))
+            sync_terminated(name, sh, tab, args.write)
+        except Exception as e:  # noqa: BLE001
+            failures.append(f"{name} term-sync: {type(e).__name__}: {e}")
+            log(f"  !! {name} term-sync FAILED: {type(e).__name__}: {e}")
     if failures:
         log(f"finished with {len(failures)} FAILURE(S): {failures}")
         return 1
