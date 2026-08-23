@@ -178,7 +178,17 @@ def capture_ranges(grid) -> list[tuple[str, str]]:
     #    unavoidably shrunk — splitting it in two was vetoed (Raf 2026-08-23).
     tables = org_ro.find_delta_tables(grid)
     if tables:
-        out.append(("delta", org_ro.delta_block_range(grid, tables[0])))
+        rng = org_ro.delta_block_range(grid, tables[0])
+        # Col A beside the delta chart is its RANK CHAIN — 1..n position
+        # formulas added 2026-08-23 (Raf: number the owners so the board says
+        # how many it lists). The shared range derivation starts at col B
+        # (delta_block_range's contract, which the Country board also uses);
+        # widen to col A only when the numbers are actually there, so an
+        # unnumbered tab renders exactly as before.
+        first_data = tables[0]["data_rows"][0]
+        if _cell(grid, first_data, 1).strip():
+            rng = "A" + rng.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        out.append(("delta", rng))
     else:
         print("  ⚠ delta units chart not located — sending the board without it")
     return out
