@@ -1116,17 +1116,19 @@ def campaign_zone(sid, title):
     values.append({"range": "'%s'!A%d" % (title, CAMP_Z0), "values": grid})
 
     z0, z1 = CAMP_Z0 - 1, CAMP_Z0 - 1 + CAMP_SLOTS
+    # Everything centered and the data BOLD — Carlos's captainship-block look
+    # (2026-08-23 feedback: "things need to be centered … thickened").
     F.extend([
         fmt(sid, z0, z1, 0, ncols, {"userEnteredFormat": {
-            "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "CENTER",
-            "numberFormat": {"type": "TEXT"}, "borders": {"bottom": bd(LINE)}}},
+            "textFormat": txt(INK, True, 12, FONT), "horizontalAlignment": "CENTER",
+            "numberFormat": {"type": "TEXT"}, "borders": {"bottom": bd(LINE_HARD)}}},
             "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
         fmt(sid, z0, z1, 0, 1, {"userEnteredFormat": {
-            "textFormat": txt(INK, False, 12, FONT_UI), "horizontalAlignment": "LEFT"}},
-            "userEnteredFormat(textFormat,horizontalAlignment)"),
+            "textFormat": txt(INK, False, 12, FONT_UI)}},
+            "userEnteredFormat.textFormat"),
         fmt(sid, z0, z1, 1, 2, {"userEnteredFormat": {
-            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK_2, False, 12, FONT),
-            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK_2, True, 12, FONT),
+            "borders": {"right": bdm(), "bottom": bd(LINE_HARD)}}},
             "userEnteredFormat(backgroundColor,textFormat,borders)"),
     ])
     for wi in range(len(WEEK_ENDS)):

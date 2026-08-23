@@ -61,17 +61,18 @@ def _derive_unit_goals(S, values, goals_seeded, log):
     upsert_goals(seed_only=True) enforces the 'no units goal yet' half.
     """
     out = []
-    nat_spr = {}
-    for camp in ("box", "nds"):
+    nat_spr, nat_week = {}, {}
+    for camp in ("box", "nds", "b2b_att"):
         slots = L.slots_by_label(camp)
         ns = slots.get("National Sales per Rep")
         if not ns:
             continue
-        for mgr, _week, slot, val in values:
-            if L.MANAGER_CAMPAIGN.get(mgr) == camp and slot == ns:
+        for mgr, week, slot, val in values:
+            if (L.MANAGER_CAMPAIGN.get(mgr) == camp and slot == ns
+                    and week >= nat_week.get(camp, "")):
                 v = _num(val)
-                if v:
-                    nat_spr[camp] = v
+                if v:                       # newest week's national wins
+                    nat_spr[camp], nat_week[camp] = v, week
     def _unit_goal_slot(camp):
         for i, (kind, lab) in enumerate(L.LAYOUTS.get(camp, [])):
             if kind == "g" and lab != "Sales per Rep":
@@ -81,7 +82,11 @@ def _derive_unit_goals(S, values, goals_seeded, log):
     for mgr, camp in L.MANAGER_CAMPAIGN.items():
         if camp not in nat_spr:
             continue
-        hc_slot = L.slots_by_label(camp).get("Head Count  ✎")
+        slots = L.slots_by_label(camp)
+        spr_slot = slots.get("Sales per Rep")
+        if spr_slot:                        # SPR goal defaults to national
+            out.append((mgr, spr_slot, "%.1f" % nat_spr[camp]))
+        hc_slot = slots.get("Head Count  ✎")
         unit_slot = _unit_goal_slot(camp)
         if not (hc_slot and unit_slot):
             continue
@@ -91,6 +96,29 @@ def _derive_unit_goals(S, values, goals_seeded, log):
     if out:
         log("unit-goal seeds: %s" % out)
     return out + goals_seeded
+
+
+def _mirror_b2b_nationals(values, log):
+    """The b2b national rows are global numbers sourced from Atef's MT copy —
+    mirror them onto every OTHER b2b manager (Carlos) for each week present,
+    and seed Carlos's SPR goal off the national. Emits only missing tuples."""
+    slots = L.slots_by_label("b2b_att")
+    nat_slots = [slots[lab] for lab in
+                 ("National AVG Headcount", "National Sales per Rep")
+                 if lab in slots]
+    src = {(w, s): v for m, w, s, v in values
+           if m == "Atef Choudhury" and s in nat_slots}
+    have = {(m, w, s) for m, w, s, _v in values}
+    out = []
+    for mgr, camp in L.MANAGER_CAMPAIGN.items():
+        if camp != "b2b_att" or mgr == "Atef Choudhury":
+            continue
+        for (w, s), v in src.items():
+            if (mgr, w, s) not in have:
+                out.append((mgr, w, s, v))
+    if out:
+        log("b2b nationals mirrored: %d tuples" % len(out))
+    return out
 
 
 def main(argv=None):
@@ -132,9 +160,15 @@ def main(argv=None):
         values += v
         goals_now += g               # MT goals win every run
 
-    if not a.skip_tableau and a.only in (None, "box", "nds"):
+    if not a.skip_tableau and a.only in (None, "b2b", "box", "nds"):
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(verbose=True) as page:
+            if a.only in (None, "b2b"):
+                from automations.org_campaign_metrics import pull_b2b
+                v, g = _run("b2b/carlos",
+                            lambda: pull_b2b.collect_carlos(page, today, log))
+                values += v
+                goals_seed += g
             if a.only in (None, "box"):
                 from automations.org_campaign_metrics import pull_box
                 v, g = _run("box", lambda: pull_box.collect(page, today, log))
@@ -146,6 +180,7 @@ def main(argv=None):
                 values += v
                 goals_seed += g
 
+    values += _mirror_b2b_nationals(values, log)
     goals_seed = _derive_unit_goals(S, values, goals_seed, log)
 
     log("-- totals: %d values, %d goals (stamped), %d goals (seed-only)"

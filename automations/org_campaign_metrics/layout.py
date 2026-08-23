@@ -39,6 +39,7 @@ ZONE_START = 30
 # an unmapped manager renders an empty zone, which is the correct default for
 # everyone else. Adding a manager (e.g. Drew/Isaiah -> nds) is a config change.
 MANAGER_CAMPAIGN = {
+    "Carlos Hidalgo":    "b2b_att",
     "Atef Choudhury":    "b2b_att",
     "Ryan McSpadden":    "box",
     "Roshan Amin":       "box",
@@ -84,6 +85,10 @@ LAYOUTS = {
         ("band4", "NATIONAL BENCHMARK"),
         ("m",     "National AVG Headcount"),
         ("m",     "National Sales per Rep"),
+        ("hdr",   "B2B AT&T METRICS — SCREENSHOT"),
+        ("m",     "(screenshot lands here — wiring in progress)"),
+        ("hdr",   "FOUR-WEEK AVERAGE — SCREENSHOT"),
+        ("m",     "(screenshot lands here — wiring in progress)"),
     ],
     "box": [
         ("hdr",   "BOX · B2B BOX ENERGY — CAMPAIGN"),
