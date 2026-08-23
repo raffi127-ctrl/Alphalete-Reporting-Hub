@@ -173,7 +173,9 @@ def capture_ranges(grid) -> list[tuple[str, str]]:
 
     # 4) the delta chart — same derivation the Country board uses, from the one
     #    definition next to find_delta_tables. It already trims the days that
-    #    haven't happened; the email paints it at WIDE_PX.
+    #    haven't happened; the email paints it full-bleed and attaches a
+    #    full-size copy (screenshot_email.build_email) since inline it is
+    #    unavoidably shrunk — splitting it in two was vetoed (Raf 2026-08-23).
     tables = org_ro.find_delta_tables(grid)
     if tables:
         out.append(("delta", org_ro.delta_block_range(grid, tables[0])))

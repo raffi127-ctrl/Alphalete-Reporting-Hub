@@ -676,8 +676,12 @@ def delta_block_range(grid: List[List[str]], table: dict,
     so a Fri–Sun image (R..Z) would be a wall of numbers with nothing naming its
     rows, and an A1 range cannot skip the middle. A narrow name+totals strip
     (`B..E`) beside it reads fine but is 4 columns over ~80 rows, so it renders
-    very tall and Eve cut it — "queda muy feo". The block stays whole and gets a
-    wider cap in the email instead (shared.board_email_html.WIDE_PX).
+    very tall and Eve cut it — "queda muy feo". A two-half split (names on both,
+    via a momentary column-hide) was built and vetoed the same day Raf flagged
+    the inline result as blurry (2026-08-23) — the board stays WHOLE. What the
+    email does instead: full-bleed inline (board_email_html.FULL_BLEED) with a
+    clean pre-shrink, plus the full-size PNG attached so it can be opened crisp
+    (screenshot_email.build_email / _inline_bytes).
     """
     hdr = table["header_row"]
     last_row = max(table["data_rows"]) if table.get("data_rows") else hdr

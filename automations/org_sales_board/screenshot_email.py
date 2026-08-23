@@ -663,6 +663,34 @@ def capture_all_units(out_dir: Path) -> List[Tuple[str, Path, int]]:
         return []
 
 
+# Inline copies of oversized blocks are pre-shrunk to this width — 2x the
+# email wrapper, i.e. the most pixels any client can actually show (1200 CSS px
+# at retina). WHY PRE-SHRINK AT ALL: the delta chart renders ~4400px wide and
+# full-bleed shows it whole, so the BROWSER shrinks it 3x+ — and browsers
+# downscale that far with cheap sampling that drops half the 1px gridlines and
+# glyph strokes, which is most of what "comes out kind of blurry" (Raf,
+# 2026-08-23; splitting the chart in two was vetoed the same day, the board
+# stays whole). One clean Lanczos pass down to 2400 + a mild sharpen leaves the
+# browser only a gentle final shrink, so what's left of the strokes survives.
+# Ordinary blocks are untouched: they already display near 1:1 sheet scale.
+_INLINE_MAX_PX = 2 * _beh.WRAPPER_PX
+
+
+def _inline_bytes(path: Path) -> bytes:
+    """The INLINE payload for one block image: pre-shrunk + lightly sharpened
+    when it is wider than any client can show, verbatim bytes otherwise."""
+    from PIL import Image, ImageFilter
+    im = Image.open(path)
+    if im.width <= _INLINE_MAX_PX:
+        return Path(path).read_bytes()
+    h = round(im.height * _INLINE_MAX_PX / im.width)
+    im = im.convert("RGB").resize((_INLINE_MAX_PX, h), Image.LANCZOS)
+    im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
 def build_email(images: List[Tuple], to_addrs: List[str],
                 day: dt.date) -> EmailMessage:
     """`day` is the day the numbers are FOR — yesterday, not the run date (Eve
@@ -702,7 +730,7 @@ def build_email(images: List[Tuple], to_addrs: List[str],
             rows.append(_beh.separator_row())
             seen_allunits = True
         cid = make_msgid()[1:-1]
-        cids.append((cid, path))
+        cids.append((cid, path, str(name)))
         rows.append(_beh.image_row(cid, alt=str(name),
                                    width_px=_beh.sheet_px(entry),
                                    widest_px=widest))
@@ -723,12 +751,23 @@ def build_email(images: List[Tuple], to_addrs: List[str],
                     + _SIGNATURE_TEXT)
     msg.add_alternative(html, subtype="html")
     html_part = msg.get_payload()[-1]
-    for cid, path in cids:
-        html_part.add_related(Path(path).read_bytes(), "image", "png",
-                              cid=f"<{cid}>")
+    for cid, path, name in cids:
+        data = (_inline_bytes(Path(path)) if _beh.is_full_bleed(name)
+                else Path(path).read_bytes())
+        html_part.add_related(data, "image", "png", cid=f"<{cid}>")
     html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
                           maintype="image", subtype="png",
                           cid=f"<{cid_photo}>")
+    # The full-bleed week-over-week chart is unavoidably shrunk inline — too
+    # wide for any mail pane, and splitting it was vetoed (Raf 2026-08-23). So
+    # the FULL-SIZE render rides along as a real attachment: every client gives
+    # an attachment an open/zoom viewer, which the inline cid image never gets.
+    for i, (path, name) in enumerate(
+            [(p, n) for _c, p, n in cids if _beh.is_full_bleed(n)]):
+        msg.add_attachment(Path(path).read_bytes(),
+                           maintype="image", subtype="png",
+                           filename="Week over Week Sales Board (full size)"
+                                    f"{f' {i + 1}' if i else ''}.png")
     return msg
 
 
