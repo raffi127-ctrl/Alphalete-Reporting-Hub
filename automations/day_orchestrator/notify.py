@@ -74,13 +74,36 @@ def send_final(cfg, ds, *, channel="email", dry_run=False):
 
 
 def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
-    subj = f"⚠️ ownerville session stale — re-seed the mini ({_d(ds)})"
+    # NAME THE MACHINE (Megan 2026-08-23). This alert used to say "re-seed the
+    # mini" no matter which runner raised it. With three machines that sends
+    # whoever reads it to the wrong box: on 8/23 the alert fired at 04:00 from
+    # LUCY 3 — whose brand-new holder had never been seeded — and pointed at the
+    # mini, which was fine. It also called every cause "stale", though the two
+    # cases need different hands: a session that EXPIRED (re-seed it) vs one that
+    # never existed because the machine has no holder at all (install it first —
+    # see install_session_holder_agent). Both blocked every report on that box.
+    try:
+        from automations.day_orchestrator import registry
+        machine = registry.this_machine() or "this machine"
+    except Exception:  # noqa: BLE001 — an alert must never die labelling itself
+        machine = "this machine"
+    never_seeded = "missing" in (reason or "").lower()
+    what = "NEVER SEEDED" if never_seeded else "went STALE"
+    fix = ("That machine has no warm ownerville session at all. If it has no "
+           "session-holder agent yet, install one (`lucy rerun "
+           f"install_session_holder_agent --machine \"{machine}\"`), then a human "
+           "seeds it once in the holder's window — Screen Sharing is fine."
+           if never_seeded else
+           f"Log back in on {machine}'s session-holder window to re-seed it.")
+    subj = f"⚠️ ownerville session {what.lower()} on {machine} ({_d(ds)})"
     text = (
-        "The day orchestrator detected a STALE ownerville session.\n\n"
+        f"The day orchestrator on {machine} has no usable ownerville session "
+        f"({what}).\n\n"
         f"Reason: {reason}\n\n"
-        "Today's Tableau reports are PAUSED (fail-closed — nothing is being written "
-        "with a dead session). Log back in on the mini's session-holder window to "
-        "re-seed; the orchestrator auto-resumes within one 25-min pass.\n\n"
+        f"EVERY report on {machine} is PAUSED — the session check is machine-wide, "
+        "so this is not limited to reports that touch ownerville. Nothing is being "
+        f"written with a dead session.\n\n{fix}\n"
+        "The orchestrator auto-resumes within one 25-min pass.\n\n"
         "This is a one-time alert; the 7:30 checkpoint and final summary follow "
         "separately."
     )
@@ -88,15 +111,17 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
     # own Slack post so it can be worked in-thread — and the redundant email is
     # skipped (Megan 2026-07-23: move problem notifications to Slack).
     if _corrections_channel(cfg):
-        title = f":lock: *ownerville session went stale* — {_d(ds)}"
+        title = f":lock: *ownerville session {what.lower()} on {machine}* — {_d(ds)}"
         body = [
             f"*What happened:* {reason}",
             "",
-            "Today's Tableau reports are *paused* on purpose — I won't write anything "
-            "with a dead session. Someone at the mini logs back in on the "
-            "session-holder window to re-seed it, and I auto-resume within one pass.",
+            f"*EVERY report on {machine} is paused* — the session check is "
+            "machine-wide, so this is not just the ownerville reports. I won't "
+            "write anything with a dead session.",
             "",
-            "_Reply in this thread once it's re-seeded and I'll pick back up._",
+            f"*Fix:* {fix}",
+            "",
+            "_Reply in this thread once it's sorted and I'll pick back up._",
         ]
         if _post_corrections(cfg, title, body, dry_run, tag="session-alert"):
             return
