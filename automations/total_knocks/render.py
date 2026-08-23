@@ -208,7 +208,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           out_path: Path, name_col: int = 1,
           wrap_headers: bool = False,
           highlight_last_row: bool = False,
-          highlight_first_row: bool = False) -> Path:
+          highlight_first_row: bool = False,
+          repeat_header_before: int = 0) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -221,7 +222,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     white, so they read apart from the rep rows — True/1 = just the last
     row, an int = that many trailing rows (a host board carrying another
     office's comparison totals). Default False = every existing board
-    byte-identical."""
+    byte-identical.
+    repeat_header_before (Raf 2026-08-23, "add the heads to the bottom"):
+    N > 0 re-draws the header band directly above the last N rows, so a
+    long board's totals block is readable without scrolling to the top.
+    Default 0 = no band, every existing board byte-identical."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
@@ -294,7 +299,10 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     banner_w = max(table_w,
                    _text_w(probe, title, f_title) + 2 * CELL_PAD_X)
 
-    img_h = PAD + TITLE_H + header_h + ROW_H * len(rows) + PAD
+    _rep_at = (len(rows) - repeat_header_before
+               if 0 < repeat_header_before < len(rows) else -1)
+    img_h = (PAD + TITLE_H + header_h + ROW_H * len(rows) + PAD
+             + (header_h if _rep_at >= 0 else 0))
     img = Image.new("RGB", (banner_w + 2 * PAD, img_h), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
@@ -302,23 +310,28 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     d.text((PAD + CELL_PAD_X, PAD + (TITLE_H - title_size) // 2), title,
            font=f_title, fill=TITLE_FG)
 
-    y, x = PAD + TITLE_H, PAD
-    for ci in range(ncol):
-        d.rectangle([x, y, x + col_w[ci], y + header_h], fill=theme["header_bg"])
-        lines = head_lines[ci]
-        block_h = head_lh * len(lines)
-        ty = y + (header_h - block_h) // 2 + 1
-        for ln in lines:
-            # Center each header line in its cell (Megan 2026-08-22).
-            tx = x + max((col_w[ci] - _text_w(d, ln, head_font)) // 2,
-                         head_pad if wrap_headers else CELL_PAD_X)
-            d.text((tx, ty), ln, font=head_font, fill=HEADER_FG)
-            ty += head_lh
-        x += col_w[ci]
+    def _header_band(y0: int) -> int:
+        x0 = PAD
+        for ci in range(ncol):
+            d.rectangle([x0, y0, x0 + col_w[ci], y0 + header_h],
+                        fill=theme["header_bg"])
+            lines = head_lines[ci]
+            block_h = head_lh * len(lines)
+            ty = y0 + (header_h - block_h) // 2 + 1
+            for ln in lines:
+                # Center each header line in its cell (Megan 2026-08-22).
+                tx = x0 + max((col_w[ci] - _text_w(d, ln, head_font)) // 2,
+                              head_pad if wrap_headers else CELL_PAD_X)
+                d.text((tx, ty), ln, font=head_font, fill=HEADER_FG)
+                ty += head_lh
+            x0 += col_w[ci]
+        return y0 + header_h
 
-    y += header_h
+    y = _header_band(PAD + TITLE_H)
     _n_hl = int(highlight_last_row or 0)   # True==1; int N = last N rows
     for ri, r in enumerate(rows):
+        if ri == _rep_at:
+            y = _header_band(y)            # the bottom header band
         is_total = ((_n_hl and ri >= len(rows) - _n_hl)
                     or (highlight_first_row and ri == 0))
         bg = (theme.get("total_bg", theme["header_bg"]) if is_total
@@ -346,7 +359,9 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     yy = PAD + TITLE_H
     d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
     yy += header_h
-    for _ in range(len(rows) + 1):
+    for ri in range(len(rows) + 1):
+        if ri == _rep_at and ri:
+            yy += header_h                 # jump the bottom header band
         d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
         yy += ROW_H
 

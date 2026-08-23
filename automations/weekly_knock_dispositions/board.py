@@ -42,8 +42,9 @@ DAYS = 6                     # Mon–Sat
 HEADERS = [
     "Rep", "Total Talk To's", "Avg Talk To's / Day", "Total Apps",
     "Avg Talk To's per App", "Mon\u2013Fri Avg First Knock",
-    "Mon\u2013Fri Avg Last Knock", "Mon\u2013Sat Avg Gap / Day",
-    "Mon\u2013Sat Total Gap Hours", "Sat First Knock", "Sat Last Knock",
+    "Mon\u2013Fri Avg Last Knock", "Avg Hrs Knocking / Day",
+    "Mon\u2013Sat Avg Gap / Day", "Mon\u2013Sat Total Gap Hours",
+    "Sat First Knock", "Sat Last Knock",
 ]
 
 # After the summary columns comes the full disposition breakdown (Raf
@@ -62,6 +63,7 @@ DISPO_DISPLAY = {
 # K_TALK_TO) draws just what TeleMapper knows about it.
 GAPS_ONLY_HEADERS = ["Rep", "Mon\u2013Fri Avg First Knock",
                      "Mon\u2013Fri Avg Last Knock",
+                     "Avg Hrs Knocking / Day",
                      "Mon\u2013Sat Avg Gap / Day",
                      "Mon\u2013Sat Total Gap Hours",
                      "Sat First Knock", "Sat Last Knock"]
@@ -117,6 +119,18 @@ def _fmt_knock(minutes: int) -> str:
     ampm = "AM" if h24 < 12 else "PM"
     h12 = h24 % 12 or 12
     return f"{h12}:{mm:02d} {ampm}"
+
+
+def _knocking_hm(first_s: str, last_s: str, gap_min_day: float) -> str:
+    """Raf's 'AVG HRs knocking per day' (Slack reply 2026-08-23): the span
+    between the avg first and last knock, minus the avg gap per day —
+    (8:40 \u2212 2:47) \u2212 1h33m = 4h20m of actual knocking. Blank when either
+    knock time is missing or the span comes out non-positive."""
+    f, l = _knock_min(first_s), _knock_min(last_s)
+    if f is None or l is None or l <= f:
+        return ""
+    m = l - f - int(round(gap_min_day or 0))
+    return _hm(m) if m > 0 else "0h 0m"
 
 
 def _avg_knock(ov_rows: list[dict], col: str) -> str:
@@ -181,6 +195,9 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
                 _display_name(str(r.get(COL_REP, "")).strip()),
                 str(r.get(COL_FIRST_KNOCK, "")).strip(),
                 str(r.get(COL_LAST_KNOCK, "")).strip(),
+                _knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
+                             str(r.get(COL_LAST_KNOCK, "")),
+                             (gap_min / DAYS) if gap_min is not None else 0),
                 (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
                 (_hm(int(gap_min)) if gap_min is not None else ""),
                 str(r.get(K_SAT_FIRST, "")).strip(),
@@ -189,11 +206,14 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
         gap_reps = [int(r.get(K_GAP_MIN) or 0) for r in ov_rows
                     if r.get(K_GAP_MIN) is not None]
         tot_gaps = sum(gap_reps)
+        _gf, _gl = (_avg_knock(ov_rows, COL_FIRST_KNOCK),
+                    _avg_knock(ov_rows, COL_LAST_KNOCK))
+        _gg = (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0
         rows.append([
             TOTALS_LABEL,
-            _avg_knock(ov_rows, COL_FIRST_KNOCK),
-            _avg_knock(ov_rows, COL_LAST_KNOCK),
-            (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
+            _gf, _gl,
+            _knocking_hm(_gf, _gl, _gg),
+            (_hm(round(_gg)) if gap_reps else ""),
             _hm(tot_gaps),
             _avg_knock(ov_rows, K_SAT_FIRST),
             _avg_knock(ov_rows, K_SAT_LAST),
@@ -225,6 +245,9 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             (_num(talk / n_apps) if n_apps else ""),
             str(r.get(COL_FIRST_KNOCK, "")).strip(),
             str(r.get(COL_LAST_KNOCK, "")).strip(),
+            _knocking_hm(str(r.get(COL_FIRST_KNOCK, "")),
+                         str(r.get(COL_LAST_KNOCK, "")),
+                         (gap_min / DAYS) if gap_min is not None else 0),
             (_hm(round(gap_min / DAYS)) if gap_min is not None else ""),
             (_hm(int(gap_min)) if gap_min is not None else ""),
             str(r.get(K_SAT_FIRST, "")).strip(),
@@ -238,7 +261,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             if _norm_name(rep) in consumed or not n_apps:
                 continue
             rows.append([_display_name(rep), "", "", str(n_apps),
-                         "", "", "", "", "", "", ""] + _dispo_cells(None))
+                         "", "", "", "", "", "", "", ""] + _dispo_cells(None))
 
     rows.append(totals_row(ov_rows, apps, dispo_cols))
     return rows
@@ -273,6 +296,9 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         (_num(tot_talk / tot_apps) if tot_apps else ""),
         _avg_knock(ov_rows, COL_FIRST_KNOCK),
         _avg_knock(ov_rows, COL_LAST_KNOCK),
+        _knocking_hm(_avg_knock(ov_rows, COL_FIRST_KNOCK),
+                     _avg_knock(ov_rows, COL_LAST_KNOCK),
+                     (tot_gaps / DAYS / len(gap_reps)) if gap_reps else 0),
         (_hm(round(tot_gaps / DAYS / len(gap_reps))) if gap_reps else ""),
         _hm(tot_gaps),
         _avg_knock(ov_rows, K_SAT_FIRST),
@@ -298,4 +324,7 @@ def render(office: str, monday: dt.date, saturday: dt.date,
     return knocks_render._draw(headers_for(dispo_cols, gaps_only), rows,
                                title, THEME_PLUM, out, name_col=0,
                                wrap_headers=True,
-                               highlight_last_row=n_totals)
+                               highlight_last_row=n_totals,
+                               # Raf 2026-08-23: header band re-drawn above
+                               # the totals block so the bottom reads alone.
+                               repeat_header_before=n_totals)
