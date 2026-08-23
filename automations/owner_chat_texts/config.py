@@ -20,13 +20,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# The two chats. Matching is substring (resolve_group), so the flame emojis in
-# the A-Team chat's real name — "Alphalete A-Team Chat🔥 🔥" (Megan's screenshot
-# 2026-08-23) — are deliberately left OUT of the needle: emoji in an
-# AppleScript literal is one more thing to escape, and the plain prefix is
-# already unique. Owners chat name is Raf's wording (#l10-alphalete 8/23);
-# exact spelling unverified until the first Lucy 1 dry-run resolves it.
-GROUP_OWNERS_REAL = "Alphalete owners - Real CHAT"
+# The two chats, needles for resolve_group's substring match (AppleScript
+# `contains`, case-insensitive). Real names per Megan's screenshots 2026-08-23:
+#
+#   "Alphalete Owners 🔥 - Real"    (NOT Raf's "…- Real CHAT" wording)
+#   "Alphalete A-Team Chat🔥 🔥"
+#
+# The flame emojis are deliberately left OUT of the needles — emoji in an
+# AppleScript literal is one more thing to escape — and the needles stop
+# BEFORE the emoji so they match the real names as substrings. resolve_group
+# raises on 2+ hits, so if a needle ever turns ambiguous the dry-run says so
+# rather than texting the wrong room.
+GROUP_OWNERS_REAL = "Alphalete Owners"
 GROUP_A_TEAM = "Alphalete A-Team Chat"
 
 # Routing.
