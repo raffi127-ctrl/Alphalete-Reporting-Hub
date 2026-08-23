@@ -218,7 +218,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           wrap_headers: bool = False,
           highlight_last_row: "bool | int" = False,
           highlight_first_row: "bool | int" = False,
-          repeat_header_before: int = 0) -> Path:
+          repeat_header_before: int = 0,
+          top_row_colors: "list | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -344,10 +345,15 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         # highlight_first_row mirrors highlight_last_row: True==1; int N =
         # the first N rows (a board carrying other offices' totals above its
         # own, Raf 2026-08-23).
-        is_total = ((_n_hl and ri >= len(rows) - _n_hl)
-                    or ri < int(highlight_first_row or 0))
+        _n_top = int(highlight_first_row or 0)
+        is_total = (_n_hl and ri >= len(rows) - _n_hl) or ri < _n_top
         bg = (theme.get("total_bg", theme["header_bg"]) if is_total
               else ROW_BG_A if ri % 2 == 0 else theme["stripe"])
+        # Per-row override for the top block (another office's totals line
+        # draws in its own colour — Megan 2026-08-23).
+        if ri < _n_top and top_row_colors and ri < len(top_row_colors) \
+                and top_row_colors[ri]:
+            bg = top_row_colors[ri]
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
         for ci in range(ncol):
@@ -434,15 +440,20 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     for t in extra_rows + [totals]:
         t[tg_pos] = _fmt_hm(t[tg_pos])
         t[hrs_pos] = _fmt_hm(t[hrs_pos])
-    # Office rows at the TOP, right under the header (Raf 2026-08-22).
+    # Office rows at the TOP, right under the header (Raf 2026-08-22). An
+    # extra office's line draws teal so it can't be misread as ours
+    # (Megan 2026-08-23).
     table = extra_rows + [totals] + sub
+    _colors = ([THEME_TEAL["title_bg"]] * len(extra_rows)
+               + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
     return _draw(disp, table,
                  f"TOTAL KNOCKS — {_office}{_title_date(target)}",
                  THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
                  name_col=0, wrap_headers=True,
-                 highlight_first_row=1 + len(extra_rows))
+                 highlight_first_row=1 + len(extra_rows),
+                 top_row_colors=_colors)
 
 
 def _gap_min(v: str) -> int:
