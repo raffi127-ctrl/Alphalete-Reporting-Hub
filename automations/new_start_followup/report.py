@@ -412,8 +412,7 @@ def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
     lines = [
         "📣 *{}* — week of {}/{}".format(
             thread_mod.ROLLCALL_MARKER, rec.monday.month, rec.monday.day),
-        "Please text your new starts today and reply *Sent* "
-        "(or *Sent x2*) in this thread.",
+        "Please text your new starts today and reply *Sent* in this thread.",
         "",
     ]
     for i, s in enumerate(owing, 1):
@@ -454,7 +453,7 @@ def render_nudge(rec: Reconciliation, when: str) -> str:
     for i, s in enumerate(pending, 1):
         lines.append("{}. {}".format(i, s.leader.mention))
     lines.append("")
-    lines.append("_Reply *Sent* (or *Sent x3*) in this thread once you're done · auto by Lucy_")
+    lines.append("_Reply *Sent* in this thread once you're done · auto by Lucy_")
     return "\n".join(lines)
 
 
