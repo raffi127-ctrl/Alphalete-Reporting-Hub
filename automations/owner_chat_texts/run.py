@@ -130,7 +130,13 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                 out["errors"].append("board: %s: %s" % (type(e).__name__,
                                                         str(e)[:240]))
 
-    out["ok"] = not out["errors"]
+    # ok = EVERYTHING due was delivered (or would be, on a dry run). A tracker
+    # missing from the Slack thread or a board data-gate HOLD is not an error,
+    # but it IS undelivered — return non-ok so the scheduled run exits 1 and
+    # the orchestrator retries later in the morning. Retries are safe: each
+    # delivered item has a per-day .sent marker, so only the stragglers send.
+    held = [s for s in out["skipped"] if s.startswith("board (HOLD")]
+    out["ok"] = not (out["errors"] or out["missing"] or held)
     return out
 
 
@@ -168,13 +174,21 @@ def main(argv=None) -> int:
     if res["ok"] and not dry and res["sent"]:
         try:  # the Hub must never fail a delivered text
             from automations.day_orchestrator import hub_publish
-            hub_publish.publish_done("owner_chat_texts",
-                                     "Owner Chat Texts (iMessage)",
-                                     status="success")
+            rid, title = {
+                "trackers": ("owner_chat_texts_trackers",
+                             "Owner Chat Texts — Trackers (iMessage)"),
+                "board": ("owner_chat_texts_board",
+                          "Owner Chat Texts — WOW Board (iMessage)"),
+            }.get(args.only, ("owner_chat_texts", "Owner Chat Texts (iMessage)"))
+            hub_publish.publish_done(rid, title, status="success")
         except Exception:  # noqa: BLE001
             pass
     if res["ok"]:
         print("=== done%s ===" % (" (dry-run)" if dry else ""), flush=True)
+    elif not res["errors"]:
+        print("  not everything delivered yet — exiting 1 so the scheduler "
+              "retries; delivered items are marker-protected from re-sends.",
+              flush=True)
     return 0 if res["ok"] else 1
 
 

@@ -182,7 +182,59 @@
       "cadence": {
         "weekdays": []
       },
-      "_note": "Raf 8/23: trackers + the WOW delta chart into the owner iMessage chats, from THIS machine (Messages = alphaletereporting@). Registered off-scheduler first so `lucy rerun owner_chat_texts` works for the proving runs; the module is dry-run by default and only --send texts anyone. Flip on_scheduler + add --send to base_args + a not_before once the live send is proven.",
+      "_note": "Raf 8/23: trackers + the WOW delta chart into the owner iMessage chats, from THIS machine (Messages = alphaletereporting@). This base entry stays OFF-scheduler and dry-run (no --send) so `lucy rerun owner_chat_texts` is always a safe full rehearsal; the two entries below it are the LIVE scheduled halves (Megan 8/23: trackers 7:30, boards 7:45).",
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "owner_chat_texts_trackers": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "display_name": "Owner Chat Texts — Trackers (iMessage)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.owner_chat_texts.run"
+      ],
+      "base_args": [
+        "--only",
+        "trackers",
+        "--send"
+      ],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "07:30"
+      },
+      "_note": "LIVE SEND (Megan 2026-08-23: 'trackers daily at 7:30am'). Forwards the tracker PNGs already posted in #alphalete-sales to the Alphalete Owners iMessage chat. Exits 1 while any routed tracker is still missing from the thread, so the orchestrator keeps retrying and the stragglers text as they land — per-day .sent markers make every retry duplicate-proof.",
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "owner_chat_texts_board": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "display_name": "Owner Chat Texts — WOW Board (iMessage)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.owner_chat_texts.run"
+      ],
+      "base_args": [
+        "--only",
+        "board",
+        "--send"
+      ],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "07:45"
+      },
+      "_note": "LIVE SEND (Megan 2026-08-23: 'sales boards at 7:45am to each chat'). Re-sorts the All Units board most-to-least, renders the WOW delta chart, texts it to BOTH owner chats. Exits 1 while the board's data gate holds (short of yesterday), so the orchestrator retries until the fill completes.",
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
