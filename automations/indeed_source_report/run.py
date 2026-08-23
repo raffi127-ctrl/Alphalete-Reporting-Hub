@@ -80,6 +80,15 @@ YTD_LABEL = "YTD (all months)"
 # Targets: Jamis's sales board + Carlos's Captainship Dashboard (2026-08-23).
 BOARD_PUSH = [
     ("1wDWeiS0IuzwsYFGF-s6mA6by8CtBtI5eOEnNmahBd6s", ["Jamis Garay"]),
+    ("1gK_QL06yPzHdSh6cNbaQ9lp7qSofoneti3kWxOgdf8I", ["Jackie LeRoy"]),
+    ("1TJpMQWJXnunqs3yrL_LV0-JZrjZEsGKtVzu5skGue6s", ["Justin Wood"]),
+    ("1VZEEpW--Us6_4UHhBJX8fYhY44Wu6CtJ3AdFtppZccc", ["Joshua Murphy"]),
+    ("1-gJfYtz8teNIMpYpMPVk5bBqomZWqu5yRfUGTfjqTlQ", ["Dhyey Patel"]),
+    ("1CmUEyC_rwidScsLeuE1WywKUvqHE7avtytFLQgzD1pU", ["Jeff Starr"]),
+    ("1MxORzw6WFGxSXCuJf1hVok68eMOvRX02T9fhauVDFq0", ["Kinsey Guenther"]),
+    ("1XtKmB-C_hXFgBKyyBWbW9h8fG5riVXAM5ckaOClxQAs", ["Atef Choudhury"]),
+    ("1n2d5vDiwwj6d3bFBIe5OcuEWEEc1OFn2Hp28wuaSFOY", ["Joey Ramirez"]),
+    ("1LOi7JPQ8j0qlbe3PvgZumaHuWCd2HKLNYDRGZOBxrnE", ["Vincent Smith"]),
     ("14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8", None),   # None = captainship
 ]
 
@@ -114,6 +123,8 @@ def push_boards(new_rows, periods):
                            periods[i] if i < len(periods) else ""] for i in range(n)]}
                    ).raise_for_status()
             print("  board %s: %d rows" % (ssid[:10], len(rows)), flush=True)
+            import time as _t
+            _t.sleep(4)                     # 60-writes/min quota headroom
         except Exception as e:  # noqa: BLE001
             print("  !! board %s push failed: %s" % (ssid[:10], str(e)[:120]), flush=True)
 
