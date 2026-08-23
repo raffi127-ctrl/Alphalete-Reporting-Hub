@@ -91,6 +91,13 @@ CAPTAINSHIP = [
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
 
+# Campaign-only people: on the Focus Report picker (their campaign block from
+# the Campaign Log renders below the funnel) but NOT in the org — they have no
+# AppStream office being pulled, no Goals row, no Recruiting Dashboard /
+# Matrix presence. Their funnel rows legitimately read zero. Carlos's Tuesday
+# 1:1 crew in limbo (2026-08-23): MJ and Akib, parked on Retail.
+CAMPAIGN_ONLY = ["MJ Malhas", "Akib Chowdhury"]
+
 # Indeed ad tracker tabs that actually exist in the workbook today, for the
 # Captain Ship Ad View dropdown. A name here must match a tab EXACTLY —
 # INDIRECT does a literal string match, and a trailing space in a tab name

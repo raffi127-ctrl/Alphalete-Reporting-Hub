@@ -17,8 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from automations.funnel_board.auth import session as _auth_session  # noqa: E402
 from automations.funnel_board.roster import (  # noqa: E402
-    CAPTAINSHIP_NAMES, ORG_NAMES, BOARD_TITLE as CAP_BOARD_TITLE,
-    TREND_TITLE as CAP_TREND_TITLE)
+    CAMPAIGN_ONLY, CAPTAINSHIP_NAMES, ORG_NAMES,
+    BOARD_TITLE as CAP_BOARD_TITLE, TREND_TITLE as CAP_TREND_TITLE)
+from automations.org_campaign_metrics.layout import (  # noqa: E402
+    N_SLOTS as CAMP_SLOTS, ZONE_START as CAMP_ZONE_START)
 
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
@@ -431,6 +433,17 @@ if "Manager Matrix" not in SID:
     SID["Manager Matrix"] = res["replies"][0]["addSheet"]["properties"]["sheetId"]
 BOARD, TREND, LOG, GOALS = SID["Recruiting Dashboard"], SID["Focus Report"], SID["Daily Log"], SID["Goals"]
 MATRIX = SID["Manager Matrix"]
+
+# The campaign zone's data store. Created here so the zone's formulas never
+# dangle on a fresh workbook, but deliberately NOT in OURS below: the hourly
+# wipe re-renders the zone's FORMULAS while the DATA (stamped by
+# org_campaign_metrics, typed rows synced by the Goal Sync script) lives on.
+if "Campaign Log" not in SID:
+    _res = batch([{"addSheet": {"properties": {
+        "title": "Campaign Log", "hidden": True,
+        "gridProperties": {"rowCount": 20000, "columnCount": 20}}}}])
+    SID["Campaign Log"] = _res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    print("created: Campaign Log")
 
 # A Trend tab is 2 + 8 columns per week and keeps growing; a freshly created
 # sheet only has 60, and writing past the grid is a 400, not a resize.
@@ -1054,6 +1067,120 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     F.append(fmt(sid, HDR - 1, TOTR + 1, 0, len(BCOLS) + 1, BOLD, FB))
 
 
+# ---- campaign zone: per-campaign sales metrics below the funnel (2026-08-23).
+# Geometry and formatting live here; WHAT the rows say lives on the hidden
+# 'Campaign Log' tab (stamped by automations/org_campaign_metrics/) — band
+# headers, labels and values are all INDEX/MATCH lookups keyed on the A1
+# picker, so one generic block serves every campaign (B2B / BOX / NDS / limbo)
+# and a manager with no campaign mapping renders nothing at all. Values are
+# display TEXT ("288", "6.4", "79%"): one slot is a count where another
+# campaign's is a rate, and a cell holds only one number format — grading CF
+# compares VALUE() of the text instead.
+CAMP_Z0 = TF + len(METRICS) + 2            # first zone row, 1-based
+if CAMP_Z0 != CAMP_ZONE_START:
+    # The installed goal_sync.gs hardcodes ZONE_START; a funnel-length change
+    # moves the zone and the script would write typed goals to WRONG slots.
+    # Warn loudly but keep building — this runs AFTER the wipe, and dying here
+    # would leave every tab blank until someone intervened.
+    print("!! CAMPAIGN ZONE MOVED: CAMP_Z0=%d but layout.ZONE_START=%d — "
+          "update org_campaign_metrics/layout.py AND the installed "
+          "goal_sync.gs together, or typed goals will land on wrong rows"
+          % (CAMP_Z0, CAMP_ZONE_START))
+
+
+def campaign_zone(sid, title):
+    hc = ncols + 1                          # hidden helper column: kind per row
+    hcL = a1(hc)
+    CL = "'Campaign Log'"
+    # the picked manager's campaign key, parked in the hidden helper column
+    values.append({"range": "'%s'!%s1" % (title, hcL), "values": [[
+        '=IFERROR(VLOOKUP($A$1,%s!$A:$B,2,FALSE),"")' % CL]]})
+    kind_rows, grid = [], []
+    for s in range(1, CAMP_SLOTS + 1):
+        kind_rows.append(['=IFERROR(INDEX(%s!$G:$G,MATCH($%s$1&"|"&%d,%s!$D:$D,0)),"")'
+                          % (CL, hcL, s, CL)])
+        row = [None] * ncols
+        row[0] = ('=IFERROR(INDEX(%s!$H:$H,MATCH($%s$1&"|"&%d,%s!$D:$D,0)),"")'
+                  % (CL, hcL, s, CL))
+        row[1] = ('=IFERROR(INDEX(%s!$R:$R,MATCH($A$1&"|"&%d,%s!$P:$P,0)),"")'
+                  % (CL, s, CL))
+        for wi in range(len(WEEK_ENDS)):
+            c = a1(TC0 + wi * WW)
+            # WK columns only; day cells stay empty (every campaign source is
+            # weekly or rolling — day granularity can come later, data-only)
+            row[TC0 + wi * WW] = (
+                '=IFERROR(INDEX(%s!$N:$N,MATCH($A$1&"|"&TEXT(%s$2,"yyyy-mm-dd")'
+                '&"|"&%d,%s!$J:$J,0)),"")' % (CL, c, s, CL))
+        grid.append(row)
+    values.append({"range": "'%s'!%s%d" % (title, hcL, CAMP_Z0), "values": kind_rows})
+    values.append({"range": "'%s'!A%d" % (title, CAMP_Z0), "values": grid})
+
+    z0, z1 = CAMP_Z0 - 1, CAMP_Z0 - 1 + CAMP_SLOTS
+    F.extend([
+        fmt(sid, z0, z1, 0, ncols, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 12, FONT), "horizontalAlignment": "CENTER",
+            "numberFormat": {"type": "TEXT"}, "borders": {"bottom": bd(LINE)}}},
+            "userEnteredFormat(textFormat,horizontalAlignment,numberFormat,borders)"),
+        fmt(sid, z0, z1, 0, 1, {"userEnteredFormat": {
+            "textFormat": txt(INK, False, 12, FONT_UI), "horizontalAlignment": "LEFT"}},
+            "userEnteredFormat(textFormat,horizontalAlignment)"),
+        fmt(sid, z0, z1, 1, 2, {"userEnteredFormat": {
+            "backgroundColor": rgb(SURF_2), "textFormat": txt(INK_2, False, 12, FONT),
+            "borders": {"right": bdm(), "bottom": bd(LINE)}}},
+            "userEnteredFormat(backgroundColor,textFormat,borders)"),
+    ])
+    for wi in range(len(WEEK_ENDS)):
+        b = TC0 + wi * WW
+        F.append(fmt(sid, z0, z1, b, b + 1, {"userEnteredFormat": {
+            "textFormat": {"bold": True}, "borders": {"left": bdm(), "right": bdm()}}},
+            "userEnteredFormat(textFormat,borders)"))
+        F.append(fmt(sid, z0, z1, b + 6, b + 8, {"userEnteredFormat": {
+            "textFormat": {"foregroundColor": rgb(INK_3)}, "backgroundColor": rgb(SURF_2)}},
+            "userEnteredFormat(textFormat,backgroundColor)"))
+        F.append({"updateBorders": {"range": gr(sid, z0, z1, b, b + WW),
+                                    "left": bdt(INK)}})
+    # band + header rows paint themselves via CF keyed on the hidden kind column
+    kref = "$%s%d" % (hcL, CAMP_Z0)
+    for kind, colr in [("hdr", INK)] + [("band%d" % i, STAGE[i]) for i in range(5)]:
+        F.append({"addConditionalFormatRule": {"rule": {
+            "ranges": [gr(sid, z0, z1, 0, ncols)],
+            "booleanRule": {"condition": {
+                "type": "CUSTOM_FORMULA",
+                "values": [{"userEnteredValue": '=%s="%s"' % (kref, kind)}]},
+                "format": {"backgroundColor": rgb(colr),
+                           "textFormat": {"foregroundColor": rgb("#FFFFFF"),
+                                          "bold": True}}}},
+            "index": 0}})
+    # violet goal cells on the rows that carry one (Head Count / units / SPR)
+    F.append({"addConditionalFormatRule": {"rule": {
+        "ranges": [gr(sid, z0, z1, 1, 2)],
+        "booleanRule": {"condition": {
+            "type": "CUSTOM_FORMULA",
+            "values": [{"userEnteredValue": '=OR(%s="mg",%s="g")' % (kref, kref)}]},
+            "format": {"backgroundColor": rgb(EDIT_BG),
+                       "textFormat": {"foregroundColor": rgb(EDIT), "bold": True}}}},
+        "index": 0}})
+    # grading chips, counts convention (coloured number, no fill), mg/g rows only
+    v = "IFERROR(VALUE(%s%d),-1)" % (a1(TC0), CAMP_Z0)
+    g = "IFERROR(VALUE($B%d),0)" % CAMP_Z0
+    graded = 'OR(%s="mg",%s="g")' % (kref, kref)
+    for expr, fg in (
+            ("%s>=%s*%s" % (v, g, BAND_OK), GOOD),
+            ("AND(%s>=%s*%s,%s<%s*%s)" % (v, g, BAND_WARN, v, g, BAND_OK), WARN),
+            ("AND(%s>=0,%s<%s*%s)" % (v, v, g, BAND_WARN), BAD)):
+        F.append({"addConditionalFormatRule": {"rule": {
+            "ranges": [gr(sid, z0, z1, TC0, ncols)],
+            "booleanRule": {"condition": {
+                "type": "CUSTOM_FORMULA",
+                "values": [{"userEnteredValue": "=AND(%s,%s>0,%s)" % (graded, g, expr)}]},
+                "format": {"textFormat": {"foregroundColor": rgb(fg), "bold": True}}}},
+            "index": 0}})
+    F.append({"updateDimensionProperties": {
+        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                  "startIndex": ncols, "endIndex": hc + 1},
+        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+
+
 def build_trend(sid, title, heading, roster):
     """One Manager-Trend-shaped tab, its picker limited to `roster`."""
     global F
@@ -1061,7 +1188,8 @@ def build_trend(sid, title, heading, roster):
         "textFormat": txt(), "verticalAlignment": "MIDDLE"}},
         "userEnteredFormat(textFormat,verticalAlignment)"))
     F.append({"updateDimensionProperties": {
-        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0, "endIndex": 60},
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0,
+                  "endIndex": max(90, CAMP_Z0 + CAMP_SLOTS + 14)},
         "properties": {"pixelSize": 32}, "fields": "pixelSize"}})
 
     trend = [[None] * ncols for _ in range(THDR + len(METRICS))]
@@ -1073,7 +1201,7 @@ def build_trend(sid, title, heading, roster):
     # an hourly rebuild that resets the pickers would silently flip a
     # captainship view mid-morning. Read A1:E1 so the values also survive the
     # one-time move from the old B1/E1 layout.
-    _names = set(ORG_NAMES) | set(CAPTAINSHIP_NAMES)
+    _names = set(ORG_NAMES) | set(CAPTAINSHIP_NAMES) | set(CAMPAIGN_ONLY)
     _cur = _grp = ""
     try:
         _r1 = S.get(API + "/values/'%s'!A1:E1" % title).json().get("values", [[]])
@@ -1150,11 +1278,14 @@ def build_trend(sid, title, heading, roster):
     values.append({"range": "'%s'!A100" % title, "values": [[
         '=IF($B$1="Captainship",FILTER($E$100:$E$140,$E$100:$E$140<>""),'
         'FILTER($D$100:$D$140,$D$100:$D$140<>""))']]})
+    # the Org picker list carries the campaign-only people too (MJ, Akib):
+    # they have no org funnel data, but their campaign block below needs a
+    # picker entry to render on
+    _pick = ORG_NAMES + CAMPAIGN_ONLY
     values.append({"range": "'%s'!D100" % title, "values":
-                   [[o if i < len(ORG_NAMES) else "",
+                   [[_pick[i] if i < len(_pick) else "",
                      CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
-                    for i, o in enumerate(
-                        ORG_NAMES + [""] * max(0, len(CAPTAINSHIP_NAMES) - len(ORG_NAMES)))]})
+                    for i in range(max(len(_pick), len(CAPTAINSHIP_NAMES)))]})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": "Org"},
@@ -1300,7 +1431,7 @@ def build_trend(sid, title, heading, roster):
         {"setDataValidation": {"range": gr(sid, 0, 1, 0, 1), "rule": {
             "condition": {"type": "ONE_OF_RANGE",
                           "values": [{"userEnteredValue": "='%s'!$A$100:$A$%d"
-                                      % (title, 99 + max(len(ORG_NAMES),
+                                      % (title, 99 + max(len(ORG_NAMES) + len(CAMPAIGN_ONLY),
                                                          len(CAPTAINSHIP_NAMES)))}]},
             "showCustomUi": True, "strict": True}}},
         {"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS",
@@ -1316,7 +1447,8 @@ def build_trend(sid, title, heading, roster):
             "range": gr(sid, THDR - 1, TF + len(METRICS) - 1, b, b + WW),
             "left": bdt(INK)}})
 
-    legend(sid, title, TF + len(METRICS) + 2)
+    campaign_zone(sid, title)
+    legend(sid, title, CAMP_Z0 + CAMP_SLOTS + 2)
     F.append(fmt(sid, THDR - 2, TF + len(METRICS) - 1, 0, ncols, CENTER, FC))
     # On the Trend the counts are the story and the rates are support, so bold
     # the count rows only — bolding both flattens that back out.
