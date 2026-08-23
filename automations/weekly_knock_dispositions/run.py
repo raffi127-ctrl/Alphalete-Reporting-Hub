@@ -289,6 +289,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # totals for comparison — COMPARE_TOTALS.)
     from automations.shared.tableau_patchright import ownerville_session
     pulled: dict[str, tuple[dict, list, list]] = {}  # name → (cfg, rows, cols)
+    compare_pulled: dict[str, tuple[dict, list, list]] = {}  # data-only
     boards: list[tuple[dict, Path | None, str]] = []  # (cfg, png, comment_extra)
     failed: list[str] = []
     skipped: list[str] = []     # structural (cross-ws / NDS) — never "failed"
@@ -320,6 +321,29 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
                           f"{str(e)[:200]}", flush=True)
                     failed.append(name)
+            # COMPARE_TOTALS targets outside the run's scope (e.g. a scoped
+            # `--office "Rafael Hidalgo"` rerun): pull their DATA too — the
+            # comparison row needs it — but never render/post them.
+            from automations.weekly_knock_dispositions.offices import (
+                COMPARE_TOTALS, all_offices)
+            _by_name = {o["name"]: o for o in all_offices()}
+            for cfg in offices:
+                for other in COMPARE_TOTALS.get(cfg["name"], []):
+                    if other in pulled or other in compare_pulled:
+                        continue
+                    o_cfg = _by_name.get(other)
+                    if not o_cfg:
+                        continue
+                    try:
+                        o_rows, o_cols = P.pull_office_week(
+                            page, o_cfg, aliases_raw, monday, saturday)
+                        compare_pulled[other] = (o_cfg, o_rows, o_cols)
+                        print(f"[wkd] pulled {other} for comparison only",
+                              flush=True)
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[wkd] ⚠ comparison pull {other} failed: "
+                              f"{type(e).__name__}: {str(e)[:160]}",
+                              flush=True)
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         print(f"[wkd] ❌ ownerville session failed: {type(e).__name__}: {e}",
               flush=True)
@@ -368,9 +392,10 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # the entry there to remove): the other office's totals, summed
             # against THIS board's columns, appended under OFFICE TOTALS.
             n_totals = 1
+            _lookup = {**pulled, **compare_pulled}
             for other in COMPARE_TOTALS.get(name, []):
-                if other in pulled and not gaps_only:
-                    o_cfg, o_rows, _ = pulled[other]
+                if other in _lookup and not gaps_only:
+                    o_cfg, o_rows, _ = _lookup[other]
                     rows.append(B.totals_row(
                         o_rows, _office_apps(o_cfg), dispo_cols,
                         label=f"{other.upper()} TOTALS"))
