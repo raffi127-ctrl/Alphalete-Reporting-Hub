@@ -270,6 +270,11 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
                 orientation = f"{cr[0].month}/{cr[0].day}"
             if cr[1]:
                 status = STATUS_CR
+            # reaching the training roster proves they were offered + BOB'd,
+            # even when the interview-day Offered detail missed them
+            c["offered"] = "Y"
+            if c["bob_status"] in ("", Q_DIDNT_OFFER):
+                c["bob_status"] = "BOB"
         row = next_row
         next_row += 1
         existing[key] = row
