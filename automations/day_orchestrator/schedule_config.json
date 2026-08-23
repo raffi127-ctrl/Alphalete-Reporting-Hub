@@ -3140,14 +3140,14 @@
       "verify": null,
       "timeout_minutes": 5
     },
-    "install_frontier_sunday_agent": {
+    "uninstall_frontier_sunday_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report \u2014 installs the Frontier OPT Sunday 6pm job, run via `lucy rerun install_frontier_sunday_agent`. Bootstraps com.alphalete.frontier-sunday-6pm (Sunday 18:00), which waits for Credico's Sunday email then fills (frontier_sunday.py retries until the 2 sales PDFs are in the inbox). Frontier was moved OFF the Monday 4am batch (Megan 2026-07-09) \u2014 the completed week is in Sunday's ~1:30pm daily email, so 6pm has it. Covered by the nightly schedule guard. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'.",
-      "display_name": "Install: Frontier OPT Sunday 6pm job",
+      "_note": "NOT a report \u2014 one-shot agent REMOVER (was install_frontier_sunday_agent). Megan 2026-08-23: 'we no longer use anything with frontier' \u2014 run `lucy rerun uninstall_frontier_sunday_agent` on Lucy 1 to boot out com.alphalete.frontier-sunday-6pm. The deploy plist + wrapper were deleted in the same commit so nothing can reinstall it (the schedule guard only re-bootstraps agents still LOADED). frontier_opt below is RETIRED in place; the wider frontier removal (org sales board / leaders call / ICD campaigns sections) is a separate pass. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs.",
+      "display_name": "Uninstall: remove Frontier OPT Sunday 6pm job",
       "source_type": "local",
       "data_sources": [],
       "command": [
-        "automations.day_orchestrator.install_agent"
+        "automations.day_orchestrator.uninstall_agent"
       ],
       "base_args": [
         "frontier-sunday-6pm"
@@ -3655,6 +3655,72 @@
       ],
       "base_args": [
         "social-scanner"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "tracker_mirror": {
+      "on_scheduler": false,
+      "machine": "Lucy 1",
+      "_machine_note": "Moved to Lucy 1 2026-08-23 (Megan) — born on Megan's laptop during the 8/22 workbook move (the building session ran there), so it only ran while her Mac was awake. Lucy 1 because the job is Sheets-API-only (no browser) AND needs the raffi127@ Sheets identity: it reads the OLD org tracker's still-authorized MIRROR tabs and writes the Recruiting Dashboard manager tabs. Lucy 3 is alphaletereporting@ (would 403, same trap as the 8/23 brand-audit incident) and Lucy 2 is Carlos's identity. Auth is funnel_board.auth (applicant service account first, personal token fallback).",
+      "_note": "Copies the 21 managers' ad-tracker values from the old org tracker (whose IMPORTRANGE grants survived the 8/22 tab move) into the manager tabs of the Alphalete Recruiting Dashboard. Runs every 2h 7:35 AM–5:35 PM via the standalone com.alphalete.tracker-mirror LaunchAgent (installed with install_tracker_mirror_agent). Never blanks on failure: an empty/#REF mirror keeps the previous values and is reported. Retire the whole job when all 21 managers re-Allow their IMPORTRANGEs in the new workbook. `lucy rerun tracker_mirror --dry-run` reads without writing.",
+      "runs_at": "7:35 AM CST (every 2h to 5:35 PM)",
+      "display_name": "Tracker Mirror",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.tracker_mirror.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 15
+    },
+    "install_tracker_mirror_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — installs the tracker-mirror LaunchAgent on THIS machine, run via `lucy rerun install_tracker_mirror_agent` (same pattern as install_brand_audit_agent). Bootstraps com.alphalete.tracker-mirror from the committed plist (every-2h 7:35–17:35 schedule). Covered by the nightly schedule guard once loaded. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs.",
+      "display_name": "Install: tracker-mirror agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "tracker-mirror"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "uninstall_tracker_mirror_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — one-shot agent REMOVER, run via `lucy rerun uninstall_tracker_mirror_agent` on the machine that should STOP running the tracker mirror (Megan's laptop after the 2026-08-23 move to Lucy 1). Mirror of install_tracker_mirror_agent; weekdays [] so the orchestrator never auto-runs it.",
+      "display_name": "Uninstall: remove tracker-mirror agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.uninstall_agent"
+      ],
+      "base_args": [
+        "tracker-mirror"
       ],
       "cadence": {
         "weekdays": []
@@ -4290,7 +4356,8 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "frontier_opt": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_retired_note": "RETIRED 2026-08-23 (Megan): 'we no longer use anything with frontier'. Sunday 6pm LaunchAgent removed via uninstall_frontier_sunday_agent (deploy plist + wrapper deleted); on_scheduler false so nothing triggers it. Module kept for history / one-off `lucy rerun frontier_opt`. Frontier sections still wired inside other reports (org sales board, leaders call, ICD campaigns, helen_residential) come out in a separate pass.",
       "display_name": "Frontier OPT Data Pull",
       "source_type": "web+email",
       "data_sources": [],
