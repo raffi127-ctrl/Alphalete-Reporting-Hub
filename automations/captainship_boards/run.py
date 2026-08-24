@@ -298,7 +298,7 @@ def update_board(label, board_id, rep_days, monday, upto, write):
         try:
             sb_id = sh.worksheet("Sales Board").id
             sh.batch_update({"requests": [{"setBasicFilter": {"filter": {
-                "range": {"sheetId": sb_id, "startRowIndex": 3,
+                "range": {"sheetId": sb_id, "startRowIndex": 2,
                           "endRowIndex": 43, "startColumnIndex": 0,
                           "endColumnIndex": 16},
                 "criteria": {"1": {"condition": {"type": "NOT_BLANK"}}}}}}]})
