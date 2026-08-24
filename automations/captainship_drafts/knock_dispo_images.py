@@ -36,6 +36,14 @@ pulled AT MOST ONCE per build: when he's an owner of the captain being built
 rows land in a per-process cache the other captains' summaries read instead
 of re-impersonating him.
 
+The WEEKLY pull goes one step further, through shared/knock_week_cache.py: a
+completed Mon–Sat week is frozen, so each (office, week) is pulled from
+ownerville at most ONCE across every report and every day. That kills the two
+duplications that made this build 1h40m+ on 2026-08-24 — the overlap with
+Sunday's weekly_knock_dispositions run (order 36.5, same offices, same week),
+and Monday's full re-pull of a week Sunday already fetched. The DAILY pull is
+deliberately NOT cached: one day, cheap, and it changes intraday.
+
 Per-owner isolation mirrors weekly_knock_dispositions/run.py: Raf is the
 MASTER login (the rhidalgo session IS his office; everyone else is an
 impersonation entered and exited around their pull), and one owner failing
@@ -440,7 +448,19 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     from automations.weekly_knock_dispositions import board as B
     from automations.weekly_knock_dispositions import pull as P
     from automations.total_knocks import render as knocks_render
+    from automations.shared import knock_week_cache as KWC
     from automations.shared.tableau_patchright import ownerville_session
+
+    # SESSION ECONOMY, honestly bounded: the week cache can make every weekly
+    # pull free, but it can NOT make the session unnecessary here. want_daily
+    # is True on both days this section runs (run.py's sections_on gates the
+    # weekly section to Sun+Mon; the daily one runs every day), and the daily
+    # knocks pulls are deliberately un-cached — they're one day, cheap, and
+    # change intraday. So on every real build there is daily work for the
+    # session regardless, and the browser opens either way. Deferring the
+    # session open for the weekly-only `capture()` entry point would mean
+    # restructuring the loop that owns the per-owner error isolation, for a
+    # path nothing schedules — not worth the risk. Left as-is on purpose.
 
     out_daily: List[Tuple[str, Optional[Path]]] = out["daily_knocks"]
     out_weekly: List[Tuple[str, Optional[Path]]] = out["knock_dispo"]
@@ -486,8 +506,28 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     done_daily.add(display)
                 if want_weekly:
                     try:
-                        ov_rows, dispo_cols = P.pull_office_week(
-                            page, cfg, aliases_raw, monday, saturday)
+                        # Shared week cache (shared/knock_week_cache.py): the
+                        # completed Mon–Sat week is frozen, and Sunday's
+                        # weekly_knock_dispositions run + MONDAY's re-build of
+                        # this very section ask for the exact same window. A
+                        # hit skips the ~12 ownerville round-trips entirely
+                        # and is NOT a failure — it falls through to the same
+                        # render below with the same (ov_rows, dispo_cols)
+                        # shape. A miss just pulls, exactly as before, and the
+                        # per-owner try/except around all of it is untouched.
+                        # (An EMPTY pull is never cached — see that module:
+                        # an owner with no rows is usually a failed
+                        # impersonation, and must be retried, not frozen in.)
+                        hit = KWC.get(cfg["name"], saturday,
+                                      aliases=aliases_raw)
+                        if hit is not None:
+                            ov_rows, dispo_cols = hit
+                            logfn(f"    ↺ weekly {display}: from week cache")
+                        else:
+                            ov_rows, dispo_cols = P.pull_office_week(
+                                page, cfg, aliases_raw, monday, saturday)
+                            KWC.put(cfg["name"], saturday, ov_rows,
+                                    dispo_cols, aliases=aliases_raw)
                         office_apps = (
                             A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
                                                  aliases_map)

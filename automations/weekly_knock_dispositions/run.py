@@ -4,6 +4,7 @@
     python -m automations.weekly_knock_dispositions.run --live      # post
     python -m automations.weekly_knock_dispositions.run --office "Rafael Hidalgo"
     python -m automations.weekly_knock_dispositions.run 2026-08-22  # that week
+    python -m automations.weekly_knock_dispositions.run --fresh     # re-pull
 
 Dry-run is the DEFAULT — a bare run pulls + renders to output/ and cannot
 post by accident (--live opts in; the two flags are mutually exclusive).
@@ -18,6 +19,11 @@ session, then ONE ownerville session (own Chrome profile — the shared one is
 first-come-first-served) walks the offices. One office failing never aborts
 the rest; the manifest says exactly who's missing and the retry re-runs only
 them.
+
+Each office's pull goes through shared.knock_week_cache, which the captainship
+drafts build (order 24, same week, ~50 owner-slots) writes into hours earlier
+on Sunday — so most offices here cost nothing, and a run where every office is
+cached never opens ownerville at all. --fresh bypasses the reads.
 """
 from __future__ import annotations
 
@@ -87,6 +93,30 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
 
 def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+
+
+def _cross_ws_token_path(cfg: dict) -> Path | None:
+    """Where a cross-workspace office's own bot token lives on this machine
+    (trang → FRESH SUCCESS), or None for an office that posts as Lucy. Same
+    file the office runner reads."""
+    tf = cfg.get("slack_token_file")
+    if not tf:
+        return None
+    return Path.home() / ".config" / "recruiting-report" / tf
+
+
+def _cross_ws_token(cfg: dict):
+    """None (posts as Lucy) | Path (cross-workspace, token present) | "skip"
+    (cross-workspace, token missing on this machine = structural skip, never a
+    red card).
+
+    Pulled out of the office loop so the cache sweep can ask the SAME question
+    before deciding whether to open an ownerville session at all — an office
+    that's going to be skipped must not be the reason Chrome launches."""
+    p = _cross_ws_token_path(cfg)
+    if p is None:
+        return None
+    return p if p.exists() else "skip"
 
 
 def _week(anchor: dt.date | None) -> tuple[dt.date, dt.date, dt.date]:
@@ -249,7 +279,8 @@ def fix_headers(only: list[str] | None = None) -> int:
 
 
 def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
-        dry_run: bool = True, preview_dm: str | None = None) -> int:
+        dry_run: bool = True, preview_dm: str | None = None,
+        fresh: bool = False) -> int:
     started_at = dt.datetime.now()
     offices = enabled(only)
     all_names = [o["name"] for o in enabled(None)]
@@ -287,35 +318,80 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # --- 2a. One ownerville session: PULL every office first ---------------
     # (render comes after, so a host board can append ANOTHER office's
     # totals for comparison — COMPARE_TOTALS.)
+    from contextlib import ExitStack
+
+    from automations.shared import knock_week_cache as KWC
     from automations.shared.tableau_patchright import ownerville_session
+    from automations.weekly_knock_dispositions.offices import (
+        all_offices, compare_targets)
     pulled: dict[str, tuple[dict, list, list]] = {}  # name → (cfg, rows, cols)
     compare_pulled: dict[str, tuple[dict, list, list]] = {}  # data-only
     boards: list[tuple[dict, Path | None, str]] = []  # (cfg, png, comment_extra)
     failed: list[str] = []
     skipped: list[str] = []     # structural (cross-ws / NDS) — never "failed"
+
+    # --- the shared week cache (automations/shared/knock_week_cache.py) -----
+    # The captainship drafts build (order 24) walks ~50 owner-slots through
+    # the SAME P.pull_office_week for the SAME Mon–Sat week and runs BEFORE
+    # this report on Sunday, so most of these offices are already pulled by
+    # the time we get here. Sweeping the cache up front (rather than only
+    # checking inside the loop) buys the session economy below: a run where
+    # every office already sits in the cache never opens ownerville at all.
+    # --fresh skips the reads — writes still happen, so a corrected re-pull
+    # replaces what the next reader sees.
+    _by_name = {o["name"]: o for o in all_offices()}
+    _wanted_compare = {other for cfg in offices
+                       for other in compare_targets(cfg["name"])
+                       if other in _by_name}
+    _in_scope = {o["name"] for o in offices}
+    cache_hits: dict[str, tuple[list, list]] = {}
+    if not fresh:
+        for _n in sorted(_in_scope | _wanted_compare):
+            hit = KWC.get(_n, saturday, aliases=aliases_raw)
+            if hit is not None:
+                cache_hits[_n] = hit
+    # A structurally-skipped office (cross-workspace token missing on this
+    # machine) is never pulled, so it must not be what keeps the session open
+    # — otherwise a fully-cached run on a machine without trang's FRESH
+    # SUCCESS token still launches Chrome for nothing.
+    need_live = any(o["name"] not in cache_hits and _cross_ws_token(o) != "skip"
+                    for o in offices) or any(
+        n not in cache_hits and n not in _in_scope for n in _wanted_compare)
+    if cache_hits:
+        print(f"[wkd] week cache: {len(cache_hits)} office(s) already pulled "
+              f"for {saturday}" + ("" if need_live else
+                                   " — every office cached, no ownerville "
+                                   "session needed"), flush=True)
+
     try:
-        with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
+        # ExitStack, not a bare `with`: the session opens ONLY when something
+        # actually needs a live pull (page stays None otherwise). A failure to
+        # open still raises inside this try, so the "ownerville session
+        # failed" alert path below is unchanged.
+        with ExitStack() as stack:
+            page = (stack.enter_context(ownerville_session(
+                        verbose=True, profile_dir=PROFILE_DIR))
+                    if need_live else None)
             for cfg in offices:
                 name = cfg["name"]
                 try:
-                    if cfg.get("slack_token_file"):
-                        # Cross-workspace office (trang/FRESH SUCCESS): posts
-                        # with its OWN workspace bot token, kept under
-                        # ~/.config/recruiting-report/ (same file the office
-                        # runner uses). Missing file = structural skip BEFORE
-                        # spending an impersonated pull — never a red card.
-                        tok_path = (Path.home() / ".config"
-                                    / "recruiting-report"
-                                    / cfg["slack_token_file"])
-                        if not tok_path.exists():
-                            print(f"[wkd] ⤳ {name}: cross-workspace token "
-                                  f"missing ({tok_path}) — SKIPPED.",
-                                  flush=True)
-                            skipped.append(name)
-                            continue
+                    tok_path = _cross_ws_token(cfg)
+                    if tok_path == "skip":
+                        print(f"[wkd] ⤳ {name}: cross-workspace token missing "
+                              f"({_cross_ws_token_path(cfg)}) — SKIPPED.",
+                              flush=True)
+                        skipped.append(name)
+                        continue
+                    if tok_path:
                         cfg["_token_path"] = tok_path
-                    ov_rows, dispo_cols = P.pull_office_week(
-                        page, cfg, aliases_raw, monday, saturday)
+                    if name in cache_hits:
+                        ov_rows, dispo_cols = cache_hits[name]
+                        print(f"[wkd] {name}: from week cache", flush=True)
+                    else:
+                        ov_rows, dispo_cols = P.pull_office_week(
+                            page, cfg, aliases_raw, monday, saturday)
+                        KWC.put(name, saturday, ov_rows, dispo_cols,
+                                aliases=aliases_raw)
                     pulled[name] = (cfg, ov_rows, dispo_cols)
                 except Exception as e:  # noqa: BLE001 — one office ≠ the run
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "
@@ -323,10 +399,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     failed.append(name)
             # COMPARE_TOTALS targets outside the run's scope (e.g. a scoped
             # `--office "Rafael Hidalgo"` rerun): pull their DATA too — the
-            # comparison row needs it — but never render/post them.
-            from automations.weekly_knock_dispositions.offices import (
-                all_offices, compare_targets)
-            _by_name = {o["name"]: o for o in all_offices()}
+            # comparison row needs it — but never render/post them. Chan Park
+            # rides EVERY board (COMPARE_TOTALS_EVERYONE), so on a scoped
+            # rerun this is the pull the week cache most reliably saves.
             for cfg in offices:
                 for other in compare_targets(cfg["name"]):
                     if other in pulled or other in compare_pulled:
@@ -335,11 +410,18 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     if not o_cfg:
                         continue
                     try:
-                        o_rows, o_cols = P.pull_office_week(
-                            page, o_cfg, aliases_raw, monday, saturday)
+                        if other in cache_hits:
+                            o_rows, o_cols = cache_hits[other]
+                            print(f"[wkd] {other}: from week cache "
+                                  "(comparison only)", flush=True)
+                        else:
+                            o_rows, o_cols = P.pull_office_week(
+                                page, o_cfg, aliases_raw, monday, saturday)
+                            KWC.put(other, saturday, o_rows, o_cols,
+                                    aliases=aliases_raw)
+                            print(f"[wkd] pulled {other} for comparison only",
+                                  flush=True)
                         compare_pulled[other] = (o_cfg, o_rows, o_cols)
-                        print(f"[wkd] pulled {other} for comparison only",
-                              flush=True)
                     except Exception as e:  # noqa: BLE001
                         print(f"[wkd] ⚠ comparison pull {other} failed: "
                               f"{type(e).__name__}: {str(e)[:160]}",
@@ -355,7 +437,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         return 1
 
     # --- 2b. Compute + render, with cross-office comparison rows -----------
-    from automations.weekly_knock_dispositions.offices import compare_targets
+    # (compare_targets / all_offices imported with the cache sweep above.)
     apps_cache: dict[str, dict | None] = {}
 
     def _office_apps(cfg: dict):
@@ -579,6 +661,10 @@ def main(argv=None) -> int:
     ap.add_argument("--fix-headers", action="store_true",
                     help="tag today's thread headers only — no pulls, no "
                          "board posts (safe after boards already went out)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="ignore the shared week cache and re-pull every "
+                         "office from ownerville (the cache is still WRITTEN, "
+                         "so the corrected data is what everyone else reads)")
     args = ap.parse_args(argv)
     if args.fix_headers:
         return fix_headers(args.office)
@@ -593,7 +679,8 @@ def main(argv=None) -> int:
               if args.date else None)
     return run(anchor, only=args.office,
                dry_run=(args.dry_run or args.preview or not args.live),
-               preview_dm=(MEGAN if args.preview else None))
+               preview_dm=(MEGAN if args.preview else None),
+               fresh=args.fresh)
 
 
 if __name__ == "__main__":
