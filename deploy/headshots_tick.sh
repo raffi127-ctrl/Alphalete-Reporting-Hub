@@ -16,10 +16,9 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# HELD with the Monday post (Megan 2026-08-23) — no processing until the
-# end-to-end flow (incl. OwnerVille upload) is approved. Flip to 1 + push +
-# `lucy update` to go live.
-HEADSHOTS_LIVE="${HEADSHOTS_LIVE:-0}"
+# LIVE since 2026-08-24 with the Monday post. Re-hold = flip to 0, push,
+# `lucy update --machine "Lucy 3"`.
+HEADSHOTS_LIVE="${HEADSHOTS_LIVE:-1}"
 if [ "$HEADSHOTS_LIVE" != "1" ]; then
     exit 0
 fi

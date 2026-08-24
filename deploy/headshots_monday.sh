@@ -12,11 +12,9 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# HELD until the flow works end to end INCLUDING the OwnerVille profile
-# upload (Megan 2026-08-23: "hold off on having a live post until we've got
-# it done end to end"). Go-live = flip to 1, push, `lucy update` — same
-# pattern as the owner-showdown hold.
-HEADSHOTS_LIVE="${HEADSHOTS_LIVE:-0}"
+# LIVE since 2026-08-24 (Megan: "Let's just take it live"). Held 8/23 while
+# the OV uploader was proven. Re-hold = flip to 0, push, `lucy update`.
+HEADSHOTS_LIVE="${HEADSHOTS_LIVE:-1}"
 if [ "$HEADSHOTS_LIVE" != "1" ]; then
     echo "[$(date)] headshots-monday HELD (HEADSHOTS_LIVE=0) — not posting"
     exit 0
