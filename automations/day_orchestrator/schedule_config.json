@@ -1924,10 +1924,10 @@
     "--live"
    ],
    "cadence": {
-    "weekdays": [0, 1, 2, 3, 4],
+    "weekdays": [1, 2, 3, 4, 5],
     "not_before": "09:00"
    },
-   "_note": "LIVE SEND (Raf 2026-08-23: 'ping the guys messaging on the daily update... 9:00am every day Monday - Friday. iMessage & Slack lvl 1 chat.'). Group posts ONLY — 'Hey guys, reminder to text any new starts you closed yesterday!' to the 'Alphalete lvl 1's' iMessage group + #alphalete-lvl1-chat. Thread-free: never reads the roster screenshot. Orchestrator-scheduled for the Messages grant (see new_start_sat_texts). One .sent marker per day.",
+   "_note": "LIVE SEND (Raf 2026-08-23: 'ping the guys messaging on the daily update... 9:00am. iMessage & Slack lvl 1 chat.'). TUESDAY-SATURDAY, not Mon-Fri — the message is about YESTERDAY'S closes and nobody closes on Sunday, so a Monday ping would be noise (Megan 2026-08-23). Group posts ONLY — 'Hey guys, reminder to text any new starts you closed yesterday!' to the 'Alphalete lvl 1's' iMessage group + #alphalete-lvl1-chat. Thread-free: never reads the roster screenshot. Orchestrator-scheduled for the Messages grant (see new_start_sat_texts). One .sent marker per day.",
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
