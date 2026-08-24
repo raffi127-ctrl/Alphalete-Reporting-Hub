@@ -40,68 +40,63 @@ NAV_TIMEOUT = 90_000
 STEP_TIMEOUT = 30_000
 
 
-def _describe(page) -> str:
-    """One compact line about what this page is showing."""
-    rows = page.query_selector_all("tr")
-    tids = []
-    for el in page.query_selector_all("[data-tid]")[:40]:
+def _tids(page, limit: int = 30) -> str:
+    seen = []
+    for el in page.query_selector_all("[data-tid]"):
         t = el.get_attribute("data-tid")
-        if t and t not in tids:
-            tids.append(t)
-    return f"url={page.url} rows={len(rows)} tids={','.join(tids[:12])}"
+        if t and t not in seen:
+            seen.append(t)
+        if len(seen) >= limit:
+            break
+    return ",".join(seen)
 
 
 def probe(email: str = "", headless: bool = True) -> int:
     """Describe the Sent list so the real reader below can be written against
-    it. Prints a handful of compact lines -- `lucy logtail` only returns ~470
-    characters at a time, so this stays deliberately terse."""
+    it. Deliberately terse -- `lucy logtail` returns ~470 characters a call.
+
+    ALWAYS returns 0. This is a diagnostic on a report card: a non-zero exit
+    publishes a FAILED run and opens an incident, which is what the first
+    version did to itself on 2026-08-24.
+    """
     sync_playwright = S._sync_api()
     with sync_playwright() as p:
         browser, ctx = S.open_context(p, headless=headless)
         page = ctx.new_page()
         try:
-            best = None
+            # The app is a SPA with no <table>, so counting <tr> proves nothing
+            # (v1 reported rows=0 everywhere). Read the SIDEBAR instead and let
+            # the app say where its own bundle list lives.
+            page.goto(f"{APP_ROOT}/dashboard/", wait_until="domcontentloaded",
+                      timeout=NAV_TIMEOUT)
+            page.wait_for_timeout(4000)
+            if "/login" in page.url:
+                print("PROBE session is DEAD -- rerun session.py --login")
+                return 0
+            print(f"PROBE landed={page.url}")
+            for a in page.query_selector_all("a[href*='/dashboard']")[:20]:
+                href = (a.get_attribute("href") or "").strip()
+                txt_ = " ".join((a.inner_text() or "").split())[:40]
+                tid = a.get_attribute("data-tid") or ""
+                if href:
+                    print(f"PROBE nav {href} | {txt_} | {tid}")
+
             for url in CANDIDATE_URLS:
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-                    page.wait_for_timeout(3000)
+                    page.goto(url, wait_until="domcontentloaded",
+                              timeout=NAV_TIMEOUT)
+                    page.wait_for_timeout(4000)
                 except Exception as exc:
-                    print(f"PROBE {url} -> ERROR {str(exc).splitlines()[0][:80]}")
+                    print(f"PROBE {url} ERROR {str(exc).splitlines()[0][:70]}")
                     continue
-                line = _describe(page)
-                print(f"PROBE {line}")
-                if "/login" in page.url:
-                    print("PROBE session is DEAD -- rerun session.py --login")
-                    return 1
-                rows = page.query_selector_all("tr")
-                if best is None and len(rows) > 1:
-                    best = url
-            if not best:
-                print("PROBE no candidate URL rendered a table")
-                return 1
-
-            page.goto(best, wait_until="domcontentloaded", timeout=NAV_TIMEOUT)
-            page.wait_for_timeout(3000)
-            print(f"PROBE list is {best}")
-            for i, tr in enumerate(page.query_selector_all("tr")[:4]):
-                txt = " ".join((tr.inner_text() or "").split())
-                print(f"PROBE row{i}: {txt[:150]}")
-
-            boxes = page.query_selector_all("input[type='search'], input[type='text']")
-            print(f"PROBE search inputs: {len(boxes)}")
-            if boxes and email:
-                boxes[0].click()
-                boxes[0].type(email, delay=40)
-                page.wait_for_timeout(4000)
-                trs = page.query_selector_all("tr")
-                print(f"PROBE after search {email!r}: rows={len(trs)}")
-                for i, tr in enumerate(trs[:3]):
-                    txt = " ".join((tr.inner_text() or "").split())
-                    print(f"PROBE hit{i}: {txt[:150]}")
+                body = " ".join((page.inner_text("body") or "").split())
+                notfound = "nub-notFound" in (page.content() or "")
+                print(f"PROBE page={url} notFound={notfound} "
+                      f"len={len(body)} tids={_tids(page, 14)}")
+                print(f"PROBE text: {body[:260]}")
         finally:
             browser.close()
     return 0
-
 
 def screen(people: List[NewStart]) -> Dict[str, str]:
     """{email: what we saw} for everyone the Sent list already shows a packet
