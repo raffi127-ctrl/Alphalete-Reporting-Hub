@@ -140,17 +140,58 @@ def _show_all(page) -> None:
 
 
 def _photo_pill(row) -> str:
-    """The row's Upload Documents state: 'uploaded' (green ✓ Photo),
-    'missing' (orange Photo), or 'unknown'."""
+    """The row's Upload Documents state: 'uploaded', 'missing', 'unknown'.
+
+    Text alone is NOT enough (2026-08-24): the green state's checkmark is an
+    ICON, so inner_text() reads plain "Photo" for both states — which made
+    every rep look like they needed a photo. Decide on the pill element's
+    COLOR/CLASS instead (OV uses bootstrap-ish success/green vs
+    danger/warning/orange), and only fall back to text."""
     try:
-        txt = _norm(row.inner_text())
+        state = row.evaluate(
+            """el => {
+                 const pills = [...el.querySelectorAll('span,div,button,td')]
+                   .filter(n => /(^|\\s)photo(\\s|$)/i.test(
+                       (n.textContent || '').trim()));
+                 if (!pills.length) return 'unknown';
+                 const p = pills[pills.length - 1];
+                 const cls = (p.className || '') + ' ' +
+                             ((p.parentElement || {}).className || '');
+                 const bg = getComputedStyle(p).backgroundColor || '';
+                 const m = bg.match(/\\d+/g) || [];
+                 const [r, g, b] = m.map(Number);
+                 const greenish = (r !== undefined) &&
+                                  (g > r + 20) && (g > (b || 0) + 20);
+                 const hasIcon = !!p.querySelector('i,svg,.fa,.fas,.glyphicon');
+                 if (/success|green/i.test(cls) || greenish) return 'uploaded';
+                 if (/danger|warning|orange|red/i.test(cls)) return 'missing';
+                 return hasIcon ? 'uploaded' : 'missing';
+               }""")
+        if state in ("uploaded", "missing"):
+            return state
+    except Exception:
+        pass
+    try:
+        txt = _norm(row.inner_text(timeout=3000))
     except Exception:
         return "unknown"
     if "✓ photo" in txt or "✓photo" in txt:
         return "uploaded"
-    if "photo" in txt:
-        return "missing"
-    return "unknown"
+    return "missing" if "photo" in txt else "unknown"
+
+
+def dump_pill(page, row, name: str) -> None:
+    """Print the Upload Documents cell markup — the ground truth for how
+    OV renders uploaded vs missing. Diagnostic only."""
+    try:
+        html = row.evaluate(
+            """el => [...el.querySelectorAll('td')]
+                 .map(td => td.innerHTML.trim())
+                 .filter(h => /photo/i.test(h))
+                 .join('\\n---\\n').slice(0, 1200)""")
+        print(f"    [pill markup for {name}]\n{html or '(no photo cell)'}")
+    except Exception as e:  # noqa: BLE001
+        print(f"    (couldn't dump pill markup: {type(e).__name__})")
 
 
 def find_rep(page, name: str, *, verbose: bool = True):
@@ -273,12 +314,14 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
             return {"status": "not_found", "name": name, "tried": campaign}
 
         pill = _photo_pill(row)
+        if dry_run:
+            dump_pill(page, row, name)      # diagnostic on read-only runs
+            return {"status": "already_uploaded" if pill == "uploaded"
+                    else "dry_run_found", "name": name,
+                    "campaign": campaign, "pill": pill}
         if pill == "uploaded":
             return {"status": "already_uploaded", "name": name,
                     "campaign": campaign}
-        if dry_run:
-            return {"status": "dry_run_found", "name": name,
-                    "campaign": campaign, "pill": pill}
         if photo is None or not Path(photo).exists():
             raise OVUploadError(f"photo file missing: {photo}")
 
