@@ -31,12 +31,13 @@ existing replies and drop anyone already named in them. That makes re-running
 free without a state file, and it survives the run happening on a different
 machine.
 
-EVERY MESSAGE LEADS WITH :bust_in_silhouette:. Five reports share
+THE WEEK'S PARENT LEADS WITH :bust_in_silhouette:. Five reports share
 #revision-emails and the terminated-reps thread used to read as one more block
 of text in the scroll; the emoji is how it is picked out at a glance (Eve,
-2026-08-24). It goes on the weekly parent AND on each day's reply. Thread
-matching strips it again, so the threads that were opened before this change
-are still found and replied into rather than duplicated.
+2026-08-24). ONLY the message that opens the thread carries it — the replies
+inside are already scoped by the thread, so repeating it there is noise (Eve,
+same day). Thread matching strips it again, so the threads that were opened
+before this change are still found and replied into rather than duplicated.
 
 TWO KINDS OF REPLY. A day's terminations use '•'. A row the board contradicts
 itself about uses '⚠' and says so in words — see board.Check. The two markers
@@ -59,8 +60,8 @@ CHANNEL = "C0BLLU9M0A2"
 
 TITLE_PREFIX = "Terminated Reps WE"
 
-# Leads every message this report puts in the channel. Keep it in sync with
-# _first_line, which has to strip it back off to match old threads.
+# Leads the message that OPENS each week's thread — and only that one. Keep it
+# in sync with _first_line, which has to strip it back off to match old threads.
 EMOJI = ":bust_in_silhouette:"
 
 # The bullet a day's terminations use, the one a flagged row uses, and the one
@@ -112,7 +113,7 @@ def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
 
 def render_reply(rows: list[Termination], day: dt.date) -> str:
     """One day's entry inside the weekly thread."""
-    lines = [f"{EMOJI} *{day.strftime('%a')} {day.month}/{day.day}* — "
+    lines = [f"*{day.strftime('%a')} {day.month}/{day.day}* — "
              f"{len(rows)} terminated"]
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
@@ -125,7 +126,7 @@ def render_checks(checks: list[Check]) -> str:
     """The 'I can't tell, you look' reply. One line per row, each one saying
     what the board says and what it says instead, because the answer is always
     a person reading the tab."""
-    lines = [f"{EMOJI} *Needs a look — the board says two different things* "
+    lines = [f"*Needs a look — the board says two different things* "
              f"({len(checks)})"]
     for c in checks:
         lines.append(f"{FLAG} {c.name} — {c.reason} "
@@ -236,7 +237,7 @@ def render_pending(pending: list, sunday: dt.date) -> str:
     place every run (see deactivate.py). Names the two accounts separately
     because they are two different jobs and one is often done without the
     other."""
-    head = f"{EMOJI} *{PENDING_TITLE}* — week ending {sunday.month}/{sunday.day}"
+    head = f"*{PENDING_TITLE}* — week ending {sunday.month}/{sunday.day}"
     if not pending:
         return f"{head}\nAll clear — every termination this week is ticked off."
     lines = [f"{head} ({len(pending)})"]
