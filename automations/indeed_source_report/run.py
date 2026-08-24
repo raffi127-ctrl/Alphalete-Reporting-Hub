@@ -70,6 +70,18 @@ def _publish_outcome(status, headline, details, *, started_at=None,
         print("  (corrections post skipped: %s)" % e, flush=True)
 
 
+def _headline(exc):
+    """First line of an exception — what belongs in a one-line FAIL row.
+
+    Playwright errors are multi-line (the message, then a Call log). Slicing
+    the raw string at N chars cuts mid-call-log and reads as garbage; the
+    first line alone is the part that identifies the failure. The full text
+    goes to the log right next to it.
+    """
+    txt = str(exc).strip()
+    return (txt.splitlines() or [""])[0][:200] or exc.__class__.__name__
+
+
 YTD_LABEL = "YTD (all months)"
 
 # Board mirrors: after every refresh, each target workbook's hidden
@@ -235,8 +247,18 @@ def main(argv=None):
                 print("  OK   %-38s owner=%-22s raw=%-4d ads=%d"
                       % (name, owner[:22], nrows, len(ads)), flush=True)
             except Exception as e:  # noqa: BLE001 — one office must not kill the run
-                failures.append((oid, name, str(e)[:120]))
-                print("  FAIL %-38s %s" % (name, str(e)[:70]), flush=True)
+                failures.append((oid, name, _headline(e)))
+                print("  FAIL %-38s %s" % (name, _headline(e)[:70]), flush=True)
+                # ...and then the WHOLE error, unclipped. Every layer of this
+                # report used to trim a per-office failure before a human saw
+                # it — 70 chars in the log, 160 in Slack — so on 2026-08-24 a
+                # Playwright click timeout reached the channel cut off at
+                # "- locator r", and the line that actually says why ("locator
+                # resolved to", "element is not visible", "intercepts pointer
+                # events") existed NOWHERE. A failure you cannot read is a
+                # failure you cannot fix; the log is what keeps all of it.
+                for ln in str(e).strip().splitlines():
+                    print("       | %s" % ln.rstrip()[:200], flush=True)
 
     if not fresh:
         print("nothing pulled — leaving the sheet alone", flush=True)
