@@ -1293,13 +1293,71 @@ def _profile_extension_paths(profile) -> list:
     return out
 
 
+APPSTREAM_RESEED_CMD = ("    PYTHONPATH=. .venv/bin/python -m "
+                        "automations.shared.tableau_patchright --appstream-login")
+
+
+def _appstream_reseed_error(reason: str,
+                            detail: str = "") -> RuntimeError:
+    """The ONE message every dead-session path must give.
+
+    WHY (Megan 2026-08-24). Four 4am reports — daily_focus, applicant_sync_
+    morning, recruiter_retention_daily/_weekly — plus alphalete-org-run's
+    Recruiting pull all died the same morning, and what they told the channel
+    was `Missing AppStream credential 'appstream_username'`. That reads like a
+    setup mistake and sends whoever picks up the ticket looking for a keychain
+    entry. It wasn't: the saved session had gone stale, and the credential was
+    only wanted by the form-login fallback that stale sessions used to fall
+    into. The actionable sentence — RE-SEED THE SESSION — never appeared.
+
+    So every path that ends in "this run has no live AppStream session" raises
+    THIS, with `reason` naming which way it got here.
+
+    `reason` stays SHORT and goes on the first line, because that first line is
+    what the alert quotes as "Likely cause" — the whole point is that the line
+    the channel shows is about the session. Anything longer (a wrapped
+    exception, a page dump) belongs in `detail`, which trails the message."""
+    msg = (
+        f"AppStream session is not usable: {reason}\n"
+        "Re-seed it with a one-time human login (the form login is gated by an "
+        "interactive check since the 2026-08-20 release, so no unattended run "
+        "can do this for you):\n"
+        f"{APPSTREAM_RESEED_CMD}\n"
+        "(a browser opens; clear the check + log in as rcaptain once, and it "
+        "saves the session). The session holder then keeps it warm for "
+        "scheduled runs.")
+    if detail:
+        msg += f"\n\nWhat it tripped over on the way down:\n{detail}"
+    return RuntimeError(msg)
+
+
+def _appstream_form_login_allowed(*, allow_form_login: bool,
+                                  force_form_login: bool,
+                                  username: Optional[str],
+                                  password: Optional[str]) -> bool:
+    """May THIS call drive the AppStream login form?
+
+    Only when someone asked for it on purpose. Three ways to ask:
+      • allow_form_login=True   — interactive/debug (appstream_whoami)
+      • force_form_login=True   — re-seed / holder paths that skip reuse
+      • explicit username+password — daily_focus --alt-appstream, whose whole
+        point is signing in as a DIFFERENT account than the saved session
+
+    A scheduled report passes none of them, which is why the default is now
+    False: since 2026-08-20 the form is human-gated, so for an unattended run
+    "fall through to the form" is not a self-heal, it's a slower and much more
+    confusing way to fail. [[reference_appstream_turnstile]]"""
+    return bool(allow_form_login or force_form_login
+                or (username and password))
+
+
 @contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
                              profile_dir: Optional[Path] = None,
                              username: Optional[str] = None,
                              password: Optional[str] = None,
-                             allow_form_login: bool = True,
+                             allow_form_login: bool = False,
                              force_form_login: bool = False,
                              load_extensions: bool = False,
                              yield_if_busy: bool = False,
@@ -1320,17 +1378,26 @@ def appstream_direct_session(headless: bool = False,
     the profile once with:  python -m automations.shared.tableau_patchright
     --appstream-extension
 
-    Auth path (2026-06-30): reuse the saved session (APPSTREAM_STORAGE_STATE)
-    if it's still live; otherwise drive the rcaptain login form and save a
-    fresh session. AppStream's Cloudflare auto-passes the automation again, so
-    the form login runs UNATTENDED — this is the self-heal that keeps the 4am
-    reports running without a human re-seed. If Cloudflare ever re-challenges,
-    the login won't reach the console and the run fails loudly (the one-time
-    human seed --appstream-login is the fallback).
+    Auth path (2026-08-24): reuse the saved session (APPSTREAM_STORAGE_STATE).
+    That is the ONLY path an unattended run has. If the session is stale or
+    missing, the run fails fast with re-seed instructions.
 
-    allow_form_login defaults True (the self-heal). Pass allow_form_login=False
-    for a reuse-only run that fails fast when the session is stale.
+    That used to read differently. Between 6/30 and 8/20 AppStream's Cloudflare
+    auto-passed the automation, so a stale session could self-heal by driving
+    the rcaptain login form unattended, and allow_form_login defaulted True. The
+    2026-08-20 release put an interactive human-check back on that form, which
+    killed the self-heal — but the default stayed True, so scheduled runs kept
+    falling into a path that cannot complete and reporting whatever it tripped
+    over on the way (a missing credential, a Turnstile timeout) as the cause.
+    The default is now False: no session, no run, one clear message.
+    [[reference_appstream_turnstile]]
+
+    allow_form_login=True re-enables the form drive for interactive/debug use
+    (it will sit on the human-check in an unattended run).
     force_form_login=True skips reuse and re-logs-in unconditionally.
+    Passing BOTH username and password also enables the form drive — that's
+    daily_focus --alt-appstream, which signs in as a different account than the
+    saved session on purpose.
 
     Override args (used by daily_focus --alt-appstream for ICDs visible only
     from a different AppStream account):
@@ -1419,33 +1486,35 @@ def appstream_direct_session(headless: bool = False,
                     return
                 if verbose:
                     print("-> reused AppStream session has no #searchMC (stale "
-                          "token) — re-logging in via the form self-heal",
-                          flush=True)
+                          "token)", flush=True)
 
-            # UPDATE (2026-06-30): AppStream's Cloudflare now auto-passes the
-            # automation, so the rcaptain form login runs UNATTENDED again and is
-            # the default self-heal (allow_form_login defaults True) — a stale or
-            # missing session just re-logs-in and saves a fresh one. The
-            # ownerville SSO URL hop is NOT used for reports: it lands on the
-            # wrong (ownerville report) view, not the rcaptain console. If
-            # Cloudflare ever re-challenges, the login won't complete (no
-            # #searchMC) and the run fails loudly; the one-time human seed
-            # (--appstream-login) is the fallback.
-            if not (allow_form_login or force_form_login):
-                raise RuntimeError(
-                    "AppStream session expired or missing. The saved session "
-                    "(.appstream_storage_state.json) has no live token. Re-seed "
-                    "it with a one-time login:\n"
-                    "    PYTHONPATH=. .venv/bin/python -m "
-                    "automations.shared.tableau_patchright --appstream-login\n"
-                    "(a browser opens; clear the Cloudflare check + log in as "
-                    "rcaptain once, and it saves the session). The session "
-                    "holder then keeps it warm for scheduled runs.")
+            # No live session. Since 2026-08-20 the login form is human-gated,
+            # so falling through to it is only right when a human asked for it
+            # (see _appstream_form_login_allowed). For everything else — every
+            # scheduled report — this is where the run STOPS, saying the one
+            # thing that fixes it. The ownerville SSO URL hop is not an option
+            # either: it lands on the ownerville report view, not the rcaptain
+            # console.
+            if not _appstream_form_login_allowed(
+                    allow_form_login=allow_form_login,
+                    force_form_login=force_form_login,
+                    username=username, password=password):
+                raise _appstream_reseed_error(
+                    "the saved session (.appstream_storage_state.json) has no "
+                    "live token, and this run may not drive the login form")
 
-            # Legacy opt-in form-drive (interactive/debug only — hits the
-            # Cloudflare Turnstile, so it stalls in unattended runs).
-            user = username or creds.appstream_username()
-            pwd  = password or creds.appstream_password()
+            # Opt-in form-drive (interactive/debug — it hits the human-check).
+            try:
+                user = username or creds.appstream_username()
+                pwd  = password or creds.appstream_password()
+            except RuntimeError as _cred_err:
+                # The caller DID ask for the form, so the missing credential is
+                # a real answer — but name the re-seed too, because on a report
+                # machine that is nearly always the shorter road.
+                raise _appstream_reseed_error(
+                    "the saved session is stale and the login form can't run "
+                    "either (no AppStream credentials on this machine)",
+                    detail=str(_cred_err)) from _cred_err
             # An explicit username override must NEVER silently ride a session
             # some other account left in this profile: if the profile is already
             # signed in, applicantstream.com shows no login form, the form-drive
@@ -1855,7 +1924,10 @@ if __name__ == "__main__":
               "The extension is saved in the PERSISTENT profile, so every scheduled\n"
               "run gets it from then on.\n", flush=True)
         try:
+            # Headed and a human is sitting here, so the login form is still a
+            # usable fallback for THIS command — unlike a scheduled run.
             with appstream_direct_session(headless=False, verbose=True,
+                                          allow_form_login=True,
                                           enable_extensions=True) as _pg:
                 print(f"\n-> console at {(_pg.url or '')[:78]}", flush=True)
                 input("\nPress Enter once the robot icon is showing… ")
