@@ -453,6 +453,74 @@ def _collapse_blocked_failures(results, blocked_channels):
     }
 
 
+def _merge_only_rerun(o: Office, results, full_metrics, blocked_channels, *,
+                      dest_desc: str, blocked_note: str) -> bool:
+    """Fold an `--only` LIVE re-run's outcome into TODAY's manifest, rewriting only
+    the metrics it actually ran. Returns True when it wrote.
+
+    WHY (Eve 2026-08-24, rashad_metrics churn). A full run writes the office's
+    whole verdict; an `--only` run wrote NOTHING, on the sound principle that a
+    partial run can't speak for the whole office. The hole that leaves: the
+    orchestrator's auto-retry (_retry_incomplete_parts) runs the manifest's own
+    retry_args, and those are ALWAYS `--only <failed slugs>`. So the retry could
+    never clear the flag it was retrying — it re-ran churn, churn posted all 8
+    boards, and reconcile then re-read the same untouched manifest, kept the
+    report INCOMPLETE and fired an alert whose log tail ended in "All wired
+    metrics ok". Every recovered flake cried wolf. Same for the Hub's "Retry
+    failed only" button and a hand `lucy rerun ... --only`.
+
+    The principle survives, because this only EDITS a verdict that already exists
+    from TODAY: no manifest (or one from an earlier day) and it writes nothing, so
+    a partial run still never invents an office-wide verdict out of nothing.
+
+    Sits out two cases rather than guess:
+      - a BLOCKED-CHANNEL verdict (manifest carries remediation, or this run hit
+        one). That failure collapses to one line per channel, not per metric, and
+        its own remediation says re-running is not the fix — an invite is.
+      - anything with no per-metric labels to match on."""
+    from automations.shared import run_manifest as _rm
+    m = _rm.read_manifest(o.report_id)
+    if not m or (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
+        return False
+    if m.get("remediation") or blocked_channels:
+        return False
+
+    label_to_slug = {x["label"]: x["slug"] for x in full_metrics}
+    ran_labels = {label for _c, _s, label, _ok, _n in results}
+    now_failed = {label for _c, _s, label, ok, _n in results if not ok}
+
+    # Labels this run didn't touch keep the full run's verdict verbatim; the ones
+    # it did run are overwritten by what it just proved.
+    failed_labels = [l for l in (m.get("failed") or [])
+                     if l not in ran_labels or l in now_failed]
+    failed_labels += [l for l in now_failed if l not in failed_labels]
+    ok_labels = [l for l in (m.get("succeeded") or []) if l not in failed_labels]
+    ok_labels += [l for l in ran_labels
+                  if l not in failed_labels and l not in ok_labels]
+
+    failed_slugs = list(dict.fromkeys(label_to_slug.get(l, l)
+                                      for l in failed_labels))
+    retry = ["--office", o.key, "--live"]
+    if failed_slugs:
+        retry += ["--only", ",".join(failed_slugs)]
+    total = len(failed_labels) + len(ok_labels)
+    _rm.write_manifest(
+        o.report_id, failed=failed_labels, succeeded=ok_labels,
+        retry_args=retry, kind="metric",
+        note=(f"{len(ok_labels)}/{total} metrics posted to {dest_desc}"
+              + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")
+              + (f"; {blocked_note}" if blocked_note else "")))
+    # The merged verdict DOES speak for the whole office — it is the full run's,
+    # corrected by what this re-run proved — so the Hub checklist row moves too.
+    _record_office_status(
+        o, ok=not failed_slugs,
+        error=("; ".join(failed_labels) if failed_labels else ""))
+    print(f"\n  manifest merged: {len(ok_labels)}/{total} ok"
+          + (f"; still failed: {', '.join(failed_slugs)}" if failed_slugs
+             else " — office is CLEAN"), flush=True)
+    return True
+
+
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
@@ -1153,10 +1221,29 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         label for _c, _s, label, ok, _ in results
         if ok and label not in set(l for _c2, _s2, l, o2, _n2 in results if not o2)))
 
-    # Manifest for the orchestrator's completeness verify — full LIVE run only.
+    _dest_desc = (f"{len(destinations)} channels" if len(destinations) > 1
+                  else o.channel_name)
+    # A blocked channel is THE headline: without it the note reads "0/4
+    # metrics posted; failed: churn, rep_activations, order_log, cancels",
+    # which sends whoever reads the alert hunting four Tableau views for a
+    # problem that is one Slack invite.
+    _blocked_note = "; ".join(
+        f"CHANNEL UNREACHABLE — {cname} ({cid}): {why}"
+        for cname, cid, why in blocked_channels)
+
+    # Manifest for the orchestrator's completeness verify. A FULL live run writes
+    # the office's whole verdict; an `--only` re-run MERGES its own metrics into
+    # today's (see _merge_only_rerun — the auto-retry has to be able to clear the
+    # very flag it is retrying).
     # `succeeded` lets the Hub pill show ORANGE (partial) instead of green when
     # some metrics land and some miss.
-    if mode == "live" and not args.only:
+    if mode == "live" and args.only:
+        if not _merge_only_rerun(o, results, _full, blocked_channels,
+                                 dest_desc=_dest_desc,
+                                 blocked_note=_blocked_note):
+            print("\n  (nothing from today to merge into — partial run, office "
+                  "verdict left untouched)", flush=True)
+    elif mode == "live":
         from automations.shared import run_manifest as _rm
         # Retry ONLY the metrics that missed — any number of them. A bare
         # ["--live"] here would re-run the whole office and re-post every metric
@@ -1170,15 +1257,6 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         retry = ["--office", o.key, "--live"]
         if failed_slugs:
             retry += ["--only", ",".join(failed_slugs)]
-        _dest_desc = (f"{len(destinations)} channels" if len(destinations) > 1
-                      else o.channel_name)
-        # A blocked channel is THE headline: without it the note reads "0/4
-        # metrics posted; failed: churn, rep_activations, order_log, cancels",
-        # which sends whoever reads the alert hunting four Tableau views for a
-        # problem that is one Slack invite.
-        _blocked_note = "; ".join(
-            f"CHANNEL UNREACHABLE — {cname} ({cid}): {why}"
-            for cname, cid, why in blocked_channels)
         # …and the same rule applies to the FAILED LIST, which is what the
         # section-drop alert actually prints. One line per blocked channel, not
         # one per metric that never got the chance to run.
