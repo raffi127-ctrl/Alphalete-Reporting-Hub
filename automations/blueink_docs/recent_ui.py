@@ -60,15 +60,20 @@ def _chunks(label: str, text: str, size: int = 200, most: int = 12) -> None:
 
 
 def _search(page, term: str) -> str:
-    """Type `term` into the dashboard's list search and return the body text."""
-    box = page.query_selector("[data-tid='nub-listSearch'] input")         or page.query_selector("input[placeholder='Search...']")
-    if box is None:
-        return ""
-    box.click()
-    page.keyboard.press("Meta+A")
-    page.keyboard.press("Control+A")
-    page.keyboard.press("Backspace")
-    box.type(term, delay=40)
+    """Type `term` into the dashboard's list search and return the body text.
+
+    The box is re-queried on every call ON PURPOSE: a search re-renders the
+    list and the previous ElementHandle goes stale, which is what killed the
+    second search of the 2026-08-24 probe run.
+    """
+    sel = "[data-tid='nub-listSearch'] input"
+    if page.query_selector(sel) is None:
+        sel = "input[placeholder='Search...']"
+        if page.query_selector(sel) is None:
+            return ""
+    page.click(sel)
+    page.fill(sel, "")
+    page.fill(sel, term)
     page.keyboard.press("Enter")
     page.wait_for_timeout(5000)
     return " ".join((page.inner_text("body") or "").split())
@@ -77,18 +82,28 @@ def _search(page, term: str) -> str:
 def probe(email: str = "", headless: bool = True) -> int:
     """Map the dashboard's search so screen() can be written against it.
 
-    ALWAYS returns 0 -- a diagnostic on a report card must not publish a FAILED
-    run (v1 opened an incident against itself on 2026-08-24).
+    ALWAYS returns 0, and now actually keeps that promise -- v4 said so in its
+    docstring but let a stale-handle exception escape, which published a FAILED
+    run and opened a second incident against a diagnostic that sends nothing.
 
     Established so far: /dashboard/<anything> is nub-notFound, the sidebar is a
     router with no <a href>, and /dashboard/ itself carries the list plus a
     search box at [data-tid=nub-listSearch] input. Searching a signer's email
-    narrows it and the page reports "Showing N of M".
+    narrows it and the page reports "Showing N of M" -- Angelica Pedroza, the
+    one person known to have been sent twice today, comes back "Showing 2 of 2".
 
-    The open question this round answers is the NEGATIVE case: an address with
-    no packet has to read differently from one with a packet, or the check is
-    worthless.
+    The open question is the NEGATIVE case: an address with no packet has to
+    read differently, or screen() would block everybody.
     """
+    try:
+        return _probe(email, headless)
+    except Exception as exc:                 # a probe must never fail the card
+        print(f"PROBE crashed: {type(exc).__name__}: "
+              f"{str(exc).splitlines()[0][:200]}")
+        return 0
+
+
+def _probe(email: str, headless: bool) -> int:
     sync_playwright = S._sync_api()
     with sync_playwright() as p:
         browser, ctx = S.open_context(p, headless=headless)
@@ -101,8 +116,6 @@ def probe(email: str = "", headless: bool = True) -> int:
                 print("PROBE session is DEAD -- rerun session.py --login")
                 return 0
 
-            # A row's own markup -- what identifies one, and where its status
-            # sits. Text alone can't be parsed reliably out of a flat dump.
             for tag in ("envelope", "bundle", "row", "list", "status"):
                 got = _tids(page, tag, 12)
                 if got:
@@ -111,7 +124,12 @@ def probe(email: str = "", headless: bool = True) -> int:
             known = email or "Angiep8k@gmail.com"
             miss = "zzz-nobody-has-this@example.invalid"
             for label, term in (("HAS", known), ("NONE", miss)):
-                text = _search(page, term)
+                try:
+                    text = _search(page, term)
+                except Exception as exc:
+                    print(f"PROBE {label} search failed: "
+                          f"{str(exc).splitlines()[0][:120]}")
+                    continue
                 mark = ""
                 for needle in ("Showing", "No Envelopes"):
                     i = text.find(needle)
