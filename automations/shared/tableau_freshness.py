@@ -523,8 +523,31 @@ def weekly_needs(today: dt.date) -> dt.date:
 # The judged column is "Date of Last  Sale in Zip" (last sale per zip, the
 # export's only date header) — a metric, not a pull stamp, so the looser bar
 # still watches it move.
+#
+# JEAllRetailersSalesSummarybyLocation (JustEnergyRTL-SalesStaffingProductivity
+# Workbook), thread `drop-tableau-stale-justenergyrtl-…-jeallretaile` the same
+# day: "newest 2026-08-22, needs 2026-08-23". Same shape, and the repo already
+# knew — org_sales_board/sources.py carries a whole staleness guard for it ("at
+# a week's start JE runs a day behind") and icd_sales_board/campaigns.py says it
+# outright ("Runs a day behind (Sunday posts Monday)"). This gate was the one
+# place that did not. Its only caller of this sheet is
+# alphalete_org_report/opt_je, inside the Monday-only alphalete_org_focus run.
+#
+# Unlike the BOX log below, JE's Sunday is REAL and it is big. Read off the view
+# week by week on 2026-08-24, org-wide, rows and sales on the Sunday:
+#   WE 7/12  98 / 776    WE 7/19  93 / 724    WE 7/26 100 / 728
+#   WE 8/02  97 / 822    WE 8/09  99 / 988    WE 8/16  94 / 842
+#   WE 8/23  — no Sunday rows at all, the week stops at Sat 8/22
+# Six full Mon..Sun weeks and then a week that ends on Saturday: the Sunday is
+# not missing, it has not posted yet. So this is a lag, not a quiet day.
+#
+# The judged column is the day itself ("Date"), so the looser bar still watches
+# the feed move day to day. The extra day applies every day, not only Mondays —
+# bounded here because opt_je is this sheet's only caller and runs Mondays only,
+# so no other day is ever judged.
 LAGGY_SOURCE_DAYS = {
     "automationpull-nichurnview": 2,
+    "jeallretailerssalessummarybylocation": 2,
 }
 
 

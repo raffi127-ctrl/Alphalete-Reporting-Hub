@@ -35,6 +35,13 @@ NICHURN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 FIBER_DEFAULT_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                      "ATTTRACKER2_1-D2D/FiberLeadPerformance?:iid=1")
 FIBER_SHEET = "Office New Fiber Lead Penetration By Zip"
+JE_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+          "JustEnergyRTL-SalesStaffingProductivityWorkbook/"
+          "JEAllRetailersSalesSummarybyLocation?:iid=1")
+JE_SHEET = "All RTL Sales Summary by Store"
+JE_ICD_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+              "JustEnergyRTL-SalesStaffingProductivityWorkbook/"
+              "WeeklyMetricsbyICD?:iid=1")
 
 
 class _Cp1252Stdout:
@@ -247,6 +254,67 @@ class TheMondayMorningLag(unittest.TestCase):
         out = self._check("8/22/2026", dt.date(2026, 8, 24), "e.csv",
                           max_days_behind=0)
         self.assertEqual(out["verdict"], "stale")
+
+
+class JustEnergyPostsTheDayAfter(unittest.TestCase):
+    """The second LAGGY_SOURCE_DAYS entry, same day as the first. JE loads each
+    day's rows the following day, and opt_je pulls the sheet on Mondays only, so
+    the newest row that morning is the Saturday that closed the week.
+
+    Its Sunday is real and big (93-100 rows, 724-988 sales across the six weeks
+    WE 7/12..WE 8/16) — this buys the ONE day it lands late, nothing more."""
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale = self._real
+
+    def _check(self, newest, today, name, url=JE_URL, **kw):
+        return tf.check_export(_export(self.tmp, newest, name), view_url=url,
+                               sheet=JE_SHEET, today=today, **kw)
+
+    def test_monday_8_24_saturday_data_is_fresh(self):
+        # The thread itself: newest 8/22, Sunday 8/23 not posted yet.
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "a.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_one_more_day_of_slip_is_loud(self):
+        # Friday-newest on a Monday = JE skipped a day on top of its lag.
+        out = self._check("8/21/2026", dt.date(2026, 8, 24), "b.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(out["needs"], dt.date(2026, 8, 22))
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_it_did_not_get_the_weekly_bar(self):
+        # A week-old export would clear weekly_needs (Sunday 8/16). It must not.
+        out = self._check("8/16/2026", dt.date(2026, 8, 24), "c.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertFalse(out["weekly"])
+
+    def test_the_extra_day_applies_every_day_not_just_monday(self):
+        # The bar is days-behind, so mid-week it also allows two. That is the
+        # cost of the mechanism and it is bounded: opt_je is the only caller of
+        # this sheet and it runs Mondays only, so no other day is ever judged.
+        out = self._check("8/17/2026", dt.date(2026, 8, 19), "d.csv")
+        self.assertEqual(out["verdict"], "fresh")
+
+    def test_three_days_back_is_loud_any_day(self):
+        out = self._check("8/16/2026", dt.date(2026, 8, 19), "f.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_the_other_je_view_keeps_the_daily_bar(self):
+        # WeeklyMetricsbyICD feeds the DAILY sales board and has its own guard;
+        # the extra day is scoped to the sheet that alerted, not the workbook.
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "e.csv",
+                          url=JE_ICD_URL)
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
 
 
 class ACp1252ConsoleCannotSilenceTheAlert(unittest.TestCase):
