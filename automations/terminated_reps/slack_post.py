@@ -63,10 +63,17 @@ TITLE_PREFIX = "Terminated Reps WE"
 # _first_line, which has to strip it back off to match old threads.
 EMOJI = ":bust_in_silhouette:"
 
-# The bullet a day's terminations use, and the one a flagged row uses. Kept
-# apart so already_posted() and already_flagged() can't read each other's lines.
+# The bullet a day's terminations use, the one a flagged row uses, and the one
+# the deactivation checklist uses. Kept apart so already_posted(),
+# already_flagged() and the checklist can't read each other's lines.
 BULLET = "•"
 FLAG = "⚠"
+TODO = "☐"
+
+# First line of the one checklist message per weekly thread. Matched exactly
+# (after the emoji comes off) to find the message to EDIT, so it must not
+# collide with a day's heading.
+PENDING_TITLE = "Still to deactivate"
 
 
 def week_title(day: dt.date) -> str:
@@ -224,6 +231,63 @@ def pending_by_week(rows: list[Termination],
     return [(s, sorted(weeks[s])) for s in sorted(weeks)]
 
 
+def render_pending(pending: list, sunday: dt.date) -> str:
+    """The week's deactivation checklist — ONE message per thread, rewritten in
+    place every run (see deactivate.py). Names the two accounts separately
+    because they are two different jobs and one is often done without the
+    other."""
+    head = f"{EMOJI} *{PENDING_TITLE}* — week ending {sunday.month}/{sunday.day}"
+    if not pending:
+        return f"{head}\nAll clear — every termination this week is ticked off."
+    lines = [f"{head} ({len(pending)})"]
+    for p in pending:
+        lines.append(f"{TODO} {p.name} — terminated {p.term_date.month}/"
+                     f"{p.term_date.day} · {p.what}")
+    lines.append("_Tick Ownerville / Slack Deact on the tracker as you go — "
+                 "this list reads those two columns._")
+    return "\n".join(lines)
+
+
+def find_reply_ts(client, thread_ts: str, title: str,
+                  channel: str = CHANNEL) -> str | None:
+    """The ts of the reply in this thread whose first line is `title`, so it can
+    be edited instead of posted again. None when it isn't there yet."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                            limit=200)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't read the thread's replies ({type(e).__name__}) — "
+              f"skipping the deactivation checklist rather than posting a "
+              f"second copy")
+        return "?"          # sentinel: don't post, don't edit
+    for msg in resp.get("messages", []):
+        if _first_line(msg.get("text", "")).startswith(title):
+            return msg.get("ts")
+    return None
+
+
+def post_pending(client, thread_ts: str, sunday: dt.date, pending: list,
+                 channel: str = CHANNEL, logfn=print) -> str | None:
+    """Put the week's checklist in the thread, or bring the existing one up to
+    date. Returns the message ts, or None when nothing was done."""
+    text = render_pending(pending, sunday)
+    ts = find_reply_ts(client, thread_ts, PENDING_TITLE, channel)
+    if ts == "?":
+        return None
+    if ts:
+        client.chat_update(channel=channel, ts=ts, text=text)
+        logfn(f"  updated the deactivation checklist ({len(pending)} left)")
+        return ts
+    if not pending:
+        # Don't open a checklist that has nothing on it — a week where every
+        # termination was handled the same day should just not have one.
+        return None
+    resp = client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                   text=text)
+    logfn(f"  posted the deactivation checklist ({len(pending)} left)")
+    return resp.get("ts")
+
+
 def checks_by_week(checks: list[Check],
                    day: dt.date) -> dict[dt.date, list[Check]]:
     """Flagged rows grouped into the thread they belong in — the week of the
@@ -238,13 +302,18 @@ def checks_by_week(checks: list[Check],
 
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
          dry_run: bool = True, checks: list[Check] | None = None,
-         logfn=print) -> dict:
+         pending_lookup=None, logfn=print) -> dict:
     """Post every not-yet-posted day into the thread of the week it belongs to,
     plus any row the board contradicts itself about.
 
     Usually that's one week. On a Monday it can be two: last week's Sunday,
     marked on the board after Sunday's run, still belongs in last week's
     thread. See `pending_by_week`.
+
+    `pending_lookup(sunday) -> list[Pending]` adds the week's deactivation
+    checklist to its thread (deactivate.pending_for_week). Left out, no
+    checklist is written at all — which is what a --sandbox run wants, since
+    the checkboxes it would be reporting on are the real tab's.
     """
     title = week_title(day)
     checks = list(checks or [])
@@ -268,6 +337,10 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
                     logfn(f"       {line}")
             if flagged.get(sunday):
                 for line in render_checks(flagged[sunday]).splitlines():
+                    logfn(f"       {line}")
+            if pending_lookup is not None:
+                for line in render_pending(pending_lookup(sunday),
+                                           sunday).splitlines():
                     logfn(f"       {line}")
         return {"dry_run": True, "posted": False, "title": title,
                 "channel": channel,
@@ -321,10 +394,26 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
         if not posted and not new_flags:
             logfn(f"  {wtitle}: every termination is already in the thread — "
                   f"nothing to add")
+
+        # The checklist is rewritten every run, whether or not anything else
+        # changed — that is the point of it: it has to be current when someone
+        # opens the thread, not current as of the last termination.
+        still = None
+        if pending_lookup is not None:
+            try:
+                still = pending_lookup(sunday)
+                post_pending(client, thread_ts, sunday, still, channel, logfn)
+            except Exception as e:                              # noqa: BLE001
+                # The terminations are posted; a checklist that can't be built
+                # must not turn the run into a failure.
+                logfn(f"  ⚠ couldn't update the deactivation checklist "
+                      f"({type(e).__name__}: {e})")
+
         out.append({"title": wtitle, "thread_ts": thread_ts,
                     "thread_created": created,
                     "days": [(d.isoformat(), n) for d, n in posted],
-                    "checks": [c.name for c in new_flags]})
+                    "checks": [c.name for c in new_flags],
+                    "pending": None if still is None else len(still)})
 
     return {"posted": any(w["days"] or w["checks"] for w in out),
             "title": title, "channel": channel, "weeks": out}
