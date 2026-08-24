@@ -94,8 +94,9 @@ class Outcome:
 # brand-new hire a leader chase message. obcl.phone_book() was deleted for
 # this. Leader numbers come ONLY from the machine-local overlay
 # (~/.config/recruiting-report/new-start-leader-phones.json), which
-# roster.load() already applies — hand-entered, or filled from Lucy 1's
-# Contacts app via contacts.py --write.
+# roster.load() already applies. Fill it from alphaletereception@'s Google
+# Contacts (contacts_google.py --write on the laptop, then
+# `lucy push_cred_file new-start-leader-phones 'Lucy 1'`), or by hand.
 
 
 def _marker(monday, slack_id: str) -> Path:
@@ -179,10 +180,9 @@ def render(outcomes: List[Outcome], send: bool) -> str:
             len(blocked), ", ".join(o.label for o in blocked)))
         lines.append("  Numbers come ONLY from the machine-local overlay "
                      "(never the OBCL — its Phone column is the new start's).")
-        lines.append("  Fill them in with: python -m "
-                     "automations.new_start_followup.contacts --write   (on Lucy 1),")
-        lines.append("  or hand-edit ~/.config/recruiting-report/"
-                     "new-start-leader-phones.json (slack_id -> E.164).")
+        lines.append("  Fill from reception's Google Contacts (laptop): python -m "
+                     "automations.new_start_followup.contacts_google --write")
+        lines.append("  then: lucy push_cred_file new-start-leader-phones 'Lucy 1'")
     if failed:
         lines.append("INCOMPLETE — {} send(s) failed: {}".format(
             len(failed), ", ".join(o.label for o in failed)))

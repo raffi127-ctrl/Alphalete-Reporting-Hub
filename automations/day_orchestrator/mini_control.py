@@ -2790,6 +2790,12 @@ _CRED_FILES = {
     # here whenever CROSS_WS_TOKEN_FILES gains one, or the next machine repeats it.
     "slack-token-freshsuccess":
         lambda: Path.home() / ".config" / "recruiting-report" / "slack-token-freshsuccess",
+    # Leader phone overlay for the New-Start texts (personal numbers — never
+    # in git; the repo is PUBLIC). Filled on the laptop from
+    # alphaletereception@'s Google Contacts (new_start_followup.contacts_google
+    # --write), then pushed to Lucy 1, the machine whose Messages sends.
+    "new-start-leader-phones":
+        lambda: Path.home() / ".config" / "recruiting-report" / "new-start-leader-phones.json",
 }
 
 
