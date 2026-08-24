@@ -28,6 +28,11 @@ Actions:
   set_doubleentry_creds <user> <pass>   install the doubleentry.com financial
                         login into ownerville-creds.json + verify it by signing
                         in. The Args cell is auto-redacted when the row finishes.
+  set_appstream_creds <user> <pass>   install the PRIMARY AppStream login into
+                        ownerville-creds.json (merged, never clobbering the
+                        ownerville pair) + verify by really logging in. Args
+                        auto-redacted. The alt-account twin is
+                        set_appstream_alt_creds.
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use. Args auto-redacted.
@@ -174,6 +179,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
+                    "set_appstream_creds",
                     "fda_check", "stage_img_test", "shortcuts_probe", "reveal_python",
                     "nsf_screenshot_diag", "nsf_status",
                     # Bookkeeping on an alert thread — a reaction and a line in
@@ -199,7 +205,8 @@ READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
-SECRET_ACTIONS = {"set_appstream_alt_creds", "set_doubleentry_creds",
+SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_doubleentry_creds",
                   # The applicant_tracker service-account PRIVATE KEY rides the
                   # Args cell as base64. It relied on hand-redaction — and on
                   # 2026-08-22 two old pushes were found still readable in the
@@ -4830,6 +4837,74 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
     return True, "stored %s and verified: %s" % (user, tail)
 
 
+def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
+    """Install the PRIMARY AppStream login on THIS machine.
+
+      set_appstream_creds <username> <password>
+
+    WHY (Megan 2026-08-23): there was a set_appstream_alt_creds for the SECOND
+    account but nothing for the first, so the only ways onto a new machine were
+    hand-editing JSON or the macOS keychain — neither reachable on a never-touch
+    runner. Lucy 3 took alphalete_org_focus on 8/22 and its very first step, the
+    recruiting pull, died with `Missing AppStream credential 'appstream_username'`
+    while the other five steps passed. shared.creds._resolve_as reads the creds
+    FILE first, then the env var, then the keychain — so writing the file is the
+    portable fix and the one a push_cred_file can later replicate.
+
+    MERGES into the repo-root ownerville-creds.json and backs it up first: that
+    file already holds the ownerville pair every Tableau report depends on, and
+    replacing it wholesale would log the machine out of ownerville — which is the
+    exact machine-wide outage this same day was spent fixing.
+
+    Verifies by really logging in (appstream_whoami) — a stored credential that
+    cannot authenticate is worse than none, because it looks configured. NEVER
+    echoes the password. In SECRET_ACTIONS, so the poller blanks the Args cell the
+    moment the row finishes (`lucy status` prints the whole Args column)."""
+    import json as _json
+    import shlex
+    import shutil
+    try:
+        parts = shlex.split((args or "").strip())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read Args ({str(e)[:80]}) — quote the password"
+    if len(parts) != 2:
+        return False, ("set_appstream_creds needs exactly `<username> <password>` "
+                       "(quote the password if it has spaces) — got "
+                       f"{len(parts)} value(s)")
+    user, pw = parts[0].strip(), parts[1]
+    if not user or not pw:
+        return False, "username and password must both be non-empty"
+    path = REPO_ROOT / "ownerville-creds.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = _json.loads(path.read_text())
+        except Exception as e:  # noqa: BLE001
+            return False, f"couldn't read {path.name}: {str(e).splitlines()[0][:120]}"
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    kept = sorted(k for k in data if not k.startswith("appstream_"))
+    data["appstream_username"] = user
+    data["appstream_password"] = pw
+    try:
+        path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami",
+                        "--user", user, "--pass", pw],
+                       timeout_s=20 * 60, log_name="appstream-creds-verify.log")
+    tail = res.split("·")[-1].strip()[:200]
+    if not ok:
+        return False, (f"stored {user} in {path.name} (kept: {', '.join(kept) or 'none'}) "
+                       f"but the LOGIN CHECK FAILED: {tail}")
+    return True, (f"AppStream creds installed for {user} + login verified "
+                  f"(kept existing keys: {', '.join(kept) or 'none'}) · {tail}")
+
+
 def _action_appstream_clear_session(args: str) -> tuple[bool, str]:
     """Delete this machine's saved AppStream session so the next run must log in.
 
@@ -5058,6 +5133,7 @@ ACTIONS = {
     "git_recover": _action_git_recover,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
+    "set_appstream_creds": _action_set_appstream_creds,
     "set_appstream_state": _action_set_appstream_state,
     "set_appstream_alt_state": _action_set_appstream_alt_state,
     "appstream_promote_alt": _action_appstream_promote_alt,
