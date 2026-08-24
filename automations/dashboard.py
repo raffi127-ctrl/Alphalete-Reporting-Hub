@@ -2286,6 +2286,13 @@ def _card_self_check() -> list[str]:
                 # `<card>-approved` review-gate convention never get cards.
                 if _cov.is_internal(rid):
                     continue
+                # An OFFBOARDED office's leftover runs are not a wiring bug —
+                # the card was removed on purpose (Megan asked four times for
+                # Drew). Without this, deleting the card turns the removal into
+                # a red "card wiring issue" for two more days, which reads as
+                # "Drew is still here". [[office_onboarding.apply.OFFBOARDED_KEYS]]
+                if _cov._is_offboarded(rid):
+                    continue
                 if rid.endswith("-approved") and rid[:-9] in known:
                     continue
                 problems.append(
