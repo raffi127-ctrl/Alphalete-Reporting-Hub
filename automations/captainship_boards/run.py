@@ -646,12 +646,19 @@ def main(argv=None) -> int:
             # does not exist yet (3 identical attempts on 2026-08-24).
             if orderlog_not_ready_yet(monday, upto, e):
                 log(f"no B2B orders posted yet for {upto} (the export is "
-                    f"empty and the week is one day old) — nothing to fill. "
-                    f"This is normal on a Monday morning; a later run today "
-                    f"picks the orders up. NOT a failure.")
-                return 0
-            raise
-    reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
+                    f"empty and the week is one day old). Rolling the week "
+                    f"with an EMPTY dataset anyway — B2, LAST WEEK row, "
+                    f"Field Status and the Focus columns must flip on Monday "
+                    f"even before the first order lands (2026-08-24: the "
+                    f"early clean-exit here skipped the first live roll). "
+                    f"A later run fills the sales.")
+                src = None
+            else:
+                raise
+    if src is None:
+        reps_all, agg_all, all_owner_day = {}, {}, {}
+    else:
+        reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
 
     try:
         master = open_sheet(C.MASTER_ID)
