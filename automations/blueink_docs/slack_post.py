@@ -27,19 +27,20 @@ from typing import List, Tuple
 
 from automations.shared import slack_metrics_post as smp
 
-# The 11280 room. UNCONFIRMED -- this is the channel bg_check_sync posts to, but
-# Megan's own Blueink note went somewhere else, so verify before this goes live.
+# #11280-alphalete-marketing-inc-rafael-hidalgo -- confirmed by Megan
+# 2026-08-24. Same room bg_check_sync posts to, so Lucy is already a member;
+# it is PRIVATE, and a bot that isn't invited fails with channel_not_found.
 CHANNEL = os.environ.get("BLUEINK_SLACK_CHANNEL", "C0AUAS88FGW")
 
 HEADER = "Blueink Status Update"
 
-# Who gets pulled in when something needs a human. Aimee and Alisson are
-# confirmed by workspace lookup; "tiff" matched SIX people, so it stays out
-# until Megan names the right one rather than tagging a stranger in a team room.
+# Who sends these by hand when the report can't. All three confirmed by
+# workspace lookup + Megan (2026-08-24); "tiff" matched six people, and she
+# named Tiffani Brown.
 TAG_USER_IDS = [
+    "U0B9924FHCL",   # Tiffani Brown
     "U0APVP29QSD",   # Aimee Garibay
     "U0BBG374GE9",   # Alisson Rodriguez
-    # "U0B9924FHCL", # Tiffani Brown? -- UNCONFIRMED, see above
 ]
 
 
@@ -58,9 +59,12 @@ def build_thread(sent: int, problems: List[Tuple[str, str]]) -> str:
     lines.append("")
     for name, why in problems:
         lines.append("• *%s* — %s" % (name, why))
+    # Name the action, not the vibe: the people tagged here are the ones who
+    # will actually send these, so the line tells them to, rather than leaving
+    # them to work out that "needs a look" means "do it yourself".
     tags = _mentions()
     if tags:
-        lines += ["", "%s — these need a look." % tags]
+        lines += ["", "%s — these need to be sent manually." % tags]
     return "\n".join(lines)
 
 

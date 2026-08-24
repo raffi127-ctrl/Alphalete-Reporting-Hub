@@ -60,7 +60,10 @@ if pgrep -f "automations.blueink_docs.run" > /dev/null 2>&1; then
 fi
 
 # --dry-run anywhere in the args wins; otherwise this is the live send.
-MODE="--send"
+# --slack rides with --send: the scheduled run is exactly the case where nobody
+# is watching the terminal, so the channel is how anyone finds out who still
+# needs doing by hand. A --dry-run keeps both off and posts nothing.
+MODE="--send --slack"
 case " $* " in *" --dry-run "*) MODE="" ;; esac
 
 LOG_FILE="$LOG_DIR/blueink-docs-$(date +%Y-%m-%d-%H%M%S).log"
