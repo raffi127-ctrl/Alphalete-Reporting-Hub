@@ -325,10 +325,10 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # `--office "Rafael Hidalgo"` rerun): pull their DATA too — the
             # comparison row needs it — but never render/post them.
             from automations.weekly_knock_dispositions.offices import (
-                COMPARE_TOTALS, all_offices)
+                all_offices, compare_targets)
             _by_name = {o["name"]: o for o in all_offices()}
             for cfg in offices:
-                for other in COMPARE_TOTALS.get(cfg["name"], []):
+                for other in compare_targets(cfg["name"]):
                     if other in pulled or other in compare_pulled:
                         continue
                     o_cfg = _by_name.get(other)
@@ -355,7 +355,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         return 1
 
     # --- 2b. Compute + render, with cross-office comparison rows -----------
-    from automations.weekly_knock_dispositions.offices import COMPARE_TOTALS
+    from automations.weekly_knock_dispositions.offices import compare_targets
     apps_cache: dict[str, dict | None] = {}
 
     def _office_apps(cfg: dict):
@@ -393,7 +393,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # against THIS board's columns, appended under OFFICE TOTALS.
             n_totals = 1
             _lookup = {**pulled, **compare_pulled}
-            for other in COMPARE_TOTALS.get(name, []):
+            for other in compare_targets(name):
                 if other in _lookup and not gaps_only:
                     o_cfg, o_rows, _ = _lookup[other]
                     rows.append(B.totals_row(

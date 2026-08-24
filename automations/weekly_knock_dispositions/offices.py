@@ -74,11 +74,26 @@ _EXCLUDED_KEYS = {"drew"}
 
 # TEMPORARY (Megan 2026-08-23, "we will prob want this removed in a few
 # weeks"): host office → other offices whose TOTALS row is appended under
-# the host's OFFICE TOTALS, so Raf can compare against Chan without
-# switching channels. REMOVE by deleting the entry — nothing else to touch.
-COMPARE_TOTALS: dict[str, list[str]] = {
-    "Rafael Hidalgo": ["Chan Park"],
-}
+# the host's OFFICE TOTALS. REMOVE by deleting the entry — nothing else
+# to touch. (Raf's original Chan-on-mine ask graduated to EVERYONE below.)
+COMPARE_TOTALS: dict[str, list[str]] = {}
+
+# TEMPORARY (Raf via Megan, 2026-08-23 evening — "prob be removed in a few
+# weeks"): these offices' totals rows append under EVERY board's OFFICE
+# TOTALS (the office itself excluded), drawn teal so the guest row reads
+# apart. Chan's office leads production; Raf wants everyone comparing
+# against it. REMOVE by emptying this list — nothing else to touch.
+COMPARE_TOTALS_EVERYONE: list[str] = ["Chan Park"]
+
+
+def compare_targets(host: str) -> list[str]:
+    """The offices whose totals ride under `host`'s board — per-host
+    entries first, then the everyone-list (never the host itself)."""
+    out = list(COMPARE_TOTALS.get(host, []))
+    for t in COMPARE_TOTALS_EVERYONE:
+        if t.lower() != host.lower() and t not in out:
+            out.append(t)
+    return out
 
 
 def enrolled_offices() -> list[dict]:
