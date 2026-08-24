@@ -84,13 +84,28 @@ def _rep_row(page, name: str, *, debug: bool = False):
     if rows.count():
         return rows.first
     if debug:
-        allrows = page.locator("tbody tr")
-        n = allrows.count()
-        print(f"    (no row matched — {n} row(s) on screen; first few: "
-              + " | ".join(
-                  _norm(allrows.nth(i).inner_text())[:60]
-                  for i in range(min(3, n))))
+        print(f"    (no row matched — {_sample_rows(page)})")
     return None
+
+
+def _sample_rows(page, limit: int = 3) -> str:
+    """A short, SAFE description of what's in the table right now.
+
+    Debug logging must never break a run: the first retry (2026-08-24) died
+    inside the old dump when the table re-rendered and .nth(1) hung for 30s.
+    Everything here is short-timeout and exception-swallowing."""
+    try:
+        rows = page.locator("tbody tr")
+        n = rows.count()
+    except Exception:
+        return "couldn't count rows"
+    out = []
+    for i in range(min(limit, n)):
+        try:
+            out.append(_norm(rows.nth(i).inner_text(timeout=2000))[:50])
+        except Exception:
+            out.append("(unreadable)")
+    return f"{n} row(s): " + " | ".join(out)
 
 
 def _show_all(page) -> None:
@@ -185,18 +200,14 @@ def find_rep(page, name: str, *, verbose: bool = True):
             box.press_sequentially(name.split()[-1], delay=40)
             page.wait_for_timeout(900)          # DataTables filters client-side
             row = _rep_row(page, name, debug=verbose)
+            if row is None:
+                # One retry: DataTables sometimes re-renders under us and
+                # the first read lands on the old body (2026-08-24).
+                page.wait_for_timeout(1500)
+                row = _rep_row(page, name, debug=False)
             if row is None and verbose:
-                # What does this account actually see? Clear the filter
-                # (Backspace fires the keyup) and dump the top rows.
-                box.fill("")
-                box.press("Backspace")
-                page.wait_for_timeout(900)
-                allrows = page.locator("tbody tr")
-                n = allrows.count()
-                print(f"    (unfiltered {label}: {n} row(s); sample: "
-                      + " | ".join(
-                          _norm(allrows.nth(i).inner_text())[:50]
-                          for i in range(min(3, n))))
+                print(f"    ({label}{' / Show All' if widen else ''}: "
+                      f"{_sample_rows(page)})")
             if row:
                 if verbose:
                     print(f"  found {name!r} under {label}"
