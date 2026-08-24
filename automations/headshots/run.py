@@ -1,27 +1,29 @@
-"""Headshot bot — watch a Slack channel, return finished white-bg headshots.
+"""Headshot bot — watch the Monday headshot threads, return finished headshots.
 
-Raf's ask (2026-08-23, #l10-alphalete "Headshot Orientation posting"): an
-admin posts a new hire's photo with the person's name as the caption. Every
-run (5-min tick once live):
+Raf's ask (2026-08-23, #l10-alphalete "Headshot Orientation posting"), shaped
+by Megan 2026-08-23: weekly_thread.py starts a thread each Monday in
+#11280-alphalete-marketing-inc-rafael-hidalgo asking people to reply with the
+headshot photo AND the person's name. This side runs on a tick and:
 
-  1. Read the last N messages in the watch channel.
-  2. For each unhandled post that carries an image: the caption is the
+  1. Finds this week's and last week's Monday threads (by their marker line —
+     last week's still catches stragglers).
+  2. For each unhandled reply that carries an image: the reply text is the
      person's name ("First Last" — capitalization is fixed automatically).
-     No name on the post -> ask for it once in the thread and retry next
-     tick (an edited caption is picked up automatically).
+     Photo but no name -> ask once in the thread and retry next tick.
   3. Cut the background, put the person on pure white, crop to
      head-and-shoulders. No text on the photo — the name is the FILENAME.
-  4. Post the finished image back in the same thread and add a ✅.
+  4. Post the finished image back in the thread and ✅ the reply.
      A copy is archived in output/headshots/ for the Roadmap upload —
      automating the Roadmap portal itself is Phase 2.
-  5. Record the message ts in a state file so nothing processes twice.
+  5. Record the reply ts in a state file so nothing processes twice.
+     (No go-live baseline needed: the threads only exist because WE post
+     them, so every reply in them is real work.)
 
 Safe by default: --dry-run (the default until Megan flips it live) processes
-the photos and writes previews locally but posts NOTHING to Slack. First
-live run on a machine baselines existing posts instead of processing them.
+the photos and writes previews locally but posts NOTHING to Slack.
 
-    # preview: process recent posts, write previews, post nothing
-    python -m automations.headshots.run --dry-run --channel C0…
+    # preview: process replies in the current threads, post nothing
+    python -m automations.headshots.run --dry-run
 
     # one local file end-to-end, no Slack at all:
     python -m automations.headshots.run --file photo.jpg --name "First Last"
@@ -178,109 +180,119 @@ def process_one(data: bytes, name: str) -> Path:
 
 
 # ---- the polled processor ----------------------------------------------------
-def scan(*, dry_run: bool = True, channel: str | None = None,
-         limit: int | None = None) -> list[dict]:
+def _week_anchors(cl, channel: str) -> list[dict]:
+    """This week's and last week's Monday threads (last week's catches
+    stragglers who reply over the weekend)."""
+    import datetime as dt
+
+    from automations.headshots import weekly_thread as wt
+    anchors = []
+    this_mon = wt.week_monday()
+    for monday in (this_mon, this_mon - dt.timedelta(days=7)):
+        a = wt.find_week_anchor(cl, channel, monday=monday)
+        if a and all(a["ts"] != b["ts"] for b in anchors):
+            anchors.append(a)
+    return anchors
+
+
+def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
     channel = channel or config.CHANNEL_ID
     if not channel:
         raise HeadshotError(
             "No channel to watch. Set config.CHANNEL_ID (or pass --channel / "
-            "HEADSHOTS_CHANNEL_ID) once Raf picks the headshot channel.")
-    limit = limit or config.SCAN_LIMIT
-
-    # First real run on a fresh machine: baseline instead of processing, so
-    # going live doesn't reprocess every headshot already in the channel.
-    baseline = (not _STATE.exists()) and (not dry_run)
+            "HEADSHOTS_CHANNEL_ID).")
 
     cl = _client()
-    msgs = cl.conversations_history(channel=channel, limit=limit).get("messages", [])
+    me = None            # Lucy's own user id — never process our own replies
+    try:
+        me = cl.auth_test().get("user_id")
+    except Exception:
+        pass
+
+    anchors = _week_anchors(cl, channel)
+    if not anchors:
+        print("No Monday headshot thread up yet (weekly_thread posts it).")
+        return []
+
     state = _load_state()
     actions: list[dict] = []
 
-    for m in sorted(msgs, key=lambda x: x.get("ts", "")):
-        if m.get("subtype"):
-            continue
-        imgs = _image_files(m)
-        if not imgs:
-            continue
-        ts = m["ts"]
-        st = state.get(ts, {})
-        if st.get("done"):
-            continue
-        poster = m.get("user", "")
-        if config.APPROVED_POSTERS and poster not in config.APPROVED_POSTERS:
-            continue
+    for anchor in anchors:
+        replies = cl.conversations_replies(
+            channel=channel, ts=anchor["ts"], limit=200).get("messages", [])
+        for m in sorted(replies, key=lambda x: x.get("ts", "")):
+            if m.get("ts") == anchor["ts"]:
+                continue
+            if me and m.get("user") == me:
+                continue
+            imgs = _image_files(m)
+            if not imgs:
+                continue
+            ts = m["ts"]
+            st = state.get(ts, {})
+            if st.get("done"):
+                continue
 
-        if baseline:
+            name = name_from_caption(m.get("text", ""))
+            if not name:
+                # Ask once; the reply retries every tick, so an edited reply
+                # gets picked up without re-asking.
+                if not st.get("asked"):
+                    actions.append({"ts": ts, "action": "ask_name"})
+                    if not dry_run:
+                        try:
+                            who = m.get("user", "")
+                            cl.chat_postMessage(
+                                channel=channel, thread_ts=anchor["ts"],
+                                text=(f"<@{who}> got the photo — who is it? "
+                                      "Edit your reply to include the "
+                                      "person's *First Last* name and I'll "
+                                      "make the headshot."))
+                            state.setdefault(ts, {})["asked"] = True
+                            _save_state(state)
+                        except Exception:
+                            pass
+                continue
+
+            try:
+                data = _download_image(imgs[0])
+            except HeadshotError as e:
+                print(f"  ⚠ SKIPPED ts={ts} — {e}")
+                actions.append({"ts": ts, "action": "download_failed",
+                                "error": str(e)})
+                continue
+
+            out_p = process_one(data, name)
+            act = {"ts": ts, "action": "processed", "name": name,
+                   "file": str(out_p)}
+
+            if dry_run:
+                act["dry_run"] = True
+                actions.append(act)
+                continue
+
+            # Post the finished image into the week's thread + ✅ the reply.
+            with open(out_p, "rb") as fh:
+                cl.files_upload_v2(
+                    channel=channel, thread_ts=anchor["ts"], file=fh,
+                    filename=out_p.name,
+                    initial_comment=f"*{name}* — headshot ready ⤵")
             state.setdefault(ts, {})["done"] = True
-            state[ts]["baselined"] = True
-            actions.append({"ts": ts, "action": "baselined"})
-            continue
-
-        name = name_from_caption(m.get("text", ""))
-        if not name:
-            # Ask once in the thread; the post retries every tick, so an
-            # edited caption (or a name typed as a reply by the same admin)
-            # gets picked up without re-asking.
-            if not st.get("asked"):
-                actions.append({"ts": ts, "action": "ask_name"})
-                if not dry_run:
-                    try:
-                        cl.chat_postMessage(
-                            channel=channel, thread_ts=ts,
-                            text=("Who is this? Edit the photo's caption to "
-                                  "the person's *First Last* name and I'll "
-                                  "make the headshot."))
-                        state.setdefault(ts, {})["asked"] = True
-                        _save_state(state)
-                    except Exception:
-                        pass
-            continue
-
-        # A reply may have supplied the name after an ask — check thread too?
-        # Kept simple: the caption is the one source (7-year-old-simple rule).
-
-        try:
-            data = _download_image(imgs[0])
-        except HeadshotError as e:
-            print(f"  ⚠ SKIPPED ts={ts} — {e}")
-            actions.append({"ts": ts, "action": "download_failed",
-                            "error": str(e)})
-            continue
-
-        out_p = process_one(data, name)
-        act = {"ts": ts, "action": "processed", "name": name,
-               "file": str(out_p)}
-
-        if dry_run:
-            act["dry_run"] = True
+            state[ts]["name"] = name
+            _save_state(state)
+            try:
+                cl.reactions_add(channel=channel, timestamp=ts,
+                                 name="white_check_mark")
+            except Exception:
+                pass
+            try:
+                from automations.day_orchestrator.hub_publish import publish_done
+                publish_done("headshots", "Headshot Bot", "success")
+            except Exception:
+                pass
+            act["posted"] = True
             actions.append(act)
-            continue
 
-        # Post the finished image back in the thread + ✅ the original.
-        with open(out_p, "rb") as fh:
-            cl.files_upload_v2(
-                channel=channel, thread_ts=ts, file=fh,
-                filename=out_p.name,
-                initial_comment=f"*{name}* — headshot ready ⤵")
-        state.setdefault(ts, {})["done"] = True
-        state[ts]["name"] = name
-        _save_state(state)
-        try:
-            cl.reactions_add(channel=channel, timestamp=ts,
-                             name="white_check_mark")
-        except Exception:
-            pass
-        try:
-            from automations.day_orchestrator.hub_publish import publish_done
-            publish_done("headshots", "Headshot Bot", "success")
-        except Exception:
-            pass
-        act["posted"] = True
-        actions.append(act)
-
-    if baseline:
-        state["_baselined"] = True
-        _save_state(state)
     return actions
 
 
@@ -290,7 +302,6 @@ def main(argv: list[str] | None = None) -> int:
                     help="process + save previews locally, post nothing")
     ap.add_argument("--channel", default=None,
                     help="channel id to watch (overrides config / env)")
-    ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--file", default=None,
                     help="process ONE local photo instead of polling Slack")
     ap.add_argument("--name", default=None,
@@ -309,29 +320,22 @@ def main(argv: list[str] | None = None) -> int:
         print("Another headshots run is active — skipping this tick.")
         return 0
     try:
-        actions = scan(dry_run=args.dry_run, channel=args.channel,
-                       limit=args.limit)
+        actions = scan(dry_run=args.dry_run, channel=args.channel)
     finally:
         release_lock()
 
     if not actions:
-        print("No new headshot posts.")
+        print("No new headshot replies.")
         return 0
     for a in actions:
-        if a["action"] == "baselined":
-            continue
-        elif a["action"] == "ask_name":
-            print(f"  needs a name (caption wasn't one): ts={a['ts']}")
+        if a["action"] == "ask_name":
+            print(f"  needs a name (reply text wasn't one): ts={a['ts']}")
         elif a["action"] == "download_failed":
             print(f"  download failed: ts={a['ts']}")
         elif a.get("dry_run"):
             print(f"  WOULD post: {a['name']}  [{a['file']}]")
         else:
             print(f"  POSTED: {a['name']}")
-    n_base = sum(1 for a in actions if a["action"] == "baselined")
-    if n_base:
-        print(f"BASELINE: marked {n_base} existing post(s) as seen — "
-              "processed nothing. New posts from here on get headshots.")
     if any(a["action"] == "download_failed" for a in actions):
         return 1
     return 0

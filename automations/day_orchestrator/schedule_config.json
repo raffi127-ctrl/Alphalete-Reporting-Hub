@@ -552,6 +552,50 @@
    "timeout_minutes": 5,
    "machine": "Lucy 1"
   },
+  "install_headshots_monday_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.headshots-monday on the mini (Monday 8:30am Central; deploy/headshots_monday.sh -> python -m automations.headshots.weekly_thread). Posts Lucy's 'Headshot Submissions' thread in #11280-alphalete-marketing-inc-rafael-hidalgo — Megan approved the exact wording 2026-08-23. Idempotent: marker-in-channel check, Monday-only. `lucy update` then `lucy rerun install_headshots_monday_agent`.",
+   "display_name": "Install Headshot Monday thread agent (Mon 8:30am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "headshots-monday"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": null
+  },
+  "install_headshots_tick_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.headshots-tick on the mini (every 10 min; deploy/headshots_tick.sh -> python -m automations.headshots.run). Watches replies to the Monday headshot threads (this week + last week), turns photo+name replies into white-background headshots and posts them back in-thread as Lucy. Needs rembg + onnxruntime in the venv first: `lucy pip_install rembg` and `lucy pip_install onnxruntime` (allowlisted 2026-08-23 — run `lucy update` + `lucy restart_poller` before those so the poller sees the new allowlist). Then `lucy rerun install_headshots_tick_agent`.",
+   "display_name": "Install Headshot processing tick agent (10 min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "headshots-tick"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": null
+  },
   "install_terminated_reps_evening_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.terminated-reps-evening on Lucy 1 / the mini (8:00pm CST, all 7 days; deploy/terminated_reps_evening.sh -> python -m automations.terminated_reps.run). SAME-DAY pass for Terminated Reps: the orchestrator's own terminated_reps run lands mid-morning and the loop dies at the noon backstop, so a cadence not_before in the afternoon would never fire and the #revision-emails notice always arrived a day late (Eve 2026-08-12). Runs on the mini so the post goes out as Lucy, not as a human account. The 4am orchestrator run STAYS as the backstop — the module is idempotent (tracker dedupes on name + date ±1 day, the Slack reply skips anyone already in the week's thread). `lucy update` then `lucy rerun install_terminated_reps_evening_agent`.",

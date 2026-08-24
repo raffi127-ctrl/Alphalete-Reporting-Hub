@@ -1,9 +1,10 @@
 """Headshot pipeline settings (Raf 2026-08-23, #l10-alphalete).
 
-Someone posts a new hire's headshot in the watch channel with the person's
-name as the caption. The bot cuts the background, puts the person on pure
-white, and posts the finished headshot back in the thread — the name goes in
-the FILENAME only (no text on the photo; Megan 2026-08-23). A copy is
+weekly_thread.py starts a thread each Monday in the office channel asking
+people to reply with the headshot photo + the person's name (Megan
+2026-08-23). run.py watches the replies, cuts the background, puts the
+person on pure white, and posts the finished headshot back in the thread —
+the name goes in the FILENAME only (no text on the photo). A copy is
 archived for the Roadmap upload (that leg is Phase 2 — the Roadmap portal
 upload is not automated yet).
 """
@@ -11,17 +12,9 @@ from __future__ import annotations
 
 import os
 
-# The channel to watch for headshot posts. Left empty on purpose until Raf
-# picks/creates the channel — set it here or via HEADSHOTS_CHANNEL_ID.
-# (Test with:  python -m automations.headshots.run --dry-run --channel C0…)
-CHANNEL_ID = os.environ.get("HEADSHOTS_CHANNEL_ID", "").strip()
-
-# Only process posts from these Slack user ids (admins). Empty = anyone in
-# the channel. Fill with --whois like sara_down.
-APPROVED_POSTERS: list[str] = []
-
-# How many recent messages to scan each tick.
-SCAN_LIMIT = 50
+# #11280-alphalete-marketing-inc-rafael-hidalgo — same office channel the
+# new-start threads + BG-status posts live in.
+CHANNEL_ID = os.environ.get("HEADSHOTS_CHANNEL_ID", "").strip() or "C0AUAS88FGW"
 
 # Finished image geometry. 4:5 portrait is what badge/roadmap headshots use.
 PHOTO_W = 1200

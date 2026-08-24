@@ -2167,7 +2167,9 @@ def _action_logtail(args: str) -> tuple[bool, str]:
 # lxml is pandas.read_html's parser — indeed_source_report failed per-office on
 # Lucy 2 without it (2026-08-21: every office FAIL "Missing optional dependency
 # 'lxml'"), and any other report that parses an HTML table needs it too.
-PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif", "lxml"}
+PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif", "lxml",
+                 # headshot bot (2026-08-23): background removal
+                 "rembg", "onnxruntime"}
 
 
 def _action_pip_install(args: str) -> tuple[bool, str]:
