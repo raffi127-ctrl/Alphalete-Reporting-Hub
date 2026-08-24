@@ -100,13 +100,20 @@ _INTRO = {
         "0-30 Day Ongoing Activation Rate ▶️",
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
-        # 2026-08-23 (Raf via Megan: "everyones captainship emails"): the two
-        # knock sections join every FIBER captain's draft too — same
-        # index-aligned pair as rafael's list above (daily every day, weekly
-        # Sun/Mon per SECTION_DAYS). b2b/nds stay OFF: their offices knock
-        # other campaigns / wireless-shaped tables — future work.
-        "Daily Knocks (per owner) 🚪",
-        "Weekly Knock Dispositions (per owner) 🚪",
+        # LOS DOS BLOQUES DE KNOCKS SALIERON DEL FLAVOR FIBER (Eve 2026-08-24).
+        # Entraron el 23/8 para "everyones captainship emails", y el primer
+        # lunes completo mostró por qué todavía no: de los 35 ICDs de estas
+        # cinco capitanías, 16 no están en la lista de Office Access de la
+        # cuenta de ownerville del reporte — Wayne los 6, Starr 4, Tony 3,
+        # Sahil 2, Chan 1 — así que sus boards salían como cajas amarillas de
+        # "no se pudo capturar", y esa caja BLOQUEA el envío del reporte
+        # entero (run.py, guard 2): cinco capitanes sin correo por una sección
+        # incompleta. Tampoco estaba confirmado que estas capitanías deban
+        # recibir knocks. Rafael los conserva — su lista de acceso está
+        # completa (14 de 14) y es de donde salió el pedido.
+        # PARA DEVOLVERLOS: agregar acá las dos líneas y los dos kinds en
+        # SECTION_KINDS["fiber"], una vez otorgado el Office Access de esas 16
+        # oficinas. El resto del código no necesita nada.
     ]),
     # B2B churn switched to WIRELESS 2026-08-19 (Eve) — the four B2B tabs are
     # filled from the wireless slice of CHURNRATES now, so the section title and
@@ -160,12 +167,15 @@ SECTION_KINDS = {
     # campaigns / wireless-shaped disposition tables, so the fiber knock
     # scrape doesn't fit them yet — scope them in here (+ intro lines) once
     # their shapes are handled.
+    # Sin "daily_knocks"/"knock_dispo" desde 2026-08-24 — ver el comentario en
+    # _INTRO["fiber"]: 16 de los 35 ICDs de estas capitanías no son accesibles
+    # en ownerville, y una sección que no se puede capturar frena el envío del
+    # reporte completo. Vuelven junto con el Office Access.
     "fiber":  ["product_summary", "fiber_activation",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days",
-               "daily_knocks", "knock_dispo"],
+               "box:six-days"],
     # churn_WIRELESS since 2026-08-19: the four B2B tabs are filled from the
     # wireless slice now, so render_captain labels their buckets "Wireless
     # Churn" and run.py sorts them into churn_wireless. Leaving this at
