@@ -2828,6 +2828,20 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
     if len(parts) < 2:
         return False, "set_cred_file needs '<file-key> <contents>'"
     key, content = parts[0], parts[1]
+    # UNWRAP shlex quoting. `lucy` shlex-joins Args before the Sheet round-trip,
+    # so a JSON payload arrives as '{"a": 1}' — quotes included — and every later
+    # reader gets "Expecting value: line 1 column 1 (char 0)". A bare token has no
+    # special characters and never showed this, so it went unnoticed until Lucy 3's
+    # ownerville-creds.json landed unreadable on 2026-08-23. Only unwrap when the
+    # result is actually JSON, so a value that legitimately contains quotes is
+    # left exactly as sent.
+    _c = content.strip()
+    if len(_c) >= 2 and _c[0] == _c[-1] and _c[0] in "'\"" \
+            and _c[1:-1].lstrip()[:1] in ("{", "["):
+        content = _c[1:-1]
+        note = " (unwrapped shlex quoting)"
+    else:
+        note = ""
     if key not in _CRED_FILES:
         return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
     path = _CRED_FILES[key]()
@@ -2841,7 +2855,7 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
         os.chmod(path, 0o600)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
-    return True, f"{path.name} installed ({len(content)} chars, chmod 600)"
+    return True, f"{path.name} installed ({len(content)} chars, chmod 600){note}"
 
 
 def _action_set_office_slack_token(args: str) -> tuple[bool, str]:
@@ -4878,11 +4892,24 @@ def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
         return False, "username and password must both be non-empty"
     path = REPO_ROOT / "ownerville-creds.json"
     data: dict = {}
+    salvaged = ""
     if path.exists():
         try:
             data = _json.loads(path.read_text())
         except Exception as e:  # noqa: BLE001
-            return False, f"couldn't read {path.name}: {str(e).splitlines()[0][:120]}"
+            # UNPARSEABLE, not missing. Refusing outright strands the machine:
+            # on 2026-08-23 Lucy 3's copy arrived shlex-quoted through the
+            # push_cred_file -> Sheet -> set_cred_file round-trip, so every later
+            # install bounced off a file that json.loads can't open. Nothing is
+            # lost by starting clean — an unreadable creds file already resolves
+            # to {} everywhere (shared.creds._file swallows the error) — but SAY
+            # SO in the result, because any ownerville pair inside it is going
+            # away and only the .bak still has it.
+            salvaged = (f" NOTE: the existing {path.name} was UNREADABLE "
+                        f"({str(e).splitlines()[0][:60]}); it was backed up and "
+                        "replaced. Any ownerville keys it held are only in the "
+                        ".bak now — re-push ownerville-creds if they're needed.")
+            data = {}
         stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
         try:
             shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
@@ -4902,9 +4929,9 @@ def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
     tail = res.split("·")[-1].strip()[:200]
     if not ok:
         return False, (f"stored {user} in {path.name} (kept: {', '.join(kept) or 'none'}) "
-                       f"but the LOGIN CHECK FAILED: {tail}")
+                       f"but the LOGIN CHECK FAILED: {tail}{salvaged}")
     return True, (f"AppStream creds installed for {user} + login verified "
-                  f"(kept existing keys: {', '.join(kept) or 'none'}) · {tail}")
+                  f"(kept existing keys: {', '.join(kept) or 'none'}) · {tail}{salvaged}")
 
 
 def _action_appstream_clear_session(args: str) -> tuple[bool, str]:
