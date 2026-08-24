@@ -43,7 +43,12 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 # Slack DM recipients for the re-seed ping — BOTH get it so whoever's free does
 # the 30-sec re-seed if the other can't (Megan 2026-06-26). Megan Hidalgo +
 # Evelyn ("Eve") Sobrino. Tunable: add/remove user ids (or a channel id).
-ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8"]
+# Plus #claudecorrections-and-requests (Eve 2026-08-24): a DM is easy to miss
+# and only reaches two people. The re-seed needs SOMEONE at the mini, not a
+# specific someone, so the ping belongs where the rest of the day's failures
+# already land. chat_postMessage takes a channel id in the same slot as a
+# user id, so this needs no other change.
+ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8", "C0BK5PRG259"]
 
 # Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
 # One entry now: daily_focus runs every captainship in one pass (--captainship all).

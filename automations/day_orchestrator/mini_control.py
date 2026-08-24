@@ -991,6 +991,21 @@ def _action_install_jiraiya(args: str) -> tuple[bool, str]:
                   "Stop the laptop's jiraiya-bot so only one Socket Mode listener runs.")
 
 
+def _action_appstream_status(args: str) -> tuple[bool, str]:
+    """Read-only: how long do the AppStream + ownerville sessions still have?
+
+    `lucy diag` reports the ownerville file's AGE and nothing about AppStream, so
+    until 2026-08-24 there was NO remote way to see whether the one session that
+    needs a human was alive -- you found out when a report failed. Reads the two
+    stored tokens; no network, no Cloudflare risk, nothing written."""
+    # log_name is load-bearing: the result cell keeps only the TAIL, and AppStream
+    # -- the session that needs a human -- prints BEFORE ownerville, so without a
+    # log the one line worth reading is the one that gets cut (Eve 2026-08-24).
+    # Read it whole with: lucy logtail appstream-status
+    cmd = [sys.executable, "-m", "automations.shared.appstream_watch", "--status"]
+    return _run_cmd(cmd, timeout_s=120, log_name="appstream-status.log")
+
+
 def _action_watch_test(args: str) -> tuple[bool, str]:
     """Fire appstream_watch's one-off test ping so Megan/Eve can confirm the 6pm
     session-expiry Slack DM actually delivers — WITHOUT waiting for a real lapse
@@ -5254,6 +5269,7 @@ ACTIONS = {
     "reseed_appstream": _action_reseed_appstream,
     "sheets_login": _action_sheets_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
+    "appstream_status": _action_appstream_status,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "nsf_screenshot_diag": _action_nsf_screenshot_diag,
@@ -5533,6 +5549,27 @@ def _git_head() -> "str | None":
 # schedules from HERE is the reliable belt the calendar guard can't be. Runs once
 # per day, on the first poll in the 1–2am window (well before the 3am/4am jobs).
 _RECONCILE_HOURS = (1, 2)
+# AppStream session watch. The module has predicted the rqst expiry and pinged
+# for a re-seed since June, but NOTHING CALLED IT: it was unhooked on 2026-06-30
+# when Cloudflare started auto-passing, so reports could drive their own login.
+# The 2026-08-20 release put that login back behind an interactive check and the
+# watch was never re-hooked -- on 8/24 the session died mid-morning in silence
+# and surfaced as four failed runs. Hooked HERE because this poller is KeepAlive:
+# no calendar to drift, it reloads itself on a code change, and it is already the
+# home of the once-a-day reconcile below. watch() is cheap (reads a local file,
+# no network), self-throttles to one ping per window per day, and never raises.
+# ONE machine only: the state file and the ping throttle are per-machine, so a
+# second poller running this would double every ping. The mini is where
+# daily_focus / att_focus_raf run and where the human re-seed happens.
+def _maybe_appstream_watch(machine: str | None) -> None:
+    """Predict / ping / recover both browser sessions. Best-effort, every poll."""
+    if _machine_profile(machine) != DEFAULT_MACHINE:
+        return
+    try:
+        from automations.shared import appstream_watch
+        appstream_watch.watch()
+    except Exception as e:  # noqa: BLE001 -- a watch hiccup must never stall polling
+        print(f"[mini_control] appstream watch error: {type(e).__name__}: {str(e)[:160]}")
 
 
 def _maybe_reconcile_schedules() -> None:
@@ -5593,6 +5630,7 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         # never raises anyway.
         if not (dry_run or sandbox):
             _maybe_reconcile_schedules()
+            _maybe_appstream_watch(mach)
         time.sleep(interval_s)
 
 

@@ -26,7 +26,8 @@ import argparse
 import sys
 from typing import List
 
-from automations.blueink_docs import blueink, config, ledger, mark, recent
+from automations.blueink_docs import (blueink, config, ledger, mark, recent,
+                                      recent_ui)
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
@@ -314,6 +315,11 @@ def _main(argv=None) -> int:
                     help="skip the check against Blue Ink's own send history. "
                          "Only if you're certain nobody was hand-sent -- this "
                          "check is what stops duplicate packets.")
+    ap.add_argument("--probe-sent", action="store_true",
+                    help="describe Blue Ink's own Sent list on this "
+                         "machine and exit -- how the web-app duplicate "
+                         "check gets mapped. Reads nothing else, sends "
+                         "nothing, needs no API key.")
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
@@ -321,6 +327,10 @@ def _main(argv=None) -> int:
 
     if args.list_templates:
         return _print_templates()
+
+    if args.probe_sent:
+        return recent_ui.probe(email=args.only.strip(),
+                               headless=not args.headed)
 
     if args.test_to:
         return _test_send(args.test_to, args.test_name, args.send)
@@ -358,21 +368,22 @@ def _main(argv=None) -> int:
     # person with a live packet must not get a second one whoever sent the
     # first. This is why Angelica Pedroza got two on 2026-08-24.
     if not args.no_dedupe and to_send:
-        print(f"\nChecking Blue Ink for packets already sent to these "
-              f"{len(to_send)} (last {recent.LOOKBACK_DAYS} days)...")
+        print(f"\nChecking Blue Ink's own list for packets already sent "
+              f"to these {len(to_send)} (last {recent_ui.LOOKBACK_DAYS} days, "
+              f"about 10s each)...")
         try:
-            blocked = recent.screen(to_send)
+            blocked = recent_ui.screen(to_send, headless=not args.headed)
         except Exception as exc:
             # Only a REAL send has anything to lose here. A dry run mails
             # nobody, so there is no duplicate to prevent and no reason to
-            # fail -- on 2026-08-24 a --dry-run on Lucy 2 came back FAILED on
-            # the Hub purely because that machine has no blueink-creds.json,
-            # which the preview itself never needed.
-            print(f"\nCouldn't check Blue Ink's history ({exc}).")
+            # fail -- on 2026-08-24 a --dry-run came back FAILED on the Hub
+            # for a check the preview itself never needed. An expired Blue
+            # Ink session or a moved search box lands here the same way.
+            print(f"\nCouldn't read Blue Ink's list ({exc}).")
             if args.send:
                 print("REFUSING to send -- without that check this could "
                       "duplicate packets your team already sent by hand. "
-                      "Rerun when Blue Ink responds, or pass --no-dedupe if "
+                      "Rerun when Blue Ink answers, or pass --no-dedupe if "
                       "you're certain.")
                 return 2
             print("Not fatal on a dry run -- nothing is being sent. But the "
@@ -383,12 +394,18 @@ def _main(argv=None) -> int:
         if blocked:
             print(f"\nALREADY HAVE A PACKET -- {len(blocked)} (skipping)")
             for pp in to_send:
-                bid = blocked.get(pp.email.strip().lower())
-                if bid:
-                    print(f"  {pp.name:<28} bundle {bid}")
+                why = blocked.get(pp.email.strip().lower())
+                if why:
+                    print(f"  {pp.name:<28} {why}")
             to_send = [pp for pp in to_send
                        if pp.email.strip().lower() not in blocked]
             print(f"\nStill to send: {len(to_send)}")
+            # Name them. The WILL SEND list above was printed BEFORE the
+            # screen, so on a morning like 2026-08-24 -- 51 of 52 already
+            # had packets -- a bare count leaves the reader scrolling to
+            # work out who is actually left.
+            for pp in to_send:
+                print(f"  {pp.name:<28} {pp.email:<38} row {pp.row}")
 
     if args.limit:
         to_send = to_send[:args.limit]

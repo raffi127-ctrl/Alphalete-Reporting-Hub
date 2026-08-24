@@ -77,6 +77,10 @@ def main(argv=None) -> int:
                     help="post to Slack even on a --sandbox run")
     ap.add_argument("--no-post", dest="no_post", action="store_true",
                     help="file the rows but don't post to Slack")
+    ap.add_argument("--no-pending", dest="no_pending", action="store_true",
+                    help="skip the 'Still to deactivate' checklist (the one "
+                         "message per weekly thread that reads the tracker's "
+                         "Ownerville / Slack Deact columns)")
     ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
                     help="how many PREVIOUS week tabs to read as well "
                          "(default 1 — Monday's new tab leaves the weekend's "
@@ -97,10 +101,20 @@ def main(argv=None) -> int:
 
     # 1 — read the board.
     try:
-        rows, tab = board.scan(today, tab=args.tab, back_weeks=args.back_weeks)
+        scanned = board.scan_full(today, tab=args.tab,
+                                  back_weeks=args.back_weeks)
+        rows, tab, checks = scanned.rows, scanned.title, scanned.checks
     except Exception as e:                                      # noqa: BLE001
         print(f"❌ couldn't read the SALES BOARD: {type(e).__name__}: {e}")
         return 1
+
+    # Rows the board contradicts itself about. They are NOT filed and NOT
+    # dated — see board.Check. They go in the thread so Eve sees them the same
+    # place she sees the day's terminations.
+    if checks:
+        print(f"  {len(checks)} row(s) need a human look — not filed:")
+        for c in checks:
+            print(f"     {c.name} — {c.reason} ({c.tab} row {c.row})")
 
     # Nobody is terminated tomorrow. A row can date into the future when the
     # board is marked for a day the offset then pushes past today (Karla Lopez,
@@ -143,7 +157,16 @@ def main(argv=None) -> int:
     # A sandbox run stays out of the real channel unless --post says otherwise.
     post_dry = dry or args.no_post or (args.sandbox and not args.post)
     try:
-        slack_post.post(rows, today, channel=args.channel, dry_run=post_dry)
+        # The week's deactivation checklist, read off the tracker's own
+        # Ownerville / Slack Deact columns. Only from the REAL tab — a sandbox
+        # run reporting on the real tab's checkboxes would be reporting on
+        # somebody else's data.
+        lookup = None
+        if not args.sandbox and not args.no_pending:
+            from automations.terminated_reps import deactivate
+            lookup = deactivate.pending_for_week
+        slack_post.post(rows, today, channel=args.channel, dry_run=post_dry,
+                        checks=checks, pending_lookup=lookup)
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the

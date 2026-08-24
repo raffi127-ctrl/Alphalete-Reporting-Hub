@@ -5,8 +5,9 @@ Double-click the "Session Check" button on the mini's Desktop to run this. It:
   2. Prints a clear ✅ / ⚠️ summary (does it last to the next 4am batch?).
   3. If ownerville WON'T survive, it restarts the session-holder so its login
      window comes up for you to log into.
-  4. AppStream needs nothing — each report self-heals by driving its own
-     rcaptain login at run time (Cloudflare auto-passes again, 2026-06-30).
+  4. Checks the AppStream recruiting session too. It does NOT self-heal:
+     the form login went back behind an interactive check in the 2026-08-20
+     release, so only a human re-seed mints a new token.
 
 Run on the mini:
     PYTHONPATH=. .venv/bin/python -m automations.shared.session_check
@@ -20,7 +21,9 @@ import subprocess
 from automations.shared.appstream_watch import (
     session_status, _next_4am, SURVIVAL_BUFFER_MIN,
 )
-from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE
+from automations.shared.tableau_patchright import (
+    APPSTREAM_STORAGE_STATE, OWNERVILLE_STORAGE_STATE,
+)
 
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 
@@ -41,15 +44,32 @@ def main() -> int:
     print(f"  {'✅' if ov_survives else '⚠️ '} Ownerville / Tableau")
     print(f"      {s['reason']}\n")
 
-    # AppStream self-heals inside each report now (drives the rcaptain login at
-    # run time), so there's nothing to reseed here anymore.
-    print("  ✅ AppStream (recruiting)")
-    print("      Self-heals at run time — each report logs itself in. "
-          "Nothing to do.\n")
+    # AppStream does NOT self-heal (Eve 2026-08-24). Between 2026-06-30 and the
+    # 2026-08-20 release Cloudflare auto-passed, so each report drove its own
+    # rcaptain login and this button had nothing to say. That release put the
+    # form login back behind an interactive check: an unattended run now dies
+    # with "Re-seed it with a one-time human login". On 8/24 that cost four runs
+    # and nobody knew until they failed, because this screen still said it
+    # self-heals. A button that reports a session it never reads is worse than
+    # no button.
+    ap = session_status(APPSTREAM_STORAGE_STATE, "AppStream (recruiting)")
+    ap_survives = bool(ap["ok"] and ap["rqst_expiry"]
+                       and ap["rqst_expiry"] >= threshold)
+    print(f"  {'✅' if ap_survives else '⚠️ '} AppStream (recruiting)")
+    print(f"      {ap['reason']}\n")
 
+    if ov_survives and ap_survives:
+        print("✅  Both sessions are good through tomorrow's 4am run.")
+        print("    You're set — nothing to do.\n")
+        return 0
+    if not ap_survives:
+        print("──────────────────────────────────────────────────")
+        print("  AppStream needs a fresh login — it cannot re-seed itself.")
+        print("  Run:  PYTHONPATH=. .venv/bin/python -m "
+              "automations.shared.tableau_patchright --appstream-login")
+        print("  and clear the 'verify you're human' box.")
+        print("──────────────────────────────────────────────────\n")
     if ov_survives:
-        print("✅  Ownerville is good through tomorrow's 4am run.")
-        print("    AppStream handles itself. You're set — nothing to do.\n")
         return 0
 
     print("──────────────────────────────────────────────────")

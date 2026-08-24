@@ -146,7 +146,13 @@ def push_boards(new_rows, periods):
 # role = one row, cities listed together in the City column (their own call —
 # Carlos, 2026-08-22). Everyone else keeps the per-city split, which is what
 # exposes a dead posting in one metro next to a producing one in another.
-CITY_AGNOSTIC = {"Carlos Hidalgo"}
+CITY_AGNOSTIC = {"Carlos Hidalgo",
+                 # Jamis (Carlos 2026-08-24): merge same-account,
+                 # same-core-title ads across cities on HIS report
+                 # only (e.g. the two Meritum "Event Marketing ..."
+                 # rows) — the rest of the captainship keeps the
+                 # per-city split.
+                 "Jamis Garay"}
 
 
 def _numeric(rows):

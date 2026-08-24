@@ -30,19 +30,50 @@ NOT POSTING THE SAME PERSON TWICE. Before replying we read the thread's
 existing replies and drop anyone already named in them. That makes re-running
 free without a state file, and it survives the run happening on a different
 machine.
+
+EVERY MESSAGE LEADS WITH :bust_in_silhouette:. Five reports share
+#revision-emails and the terminated-reps thread used to read as one more block
+of text in the scroll; the emoji is how it is picked out at a glance (Eve,
+2026-08-24). It goes on the weekly parent AND on each day's reply. Thread
+matching strips it again, so the threads that were opened before this change
+are still found and replied into rather than duplicated.
+
+TWO KINDS OF REPLY. A day's terminations use '•'. A row the board contradicts
+itself about uses '⚠' and says so in words — see board.Check. The two markers
+are different ON PURPOSE: the duplicate check reads '•' lines to learn who has
+already been posted, so a flagged person must not register as posted. When Eve
+resolves the flag and the row becomes a real termination, it still gets its own
+'•' line that day.
 """
 from __future__ import annotations
 
 import datetime as dt
 
 from automations.shared import slack_metrics_post as smp
-from automations.terminated_reps.board import Termination, norm_name, week_sunday
+from automations.terminated_reps.board import (Check, Termination, norm_name,
+                                               week_sunday)
 
 # #revision-emails. The id, not the name, so a channel rename can't silently
 # send this somewhere else.
 CHANNEL = "C0BLLU9M0A2"
 
 TITLE_PREFIX = "Terminated Reps WE"
+
+# Leads every message this report puts in the channel. Keep it in sync with
+# _first_line, which has to strip it back off to match old threads.
+EMOJI = ":bust_in_silhouette:"
+
+# The bullet a day's terminations use, the one a flagged row uses, and the one
+# the deactivation checklist uses. Kept apart so already_posted(),
+# already_flagged() and the checklist can't read each other's lines.
+BULLET = "•"
+FLAG = "⚠"
+TODO = "☐"
+
+# First line of the one checklist message per weekly thread. Matched exactly
+# (after the emoji comes off) to find the message to EDIT, so it must not
+# collide with a day's heading.
+PENDING_TITLE = "Still to deactivate"
 
 
 def week_title(day: dt.date) -> str:
@@ -53,9 +84,24 @@ def week_title(day: dt.date) -> str:
 
 
 def _first_line(text: str) -> str:
-    """The message's title line, with Slack's bold markers stripped."""
+    """The message's title line, with Slack's bold markers AND any leading
+    emoji stripped.
+
+    The emoji has to come off or the weekly threads opened before 2026-08-24
+    ('Terminated Reps WE 8.16') stop matching the title we now write
+    (':bust_in_silhouette: Terminated Reps WE 8.16') and every one of them gets
+    a second, empty parent. Stripped by shape (`:name:` at the start), not by
+    the one constant, so changing EMOJI later doesn't strand today's threads."""
     t = (text or "").strip()
-    return t.splitlines()[0].strip().strip("*").strip() if t else ""
+    if not t:
+        return ""
+    line = t.splitlines()[0].strip().strip("*").strip()
+    while line.startswith(":") and ":" in line[1:]:
+        head, _, rest = line[1:].partition(":")
+        if not head or " " in head:
+            break
+        line = rest.strip().strip("*").strip()
+    return line
 
 
 def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
@@ -66,12 +112,24 @@ def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
 
 def render_reply(rows: list[Termination], day: dt.date) -> str:
     """One day's entry inside the weekly thread."""
-    lines = [f"*{day.strftime('%a')} {day.month}/{day.day}* — "
+    lines = [f"{EMOJI} *{day.strftime('%a')} {day.month}/{day.day}* — "
              f"{len(rows)} terminated"]
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
                 else f"{t.days_worked} day{'' if t.days_worked == 1 else 's'} worked")
-        lines.append(f"• {t.name} — {days} · {t.source}")
+        lines.append(f"{BULLET} {t.name} — {days} · {t.source}")
+    return "\n".join(lines)
+
+
+def render_checks(checks: list[Check]) -> str:
+    """The 'I can't tell, you look' reply. One line per row, each one saying
+    what the board says and what it says instead, because the answer is always
+    a person reading the tab."""
+    lines = [f"{EMOJI} *Needs a look — the board says two different things* "
+             f"({len(checks)})"]
+    for c in checks:
+        lines.append(f"{FLAG} {c.name} — {c.reason} "
+                     f"_({c.tab}, row {c.row})_")
     return "\n".join(lines)
 
 
@@ -107,8 +165,29 @@ def already_posted(client, thread_ts: str, channel: str = CHANNEL) -> set:
     for msg in resp.get("messages", []):
         for line in (msg.get("text") or "").splitlines():
             line = line.strip()
-            if line.startswith("•"):
-                out.add(norm_name(line.lstrip("•").split("—")[0]))
+            if line.startswith(BULLET):
+                out.add(norm_name(line.lstrip(BULLET).split("—")[0]))
+    return out
+
+
+def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
+    """Folded names already raised as a '⚠' in this week's thread. Read
+    separately from already_posted so a flag never counts as 'this person's
+    termination has been posted' — the day it stops being ambiguous it still
+    needs its own '•' line."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                            limit=200)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't read the thread's replies ({type(e).__name__}) — "
+              f"posting the flags without the duplicate check")
+        return set()
+    out = set()
+    for msg in resp.get("messages", []):
+        for line in (msg.get("text") or "").splitlines():
+            line = line.strip()
+            if line.startswith(FLAG):
+                out.add(norm_name(line.lstrip(FLAG).split("—")[0]))
     return out
 
 
@@ -152,16 +231,99 @@ def pending_by_week(rows: list[Termination],
     return [(s, sorted(weeks[s])) for s in sorted(weeks)]
 
 
+def render_pending(pending: list, sunday: dt.date) -> str:
+    """The week's deactivation checklist — ONE message per thread, rewritten in
+    place every run (see deactivate.py). Names the two accounts separately
+    because they are two different jobs and one is often done without the
+    other."""
+    head = f"{EMOJI} *{PENDING_TITLE}* — week ending {sunday.month}/{sunday.day}"
+    if not pending:
+        return f"{head}\nAll clear — every termination this week is ticked off."
+    lines = [f"{head} ({len(pending)})"]
+    for p in pending:
+        lines.append(f"{TODO} {p.name} — terminated {p.term_date.month}/"
+                     f"{p.term_date.day} · {p.what}")
+    lines.append("_Tick Ownerville / Slack Deact on the tracker as you go — "
+                 "this list reads those two columns._")
+    return "\n".join(lines)
+
+
+def find_reply_ts(client, thread_ts: str, title: str,
+                  channel: str = CHANNEL) -> str | None:
+    """The ts of the reply in this thread whose first line is `title`, so it can
+    be edited instead of posted again. None when it isn't there yet."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                            limit=200)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't read the thread's replies ({type(e).__name__}) — "
+              f"skipping the deactivation checklist rather than posting a "
+              f"second copy")
+        return "?"          # sentinel: don't post, don't edit
+    for msg in resp.get("messages", []):
+        if _first_line(msg.get("text", "")).startswith(title):
+            return msg.get("ts")
+    return None
+
+
+def post_pending(client, thread_ts: str, sunday: dt.date, pending: list,
+                 channel: str = CHANNEL, logfn=print) -> str | None:
+    """Put the week's checklist in the thread, or bring the existing one up to
+    date. Returns the message ts, or None when nothing was done."""
+    text = render_pending(pending, sunday)
+    ts = find_reply_ts(client, thread_ts, PENDING_TITLE, channel)
+    if ts == "?":
+        return None
+    if ts:
+        client.chat_update(channel=channel, ts=ts, text=text)
+        logfn(f"  updated the deactivation checklist ({len(pending)} left)")
+        return ts
+    if not pending:
+        # Don't open a checklist that has nothing on it — a week where every
+        # termination was handled the same day should just not have one.
+        return None
+    resp = client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                   text=text)
+    logfn(f"  posted the deactivation checklist ({len(pending)} left)")
+    return resp.get("ts")
+
+
+def checks_by_week(checks: list[Check],
+                   day: dt.date) -> dict[dt.date, list[Check]]:
+    """Flagged rows grouped into the thread they belong in — the week of the
+    day the board marked them, falling back to the run's week when the board
+    gives no usable day at all."""
+    out: dict[dt.date, list[Check]] = {}
+    for c in checks:
+        anchor = c.marked_date or c.board_date or day
+        out.setdefault(week_sunday(anchor), []).append(c)
+    return out
+
+
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
-         dry_run: bool = True, logfn=print) -> dict:
-    """Post every not-yet-posted day into the thread of the week it belongs to.
+         dry_run: bool = True, checks: list[Check] | None = None,
+         pending_lookup=None, logfn=print) -> dict:
+    """Post every not-yet-posted day into the thread of the week it belongs to,
+    plus any row the board contradicts itself about.
 
     Usually that's one week. On a Monday it can be two: last week's Sunday,
     marked on the board after Sunday's run, still belongs in last week's
     thread. See `pending_by_week`.
+
+    `pending_lookup(sunday) -> list[Pending]` adds the week's deactivation
+    checklist to its thread (deactivate.pending_for_week). Left out, no
+    checklist is written at all — which is what a --sandbox run wants, since
+    the checkboxes it would be reporting on are the real tab's.
     """
     title = week_title(day)
+    checks = list(checks or [])
+    flagged = checks_by_week(checks, day)
     weeks = pending_by_week(rows, day)
+    # A week can have nothing but a flag — that still opens its thread, because
+    # a row nobody can date is exactly the thing that must not go unseen.
+    seen_weeks = {s for s, _ in weeks}
+    weeks += [(s, []) for s in sorted(flagged) if s not in seen_weeks]
+    weeks.sort()
     if not weeks:
         logfn(f"  nobody terminated this week yet — nothing to post ({title})")
         return {"posted": False, "reason": "none this week", "title": title}
@@ -173,10 +335,18 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             for d in days:
                 for line in render_reply(for_day(rows, d), d).splitlines():
                     logfn(f"       {line}")
+            if flagged.get(sunday):
+                for line in render_checks(flagged[sunday]).splitlines():
+                    logfn(f"       {line}")
+            if pending_lookup is not None:
+                for line in render_pending(pending_lookup(sunday),
+                                           sunday).splitlines():
+                    logfn(f"       {line}")
         return {"dry_run": True, "posted": False, "title": title,
                 "channel": channel,
                 "weeks": [{"title": week_title(s),
-                           "days": [d.isoformat() for d in days]}
+                           "days": [d.isoformat() for d in days],
+                           "checks": [c.name for c in flagged.get(s, [])]}
                           for s, days in weeks]}
 
     client = smp._client()
@@ -192,13 +362,16 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
         thread_ts = find_thread_ts(client, wtitle, channel)
         created = False
         seen: set = set()
+        flags_seen: set = set()
         if not thread_ts:
-            parent = client.chat_postMessage(channel=channel, text=f"*{wtitle}*")
+            parent = client.chat_postMessage(channel=channel,
+                                             text=f"{EMOJI} *{wtitle}*")
             thread_ts = parent.get("ts")
             created = True
             logfn(f"  opened the thread {wtitle!r} (ts {thread_ts})")
         else:
             seen = already_posted(client, thread_ts, channel)
+            flags_seen = already_flagged(client, thread_ts, channel)
 
         posted = []
         for d in days:
@@ -211,12 +384,36 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             seen.update(norm_name(t.name) for t in todays)
             posted.append((d, len(todays)))
             logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
-        if not posted:
+
+        new_flags = [c for c in flagged.get(sunday, [])
+                     if norm_name(c.name) not in flags_seen]
+        if new_flags:
+            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                    text=render_checks(new_flags))
+            logfn(f"  {wtitle}: flagged {len(new_flags)} row(s) for a look")
+        if not posted and not new_flags:
             logfn(f"  {wtitle}: every termination is already in the thread — "
                   f"nothing to add")
+
+        # The checklist is rewritten every run, whether or not anything else
+        # changed — that is the point of it: it has to be current when someone
+        # opens the thread, not current as of the last termination.
+        still = None
+        if pending_lookup is not None:
+            try:
+                still = pending_lookup(sunday)
+                post_pending(client, thread_ts, sunday, still, channel, logfn)
+            except Exception as e:                              # noqa: BLE001
+                # The terminations are posted; a checklist that can't be built
+                # must not turn the run into a failure.
+                logfn(f"  ⚠ couldn't update the deactivation checklist "
+                      f"({type(e).__name__}: {e})")
+
         out.append({"title": wtitle, "thread_ts": thread_ts,
                     "thread_created": created,
-                    "days": [(d.isoformat(), n) for d, n in posted]})
+                    "days": [(d.isoformat(), n) for d, n in posted],
+                    "checks": [c.name for c in new_flags],
+                    "pending": None if still is None else len(still)})
 
-    return {"posted": any(w["days"] for w in out), "title": title,
-            "channel": channel, "weeks": out}
+    return {"posted": any(w["days"] or w["checks"] for w in out),
+            "title": title, "channel": channel, "weeks": out}

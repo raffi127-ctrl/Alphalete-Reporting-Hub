@@ -117,10 +117,26 @@ def plan_box(box: B.Box, grid: List[List[str]], we: dt.date, src,
                         f"{_a1(row, box.weeks[span[-1]])})"))
 
     # --- Total / Per rep AVG rows ----------------------------------------
+    # The SAME columns the rep rows above just got: the current week always,
+    # plus every backfilled week. Until 2026-08-24 both rows were written for
+    # week_col ONLY, so a --backfill filled the rep cells of an old week and
+    # left its Total / Per rep AVG blank -- Tony Chavez's Total Sales box came
+    # back with WE 8/02-8/16 filled per rep and those two rows empty, which
+    # reads as a half-done backfill. A past week is append-only here for the
+    # same reason the rep cells are: never overwrite a hand-entered total.
+    past_cols = [c for c in (box.weeks.get(d) for d in (backfill or []))
+                 if c and c != week_col]
+
+    def _week_rows(row: int, formula) -> None:
+        ups.append((_a1(row, week_col), formula(week_col)))
+        for col in past_cols:
+            if not B._cell(grid, row, col):
+                ups.append((_a1(row, col), formula(col)))
+
     if box.total_row and box.reps:
         r0, r1 = box.reps[0][0], box.reps[-1][0]
-        ups.append((_a1(box.total_row, week_col),
-                    f"=SUM({_a1(r0, week_col)}:{_a1(r1, week_col)})"))
+        _week_rows(box.total_row,
+                   lambda c: f"=SUM({_a1(r0, c)}:{_a1(r1, c)})")
         for avg_key, window in (("avg8", AVG8_WINDOW), ("avg4", AVG4_WINDOW)):
             col = box.cols.get(avg_key)
             span = filled_weeks[-window:]
@@ -130,8 +146,8 @@ def plan_box(box: B.Box, grid: List[List[str]], we: dt.date, src,
                             f"{_a1(box.total_row, box.weeks[span[-1]])})"))
     if box.avg_row and box.reps:
         r0, r1 = box.reps[0][0], box.reps[-1][0]
-        ups.append((_a1(box.avg_row, week_col),
-                    f"=AVERAGE({_a1(r0, week_col)}:{_a1(r1, week_col)})"))
+        _week_rows(box.avg_row,
+                   lambda c: f"=AVERAGE({_a1(r0, c)}:{_a1(r1, c)})")
         for avg_key in ("avg8", "avg4"):
             col = box.cols.get(avg_key)
             if col:
