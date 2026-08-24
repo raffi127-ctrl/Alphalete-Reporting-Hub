@@ -46,6 +46,7 @@ DASHBOARD = APP_ROOT + "/dashboard/"
 SEARCH_SEL = "input[placeholder='Search...']"
 
 NAV_TIMEOUT = 90_000
+SEARCH_TIMEOUT = 45_000
 
 # Same window the API check used: a packet from a previous WEEK shouldn't block
 # this week's send, but "sent 3 days ago" always should. New starts run
@@ -79,9 +80,16 @@ def _search(page, term: str) -> str:
     The selector is re-resolved on every call -- a search re-renders the list,
     so a handle held across searches is stale and throws.
     """
-    if page.query_selector(SEARCH_SEL) is None:
+    # WAIT for the box, don't snap-check it. The list is rendered by the app
+    # after load, so a query_selector the instant the page settles can miss it
+    # -- which is exactly how the first live run reported "the app's layout
+    # changed" against a layout that hadn't changed at all.
+    try:
+        page.wait_for_selector(SEARCH_SEL, timeout=SEARCH_TIMEOUT)
+    except Exception:
         raise RuntimeError(
-            "No search box on the Blue Ink dashboard -- the app's layout "
+            "No search box on the Blue Ink dashboard after "
+            + str(SEARCH_TIMEOUT // 1000) + "s -- the app's layout may have "
             "changed. Rerun `--probe-sent` and remap.")
     page.click(SEARCH_SEL)
     page.fill(SEARCH_SEL, "")
