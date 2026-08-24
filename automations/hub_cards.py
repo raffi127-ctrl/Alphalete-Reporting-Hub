@@ -4534,9 +4534,9 @@ AUTOMATED_REPORTS = [
             "**#alphalete-lvl1-chat** + the numbers-needed post; **hourly "
             "9am–6pm Sat & Sun** — number-reply scan; **Sat 1pm** — reminder "
             "tagging only who hasn't replied. **Sunday 1pm** — the numbered "
-            "✅ roll-up. **Tue–Sat 9am** — the \"text the new starts you "
-            "closed yesterday\" ping (both lvl-1 chats; no Monday ping — "
-            "nobody closes on Sunday)."
+            "✅ roll-up. **Tue–Fri 9am** — the \"text the new starts you "
+            "closed yesterday\" ping (both lvl-1 chats; no Monday — nobody "
+            "closes Sunday — and Saturday's 8:30 reminder already covers it)."
         ),
         "assignees": ["Lucy 1"],
         # Pinned to Lucy 1 (same as bg-check-sync): that's where Lucy's Slack
@@ -4548,14 +4548,14 @@ AUTOMATED_REPORTS = [
         # out of the "due today" tallies, same as bg-check-sync.
         "hide_schedule": True,
         "self_scheduled": True,
-        # Pill climbs as each pass lands: Saturday = 4 (roll-call 8am +
-        # sat-texts 8:30 + the 9am daily reminder + the 1pm nudge); Sunday =
-        # the 1pm checklist; Tue-Fri = the 9am group reminder. NO MONDAY runs
-        # — the reminder is about yesterday's closes and nobody closes Sunday
-        # (Megan 2026-08-23). Weekday-keyed (weekday(): Mon=0 … Sun=6).
-        # Each live pass records itself via hub_publish
+        # Pill climbs as each pass lands: Saturday = 3 (roll-call 8am +
+        # sat-texts 8:30 + the 1pm nudge); Sunday = the 1pm checklist;
+        # Tue-Fri = the 9am group reminder. NO MONDAY (nobody closes Sunday)
+        # and NO SATURDAY daily ping (sat-texts' 8:30 group reminder covers
+        # it) — Raf via Megan 2026-08-23. Weekday-keyed (weekday(): Mon=0 …
+        # Sun=6). Each live pass records itself via hub_publish
         # (new_start_followup -> this card).
-        "daily_runs": {"1": 1, "2": 1, "3": 1, "4": 1, "5": 4, "6": 1},
+        "daily_runs": {"1": 1, "2": 1, "3": 1, "4": 1, "5": 3, "6": 1},
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1, 2, 3, 4, 5, 6],
@@ -4563,7 +4563,7 @@ AUTOMATED_REPORTS = [
             # Weekday-keyed: each day's pill shows only its own times.
             "time_label": {"1": "9am CST", "2": "9am CST",
                            "3": "9am CST", "4": "9am CST",
-                           "5": "8am/8:30am/9am/1pm CST", "6": "1pm CST"},
+                           "5": "8am/8:30am/1pm CST", "6": "1pm CST"},
             "estimated_minutes": 1,
         },
         "checklist": [],
