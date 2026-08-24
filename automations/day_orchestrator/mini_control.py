@@ -998,8 +998,12 @@ def _action_appstream_status(args: str) -> tuple[bool, str]:
     until 2026-08-24 there was NO remote way to see whether the one session that
     needs a human was alive -- you found out when a report failed. Reads the two
     stored tokens; no network, no Cloudflare risk, nothing written."""
+    # log_name is load-bearing: the result cell keeps only the TAIL, and AppStream
+    # -- the session that needs a human -- prints BEFORE ownerville, so without a
+    # log the one line worth reading is the one that gets cut (Eve 2026-08-24).
+    # Read it whole with: lucy logtail appstream-status
     cmd = [sys.executable, "-m", "automations.shared.appstream_watch", "--status"]
-    return _run_cmd(cmd, timeout_s=120)
+    return _run_cmd(cmd, timeout_s=120, log_name="appstream-status.log")
 
 
 def _action_watch_test(args: str) -> tuple[bool, str]:
