@@ -552,9 +552,53 @@
    "timeout_minutes": 5,
    "machine": "Lucy 1"
   },
+  "disable_headshots_monday_agent": {
+   "on_scheduler": false,
+   "_note": "Unload com.alphalete.headshots-monday from the MINI — the pair moved to Lucy 3 on 2026-08-23 (Megan: Lucy 3 has less running) minutes after being installed on the mini. Boots out + renames the plist .disabled so a re-login can't re-load it. `lucy rerun disable_headshots_monday_agent` (no --machine: the mini is the default target).",
+   "display_name": "Disable Headshot Monday agent (mini — moved to Lucy 3)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "headshots-monday"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": null
+  },
+  "disable_headshots_tick_agent": {
+   "on_scheduler": false,
+   "_note": "Unload com.alphalete.headshots-tick from the MINI — moved to Lucy 3 on 2026-08-23 with its Monday twin. `lucy rerun disable_headshots_tick_agent` (no --machine: the mini is the default target).",
+   "display_name": "Disable Headshot tick agent (mini — moved to Lucy 3)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "headshots-tick"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": null
+  },
   "install_headshots_monday_agent": {
    "on_scheduler": false,
-   "_note": "One-shot installer for com.alphalete.headshots-monday on the mini (Monday 8:30am Central; deploy/headshots_monday.sh -> python -m automations.headshots.weekly_thread). Posts Lucy's 'Headshot Submissions' thread in #11280-alphalete-marketing-inc-rafael-hidalgo — Megan approved the exact wording 2026-08-23. Idempotent: marker-in-channel check, Monday-only. `lucy update` then `lucy rerun install_headshots_monday_agent`.",
+   "_note": "One-shot installer for com.alphalete.headshots-monday on LUCY 3 (Monday 8:30am Central; deploy/headshots_monday.sh -> python -m automations.headshots.weekly_thread). Moved off the mini 2026-08-23 (Megan: Lucy 3 has less running). Posts Lucy's 'Headshot Submissions' thread in #11280-alphalete-marketing-inc-rafael-hidalgo — Megan approved the exact wording 2026-08-23. HELD via HEADSHOTS_LIVE=0 in the wrapper until the end-to-end flow (incl. OwnerVille upload) is approved. Idempotent: marker-in-channel check, Monday-only. `lucy update --machine \"Lucy 3\"` then `lucy rerun install_headshots_monday_agent --machine \"Lucy 3\"`.",
    "display_name": "Install Headshot Monday thread agent (Mon 8:30am)",
    "source_type": "local",
    "data_sources": [],
@@ -572,11 +616,11 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 5,
-   "machine": null
+   "machine": "Lucy 3"
   },
   "install_headshots_tick_agent": {
    "on_scheduler": false,
-   "_note": "One-shot installer for com.alphalete.headshots-tick on the mini (every 10 min; deploy/headshots_tick.sh -> python -m automations.headshots.run). Watches replies to the Monday headshot threads (this week + last week), turns photo+name replies into white-background headshots and posts them back in-thread as Lucy. Needs rembg + onnxruntime in the venv first: `lucy pip_install rembg` and `lucy pip_install onnxruntime` (allowlisted 2026-08-23 — run `lucy update` + `lucy restart_poller` before those so the poller sees the new allowlist). Then `lucy rerun install_headshots_tick_agent`.",
+   "_note": "One-shot installer for com.alphalete.headshots-tick on LUCY 3 (every 10 min; deploy/headshots_tick.sh -> python -m automations.headshots.run). Moved off the mini 2026-08-23 (Megan: Lucy 3 has less running). Watches replies to the Monday headshot threads (this week + last week), turns photo+name replies into white-background headshots and posts them back in-thread as Lucy. HELD via HEADSHOTS_LIVE=0 in the wrapper until end-to-end is approved. Needs onnxruntime + rembg in the venv first (`lucy pip_install onnxruntime --machine \"Lucy 3\"` THEN rembg — rembg's import check needs onnxruntime already present; run `lucy update` + `lucy restart_poller` there first so the poller sees the allowlist). Then `lucy rerun install_headshots_tick_agent --machine \"Lucy 3\"`.",
    "display_name": "Install Headshot processing tick agent (10 min)",
    "source_type": "local",
    "data_sources": [],
@@ -594,7 +638,7 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 5,
-   "machine": null
+   "machine": "Lucy 3"
   },
   "install_terminated_reps_evening_agent": {
    "on_scheduler": false,
