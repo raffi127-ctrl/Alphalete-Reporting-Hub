@@ -21,7 +21,9 @@ THE SCREEN (mapped against the live app 2026-08-24)
   `[data-tid=nub-listSearch] input` -- that wrapper holds the Date Range field
   too, and a selector ending in ` input` types into whichever comes first.
 
-  Searching a signer's email narrows the list. Rows carry their own status as a
+  Searched by email first, then -- only when the email came back clear -- by
+  NAME, because the address on the sheet is not always the address the packet
+  actually went to. Searching a signer's email narrows the list. Rows carry their own status as a
   prefix, e.g. "Sent8/24/26 Raf Documents AP". An address with nothing reads
   "No Envelopes" in every section and has no "Showing" anywhere:
 
@@ -155,6 +157,23 @@ def screen(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
             for person in todo:
                 email = person.email.strip()
                 why = verdict(_search(page, email), today)
+                if not why:
+                    # The address on the sheet is clear -- but the sheet's
+                    # address is not always the one the packet went to. Ignacio
+                    # Lara was sent (and had already signed) as
+                    # iamlara3333@gmail.com while row 10 said
+                    # iamlara33@yahoo.com, so the email search saw nothing and
+                    # he came back as "still to send" (2026-08-24). Sending
+                    # would have mailed onboarding paperwork to whoever owns
+                    # the address on the sheet, which is worse than a duplicate.
+                    # So when the email is clear, ask the same question by NAME.
+                    name = (person.name or "").strip()
+                    if name:
+                        hit = verdict(_search(page, name), today)
+                        if hit:
+                            why = ("same name already has " + hit +
+                                   " (sent to a different address than the "
+                                   "sheet's) -- check this is the same person")
                 if why:
                     out[email.lower()] = why
         finally:
