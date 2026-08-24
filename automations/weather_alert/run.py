@@ -218,6 +218,14 @@ def main() -> int:
         from automations.shared import slack_metrics_post as smp
         client = smp._client()
         client.chat_postMessage(channel=smp.CHANNEL_ID, text=msg)
+        # Raf 8/23: the forecast also lands in #alphalete-lvl1-chat (best-effort —
+        # a broken mirror never fails the primary post).
+        for _dst in smp.mirror_channels(smp.CHANNEL_ID):
+            try:
+                client.chat_postMessage(channel=_dst, text=msg)
+            except Exception as e:      # noqa: BLE001
+                print(f"[weather] mirror to {_dst} failed: "
+                      f"{type(e).__name__}: {e}", flush=True)
     except Exception as e:
         print(f"[weather] Slack post failed: {type(e).__name__}: {e}", flush=True)
         return 1

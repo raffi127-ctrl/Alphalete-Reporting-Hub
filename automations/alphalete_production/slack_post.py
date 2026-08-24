@@ -7,7 +7,8 @@ Megan 7/5), with each section's emoji reacted onto the parent.
 
 Replaces Jolie Calinagan's two manual morning screenshot posts. Creates its OWN parent
 each morning (find-or-create), no human dependency. Uses the shared Lucy user token
-(slack_metrics_post._client) + files_upload_v2. Single channel: #alphalete-sales.
+(slack_metrics_post._client) + files_upload_v2. Posts to #alphalete-sales AND, per
+Raf 8/23, its own copy of the thread to #alphalete-lvl1-chat (smp.MIRROR_CHANNELS).
 """
 from __future__ import annotations
 
@@ -122,14 +123,23 @@ def _post_thread(client, channel: str, captures: list, sections: list,
 
 def post_all(captures: list, sections: list, today: dt.date | None = None,
              *, dry_run: bool = False) -> dict:
+    # Raf 8/23: the whole thread ALSO posts to #alphalete-lvl1-chat — its own
+    # copy per channel (Slack can't share a thread), config in smp.MIRROR_CHANNELS.
+    channels = [CHANNEL] + smp.mirror_channels(CHANNEL)
     today = today or dt.date.today()
     if dry_run:
-        return {"dry_run": True, "channel": CHANNEL,
+        return {"dry_run": True, "channel": CHANNEL, "mirrors_to": channels[1:],
                 "header": header_text(sections, today, captures),
                 "replies": [{"file": Path(p).name, "caption": reply_caption(m, today)}
                             for m, p in captures]}
     client = smp._client()
-    return _post_thread(client, CHANNEL, captures, sections, today)
+    results = [_post_thread(client, ch, captures, sections, today)
+               for ch in channels]
+    out = dict(results[0])
+    out["ok"] = all(r.get("ok") for r in results)
+    if len(results) > 1:
+        out["mirrors"] = results[1:]
+    return out
 
 
 def preview_dm(captures: list, sections: list, users: list,

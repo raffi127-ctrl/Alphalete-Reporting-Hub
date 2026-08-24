@@ -26,6 +26,23 @@ CHANNEL_ID = os.environ.get("METRICS_CHANNEL_ID", "C068PH3RFSM")  # default #alp
 # so an office finds ITS thread, not the other's. Unset = original single-office
 # behaviour, unchanged. Read at import so metric subprocesses inherit it.
 HEADER_LABEL = os.environ.get("METRICS_HEADER_LABEL", "").strip()
+# Raf 8/23 (Loom): everything that lands in #alphalete-sales ALSO lands in
+# #alphalete-lvl1-chat — same parents, same replies, its own copy of each thread
+# (Slack can't share a thread across channels). Keyed by the PRIMARY channel so
+# other offices' channels (Rashad's via METRICS_CHANNEL_ID, per-office
+# channel_id args, offices that swap smp.CHANNEL_ID) never mirror. Lucy must be
+# a member of every mirror channel (lvl1 is private). Kill switch:
+# ALPHALETE_MIRROR_OFF=1 turns all mirroring off without a code change.
+MIRROR_CHANNELS = {
+    "C068PH3RFSM": ["C09JG28CD27"],   # #alphalete-sales -> #alphalete-lvl1-chat
+}
+
+
+def mirror_channels(channel_id: str) -> list:
+    """The channels `channel_id`'s posts must be copied into ([] for most)."""
+    if os.environ.get("ALPHALETE_MIRROR_OFF", "") == "1":
+        return []
+    return MIRROR_CHANNELS.get(channel_id or "", [])
 TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
 # Token for the automated-reports identity 'Lucy' (alphaletereporting@gmail.com)
 # used to DM finished reports so they come FROM Lucy, not the person running it.
@@ -199,7 +216,82 @@ _SPANISH_MONTHS = {
 }
 
 
-def find_metrics_thread_ts(client, today: dt.date) -> str:
+def _norm_first_line(text: str) -> str:
+    """A parent message's dated first line, markdown-stripped + whitespace-
+    collapsed — the identity we match a thread's cross-channel twin on."""
+    first = (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    return re.sub(r"\s+", " ", first.replace("*", "")).strip()
+
+
+def _mirror_thread_ts(client, src_channel: str, src_ts: str,
+                      dst_channel: str, today: dt.date) -> str:
+    """The dst-channel twin of a thread parent: today's dst message whose first
+    line matches the src parent's (we post identical parents into every mirror),
+    posting a copy of the src parent if it isn't there yet. First-line match, not
+    whole-text, so Slack's own text normalization can never make the copy
+    unrecognizable (which would spawn a duplicate parent per reply)."""
+    src = client.conversations_replies(channel=src_channel, ts=src_ts, limit=1)
+    text = (src.get("messages") or [{}])[0].get("text") or ""
+    key = _norm_first_line(text)
+    if not key:
+        raise SlackPostError("mirror: source thread parent has no text")
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    cursor = None
+    for _ in range(10):
+        resp = client.conversations_history(
+            channel=dst_channel, oldest=str(oldest), limit=200,
+            **({"cursor": cursor} if cursor else {}))
+        for msg in resp.get("messages", []):
+            if _norm_first_line(msg.get("text", "")) == key:
+                return msg.get("thread_ts") or msg.get("ts")
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+    return client.chat_postMessage(channel=dst_channel, text=text)["ts"]
+
+
+def _mirror_reply(client, channel_id: str, thread_ts: str, today: dt.date,
+                  out: dict, *, text: str | None = None,
+                  file_path=None, file_name: str | None = None,
+                  comment: str | None = None,
+                  react_emoji: str | None = None,
+                  wait_visible: bool = False) -> None:
+    """Copy one thread reply (text OR file) into every mirror of `channel_id`,
+    into the mirror's own twin of the thread. Appends per-channel results onto
+    out['mirrors']. Best-effort by design: a broken mirror prints loudly but
+    never fails the primary post."""
+    for dst in mirror_channels(channel_id):
+        try:
+            m_ts = _mirror_thread_ts(client, channel_id, thread_ts, dst, today)
+            if file_path is not None:
+                resp = client.files_upload_v2(
+                    channel=dst, thread_ts=m_ts, file=str(file_path),
+                    filename=file_name, initial_comment=comment)
+                if wait_visible and resp.get("ok"):
+                    # same ordering guarantee as the primary thread (Eve 8/19:
+                    # small images overtake big ones without this)
+                    wait_for_share(client, dst, m_ts, _uploaded_file_id(resp),
+                                   text=comment or "")
+            else:
+                resp = client.chat_postMessage(channel=dst, thread_ts=m_ts,
+                                               text=text)
+            if react_emoji:
+                try:
+                    client.reactions_add(channel=dst, timestamp=m_ts,
+                                         name=react_emoji)
+                except Exception:      # noqa: BLE001 — already-reacted is fine
+                    pass
+            out.setdefault("mirrors", []).append(
+                {"channel": dst, "ok": resp.get("ok"), "thread_ts": m_ts})
+        except Exception as e:      # noqa: BLE001
+            print(f"  reply mirror to {dst} failed: "
+                  f"{type(e).__name__}: {str(e)[:120]}")
+            out.setdefault("mirrors", []).append(
+                {"channel": dst, "ok": False, "error": str(e)[:200]})
+
+
+def find_metrics_thread_ts(client, today: dt.date,
+                           channel_id: str | None = None) -> str:
     """Find today's Metrics parent thread in #alphalete-sales.
 
     Primary match: the daily Slack Workflow that posts at 7:00 AM with
@@ -222,7 +314,7 @@ def find_metrics_thread_ts(client, today: dt.date) -> str:
     ]
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
     resp = client.conversations_history(
-        channel=CHANNEL_ID, oldest=str(oldest), limit=100
+        channel=channel_id or CHANNEL_ID, oldest=str(oldest), limit=100
     )
     for msg in resp.get("messages", []):
         text = msg.get("text", "")
@@ -300,16 +392,26 @@ def ensure_metrics_thread(today: dt.date | None = None,
     header_text = "\n".join([_first, "", *(sections if sections else _default)])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
-                "to_channel": CHANNEL_ID}
+                "to_channel": CHANNEL_ID,
+                "mirrors_to": mirror_channels(CHANNEL_ID)}
     client = _client()
     try:
         ts = find_metrics_thread_ts(client, today)
-        return {"ok": True, "existed": True, "thread_ts": ts}
+        out = {"ok": True, "existed": True, "thread_ts": ts}
     except SlackPostError:
-        pass  # not posted yet — fall through and post it ourselves
-    resp = client.chat_postMessage(channel=CHANNEL_ID, text=header_text)
-    return {"ok": resp.get("ok"), "existed": False,
-            "thread_ts": resp.get("ts"), "header_text": header_text}
+        resp = client.chat_postMessage(channel=CHANNEL_ID, text=header_text)
+        out = {"ok": resp.get("ok"), "existed": False,
+               "thread_ts": resp.get("ts"), "header_text": header_text}
+    # copy the parent into each mirror channel (best-effort — a broken mirror
+    # must never take down the primary thread)
+    if out.get("thread_ts"):
+        for dst in mirror_channels(CHANNEL_ID):
+            try:
+                _mirror_thread_ts(client, CHANNEL_ID, out["thread_ts"], dst, today)
+            except Exception as e:      # noqa: BLE001
+                print(f"  metrics-thread mirror to {dst} failed: "
+                      f"{type(e).__name__}: {str(e)[:120]}")
+    return out
 
 
 def find_named_thread_ts(client, title: str, today: dt.date,
@@ -350,19 +452,27 @@ def ensure_named_thread(title: str, today: dt.date | None = None,
     first = (f"*{title} — {today.strftime('%B')} {_ordinal(today.day)} "
              f"{today.year}*")
     header_text = "\n".join([first, "", *lines]) if lines else first
+    channel_id = channel_id or CHANNEL_ID
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
-                "to_channel": channel_id or CHANNEL_ID}
+                "to_channel": channel_id,
+                "mirrors_to": mirror_channels(channel_id)}
     client = _client()
     try:
         ts = find_named_thread_ts(client, title, today, channel_id=channel_id)
-        return {"ok": True, "existed": True, "thread_ts": ts}
+        out = {"ok": True, "existed": True, "thread_ts": ts}
     except SlackPostError:
-        pass  # not posted yet — post it ourselves
-    resp = client.chat_postMessage(channel=channel_id or CHANNEL_ID,
-                                   text=header_text)
-    return {"ok": resp.get("ok"), "existed": False,
-            "thread_ts": resp.get("ts"), "header_text": header_text}
+        resp = client.chat_postMessage(channel=channel_id, text=header_text)
+        out = {"ok": resp.get("ok"), "existed": False,
+               "thread_ts": resp.get("ts"), "header_text": header_text}
+    if out.get("thread_ts"):
+        for dst in mirror_channels(channel_id):
+            try:
+                _mirror_thread_ts(client, channel_id, out["thread_ts"], dst, today)
+            except Exception as e:      # noqa: BLE001
+                print(f"  named-thread mirror to {dst} failed: "
+                      f"{type(e).__name__}: {str(e)[:120]}")
+    return out
 
 
 def post_reply_text_only(
@@ -382,7 +492,8 @@ def post_reply_text_only(
     channel_id = channel_id or CHANNEL_ID
     if dry_run:
         return {"dry_run": True, "would_post_text": text,
-                "to_channel": channel_id, "react_emoji": react_emoji}
+                "to_channel": channel_id, "react_emoji": react_emoji,
+                "mirrors_to": mirror_channels(channel_id)}
     client = _client()
     # thread_ts given => post into THAT thread (e.g. a named thread from
     # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
@@ -397,6 +508,8 @@ def post_reply_text_only(
             out["reaction_ok"] = r.get("ok")
         except Exception as e:
             out["reaction_warning"] = str(e)
+    _mirror_reply(client, channel_id, thread_ts, today, out,
+                  text=text, react_emoji=react_emoji)
     return out
 
 
@@ -497,6 +610,7 @@ def post_reply_with_image(
             "to_channel": channel_id,
             "comment": comment,
             "react_emoji": react_emoji,
+            "mirrors_to": mirror_channels(channel_id),
         }
     client = _client()
     # thread_ts given => post into THAT thread (e.g. a named thread from
@@ -526,6 +640,11 @@ def post_reply_with_image(
         except Exception as e:
             # Already-reacted is fine; surface other errors only.
             out["reaction_warning"] = str(e)
+    _mirror_reply(client, channel_id, thread_ts, today, out,
+                  file_path=image_path,
+                  file_name=file_name or f"{comment} {today.month}.{today.day}.png",
+                  comment=comment, react_emoji=react_emoji,
+                  wait_visible=wait_visible)
     return out
 
 
@@ -553,6 +672,7 @@ def post_reply_with_file(
             "to_channel": CHANNEL_ID,
             "comment": comment,
             "react_emoji": react_emoji,
+            "mirrors_to": mirror_channels(CHANNEL_ID),
         }
     client = _client()
     thread_ts = find_metrics_thread_ts(client, today)
@@ -577,4 +697,7 @@ def post_reply_with_file(
             out["reaction_ok"] = r.get("ok")
         except Exception as e:
             out["reaction_warning"] = str(e)
+    _mirror_reply(client, CHANNEL_ID, thread_ts, today, out,
+                  file_path=file_path, file_name=file_name or default_name,
+                  comment=comment, react_emoji=react_emoji)
     return out

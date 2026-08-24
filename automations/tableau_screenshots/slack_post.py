@@ -34,7 +34,8 @@ from automations.shared import slack_metrics_post as smp
 # files_upload_v2 with not_in_channel if she is ever removed.
 ORG_CHANNELS = {
     "alphalete":   ["C068PH3RFSM",        # #alphalete-sales
-                    "C067TTGFEFR"],       # #top-leaders-alphalete-org (private)
+                    "C067TTGFEFR",        # #top-leaders-alphalete-org (private)
+                    "C09JG28CD27"],       # #alphalete-lvl1-chat (private, Raf 8/23)
     "elevate":     ["C0B3KTCCMT7"],       # #elevate-sales (private)
     "indelible":   ["C0AA85Y3FPE"],       # #indelible-sales (private)
     "palace":      ["C09AVM17PAR"],       # #palace-sales (private)
@@ -53,7 +54,7 @@ ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
 
 # Human labels for the Hub card / logs.
-ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
+ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org + #alphalete-lvl1-chat",
              "elevate": "#elevate-sales",
              "indelible": "#indelible-sales",
              "palace": "#palace-sales",

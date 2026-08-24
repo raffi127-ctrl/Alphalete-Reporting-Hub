@@ -12,7 +12,10 @@ For each image we:
     4. DELETE the copy (in a finally; also sweeps orphans from a crashed run).
 
 The live sheet the team is using is never touched. Recipes per 'kind':
-  daily        -- full leaderboard, day-Apps columns, through Teams 'Alphaletes TOTALS'
+  daily        -- full leaderboard, day-Apps columns for days already played, through
+                  the reps-summary band under TOTALS (Teams table has its own post)
+  team_totals  -- the Teams table alone: CURRENT/LAST WEEK Total Units + per-day Apps
+                  through 'Alphaletes TOTALS' (Raf 8/23 'All Teams Sales Board')
   field_status -- daily leaderboard, 1st-4th-week reps only, grouped by Field Status
   energy       -- daily leaderboard filtered to Campaign = Energy, ranked by Apps
   team         -- ONE per team: full running-week block + last-week Apps + identity thru
@@ -144,6 +147,30 @@ def _running_apps_col(grid) -> int:
     return 3            # D, first APPS under 'RUNNING WEEK TOTALS' (structurally fixed)
 
 
+def _allowed_day_doms(through: dt.date) -> set:
+    """Day-of-month labels (row 2 of each day block) for Monday-of-week .. `through`.
+    Raf 8/23: days that haven't happened yet carry no data — drop them from the
+    boards instead of showing columns of 0.00s."""
+    start = through - dt.timedelta(days=through.weekday())
+    return {str((start + dt.timedelta(days=i)).day)
+            for i in range((through - start).days + 1)}
+
+
+def _day_apps_cols(grid, through: dt.date | None = None) -> set:
+    """Every day block's Apps column; with `through`, only days that have already
+    happened (matched on the row-2 day-of-month). If the dom match comes up empty
+    (data-entry lag put us on a tab that doesn't contain `through`), fall back to
+    ALL day columns — a full board beats a board with no days at all."""
+    all_days = {c for c in range(len(grid[1]))
+                if _cell(grid, 0, c).strip() in DAY_NAMES
+                and _cell(grid, 2, c).strip().lower() == "apps"}
+    if through is None:
+        return all_days
+    allowed = _allowed_day_doms(through)
+    kept = {c for c in all_days if _cell(grid, 1, c).strip() in allowed}
+    return kept or all_days
+
+
 def _field_status_col(grid) -> int:
     return next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Field Status")
 
@@ -169,9 +196,14 @@ def _is_wk5_plus(v: str) -> bool:
     return s.startswith("5") or "+" in s
 
 
-def _daily_show_cols(grid, team_avgs: bool = True) -> set:
+def _daily_show_cols(grid, team_avgs: bool = True, *,
+                     through: dt.date | None = None, drop: tuple = ()) -> set:
     """DP visible set (by header label): #, name, running-APPS, last-week-APPS, each
-    day's Apps, the identity columns, and (optionally) the Teams-table avg columns."""
+    day's Apps, the identity columns, and (optionally) the Teams-table avg columns.
+
+    `through` — only show day columns for days that have already happened (Raf 8/23).
+    `drop`    — identity header labels to LEAVE OUT (Raf 8/23: 'Leadership Status'
+                and 'Location' off the Daily + Entry Level boards)."""
     show = {0, 1, 2, 3}                                  # A, B, C, D(running APPS)
     # A header we hunt for may be absent (label drift, a sheet-layout edit). A
     # missing one must NOT crash the whole report — skip it (rendering without
@@ -193,12 +225,12 @@ def _daily_show_cols(grid, team_avgs: bool = True) -> set:
               "LAST WEEK / APPS")
     if lw is not None:
         show.add(lw)
-    # each day's Apps
-    for c in range(len(grid[1])):
-        if _cell(grid, 0, c).strip() in DAY_NAMES and _cell(grid, 2, c).strip().lower() == "apps":
-            show.add(c)
+    # each day's Apps (only days that have happened, when `through` is given)
+    show |= _day_apps_cols(grid, through)
     # identity columns by their row-1 header
     for lbl in ("Trainer", "Field Status", "Team", "Leadership Status", "Location"):
+        if lbl in drop:
+            continue
         c = _col(lambda c, _l=lbl: _cell(grid, 0, c).strip() == _l, lbl)
         if c is not None:
             show.add(c)
@@ -373,11 +405,42 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         filt_specs.append({"columnIndex": 2, "filterCriteria": {"hiddenValues": [""]}})
 
         if kind == "daily":
-            show = _daily_show_cols(grid)
+            # Raf 8/23: leaderboard only — days already played, no Leadership
+            # Status / Location, and the Teams table moved to its OWN post
+            # (kind='team_totals'). The reps-summary band right under TOTALS
+            # ('Total Reps in the Field' .. '% of Reps on the Board') stays.
+            show = _daily_show_cols(grid, team_avgs=False,
+                                    through=last_completed_day(today),
+                                    drop=("Leadership Status", "Location"))
             right = col_letter(max(show))
-            bottom = _label_row(grid, "Alphaletes TOTALS")
+            bottom = max([r + 1 for r in range(tot_row - 1, min(tot_row + 20, len(grid)))
+                          if _cell(grid, r, 2).strip().lower().startswith("% of reps")]
+                         or [tot_row])
             export_rng = f"A1:{right}{bottom}"
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+
+        elif kind == "team_totals":
+            # Raf 8/23 (via Megan's screenshot): the Teams table that used to sit at
+            # the bottom of Daily Production, as its OWN image — Teams / CURRENT WEEK
+            # Total Units / LAST WEEK Total Units / per-day Apps, down through the
+            # 'Alphaletes TOTALS' row. All by label; day columns trimmed to days
+            # that have happened, same as the leaderboard.
+            hdr = _label_row(grid, "Teams")
+            bottom = _label_row(grid, "Alphaletes TOTALS")
+            h0 = hdr - 1
+            show = {2}                                   # C — team names
+            for want in ("CURRENT WEEK", "LAST WEEK"):
+                c = next((c for c in range(len(grid[h0]))
+                          if _cell(grid, h0, c).strip().upper() == want), None)
+                if c is None:
+                    print("[alphalete_production] warn: Teams-table column not "
+                          "found: %s" % want)
+                else:
+                    show.add(c)
+            # the Teams table's MONDAY..SUNDAY Apps groups sit on the SAME columns
+            # as the leaderboard's day blocks, so one helper serves both
+            show |= _day_apps_cols(grid, last_completed_day(today))
+            export_rng = f"C{hdr}:{col_letter(max(show))}{bottom}"
 
         elif kind == "team":
             # Raf 8/6 (from his screenshots, "what Eve sent"): the leader's own team, everything
@@ -460,7 +523,9 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             # daily leaderboard, first-4-weeks only, organized by tenure (Raf 7/10):
             # same columns as 'daily' minus the Teams-avg block, drop '5th wk+' reps,
             # sort by Field Status then running APPS.
-            show = _daily_show_cols(grid, team_avgs=False)
+            show = _daily_show_cols(grid, team_avgs=False,
+                                    through=last_completed_day(today),
+                                    drop=("Leadership Status", "Location"))
             right = col_letter(max(show))
             export_rng = f"A1:{right}{tot_row}"
             fs_col = _field_status_col(grid)
