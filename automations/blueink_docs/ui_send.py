@@ -21,6 +21,8 @@ doesn't break the run:
     -> button[data-tid=nub-create-prepare]     -> /prepare  (template fields
                                                   are already placed)
     -> button[data-tid=nub-create-review]      -> /review
+    -> pencil beside "Envelope Label" -> input[name=label] = the signer's name
+       (without this every envelope reads "Raf Documents" in the Sent list)
     -> button[data-tid=nub-create-send]        SENDS. No undo.
 
 The signer form is TRANSIENT -- reloading the draft URL drops back to the search
@@ -118,12 +120,38 @@ def send_one(page, *, first: str, last: str, email: str,
     page.wait_for_selector("button[data-tid='nub-create-send']", timeout=STEP_TIMEOUT)
 
     # Confirm the review screen really is addressed to this person before we
-    # commit -- a mis-wired step would otherwise mail the wrong human.
+    # commit -- a mis-wired step would otherwise mail the wrong human. This
+    # runs BEFORE the label edit: opening that editor re-renders the summary
+    # and the recipient line goes with it, which tripped this check.
     body = " ".join((page.inner_text("body") or "").split())
     if email.lower() not in body.lower():
         raise UISendError(
             f"Review screen for bundle {bundle} doesn't mention {email} -- "
             "refusing to send. The wizard may have changed.")
+
+    # --- name the envelope after the signer -------------------------------
+    # Left alone, every envelope inherits the template's label ("Raf Documents")
+    # and the Sent list becomes forty identical rows. The team names each one
+    # after the person, so we do too. The field is behind a pencil icon on the
+    # review summary. Cosmetic, so a failure here must not block the send.
+    full_name = f"{first} {last}".strip()
+    try:
+        pencil = page.query_selector(
+            "xpath=//div[contains(., 'Envelope Label')]"
+            "[not(.//div[contains(., 'Envelope Label')])]"
+            "//i[contains(@class, 'edit')]")
+        if pencil:
+            pencil.click()
+            page.wait_for_selector("input[name='label']", timeout=15_000)
+            page.fill("input[name='label']", full_name)
+            page.keyboard.press("Tab")          # commit the edit
+            page.wait_for_timeout(1200)
+        else:
+            print(f"     (couldn't find the label pencil for {full_name} -- "
+                  "sending with the template's default label)")
+    except Exception as exc:
+        print(f"     (couldn't set the envelope label for {full_name}: {exc} -- "
+              "sending anyway)")
 
     if not really_send:
         return UIResult(bundle_id=bundle, status="draft (dry run, not sent)")
