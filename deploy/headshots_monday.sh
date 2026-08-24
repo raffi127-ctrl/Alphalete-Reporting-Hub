@@ -36,4 +36,17 @@ echo "[$(date)] Monday headshot thread starting" >> "$LOG_FILE"
 "$VENV_PY" -u -m automations.headshots.weekly_thread >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] finished exit=$ST" >> "$LOG_FILE"
+
+# TELL THE HUB (Megan 2026-08-24). Without this the card could only ever read
+# "scheduled Mon 08:30, no run logged" — a clean post and a dead agent looked
+# identical, and the one thing Megan actually wants flagged (the Monday thread
+# failing to start) could never show at all. Megan: "the headshot shouldn't
+# error unless there's an issue with just starting the new thread each Monday."
+# Publishing under THIS id is what makes that true: success greens the card and
+# clears it from Needs attention, a non-zero exit turns it red.
+# Best-effort — a Hub hiccup must never fail the post itself.
+# [[feedback_launchd_reports_must_publish]]
+if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('headshots_monday','Headshots Monday','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+
 exit $ST
