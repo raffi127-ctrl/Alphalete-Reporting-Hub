@@ -332,17 +332,67 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
     return actions
 
 
+def diag(channel: str | None = None) -> int:
+    """READ-ONLY: say exactly what the tick sees and why it skips each reply.
+
+    Added 2026-08-24 when two submissions sat unprocessed while the tick
+    kept logging "No new headshot replies" — the per-reply decision was
+    invisible. Touches nothing."""
+    channel = channel or config.CHANNEL_ID
+    cl = _client()
+    try:
+        me = cl.auth_test().get("user_id")
+    except Exception:
+        me = None
+    print(f"channel: {channel}   this bot: {me}")
+    anchors = _week_anchors(cl, channel)
+    print(f"anchors found: {len(anchors)}")
+    state = _load_state()
+    print(f"state entries: {len(state)}  ({_STATE})")
+    for a in anchors:
+        print(f"\nanchor ts={a['ts']}  {(a.get('text') or '')[:60]!r}")
+        replies = cl.conversations_replies(
+            channel=channel, ts=a["ts"], limit=200).get("messages", [])
+        print(f"  replies: {len(replies)}")
+        for m in sorted(replies, key=lambda x: x.get("ts", "")):
+            if m.get("ts") == a["ts"]:
+                continue
+            ts = m["ts"]
+            st = state.get(ts, {})
+            imgs = _image_files(m)
+            why = []
+            if m.get("subtype"):
+                why.append(f"subtype={m['subtype']}")
+            if me and m.get("user") == me:
+                why.append("own message")
+            if not imgs:
+                why.append(f"no image (files={len(m.get('files') or [])})")
+            if st.get("done"):
+                why.append("state=DONE")
+            nm = name_from_caption(m.get("text", ""))
+            verdict = "SKIP: " + ", ".join(why) if why else (
+                f"WOULD PROCESS as {nm!r}" if nm else "SKIP: name not parsed")
+            print(f"    {ts} u={m.get('user')} "
+                  f"txt={(m.get('text') or '')[:28]!r} -> {verdict}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="White-background headshot bot.")
     ap.add_argument("--dry-run", action="store_true",
                     help="process + save previews locally, post nothing")
     ap.add_argument("--channel", default=None,
                     help="channel id to watch (overrides config / env)")
+    ap.add_argument("--diag", action="store_true",
+                    help="READ-ONLY: show what the tick sees per reply")
     ap.add_argument("--file", default=None,
                     help="process ONE local photo instead of polling Slack")
     ap.add_argument("--name", default=None,
                     help="the person's name (with --file)")
     args = ap.parse_args(argv)
+
+    if args.diag:
+        return diag(channel=args.channel)
 
     if args.file:
         if not args.name:
