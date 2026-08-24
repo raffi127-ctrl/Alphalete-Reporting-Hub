@@ -16,6 +16,14 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# HELD with the Monday post (Megan 2026-08-23) — no processing until the
+# end-to-end flow (incl. OwnerVille upload) is approved. Flip to 1 + push +
+# `lucy update` to go live.
+HEADSHOTS_LIVE="${HEADSHOTS_LIVE:-0}"
+if [ "$HEADSHOTS_LIVE" != "1" ]; then
+    exit 0
+fi
+
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"
 LOG_DIR="output/logs"
