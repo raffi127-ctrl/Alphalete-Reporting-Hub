@@ -22,6 +22,10 @@ from automations.new_start_followup import (
 
 DEPARTED_NOTE = "No longer a channel member"
 
+# Raf gets @'d when OBCL rows are marked "Terminated" — those new starts have
+# no leader, and he assigns one (his Loom, 2026-08-23).
+RAF_SLACK_ID = "U045Z8N0ZQC"
+
 # Last roster taken off the weekly screenshot by a machine that can read it,
 # used when THIS machine can't (the mini's Slack token has no files:read).
 # Written by fix_rollcall.py --snapshot. Only ever used for its own week.
@@ -75,6 +79,7 @@ class Reconciliation:
         self.tagged_unknown = []      # type: List[str]       Slack id tagged, not in roster
         self.tagged_no_starts = []    # type: List[str]       Slack id tagged, but owes nothing
         self.thread = None            # type: Optional[dict]
+        self.needs_leader = 0         # new starts whose OBCL row says "Terminated"
 
     @property
     def sent(self) -> List[LeaderStatus]:
@@ -246,6 +251,16 @@ def _assemble(monday, friday, client, ros, owed, tab, sheet_only,
     rec.monday = monday
     rec.tab = tab
     rec.thread = th
+
+    # OBCL rows marked "Terminated" (Raf's Loom 2026-08-23): when a leader is
+    # let go, whoever terminates them replaces their name in the sheet's
+    # 2ND Round Interviewer cell with "Terminated". Those new starts must never
+    # produce a tag, a text, or an unable-to-tag line — they're counted and Raf
+    # is @'d to assign a leader. Handled here so every roster source
+    # (screenshot, snapshot, sheet fallback, sheet cross-read) gets it.
+    for src in (owed, sheet_only):
+        for key in [k for k in src if roster_mod._norm(k) == "terminated"]:
+            rec.needs_leader += src.pop(key)
 
     owed_by_id = {}  # type: Dict[str, int]
     for name, count in owed.items():
@@ -426,6 +441,8 @@ def render_rollcall(rec: Reconciliation, tag: bool = True) -> str:
         lines.append(line)
     for line in _untaggable_lines(rec):
         lines.append(line)
+    for line in _needs_leader_lines(rec):
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -495,6 +512,8 @@ def render_checklist(rec: Reconciliation) -> str:
         lines.append(line)
     for line in _untaggable_lines(rec):
         lines.append(line)
+    for line in _needs_leader_lines(rec):
+        lines.append(line)
 
     lines.append("")
     # Only a real OBCL tab title gets the "OBCL tab" prefix; the screenshot and
@@ -532,6 +551,19 @@ def _untaggable_lines(rec: Reconciliation) -> List[str]:
     for name in sorted(rec.unmatched_obcl):
         out.append("   •  {}".format(name))
     return out
+
+
+def _needs_leader_lines(rec: Reconciliation) -> List[str]:
+    """New starts whose OBCL row was marked "Terminated" — their leader is
+    gone, so Raf gets @'d to assign someone for the reach-out (his Loom,
+    2026-08-23). A count only: no names, no tags."""
+    if not rec.needs_leader:
+        return []
+    n = rec.needs_leader
+    return ["", "🚨 <@{}> — *{} new start{} need{} a leader assigned* "
+                "for reach-out (marked Terminated on the OBCL)".format(
+                    RAF_SLACK_ID, n, "" if n == 1 else "s",
+                    "s" if n == 1 else "")]
 
 
 def _team_flags(rec: Reconciliation) -> List[str]:
