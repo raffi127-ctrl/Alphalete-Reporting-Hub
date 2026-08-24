@@ -285,6 +285,69 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
     return out
 
 
+def shown_sunday(shown: str, want_sunday):
+    """The SUNDAY the gold cell is pointing at, or None if it can't be read.
+
+    Only used to say WHICH WAY the board is off — forward (rolled early for
+    today's fill) or backward (someone parked it on an old week). Handles the
+    lost trailing zero the same way we_matches does: a WE is always a Sunday, so
+    of `8.3` and `8.30` at most one can be, and that one is the answer.
+    """
+    try:
+        m, d = (int(x) for x in str(shown).strip().split("."))
+    except (ValueError, TypeError):
+        return None
+    for day in (d, d * 10):
+        try:
+            cand = dt.date(want_sunday.year, m, day)
+        except ValueError:
+            continue
+        if cand.weekday() == 6:
+            return cand
+    return None
+
+
+def _day_already_posted(day, yday) -> bool:
+    """Did an EARLIER pass already ship today's thread in full?
+
+    The week gate runs before anything is rendered, so a pass that fires AFTER a
+    human rolls the board forward sees the "wrong" week and holds — even though
+    the thread went out hours earlier on the right week. That is the normal
+    Monday shape: the 5:00am fill closes out Sunday on week 8.23, we post, and
+    then someone has to roll B2 to 8.30 before the 4:00pm fill (the roll-due
+    reminder in #claudecorrections asks for it by name). On 2026-08-24 the 8:05
+    pass held on that rolled board and opened an incident saying "today's thread
+    was not posted" — three hours after it had been — whose fix line told the
+    reader to set B2 back to 8.23, which would have broken the 4:00pm fill.
+
+    A hold is only real if the day's boards are actually missing. True only when
+    EVERY program's board reply is in the thread in EVERY target channel; any
+    lookup failure returns False, since alerting twice beats swallowing a day
+    that never posted.
+    """
+    targets = [t for t in TARGETS if t[1]]
+    if os.environ.get("SALES_BOARD_CHANNEL_ID") or not targets:
+        return False                      # a scratch-channel run proves nothing
+    tag = f"{yday.month}.{yday.day}"
+    try:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        for name, cid, _wz in targets:
+            ts = find_thread_ts(client, cid, day)
+            if not ts:
+                print(f"    ({name}: no thread for {header_title(day)!r} today)")
+                return False
+            for p in PROGRAMS:
+                plain = f"{p} Sales Board {tag}"
+                if not _already_replied(client, cid, ts, plain):
+                    print(f"    ({name}: {plain!r} is not in today's thread)")
+                    return False
+    except Exception as e:  # noqa: BLE001 — unknown means "still might be missing"
+        print(f"    (posted-check unavailable — {type(e).__name__}: {str(e)[:80]})")
+        return False
+    return True
+
+
 def _alert_wrong_week(shown: str, want: str, yday, *, post: bool) -> None:
     """Say in #claudecorrections that we HELD, and name the cell that caused it.
 
@@ -306,6 +369,19 @@ def _alert_wrong_week(shown: str, want: str, yday, *, post: bool) -> None:
     """
     if not post:
         return
+    # Which way is it off? A board sitting on a LATER week was rolled early for
+    # the 4:00pm fill (the roll-due reminder asks for exactly that), so "set it
+    # to 8.23" alone would leave the reader undoing the roll — and the fill
+    # holding all afternoon. Say the whole round trip, or say nothing.
+    sunday, _ = expected_we(yday)
+    on = shown_sunday(shown, sunday)
+    ahead = []
+    if on and on > sunday:
+        ahead = [f"Heads up: the board was rolled FORWARD to {shown} for "
+                 f"today's fill — that roll is correct and has to stay. Set it "
+                 f"to {want} only long enough for the next pass to post "
+                 f"(≤25 min), then put it back on {shown} before the 4:00pm "
+                 f"fill, or the fill holds all afternoon."]
     try:
         from automations.shared import incident_thread
         incident_thread.open_or_followup(
@@ -324,6 +400,7 @@ def _alert_wrong_week(shown: str, want: str, yday, *, post: bool) -> None:
                 "Only some day cells are formulas keyed on that cell, so it is "
                 "never rolled automatically — a human moves it to read an old "
                 "week and forgets to move it back.",
+                *ahead,
             ],
             label="Sales Boards → #alphalete-gp-sales",
         )
@@ -358,6 +435,16 @@ def main(argv=None) -> int:
     print(f"week check: board WE={shown!r}, need {want!r} "
           f"(week ending {sunday:%a %m/%d} — covers {yday:%a %m/%d})")
     if not ok:
+        # A rolled-forward board is only a problem while the day is unposted —
+        # see _day_already_posted. Checked before the hold so a late pass neither
+        # alerts nor returns 75 (which the LaunchAgent ladder would keep retrying).
+        if args.post and not args.dm and _day_already_posted(today, yday):
+            print(f"WRONG WEEK for a re-run (board reads {shown!r}, "
+                  f"{yday:%a %m/%d} lives in {want!r}) — but today's thread is "
+                  "already posted in full, so there is nothing left to render. "
+                  "The board has moved on to the week the 4:00pm fill needs; "
+                  "that is correct, not a failure.")
+            return 0
         print(f"WRONG WEEK — holding. The gold WE cell reads {shown!r} but "
               f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to {want} "
               "(or wait for the roll) and re-run; posting now would ship the "

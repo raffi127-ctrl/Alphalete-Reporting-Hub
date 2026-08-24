@@ -70,6 +70,20 @@ STATUS_ACTIVE = "Active"
 STATUS_CR = "Showed to Classroom"
 STATUS_NOT_ACTIVE = "Not Active"
 STATUS_ADMIN = "Admin"
+# Carlos 8/24: people scheduled to start carry their own status until the
+# classroom outcome lands (Showed -> Showed to Classroom; no-show or the
+# date passing quietly -> Not Active).
+STATUS_ORIENT = "Orientation Scheduled"
+
+
+def _orient_date(v, today):
+    m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(v))
+    if not m:
+        return None
+    try:
+        return dt.date(today.year, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
 # Vantura master (Carlos, 2026-08-24): terminations and classroom flips ONLY —
 # no sale=>Active automation of ANY flavor there (the WeekData-history variant
 # inflated his Actives to 162). Actives on the master are set by hand. The
@@ -467,6 +481,8 @@ def sync_statuses(name_label, sh, tab, write) -> int:
     col_a = [_n(c) for c in ws.col_values(1)]
     col_b = [_n(c) for c in ws.col_values(2)]
     col_t = [_n(c) for c in ws.col_values(20)]
+    col_r = [_n(c) for c in ws.col_values(18)]
+    today_ = dt.datetime.now(CENTRAL).date()
     data, flips = [], 0
     for idx, nm in enumerate(col_i):
         if not nm:
@@ -491,8 +507,17 @@ def sync_statuses(name_label, sh, tab, write) -> int:
                 want = STATUS_NOT_ACTIVE
         elif cl.startswith("1 - orientation"):
             want = STATUS_NOT_ACTIVE
-        elif cl.startswith("2 - showed") or (not cur and t == CR_SHOW):
+        elif cl.startswith("2 - showed") or (t == CR_SHOW and cur in
+                ("", STATUS_ORIENT)):
             want = STATUS_CR
+        elif cur == STATUS_ORIENT and (t == CR_NOSHOW or (
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                 or today_) < today_ - dt.timedelta(days=2))):
+            want = STATUS_NOT_ACTIVE     # orientation came and went, no show
+        elif cur in ("", STATUS_NOT_ACTIVE) and not t and (
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                 or dt.date(1, 1, 1)) >= today_):
+            want = STATUS_ORIENT         # scheduled to start
         else:
             continue                     # Not Active / Active / blank stand
         if cur != want:
@@ -519,7 +544,7 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
     if name_label in NO_ROLLCALL_SYNC:
         return 0
     ws = sh.worksheet("Roll Call")
-    rc = ws.get_values("A1:F250")
+    rc = ws.get_values("A1:N250")
     du = sh.worksheet(tab).get_values("A2:T6000")
     today = dt.datetime.now(CENTRAL).date()
     cur_we = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=6)
@@ -606,13 +631,35 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
                      "values": [[orient_we(row[17]), "New Start", campaign,
                                  nm, _n(row[13]), ""]]})
         added += 1
-    # week rollover: previous weeks' New Starts become Active; backfills
+    # week rollover: previous weeks' New Starts become Active; backfills;
+    # and the TERMINATION CASCADE (Carlos 8/24: "mark T" must actually do
+    # its job) — an attendance-cell T sets Status='Terminated', fills Date
+    # Gone with the T'd day, and guarantees a DU row exists to flip.
+    du_names = {_n(r[8]).lower() for r in
+                (list(x) + [""] * 20 for x in du) if _n(r[8])}
+    term_cascaded, term_new_du = 0, []
     for i, row in enumerate(rc[2:], 3):
-        row = list(row) + [""] * 6
+        row = list(row) + [""] * 14
         nm = _n(row[3])
         if not nm:
             continue
-        if _n(row[1]) == "New Start":
+        att_t_idx = next((c for c in range(6, 12)
+                          if _n(row[c]).lower() == "t"), None)
+        is_term = _is_term(row[1]) or att_t_idx is not None
+        if is_term:
+            if not _is_term(row[1]):
+                data.append({"range": f"'Roll Call'!B{i}",
+                             "values": [["Terminated"]]})
+                term_cascaded += 1
+            if not _n(row[12]) and att_t_idx is not None:
+                wed = parse_lbl(row[0]) or cur_we
+                gone = wed - dt.timedelta(days=6 - (att_t_idx - 6))
+                data.append({"range": f"'Roll Call'!M{i}",
+                             "values": [[f"{gone.month}/{gone.day}"]]})
+            if nm.lower() not in du_names:
+                du_names.add(nm.lower())
+                term_new_du.append(nm)
+        elif _n(row[1]) == "New Start":
             wed = parse_lbl(row[0])
             if wed is not None and wed < cur_we:
                 data.append({"range": f"'Roll Call'!B{i}",
@@ -627,8 +674,16 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
                 data.append({"range": f"'Roll Call'!A{i}",
                              "values": [[orient_we(e["orient"])]]})
                 filled += 1
+    next_du = len(du) + 2
+    for nm in term_new_du:
+        data.append({"range": f"'{tab}'!A{next_du}", "values": [["Not Active"]]})
+        data.append({"range": f"'{tab}'!B{next_du}", "values": [["Terminated"]]})
+        data.append({"range": f"'{tab}'!F{next_du}", "values": [[campaign]]})
+        data.append({"range": f"'{tab}'!I{next_du}", "values": [[nm]]})
+        next_du += 1
     log(f"  {name_label:<17} rollcall: +{added} new-start, {flipped} -> Active, "
-        f"{filled} backfilled, {skipped_old} historical skipped"
+        f"{filled} backfilled, {skipped_old} historical skipped, "
+        f"{term_cascaded} T-cascaded, +{len(term_new_du)} DU rows for terms"
         + ("" if write else "  (dry-run)"))
     if write and data:
         sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
