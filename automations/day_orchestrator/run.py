@@ -100,6 +100,21 @@ RECHECK_ROUNDS = 3
 # and this is what tells them apart.
 FLAKE_WAITING_ON = "prior run failed — retrying"
 
+# `waiting_on` sentinel for a report the batch DELIBERATELY DID NOT LAUNCH this
+# pass because a copy of it was already running on this machine — almost always a
+# manual `lucy rerun` in flight (2026-08-24: Eve queued a rerun of
+# captainship_drafts at 09:11 and the batch launched its own copy of the same
+# ~2h browser report minutes later; overlapping builds fought over one Chrome
+# profile, the work took ~2.5h, and the mini's serial control queue was blocked
+# behind them all morning).
+#
+# It is deliberately NOT a failure and NOT a flake: nothing errored, we simply
+# yielded to the run that is already going — so it burns no attempt, fires no
+# alert, and stays STILL_TRYING for a later pass to pick up. The wording must not
+# contain the word "session": _apply_backstop reads waiting_on for that string to
+# decide BLOCKED_SESSION.
+DUPLICATE_WAITING_ON = "another copy of this report is already running here"
+
 # The between-reports SERVICE TICK (see _service_owed) narrows what _recheck_gated
 # already handles at END OF PASS. RECHECK_ROUNDS is the right backstop, but a pass
 # is hours long, so "end of pass" can itself be hours after a source landed or a
@@ -507,6 +522,13 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
             else:  # non-terminal → keep it visibly in-progress
                 if rs.hub_run_id:
                     hub_publish.publish_heartbeat(rs.hub_run_id)
+                elif rs.waiting_on == DUPLICATE_WAITING_ON:
+                    # Deferred: the copy that IS running published its own
+                    # 'started' row, and opening a second one here would put two
+                    # live pills on one card and later close a row this batch
+                    # never ran — the Hub would show a run that didn't happen.
+                    # Leave the pill to whoever is actually running.
+                    continue
                 else:
                     rs.hub_run_id = hub_publish.publish_running(
                         rs.report_id, rs.display_name)
@@ -604,8 +626,43 @@ def _attempt_report_inner(ds, r, rs, target, *, dry_run, simulate) -> str:
       'flaked' — a TABLEAU run errored but is still retryable (attempts < cap); left
                  STILL_TRYING with its yellow pill kept, for a fast end-of-pass retry
       'failed' — terminal FAILED (a non-tableau error, or retries exhausted)
+      'deferred' — NOT LAUNCHED: a copy of this report is already running on this
+                 machine. Nothing ran, nothing was published, no attempt was
+                 spent; left STILL_TRYING for a later pass.
     Extracted from the pass loop so a flaked report can be retried end-of-pass (fast)
     instead of only on the next full pass."""
+    # ---- duplicate-run guard ----------------------------------------------
+    # BEFORE the Hub pill and before the subprocess, because everything below
+    # this point is a claim that a run is happening. A copy already going here
+    # (nearly always a manual `lucy rerun`) means the only useful thing we can do
+    # is get out of its way: two copies of one browser report collide on the
+    # shared Chrome profile and BOTH die at their timeouts — 2026-08-24 overlapped
+    # captainship_drafts builds (a 09:11 manual rerun, the batch's own minutes
+    # later, Hub 'started' rows at 09:14:25 and 09:18:56) and turned a ~2h job
+    # into ~2.5h that blocked the mini's control queue all morning.
+    #
+    # NOT a failure: no attempt is burned (bump_attempt would spend the retry
+    # budget on a run that never happened), no pill is opened OR closed (the copy
+    # that IS running publishes its own; flipping one here would either duplicate
+    # its row or close a live run's), and no alert fires. STILL_TRYING is the
+    # state that keeps it in the loop — the service tick and every later pass
+    # re-attempt it, and if it is still deferred at the backstop it retires
+    # MISSED_NOT_READY and gets alerted like any other report that never ran.
+    #
+    # dry_run/simulate skip the check entirely: neither launches anything real,
+    # so a live process is none of their business (and a simulate pass must stay
+    # runnable while the real batch is mid-report).
+    if not (dry_run or simulate):
+        busy = _already_running(r.command[0])
+        if busy:
+            ds.set(r.report_id, state.STILL_TRYING,
+                   reason=("not launched — already running here (pid {}); "
+                           "a second copy would collide on the browser profile"
+                           .format(", ".join(busy))),
+                   waiting_on=DUPLICATE_WAITING_ON)
+            _log(f"  {r.report_id}: already running (pid {', '.join(busy)}) "
+                 f"— deferring to a later pass")
+            return "deferred"
     _log(f"  {r.report_id}: data ready — running"
          + (" [SIMULATE]" if simulate else (" [dry-run]" if dry_run else "")))
     # Announce the START on the shared Hub Activity tab. Reuse the pill this report
@@ -763,8 +820,9 @@ def _service_owed(ds, visited, target, cache, probed_at, *, dry_run, simulate):
     Scope is `visited` — reports the loop has ALREADY walked past — on purpose:
     servicing one it hasn't reached yet would run it out of registry/priority
     order, which run_order exists to enforce; the loop reaches those momentarily.
-    Only STILL_TRYING is serviced, which (by construction) means exactly a flaked
-    run or a readiness-gated one — a dependency/`after` wait is PENDING, not
+    Only STILL_TRYING is serviced, which (by construction) means a flaked run, a
+    readiness-gated one, or one DEFERRED because a copy of it was already running
+    (branch a2) — a dependency/`after` wait is PENDING, not
     STILL_TRYING, so it isn't (and shouldn't be) touched here. Nothing double-runs:
     everything launched goes terminal or stays STILL_TRYING, and the loop skips
     terminal reports."""
@@ -781,6 +839,21 @@ def _service_owed(ds, visited, target, cache, probed_at, *, dry_run, simulate):
             _log(f"  {r.report_id}: mid-pass retry of a flaked run "
                  f"(attempt {rs.attempts + 1}/{MAX_RUN_RETRIES})")
             _guard_chrome(r, dry_run=dry_run, simulate=simulate)
+            _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+            state.save(ds)
+            continue
+
+        # (a2) We DIDN'T LAUNCH it last time — a copy was already running. Try
+        # again with no probe: it had already passed readiness when it was
+        # deferred, and the guard inside _attempt_report re-checks the pid, so
+        # this costs one pgrep and starts the report the moment the other copy
+        # ends instead of leaving a ready report parked until the next pass.
+        if rs.waiting_on == DUPLICATE_WAITING_ON:
+            # Sweep Chrome only once that copy is really gone. While it is still
+            # running the sweep is pointless, and the run it would help is the
+            # one we are about to defer again anyway.
+            if not _already_running((getattr(r, "command", None) or [""])[0]):
+                _guard_chrome(r, dry_run=dry_run, simulate=simulate)
             _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
             state.save(ds)
             continue
@@ -896,7 +969,9 @@ def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
                  channel, email_dry, recheck=False):
     """Evaluate ONE non-terminal report's gates (upload / not_before / depends_on
     / after / readiness) and, if it clears them all, run it. Returns the
-    _attempt_report outcome ('done' / 'flaked' / 'failed') when it ran, else None.
+    _attempt_report outcome ('done' / 'flaked' / 'failed' / 'deferred') when it
+    reached the run step, else None. 'deferred' means the duplicate-run guard
+    stopped it — a copy is already running, so nothing was launched.
 
     `recheck=True` (the end-of-pass sweep): a report that is STILL gated is a
     silent no-op — its waiting state was already stamped + logged by the main
@@ -1005,6 +1080,12 @@ def _recheck_gated(cfg, ds, todays, cache, target, *, dry_run, simulate,
                                    recheck=True)
             if outcome is None:
                 continue
+            # Deferred = a copy is already running, so this sweep launched
+            # nothing. Not "ran_any" (that would spin the remaining rounds on a
+            # report that cannot start yet) and not worth the "data landed
+            # mid-pass" banner — the guard already logged its own line.
+            if outcome == "deferred":
+                continue
             if not announced:
                 _log("  end-of-pass re-check: data landed mid-pass — running "
                      "now-ready report(s)")
@@ -1048,16 +1129,15 @@ def _kill_tree(proc) -> bool:
 def _already_running(module: str) -> list:
     """PIDs already running `python -m <module>` on this machine ([] on Windows
     or when pgrep isn't there). Best-effort: a guard that raises would take out
-    the batch it protects."""
-    if sys.platform == "win32":
-        return []
-    try:
-        out = subprocess.run(["pgrep", "-f", "-m {}".format(module)],
-                             capture_output=True, text=True, timeout=10).stdout
-    except Exception:  # noqa: BLE001
-        return []
-    me = str(os.getpid())
-    return [x for x in out.split() if x and x != me]
+    the batch it protects.
+
+    The probe lives in proc_guard so this and the manual-rerun guard
+    (mini_control._running_pids) ask ONE question with ONE implementation. They
+    used to hold a copy each, and both copies passed pgrep a pattern starting
+    with '-m', which BSD pgrep reads as an option — so both silently answered
+    "nothing is running" on every macOS box in the fleet. See proc_guard."""
+    from automations.day_orchestrator import proc_guard
+    return proc_guard.running_pids(module)
 
 
 # Every persistent Chrome profile a scheduled browser report can leave an
@@ -1098,6 +1178,14 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     args = list(args_override) if args_override is not None else list(r.base_args)
+    # LAST LINE OF DEFENCE. _attempt_report_inner now checks this BEFORE it
+    # publishes anything and defers the report instead (no attempt spent, no
+    # pill, no alert) — the right place for the scheduled path. This stays for
+    # the callers that bypass it: the INCOMPLETE part-retry (args_override), and
+    # a copy that starts in the moment between that check and this launch. It
+    # reads as a failed run, which is the honest verdict HERE: this function's
+    # only job is to run the report, and it did not.
+    #
     # A manual `lucy rerun` of this same report may already be in flight. Two
     # copies of one browser report collide on the shared Chrome profile and BOTH
     # lose — each waits in tableau_patchright's profile lock until its own
@@ -1402,7 +1490,19 @@ def _apply_backstop(ds, stale_after):
     for rs in ds.reports.values():
         if rs.is_terminal():
             continue
-        if rs.waiting_on and "session" in (rs.waiting_on or "").lower():
+        if rs.waiting_on == DUPLICATE_WAITING_ON:
+            # It never launched: every pass found a copy of it already running
+            # (a manual rerun that outlived the morning, or one that hung). Say
+            # exactly that — MISSED_NOT_READY's "data never ready" would blame
+            # the wrong thing and send whoever reads the summary hunting a
+            # source that was fine. Terminal either way, so it lands in the
+            # summary's attention block and the #claudecorrections sweep like
+            # any other report that did not run.
+            ds.set(rs.report_id, state.MISSED_NOT_READY,
+                   reason="never launched — a copy of this report was still "
+                          "running on this machine every time the batch tried "
+                          "(check that manual rerun / kill it, then re-run)")
+        elif rs.waiting_on and "session" in (rs.waiting_on or "").lower():
             ds.set(rs.report_id, state.BLOCKED_SESSION,
                    reason="ownerville session never recovered by noon")
         elif rs.nothing_to_do:

@@ -351,16 +351,16 @@ def _write_log(path: Path, cmd: list[str], output: str) -> None:
 def _running_pids(module: str) -> list:
     """PIDs already running `python -m <module>` on this machine ([] on Windows,
     or when pgrep isn't available). Best-effort — a check that raises would take
-    down the rerun it is guarding."""
-    if sys.platform == "win32":
-        return []
-    try:
-        out = subprocess.run(["pgrep", "-f", "-m {}".format(module)],
-                             capture_output=True, text=True, timeout=10).stdout
-    except Exception:          # noqa: BLE001
-        return []
-    me = str(os.getpid())
-    return [p for p in out.split() if p and p != me]
+    down the rerun it is guarding.
+
+    The probe itself lives in proc_guard so this path and the ORCHESTRATOR's
+    (run._attempt_report_inner) ask the identical question — they used to carry
+    a copy each, and both copies shared the same dead-on-macOS pgrep invocation
+    that let three copies of captainship_drafts run at once on 2026-08-24. One
+    implementation, one fix. Kept as a thin wrapper so every caller/reader of
+    this file keeps the name it already knows."""
+    from automations.day_orchestrator import proc_guard
+    return proc_guard.running_pids(module)
 
 
 def _action_rerun(args: str) -> tuple[bool, str]:
