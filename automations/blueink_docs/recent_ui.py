@@ -59,30 +59,40 @@ def _chunks(label: str, text: str, size: int = 200, most: int = 12) -> None:
         print(f"PROBE {label}{i // size}: {text[i:i + size]}")
 
 
+SEARCH_SEL = "input[placeholder='Search...']"
+
+
 def _search(page, term: str) -> str:
     """Type `term` into the dashboard's list search and return the body text.
 
-    Two things this has to get right, both learned the hard way on 2026-08-24:
+    Three things this has to get right, all learned the hard way on 2026-08-24:
 
-    The selector is re-resolved on every call -- a search re-renders the list,
-    so an ElementHandle held across searches is stale and throws.
+    Target the box by its PLACEHOLDER. [data-tid=nub-listSearch] wraps more
+    than one input -- the Date Range field is in there too -- so a selector
+    ending in ` input` resolves to whichever comes first and the search term
+    went somewhere harmless. The list stayed at its unfiltered "Showing 40 of
+    436" for a real signer and an absent address alike.
 
-    And the text is TYPED, not filled. page.fill() sets the value without the
-    keystrokes the app listens for, so the list never narrowed: a probe that
-    filled came back "Showing 40 of 436" for a real signer and for a deliberately
-    absent address alike -- identical output, no filtering, and a check built on
-    that would have blocked everybody.
+    Re-resolve it every call: a search re-renders the list, so a handle held
+    across searches is stale and throws.
+
+    And TYPE, don't fill: page.fill() sets the value without the keystrokes the
+    app listens for, so the list never narrows.
     """
-    sel = "[data-tid='nub-listSearch'] input"
-    if page.query_selector(sel) is None:
-        sel = "input[placeholder='Search...']"
-        if page.query_selector(sel) is None:
-            return ""
-    page.click(sel)
-    page.keyboard.press("Control+A")
+    if page.query_selector(SEARCH_SEL) is None:
+        return ""
+    page.click(SEARCH_SEL)
     page.keyboard.press("Meta+A")
+    page.keyboard.press("Control+A")
     page.keyboard.press("Backspace")
-    page.type(sel, term, delay=40)          # real keystrokes -- see above
+    page.type(SEARCH_SEL, term, delay=40)
+    # Read the value back: proof the characters landed in the box we meant,
+    # rather than inferring it from a list that may not have filtered.
+    got = ""
+    box = page.query_selector(SEARCH_SEL)
+    if box is not None:
+        got = box.get_attribute("value") or box.input_value() or ""
+    print(f"PROBE typed={term!r} boxvalue={got!r}")
     page.keyboard.press("Enter")
     page.wait_for_timeout(6000)
     return " ".join((page.inner_text("body") or "").split())
