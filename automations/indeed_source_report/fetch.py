@@ -32,30 +32,27 @@ def owner_name(page):
     return m.group(1).strip() if m else ""
 
 
-# Post the form from the page instead of clicking the submit input.
+# Submitting this form has TWO failure modes and they pull in opposite
+# directions, so the order here is the whole design.
 #
-# `page.click` has to prove the element is visible, stable and unobstructed
-# before it will fire, and on this site that check is what fails — not the
-# submit itself. 2026-08-24: Kinsey Guenther (11906) ran clean at 04:00 and
-# then spent the full 30s default timeout on `input[name="sbmtSrcReport"]`
-# at 12:00, with the element RESOLVED ("locator resolved to ...") and the
-# click never landing. Same office, same form, four hours apart — an overlay
-# or a late reflow ate the click, and one flaky office fails the whole run's
-# alert. funnel_board hit this on the same site and stopped clicking too.
+# 1. `page.click` has to prove the element is visible, stable and unobstructed
+#    before it fires. 2026-08-24: Kinsey Guenther (11906) ran clean at 04:00
+#    and then spent the full 30s default timeout on this input at 12:00, with
+#    the element RESOLVED ("locator resolved to ...") and the click never
+#    landing — an overlay or a late reflow ate it.
+# 2. But the click is ALSO the only thing that runs an inline `onclick` on the
+#    submit, and these ColdFusion forms lean on those. `form.requestSubmit(b)`
+#    looked like the clean fix (it posts the submitter's name/value, unlike a
+#    bare `form.submit()`) and it is what funnel_board settled on for its own
+#    form — but per spec it dispatches NO click event, so any onclick is
+#    skipped. Tried on 11906 and the report came back with no table at all.
 #
-# requestSubmit(button) is the right call, NOT form.submit(): it fires the
-# submit event and INCLUDES the submitter's name/value in the POST, exactly
-# like a click, so `sbmtSrcReport` still reaches ColdFusion. A bare
-# form.submit() would drop it — and it is shadowed anyway on forms that carry
-# an input named "submit". The JS .click() fallback covers an old engine
-# without requestSubmit; the Playwright click stays as the last resort so a
-# page whose markup changed still gets the original path.
-_SUBMIT_JS = """b => {
-    if (!b.form) { b.click(); return "click(no form)"; }
-    if (b.form.requestSubmit) { b.form.requestSubmit(b); return "requestSubmit"; }
-    b.click();
-    return "click";
-}"""
+# So: the normal path stays the click that has worked for a month, and the JS
+# `.click()` is the ESCAPE HATCH for when actionability blocks it. A DOM click
+# fires the same onclick and posts the same submitter as a real click; the one
+# thing it skips is Playwright's visibility gate, which is exactly the thing
+# that failed. requestSubmit is deliberately not used.
+_JS_CLICK = "b => { b.click(); return true; }"
 
 
 def _submit(page, timeout):
@@ -63,10 +60,13 @@ def _submit(page, timeout):
     if page.query_selector(sel) is None:
         raise RuntimeError("Source Report form has no %s submit" % sel)
     try:
-        return page.eval_on_selector(sel, _SUBMIT_JS)
-    except Exception:  # noqa: BLE001 — fall back to the original path
         page.click(sel, timeout=timeout)
         return "page.click"
+    except Exception as e:  # noqa: BLE001 — blocked click, not a missing button
+        print("     click blocked (%s) — posting from the page instead"
+              % str(e).splitlines()[0][:70], flush=True)
+        page.eval_on_selector(sel, _JS_CLICK)
+        return "js click"
 
 
 def _one_pass(page, tok, start, end, timeout):
