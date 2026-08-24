@@ -265,6 +265,24 @@ def _schedule_meta(weekdays: List[int], est_minutes: Optional[int]) -> dict:
     return sched
 
 
+def _is_offboarded(report_id: str) -> bool:
+    """Does `report_id` belong to an office that was deliberately turned off?
+
+    Matches the office KEY against office_onboarding.apply.OFFBOARDED_KEYS —
+    `drew_metrics` -> `drew`, and the bare key too, so both the report id and a
+    raw key answer the same. Best-effort by design: if that module can't be
+    imported for any reason, we must NOT block card creation, because a missing
+    card is the failure this whole module exists to prevent."""
+    try:
+        from automations.office_onboarding.apply import OFFBOARDED_KEYS
+    except Exception:  # noqa: BLE001 — never block carding on an import
+        return False
+    rid = (report_id or "").strip().lower()
+    if not rid:
+        return False
+    return any(rid == k or rid.startswith(k + "_") for k in OFFBOARDED_KEYS)
+
+
 def ensure_library_card(report_id: str, report_name: str, *,
                         module: Optional[str] = None,
                         dry_run: bool = False,
@@ -277,7 +295,19 @@ def ensure_library_card(report_id: str, report_name: str, *,
     keyed by the underscore report_id, so a second call updates in place, never
     dupes. Auto-created cards carry a delegating launcher script (so they render
     and run) and are tagged so Megan can rename / curate them later. Looks up the
-    real module + base_args from schedule_config when not passed."""
+    real module + base_args from schedule_config when not passed.
+
+    OFFBOARDED REPORTS ARE REFUSED (Megan 2026-08-24). Self-registration is why
+    "remove Drew" did not stick: he came out of both registries, the schedule and
+    the onboarding apply path, and his card kept coming back — because the card
+    is a ROW IN THE SHARED LIBRARY SHEET, and nothing code-side deletes a sheet
+    row. Megan asked four separate times. So the offboard denylist that already
+    guards onboarding now guards THIS door too: a report belonging to an
+    offboarded office never gets a card, however it is reached."""
+    if _is_offboarded(report_id):
+        return False, ("{} belongs to an offboarded office — no Hub card "
+                       "(see office_onboarding.apply.OFFBOARDED_KEYS)"
+                       .format(report_id))
     cid = report_id  # underscore id -> valid materialized-module filename
     real_module, base_args = module, []  # type: Optional[str], List[str]
     name = report_name

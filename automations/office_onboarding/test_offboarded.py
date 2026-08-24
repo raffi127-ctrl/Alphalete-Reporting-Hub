@@ -106,5 +106,38 @@ class RegistriesAreCleanTest(unittest.TestCase):
         self.assertEqual([i for i in ids if "drew" in i.lower()], [])
 
 
+class HubCardIsRefusedTest(unittest.TestCase):
+    """The door that actually let Drew back in.
+
+    His card is a ROW IN THE SHARED LIBRARY SHEET, written by hub_coverage's
+    self-registration. Code-side removal never deleted it, which is why "remove
+    Drew" failed four times running."""
+
+    def test_an_offboarded_report_id_is_offboarded(self):
+        from automations.day_orchestrator import hub_coverage as hc
+        self.assertTrue(hc._is_offboarded("drew_metrics"))
+        self.assertTrue(hc._is_offboarded("drew"))
+
+    def test_a_live_office_is_not(self):
+        from automations.day_orchestrator import hub_coverage as hc
+        for rid in ("nii_metrics", "haytham_metrics", "trang_metrics",
+                    "isaiah_metrics", "daily_focus", ""):
+            with self.subTest(rid=rid):
+                self.assertFalse(hc._is_offboarded(rid))
+
+    def test_a_prefix_lookalike_is_not_offboarded(self):
+        """`drewsomething_metrics` is a different office, not Drew's."""
+        from automations.day_orchestrator import hub_coverage as hc
+        self.assertFalse(hc._is_offboarded("drewster_metrics"))
+        self.assertFalse(hc._is_offboarded("andrew_metrics"))
+
+    def test_ensure_library_card_refuses_and_says_why(self):
+        from automations.day_orchestrator import hub_coverage as hc
+        ok, msg = hc.ensure_library_card("drew_metrics", "Drew's Daily Metrics",
+                                         dry_run=True)
+        self.assertFalse(ok)
+        self.assertIn("offboarded", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
