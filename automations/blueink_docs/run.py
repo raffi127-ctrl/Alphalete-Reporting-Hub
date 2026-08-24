@@ -389,6 +389,12 @@ def _main(argv=None) -> int:
             to_send = [pp for pp in to_send
                        if pp.email.strip().lower() not in blocked]
             print(f"\nStill to send: {len(to_send)}")
+            # Name them. The WILL SEND list above was printed BEFORE the
+            # screen, so on a morning like 2026-08-24 -- 51 of 52 already
+            # had packets -- a bare count leaves the reader scrolling to
+            # work out who is actually left.
+            for pp in to_send:
+                print(f"  {pp.name:<28} {pp.email:<38} row {pp.row}")
 
     if args.limit:
         to_send = to_send[:args.limit]
