@@ -26,7 +26,8 @@ import argparse
 import sys
 from typing import List
 
-from automations.blueink_docs import blueink, config, ledger, mark, recent
+from automations.blueink_docs import (blueink, config, ledger, mark, recent,
+                                      recent_ui)
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
@@ -314,6 +315,11 @@ def _main(argv=None) -> int:
                     help="skip the check against Blue Ink's own send history. "
                          "Only if you're certain nobody was hand-sent -- this "
                          "check is what stops duplicate packets.")
+    ap.add_argument("--probe-sent", action="store_true",
+                    help="describe Blue Ink's own Sent list on this "
+                         "machine and exit -- how the web-app duplicate "
+                         "check gets mapped. Reads nothing else, sends "
+                         "nothing, needs no API key.")
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
@@ -321,6 +327,10 @@ def _main(argv=None) -> int:
 
     if args.list_templates:
         return _print_templates()
+
+    if args.probe_sent:
+        return recent_ui.probe(email=args.only.strip(),
+                               headless=not args.headed)
 
     if args.test_to:
         return _test_send(args.test_to, args.test_name, args.send)
