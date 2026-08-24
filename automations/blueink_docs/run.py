@@ -27,6 +27,7 @@ import sys
 from typing import List
 
 from automations.blueink_docs import (blueink, config, ledger, mark, recent,
+                                      slack_post,
                                       recent_ui)
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
@@ -151,6 +152,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
     """The live path. One browser for the whole batch -- relaunching per person
     would roughly double a run that already takes ~a minute each."""
     rows, failures, sent = [], 0, []
+    problems: List[tuple] = []
     template = config.TEMPLATE_NAME
     with bi_session._sync_api()() as p:
         browser, ctx = ui_send.open_browser(p, headless=headless)
@@ -168,6 +170,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                         sent.append(person)
                 except Exception as exc:          # one bad row can't stop the batch
                     failures += 1
+                    problems.append((person.name, str(exc)[:160]))
                     print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {exc}")
                     if really_send:
                         rows.append(ledger.row_for(person, "", "failed", str(exc)[:200]))
@@ -188,7 +191,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
         except Exception as exc:
             print(f"\nSends went out, but the green highlight failed: {exc}\n"
                   "Nothing to re-send -- rerun with --highlight-only to tint.")
-    return failures
+    return failures, len(sent), problems
 
 
 def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
@@ -311,6 +314,9 @@ def _main(argv=None) -> int:
                          "already spent, so it 403s.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser while the UI path runs")
+    ap.add_argument("--slack", action="store_true",
+                    help="actually post the summary to Slack. Without it the "
+                         "message is printed and nothing is posted.")
     ap.add_argument("--no-dedupe", action="store_true",
                     help="skip the check against Blue Ink's own send history. "
                          "Only if you're certain nobody was hand-sent -- this "
@@ -367,6 +373,8 @@ def _main(argv=None) -> int:
     # Blue Ink's OWN history, not just our log: the team hand-sends too, and a
     # person with a live packet must not get a second one whoever sent the
     # first. This is why Angelica Pedroza got two on 2026-08-24.
+    to_send_all = list(to_send)
+    held: dict = {}
     if not args.no_dedupe and to_send:
         print(f"\nChecking Blue Ink's own list for packets already sent "
               f"to these {len(to_send)} (last {recent_ui.LOOKBACK_DAYS} days, "
@@ -391,6 +399,7 @@ def _main(argv=None) -> int:
                   "may already have a packet the team sent by hand, and this "
                   "has to work before --send will do anything.")
             blocked = {}
+        held = dict(blocked)
         if blocked:
             print(f"\nALREADY HAVE A PACKET -- {len(blocked)} (skipping)")
             for pp in to_send:
@@ -431,8 +440,27 @@ def _main(argv=None) -> int:
     else:
         print(f"\nSENDING to {len(to_send)} people through the web app "
               f"(~1 min each, so roughly {max(1, len(to_send))} minutes)...")
-        failures = _send_via_ui(workbook, ws, to_send, really_send=True,
-                                headless=not args.headed)
+        failures, sent_count, problems = _send_via_ui(
+            workbook, ws, to_send, really_send=True, headless=not args.headed)
+
+        # Anyone who SHOULD have docs and doesn't. Deliberate exclusions (quit,
+        # failed background, declined) are the report working correctly, so
+        # they stay out -- listing 14 of those every Monday would bury the one
+        # or two names that actually need somebody.
+        for pp in people:
+            if pp.eligible or "email" not in pp.skip_reason:
+                continue
+            problems.append((pp.name, pp.skip_reason))
+        for pp in to_send_all:
+            why = held.get(pp.email.strip().lower(), "")
+            if why.startswith("same name"):
+                problems.append((pp.name, why))
+
+        try:
+            slack_post.post(sent_count, problems, dry_run=not args.slack)
+        except Exception as exc:
+            print(f"\nThe Slack summary failed ({exc}). The sends themselves "
+                  "are fine and logged -- this is only the notification.")
     print(f"\nDone: {len(to_send) - failures} sent, {failures} failed. "
           f"Logged in the {config.LEDGER_TAB!r} tab.")
     return 1 if failures else 0
