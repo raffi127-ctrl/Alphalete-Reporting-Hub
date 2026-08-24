@@ -224,6 +224,9 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
                   # A live Credico browser session — same class of secret as a
                   # token, and it transits the Args cell to reach Lucy 1.
                   "set_credico_state",
+                  # A live AppStream session: same class of secret, same transit
+                  # through the Args cell (Eve 2026-08-24).
+                  "set_appstream_state",
                   # The shared reporting mailbox's app password: one paste feeds
                   # every emailing report on the machine (2026-08-13).
                   "set_alphalete_app_password",
@@ -3247,6 +3250,98 @@ def _action_set_credico_state(args: str) -> tuple[bool, str]:
                    "that logged in; full log: lucy logtail credico-set-state")
 
 
+def _action_set_appstream_state(args: str) -> tuple[bool, str]:
+    """Install an AppStream recruiting session on THIS machine, exported by a
+    human ELSEWHERE. Args is the CONTENTS of .appstream_storage_state.json,
+    produced by output/_scratch_appstream_export_state.py on a machine where a
+    person cleared the Cloudflare check.
+
+    WHY THIS EXISTS. AppStream's rqst token expires about daily and only a human
+    can mint a new one -- the login form went back behind an interactive check in
+    the 2026-08-20 release. Until now the only fix was `reseed_appstream`, which
+    opens a window ON THE MINI'S SCREEN, so a dead session meant finding someone
+    with physical access. On 2026-08-24 nobody had it: the token expired at
+    2:05PM, four runs died on it, and the fix needed a person at the machine.
+    Same escape hatch as set_credico_state -- the human step does not have to
+    happen on the mini. The human clears Cloudflare on their own screen; this
+    ships the RESULT.
+
+    No password travels: an AppStream session is cookies, and the exporter never
+    types credentials on this side.
+
+    This is NOT the Chrome-profile copy _action_sheets_login rules out. That
+    fails because Chrome seals its cookie store with an OS key. A Playwright
+    storage_state is plain JSON with no OS key in it, so it replays elsewhere --
+    proven cross-country for Credico (login in Argentina, verified from Texas).
+    AppStream MAY still refuse a session presented from another IP; the verify
+    below is what tells us, and a rejection costs only the round trip, since the
+    session it replaces is already dead.
+
+    Backs up any existing state, writes it 0600, then verifies with a REUSE-ONLY
+    probe (--appstream-check never logs in, so a bad ship cannot be masked by a
+    silent re-login). NEVER echoes the state. In SECRET_ACTIONS, so the poller
+    blanks the Args cell the moment the row ends."""
+    import json
+    import shlex
+    import shutil
+    # Same two delivery paths as set_credico_state: `lucy` shlex-JOINS its args,
+    # while enqueue() writes the cell verbatim. Raw text FIRST -- shlex on raw
+    # JSON eats the quotes -- then fall back to un-shlexing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 -- try the next candidate
+            continue
+    if parsed is None:
+        return False, ("set_appstream_state needs the CONTENTS of "
+                       ".appstream_storage_state.json (a JSON object) as Args")
+    # The auth lives in the rqst_* SSO cookies: _reuse_appstream_storage_state
+    # navigates index.cfm?rqst=<TOKEN> for each one, and cookies ALONE land on
+    # the login page. A state with none of them is dead on arrival -- refuse it
+    # here rather than after a browser launch.
+    cookies = parsed.get("cookies") or []
+    rqst = [c for c in cookies if str(c.get("name", "")).startswith("rqst_")]
+    if not rqst:
+        return False, (f"{len(cookies)} cookie(s) but NO rqst_* SSO token -- that "
+                       "is where AppStream keeps the auth, so the login never "
+                       "completed. Re-run the export and wait for the console "
+                       "(the applicant search box) to be on screen first.")
+
+    from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE as path
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 -- a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=1), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    ok, res = _run_cmd([sys.executable, "-m",
+                        "automations.shared.tableau_patchright",
+                        "--appstream-check"],
+                       timeout_s=8 * 60, log_name="appstream-set-state.log")
+    head = f"{len(cookies)} cookie(s), {len(rqst)} rqst token(s) installed - "
+    if ok:
+        return True, head + "session VERIFIED here - the AppStream reports can run"
+    return False, (head + "but AppStream REJECTED it on this machine: " +
+                   res[:150] + " - the session may be bound to the browser/IP "
+                   "that logged in; full log: lucy logtail appstream-set-state")
+
+
+
 def _action_set_contacts_ro_token(args: str) -> tuple[bool, str]:
     """Install the alphaletereporting READ-ONLY Contacts token on THIS machine —
     the one `shared.contacts_auth` uses to expand the distro groups that address
@@ -5235,6 +5330,7 @@ ACTIONS = {
     "set_gdocs_token": _action_set_gdocs_token,
     "set_gmail_token": _action_set_gmail_token,
     "set_credico_state": _action_set_credico_state,
+    "set_appstream_state": _action_set_appstream_state,
     "set_contacts_token": _action_set_contacts_token,
     "set_contacts_ro_token": _action_set_contacts_ro_token,
     "restart_holder": _action_restart_holder,

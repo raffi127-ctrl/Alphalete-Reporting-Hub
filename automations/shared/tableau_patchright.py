@@ -1785,6 +1785,10 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-login", action="store_true",
                     help="One-time interactive AppStream login → saves the "
                          "session for unattended runs.")
+    ap.add_argument("--appstream-check", action="store_true",
+                    help="REUSE-ONLY probe: does the SAVED session still "
+                         "authenticate from THIS machine? Never logs in, so a "
+                         "dead session fails instead of silently re-seeding.")
     ap.add_argument("--appstream-form-login", action="store_true",
                     help="Test the UNATTENDED rcaptain form login (now that "
                          "Cloudflare auto-passes) → real console + save session.")
@@ -2044,6 +2048,28 @@ if __name__ == "__main__":
             finally:
                 _ctx.close()
         _sys.exit(0 if _ok else 1)
+    if args.appstream_check:
+        # Reuse-only ON PURPOSE: allow_form_login=False means a dead session
+        # RAISES instead of quietly re-driving the login, so this answers the
+        # one question a shipped session poses -- does it authenticate from
+        # THIS machine, or was it bound to the browser/IP that logged in?
+        # (Eve 2026-08-24, mirroring the credico --check that set_credico_state
+        # verifies with.)
+        try:
+            with appstream_direct_session(verbose=True,
+                                          allow_form_login=False) as pg:
+                url = pg.url or ""
+                ok = "applicantstream.com" in url and "login" not in url.lower()
+            print("✅ AppStream session VALID from this machine" if ok else
+                  "❌ landed on a non-authed page: " + url[:90])
+            raise SystemExit(0 if ok else 1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            print(f"❌ AppStream session REJECTED here: "
+                  f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
+            raise SystemExit(1)
+
     if args.appstream:
         with appstream_session(verbose=True) as pg:
             url = pg.url or ""
