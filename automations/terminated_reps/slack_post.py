@@ -30,19 +30,43 @@ NOT POSTING THE SAME PERSON TWICE. Before replying we read the thread's
 existing replies and drop anyone already named in them. That makes re-running
 free without a state file, and it survives the run happening on a different
 machine.
+
+EVERY MESSAGE LEADS WITH :bust_in_silhouette:. Five reports share
+#revision-emails and the terminated-reps thread used to read as one more block
+of text in the scroll; the emoji is how it is picked out at a glance (Eve,
+2026-08-24). It goes on the weekly parent AND on each day's reply. Thread
+matching strips it again, so the threads that were opened before this change
+are still found and replied into rather than duplicated.
+
+TWO KINDS OF REPLY. A day's terminations use '•'. A row the board contradicts
+itself about uses '⚠' and says so in words — see board.Check. The two markers
+are different ON PURPOSE: the duplicate check reads '•' lines to learn who has
+already been posted, so a flagged person must not register as posted. When Eve
+resolves the flag and the row becomes a real termination, it still gets its own
+'•' line that day.
 """
 from __future__ import annotations
 
 import datetime as dt
 
 from automations.shared import slack_metrics_post as smp
-from automations.terminated_reps.board import Termination, norm_name, week_sunday
+from automations.terminated_reps.board import (Check, Termination, norm_name,
+                                               week_sunday)
 
 # #revision-emails. The id, not the name, so a channel rename can't silently
 # send this somewhere else.
 CHANNEL = "C0BLLU9M0A2"
 
 TITLE_PREFIX = "Terminated Reps WE"
+
+# Leads every message this report puts in the channel. Keep it in sync with
+# _first_line, which has to strip it back off to match old threads.
+EMOJI = ":bust_in_silhouette:"
+
+# The bullet a day's terminations use, and the one a flagged row uses. Kept
+# apart so already_posted() and already_flagged() can't read each other's lines.
+BULLET = "•"
+FLAG = "⚠"
 
 
 def week_title(day: dt.date) -> str:
@@ -53,9 +77,24 @@ def week_title(day: dt.date) -> str:
 
 
 def _first_line(text: str) -> str:
-    """The message's title line, with Slack's bold markers stripped."""
+    """The message's title line, with Slack's bold markers AND any leading
+    emoji stripped.
+
+    The emoji has to come off or the weekly threads opened before 2026-08-24
+    ('Terminated Reps WE 8.16') stop matching the title we now write
+    (':bust_in_silhouette: Terminated Reps WE 8.16') and every one of them gets
+    a second, empty parent. Stripped by shape (`:name:` at the start), not by
+    the one constant, so changing EMOJI later doesn't strand today's threads."""
     t = (text or "").strip()
-    return t.splitlines()[0].strip().strip("*").strip() if t else ""
+    if not t:
+        return ""
+    line = t.splitlines()[0].strip().strip("*").strip()
+    while line.startswith(":") and ":" in line[1:]:
+        head, _, rest = line[1:].partition(":")
+        if not head or " " in head:
+            break
+        line = rest.strip().strip("*").strip()
+    return line
 
 
 def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
@@ -66,12 +105,24 @@ def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
 
 def render_reply(rows: list[Termination], day: dt.date) -> str:
     """One day's entry inside the weekly thread."""
-    lines = [f"*{day.strftime('%a')} {day.month}/{day.day}* — "
+    lines = [f"{EMOJI} *{day.strftime('%a')} {day.month}/{day.day}* — "
              f"{len(rows)} terminated"]
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
                 else f"{t.days_worked} day{'' if t.days_worked == 1 else 's'} worked")
-        lines.append(f"• {t.name} — {days} · {t.source}")
+        lines.append(f"{BULLET} {t.name} — {days} · {t.source}")
+    return "\n".join(lines)
+
+
+def render_checks(checks: list[Check]) -> str:
+    """The 'I can't tell, you look' reply. One line per row, each one saying
+    what the board says and what it says instead, because the answer is always
+    a person reading the tab."""
+    lines = [f"{EMOJI} *Needs a look — the board says two different things* "
+             f"({len(checks)})"]
+    for c in checks:
+        lines.append(f"{FLAG} {c.name} — {c.reason} "
+                     f"_({c.tab}, row {c.row})_")
     return "\n".join(lines)
 
 
@@ -107,8 +158,29 @@ def already_posted(client, thread_ts: str, channel: str = CHANNEL) -> set:
     for msg in resp.get("messages", []):
         for line in (msg.get("text") or "").splitlines():
             line = line.strip()
-            if line.startswith("•"):
-                out.add(norm_name(line.lstrip("•").split("—")[0]))
+            if line.startswith(BULLET):
+                out.add(norm_name(line.lstrip(BULLET).split("—")[0]))
+    return out
+
+
+def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
+    """Folded names already raised as a '⚠' in this week's thread. Read
+    separately from already_posted so a flag never counts as 'this person's
+    termination has been posted' — the day it stops being ambiguous it still
+    needs its own '•' line."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                            limit=200)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't read the thread's replies ({type(e).__name__}) — "
+              f"posting the flags without the duplicate check")
+        return set()
+    out = set()
+    for msg in resp.get("messages", []):
+        for line in (msg.get("text") or "").splitlines():
+            line = line.strip()
+            if line.startswith(FLAG):
+                out.add(norm_name(line.lstrip(FLAG).split("—")[0]))
     return out
 
 
@@ -152,16 +224,37 @@ def pending_by_week(rows: list[Termination],
     return [(s, sorted(weeks[s])) for s in sorted(weeks)]
 
 
+def checks_by_week(checks: list[Check],
+                   day: dt.date) -> dict[dt.date, list[Check]]:
+    """Flagged rows grouped into the thread they belong in — the week of the
+    day the board marked them, falling back to the run's week when the board
+    gives no usable day at all."""
+    out: dict[dt.date, list[Check]] = {}
+    for c in checks:
+        anchor = c.marked_date or c.board_date or day
+        out.setdefault(week_sunday(anchor), []).append(c)
+    return out
+
+
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
-         dry_run: bool = True, logfn=print) -> dict:
-    """Post every not-yet-posted day into the thread of the week it belongs to.
+         dry_run: bool = True, checks: list[Check] | None = None,
+         logfn=print) -> dict:
+    """Post every not-yet-posted day into the thread of the week it belongs to,
+    plus any row the board contradicts itself about.
 
     Usually that's one week. On a Monday it can be two: last week's Sunday,
     marked on the board after Sunday's run, still belongs in last week's
     thread. See `pending_by_week`.
     """
     title = week_title(day)
+    checks = list(checks or [])
+    flagged = checks_by_week(checks, day)
     weeks = pending_by_week(rows, day)
+    # A week can have nothing but a flag — that still opens its thread, because
+    # a row nobody can date is exactly the thing that must not go unseen.
+    seen_weeks = {s for s, _ in weeks}
+    weeks += [(s, []) for s in sorted(flagged) if s not in seen_weeks]
+    weeks.sort()
     if not weeks:
         logfn(f"  nobody terminated this week yet — nothing to post ({title})")
         return {"posted": False, "reason": "none this week", "title": title}
@@ -173,10 +266,14 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             for d in days:
                 for line in render_reply(for_day(rows, d), d).splitlines():
                     logfn(f"       {line}")
+            if flagged.get(sunday):
+                for line in render_checks(flagged[sunday]).splitlines():
+                    logfn(f"       {line}")
         return {"dry_run": True, "posted": False, "title": title,
                 "channel": channel,
                 "weeks": [{"title": week_title(s),
-                           "days": [d.isoformat() for d in days]}
+                           "days": [d.isoformat() for d in days],
+                           "checks": [c.name for c in flagged.get(s, [])]}
                           for s, days in weeks]}
 
     client = smp._client()
@@ -192,13 +289,16 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
         thread_ts = find_thread_ts(client, wtitle, channel)
         created = False
         seen: set = set()
+        flags_seen: set = set()
         if not thread_ts:
-            parent = client.chat_postMessage(channel=channel, text=f"*{wtitle}*")
+            parent = client.chat_postMessage(channel=channel,
+                                             text=f"{EMOJI} *{wtitle}*")
             thread_ts = parent.get("ts")
             created = True
             logfn(f"  opened the thread {wtitle!r} (ts {thread_ts})")
         else:
             seen = already_posted(client, thread_ts, channel)
+            flags_seen = already_flagged(client, thread_ts, channel)
 
         posted = []
         for d in days:
@@ -211,12 +311,20 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             seen.update(norm_name(t.name) for t in todays)
             posted.append((d, len(todays)))
             logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
-        if not posted:
+
+        new_flags = [c for c in flagged.get(sunday, [])
+                     if norm_name(c.name) not in flags_seen]
+        if new_flags:
+            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                    text=render_checks(new_flags))
+            logfn(f"  {wtitle}: flagged {len(new_flags)} row(s) for a look")
+        if not posted and not new_flags:
             logfn(f"  {wtitle}: every termination is already in the thread — "
                   f"nothing to add")
         out.append({"title": wtitle, "thread_ts": thread_ts,
                     "thread_created": created,
-                    "days": [(d.isoformat(), n) for d, n in posted]})
+                    "days": [(d.isoformat(), n) for d, n in posted],
+                    "checks": [c.name for c in new_flags]})
 
-    return {"posted": any(w["days"] for w in out), "title": title,
-            "channel": channel, "weeks": out}
+    return {"posted": any(w["days"] or w["checks"] for w in out),
+            "title": title, "channel": channel, "weeks": out}

@@ -97,10 +97,20 @@ def main(argv=None) -> int:
 
     # 1 — read the board.
     try:
-        rows, tab = board.scan(today, tab=args.tab, back_weeks=args.back_weeks)
+        scanned = board.scan_full(today, tab=args.tab,
+                                  back_weeks=args.back_weeks)
+        rows, tab, checks = scanned.rows, scanned.title, scanned.checks
     except Exception as e:                                      # noqa: BLE001
         print(f"❌ couldn't read the SALES BOARD: {type(e).__name__}: {e}")
         return 1
+
+    # Rows the board contradicts itself about. They are NOT filed and NOT
+    # dated — see board.Check. They go in the thread so Eve sees them the same
+    # place she sees the day's terminations.
+    if checks:
+        print(f"  {len(checks)} row(s) need a human look — not filed:")
+        for c in checks:
+            print(f"     {c.name} — {c.reason} ({c.tab} row {c.row})")
 
     # Nobody is terminated tomorrow. A row can date into the future when the
     # board is marked for a day the offset then pushes past today (Karla Lopez,
@@ -143,7 +153,8 @@ def main(argv=None) -> int:
     # A sandbox run stays out of the real channel unless --post says otherwise.
     post_dry = dry or args.no_post or (args.sandbox and not args.post)
     try:
-        slack_post.post(rows, today, channel=args.channel, dry_run=post_dry)
+        slack_post.post(rows, today, channel=args.channel, dry_run=post_dry,
+                        checks=checks)
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the
