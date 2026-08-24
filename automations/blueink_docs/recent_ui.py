@@ -62,9 +62,16 @@ def _chunks(label: str, text: str, size: int = 200, most: int = 12) -> None:
 def _search(page, term: str) -> str:
     """Type `term` into the dashboard's list search and return the body text.
 
-    The box is re-queried on every call ON PURPOSE: a search re-renders the
-    list and the previous ElementHandle goes stale, which is what killed the
-    second search of the 2026-08-24 probe run.
+    Two things this has to get right, both learned the hard way on 2026-08-24:
+
+    The selector is re-resolved on every call -- a search re-renders the list,
+    so an ElementHandle held across searches is stale and throws.
+
+    And the text is TYPED, not filled. page.fill() sets the value without the
+    keystrokes the app listens for, so the list never narrowed: a probe that
+    filled came back "Showing 40 of 436" for a real signer and for a deliberately
+    absent address alike -- identical output, no filtering, and a check built on
+    that would have blocked everybody.
     """
     sel = "[data-tid='nub-listSearch'] input"
     if page.query_selector(sel) is None:
@@ -72,10 +79,12 @@ def _search(page, term: str) -> str:
         if page.query_selector(sel) is None:
             return ""
     page.click(sel)
-    page.fill(sel, "")
-    page.fill(sel, term)
+    page.keyboard.press("Control+A")
+    page.keyboard.press("Meta+A")
+    page.keyboard.press("Backspace")
+    page.type(sel, term, delay=40)          # real keystrokes -- see above
     page.keyboard.press("Enter")
-    page.wait_for_timeout(5000)
+    page.wait_for_timeout(6000)
     return " ".join((page.inner_text("body") or "").split())
 
 
@@ -136,7 +145,7 @@ def _probe(email: str, headless: bool) -> int:
                     if i >= 0:
                         mark += f" | {text[i:i + 60]}"
                 print(f"PROBE {label} term={term} len={len(text)}{mark}")
-                _chunks(f"{label.lower()}body", text, most=4)
+                _chunks(f"{label.lower()}body", text, most=2)
         finally:
             browser.close()
     return 0
