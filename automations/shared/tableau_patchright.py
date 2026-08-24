@@ -570,6 +570,37 @@ def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
         return False
 
 
+def _ownerville_seed_hint() -> str:
+    """What to actually DO about a dead ownerville session on THIS machine.
+
+    The old error named output/_scratch_ownerville_export_state.py — a scratch
+    file that no longer exists, so anyone who hit this was sent to a missing
+    path (found 2026-08-24). The real refresh path is the session holder: a
+    human clears Cloudflare in its window ONCE, then it re-exports the live
+    cookies every few minutes.
+
+    The key thing the old message never said: this file is gitignored and
+    MACHINE-LOCAL. A holder keeping ownerville warm on the mini does nothing
+    for a laptop, so a machine that never runs one just ages out — that is
+    expected, not a fault to repair. Hence the two branches below.
+    """
+    try:
+        days = (_dt.datetime.now() - _dt.datetime.fromtimestamp(
+            OWNERVILLE_STORAGE_STATE.stat().st_mtime)).days
+        when = f"was last exported {days} day(s) ago on this machine"
+    except OSError:
+        when = "has never been exported on this machine"
+    return (
+        f"{OWNERVILLE_STORAGE_STATE.name} {when}. On a machine that RUNS the "
+        "session holder (mini / Lucy boxes): log back in inside its window, or "
+        "restart it — `python -m automations.shared.session_holder` locally, "
+        "`lucy restart_holder` remotely. On a machine with NO holder (e.g. a "
+        "laptop) this file only ever ages, and reseeding it by hand is not the "
+        "fix: run browser reports through `lucy` on the mini instead. Note "
+        "`lucy reseed_appstream` is a DIFFERENT login (AppStream) and does not "
+        "touch this file.")
+
+
 def _reuse_ownerville_storage_state(ctx, page: Page, verbose: bool) -> bool:
     """Restore a manually-exported ownerville session onto the stealth context.
     Inject the saved cookies (the ColdFusion login session: CFID/CFTOKEN/…),
@@ -611,8 +642,8 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
     (OWNERVILLE_STORAGE_STATE) rather than driving the login form. ownerville's
     form hits a Cloudflare 'verify you are human' check that can't be cleared
     unattended, so a missing/expired session FAILS FAST with a clear error
-    (re-export via output/_scratch_ownerville_export_state.py) instead of
-    stalling on the check.
+    (see _ownerville_seed_hint for the per-machine remedy) instead of stalling
+    on the check.
 
     Steps:
       1. Reuse the exported storage_state (inject cookies → rqst check).
@@ -635,14 +666,13 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
                   flush=True)
         return
 
-    # (3) Unattended default: fail loud + clear, pointing at the re-export.
+    # (3) Unattended default: fail loud + clear, pointing at the real remedy.
     if not allow_form_login:
         raise RuntimeError(
-            "ownerville session expired or missing — run "
-            "output/_scratch_ownerville_export_state.py to re-export "
-            f"{OWNERVILLE_STORAGE_STATE.name}. (storage_state reuse path; the "
-            "login form is disabled because its Cloudflare 'verify you are "
-            f"human' check can't be cleared unattended.) Profile: {PROFILE_DIR}")
+            f"ownerville session expired or missing — {_ownerville_seed_hint()} "
+            "(storage_state reuse path; the login form is disabled because its "
+            "Cloudflare 'verify you are human' check can't be cleared "
+            f"unattended.) Profile: {PROFILE_DIR}")
 
     # (4) Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
     if verbose:
