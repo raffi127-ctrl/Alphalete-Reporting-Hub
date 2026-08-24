@@ -88,6 +88,79 @@ def _rep_row(page, name: str, *, debug: bool = False):
     return None
 
 
+# --- typo-tolerant name matching ----------------------------------------------
+# Admins type these names by hand in Slack, so "Crenshawe" / "Thomes" happen.
+# But a WRONG match uploads someone's face onto another rep's profile, and the
+# table really does hold near-twins (Ana Gonzalez vs Ana Griffin). So: forgive
+# typos, and REFUSE to guess when two candidates are close — an ambiguous case
+# is reported for manual handling instead (Megan 2026-08-24).
+_MIN_SCORE = 0.86        # below this, not the same person
+_MIN_MARGIN = 0.06       # winner must beat the runner-up by this much
+
+_ROW_NAMES_JS = """() => [...document.querySelectorAll('tbody tr')].map(tr => {
+    const lines = (tr.innerText || '').split('\\n')
+        .map(s => s.trim()).filter(Boolean);
+    return lines.length ? lines[0] : '';
+})"""
+
+
+def _name_key(s: str) -> str:
+    """Lowercase, drop punctuation/suffixes, collapse spaces."""
+    s = re.sub(r"\(.*?\)", " ", s or "")            # strip the (9445955) id
+    s = re.sub(r"[^A-Za-z ]", " ", s).lower()
+    s = re.sub(r"\b(jr|sr|ii|iii|iv)\b", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _name_score(want: str, got: str) -> float:
+    """0-1 similarity between a submitted name and a table name."""
+    from difflib import SequenceMatcher
+    a, b = _name_key(want), _name_key(got)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    at, bt = a.split(), b.split()
+    # Every submitted token close to some table token (covers middle names
+    # and extra surnames: "Raymond Carriere" vs "Raymond Joseph Carriere Jr").
+    if at and all(
+            any(SequenceMatcher(None, x, y).ratio() >= 0.88 for y in bt)
+            for x in at):
+        return 0.95
+    # Same tokens in a different order ("Crenshaw Thomas").
+    if sorted(at) == sorted(bt):
+        return 0.97
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _fuzzy_row(page, name: str, *, verbose: bool = True):
+    """Best typo-tolerant row match, or None. Returns (row, matched_name).
+
+    Refuses to return an ambiguous winner — two near-equal candidates mean
+    a human decides, never the bot."""
+    try:
+        names = page.evaluate(_ROW_NAMES_JS)
+    except Exception:
+        return None, None
+    scored = sorted(
+        ((_name_score(name, n), i, n) for i, n in enumerate(names) if n),
+        reverse=True)
+    if not scored:
+        return None, None
+    best, idx, got = scored[0]
+    runner = scored[1][0] if len(scored) > 1 else 0.0
+    if best < _MIN_SCORE:
+        return None, None
+    if best - runner < _MIN_MARGIN:
+        if verbose:
+            print(f"    AMBIGUOUS {name!r}: {got!r} ({best:.2f}) vs "
+                  f"{scored[1][2]!r} ({runner:.2f}) — refusing to guess")
+        return None, None
+    if verbose and best < 1.0:
+        print(f"    fuzzy-matched {name!r} -> {got!r} ({best:.2f})")
+    return page.locator("tbody tr").nth(idx), got
+
+
 def _sample_rows(page, limit: int = 3) -> str:
     """A short, SAFE description of what's in the table right now.
 
@@ -194,9 +267,32 @@ def dump_pill(page, row, name: str) -> None:
         print(f"    (couldn't dump pill markup: {type(e).__name__})")
 
 
+def _search_probes(name: str):
+    """Short strings to type in the DataTables search, best first.
+
+    Full names filter to zero, so probe with the last name, then 4-char
+    prefixes of the last and first name — a typo in the tail ("Crenshawe")
+    still narrows the table, and a typo in the last name is covered by the
+    first-name prefix."""
+    parts = [p for p in name.split() if p]
+    if not parts:
+        return []
+    out, seen = [], set()
+    for cand in ([parts[-1], parts[-1][:4]] +
+                 ([parts[0], parts[0][:4]] if len(parts) > 1 else [])):
+        c = cand.strip()
+        if len(c) >= 3 and c.lower() not in seen:
+            seen.add(c.lower())
+            out.append(c)
+    return out
+
+
 def find_rep(page, name: str, *, verbose: bool = True):
-    """Locate the rep across campaigns/filters. Returns (row, campaign) or
-    (None, tried_campaigns)."""
+    """Locate the rep across campaigns/filters, tolerating typos.
+
+    Returns (row, campaign, matched_name) or (None, tried_campaigns, None).
+    matched_name is what the OV table actually calls them, which can differ
+    from what was typed in Slack."""
     from automations.b2b_dispositions.capture import capture_rqst
     rqst = capture_rqst(page)
     # View Progress renders a huge DataTable (every rep + a pill per column)
@@ -231,30 +327,38 @@ def find_rep(page, name: str, *, verbose: bool = True):
         for widen in (False, True):
             if widen:
                 _show_all(page)
-            box = _search_box(page)
-            box.fill("")
-            # Search the LAST name only (probe #6: the full "First Last"
-            # string filtered to zero — the searchable field doesn't hold
-            # the display string). _rep_row still verifies the full name.
-            # Key-by-key: old DataTables filters on keyup, which a plain
-            # fill() never fires.
-            box.press_sequentially(name.split()[-1], delay=40)
-            page.wait_for_timeout(900)          # DataTables filters client-side
-            row = _rep_row(page, name, debug=verbose)
-            if row is None:
-                # One retry: DataTables sometimes re-renders under us and
-                # the first read lands on the old body (2026-08-24).
-                page.wait_for_timeout(1500)
+            for probe in _search_probes(name):
+                box = _search_box(page)
+                box.fill("")
+                # Search a SHORT probe, not the full name (probe #6: the
+                # whole "First Last" string filters to zero — the searchable
+                # field doesn't hold the display string). Prefixes also let
+                # a typo'd tail still narrow the table. Key-by-key: old
+                # DataTables filters on keyup, which fill() never fires.
+                box.press_sequentially(probe, delay=40)
+                page.wait_for_timeout(900)      # filters client-side
                 row = _rep_row(page, name, debug=False)
-            if row is None and verbose:
+                if row is None:
+                    # One retry: DataTables sometimes re-renders under us
+                    # and the first read hits the old body (2026-08-24).
+                    page.wait_for_timeout(1500)
+                    row = _rep_row(page, name, debug=False)
+                matched = name
+                if row is None:
+                    # Exact text failed — allow a typo, but never a guess
+                    # between near-twins.
+                    row, got = _fuzzy_row(page, name, verbose=verbose)
+                    if row is not None:
+                        matched = got or name
+                if row:
+                    if verbose:
+                        print(f"  found {matched!r} under {label}"
+                              f"{' (Show All)' if widen else ''}")
+                    return row, label, matched
+            if verbose:
                 print(f"    ({label}{' / Show All' if widen else ''}: "
                       f"{_sample_rows(page)})")
-            if row:
-                if verbose:
-                    print(f"  found {name!r} under {label}"
-                          f"{' (Show All)' if widen else ''}")
-                return row, label
-    return None, tried
+    return None, tried, None
 
 
 def _click_any(scope, label: str, *, page=None, timeout: int = 12000) -> None:
@@ -309,19 +413,22 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
     from automations.shared.tableau_patchright import ownerville_session
     with ownerville_session(headless=headless, verbose=verbose,
                             profile_dir=PROFILE_DIR) as page:
-        row, campaign = find_rep(page, name, verbose=verbose)
+        row, campaign, matched = find_rep(page, name, verbose=verbose)
         if row is None:
             return {"status": "not_found", "name": name, "tried": campaign}
+        # What OV calls them, when a typo was forgiven — surfaced so the
+        # Slack thread always shows WHO the photo actually went to.
+        extra = {"matched_as": matched} if matched and matched != name else {}
 
         pill = _photo_pill(row)
         if dry_run:
             dump_pill(page, row, name)      # diagnostic on read-only runs
             return {"status": "already_uploaded" if pill == "uploaded"
                     else "dry_run_found", "name": name,
-                    "campaign": campaign, "pill": pill}
+                    "campaign": campaign, "pill": pill, **extra}
         if pill == "uploaded":
             return {"status": "already_uploaded", "name": name,
-                    "campaign": campaign}
+                    "campaign": campaign, **extra}
         if photo is None or not Path(photo).exists():
             raise OVUploadError(f"photo file missing: {photo}")
 
@@ -364,10 +471,10 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
         time.sleep(2)
 
         # Verify: back on the table, the pill should now be green.
-        row2, _ = find_rep(page, name, verbose=False)
+        row2, _, _ = find_rep(page, name, verbose=False)
         verified = row2 is not None and _photo_pill(row2) == "uploaded"
         return {"status": "uploaded", "name": name, "campaign": campaign,
-                "verified": verified}
+                "verified": verified, **extra}
 
 
 def archived_headshot(name: str) -> Path | None:

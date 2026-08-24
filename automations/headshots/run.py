@@ -190,12 +190,15 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
         from automations.headshots.ov_upload import upload
         res = upload(name, photo, dry_run=False, headless=True, verbose=True)
         act["ov"] = res
+        # A forgiven typo must be VISIBLE — say whose profile it landed on.
+        as_who = (f" (matched to *{res['matched_as']}* in OwnerVille)"
+                  if res.get("matched_as") else "")
         if res["status"] == "uploaded":
             ok = "" if res.get("verified") else " (verify pill manually)"
-            return f"\nOwnerVille: uploaded to their profile ✅{ok}"
+            return f"\nOwnerVille: uploaded to their profile ✅{ok}{as_who}"
         if res["status"] == "already_uploaded":
             return ("\nOwnerVille: a photo is already on their profile — "
-                    "left as-is")
+                    f"left as-is{as_who}")
         return (f"\n⚠ OwnerVille: couldn't find *{name}* in View Progress "
                 "(tried every campaign + Show All) — please upload this one "
                 "manually")
