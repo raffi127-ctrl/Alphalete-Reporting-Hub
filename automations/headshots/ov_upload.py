@@ -34,7 +34,10 @@ import sys
 import time
 from pathlib import Path
 
-VIEW_PROGRESS_URL = "https://v2.ownerville.com/index.cfm?p=201"
+# View Progress is p=201, but a bare p=<id> BOUNCES TO WELCOME — every OV
+# page URL needs the session's rqst token appended (the trap b2b_dispositions/
+# total_knocks/car_rides all document). find_rep builds the URL at runtime.
+VIEW_PROGRESS_P = 201
 
 # Own profile — never the shared one (profile-lock wedge, 2026-08-19).
 PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
@@ -109,7 +112,10 @@ def _photo_pill(row) -> str:
 def find_rep(page, name: str, *, verbose: bool = True):
     """Locate the rep across campaigns/filters. Returns (row, campaign) or
     (None, tried_campaigns)."""
-    page.goto(VIEW_PROGRESS_URL, wait_until="domcontentloaded")
+    from automations.b2b_dispositions.capture import capture_rqst
+    rqst = capture_rqst(page)
+    page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
+              f"&rqst={rqst}", wait_until="domcontentloaded")
     page.wait_for_load_state("networkidle")
     sel = _campaign_select(page)
     options = sel.locator("option").all_inner_texts()
