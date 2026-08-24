@@ -1864,6 +1864,32 @@
     "type": "not_configured"
    }
   },
+  "new_start_number_replies": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "New-Start Number Replies (iMessage)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.new_start_followup.run"
+   ],
+   "base_args": [
+    "--mode",
+    "number-replies",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [5, 6],
+    "not_before": "09:00"
+   },
+   "_note": "LIVE SEND (Megan 2026-08-23: 'if anyone responds with the number, then you should read it and send the text'). Sat+Sun from 9am: reads the replies under the 'numbers needed' post (@Raf @Aisha, posted by sat-texts for leaders with no number), parses 'Name - number' / 'Name - terminated' lines, saves the number to the machine-local overlay, SENDS that leader's text from this machine's Messages, and confirms '✅ Got it — texted …' in the thread. EXITS 1 while gaps remain so the orchestrator re-polls through the day (owner_chat_texts trackers idiom) — an all-day 'failed' state here just means nobody has replied with the last numbers yet. Orchestrator-scheduled for the Messages grant. Idempotent: per-(week, leader) .sent markers; terminated resolutions recorded per week.",
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "new_start_daily_reminder": {
    "on_scheduler": true,
    "machine": "Lucy 1",

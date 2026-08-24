@@ -106,7 +106,8 @@ def _run_funnel(args, funnel, monday, when) -> int:
         return 0
 
     if args.mode == "sat-texts":
-        from automations.new_start_followup import texts, group_reminders
+        from automations.new_start_followup import (
+            texts, group_reminders, number_requests)
         outcomes = texts.run(rec, send=args.live)
         print(texts.render(outcomes, send=args.live))
         print()
@@ -115,8 +116,23 @@ def _run_funnel(args, funnel, monday, when) -> int:
             group_reminders.saturday_message(texts.thread_link(rec)),
             dry_run=not args.live)
         print(group_reminders.describe(out))
+        # Anyone we couldn't text gets flagged IN the thread @Raf @Aisha, who
+        # can reply with the number — the number-replies pass then sends it
+        # (Megan 2026-08-23).
+        note = number_requests.ensure_request(rec, live=args.live)
+        if note:
+            print(note)
         failed = [o for o in outcomes if o.error]
         return 2 if (failed or out["errors"]) else 0
+
+    if args.mode == "number-replies":
+        from automations.new_start_followup import number_requests
+        result = number_requests.process(rec, live=args.live)
+        for line in result["lines"]:
+            print(line)
+        # Exit 1 while gaps remain so the orchestrator keeps re-polling the
+        # thread through the day (same retry idiom as owner_chat_texts).
+        return 1 if result["gaps_remaining"] else 0
 
     if args.mode == "rollcall":
         # One Lucy roll call per week PER THREAD — a re-run must not repeat it.
@@ -164,7 +180,7 @@ def _run(args) -> int:
                else [thread_mod.funnel_by_key(args.funnel)])
     # The individual texts are Raf's funnel only — his Loom, his lvl-1 chats.
     # Tiffani runs her own funnel's chasing by hand.
-    if args.mode == "sat-texts":
+    if args.mode in ("sat-texts", "number-replies"):
         funnels = [thread_mod.funnel_by_key("main")]
     rc = 0
     for funnel in funnels:
@@ -190,7 +206,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
     ap.add_argument("--mode",
                     choices=["status", "rollcall", "nudge", "checklist",
-                             "sat-texts", "daily-reminder"],
+                             "sat-texts", "daily-reminder", "number-replies"],
                     default="status",
                     help="status = print only; rollcall = Saturday 8am tag-everyone; "
                          "nudge = Saturday reminder; checklist = Sunday roll-up; "
