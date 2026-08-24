@@ -519,7 +519,7 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
     if name_label in NO_ROLLCALL_SYNC:
         return 0
     ws = sh.worksheet("Roll Call")
-    rc = ws.get_values("A1:F250")
+    rc = ws.get_values("A1:N250")
     du = sh.worksheet(tab).get_values("A2:T6000")
     today = dt.datetime.now(CENTRAL).date()
     cur_we = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=6)
@@ -606,13 +606,35 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
                      "values": [[orient_we(row[17]), "New Start", campaign,
                                  nm, _n(row[13]), ""]]})
         added += 1
-    # week rollover: previous weeks' New Starts become Active; backfills
+    # week rollover: previous weeks' New Starts become Active; backfills;
+    # and the TERMINATION CASCADE (Carlos 8/24: "mark T" must actually do
+    # its job) — an attendance-cell T sets Status='Terminated', fills Date
+    # Gone with the T'd day, and guarantees a DU row exists to flip.
+    du_names = {_n(r[8]).lower() for r in
+                (list(x) + [""] * 20 for x in du) if _n(r[8])}
+    term_cascaded, term_new_du = 0, []
     for i, row in enumerate(rc[2:], 3):
-        row = list(row) + [""] * 6
+        row = list(row) + [""] * 14
         nm = _n(row[3])
         if not nm:
             continue
-        if _n(row[1]) == "New Start":
+        att_t_idx = next((c for c in range(6, 12)
+                          if _n(row[c]).lower() == "t"), None)
+        is_term = _is_term(row[1]) or att_t_idx is not None
+        if is_term:
+            if not _is_term(row[1]):
+                data.append({"range": f"'Roll Call'!B{i}",
+                             "values": [["Terminated"]]})
+                term_cascaded += 1
+            if not _n(row[12]) and att_t_idx is not None:
+                wed = parse_lbl(row[0]) or cur_we
+                gone = wed - dt.timedelta(days=6 - (att_t_idx - 6))
+                data.append({"range": f"'Roll Call'!M{i}",
+                             "values": [[f"{gone.month}/{gone.day}"]]})
+            if nm.lower() not in du_names:
+                du_names.add(nm.lower())
+                term_new_du.append(nm)
+        elif _n(row[1]) == "New Start":
             wed = parse_lbl(row[0])
             if wed is not None and wed < cur_we:
                 data.append({"range": f"'Roll Call'!B{i}",
@@ -627,8 +649,16 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
                 data.append({"range": f"'Roll Call'!A{i}",
                              "values": [[orient_we(e["orient"])]]})
                 filled += 1
+    next_du = len(du) + 2
+    for nm in term_new_du:
+        data.append({"range": f"'{tab}'!A{next_du}", "values": [["Not Active"]]})
+        data.append({"range": f"'{tab}'!B{next_du}", "values": [["Terminated"]]})
+        data.append({"range": f"'{tab}'!F{next_du}", "values": [[campaign]]})
+        data.append({"range": f"'{tab}'!I{next_du}", "values": [[nm]]})
+        next_du += 1
     log(f"  {name_label:<17} rollcall: +{added} new-start, {flipped} -> Active, "
-        f"{filled} backfilled, {skipped_old} historical skipped"
+        f"{filled} backfilled, {skipped_old} historical skipped, "
+        f"{term_cascaded} T-cascaded, +{len(term_new_du)} DU rows for terms"
         + ("" if write else "  (dry-run)"))
     if write and data:
         sh.values_batch_update(body={"valueInputOption": "RAW", "data": data})
