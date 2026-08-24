@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -373,6 +374,36 @@ def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
                     incident=f"tracker-text-{tid}")
             except Exception:                             # noqa: BLE001
                 pass
+
+
+def _cross_ws_token_missing(org: str, label: str, token_file: str) -> str:
+    """Why a cross-workspace org can't be posted from THIS machine, or "".
+
+    WHY (Megan 2026-08-24). trang's channel lives in the FRESH SUCCESS Slack, not
+    ours, so it is posted with that workspace's own bot token
+    (CROSS_WS_TOKEN_FILES). When the token file isn't on the machine the run is
+    on — which is what the 8/23 move of the trackers to Lucy 3 changed — the code
+    used to just leave SLACK_USER_TOKEN alone and post with the AO 'Lucy' token.
+    That token cannot see a channel in another workspace, and Slack answers a
+    non-member with `channel_not_found`, so the alert read
+    "#freshsuccess-all-leaders (channel unreadable)" — indistinguishable from Lucy
+    being un-invited to one of OUR private channels. Two people looked at that
+    alert on 8/19 and 8/23 and neither could act on it, because the fix is a file
+    on a machine, not an invite.
+
+    Naming the file and the machine is the whole point.
+    [[project_trang_fresh_success]]"""
+    if not token_file:
+        return ""
+    path = Path.home() / ".config" / "recruiting-report" / token_file
+    if path.exists():
+        return ""
+    return (f"{label} is in a DIFFERENT Slack workspace and its token file is "
+            f"not on this machine ({socket.gethostname()}): expected "
+            f"{path}. Nothing was posted for '{org}' — the AO Lucy token can't "
+            f"see that workspace, and using it would report a misleading "
+            f"'channel unreadable'. Copy the token file to this machine, or run "
+            f"'{org}' from the machine that has it.")
 
 
 def _capture_one(spec: dict, page, out_dir: Path, force_crop):
@@ -789,27 +820,43 @@ def main(argv=None) -> int:
             _tok_file = CROSS_WS_TOKEN_FILES.get(org)
         except Exception:                             # noqa: BLE001
             _tok_file = None
+        _missing_tok = ""
         if _tok_file:
             _tok_path = Path.home() / ".config" / "recruiting-report" / _tok_file
             if _tok_path.exists():
                 os.environ["SLACK_USER_TOKEN"] = _tok_path.read_text(
                     encoding="utf-8-sig").strip()
                 _routed = True
-        try:
-            result = sp.post_all(captures, post_pages, today,
-                                 replace=args.replace, org=org,
-                                 new_thread=args.new_thread,
-                                 note=args.header_note or "",
-                                 updated=args.updated)
-        except Exception as e:                        # noqa: BLE001
-            result = {"ok": False, "channels": [],
-                      "error": f"{type(e).__name__}: {str(e)[:120]}"}
-        finally:
-            if _routed:                               # restore AO token for next org
-                if _saved_tok is None:
-                    os.environ.pop("SLACK_USER_TOKEN", None)
-                else:
-                    os.environ["SLACK_USER_TOKEN"] = _saved_tok
+            else:
+                _missing_tok = _cross_ws_token_missing(org, label, _tok_file)
+        if _missing_tok:
+            # DON'T fall through to the AO token. It cannot see a channel in
+            # another workspace, so the run would go pull every board, try to
+            # read the day's thread, get channel_not_found, and report
+            # "#freshsuccess-all-leaders (channel unreadable)" — which reads as a
+            # membership problem in OUR workspace and is why that same alert came
+            # back on 8/19 and 8/23 with nobody able to act on it. Skip SOFT
+            # (nothing posted, re-runnable) and name the actual missing file.
+            print(f"⚠ [{org}] SKIPPED — {_missing_tok}", flush=True)
+            result = {"ok": False, "no_op": False,
+                      "channels": [{"channel": label, "ok": False, "soft": True,
+                                    "error": _missing_tok}]}
+        else:
+            try:
+                result = sp.post_all(captures, post_pages, today,
+                                     replace=args.replace, org=org,
+                                     new_thread=args.new_thread,
+                                     note=args.header_note or "",
+                                     updated=args.updated)
+            except Exception as e:                    # noqa: BLE001
+                result = {"ok": False, "channels": [],
+                          "error": f"{type(e).__name__}: {str(e)[:120]}"}
+            finally:
+                if _routed:                           # restore AO token for next org
+                    if _saved_tok is None:
+                        os.environ.pop("SLACK_USER_TOKEN", None)
+                    else:
+                        os.environ["SLACK_USER_TOKEN"] = _saved_tok
         for c in result.get("channels", []):
             if c.get("skipped"):
                 print(f"↷ [{org}] {c['channel']} already had today's images — "

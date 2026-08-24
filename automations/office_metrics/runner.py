@@ -397,6 +397,62 @@ def _channel_block_reason(client, channel_id: str) -> str:
     return ""
 
 
+CHANNEL_UNREACHABLE_PREFIX = "channel unreachable: "
+
+
+def _collapse_blocked_failures(results, blocked_channels):
+    """(display_failed, remediation) — what the ALERT should say.
+
+    WHY (Megan 2026-08-24). The preflight above already knew the truth and the
+    run still shouted the wrong thing at the channel. Drew's office posted
+    "*drew_metrics* dropped 5 sections this run" every day from 8/19 to 8/23,
+    listing TeleMapper Knocks, Wireless Churn, Rep Activations, Order Log and
+    Canceled Orders — five healthy metrics, none of which was broken. Lucy just
+    isn't in `C0A7871FAUV`. Reading that list, nobody would guess the fix is one
+    Slack invite; the preflight's own note explaining exactly that was appended
+    at the tail of the manifest note, well past where anyone stops reading.
+
+    So a failure that is really a blocked destination collapses to ONE line per
+    CHANNEL, and the invite becomes structured `remediation` (the Hub's
+    failure-help callout) instead of prose. Metrics that failed for their own
+    reasons are still listed by name — a blocked channel must never become a
+    place where real breakage hides."""
+    blocked_names = {cname for cname, _cid, _why in blocked_channels}
+    genuinely_failed, blocked_seen = [], []
+    for chan_name, _slug, label, ok, note in results:
+        if ok:
+            continue
+        if chan_name in blocked_names and str(note).startswith(
+                CHANNEL_UNREACHABLE_PREFIX):
+            if chan_name not in blocked_seen:
+                blocked_seen.append(chan_name)
+        elif label not in genuinely_failed:
+            genuinely_failed.append(label)
+
+    if not blocked_seen:
+        return list(dict.fromkeys(
+            label for _c, _s, label, ok, _n in results if not ok)), None
+
+    n_by_chan = {c: sum(1 for r in results if r[0] == c and not r[3])
+                 for c in blocked_seen}
+    display = [f"{c} — Lucy can't post here ({n_by_chan[c]} metric(s) held)"
+               for c in blocked_seen] + genuinely_failed
+    fix = ("Invite the posting account to "
+           + ", ".join(f"{cname} ({cid})" for cname, cid, _w
+                       in blocked_channels if cname in blocked_seen)
+           + ". Nothing else needs re-running — the metrics were never pulled, "
+             "and the next scheduled run posts them once she's in.")
+    return display, {
+        "reason": "; ".join(f"{cname} ({cid}): {why}"
+                            for cname, cid, why in blocked_channels
+                            if cname in blocked_seen),
+        "fix": fix,
+        "message": ("This is a Slack membership problem, not a metrics problem. "
+                    "A PRIVATE channel answers channel_not_found to non-members, "
+                    "so it looks identical to a bad channel id from the log."),
+    }
+
+
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
@@ -1025,7 +1081,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                 blocked_channels.append((dest["channel_name"], chan, blocked))
                 for m in dest["metrics"]:
                     results.append((dest["channel_name"], m["slug"], m["label"],
-                                    False, f"channel unreachable: {blocked}"))
+                                    False,
+                                    f"{CHANNEL_UNREACHABLE_PREFIX}{blocked}"))
                 continue
 
         if mode == "live":
@@ -1122,9 +1179,14 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         _blocked_note = "; ".join(
             f"CHANNEL UNREACHABLE — {cname} ({cid}): {why}"
             for cname, cid, why in blocked_channels)
+        # …and the same rule applies to the FAILED LIST, which is what the
+        # section-drop alert actually prints. One line per blocked channel, not
+        # one per metric that never got the chance to run.
+        _display_failed, _remediation = _collapse_blocked_failures(
+            results, blocked_channels)
         _rm.write_manifest(
-            o.report_id, failed=failed_labels, succeeded=ok_labels,
-            retry_args=retry, kind="metric",
+            o.report_id, failed=_display_failed, succeeded=ok_labels,
+            retry_args=retry, kind="metric", remediation=_remediation,
             note=(f"{n_ok}/{len(results)} metrics posted to {_dest_desc}"
                   + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")
                   + (f"; {_blocked_note}" if _blocked_note else "")))
@@ -1133,7 +1195,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         # so it must not overwrite the office's row with a partial verdict).
         _record_office_status(
             o, ok=not failed_slugs,
-            error=("; ".join(failed_labels) if failed_labels else ""))
+            error=("; ".join(_display_failed) if _display_failed else ""))
 
     if blocked_channels:
         for cname, cid, why in blocked_channels:
