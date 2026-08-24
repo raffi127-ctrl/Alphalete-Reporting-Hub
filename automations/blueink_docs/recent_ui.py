@@ -59,17 +59,35 @@ def _chunks(label: str, text: str, size: int = 200, most: int = 12) -> None:
         print(f"PROBE {label}{i // size}: {text[i:i + size]}")
 
 
+def _search(page, term: str) -> str:
+    """Type `term` into the dashboard's list search and return the body text."""
+    box = page.query_selector("[data-tid='nub-listSearch'] input")         or page.query_selector("input[placeholder='Search...']")
+    if box is None:
+        return ""
+    box.click()
+    page.keyboard.press("Meta+A")
+    page.keyboard.press("Control+A")
+    page.keyboard.press("Backspace")
+    box.type(term, delay=40)
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(5000)
+    return " ".join((page.inner_text("body") or "").split())
+
+
 def probe(email: str = "", headless: bool = True) -> int:
-    """Map the dashboard so the reader below can be written against it.
+    """Map the dashboard's search so screen() can be written against it.
 
-    ALWAYS returns 0. This is a diagnostic on a report card: a non-zero exit
-    publishes a FAILED run and opens an incident, which is what the first
-    version did to itself on 2026-08-24.
+    ALWAYS returns 0 -- a diagnostic on a report card must not publish a FAILED
+    run (v1 opened an incident against itself on 2026-08-24).
 
-    What v2 established: every /dashboard/<name> guess (bundles, sent,
-    documents) renders nub-notFound, and the sidebar holds no <a href> to
-    follow -- it's a router. /dashboard/ itself is the real screen, so this
-    reads THAT.
+    Established so far: /dashboard/<anything> is nub-notFound, the sidebar is a
+    router with no <a href>, and /dashboard/ itself carries the list plus a
+    search box at [data-tid=nub-listSearch] input. Searching a signer's email
+    narrows it and the page reports "Showing N of M".
+
+    The open question this round answers is the NEGATIVE case: an address with
+    no packet has to read differently from one with a packet, or the check is
+    worthless.
     """
     sync_playwright = S._sync_api()
     with sync_playwright() as p:
@@ -82,33 +100,25 @@ def probe(email: str = "", headless: bool = True) -> int:
             if "/login" in page.url:
                 print("PROBE session is DEAD -- rerun session.py --login")
                 return 0
-            print(f"PROBE landed={page.url}")
-            print(f"PROBE navtids={_tids(page, 'nav')}")
-            print(f"PROBE listtids={_tids(page, 'row')}|{_tids(page, 'bundle')}"
-                  f"|{_tids(page, 'list')}|{_tids(page, 'table')}"
-                  f"|{_tids(page, 'search')}")
-            for i, inp in enumerate(page.query_selector_all("input")[:8]):
-                print(f"PROBE input{i} name={inp.get_attribute('name')!r} "
-                      f"type={inp.get_attribute('type')!r} "
-                      f"ph={inp.get_attribute('placeholder')!r} "
-                      f"tid={inp.get_attribute('data-tid')!r}")
-            body = " ".join((page.inner_text("body") or "").split())
-            print(f"PROBE bodylen={len(body)}")
-            _chunks("dash", body)
 
-            if email:
-                boxes = page.query_selector_all(
-                    "input[type='search'], input[type='text']")
-                if boxes:
-                    boxes[0].click()
-                    boxes[0].type(email, delay=40)
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(5000)
-                    after = " ".join((page.inner_text("body") or "").split())
-                    print(f"PROBE searched={email} len={len(after)}")
-                    _chunks("hit", after, most=6)
-                else:
-                    print("PROBE no search input on the dashboard")
+            # A row's own markup -- what identifies one, and where its status
+            # sits. Text alone can't be parsed reliably out of a flat dump.
+            for tag in ("envelope", "bundle", "row", "list", "status"):
+                got = _tids(page, tag, 12)
+                if got:
+                    print(f"PROBE tid[{tag}]={got}")
+
+            known = email or "Angiep8k@gmail.com"
+            miss = "zzz-nobody-has-this@example.invalid"
+            for label, term in (("HAS", known), ("NONE", miss)):
+                text = _search(page, term)
+                mark = ""
+                for needle in ("Showing", "No Envelopes"):
+                    i = text.find(needle)
+                    if i >= 0:
+                        mark += f" | {text[i:i + 60]}"
+                print(f"PROBE {label} term={term} len={len(text)}{mark}")
+                _chunks(f"{label.lower()}body", text, most=4)
         finally:
             browser.close()
     return 0
