@@ -68,21 +68,28 @@ def _search_box(page):
     return box
 
 
-def _rep_row(page, name: str):
-    """The table row whose Name cell matches `name` (case-insensitive,
-    whitespace-tolerant). None if not on the current page/filter."""
-    want = _norm(name)
-    rows = page.locator("table tbody tr")
-    for i in range(rows.count()):
-        row = rows.nth(i)
-        try:
-            cell = row.locator("td").first.inner_text(timeout=3000)
-        except Exception:
-            continue
-        # Name cell reads like "Ahna Vanmeter\n(9419990)\nEdit\nAction".
-        head = _norm(cell.split("(")[0])
-        if want and want == head:
-            return row
+def _rep_row(page, name: str, *, debug: bool = False):
+    """The table row containing `name` (case-insensitive, any cell).
+
+    Probe #5 (2026-08-23) proved reading only the FIRST td misses real reps
+    — DataTables likes a hidden control column up front. has_text matches
+    the name anywhere in the row instead; whitespace between first/last is
+    matched loosely (the cell breaks lines).
+    """
+    parts = [p for p in name.split() if p]
+    if not parts:
+        return None
+    pat = re.compile(r"\s+".join(re.escape(p) for p in parts), re.I)
+    rows = page.locator("tbody tr").filter(has_text=pat)
+    if rows.count():
+        return rows.first
+    if debug:
+        allrows = page.locator("tbody tr")
+        n = allrows.count()
+        print(f"    (no row matched — {n} row(s) on screen; first few: "
+              + " | ".join(
+                  _norm(allrows.nth(i).inner_text())[:60]
+                  for i in range(min(3, n))))
     return None
 
 
@@ -170,9 +177,11 @@ def find_rep(page, name: str, *, verbose: bool = True):
                 _show_all(page)
             box = _search_box(page)
             box.fill("")
-            box.fill(name)
-            page.wait_for_timeout(700)          # DataTables filters client-side
-            row = _rep_row(page, name)
+            # Type key-by-key: old DataTables filters on keyup, which a
+            # plain fill() never fires.
+            box.press_sequentially(name, delay=40)
+            page.wait_for_timeout(900)          # DataTables filters client-side
+            row = _rep_row(page, name, debug=verbose)
             if row:
                 if verbose:
                     print(f"  found {name!r} under {label}"
