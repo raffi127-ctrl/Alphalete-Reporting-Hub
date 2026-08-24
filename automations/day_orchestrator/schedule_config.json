@@ -169,6 +169,54 @@
   }
  },
  "reports": {
+  "blueink_docs": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "standalone_weekdays": [
+    4
+   ],
+   "_standalone_weekdays_note": "Python weekday(): Friday. The REAL schedule is com.alphalete.blueink-docs-friday (plist Weekday 5 = Fri, 16:00 machine-local), wrapper deploy/blueink_docs_friday.sh. Declared here so machine_digest's error watcher doesn't infer the cadence from hand-reruns and post 'did not run today' on the wrong day.",
+   "_note": "Blue Ink onboarding docs for next week's new starts (Megan 2026-08-24). on_scheduler:false = the 4am orchestrator NEVER runs it; its real schedule is the Friday 4:00pm launchd job on Lucy 2. Source: the newest dated 'D2D OBCL <m.d>' tab of Raf's 'All in One Local Office' workbook (1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4) -- BOTH stacked sections on that tab, since the late adds live under a second date+header block and reading only the first silently drops them. Excluded from the send: anyone with ANY value in Final Status (quit before/during classroom, failed BGC, terminated, no show, rescheduling -- they aren't starting) and anyone whose BG Status is Failed or Adverse Action. Everyone else gets docs, including Sent / Taken - Pending / Review, because docs go out while the background check is still moving. Double-send guard is the 'Blue Ink Log' tab we own in the same workbook -- keyed on BOTH normalized name and email, and written per-person as each bundle launches, because creating a Blue Ink bundle SENDS it and there is no unsend. The module is dry-run by default; the WRAPPER passes --send. NOT ARMED until a --limit 1 send is log-verified (needs blueink-creds.json on Lucy 2: private API key from the alphaletemarketing@gmail.com account + the envelope template id).",
+   "display_name": "Blue Ink New Start Docs",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.blueink_docs.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "16:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
+  },
+  "install_blueink_docs_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_blueink_docs_agent --machine \"Lucy 2\"` can install/refresh the STANDALONE com.alphalete.blueink-docs-friday LaunchAgent on Lucy 2 (Friday 16:00 machine-local, deploy/blueink_docs_friday.sh). install_agent is read-only w.r.t. any Sheet data; it only loads the plist. DO NOT run this until a --limit 1 send has been log-verified -- the wrapper passes --send and a Blue Ink bundle cannot be unsent.",
+   "display_name": "Install Blue Ink docs agent (Fri 4pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "blueink-docs-friday"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "16:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "owner_chat_texts": {
    "on_scheduler": false,
    "machine": "Lucy 1",
@@ -205,7 +253,15 @@
     "--send"
    ],
    "cadence": {
-    "weekdays": [],
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
     "not_before": "07:30"
    },
    "_note": "LIVE SEND (Megan 2026-08-23: 'trackers daily at 7:30am'). Forwards the tracker PNGs already posted in #alphalete-sales to the Alphalete Owners iMessage chat. Exits 1 while any routed tracker is still missing from the thread, so the orchestrator keeps retrying and the stragglers text as they land — per-day .sent markers make every retry duplicate-proof.",
@@ -231,7 +287,15 @@
     "--send"
    ],
    "cadence": {
-    "weekdays": [],
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
     "not_before": "07:45"
    },
    "_note": "LIVE SEND (Megan 2026-08-23: 'sales boards at 7:45am to each chat'). Re-sorts the All Units board most-to-least, renders the WOW delta chart, texts it to BOTH owner chats. Exits 1 while the board's data gate holds (short of yesterday), so the orchestrator retries until the fill completes.",
@@ -602,7 +666,9 @@
     "automations.headshots.ov_upload"
    ],
    "base_args": [
-    "--name", "Ahna Vanmeter", "--dry-run"
+    "--name",
+    "Ahna Vanmeter",
+    "--dry-run"
    ],
    "cadence": {
     "weekdays": []
@@ -1913,7 +1979,9 @@
     "--live"
    ],
    "cadence": {
-    "weekdays": [5],
+    "weekdays": [
+     5
+    ],
     "not_before": "08:30"
    },
    "_note": "LIVE SEND (Raf's Loom 2026-08-23: leaders answer texts, not Slack). Saturday from 8:30am CST — after the 8:00 roll call so the thread the texts link to exists. iMessages every leader still owing a text from THIS machine's Messages (alphaletereporting@) + posts the reminder to the 'Alphalete lvl 1's' iMessage group and #alphalete-lvl1-chat. Scheduled through the orchestrator ON PURPOSE, never a bash-wrapper plist: macOS grants control-Messages per executable identity, and only the poller/orchestrator python identity holds it (same lesson as b2b_dispositions on Lucy 2). Idempotent per (week, leader) and per (slot, day) via .sent markers, so retries only send what they missed.",
@@ -1964,7 +2032,12 @@
     "--live"
    ],
    "cadence": {
-    "weekdays": [1, 2, 3, 4],
+    "weekdays": [
+     1,
+     2,
+     3,
+     4
+    ],
     "not_before": "09:00"
    },
    "_note": "LIVE SEND (Raf 2026-08-23: 'ping the guys messaging on the daily update... 9:00am. iMessage & Slack lvl 1 chat.'). TUESDAY-FRIDAY (Raf via Megan same day): no Monday — it's about YESTERDAY'S closes and nobody closes Sunday — and no Saturday, which already gets its own 8:30 group reminder from sat-texts. Group posts ONLY — 'Hey guys, reminder to text any new starts you closed yesterday!' to the 'Alphalete lvl 1's' iMessage group + #alphalete-lvl1-chat. Thread-free: never reads the roster screenshot. Orchestrator-scheduled for the Messages grant (see new_start_sat_texts). One .sent marker per day.",
