@@ -352,11 +352,23 @@ def _main(argv=None) -> int:
         try:
             blocked = recent.screen(to_send)
         except Exception as exc:
-            print(f"\nCouldn't check Blue Ink's history ({exc}).\n"
-                  "REFUSING to send -- without that check this could duplicate "
-                  "packets your team already sent by hand. Rerun when Blue Ink "
-                  "responds, or pass --no-dedupe if you're certain.")
-            return 2
+            # Only a REAL send has anything to lose here. A dry run mails
+            # nobody, so there is no duplicate to prevent and no reason to
+            # fail -- on 2026-08-24 a --dry-run on Lucy 2 came back FAILED on
+            # the Hub purely because that machine has no blueink-creds.json,
+            # which the preview itself never needed.
+            print(f"\nCouldn't check Blue Ink's history ({exc}).")
+            if args.send:
+                print("REFUSING to send -- without that check this could "
+                      "duplicate packets your team already sent by hand. "
+                      "Rerun when Blue Ink responds, or pass --no-dedupe if "
+                      "you're certain.")
+                return 2
+            print("Not fatal on a dry run -- nothing is being sent. But the "
+                  "WILL SEND list above is UNSCREENED: some of those people "
+                  "may already have a packet the team sent by hand, and this "
+                  "has to work before --send will do anything.")
+            blocked = {}
         if blocked:
             print(f"\nALREADY HAVE A PACKET -- {len(blocked)} (skipping)")
             for pp in to_send:

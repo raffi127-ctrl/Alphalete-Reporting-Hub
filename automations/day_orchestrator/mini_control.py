@@ -2782,6 +2782,14 @@ _CRED_FILES = {
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127",
     "ownerville-creds":
         lambda: REPO_ROOT / "ownerville-creds.json",
+    # Blue Ink private API key + envelope template id. The SEND itself goes
+    # through the web app, but the pre-send dedupe (blueink_docs.recent) reads
+    # Blue Ink's own bundle history over the API and needs this key. Lucy 2 --
+    # the machine whose Monday 7:30 agent sends -- had no copy, so the first
+    # run after the dedupe check landed exited 2 (2026-08-24). Gitignored by
+    # the *-creds.json rule, so `lucy update` will never carry it.
+    "blueink-creds":
+        lambda: REPO_ROOT / "blueink-creds.json",
     # Cross-workspace Slack bot tokens (office_metrics.offices.CROSS_WS_TOKEN_FILES).
     # push_slack_tokens moves only the MAIN workspace pair, so an office whose
     # channel lives in another Slack (trang -> FRESH SUCCESS) was silently left
