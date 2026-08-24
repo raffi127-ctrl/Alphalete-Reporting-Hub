@@ -546,7 +546,11 @@ def main(argv=None) -> int:
         print("\n=== done ===")
         return 0
 
-    render_dir = Path(tempfile.gettempdir()) / "captainship_drafts_render"
+    # config.RENDER_DIR, not a local temp path: knocks_capture.py writes the
+    # knock boards + their manifest here BEFORE this build runs, and the build
+    # reuses them instead of re-opening a 2h ownerville session. Two modules
+    # agreeing on a directory by copy-paste is how that quietly stops working.
+    render_dir = config.RENDER_DIR
     failures = 0
 
     # Pass 1: capture every captain's images. Pass 2 (below) assembles + emits,

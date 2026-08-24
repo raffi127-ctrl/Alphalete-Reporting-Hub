@@ -3103,6 +3103,39 @@
    ],
    "verify": null
   },
+  "captainship_knocks": {
+   "order": 23.5,
+   "_order_note": "23.5 = right before captainship_drafts (24), after the captainship metrics block. The capture only needs the Org Sales Board roster, but keeping it adjacent to the build means a day where this step dies still has the build's own fallback pull right behind it.",
+   "on_scheduler": true,
+   "display_name": "Captainship Knock Boards (capture)",
+   "_note": "THE EXPENSIVE HALF OF captainship_drafts, SPLIT OUT (Eve 2026-08-24). One ownerville session impersonates every ICD of the six fiber captainships in single file - ~2h measured 8/24 - and impersonation is per-account server state, so it cannot be parallelised. CAPTURES ONLY: no Sheet write, no mail, no Slack. captainship_drafts then finds these images through knock_dispo_images' per-captain manifest and opens no session at all, which is what turns a rebuild - or the 07:15 review-link agent building the previews itself - back into a minutes-long job instead of a two-hour one that also blocks every other job on the mini. If this step fails nothing breaks: the build pulls whatever the manifest doesn't cover, exactly as it did before the split.",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.captainship_drafts.knocks_capture"
+   ],
+   "base_args": [],
+   "cadence": {
+    "_note": "SEVEN DAYS, matching captainship_drafts. The weekly board is gated to Sun+Mon inside the step itself (Captain.sections_on), so Tue-Sat it pulls the daily board only.",
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [
+    "org_sales_board"
+   ],
+   "timeout_minutes": 210,
+   "verify": null,
+   "report_id": "captainship-knocks"
+  },
   "captainship_drafts": {
    "timeout_minutes": 210,
    "_timeout_note": "90 -> 210 (2026-08-23 night): the six fiber-side drafts now carry the Daily Knocks section (per-owner ownerville pulls) every day, and Sun+Mon ALSO the weekly knock_dispo section (6 day-pulls per owner). The 2-captain both-sections validation ran ~34m with sheets+tableau SKIPPED - six captains with everything real needs the headroom; 210 still fails a genuine hang before the review window closes.",

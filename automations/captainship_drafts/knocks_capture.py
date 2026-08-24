@@ -1,0 +1,106 @@
+"""Pull the Captainship Reports' knock boards ONCE, ahead of the build.
+
+WHY THIS IS ITS OWN STEP (Eve, 2026-08-24). The knock sections
+(knock_dispo_images) are the expensive half of the drafts by an order of
+magnitude: one ownerville session, every ICD in every captainship impersonated,
+scraped and un-impersonated in single file — impersonation is per-account
+server state, so it cannot be parallelised. Measured 2026-08-24: ~2h, twice
+that morning, while the rest of the day queued behind it.
+
+Splitting it changes what that 2h blocks, not how long it takes:
+
+  * `captainship_drafts` becomes a MINUTES-long job again — it finds this
+    step's images through the manifest and opens no session at all. So
+    rebuilding the twelve drafts after fixing a churn tab, or the 07:15
+    review-link agent building them because the morning chain didn't, no
+    longer costs two hours.
+  * The long pull sits in the 4am wave where a long job belongs, instead of
+    landing in `lucy rerun` — the same queue Eve uses for anything urgent
+    (2026-08-24: a hand-queued rebuild held the ATT Focus rerun for hours).
+
+Captures ONLY — writes no Sheet, mails nobody, posts nothing. Re-running it is
+free after the first success of the day: the manifest short-circuits it, same
+as it does for the build.
+
+    python -m automations.captainship_drafts.knocks_capture
+    python -m automations.captainship_drafts.knocks_capture --date 2026-08-24
+    python -m automations.captainship_drafts.knocks_capture --only rafael
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import sys
+
+from automations.captainship_drafts import config
+from automations.captainship_drafts import knock_dispo_images as KD
+
+# The kinds this step owns. A captain with neither runs nothing here.
+KNOCK_KINDS = ("daily_knocks", "knock_dispo")
+
+
+def captains_for(today: dt.date, only: str | None = None):
+    """The captains whose sections TODAY include a knock board, in config
+    order. Resolved through Captain.sections_on so the Sun+Mon gate on the
+    weekly section is honoured here exactly as the build honours it — this
+    step must never pull a section the emails won't show."""
+    out = []
+    for captain in config.CAPTAINS:
+        if only and captain.key != only:
+            continue
+        kinds = {k for _h, k in captain.sections_on(today)}
+        wants = tuple(k for k in KNOCK_KINDS if k in kinds)
+        if wants:
+            out.append((captain, wants))
+    return out
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--date", help="Run date (YYYY-MM-DD). Default: today. "
+                                   "The boards cover the day before, same "
+                                   "anchor the drafts use.")
+    ap.add_argument("--only", help="One captain key (e.g. rafael).")
+    args = ap.parse_args(argv)
+
+    today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    targets = captains_for(today, args.only)
+    if not targets:
+        print(f"no captain has a knock section on {today} — nothing to pull")
+        print("=== done ===")
+        return 0
+
+    print(f"capturing knock boards for {len(targets)} captain(s) into "
+          f"{config.RENDER_DIR}")
+    failures = 0
+    for captain, wants in targets:
+        errors: dict = {}
+        try:
+            got = KD.capture_sections(
+                captain, today, config.RENDER_DIR,
+                want_daily="daily_knocks" in wants,
+                want_weekly="knock_dispo" in wants,
+                errors=errors)
+        except Exception as e:  # noqa: BLE001 — one captain ≠ the step
+            failures += 1
+            print(f"  ✗ {captain.key}: {type(e).__name__}: {str(e)[:200]}")
+            continue
+        # Per-owner failures are NOT step failures: they are already carried
+        # into the email as that owner's note (the errors map rides the
+        # manifest), and holding the whole step for one office would cost the
+        # other eleven captains their boards.
+        boards = sum(1 for k in wants for _lab, p in got.get(k, []) if p)
+        blanks = sum(1 for k in wants for _lab, p in got.get(k, []) if not p)
+        print(f"  ✓ {captain.key}: {boards} board(s)"
+              + (f", {blanks} without data/failed" if blanks else ""))
+
+    if failures:
+        print(f"\n✗ {failures} captain(s) failed to capture — the build will "
+              f"pull those itself")
+        return 1
+    print("\n=== done ===")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

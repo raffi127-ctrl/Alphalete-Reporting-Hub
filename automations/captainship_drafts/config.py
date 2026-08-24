@@ -35,7 +35,9 @@ mismatch in the spec — the real tabs use a hyphen).
 from __future__ import annotations
 
 import datetime as dt
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, List, Tuple
 
 from automations.captainship_churn import fill as _cap
@@ -138,6 +140,14 @@ _INTRO = {
 #   daily_knocks       -> per-owner DAILY combined knocks boards + captainship
 #                         summary (knock_dispo_images.py again) — same
 #                         sub-heading + PNG shape as knock_dispo.
+# Where every section's images land, shared by the capture step and the build
+# so a build can REUSE what the capture already pulled (knock_dispo_images'
+# manifest). Stable across runs on a machine and swept by the OS, never by us:
+# an image is a rebuildable artifact, and the manifest refuses any entry whose
+# file is gone.
+RENDER_DIR = Path(tempfile.gettempdir()) / "captainship_drafts_render"
+
+
 SECTION_KINDS = {
     "rafael": ["product_summary",
                "box:cancel-0-30", "box:cancel-30-60",

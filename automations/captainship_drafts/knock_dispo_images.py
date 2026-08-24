@@ -60,6 +60,7 @@ done.
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -366,6 +367,69 @@ def _chan_daily_rows(page, captured_daily: list, aliases_raw,
 # capture — both sections, one roster lookup, one ownerville session
 # ---------------------------------------------------------------------------
 
+def _manifest_path(render_dir, captain_key: str, target: dt.date,
+                   saturday: dt.date) -> Path:
+    """One file per captain per DAY — the daily target and the week's Saturday
+    both ride the name, so yesterday's manifest can never satisfy today's run
+    and a Monday's can never satisfy a Tuesday's."""
+    return (Path(render_dir) / f"knocks_manifest_{captain_key}_"
+            f"{target.isoformat()}_{saturday.isoformat()}.json")
+
+
+def _save_manifest(render_dir, captain_key: str, target: dt.date,
+                   saturday: dt.date, wanted, out: dict, errors: dict,
+                   logfn=print) -> None:
+    """Record what this pull produced so a later build today can skip it.
+
+    Best-effort: a manifest that fails to write costs a re-pull, never a
+    wrong board."""
+    try:
+        payload = {
+            "kinds": sorted(wanted),
+            "items": {k: [[lab, (str(p) if p else None)]
+                          for lab, p in out.get(k, [])] for k in wanted},
+            "errors": {k: v for k, v in errors.items()
+                       if k.split(":", 1)[0] in wanted},
+        }
+        p = _manifest_path(render_dir, captain_key, target, saturday)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"    ⚠ knocks manifest not saved: {type(e).__name__}: {e}")
+
+
+def _load_manifest(render_dir, captain_key: str, target: dt.date,
+                   saturday: dt.date, wanted):
+    """Today's capture for this captain, or None to pull it fresh.
+
+    Refuses the manifest unless it covers EVERY kind this run wants (a
+    daily-only Tuesday capture must not satisfy Monday's weekly section) and
+    every PNG it names is still on disk — /tmp is swept, and half a section is
+    worse than a slow one."""
+    p = _manifest_path(render_dir, captain_key, target, saturday)
+    try:
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not set(wanted).issubset(set(data.get("kinds") or [])):
+            return None
+        items = {}
+        for kind in wanted:
+            pairs = []
+            for lab, path in data["items"][kind]:
+                if path is None:
+                    pairs.append((lab, None))
+                    continue
+                png = Path(path)
+                if not png.exists() or png.stat().st_size == 0:
+                    return None
+                pairs.append((lab, png))
+            items[kind] = pairs
+        return {"items": items, "errors": data.get("errors") or {}}
+    except Exception:  # noqa: BLE001 — an unreadable manifest = pull fresh
+        return None
+
+
 def capture_sections(captain, today: dt.date, render_dir, *,
                      want_daily: bool = True, want_weekly: bool = True,
                      logfn=print, errors: Optional[dict] = None) -> dict:
@@ -408,6 +472,27 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                          "owner rows")
         return out
     logfn(f"    {len(names)} owner(s): {', '.join(names)}")
+
+    # Already captured today? Then this whole function is a no-op. THE reason
+    # this exists (Eve 2026-08-24): the pull is ~2h — one ownerville session,
+    # every ICD impersonated, scraped and un-impersonated in single file,
+    # because impersonation is per-account server state and cannot be
+    # parallelised. On 2026-08-24 that 2h sat between Eve and every other job
+    # on the mini, and the day's second build paid it all over again for
+    # images that were already on disk.
+    #
+    # The manifest is what makes reuse honest: labels (INCOMPLETE suffix and
+    # all) and the errors map come back exactly as the pull left them, so a
+    # reused build renders the same notes as the original — never a blank
+    # board wearing a fresh face.
+    cached = _load_manifest(render_dir, captain.key, target, saturday, wanted)
+    if cached is not None:
+        for kind in wanted:
+            out[kind] = cached["items"][kind]
+        errors.update(cached["errors"])
+        logfn(f"    ✓ reusing today's capture from {render_dir} "
+              f"(no ownerville session needed)")
+        return out
 
     from automations.focus_office_att.aliases import load_aliases
     aliases_raw = load_aliases()
@@ -654,6 +739,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 f"{type(e).__name__}: {str(e)[:200]}")
             out_daily.insert(0, (summary_label, None))
             logfn(f"    ✗ daily summary: {type(e).__name__}: {str(e)[:160]}")
+    # Written LAST, so it only ever describes a finished pull: a run that dies
+    # mid-session leaves no manifest and the next build pulls properly instead
+    # of inheriting half a captainship.
+    _save_manifest(render_dir, captain.key, target, saturday, wanted,
+                   out, errors, logfn=logfn)
     return out
 
 
