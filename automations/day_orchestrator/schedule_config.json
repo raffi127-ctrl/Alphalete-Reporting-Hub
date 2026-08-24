@@ -3064,7 +3064,8 @@
    "verify": null
   },
   "captainship_drafts": {
-   "timeout_minutes": 90,
+   "timeout_minutes": 210,
+   "_timeout_note": "90 -> 210 (2026-08-23 night): the six fiber-side drafts now carry the Daily Knocks section (per-owner ownerville pulls) every day, and Sun+Mon ALSO the weekly knock_dispo section (6 day-pulls per owner). The 2-captain both-sections validation ran ~34m with sheets+tableau SKIPPED - six captains with everything real needs the headroom; 210 still fails a genuine hang before the review window closes.",
    "order": 24,
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
    "on_scheduler": true,
