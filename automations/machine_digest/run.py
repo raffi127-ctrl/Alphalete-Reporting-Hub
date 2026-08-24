@@ -481,7 +481,7 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         rec["name"] = str(r.get("Report Name") or cid) or rec["name"]
     same_wd = (target_date - _dt.timedelta(days=7)).isoformat()
     for cid, rec in dseen.items():
-        if cid in out or len(rec["days"]) < daily_min_days:
+        if len(rec["days"]) < daily_min_days:
             continue
         if same_wd not in rec["days"]:
             continue   # never ran on this weekday → it isn't a report of today's
@@ -492,6 +492,27 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
         start_hour = rec["hour_by_day"].get(newest)
         if start_hour is None:
             start_hour = min(rec["hour_by_day"].values()) if rec["hour_by_day"] else 0
+        if cid in out:
+            # A SCHEDULE CHANGE MUST NOT COST A WEEK OF FALSE ALARMS (Megan
+            # 2026-08-24). The weekday path got here first and anchored the hour
+            # to the same weekday SEVEN DAYS AGO. For a daily report that is
+            # always the stalest reading available, and the day a report moves it
+            # is simply wrong: enrollment_pending_check left the 4am pass for its
+            # own 09:00-22:00 hourly agent on 8/19, and the watcher went on
+            # expecting it at 4:00 — posting "didn't run today on the mini ·
+            # usually starts ~4:00" on 8/20, 8/21, 8/22 and 8/23, each one
+            # resolved a few hours later by the 9:00 run that was never late.
+            # Four mornings of noise in the channel Megan is trying to de-clutter,
+            # for a report that was working the whole time.
+            #
+            # This report also clears the DAILY bar, and the daily anchor is the
+            # most recent day it actually ran — so it is both fresher and, after
+            # a move, correct. Take the hour (and the machine, stale for the same
+            # reason: that agent moved to Lucy 1) and leave membership alone.
+            out[cid]["start_hour"] = start_hour
+            if rec["machine"]:
+                out[cid]["machine"] = rec["machine"]
+            continue
         out[cid] = {"start_hour": start_hour,
                     "machine": rec["machine"], "name": rec["name"]}
     return out
