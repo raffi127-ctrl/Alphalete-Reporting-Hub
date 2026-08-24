@@ -3308,6 +3308,27 @@
    "verify": null,
    "timeout_minutes": 5
   },
+  "install_je_opt_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_je_opt_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. It regens + launchctl-bootstraps com.alphalete.je-opt-monday-catchup on the mini — the MONDAY 15:00 re-run of alphalete_org_report.opt_je that picks up the just-closed SUNDAY. The org focus runs Mondays ~07:2x, but Just Energy's Tableau publishes ~13:53, so the morning fill finalizes the JE week a Sunday short (~20% of the week, measured 2026-08-24) and nothing comes back for it — opt_je writes that WE column once and the next org focus is a week later. Monday afternoon is the only window: after JE publishes, and before TUESDAY, when the Org Sales Board's reporting week rolls (Eve 2026-08-24). 15:00 also clears board_catchup's 14:30 so the two never contend for a Tableau session. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Safe to leave here; re-runnable any time.",
+   "display_name": "Install: JE OPT Monday catch-up LaunchAgent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "je-opt-monday-catchup"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5
+  },
   "install_orchestrator_agent": {
    "on_scheduler": true,
    "_note": "NOT a report — re-bootstraps the day-orchestrator LaunchAgent itself, run via `lucy rerun install_orchestrator_agent`. FIXES the 2026-07-07 finding: the mini was awake at 4am (up 14d, no sleep) yet the batch started at 6am — launchd was honoring a STALE loaded schedule while the plist file already said Hour 4 (a git pull updates the file but never reloads launchd). This does launchctl bootout+bootstrap of com.alphalete.day-orchestrator so launchd picks up the 4am schedule. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent; the plist has no RunAtLoad so it won't trigger an immediate run. Re-run any time launchd drifts.",

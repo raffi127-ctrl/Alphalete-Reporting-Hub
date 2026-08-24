@@ -926,6 +926,7 @@ _REMAINING_NAMES = {
     "board-catchup": "Org Sales Board — catch-up re-pull",
     "retail-catchup": "Retail — catch-up re-pull",
     "je-sunday-catchup": "JE — Sunday catch-up",
+    "je-opt-monday-catchup": "JE OPT — Monday catch-up",
     "leaders-call-mon": "Leader's Call",
     "carlos-captainship-headcount-mon": "Carlos Captainship Headcount",
     "carlos-captainship-bonus-tue": "Carlos Captainship Bonus",
