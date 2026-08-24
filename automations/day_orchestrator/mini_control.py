@@ -4080,10 +4080,21 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
     `automations.rashad_metrics.knocks_pull` standalone, whose whole job is the
     preview (`_print_preview`).
 
-      probe_knocks "<ownerville office>" [YYYY-MM-DD]
+      probe_knocks "<ownerville office>" [YYYY-MM-DD] [campaign=<id|none>]
         office  the name to IMPERSONATE — i.e. an office's `knocks_office` in
                 office_metrics/offices.py, NOT its owner. Quote it.
+                Use the word `master` for Raf's own office: his login IS
+                office 11280, so he is not in the Office Access list and
+                CANNOT be impersonated — probing him by name just returns
+                "couldn't be found in ownerville" (2026-08-24). `master`
+                runs total_knocks.pull instead, which is the exact path his
+                daily report uses.
         date    default: yesterday (Central), same as the daily run.
+        campaign=<id>    pin a different TeleMapper campaign for this probe
+        campaign=none    skip the pin entirely (what an NDS office gets in
+                         weekly_knock_dispositions). Lets the "is the pin
+                         blanking this office?" question be asked from the
+                         laptop instead of needing a code change + deploy.
 
     Why this exists: when a daily metrics run posts "No data available", the log
     only says `0 rep(s)` — which reads identically whether (a) the office really
@@ -4105,7 +4116,17 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
         return False, ('probe_knocks needs an office name, e.g. '
                        'probe_knocks "Muhammad Waqar" 2026-08-04')
     office = parts[0].strip()
-    date_arg = parts[1].strip() if len(parts) > 1 else None
+    date_arg = None
+    campaign = None                      # None = leave the default pin alone
+    for raw in parts[1:]:
+        arg = raw.strip()
+        if arg.lower().startswith("campaign="):
+            val = arg.split("=", 1)[1].strip()
+            # 'none' / '' both mean DON'T pin — knocks_pull skips the pin on
+            # an empty KNOCKS_CAMPAIGN_ID.
+            campaign = "" if val.lower() in ("none", "off", "") else val
+            continue
+        date_arg = arg
     if date_arg:
         try:
             dt.datetime.strptime(date_arg, "%Y-%m-%d")
@@ -4118,14 +4139,20 @@ def _action_probe_knocks(args: str) -> tuple[bool, str]:
         chrome_guard.close_stray_chrome()
     except Exception:  # noqa: BLE001 — a guard must never crash the run
         pass
-    cmd = [sys.executable, "-m", "automations.rashad_metrics.knocks_pull"]
+    master = office.lower() in ("master", "raf", "rafael hidalgo")
+    module = ("automations.total_knocks.pull" if master
+              else "automations.rashad_metrics.knocks_pull")
+    cmd = [sys.executable, "-m", module]
     if date_arg:
         cmd.append(date_arg)
+    env = {} if master else {"KNOCKS_OFFICE": office}
+    if campaign is not None:
+        env["KNOCKS_CAMPAIGN_ID"] = campaign
     slug = "".join(c if c.isalnum() else "-" for c in office).strip("-").lower()
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     ok, res = _run_cmd(cmd, timeout_s=15 * 60,
                        log_name=f"probe-knocks-{slug}-{stamp}.log",
-                       env={"KNOCKS_OFFICE": office})
+                       env=env or None)
     return ok, res
 
 
@@ -5607,9 +5634,13 @@ def print_help() -> None:
         "  lucy status 25            show the last 25\n"
         "  lucy rerun <report_id>    re-run a report that failed in the daily email\n"
         "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
-        '  lucy probe_knocks "<office>" [date]\n'
+        '  lucy probe_knocks "<office>" [date] [campaign=<id|none>]\n'
         "                            READ-ONLY: what a knocks scrape returns for\n"
-        "                            one office on one day (no Sheet, no Slack)\n"
+        "                            one office on one day (no Sheet, no Slack).\n"
+        '                            Use "master" as the office for Raf (he cannot\n'
+        "                            be impersonated). campaign=none skips the\n"
+        "                            TeleMapper pin, to test whether the pin is\n"
+        "                            what is blanking an office.\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"

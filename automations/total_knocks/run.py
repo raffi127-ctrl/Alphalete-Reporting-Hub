@@ -28,7 +28,11 @@ except Exception:
 
 from automations.total_knocks import fill as _fill
 from automations.total_knocks import render as _render
-from automations.total_knocks.pull import central_today, pull_disposition_day
+from automations.total_knocks.pull import (
+    KnocksPullFailed,
+    central_today,
+    pull_disposition_day,
+)
 
 # ONE post to the Metrics thread: (comment label, reaction short-name). The
 # comment leads with the workflow emoji + Title Case title, matching every
@@ -61,10 +65,22 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
           "the browser window while it works.", flush=True)
 
     # 1. Pull (Disposition + Time Tracker gaps, merged).
-    target, rows = pull_disposition_day(target)
+    try:
+        target, rows = pull_disposition_day(target)
+    except KnocksPullFailed as e:
+        # A FAILED scrape, not a quiet day. Post nothing — the 'No data
+        # available' line below is reserved for a VERIFIED empty day, and a
+        # failure wearing that line is exactly what hid this for a week — and
+        # exit non-zero so the retry + failure alert fire.
+        print(f"[total_knocks] ❌ Pull FAILED (not an empty day) — {e}",
+              flush=True)
+        print("[total_knocks] Nothing written or posted; the retry + failure "
+              "alert take it from here.", flush=True)
+        return 1
     print(f"[total_knocks] Scraped {len(rows)} rep(s).", flush=True)
     if not rows:
-        # No knocks for that day (e.g. a day nobody door-knocked). Post an
+        # VERIFIED no knocks for that day (the scrape completed and the office
+        # logged nothing — e.g. a Sunday nobody door-knocked). Post an
         # explicit 'No data available' one-liner to each metric in today's
         # thread so the absence is visible — NOT a silent failure — and the
         # parent reactions still mark both metrics done. (Eve, 2026-06-22)

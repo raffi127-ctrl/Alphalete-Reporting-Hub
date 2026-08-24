@@ -54,7 +54,7 @@ from automations.rashad_metrics.knocks_pull import (
     pull_offices_knocks,
 )
 from automations.total_knocks import render as _render
-from automations.total_knocks.pull import COL_TOTAL_KNOCKS
+from automations.total_knocks.pull import COL_TOTAL_KNOCKS, KnocksPullFailed
 from automations.total_knocks.pull import central_today
 
 # Same two posts, same order, same emoji+title strings as Raf's
@@ -85,32 +85,27 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
     #    or absence never blocks this office's post.
     extras = [o for o in EXTRA_TOTALS_OFFICES
               if o.strip().lower() != office_name.strip().lower()]
-    if extras:
-        target, pulled = pull_offices_knocks([office_name] + extras, target)
-        _, rows, err0 = pulled[0]
-        if err0 is not None:
-            raise err0
-        extra_totals = []
-        for name, x_rows, x_err in pulled[1:]:
-            if x_err is not None:
-                print(f"[rashad_knocks] ⚠ {name} totals pull failed "
-                      f"({type(x_err).__name__}) — posting without it.",
-                      flush=True)
-            elif x_rows and COL_TOTAL_KNOCKS in x_rows[0]:
-                extra_totals.append((name, x_rows))
-            else:
-                print(f"[rashad_knocks] ⚠ {name}: no fiber rows — posting "
-                      "without that totals line.", flush=True)
-    else:
-        target, rows = pull_office_knocks(office_name, target)
-        extra_totals = []
+    try:
+        rows, extra_totals, target = _pull(office_name, extras, target)
+    except KnocksPullFailed as e:
+        # A FAILED scrape, not a quiet day: post nothing (a "No data
+        # available" line here would be a lie the thread can't tell from the
+        # real thing) and exit non-zero so the runner's retry_on_fail fires
+        # and the office lands in the manifest's failed list.
+        print(f"[rashad_knocks] ❌ {office_name}: pull FAILED (not an empty "
+              f"day) — {e}", flush=True)
+        print("[rashad_knocks] Nothing posted; the runner's retry + failure "
+              "alert take it from here.", flush=True)
+        return 1
     print(f"[rashad_knocks] {office_name} — data date {target.isoformat()} — "
           f"{len(rows)} rep(s).", flush=True)
 
-    # No-data day — post (or, on dry-run, describe) the 'No data available'
-    # one-liner per metric, same as Raf's run.
+    # No-data day — VERIFIED empty (the scrape completed and the office
+    # logged nothing). Post the 'No data available' one-liner per metric,
+    # same as Raf's run.
     if not rows:
-        print("[rashad_knocks] ⚠ No rows for that day.", flush=True)
+        print("[rashad_knocks] ⚠ No rows for that day (verified empty).",
+              flush=True)
         if dry_run:
             for label, _ in (POST_TOTAL_KNOCKS, POST_TIME_GAPS):
                 print(f"[rashad_knocks] --dry-run — would post 'No data "
@@ -133,6 +128,40 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
         print("[rashad_knocks] ✅ Finished (no data).", flush=True)
         return 0
 
+    return _render_and_post(office_name, target, rows, extra_totals,
+                            dry_run=dry_run)
+
+
+def _pull(office_name: str, extras: list, target):
+    """The pull half of run(): this office's rows + any extra offices' totals.
+    Raises KnocksPullFailed when THIS office's scrape failed; an extra
+    office's failure only costs its comparison line."""
+    if extras:
+        target, pulled = pull_offices_knocks([office_name] + extras, target)
+        _, rows, err0 = pulled[0]
+        if err0 is not None:
+            raise err0
+        extra_totals = []
+        for name, x_rows, x_err in pulled[1:]:
+            if x_err is not None:
+                print(f"[rashad_knocks] ⚠ {name} totals pull failed "
+                      f"({type(x_err).__name__}) — posting without it.",
+                      flush=True)
+            elif x_rows and COL_TOTAL_KNOCKS in x_rows[0]:
+                extra_totals.append((name, x_rows))
+            else:
+                print(f"[rashad_knocks] ⚠ {name}: no fiber rows — posting "
+                      "without that totals line.", flush=True)
+    else:
+        target, rows = pull_office_knocks(office_name, target)
+        extra_totals = []
+    return rows, extra_totals, target
+
+
+def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
+                     *, dry_run: bool) -> int:
+    """Render this office's board(s) from the in-memory rows and post them.
+    Only reached with a non-empty, successfully-pulled `rows`."""
     # 2. Render straight from the in-memory rows — no Sheet read/write.
     #    Three Disposition shapes (Raf 2026-08-22: "telemapper knocks … should
     #    be on there for the NDS guys"):

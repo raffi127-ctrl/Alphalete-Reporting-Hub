@@ -55,6 +55,7 @@ from automations.total_knocks.pull import (
     COL_ID,
     COL_GAPS,
     COL_TOTAL_GAPS,
+    KnocksPullFailed,  # re-exported: callers catch it without importing both
     SHEET_COLUMNS,  # re-exported for callers (Sheet column order)
 )
 
@@ -101,8 +102,14 @@ def _scrape_wireless_rows(page, idx: dict) -> list[dict]:
         page.wait_for_function(
             "() => document.querySelectorAll('#table-dispositions tbody tr')"
             ".length >= 1", timeout=10000)
-    except Exception:  # noqa: BLE001 — an empty day renders no body rows
-        return []
+    except Exception as e:  # noqa: BLE001 — turned into a typed failure below
+        # An empty day still renders DataTables' 'No data available' row, so
+        # zero rows means the grid never built — a failed scrape, not a quiet
+        # day. Same rule as the house walk in total_knocks.pull._scrape_rows.
+        raise KnocksPullFailed(
+            "Wireless disposition grid rendered no rows at all — not even "
+            "DataTables' 'No data available' placeholder — so the scrape "
+            "failed rather than the day being empty.") from e
 
     out: list = []
     seen_ids: set = set()
@@ -154,7 +161,17 @@ KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 def _pin_campaign(page, rqst: str, verbose: bool = True) -> None:
     """Force the impersonated session's TeleMapper campaign so a stale sticky
     selection can't silently blank the whole pull. Best-effort: a failure here
-    leaves us exactly where we were before this guard existed."""
+    leaves us exactly where we were before this guard existed.
+
+    An EMPTY KNOCKS_CAMPAIGN_ID skips the pin — the session keeps whatever
+    campaign it already had. That's what weekly_knock_dispositions does for an
+    NDS office ("" if nds else "3"), and it's how `lucy probe_knocks …
+    campaign=none` asks whether the pin is what's blanking an office."""
+    if not KNOCKS_CAMPAIGN_ID:
+        if verbose:
+            print("  · TeleMapper campaign pin SKIPPED "
+                  "(KNOCKS_CAMPAIGN_ID empty)", flush=True)
+        return
     try:
         page.goto(f"https://v2.ownerville.com/index.cfm?p=88&rqst={rqst}"
                   f"&invD2DClientId={KNOCKS_CAMPAIGN_ID}",
@@ -268,7 +285,10 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
                       flush=True)
         else:
             rows = knocks._scrape_rows(page, idx)
-        tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
+        # Supplementary while we have disposition rows, the last source
+        # standing when we don't — only then is a failed fetch fatal.
+        tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose,
+                                         required=not rows)
         if verbose:
             print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",
                   flush=True)

@@ -92,6 +92,19 @@ COUNT_COLUMNS = {
 DISP_TABLE = "table#table-dispositions"
 
 
+class KnocksPullFailed(RuntimeError):
+    """The scrape did not complete — as distinct from an office that genuinely
+    logged no knocks that day.
+
+    Why this exists (2026-08-24): every read path used to return [] for BOTH
+    cases, so a stalled grid or a dead Time Tracker endpoint posted the same
+    "No data available" line a real empty day posts, exited 0, kept the Hub
+    card green, and never fired the runner's retry. Callers now post the
+    no-data line ONLY for a verified-empty pull and let this exception fail
+    the run loudly.
+    """
+
+
 def _norm(s: str) -> str:
     """Normalize a header for matching: lowercase, drop every non-alphanumeric
     (so an en-dash, the mojibake '�', or extra spaces all collapse), then
@@ -205,8 +218,17 @@ def _scrape_rows(page, idx: dict) -> list[dict]:
             "() => document.querySelectorAll('#table-dispositions tbody tr').length >= 1",
             timeout=10000,
         )
-    except Exception:
-        return []
+    except Exception as e:  # noqa: BLE001 — turned into a typed failure below
+        # A day with NO knocks still renders ONE tbody row: DataTables' own
+        # 'No data available in table' placeholder — the row the walk below
+        # skips by name. So ZERO tbody rows does NOT mean an empty day, it
+        # means the grid never finished building. Raising is what separates
+        # the two; before this both came back [] and posted "No data
+        # available" (Isaiah, 2026-08-23 — see KnocksPullFailed).
+        raise KnocksPullFailed(
+            "Disposition grid rendered no rows at all — not even DataTables' "
+            "'No data available' placeholder — so the scrape failed rather "
+            "than the day being empty.") from e
 
     out: list[dict] = []
     seen_ids: set[str] = set()
@@ -263,11 +285,19 @@ def _blank_zero(v) -> str:
         return s
 
 
-def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dict:
-    """Fetch Time Tracker (p=510) data for `mdy` from its JSON endpoint and
-    return {id_str: {Gaps, Total Gaps (min)}}. The page's own same-origin
-    fetch carries the ownerville session cookies — far more robust than
-    driving the jQuery datepicker (jQuery isn't on `window` here)."""
+def _fetch_time_tracker(page, rqst: str, mdy: str, *, required: bool,
+                        verbose: bool = True) -> list:
+    """Raw Time Tracker (p=510) JSON rows for `mdy`, with the status checked.
+
+    `required=True` — this endpoint is the ONLY source for the board being
+    built (an NDS/wireless office has no Disposition rows to fall back on), so
+    anything other than a clean 200 raises KnocksPullFailed. `required=False`
+    — the gaps merely decorate disposition rows we already have, so a failed
+    fetch warns and leaves Gaps blank, the documented pre-existing behaviour.
+
+    A 200 carrying zero rows is a VERIFIED empty day, never a failure: that is
+    exactly what Isaiah's office returned for Sunday 2026-08-23.
+    """
     result = page.evaluate(
         """async ({rqst, mdy}) => {
             const url = `https://v2.ownerville.com/components/telemapper/`
@@ -282,9 +312,34 @@ def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True) -> dic
         }""",
         {"rqst": rqst, "mdy": mdy})
     rows = result.get("data", []) or []
-    if verbose and (result.get("status") != 200 or not rows):
-        print(f"  ⚠ Time Tracker fetch: status={result.get('status')} "
-              f"rows={len(rows)} {result.get('raw', '')}", flush=True)
+    status = result.get("status")
+    if status != 200:
+        msg = (f"Time Tracker fetch failed for {mdy}: status={status} "
+               f"{result.get('raw', '')}").strip()
+        if required:
+            raise KnocksPullFailed(msg)
+        if verbose:
+            print(f"  ⚠ {msg} — Gaps / Total Gaps left blank", flush=True)
+    elif verbose and not rows:
+        # 200 + no rows is a real quiet day, NOT a problem — say so plainly.
+        # The old code warned here too, which cried wolf every empty Sunday.
+        print(f"  · Time Tracker: 200 OK, no rows for {mdy} "
+              "(nobody clocked knocks)", flush=True)
+    return rows
+
+
+def _scrape_time_tracker(page, rqst: str, mdy: str, verbose: bool = True,
+                         required: bool = False) -> dict:
+    """Fetch Time Tracker (p=510) data for `mdy` from its JSON endpoint and
+    return {id_str: {Gaps, Total Gaps (min)}}. The page's own same-origin
+    fetch carries the ownerville session cookies — far more robust than
+    driving the jQuery datepicker (jQuery isn't on `window` here).
+
+    `required` — see _fetch_time_tracker. Defaults False here because this is
+    the gap-MERGE path: callers pass required=True only when the disposition
+    came back empty and this is the last source standing."""
+    rows = _fetch_time_tracker(page, rqst, mdy, required=required,
+                               verbose=verbose)
     out = {}
     for row in rows:
         rid = str(row.get("id", "")).strip()
@@ -305,21 +360,12 @@ def _scrape_time_tracker_rows(page, rqst: str, mdy: str,
     JSON as _scrape_time_tracker, but keeps the identity columns the disposition
     normally supplies (name/first/last knock) so render_time_gaps can draw the
     table on its own. Fields from the live endpoint: name, firstKnockDate,
-    lastKnockDate, gaps, totalGapMinutes, id."""
-    result = page.evaluate(
-        """async ({rqst, mdy}) => {
-            const url = `https://v2.ownerville.com/components/telemapper/`
-                + `report_timeTracker.cfc?method=getTimeTrackingData&rqst=${rqst}`
-                + `&dateToSearch=${encodeURIComponent(mdy)}&returnFormat=json`;
-            try {
-                const r = await fetch(url, {credentials: 'include'});
-                const text = await r.text();
-                try { return {status: r.status, data: (JSON.parse(text).data) || []}; }
-                catch (e) { return {status: r.status, data: [], raw: text.slice(0, 160)}; }
-            } catch (e) { return {status: 0, data: [], raw: String(e).slice(0, 160)}; }
-        }""",
-        {"rqst": rqst, "mdy": mdy})
-    raw = result.get("data", []) or []
+    lastKnockDate, gaps, totalGapMinutes, id.
+
+    required=True always: by the time we get here the Disposition came back
+    empty, so this endpoint IS the board. A non-200 here is a failed pull, not
+    a quiet day."""
+    raw = _fetch_time_tracker(page, rqst, mdy, required=True, verbose=verbose)
     out = []
     for row in raw:
         rid = str(row.get("id", "")).strip()
@@ -361,7 +407,11 @@ def pull_disposition_day(target: Optional[dt.date] = None,
         _navigate(page, rqst, mdy)
         idx = _header_index(page)
         rows = _scrape_rows(page, idx)
-        tt = _scrape_time_tracker(page, rqst, mdy, verbose=verbose)
+        # Gaps are supplementary while we HAVE disposition rows; they are the
+        # last source standing when we don't — so only then is a failed fetch
+        # fatal (see _fetch_time_tracker).
+        tt = _scrape_time_tracker(page, rqst, mdy, verbose=verbose,
+                                  required=not rows)
         if verbose:
             print(f"-> Time Tracker: gap data for {len(tt)} rep(s)", flush=True)
 
