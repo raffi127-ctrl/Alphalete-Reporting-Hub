@@ -1816,6 +1816,26 @@
    "depends_on": [],
    "verify": null
   },
+  "install_new_start_number_scan_agent": {
+   "on_scheduler": true,
+   "_note": "MANUAL: `lucy rerun install_new_start_number_scan_agent` installs com.alphalete.new-start-number-replies (Sat+Sun hourly 9am-6pm CST) on THIS machine. Each firing enqueues `rerun new_start_number_replies` for the poller — see that entry for why. weekdays [] = manual only.",
+   "display_name": "Install New-Start number scan agent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "new-start-number-replies"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
   "new_start_texts_dry": {
    "on_scheduler": true,
    "machine": "Lucy 1",
@@ -1879,10 +1899,9 @@
     "--live"
    ],
    "cadence": {
-    "weekdays": [5, 6],
-    "not_before": "09:00"
+    "weekdays": []
    },
-   "_note": "LIVE SEND (Megan 2026-08-23: 'if anyone responds with the number, then you should read it and send the text'). Sat+Sun from 9am: reads the replies under the 'numbers needed' post (@Raf @Aisha, posted by sat-texts for leaders with no number), parses 'Name - number' / 'Name - terminated' lines, saves the number to the machine-local overlay, SENDS that leader's text from this machine's Messages, and confirms '✅ Got it — texted …' in the thread. EXITS 1 while gaps remain so the orchestrator re-polls through the day (owner_chat_texts trackers idiom) — an all-day 'failed' state here just means nobody has replied with the last numbers yet. Orchestrator-scheduled for the Messages grant. Idempotent: per-(week, leader) .sent markers; terminated resolutions recorded per week.",
+   "_note": "LIVE SEND (Megan 2026-08-23: 'if anyone responds with the number, then you should read it and send the text' + 'rescan in 1 hour'). Reads the replies under the 'numbers needed' post (@Raf @Aisha, posted by sat-texts for leaders with no number; ANYONE may reply), parses 'Name - number' / 'Name - terminated' lines, saves the number to the machine-local overlay, SENDS that leader's text from this machine's Messages, and confirms '✅ Got it — texted …' in the thread. weekdays [] = never orchestrator-run: the day orchestrator's retry loop stops at its noon backstop, so the cadence is instead the com.alphalete.new-start-number-replies LaunchAgent (Sat+Sun hourly 9am-6pm), which just enqueues `rerun new_start_number_replies` — the POLLER runs it because only that identity holds the control-Messages grant. Manual `lucy rerun new_start_number_replies` = scan right now. Idempotent: per-(week, leader) .sent markers; terminated resolutions recorded per week.",
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],

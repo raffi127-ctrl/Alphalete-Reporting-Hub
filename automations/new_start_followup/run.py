@@ -130,9 +130,9 @@ def _run_funnel(args, funnel, monday, when) -> int:
         result = number_requests.process(rec, live=args.live)
         for line in result["lines"]:
             print(line)
-        # Exit 1 while gaps remain so the orchestrator keeps re-polling the
-        # thread through the day (same retry idiom as owner_chat_texts).
-        return 1 if result["gaps_remaining"] else 0
+        # Waiting on a reply is NOT a failure — the hourly launchd scan drives
+        # the re-checks, so exit 0 unless an actual send broke.
+        return 1 if any("SEND FAILED" in l for l in result["lines"]) else 0
 
     if args.mode == "rollcall":
         # One Lucy roll call per week PER THREAD — a re-run must not repeat it.
