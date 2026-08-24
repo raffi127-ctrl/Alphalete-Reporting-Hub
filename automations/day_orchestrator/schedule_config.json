@@ -4161,7 +4161,7 @@
    "data_sources": [
     "tableau:product_sales"
    ],
-   "_note": "AppStream + Tableau OPT; gated on the Tableau OPT source. run.py defaults to the current week.",
+   "_note": "AppStream + Tableau OPT; gated on the Tableau OPT source. run.py defaults to the current week. timeout_minutes 90 (Eve 2026-08-24), was the flat 45 default: on 8/24 BOTH attempts were killed at 45m and the report reached no tab. Attempt 1 started 06:39:56 and spent 20min waiting on .appstream_profile.launchlock (daily_focus failed at 04:00 and its retry ran 06:33-07:00 on the same profile), leaving ~24min of budget. Attempt 2 started 07:26:31 on a FREE profile, ran clean, reached the last phase (DD Boxes, 08:08:12) and was killed at 08:11:31 anyway - so 45m is short even with no contention: the run has grown every week (32:29 on 7/13 -> 37:25 on 8/17) and its start slot drifts ~10min later per week as the 4am batch grows (05:14 -> 06:39). The launchlock wait is CORRECT behaviour (it is what stops two runs colliding on one profile), so the budget has to cover it. 90 = work + a full 30min wait + margin, the same number alphalete_org_focus carries.",
    "command": [
     "automations.recruiting_report.run"
    ],
@@ -4171,6 +4171,7 @@
      0
     ]
    },
+   "timeout_minutes": 90,
    "priority": "P1",
    "freshness_target": null,
    "depends_on": [],

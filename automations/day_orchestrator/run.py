@@ -298,7 +298,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             # of the day would wait out the 30m profile lock and die at its own
             # timeout (2026-08-19). Orphans only (PPID 1), so this can never
             # take out a run that is legitimately using the profile.
-            chrome_guard.unstick_profile(verbose=False)
+            for _profile in ORPHANABLE_PROFILES:
+                chrome_guard.unstick_profile(_profile, verbose=False)
 
         ds = state.load_or_create(
             target.isoformat(),
@@ -728,7 +729,8 @@ def _guard_chrome(r, *, dry_run, simulate) -> None:
     try:
         from automations.day_orchestrator import chrome_guard
         chrome_guard.close_stray_chrome(verbose=False)
-        chrome_guard.unstick_profile(verbose=False)
+        for profile in ORPHANABLE_PROFILES:
+            chrome_guard.unstick_profile(profile, verbose=False)
     except Exception:  # noqa: BLE001 — a guard must never crash the batch
         pass
 
@@ -1058,21 +1060,30 @@ def _already_running(module: str) -> list:
     return [x for x in out.split() if x and x != me]
 
 
+# Every persistent Chrome profile a scheduled browser report can leave an
+# orphan on. unstick_profile() defaults to '.browser_profile' alone, so every
+# guard below used to skip '.appstream_profile' even though they are all gated
+# on source_type 'appstream' as well as 'tableau' (Eve 2026-08-24). att_focus_raf
+# drives BOTH in one run, so a kill there can orphan either one.
+ORPHANABLE_PROFILES = (".browser_profile", ".appstream_profile")
+
+
 def _unstick_after_run(r, logf=None) -> None:
     """Close an orphan Chrome left holding the shared profile by a run that just
     ENDED — clean exit or not. Best-effort and silent: a guard must never turn a
     finished report into a failure."""
     if getattr(r, "source_type", None) not in ("tableau", "appstream"):
         return
-    try:
-        from automations.day_orchestrator import chrome_guard
-        freed = chrome_guard.unstick_profile(verbose=False)
-        if freed and logf is not None:
-            logf.write(f"===== freed the browser profile after the run: closed "
-                       f"orphan Chrome PID(s) {freed} =====\n")
-            logf.flush()
-    except Exception:  # noqa: BLE001 — never affect the report's outcome
-        pass
+    for profile in ORPHANABLE_PROFILES:
+        try:
+            from automations.day_orchestrator import chrome_guard
+            freed = chrome_guard.unstick_profile(profile, verbose=False)
+            if freed and logf is not None:
+                logf.write(f"===== freed {profile} after the run: closed "
+                           f"orphan Chrome PID(s) {freed} =====\n")
+                logf.flush()
+        except Exception:  # noqa: BLE001 — never affect the report's outcome
+            pass
 
 
 def _run_report(r, target, *, dry_run, simulate, args_override=None):
@@ -1166,15 +1177,9 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
                 # waits out the 30m profile lock and dies here too, leaving one
                 # more orphan. Clear it now or the retries are guaranteed to
                 # repeat the same 30 minutes (Eve 2026-08-19).
-                if r.source_type in ("tableau", "appstream"):
-                    try:
-                        from automations.day_orchestrator import chrome_guard
-                        freed = chrome_guard.unstick_profile()
-                        if freed:
-                            lf.write(f"===== freed the browser profile: closed "
-                                     f"orphan Chrome PID(s) {freed} =====\n")
-                    except Exception:  # noqa: BLE001 — cleanup never re-kills a run
-                        pass
+                # Same sweep the clean-exit path does, and for the same
+                # reason — one implementation, both profiles.
+                _unstick_after_run(r, lf)
                 return False, f"{TIMEOUT_DETAIL}{timeout_s//60}m{note}"
         # A run that FINISHES can still leave its Chrome behind — Playwright's
         # browser outlives the python process whether it was killed or exited
