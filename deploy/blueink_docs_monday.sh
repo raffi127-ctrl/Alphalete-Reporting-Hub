@@ -25,9 +25,23 @@
 # StartCalendarInterval in the plist, not this wrapper.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+mkdir -p output/logs
 
-VENV_PY=".venv/bin/python3.9"
-[ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
+# Pick the interpreter that can actually drive a browser, rather than guessing
+# a version: this repo's venv holds several, and patchright is not installed for
+# all of them on every machine (3.9 has it on Lucy 2, 3.14 has it on Megan's
+# laptop). Probing beats hardcoding.
+VENV_PY=""
+for _cand in .venv/bin/python .venv/bin/python3.9 .venv/bin/python3; do
+    if [ -x "$_cand" ] && "$_cand" -c "import patchright" >/dev/null 2>&1; then
+        VENV_PY="$_cand"; break
+    fi
+done
+if [ -z "$VENV_PY" ]; then
+    echo "[$(date)] no venv python with patchright — cannot drive Blue Ink" \
+        >> "output/logs/blueink-docs.skip.log"
+    exit 1
+fi
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 

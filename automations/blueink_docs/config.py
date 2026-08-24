@@ -99,6 +99,11 @@ API_BASE = "https://api.blueink.com/api/v2"
 # real keys if a future template differs.
 SIGNER_KEY = "employee-1"
 
+# The Envelope Template's NAME as it appears on /dashboard/templates -- the UI
+# path finds its row by this text. Keep it in step with envelope_template_id in
+# blueink-creds.json (that id is only used by the now-capped API path).
+TEMPLATE_NAME = "UNIVERSAL I9 MASTER FORM"
+
 BUNDLE_LABEL = "Alphalete New Start Docs"
 EMAIL_SUBJECT = "Your Alphalete onboarding documents"
 EMAIL_MESSAGE = (

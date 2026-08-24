@@ -111,3 +111,16 @@ automations/applicant_tracker/.env
 # thread_builder.sync; the sheet is the source of truth, not git).
 automations/shared/thread_plans.json
 output/thread_plans_store.json
+# Blue Ink storage_state (blueink_docs) — live SESSION cookies for the
+# alphaletemarketing@gmail.com account, which can SEND documents. The repo is
+# PUBLIC. Never commit. Seeded by `python -m automations.blueink_docs.session
+# --login` (a human logs in once; nothing types a password).
+.blueink_storage_state.json
+automations/blueink_docs/.blueink_storage_state.json
+# ...and the persistent Chrome profile the --login seed writes. It holds the
+# SAME live session (cookies for an account that can send legally-binding
+# documents), and `git add <dir>` sweeps its thousands of files in without
+# blinking — which is exactly what happened on 2026-08-24, caught before the
+# commit. Wildcard so a _holder/_alt variant is covered too.
+.blueink_profile*
+automations/blueink_docs/.blueink_profile*

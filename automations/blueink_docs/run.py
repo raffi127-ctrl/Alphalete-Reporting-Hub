@@ -27,6 +27,8 @@ import sys
 from typing import List
 
 from automations.blueink_docs import blueink, config, ledger, mark
+from automations.blueink_docs import session as bi_session
+from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
                                              final_status_is_unrecognised,
                                              parse_tab)
@@ -143,6 +145,51 @@ def _flag_terminated(people: List[NewStart]) -> None:
         pass
 
 
+def _send_via_ui(workbook, worksheet, people: List[NewStart],
+                 really_send: bool, headless: bool = True) -> int:
+    """The live path. One browser for the whole batch -- relaunching per person
+    would roughly double a run that already takes ~a minute each."""
+    rows, failures, sent = [], 0, []
+    template = config.TEMPLATE_NAME
+    with bi_session._sync_api()() as p:
+        browser, ctx = ui_send.open_browser(p, headless=headless)
+        page = ctx.new_page()
+        try:
+            for i, person in enumerate(people, 1):
+                try:
+                    r = ui_send.send_one(page, first=person.first, last=person.last,
+                                         email=person.email, template_name=template,
+                                         really_send=really_send)
+                    print(f"  [{i}/{len(people)}] {r.status:<26} "
+                          f"{person.name:<26} {person.email:<36} {r.bundle_id}")
+                    if really_send:
+                        rows.append(ledger.row_for(person, r.bundle_id, r.status))
+                        sent.append(person)
+                except Exception as exc:          # one bad row can't stop the batch
+                    failures += 1
+                    print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {exc}")
+                    if really_send:
+                        rows.append(ledger.row_for(person, "", "failed", str(exc)[:200]))
+                finally:
+                    # Per-person, before the next one starts: a crash mid-batch
+                    # must never leave a sent person looking unsent.
+                    if really_send and rows:
+                        ledger.record(workbook, rows[-1:])
+        finally:
+            browser.close()
+
+    if really_send:
+        try:
+            tinted = mark.highlight(worksheet, sent)
+            if tinted:
+                print(f"\nTinted {tinted} first name(s) light green on "
+                      f"{worksheet.title!r}.")
+        except Exception as exc:
+            print(f"\nSends went out, but the green highlight failed: {exc}\n"
+                  "Nothing to re-send -- rerun with --highlight-only to tint.")
+    return failures
+
+
 def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     rows, failures, sent = [], 0, []
     template = config.template_id()
@@ -252,6 +299,17 @@ def _main(argv=None) -> int:
                          "batch. Nothing is written to the log.")
     ap.add_argument("--test-name", default="Test Signer",
                     help="name on the --test-to packet")
+    ap.add_argument("--walk", action="store_true",
+                    help="on a dry run, actually drive the wizard for the first "
+                         "person up to (not including) Send -- proves the UI "
+                         "path still works without mailing anyone")
+    ap.add_argument("--via", choices=("ui", "api"), default="ui",
+                    help="'ui' (default) drives the web app and draws on the "
+                         "UNLIMITED Envelopes bucket. 'api' is faster but every "
+                         "bundle costs a Bulk Envelope -- 50/YEAR on this plan, "
+                         "already spent, so it 403s.")
+    ap.add_argument("--headed", action="store_true",
+                    help="show the browser while the UI path runs")
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
@@ -287,14 +345,25 @@ def _main(argv=None) -> int:
     if not args.send:
         print(f"\nDRY RUN -- nothing sent. Add --send to mail these "
               f"{len(to_send)} people.")
+        if args.walk and to_send:
+            print("\nWalking the real wizard for the first person, stopping at "
+                  "the Send button (leaves a harmless draft):")
+            _send_via_ui(workbook, ws, to_send[:1], really_send=False,
+                         headless=not args.headed)
         return 0
     if not to_send:
         print("\nNothing to send.")
         return 0
 
-    print(f"\nSENDING to {len(to_send)} people"
-          f"{' (test bundles)' if args.test_bundle else ''}...")
-    failures = _send(workbook, ws, to_send, args.test_bundle)
+    if args.via == "api":
+        print(f"\nSENDING to {len(to_send)} people via the API"
+              f"{' (test bundles)' if args.test_bundle else ''}...")
+        failures = _send(workbook, ws, to_send, args.test_bundle)
+    else:
+        print(f"\nSENDING to {len(to_send)} people through the web app "
+              f"(~1 min each, so roughly {max(1, len(to_send))} minutes)...")
+        failures = _send_via_ui(workbook, ws, to_send, really_send=True,
+                                headless=not args.headed)
     print(f"\nDone: {len(to_send) - failures} sent, {failures} failed. "
           f"Logged in the {config.LEDGER_TAB!r} tab.")
     return 1 if failures else 0
