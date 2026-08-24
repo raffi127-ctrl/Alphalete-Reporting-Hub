@@ -26,7 +26,7 @@ import argparse
 import sys
 from typing import List
 
-from automations.blueink_docs import blueink, config, ledger, mark
+from automations.blueink_docs import blueink, config, ledger, mark, recent
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
@@ -310,6 +310,10 @@ def _main(argv=None) -> int:
                          "already spent, so it 403s.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser while the UI path runs")
+    ap.add_argument("--no-dedupe", action="store_true",
+                    help="skip the check against Blue Ink's own send history. "
+                         "Only if you're certain nobody was hand-sent -- this "
+                         "check is what stops duplicate packets.")
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
@@ -338,6 +342,31 @@ def _main(argv=None) -> int:
         return _highlight_only(workbook, ws, people)
 
     to_send = _report(people, ledger.already_sent(workbook), ws.title)
+
+    # Blue Ink's OWN history, not just our log: the team hand-sends too, and a
+    # person with a live packet must not get a second one whoever sent the
+    # first. This is why Angelica Pedroza got two on 2026-08-24.
+    if not args.no_dedupe and to_send:
+        print(f"\nChecking Blue Ink for packets already sent to these "
+              f"{len(to_send)} (last {recent.LOOKBACK_DAYS} days)...")
+        try:
+            blocked = recent.screen(to_send)
+        except Exception as exc:
+            print(f"\nCouldn't check Blue Ink's history ({exc}).\n"
+                  "REFUSING to send -- without that check this could duplicate "
+                  "packets your team already sent by hand. Rerun when Blue Ink "
+                  "responds, or pass --no-dedupe if you're certain.")
+            return 2
+        if blocked:
+            print(f"\nALREADY HAVE A PACKET -- {len(blocked)} (skipping)")
+            for pp in to_send:
+                bid = blocked.get(pp.email.strip().lower())
+                if bid:
+                    print(f"  {pp.name:<28} bundle {bid}")
+            to_send = [pp for pp in to_send
+                       if pp.email.strip().lower() not in blocked]
+            print(f"\nStill to send: {len(to_send)}")
+
     if args.limit:
         to_send = to_send[:args.limit]
     _flag_terminated(to_send)
