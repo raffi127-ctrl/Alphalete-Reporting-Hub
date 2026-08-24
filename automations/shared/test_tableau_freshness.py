@@ -8,6 +8,7 @@ missed week is still loud, so the loosening didn't turn into blindness.
 from __future__ import annotations
 
 import datetime as dt
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,27 @@ DAILY_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 LEADPEN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                "NDS-SNRES-ATT-OOFWorkbook/LeadPenetrationOverview/"
                "a15a85ac-e0c8-423d-ba85-6be048203b0b/THISWEEK?:iid=1")
+# The custom view recruiting_report/opt_phase pulls, and the DEFAULT view of the
+# same workbook that int_wow_penetration pulls on Tuesdays.
+NICHURN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "ATTTRACKER2_1-D2D/FiberLeadPerformance/"
+               "a79fd021-3606-4aa2-bf55-bc3856cdac99/AUTOMATIONPULL-NICHURNVIEW")
+FIBER_DEFAULT_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                     "ATTTRACKER2_1-D2D/FiberLeadPerformance?:iid=1")
+FIBER_SHEET = "Office New Fiber Lead Penetration By Zip"
+
+
+class _Cp1252Stdout:
+    """A console that chokes on anything outside cp1252, like Windows'."""
+
+    encoding = "cp1252"
+
+    def write(self, s):
+        s.encode("cp1252")          # raises UnicodeEncodeError on ⚠ / →
+        return len(s)
+
+    def flush(self):
+        pass
 
 
 def _export(tmp: Path, newest: str, name: str = "x.csv") -> Path:
@@ -167,6 +189,84 @@ class TheMondayOnlySource(unittest.TestCase):
         # Mon 8/24 with nothing newer than Sat 8/15 = the 8/16 week never landed.
         out = self._check("8/15/2026", dt.date(2026, 8, 24), "c.csv")
         self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+
+class TheMondayMorningLag(unittest.TestCase):
+    """AUTOMATIONPULL-NICHURNVIEW, 2026-08-24 — a DAILY feed the Monday Focus
+    run reads before Sunday has loaded. Not weekly: the same worksheet through
+    the workbook's default view carries yesterday when int_wow_penetration pulls
+    it on Tuesday afternoons, so only the custom view gets the extra day.
+    Replayed from the exports on disk."""
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale = self._real
+
+    def _check(self, newest, today, name, url=NICHURN_URL, **kw):
+        return tf.check_export(_export(self.tmp, newest, name), view_url=url,
+                               sheet=FIBER_SHEET, today=today, **kw)
+
+    def test_monday_8_24_saturday_data_is_fresh(self):
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "a.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_monday_8_17_saturday_data_is_fresh(self):
+        out = self._check("8/15/2026", dt.date(2026, 8, 17), "b.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_it_is_not_judged_by_the_weekly_bar(self):
+        # Three days back is still loud — this buys ONE day, not a whole week.
+        out = self._check("8/21/2026", dt.date(2026, 8, 24), "c.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(out["needs"], dt.date(2026, 8, 22))
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_the_default_view_keeps_the_daily_bar(self):
+        # int_wow_penetration's Tuesday pull carries yesterday, so it still owes
+        # the daily bar. The looser one is scoped to the custom view alone.
+        out = self._check("5/23/2026", dt.date(2026, 5, 26), "d.csv",
+                          url=FIBER_DEFAULT_URL)
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_a_caller_that_named_its_own_bar_keeps_it(self):
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "e.csv",
+                          max_days_behind=0)
+        self.assertEqual(out["verdict"], "stale")
+
+
+class ACp1252ConsoleCannotSilenceTheAlert(unittest.TestCase):
+    """Windows, 2026-08-24: the "⚠ STALE PULL" line raised UnicodeEncodeError on
+    a cp1252 console, check_export's blanket except swallowed it, and the
+    alert_stale() call that came after it never ran. Verdict stale, alerted
+    False, no thread. The console must never decide whether we get heard."""
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self._stdout = sys.stdout
+        sys.stdout = _Cp1252Stdout()
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        sys.stdout = self._stdout
+        tf.alert_stale = self._real
+
+    def test_the_alert_still_fires(self):
+        out = tf.check_export(_export(self.tmp, "8/13/2026", "a.csv"),
+                              view_url=DAILY_URL, sheet="Order Log",
+                              today=dt.date(2026, 8, 17))
+        self.assertEqual(out["verdict"], "stale")
+        self.assertTrue(out["alerted"])
         self.assertEqual(len(self._alerts), 1)
 
 

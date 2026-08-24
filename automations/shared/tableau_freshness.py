@@ -37,6 +37,12 @@ exactly one day back on a good day, and a gate that shouts about those would be
 muted within a week. `max_days_behind` raises it per source for feeds that are
 legitimately laggier; `needs` sets an explicit date the export must reach.
 
+A source can also be daily and simply not have loaded yesterday yet at the hour
+its one caller pulls it — see LAGGY_SOURCE_DAYS, which buys a named view one
+extra day WITHOUT the week-wide blindness of the weekly bar. That is the
+AUTOMATIONPULL-NICHURNVIEW case (Eve 2026-08-24): the Monday Focus run reads it
+before Sunday lands, and the week it reports ended the Saturday that IS there.
+
 WHAT IS NOT JUDGED
 An export with no parseable date column is returned as "unknown" and never
 alerts — rosters, mappings and reference lists have no data date, and inventing
@@ -62,6 +68,7 @@ import datetime as dt
 import io
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -281,6 +288,33 @@ def _view_label(view_url: str, sheet: str = "") -> str:
     return "{} → {}".format(label, sheet) if sheet else label
 
 
+def _say(msg: str) -> None:
+    """print() that cannot take an alert down with it.
+
+    Every print in this module sits INSIDE a blanket `except Exception`, and the
+    lines carry "⚠" and the label's "→". On a Windows cp1252 console that raises
+    UnicodeEncodeError, the except swallows it, and the message that could not be
+    printed silently ate the `alert_stale()` call that came AFTER it: verdict
+    "stale", `alerted=False`, no thread, no sound at all. Found 2026-08-24 —
+    it is why three of this module's own tests fail on Windows and pass under
+    PYTHONIOENCODING=utf-8. Reports run on the mini, so nothing in production was
+    ever silenced; a `lucy rerun` from Eve's laptop was.
+
+    Falls back to whatever the console CAN encode. Never raises."""
+    try:
+        print(msg, flush=True)
+        return
+    except UnicodeEncodeError:
+        pass
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(msg.encode(enc, "replace").decode(enc, "replace"), flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def alert_stale(source_key: str, view_label: str, newest: Optional[dt.date],
                 needs: dt.date, today: dt.date, report: str,
                 detail: str = "") -> bool:
@@ -451,6 +485,52 @@ def weekly_needs(today: dt.date) -> dt.date:
     return last_sunday - dt.timedelta(days=7)
 
 
+# --- Sources that land a day LATER than the daily bar assumes -----------------
+# NOT weekly. These are daily feeds that simply have not loaded yesterday yet at
+# the hour their one caller pulls them. Loosening the bar by a day for a NAMED
+# view keeps the source under a daily-shaped watch — a real freeze still shouts
+# on the next pull — instead of the week-wide blindness of WEEKLY_SOURCE_MARKERS.
+#
+# AUTOMATIONPULL-NICHURNVIEW (ATTTRACKER2_1-D2D/FiberLeadPerformance), first
+# thread 2026-08-24: "newest 2026-08-22, needs 2026-08-23". Its only caller is
+# recruiting_report/opt_phase — the weekly ATT Focus run (att_focus_raf,
+# cadence.weekdays [0]) — which pulls it Monday morning, and at that hour the
+# feed's newest row is the SATURDAY that closed the week, with Sunday not loaded
+# at all. Measured from the exports on disk:
+#   Mon 2026-08-17 09:25  newest 8/15 (Sat), ZERO rows dated 8/16   -> 2 days
+#   Mon 2026-08-24        newest 8/22 (Sat), the alert itself       -> 2 days
+#   Tue 2026-05-26 15:20  newest 5/25 (Mon), Sunday 5/24 present    -> 1 day
+# The count per date peaks on the newest day (204 zips on Sat 8/15, 255 on Mon
+# 5/25) and falls off going back, which is the shape of a "last sale per zip"
+# max — so the Saturday IS the end of the loaded data, not a straggler.
+#
+# Scoped to the CUSTOM VIEW, not the workbook: int_wow_penetration pulls the
+# same worksheet through the workbook's DEFAULT view on Tuesdays and carries
+# yesterday, so it still owes the daily bar. If it ever opens its own thread
+# that is a new fact, not this one.
+#
+# Worth saying plainly: the Monday pull is not short of anything it needs. The
+# Focus week is Sun-Sat, so a Monday run reporting the week that ended Saturday
+# has every day of that week. The Sunday it is missing belongs to the week that
+# just started. Nothing built on this pull understated anything.
+# The judged column is "Date of Last  Sale in Zip" (last sale per zip, the
+# export's only date header) — a metric, not a pull stamp, so the looser bar
+# still watches it move.
+LAGGY_SOURCE_DAYS = {
+    "automationpull-nichurnview": 2,
+}
+
+
+def source_max_days(label: str) -> Optional[int]:
+    """Days-behind bar for a source that is legitimately laggier than the daily
+    default, or None to keep the default."""
+    low = (label or "").lower()
+    for marker, days in LAGGY_SOURCE_DAYS.items():
+        if marker in low:
+            return days
+    return None
+
+
 def _fingerprint(path) -> Optional[str]:
     """A stable digest of the export's DATA (header excluded — a column rename
     isn't new data, and a stable header is what makes runs comparable)."""
@@ -520,9 +600,9 @@ def check_unchanged(path, source_key: str, view_label: str,
             out["verdict"] = "moving"
             return out
         out["verdict"] = "frozen"
-        print("  ⚠ FROZEN FEED: {} — byte-identical for {} day(s) running, "
-              "and this source normally changes. The numbers behind it have "
-              "stopped moving.".format(view_label, same), flush=True)
+        _say("  ⚠ FROZEN FEED: {} — byte-identical for {} day(s) running, "
+             "and this source normally changes. The numbers behind it have "
+             "stopped moving.".format(view_label, same))
         out["alerted"] = alert_frozen(source_key, view_label, same, today,
                                       report or _current_report())
         return out
@@ -589,6 +669,10 @@ def check_export(path,
         weekly = is_weekly_source(label)
         if needs is None and weekly:
             needs = weekly_needs(today)
+        if needs is None and max_days_behind == DEFAULT_MAX_DAYS_BEHIND:
+            # Same rule as the weekly bar: this only ever loosens the default
+            # nobody chose. A caller that named its own bar keeps it.
+            max_days_behind = source_max_days(label) or max_days_behind
         needs = needs or (today - dt.timedelta(days=max_days_behind))
         out["needs"] = needs
         out["weekly"] = weekly
@@ -613,22 +697,21 @@ def check_export(path,
             out["days_same"] = unchanged["days_same"]
             out["alerted"] = unchanged["alerted"]
             if verbose:
-                print("  [freshness] {} — no date column; content {} ({} day(s) "
-                      "identical)".format(label, unchanged["verdict"],
-                                          unchanged["days_same"]), flush=True)
+                _say("  [freshness] {} — no date column; content {} ({} day(s) "
+                     "identical)".format(label, unchanged["verdict"],
+                                         unchanged["days_same"]))
             return out
         out["behind"] = (today - newest).days
         if newest >= needs:
             out["verdict"] = "fresh"
             if verbose:
-                print("  [freshness] {} — newest {} (ok{})".format(
-                    label, newest, ", weekly source" if weekly else ""),
-                    flush=True)
+                _say("  [freshness] {} — newest {} (ok{})".format(
+                    label, newest, ", weekly source" if weekly else ""))
             return out
         out["verdict"] = "stale"
-        print("  ⚠ STALE PULL: {} — newest data {}, needs {} ({} day(s) "
-              "behind). Numbers built on this UNDERSTATE reality.".format(
-                  label, newest, needs, out["behind"]), flush=True)
+        _say("  ⚠ STALE PULL: {} — newest data {}, needs {} ({} day(s) "
+             "behind). Numbers built on this UNDERSTATE reality.".format(
+                 label, newest, needs, out["behind"]))
         # Key on the LABEL, not the URL: the workbook/view/sheet path is stable
         # and readable, so the incident thread reads
         # `tableau-stale-b2bboxenergytracker-boxorderlog-order-log` instead of
