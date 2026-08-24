@@ -552,6 +552,28 @@
    "timeout_minutes": 5,
    "machine": "Lucy 1"
   },
+  "headshots_ov_probe": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY probe for the headshot bot's OwnerVille uploader (Phase 2): find a rep on Onboard -> View Progress and report the Photo pill, changing NOTHING. Runs where the session holder keeps the OV login warm (the mini) — the laptop's storage_state goes stale. `lucy rerun headshots_ov_probe` (default probe rep: Ahna Vanmeter, from Megan's 8/23 walkthrough).",
+   "display_name": "Headshot OV uploader probe (read-only)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.headshots.ov_upload"
+   ],
+   "base_args": [
+    "--name", "Ahna Vanmeter", "--dry-run"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 10,
+   "machine": null
+  },
   "disable_headshots_monday_agent": {
    "on_scheduler": false,
    "_note": "Unload com.alphalete.headshots-monday from the MINI — the pair moved to Lucy 3 on 2026-08-23 (Megan: Lucy 3 has less running) minutes after being installed on the mini. Boots out + renames the plist .disabled so a re-login can't re-load it. `lucy rerun disable_headshots_monday_agent` (no --machine: the mini is the default target).",

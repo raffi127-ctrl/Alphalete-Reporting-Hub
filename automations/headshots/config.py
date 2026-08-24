@@ -28,5 +28,11 @@ HEAD_MARGIN = 0.08
 # than the generic model. The model file downloads once to ~/.u2net/.
 REMBG_MODEL = "u2net_human_seg"
 
+# Phase 2: after processing, upload the clean headshot to the rep's
+# OwnerVille profile (Onboard -> View Progress -> Edit; see ov_upload.py).
+# The in-thread photo post NEVER blocks on this — an OV failure is reported
+# in the same reply so an admin can do that one by hand.
+OV_UPLOAD_ENABLED = True
+
 # Archive of processed headshots (clean + named), grouped by date.
 OUTPUT_DIR = os.path.join("output", "headshots")

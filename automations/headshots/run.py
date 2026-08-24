@@ -179,6 +179,34 @@ def process_one(data: bytes, name: str) -> Path:
     return path
 
 
+# ---- OwnerVille upload (Phase 2) ---------------------------------------------
+def _ov_upload_note(name: str, photo, act: dict) -> str:
+    """Upload to the rep's OV profile; return the line to append to the
+    thread reply. Never raises — an OV problem must not stop the photo post."""
+    from automations.headshots import config as _cfg
+    if not _cfg.OV_UPLOAD_ENABLED:
+        return ""
+    try:
+        from automations.headshots.ov_upload import upload
+        res = upload(name, photo, dry_run=False, headless=True, verbose=True)
+        act["ov"] = res
+        if res["status"] == "uploaded":
+            ok = "" if res.get("verified") else " (verify pill manually)"
+            return f"\nOwnerVille: uploaded to their profile ✅{ok}"
+        if res["status"] == "already_uploaded":
+            return ("\nOwnerVille: a photo is already on their profile — "
+                    "left as-is")
+        return (f"\n⚠ OwnerVille: couldn't find *{name}* in View Progress "
+                "(tried every campaign + Show All) — please upload this one "
+                "manually")
+    except Exception as e:  # noqa: BLE001
+        act["ov"] = {"status": "error", "error": str(e)[:200]}
+        print(f"  ⚠ OV upload failed for {name}: {type(e).__name__}: "
+              f"{str(e)[:150]}")
+        return ("\n⚠ OwnerVille: upload didn't go through — please upload "
+                "this one manually")
+
+
 # ---- the polled processor ----------------------------------------------------
 def _week_anchors(cl, channel: str) -> list[dict]:
     """This week's and last week's Monday threads (last week's catches
@@ -271,12 +299,17 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
                 actions.append(act)
                 continue
 
+            # Phase 2: push the clean headshot onto the rep's OwnerVille
+            # profile. Best-effort — the thread post below goes out either
+            # way, carrying the OV outcome so a miss gets handled by hand.
+            ov_note = _ov_upload_note(name, out_p, act)
+
             # Post the finished image into the week's thread + ✅ the reply.
             with open(out_p, "rb") as fh:
                 cl.files_upload_v2(
                     channel=channel, thread_ts=anchor["ts"], file=fh,
                     filename=out_p.name,
-                    initial_comment=f"*{name}* — headshot ready ⤵")
+                    initial_comment=f"*{name}* — headshot ready ⤵{ov_note}")
             state.setdefault(ts, {})["done"] = True
             state[ts]["name"] = name
             _save_state(state)
