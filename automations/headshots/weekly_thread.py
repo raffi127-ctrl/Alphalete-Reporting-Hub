@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 from typing import Optional
 
@@ -105,6 +106,29 @@ def post_prompt(*, dry_run: bool = True, channel: str = CHANNEL_ID,
     return resp.get("ts")
 
 
+# The Hub CARD id for this job — the launchd agent com.alphalete.headshots-monday
+# auto-registers as the card 'headshots_monday'. It MUST be that id and NOT the
+# on-demand rerun id 'headshots_monday_now', which is a card of its OWN: the Hub
+# counts runs by card id, so a manual `_now` run left the scheduled card reading
+# "no run logged" all day even though the thread had posted (Megan, 2026-08-24).
+HUB_CARD_ID = "headshots_monday"
+HUB_CARD_NAME = "Headshots Monday"
+
+
+def _log_hub_run(started_at, status):
+    """Publish this run to the Hub (standing rule: LaunchAgent reports publish
+    to the Hub). Best-effort — a logging problem must never fail a post that
+    already went out."""
+    if os.environ.get("HUB_REPORT_ID"):
+        return          # a runner is wrapping us and logs this run itself
+    try:
+        from automations.shared import hub_activity
+        hub_activity.log_completed(HUB_CARD_ID, HUB_CARD_NAME,
+                                   status=status, started_at=started_at)
+    except Exception as e:                              # noqa: BLE001
+        print("(activity log skipped: {}: {})".format(type(e).__name__, e))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Monday headshot thread-starter.")
     ap.add_argument("--dry-run", action="store_true",
@@ -113,8 +137,20 @@ def main(argv=None) -> int:
                     help="post even if today isn't Monday")
     ap.add_argument("--channel", default=CHANNEL_ID)
     args = ap.parse_args(argv)
-    post_prompt(dry_run=args.dry_run, channel=args.channel, force=args.force)
-    return 0
+    started_at = dt.datetime.now()
+    ts, ok = None, False
+    try:
+        ts = post_prompt(dry_run=args.dry_run, channel=args.channel,
+                         force=args.force)
+        ok = True
+        return 0
+    finally:
+        # Log only a run that actually settled the week's thread — `ts` is set
+        # whether we posted it or found it already up. A --dry-run posts
+        # nothing, and a non-Monday no-op has nothing to report; logging either
+        # would clear the card on a day the thread never went out.
+        if not args.dry_run and (ts or not ok):
+            _log_hub_run(started_at, "success" if ok else "failed")
 
 
 if __name__ == "__main__":
