@@ -88,11 +88,21 @@ def _rep_row(page, name: str):
 
 def _show_all(page) -> None:
     """Flip 'Filter by Activation Date' from Show Last 3 Weeks to Show All.
-    Clicking the label text toggles its radio — sturdier than guessing which
-    input element is which."""
-    page.get_by_text("Show All", exact=True).first.click()
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1000)
+
+    The exact-text click missed on the mini (2026-08-23 probe — the label
+    text isn't its own exact node), so: the filter is two visible radios,
+    Show Last 3 Weeks first and Show All second — check the LAST one.
+    Text click stays as the fallback."""
+    radios = page.locator("input[type='radio']:visible")
+    if radios.count() >= 2:
+        radios.last.check()
+    else:
+        page.get_by_text("Show All").first.click()
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:
+        pass
+    page.wait_for_timeout(1500)     # the Show All table is even bigger
 
 
 def _photo_pill(row) -> str:
