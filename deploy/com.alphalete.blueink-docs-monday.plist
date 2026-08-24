@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.blueink-docs-monday</string>
+
+    <!-- NOT INSTALLED YET. Arm it only after a --limit 1 send has been
+         log-verified on Lucy 2:
+             lucy rerun install_blueink_docs_agent --machine "Lucy 2"
+         The wrapper passes --send, so the moment this is loaded it mails real
+         people and there is no unsend. -->
+
+    <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
+         to that machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/blueink_docs_monday.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 7:30am machine LOCAL time (Lucy 2 is Central). Weekday 1 =
+         Monday: start day, and the dated tab is named for that Monday, so the
+         newest tab is always the week being sent. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-docs.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-docs.launchd.err.log</string>
+</dict>
+</plist>
