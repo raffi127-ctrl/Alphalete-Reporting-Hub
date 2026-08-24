@@ -58,20 +58,63 @@ def thread_link(rec) -> Optional[str]:
                                        str(ts).replace(".", ""))
 
 
-def compose(status, monday, link: Optional[str] = None) -> str:
-    """Raf's short ask, from Lucy, with the thread link.
+def compose(status, monday, link: Optional[str] = None,
+            starts: Optional[list] = None) -> str:
+    """Raf's short ask, from Lucy, with the thread link — then the leader's
+    new starts as "Name - phone" lines (Megan 2026-08-23: leaders kept asking
+    where to find the contact info; Willvim did exactly that on 8/23).
 
-    No per-leader counts (Raf 2026-08-23) — "your new starts" covers however
-    many they have.
+    THIS is what the OBCL Phone column is for — it's the NEW START'S number,
+    handed TO the leader inside the message. It must never be a send target.
     """
     name = (status.leader.name or "").split()[0] if status.leader.name else "there"
-    what = "your new start" if status.owed == 1 else "your new starts"
-    text = ("Hey {name}, it's Lucy! Can you text {what} starting Monday "
-            "and reply Sent in the Slack thread once done please?".format(
-                name=name, what=what))
+    many = len(starts) > 1 if starts else status.owed != 1
+    what = ("your new starts that start this Monday" if many
+            else "your new start that starts this Monday")
+    text = ("Hey {name}, it's Lucy! Can you text {what} and reply Sent in "
+            "the Slack thread once done please?".format(name=name, what=what))
     if link:
         text += "\n" + link
+    if starts:
+        text += "\n"
+        for ns_name, ns_phone in starts:
+            text += "\n{} - {}".format(ns_name, ns_phone or "no number on the OBCL")
     return text
+
+
+def starts_by_leader(monday) -> dict:
+    """slack_id -> [(new-start name, pretty phone), ...] off the week's OBCL tab.
+
+    The screenshot decides WHO owes a text; the sheet is where the new starts'
+    names and numbers live, so the detail lines come from here. Advisory: a
+    sheet read failing means the texts go out without the list, not not at all.
+    """
+    from automations.new_start_followup import obcl, roster as roster_mod
+    from automations.swag_welcome.roster import normalize_phone, pretty_phone
+
+    ros = roster_mod.load()
+    out = {}  # type: dict
+    seen = set()
+    try:
+        _, _, rows = obcl.read_new_starts(monday)
+    except Exception as exc:  # noqa: BLE001
+        print("WARNING: couldn't read the OBCL sheet ({}) — texts go out "
+              "without the name/number lines.".format(exc))
+        return {}
+    for ns in rows:
+        if ns.dropped or not ns.interviewer or not ns.name:
+            continue
+        leader = ros.by_obcl_name(ns.interviewer)
+        if leader is None:      # incl. rows marked "Terminated"
+            continue
+        key = (leader.slack_id, roster_mod._norm(ns.name))
+        if key in seen:         # the sheet carries duplicate rows sometimes
+            continue
+        seen.add(key)
+        e164, _ = normalize_phone(ns.phone or "")
+        shown = pretty_phone(e164) if e164 else (ns.phone or "").strip()
+        out.setdefault(leader.slack_id, []).append((ns.name.strip(), shown))
+    return out
 
 
 class Outcome:
@@ -118,9 +161,11 @@ def run(rec, send: bool = False) -> List[Outcome]:
     link = thread_link(rec)
     if not link:
         print("WARNING: couldn't build the thread link — texts go out without it.")
+    details = starts_by_leader(rec.monday)
 
     for status in pending:
-        text = compose(status, rec.monday, link=link)
+        text = compose(status, rec.monday, link=link,
+                       starts=details.get(status.leader.slack_id))
         phone = status.leader.phone
         if not phone:
             # No number is a REPORTED gap, not a silent skip -- otherwise a
