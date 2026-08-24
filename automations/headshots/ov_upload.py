@@ -95,7 +95,19 @@ def _show_all(page) -> None:
     Text click stays as the fallback."""
     radios = page.locator("input[type='radio']:visible")
     if radios.count() >= 2:
-        radios.last.check()
+        target = radios.last
+        try:
+            target.check(timeout=5000)
+        except Exception:
+            # The input sits under a styled span — actionability never
+            # settles (mini probe #4). Force it, then raw JS as last resort.
+            try:
+                target.click(force=True, timeout=5000)
+            except Exception:
+                target.evaluate(
+                    "el => { el.checked = true;"
+                    " el.dispatchEvent(new Event('click',  {bubbles: true}));"
+                    " el.dispatchEvent(new Event('change', {bubbles: true})); }")
     else:
         page.get_by_text("Show All").first.click()
     try:
