@@ -205,6 +205,47 @@ def find_rep(page, name: str, *, verbose: bool = True):
     return None, tried
 
 
+def _click_any(scope, label: str, *, page=None, timeout: int = 12000) -> None:
+    """Click a control named `label` inside `scope`, trying every shape OV
+    might render it as. The first live run (Thomas Crenshaw, 2026-08-24)
+    died on a bare get_by_text click that never resolved — OV renders these
+    as <button>/<input value=…>/<a> inconsistently, so try them all, then
+    force, then raw JS. On total failure DUMP the scope's HTML so the log
+    says what's actually there instead of only that a click timed out."""
+    attempts = (
+        ("role=button", lambda: scope.get_by_role("button", name=label,
+                                                  exact=False)),
+        ("role=link", lambda: scope.get_by_role("link", name=label,
+                                                exact=False)),
+        ("input[value]", lambda: scope.locator(
+            f"input[value='{label}' i], input[type='button'][value*='{label}' i]")),
+        ("text", lambda: scope.get_by_text(label, exact=True)),
+        ("text-loose", lambda: scope.get_by_text(label, exact=False)),
+        ("css-contains", lambda: scope.locator(
+            f"button:has-text('{label}'), a:has-text('{label}')")),
+    )
+    for how, build in attempts:
+        try:
+            loc = build().first
+            if not loc.count():
+                continue
+            try:
+                loc.click(timeout=timeout)
+            except Exception:
+                loc.click(force=True, timeout=5000)
+            print(f"    clicked {label!r} via {how}")
+            return
+        except Exception:
+            continue
+    # Nothing worked — show the markup so the next run is not a guess.
+    try:
+        html = scope.evaluate("el => el.outerHTML")[:1500]
+    except Exception:
+        html = "(couldn't read HTML)"
+    print(f"    !! no clickable {label!r} found. Scope HTML:\n{html}")
+    raise OVUploadError(f"couldn't click {label!r} — see the HTML dump above")
+
+
 def upload(name: str, photo: Path | None, *, dry_run: bool = True,
            headless: bool = True, verbose: bool = True) -> dict:
     """Find the rep and upload `photo` to their profile. Returns a result
@@ -231,32 +272,42 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
             raise OVUploadError(f"photo file missing: {photo}")
 
         # Edit -> Set Status modal.
-        row.get_by_text("Edit", exact=True).first.click()
-        modal = page.locator(".modal, [role='dialog']").filter(
+        _click_any(row, "Edit", page=page)
+        modal = page.locator(".modal:visible, [role='dialog']:visible").filter(
             has_text="Set Status").first
         modal.wait_for(state="visible", timeout=20000)
 
         # UPLOAD DOCUMENTS section — expand if collapsed (the Photo row's
         # Upload link is hidden until the section opens).
-        section = modal.get_by_text("UPLOAD DOCUMENTS", exact=False).first
-        photo_row = modal.locator("tr").filter(has_text="Photo").first
+        photo_row = modal.locator("tr").filter(
+            has_text=re.compile(r"\bPhoto\b", re.I)).first
         if not photo_row.is_visible():
-            section.click()
-            photo_row.wait_for(state="visible", timeout=10000)
+            _click_any(modal, "UPLOAD DOCUMENTS", page=page)
+            photo_row.wait_for(state="visible", timeout=15000)
 
-        # Upload via the file chooser — never the OS dialog.
-        with page.expect_file_chooser(timeout=20000) as fc:
-            photo_row.get_by_text("Upload", exact=True).click()
-        fc.value.set_files(str(photo))
+        # Upload via the file chooser — never the OS dialog. An <input
+        # type=file> in the row is the most direct path; fall back to the
+        # chooser event when the input is script-driven.
+        file_input = photo_row.locator("input[type='file']")
+        if file_input.count():
+            file_input.first.set_input_files(str(photo))
+        else:
+            with page.expect_file_chooser(timeout=20000) as fc:
+                _click_any(photo_row, "Upload", page=page)
+            fc.value.set_files(str(photo))
 
         # Success = the Action cell flips to "Uploaded" (Megan's screenshot).
-        photo_row.get_by_text("Uploaded", exact=True).wait_for(timeout=60000)
+        photo_row.get_by_text("Uploaded", exact=False).first.wait_for(
+            timeout=90000)
         if verbose:
             print(f"  {name}: photo uploaded — saving")
 
-        modal.get_by_text("Save Changes", exact=True).click()
-        page.wait_for_load_state("networkidle")
-        time.sleep(1)
+        _click_any(modal, "Save Changes", page=page)
+        try:
+            page.wait_for_load_state("networkidle", timeout=60000)
+        except Exception:
+            pass
+        time.sleep(2)
 
         # Verify: back on the table, the pill should now be green.
         row2, _ = find_rep(page, name, verbose=False)
@@ -265,16 +316,41 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
                 "verified": verified}
 
 
+def archived_headshot(name: str) -> Path | None:
+    """The most recent processed headshot for `name` in output/headshots/.
+
+    Lets the OV leg be retried on its own after a Slack reply has already
+    been processed (that reply is marked done and never reprocesses, so the
+    photo would otherwise have to be resubmitted)."""
+    root = Path(__file__).resolve().parents[2] / "output" / "headshots"
+    hits = sorted(root.glob(f"*/{_safe_name(name)} - Headshot.png"))
+    return hits[-1] if hits else None
+
+
+def _safe_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9 '-]", "", name).strip()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Upload a headshot to OwnerVille.")
     ap.add_argument("--name", required=True, help='rep name, "First Last"')
     ap.add_argument("--file", default=None, help="processed headshot PNG")
+    ap.add_argument("--from-archive", action="store_true",
+                    help="use the newest processed headshot in output/headshots/ "
+                         "for --name (retry the OV leg on its own)")
     ap.add_argument("--dry-run", action="store_true",
                     help="find the rep + report the photo pill, change nothing")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debug)")
     args = ap.parse_args(argv)
-    res = upload(args.name, Path(args.file) if args.file else None,
+    photo = Path(args.file) if args.file else None
+    if photo is None and args.from_archive:
+        photo = archived_headshot(args.name)
+        if photo is None:
+            print(f"no archived headshot for {args.name!r} in output/headshots/")
+            return 1
+        print(f"using archived headshot: {photo}")
+    res = upload(args.name, photo,
                  dry_run=args.dry_run, headless=not args.headed)
     print(res)
     return 0 if res["status"] in ("uploaded", "already_uploaded",

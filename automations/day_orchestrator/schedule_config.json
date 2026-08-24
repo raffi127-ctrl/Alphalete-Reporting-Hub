@@ -572,6 +572,26 @@
    "timeout_minutes": 5,
    "machine": "Lucy 3"
   },
+  "headshots_ov_upload_one": {
+   "on_scheduler": false,
+   "_note": "Run the OwnerVille upload leg for ONE rep on demand — the retry path when the Slack reply was already processed (that reply is marked done and never reprocesses). Pass the name and let it pull the processed PNG from output/headshots/: `lucy rerun headshots_ov_upload_one --name \"Thomas Crenshaw\" --from-archive --machine \"Lucy 3\"`. Add --dry-run to only locate the rep + read the pill. Never overwrites a rep whose photo pill is already green.",
+   "display_name": "OV headshot upload — one rep (on demand)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.headshots.ov_upload"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 3"
+  },
   "headshots_ov_probe": {
    "on_scheduler": false,
    "_note": "READ-ONLY probe for the headshot bot's OwnerVille uploader (Phase 2): find a rep on Onboard -> View Progress and report the Photo pill, changing NOTHING. Runs where the session holder keeps the OV login warm (the mini) — the laptop's storage_state goes stale. `lucy rerun headshots_ov_probe` (default probe rep: Ahna Vanmeter, from Megan's 8/23 walkthrough).",
