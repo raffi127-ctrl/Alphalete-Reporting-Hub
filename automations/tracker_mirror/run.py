@@ -38,6 +38,12 @@ def q(rng):
 
 
 def main(argv=None):
+    marker = Path(__file__).parent / "DISABLED"
+    if marker.exists():
+        print("[tracker_mirror] DISABLED — manager tabs are live IMPORTRANGE "
+              "(2026-08-24); a ferry run would overwrite the formulas. Exiting.",
+              flush=True)
+        return 0
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="pipe-separated manager names")
     ap.add_argument("--dry-run", action="store_true")

@@ -1,0 +1,6 @@
+2026-08-24: tracker_mirror is STOOD DOWN. The manager tabs in Alphalete
+Recruiting Dashboard are live again — each holds
+  =IMPORTRANGE(<old org tracker>, "'MIRROR <name>'!A1:Z1000")
+(the NEW<->OLD grant already existed, no Allow click was needed). Running the
+ferry now would OVERWRITE those formulas with static values. Delete this file
+only if the live imports are torn back out.
