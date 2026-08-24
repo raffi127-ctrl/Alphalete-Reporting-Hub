@@ -332,6 +332,50 @@ def _wait_office_table_loaded(page, attempts: int = 3,
         f"stalled (last: {type(last_err).__name__ if last_err else 'unknown'})")
 
 
+def _near_matches(try_search, sheet_tab_name: str, cap: int = 4) -> list:
+    """What ownerville DOES list for this person's surname, when the full-name
+    search found nothing.
+
+    The match has to be exact (`name_text == cand_lower`), and the filter is a
+    substring search, so a full name that isn't ownerville's label returns an
+    EMPTY table — the failure tells you the name is unknown and nothing else.
+    Searching just the surname turns that dead end into the answer: the row
+    ownerville really carries, label and all.
+
+    Why it matters (Eve 2026-08-24): the first Daily Knocks run left 16 owners
+    with 'name not found in ownerville' and no way to tell a missing alias from
+    an office nobody granted access to — every one of them needed a human to go
+    look. Several ownerville labels carry the company ahead of the person
+    ("Next Horizon Group, Inc. Nii Tagoe"), which can never match a bare name.
+    """
+    surname = (sheet_tab_name or "").split()[-1] if sheet_tab_name.split() else ""
+    if len(surname) < 3:
+        return []
+    try:
+        _row, visible = try_search(surname)
+    except Exception:  # noqa: BLE001 — diagnosis must never break the run
+        return []
+    seen = {" ".join((sheet_tab_name or "").lower().split())}
+    out = []
+    for name in visible:
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _not_found_reason(near: list) -> str:
+    """The 'name not found' reason, carrying the near-matches when there are
+    any — the caller writes it verbatim into scrape_results.json and the
+    captainship email's note, so the report itself says what to alias."""
+    if not near:
+        return "name not found in ownerville"
+    return ("name not found in ownerville — it lists: "
+            + "; ".join(repr(n) for n in near))
+
+
 def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) -> tuple[str | None, str]:
     """On the Office Access page, search for the owner (trying canonical name
     plus any known aliases), grab their officeId, and call confirmImpersonate.
@@ -386,13 +430,17 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     # Fall back: interactively prompt for an unknown name, save it as an alias.
     if owner_row is None:
         print(f"  ❌ Couldn't find '{sheet_tab_name}' in ownerville. Tried: {candidates}")
+        near = _near_matches(_try_search, sheet_tab_name)
+        if near:
+            print(f"     ownerville shows, searching just the surname: {near}")
         new_alias = _prompt_for_unknown_owner(sheet_tab_name)
         if not new_alias:
-            return None, "name not found in ownerville"
+            return None, _not_found_reason(near)
         owner_row, last_visible_names = _try_search(new_alias)
         if owner_row is None:
             print(f"  ❌ '{new_alias}' also not found — skipping {sheet_tab_name}.")
-            return None, "name not found in ownerville"
+            return None, _not_found_reason(_near_matches(_try_search,
+                                                         sheet_tab_name))
         save_alias(sheet_tab_name, new_alias)
         # Refresh local map so subsequent searches in this run pick it up.
         aliases_raw.setdefault(sheet_tab_name, []).append(new_alias)
