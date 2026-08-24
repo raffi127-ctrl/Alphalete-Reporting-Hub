@@ -177,11 +177,26 @@ def find_rep(page, name: str, *, verbose: bool = True):
                 _show_all(page)
             box = _search_box(page)
             box.fill("")
-            # Type key-by-key: old DataTables filters on keyup, which a
-            # plain fill() never fires.
-            box.press_sequentially(name, delay=40)
+            # Search the LAST name only (probe #6: the full "First Last"
+            # string filtered to zero — the searchable field doesn't hold
+            # the display string). _rep_row still verifies the full name.
+            # Key-by-key: old DataTables filters on keyup, which a plain
+            # fill() never fires.
+            box.press_sequentially(name.split()[-1], delay=40)
             page.wait_for_timeout(900)          # DataTables filters client-side
             row = _rep_row(page, name, debug=verbose)
+            if row is None and verbose:
+                # What does this account actually see? Clear the filter
+                # (Backspace fires the keyup) and dump the top rows.
+                box.fill("")
+                box.press("Backspace")
+                page.wait_for_timeout(900)
+                allrows = page.locator("tbody tr")
+                n = allrows.count()
+                print(f"    (unfiltered {label}: {n} row(s); sample: "
+                      + " | ".join(
+                          _norm(allrows.nth(i).inner_text())[:50]
+                          for i in range(min(3, n))))
             if row:
                 if verbose:
                     print(f"  found {name!r} under {label}"
