@@ -88,6 +88,30 @@ def expected_we(yday):
     return sunday, f"{sunday.month}.{sunday.day}"
 
 
+def we_matches(shown: str, want: str) -> bool:
+    """Is the gold cell showing `want`, allowing for a LOST TRAILING ZERO?
+
+    Picking a week from B2's dropdown stores it as a NUMBER, and a number cannot
+    keep a trailing zero: week `8.30` comes back from the API as `8.3`. That is
+    exactly how 2026-08-24 went wrong — the board had been rolled correctly, but
+    the gate read '8.3', held, and the whole thing looked like a board nobody
+    touched. (It also made the board's own date header render Jul 28–Aug 3: the
+    AS3 anchor parsed "8.3" as month 8, day 3. AS3 now reads the real Sunday off
+    WeekData!J:K instead, and B2 is kept as TEXT so the day-cell keys stay
+    `<REP>|8.30` — the spelling `zeros.we_label` builds.)
+
+    Comparing numerically as well as textually is safe because a WE is always a
+    SUNDAY: within one year `x.3` and `x.30` are 27 days apart, never a multiple
+    of 7, so they can never both be Sundays. Same for x.1/x.10 and x.2/x.20.
+    """
+    if shown == want:
+        return True
+    try:
+        return float(shown) == float(want)
+    except ValueError:
+        return False
+
+
 def check_we(grid, yday):
     """(ok, shown, want). We deliberately do NOT rewrite B2 ourselves: only some
     day cells are formulas keyed on it (=INDEX(WeekData…MATCH(REP|$B$2))) — the
@@ -97,7 +121,7 @@ def check_we(grid, yday):
     r, c = WE_CELL
     shown = (grid[r - 1][c - 1] if len(grid) >= r and len(grid[r - 1]) >= c else "").strip()
     _, want = expected_we(yday)
-    return shown == want, shown, want
+    return we_matches(shown, want), shown, want
 
 
 def header_title(day) -> str:

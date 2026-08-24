@@ -471,11 +471,12 @@ def week_ok(g, day: dt.date):
     formulas keyed on B2, the rest are hand-typed, so flipping the selector
     would repopulate a few and leave the others stale (see sales_boards.check_we).
     """
-    from automations.sales_boards.run import WE_CELL, expected_we
+    from automations.sales_boards.run import WE_CELL, expected_we, we_matches
     r, c = WE_CELL
     shown = str(_cell(g, r, c)).strip()
     _, want = expected_we(day)
-    return shown == want, shown, want
+    # we_matches, not ==: the dropdown stores 8.30 as the number 8.3.
+    return we_matches(shown, want), shown, want
 
 
 def day_column(g, day: dt.date):
