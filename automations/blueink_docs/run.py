@@ -31,7 +31,7 @@ from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
                                              final_status_is_unrecognised,
-                                             parse_tab)
+                                             parse_tab, unparsed_email_rows)
 from automations.recruiting_report import fill
 
 
@@ -330,7 +330,8 @@ def _main(argv=None) -> int:
         return _sync_status(workbook)
 
     ws = current_tab(workbook, args.tab)
-    people = parse_tab(ws.get_all_values(), ws.title)
+    raw_values = ws.get_all_values()
+    people = parse_tab(raw_values, ws.title)
     if args.only:
         want = args.only.strip().lower()
         people = [p for p in people if want in p.name.lower()]
@@ -340,6 +341,16 @@ def _main(argv=None) -> int:
 
     if args.highlight_only:
         return _highlight_only(workbook, ws, people)
+
+    # Anyone the parser didn't see is someone who silently gets no docs.
+    stray = unparsed_email_rows(raw_values, people)
+    if stray:
+        print(f"⚠️  {len(stray)} row(s) hold an email but weren't read as "
+              f"people. If a section was added or reworded, they are being "
+              f"MISSED -- check before trusting this list:")
+        for rownum, email, label in stray[:12]:
+            print(f"     row {rownum}: {email}  |  {label}")
+        print()
 
     to_send = _report(people, ledger.already_sent(workbook), ws.title)
 

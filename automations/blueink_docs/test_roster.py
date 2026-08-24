@@ -37,6 +37,26 @@ def test_reads_every_section_not_just_the_first():
     assert [p.section for p in people] == [1, 2]
 
 
+def test_three_or_more_sections_are_all_read():
+    # The tab grew a second stacked block without warning; assume a third will
+    # turn up too. Every header row starts a new section, however many there are.
+    people = parse_tab(_tab([_row("A", "One", "a@x.com")],
+                            [_row("B", "Two", "b@x.com")],
+                            [_row("C", "Three", "c@x.com")],
+                            [_row("D", "Four", "d@x.com")]), "t")
+    assert [p.name for p in people] == ["A One", "B Two", "C Three", "D Four"]
+    assert [p.section for p in people] == [1, 2, 3, 4]
+
+
+def test_rows_hidden_by_a_sheet_filter_are_still_parsed():
+    # Sheets filters hide rows in the VIEW only -- values API returns them all.
+    # Proven against the live tab 2026-08-24 (53 rows hidden, all 72 people
+    # parsed). This pins the parser side: nothing here may skip a row for
+    # looking "hidden", because we never see that flag in the first place.
+    values = _tab([_row("A", "One", "a@x.com")], [_row("B", "Two", "b@x.com")])
+    assert len(parse_tab(values, "t")) == 2
+
+
 def test_bad_final_status_blocks_the_send():
     for final in ("Failed BGC", "Quit before Classroom",
                   "Quit during Classroom", "Quit - CR", "Terminated",

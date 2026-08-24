@@ -228,3 +228,32 @@ def current_tab(workbook, tab_name: str = ""):
             f"No dated '{config.DATED_TAB_PREFIX} <m.d>' tab found in the "
             "workbook -- has this week's lineup been built yet?")
     return tabs[0][1]
+
+
+def unparsed_email_rows(values: List[List[str]],
+                        people: List[NewStart]) -> List[tuple]:
+    """Rows holding an email address that we did NOT turn into a person.
+
+    The structural safety net. The parser finds people by walking header rows,
+    so a section whose header is worded differently -- or a block someone
+    pastes in without one -- would be skipped in total silence, and silence is
+    exactly the failure mode that matters here: nobody notices the people who
+    DIDN'T get docs. This re-reads the raw grid for anything that looks like a
+    real person and reports what the parser missed, so a shape change surfaces
+    as a warning instead of a quiet short-send.
+
+    Header rows and the odd stray address are expected to show up here; it's a
+    prompt to look, not proof of a bug.
+    """
+    claimed = {p.row for p in people}
+    out = []
+    for i, row in enumerate(values, start=1):
+        if i in claimed or _looks_like_header(row):
+            continue
+        for cell in row:
+            cell = (cell or "").strip()
+            if _EMAIL_RE.match(cell):
+                label = " ".join(c.strip() for c in row[:6] if (c or "").strip())
+                out.append((i, cell, label[:60]))
+                break
+    return out
