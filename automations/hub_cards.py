@@ -4518,20 +4518,24 @@ AUTOMATED_REPORTS = [
             "WHAT IT DOES\n"
             "Every new start should get a text from **the person who ran their "
             "2nd-round interview** before Monday. This chases that — it reads "
-            "who owes a text (**column B** on the week's `D2D OBCL` tab) against "
-            "who's replied **Sent** in Aisha's **#11280-alphalete-marketing-inc-rafael-hidalgo** "
-            "thread, and nudges whoever's still out. It also catches short "
-            "counts, leaders who never got tagged, and interviewers with no "
-            "Slack account (named so someone chases them by hand).\n\n"
+            "who owes a text (**Aisha's Friday roster screenshot** in the "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo** thread) against "
+            "who's replied **Sent**, and chases whoever's still out by Slack "
+            "tag AND a personal iMessage that lists each new start's **name + "
+            "number** (off the OBCL sheet). A leader Lucy has **no number** "
+            "for gets posted in the thread @Raf @Aisha — anyone's reply with "
+            "the number turns into a sent text **within the hour**. OBCL rows "
+            "marked **Terminated** @Raf with a needs-a-leader count; "
+            "interviewers with no Slack account are named for a manual "
+            "reach-out.\n\n"
             "WHEN IT RUNS\n"
-            "**Saturday 8am** — numbered roll call @-tagging every leader with "
-            "a new start; **8:30am** — Lucy TEXTS each of those leaders from "
-            "her iMessage number and posts a reminder in the *Alphalete "
-            "lvl 1's* iMessage group + **#alphalete-lvl1-chat**; **1pm** — a "
-            "reminder tagging only who hasn't replied yet. **Sunday 1pm** — "
-            "the numbered ✅ roll-up. **Mon–Fri 9am** — a group-only "
-            "\"text the new starts you closed yesterday\" ping (both lvl-1 "
-            "chats)."
+            "**Saturday 8am** — numbered roll call; **8:30am** — the texts + "
+            "a reminder in the *Alphalete lvl 1's* iMessage group + "
+            "**#alphalete-lvl1-chat** + the numbers-needed post; **hourly "
+            "9am–6pm Sat & Sun** — number-reply scan; **Sat 1pm** — reminder "
+            "tagging only who hasn't replied. **Sunday 1pm** — the numbered "
+            "✅ roll-up. **Mon–Fri 9am** — the \"text the new starts you "
+            "closed yesterday\" ping (both lvl-1 chats)."
         ),
         "assignees": ["Lucy 1"],
         # Pinned to Lucy 1 (same as bg-check-sync): that's where Lucy's Slack
@@ -4610,6 +4614,15 @@ AUTOMATED_REPORTS = [
                         "sending anything.",
                 "module": "automations.new_start_followup.run",
                 "args_fn": lambda: ["--mode", "sat-texts"],
+            },
+            {
+                "label": "Scan Number Replies",
+                "icon": "🔁",
+                "help": "Check the numbers-needed post right now instead of "
+                        "waiting for the hourly scan — texts any leader whose "
+                        "number just got replied. Lucy 1 only.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "number-replies", "--live"],
             },
         ],
     },
