@@ -232,6 +232,38 @@ def update_board(label, board_id, rep_days, monday, upto, write):
     data.append({"range": "Sales Board!D45:K45",
                  "values": [[sum(lw)] + [v or 0 for v in lw]]})
 
+    # Field Status (col N) = tenure 'Nth Wk' from the rep's FIRST WeekData
+    # week (Carlos 8/24). Rewritten daily so it ages on the Monday roll.
+    # Floor: reps selling before the boards were seeded (8/2) read low.
+    def _ordinal(n):
+        if 10 <= n % 100 <= 13:
+            return f"{n}th"
+        return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+    first_seen = {}
+    for r_ in wd:
+        k_ = r_[0] if r_ else ""
+        if "|" not in k_:
+            continue
+        rep_, we_ = k_.rsplit("|", 1)
+        try:
+            mo_, dy_ = we_.strip().split(".")
+            d_ = dt.date(monday.year, int(mo_), int(dy_))
+        except (ValueError, AttributeError):
+            continue
+        key_ = _n(rep_).lower()
+        if key_ not in first_seen or d_ < first_seen[key_]:
+            first_seen[key_] = d_
+    cur_we_ = monday + dt.timedelta(days=6)
+    for slot_, rep_ in enumerate(roster):
+        if not rep_:
+            continue
+        d_ = first_seen.get(rep_.lower())
+        if not d_:
+            continue
+        wk_ = max(1, (cur_we_ - d_).days // 7 + 1)
+        data.append({"range": f"Sales Board!N{4 + slot_}",
+                     "values": [[f"{_ordinal(wk_)} Wk"]]})
+
     # roster append (Sales Board B4:B43 + Roll Call D)
     roster = [(_n(r[0]) if r else "") for r in values_get(sh, "Sales Board!B4:B43")]
     roster += [""] * (40 - len(roster))
