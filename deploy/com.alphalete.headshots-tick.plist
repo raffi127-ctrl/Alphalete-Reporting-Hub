@@ -22,11 +22,14 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 10 minutes. People reply to the Monday thread all week (last
+    <!-- Every 5 minutes. People reply to the Monday thread all week (last
          week's thread is watched too for stragglers), so no day gate. The run
-         is a cheap 2-API-call no-op when there's nothing new. -->
+         is a cheap 2-API-call no-op when there's nothing new, and a pid lock
+         stops a long run (each OV upload is ~2 min) from overlapping the
+         next tick. Was 600s; halved 2026-08-24 because a submission could
+         sit ~8 min and read as broken (Megan). -->
     <key>StartInterval</key>
-    <integer>600</integer>
+    <integer>300</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/headshots-tick.launchd.out.log</string>
