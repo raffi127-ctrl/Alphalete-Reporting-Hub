@@ -56,6 +56,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from automations.shared.report_week import week_ending
+# The prefix that tells email_build "the source answered, it had nothing" —
+# a grey 'no data available' note instead of the yellow capture-failed one.
+from automations.captainship_drafts.email_build import NO_DATA_MARK
 
 # Own Chrome profile — the shared .browser_profile is first-come-first-served
 # and a Sunday-morning build overlaps other browser reports. Same escape hatch
@@ -463,7 +466,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             # Visible absence, never a blank board (standing
                             # rule): the email says so under this owner.
                             errors[f"daily_knocks:{display}"] = (
-                                "no knock data for yesterday")
+                                NO_DATA_MARK + "no knocks recorded yesterday")
                             out_daily.append((display, None))
                         else:
                             png = knocks_render.render_total_knocks(
@@ -493,7 +496,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             # Visible absence, never a blank board (standing
                             # rule): the email says so under this owner.
                             errors[f"knock_dispo:{display}"] = (
-                                "no knock or sales data for this week")
+                                NO_DATA_MARK
+                                + "no knocks or sales recorded this week")
                             out_weekly.append((display, None))
                             done_weekly.add(display)
                             continue

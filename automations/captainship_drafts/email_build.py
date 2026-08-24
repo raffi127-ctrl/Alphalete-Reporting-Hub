@@ -41,6 +41,18 @@ _FONT_STACK = "Arial,Helvetica,sans-serif"
 # the f-string and the guard silently stops matching.
 PENDING_MARK = "could not be captured on this run"
 
+# The other half of that contract: a source that ANSWERED and had nothing to
+# show. A capture prefixes its reason with this and the note flips from the
+# yellow "go fix the source" box to a grey "no data available" one that does
+# NOT carry PENDING_MARK — so a genuine zero neither reads as a failure nor
+# holds the report back at run.py's send guard.
+#
+# Eve 2026-08-24: Sunday's Daily Knocks came back empty for four of Rafael's
+# ICDs — nobody knocked — and the report told her the board "could not be
+# captured (re-run after fixing the source)". Ten of the day's forty-four
+# notes were real zeros wearing a failure's clothes.
+NO_DATA_MARK = "no-data::"
+
 
 def _intro_html(captain: Captain, today: dt.date) -> str:
     """The greeting + numbered list of TODAY'S sections. The items come from
@@ -63,13 +75,35 @@ def _pending(what: str, why: str = "") -> str:
     existed as one line in the run's log, on whichever machine built the draft,
     so Eve reading the report had no way to tell a Tableau session that expired
     from a captain whose Sales Board header got renamed. Printed small and last
-    so the section still reads as a status note, not a stack trace."""
+    so the section still reads as a status note, not a stack trace.
+
+    A `why` prefixed with NO_DATA_MARK means the source answered and had
+    nothing — that is not a pending capture, so it renders as _no_data()
+    instead. Routed HERE, in the one function every section already calls, so
+    no caller has to remember the distinction."""
+    if why.startswith(NO_DATA_MARK):
+        return _no_data(what, why[len(NO_DATA_MARK):].strip())
     reason = (f'<div style="font-size:11px;color:#7a5600;margin-top:4px">'
               f'{_html.escape(why)}</div>') if why else ""
     return (f'<div style="font-size:12px;color:#9a6b00;background:#fff4d6;'
             f'border:1px solid #f0d271;border-radius:4px;padding:8px 10px;'
             f'margin:4px 0 10px">— {what} {PENDING_MARK} '
             f'(re-run after fixing the source) —{reason}</div>')
+
+
+def _no_data(what: str, detail: str = "") -> str:
+    """The source ran fine and had nothing to report — a real zero.
+
+    Grey like _not_available and, like it, WITHOUT PENDING_MARK: a captain
+    whose ICDs simply did not knock on a Sunday must not have his report held
+    back by run.py's send guard, and Eve must not be sent hunting for a broken
+    source that isn't broken. The detail (e.g. "no knocks recorded yesterday")
+    still says WHICH zero it is, so an office that goes quiet for a week is
+    still visible rather than silently blank — the standing rule."""
+    tail = f' — {_html.escape(detail)}' if detail else ""
+    return (f'<div style="font-size:12px;color:#555;background:#f4f4f4;'
+            f'border:1px solid #ddd;border-radius:4px;padding:8px 10px;'
+            f'margin:4px 0 10px">{what}: no data available{tail}.</div>')
 
 
 def _not_available(what: str) -> str:
