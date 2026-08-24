@@ -37,6 +37,13 @@ exactly one day back on a good day, and a gate that shouts about those would be
 muted within a week. `max_days_behind` raises it per source for feeds that are
 legitimately laggier; `needs` sets an explicit date the export must reach.
 
+A source can also be daily and never have SUNDAY rows at all, because its
+business is shut that day — see SUNDAY_QUIET_MARKERS. The BOX energy order log
+sells to businesses (Eve 2026-08-24): its Monday pull is newest-Saturday on five
+Mondays out of six, so the daily bar opened a thread every Monday for a feed
+with nothing wrong with it. That rule loosens Monday alone; Tuesday through
+Saturday keep the daily bar untouched.
+
 A source can also be daily and simply not have loaded yesterday yet at the hour
 its one caller pulls it — see LAGGY_SOURCE_DAYS, which buys a named view one
 extra day WITHOUT the week-wide blindness of the weekly bar. That is the
@@ -531,6 +538,70 @@ def source_max_days(label: str) -> Optional[int]:
     return None
 
 
+# --- Sources whose data never lands on a SUNDAY ------------------------------
+# A third shape, smaller than both of the above. Not weekly, and not late: the
+# feed is daily and perfectly current, it just has no Sunday rows to be current
+# WITH. The daily bar asks Monday for yesterday, yesterday is a day this source
+# can never have, and the thread opens every Monday forever.
+#
+# The BOX energy order log is the case that proved it (Eve 2026-08-24, thread
+# `drop-tableau-stale-b2bboxenergytracker-boxorderlog-carlosorderlog-order-log`,
+# "newest 2026-08-22, needs 2026-08-23"). It sells energy contracts TO
+# BUSINESSES, and businesses are shut on Sunday. Counted off the merged
+# high-water tabs of three separate BOX offices, which only ever move forward
+# (sheet.newest_sale_date's "Lucy Box Data"):
+#
+#   Sundays, Carlos (the CarlosOrderLog cut that alerted):
+#     7/19  0    7/26  0    8/02  0    8/09  0    8/16  1    8/23  0
+#   Saturdays, same weeks, for scale:  3, 3, 6, 6, 7
+#
+# So Monday's newest is Saturday's on roughly five Mondays out of six.
+#
+# NOT a capped pull — the failure this module was built for looks nothing like
+# it. A re-pinned `Contract ID` list caps the export at a stale snapshot of IDs,
+# which guts every office at once and leaves a cliff (2026-08-13: a whole week
+# of Roshan's real sales simply absent). Here all three offices ran normal daily
+# volume right up to the edge — Carlos 11 on Fri 8/21, his strongest Friday of
+# the window, and 7 on Sat 8/22; Roshan 28 and 22. Full volume into Saturday and
+# nothing on Sunday is a closed weekend, not a cap.
+#
+# Matched on the lowercased view label, so one entry covers the whole workbook:
+# Carlos's CarlosOrderLog cut, the org-wide base view the per-owner emails pull,
+# and the ALLEXPORDERLOG team view behind per_office.
+SUNDAY_QUIET_MARKERS = (
+    "b2bboxenergytracker",
+)
+
+
+def is_sunday_quiet_source(label: str) -> bool:
+    """Does this view's feed simply have no Sunday rows to be behind on?"""
+    low = (label or "").lower()
+    return any(m in low for m in SUNDAY_QUIET_MARKERS)
+
+
+def business_needs(today: dt.date,
+                   max_days_behind: int = DEFAULT_MAX_DAYS_BEHIND) -> dt.date:
+    """`max_days_behind` days back, counting only days this source can carry.
+
+    Sundays are skipped, so the bar moves by exactly one day and only on
+    Mondays: Monday asks for Saturday instead of Sunday, and Tuesday through
+    Saturday are untouched — a feed that freezes mid-week is still caught on
+    the next morning's pull, exactly as before.
+
+    The one thing this gives up is deliberate: a freeze starting right after
+    Saturday's data lands is heard Tuesday instead of Monday. Saturday-newest on
+    a Monday is genuinely indistinguishable from a closed Sunday, and the guard
+    that decides delivery (box_order_log.window.should_block_send, 4 days) is
+    untouched either way."""
+    d = today
+    left = max(0, max_days_behind)
+    while left > 0:
+        d -= dt.timedelta(days=1)
+        if d.weekday() != 6:                        # 6 = Sunday
+            left -= 1
+    return d
+
+
 def _fingerprint(path) -> Optional[str]:
     """A stable digest of the export's DATA (header excluded — a column rename
     isn't new data, and a stable header is what makes runs comparable)."""
@@ -673,9 +744,16 @@ def check_export(path,
             # Same rule as the weekly bar: this only ever loosens the default
             # nobody chose. A caller that named its own bar keeps it.
             max_days_behind = source_max_days(label) or max_days_behind
+        # Counted AFTER the laggy bump so the two compose: whatever the bar is,
+        # it is measured over days this source can actually carry data. Only
+        # ever loosens, and only ever a Monday. See SUNDAY_QUIET_MARKERS.
+        sunday_quiet = is_sunday_quiet_source(label)
+        if needs is None and sunday_quiet:
+            needs = business_needs(today, max_days_behind)
         needs = needs or (today - dt.timedelta(days=max_days_behind))
         out["needs"] = needs
         out["weekly"] = weekly
+        out["sunday_quiet"] = sunday_quiet
         p = Path(path)
         if not p.exists() or p.stat().st_size == 0:
             out["column"] = "missing or empty export"
@@ -705,8 +783,10 @@ def check_export(path,
         if newest >= needs:
             out["verdict"] = "fresh"
             if verbose:
+                why = (", weekly source" if weekly else
+                       ", no Sunday data" if sunday_quiet else "")
                 _say("  [freshness] {} — newest {} (ok{})".format(
-                    label, newest, ", weekly source" if weekly else ""))
+                    label, newest, why))
             return out
         out["verdict"] = "stale"
         _say("  ⚠ STALE PULL: {} — newest data {}, needs {} ({} day(s) "

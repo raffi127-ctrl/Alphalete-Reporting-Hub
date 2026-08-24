@@ -20,6 +20,10 @@ DD_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
           "DirectDepositICDVIEWVersion2_0/DDDETAIL?:iid=1")
 DAILY_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "B2BBOXEnergyTracker/BoxOrderLog?:iid=1")
+# Carlos's cut of the BOX order log — the one that opened the Sunday thread.
+BOX_CARLOS_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                  "B2BBOXEnergyTracker/BoxOrderLog/"
+                  "8286c5bb-09f8-4bd8-a3cf-4842dd4d7f87/CarlosOrderLog?:iid=1")
 LEADPEN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                "NDS-SNRES-ATT-OOFWorkbook/LeadPenetrationOverview/"
                "a15a85ac-e0c8-423d-ba85-6be048203b0b/THISWEEK?:iid=1")
@@ -142,6 +146,8 @@ class TheTwoFalseAlarms(unittest.TestCase):
         self.assertEqual(len(self._alerts), 1)
 
     def test_a_daily_source_keeps_the_daily_bar(self):
+        # A Wednesday. BOX is Sunday-quiet, which moves nothing but Monday's
+        # bar, so this still has to ask for Tuesday and still has to be loud.
         out = self._check(DAILY_URL, "8/16/2026", dt.date(2026, 8, 19), "d.csv")
         self.assertEqual(out["verdict"], "stale")
         self.assertEqual(len(self._alerts), 1)
@@ -268,6 +274,77 @@ class ACp1252ConsoleCannotSilenceTheAlert(unittest.TestCase):
         self.assertEqual(out["verdict"], "stale")
         self.assertTrue(out["alerted"])
         self.assertEqual(len(self._alerts), 1)
+
+
+class TheSundayQuietSource(unittest.TestCase):
+    """The BOX energy order log, 2026-08-24 — the Monday thread that found the
+    rule. B2B energy sells to businesses, which are shut on Sunday, so Monday's
+    newest row is Saturday's. Off three BOX offices' merged high-water tabs,
+    Carlos's Sundays run 0/0/0/0/1/0 over six weeks while his Saturdays run
+    3/3/6/6/7, and all three offices ran full volume into Sat 8/22 — a closed
+    weekend, not the capped pull that leaves a cliff."""
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale = self._real
+
+    def _check(self, newest, today, name, url=BOX_CARLOS_URL):
+        return tf.check_export(_export(self.tmp, newest, name), view_url=url,
+                               sheet="Order Log", today=today)
+
+    def test_label_is_recognised_across_the_whole_workbook(self):
+        for cut in ("B2BBOXEnergyTracker/BoxOrderLog/CarlosOrderLog → Order Log",
+                    "B2BBOXEnergyTracker/BoxOrderLog → Order Log",
+                    "B2BBOXEnergyTracker/BoxOrderLog/ALLEXPORDERLOG → Order Log"):
+            self.assertTrue(tf.is_sunday_quiet_source(cut), cut)
+        self.assertFalse(tf.is_sunday_quiet_source(DD))
+
+    def test_monday_8_24_saturday_data_is_fresh(self):
+        # The thread itself: newest 8/22 (Sat) on Mon 8/24, "needs 8/23".
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "a.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(out["needs"], dt.date(2026, 8, 22))
+        self.assertEqual(self._alerts, [])
+
+    def test_the_base_view_the_owner_emails_pull_is_covered_too(self):
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "b.csv",
+                          url=DAILY_URL)
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_a_missing_saturday_is_still_loud_on_monday(self):
+        # Monday asks for Saturday, not Sunday — Friday-newest still shouts.
+        out = self._check("8/21/2026", dt.date(2026, 8, 24), "c.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_tuesday_hears_the_freeze_monday_could_not_prove(self):
+        out = self._check("8/22/2026", dt.date(2026, 8, 25), "d.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_sunday_still_asks_for_saturday(self):
+        # Sun 8/23: yesterday IS Saturday, so nothing is loosened here.
+        self.assertEqual(tf.business_needs(dt.date(2026, 8, 23)),
+                         dt.date(2026, 8, 22))
+
+    def test_the_midweek_bar_is_untouched(self):
+        for today, wants in ((dt.date(2026, 8, 25), dt.date(2026, 8, 24)),
+                             (dt.date(2026, 8, 26), dt.date(2026, 8, 25)),
+                             (dt.date(2026, 8, 29), dt.date(2026, 8, 28))):
+            self.assertEqual(tf.business_needs(today), wants, today)
+
+    def test_an_explicit_needs_from_the_caller_still_wins(self):
+        out = tf.check_export(_export(self.tmp, "8/22/2026", "e.csv"),
+                              view_url=BOX_CARLOS_URL, sheet="Order Log",
+                              needs=dt.date(2026, 8, 23),
+                              today=dt.date(2026, 8, 24))
+        self.assertEqual(out["verdict"], "stale")
 
 
 class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
