@@ -254,6 +254,31 @@ def _orchestrator_ids(cfg, target_date) -> set:
     return ids
 
 
+# Modules that are ONLY ever run by a human asking for them. Matched on the
+# MODULE, never on the id, because an id is a name someone chose and a module is
+# what actually runs.
+#
+# The installers/disablers came first (see the docstring below). READ-ONLY
+# DIAGNOSTICS joined them 2026-08-24: `list_agents` ("List loaded LaunchAgents
+# (read-only)") opened a "didn't run today on the mini · usually starts ~8:00"
+# thread, because a week of hand-running it while debugging — Eve's, mine, and
+# other sessions' — is indistinguishable in the Activity log from an 8am daily
+# report. It has no cadence, no machine and no LaunchAgent; nothing was ever
+# going to run it. Exactly the `disable_oat_processing_agent` shape.
+#
+# NOTE the tempting rule that does NOT work: "on_scheduler false + no weekdays
+# + no machine" describes list_agents perfectly and ALSO describes 40 real
+# reports — stf_field_check, org_board_slack, sara_down, pnl_office among them —
+# which run from their own LaunchAgents. Exempting on that shape would have gone
+# silent on all of them. Measured against the live config before writing this.
+_ONESHOT_UTILITY_MODULES = (
+    "day_orchestrator.install_agent",
+    "day_orchestrator.disable_agent",
+    "day_orchestrator.list_agents",          # read-only agent lister
+    "day_orchestrator.imessage_thread_probe",  # read-only iMessage probe
+)
+
+
 def _oneshot_utility_ids(cfg) -> set:
     """Registry ids that are ONE-SHOT UTILITIES, not reports: the LaunchAgent
     installers / disablers (`day_orchestrator.install_agent` / `.disable_agent`).
@@ -276,8 +301,7 @@ def _oneshot_utility_ids(cfg) -> set:
     ids = set()
     for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
         cmd = " ".join(str(c) for c in (rep_raw.get("command") or []))
-        if not cmd.endswith(("day_orchestrator.install_agent",
-                             "day_orchestrator.disable_agent")):
+        if not cmd.endswith(_ONESHOT_UTILITY_MODULES):
             continue
         ids.add(rid)
         for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):

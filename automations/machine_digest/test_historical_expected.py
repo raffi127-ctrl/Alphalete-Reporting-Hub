@@ -171,5 +171,47 @@ class OffdayStandaloneIds(unittest.TestCase):
         self.assertNotIn("plain", _offday_standalone_ids(cfg, dt.date(2026, 8, 22)))
 
 
+class OneshotUtilityIds(unittest.TestCase):
+    """Hand-run utilities must never enter the 'expected today' baseline.
+
+    2026-08-24: `list_agents` — a read-only LaunchAgent lister with no cadence,
+    no machine and no agent — posted "didn't run today on the mini · usually
+    starts ~8:00" after a week of being hand-run during debugging. Same shape as
+    `disable_oat_processing_agent`, which posted every Wednesday in August."""
+
+    class _C:
+        def __init__(self, reports):
+            self.raw = {"reports": reports}
+
+    def _ids(self, reports):
+        from automations.machine_digest.run import _oneshot_utility_ids
+        return _oneshot_utility_ids(self._C(reports))
+
+    def test_read_only_listers_are_exempt(self):
+        ids = self._ids({
+            "list_agents": {"command": ["automations.day_orchestrator.list_agents"]},
+            "probe_imessage_threads": {
+                "command": ["automations.day_orchestrator.imessage_thread_probe"]},
+        })
+        self.assertIn("list_agents", ids)
+        self.assertIn("probe_imessage_threads", ids)
+
+    def test_installers_are_still_exempt(self):
+        ids = self._ids({"install_x_agent":
+                         {"command": ["automations.day_orchestrator.install_agent"]}})
+        self.assertIn("install_x_agent", ids)
+
+    def test_real_reports_are_never_exempt(self):
+        """The 40 reports that share list_agents' config shape but run from
+        their own LaunchAgents must stay watched."""
+        ids = self._ids({
+            "stf_field_check": {"command": ["automations.stf_field_check.run"]},
+            "org_board_slack": {"command": ["automations.org_sales_board.slack_post"]},
+            "sara_down": {"command": ["automations.sara_down.run"]},
+            "box_order_log": {"command": ["automations.box_order_log.run"]},
+        })
+        self.assertEqual(ids, set())
+
+
 if __name__ == "__main__":
     unittest.main()
