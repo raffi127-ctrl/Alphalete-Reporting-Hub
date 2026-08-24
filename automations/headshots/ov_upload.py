@@ -114,9 +114,25 @@ def find_rep(page, name: str, *, verbose: bool = True):
     (None, tried_campaigns)."""
     from automations.b2b_dispositions.capture import capture_rqst
     rqst = capture_rqst(page)
-    page.goto(f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
-              f"&rqst={rqst}", wait_until="domcontentloaded")
-    page.wait_for_load_state("networkidle")
+    # View Progress renders a huge DataTable (every rep + a pill per column)
+    # — the default 30s goto timed out on the mini (2026-08-23 probe). Give
+    # it 90s and one retry; the second load is usually warm.
+    page.set_default_navigation_timeout(90000)
+    url = (f"https://v2.ownerville.com/index.cfm?p={VIEW_PROGRESS_P}"
+           f"&rqst={rqst}")
+    for attempt in (1, 2):
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            break
+        except Exception:
+            if attempt == 2:
+                raise
+            if verbose:
+                print("  view-progress load timed out — retrying once")
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:
+        pass                      # the select wait below is the real gate
     sel = _campaign_select(page)
     options = sel.locator("option").all_inner_texts()
     tried = []
