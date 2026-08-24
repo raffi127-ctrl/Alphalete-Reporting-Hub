@@ -1371,6 +1371,25 @@
    "timeout_minutes": 150,
    "verify": null
   },
+  "dd_boxes": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Due Diligence rep boxes on the ATT Program - Focus Report's ICD tabs (automations/dd_boxes). on_scheduler:false = NOT in the 4am batch -- the weekly fill already runs as the LAST STEP of att_focus_raf's OPT phase, and a second pass would just repeat it. Present here so `lucy rerun dd_boxes` works at all: until 2026-08-24 this module had NO entry, so it could only be run by hand on a machine with Tableau access and there was no remote way to re-run it (Eve 2026-08-24, after Tony Chavez's Total Sales box sat 4 weeks behind with no way to fill it from the queue). Boxes are auto-detected by the 'Reps Names' + '8 WK ... Average' header, so a new box needs no code. THE WEEKLY PASS ONLY EVER FILLS THE CURRENT WEEK -- old holes need --backfill N, e.g. `lucy rerun dd_boxes --backfill 4 --only \\\"Tony Chavez\\\"`. A box that has run out of week COLUMNS cannot be filled at all until someone adds columns BY HAND; the run warns when <=4 are left. source_type tableau so the orphan-Chrome guards apply: it downloads 4 crosstabs (NI/wireless cancel + churn) on top of the OPT phase's PRODUCT SALES SUMMARY. --skip-download reuses what is already in output/. Writes sales append-only per cell (a hand correction survives a re-run) and re-seeds cancel/churn/start every time (those are rolling).",
+   "display_name": "DD rep boxes (Focus Report ICD tabs)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.dd_boxes.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
+  },
   "stf_field_check": {
    "on_scheduler": false,
    "_off_scheduler_note": "STF Field Check. on_scheduler:false = NOT in the 4am batch; the nightly run is a STANDALONE 11pm LaunchAgent (com.alphalete.stf-field-check-11pm, installed via `lucy rerun install_stf_field_check_agent`). Present here so `lucy rerun stf_field_check` works. Reads the Sales Board WE tab, finds the day's reps marked STF, pulls that same day's ownerville Time Tracker (p=510, Raf's master view — no impersonation), and overwrites STF with X when worked (last knock − first knock) < 3:00 or the rep never showed. Runs on the MINI (ownerville is single-session; a laptop scrape knocks out the holder). DRY-RUN by default: `lucy rerun stf_field_check` (today) or `lucy rerun stf_field_check --date 2026-07-15` (backfill a past day). Add --write to actually flip the cells. The 11pm LaunchAgent passes --write. Registered 2026-07-17.",
