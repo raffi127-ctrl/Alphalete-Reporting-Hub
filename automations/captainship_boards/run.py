@@ -60,6 +60,41 @@ def csv_url(start: dt.date, end: dt.date) -> str:
             f"&Start%20Date={start.isoformat()}&End%20Date={end.isoformat()}")
 
 
+_EMPTY_EXPORT_RE = __import__("re").compile(
+    r"order-log export failed: status=(\d+) bytes=(\d+)")
+
+
+def orderlog_not_ready_yet(start: dt.date, end: dt.date,
+                           exc: BaseException) -> bool:
+    """Is an EMPTY order-log export the expected answer rather than a break?
+
+    WHY (Megan 2026-08-24). This report failed three times in a row at 05:40 on a
+    Monday and opened an incident that read "didn't finish · exit 1". Nothing was
+    broken. The window it exports is `monday_of(today)` → `today`, so on a MONDAY
+    that collapses to a single day — today — and at 5:40am today's B2B orders
+    have not posted yet. Tableau correctly returned an empty result (HTTP 200,
+    1 byte), `_fetch_csv` requires >= 1000 bytes, and an empty Monday became a
+    crash. The code already knew this could happen — `upto = today  # export
+    lags; rows just won't exist yet` — it just had nowhere to put the thought.
+
+    Every other day of the week the window is Monday→today, i.e. at least one
+    COMPLETE day of data, so this can only bite on the first day of the week.
+
+    Narrow on purpose. It is only "not ready" when ALL of:
+      • the window is a single day (start == end) — the Monday shape
+      • the server actually answered 200 — not an outage, not an auth wall
+      • the body was empty/short — a real export is orders of magnitude bigger
+    Anything else is a genuine failure and must keep failing loudly: a silent
+    "not ready" on a real break is exactly how a report goes quiet for a week."""
+    if start != end:
+        return False
+    m = _EMPTY_EXPORT_RE.search(str(exc) or "")
+    if not m:
+        return False
+    status, nbytes = int(m.group(1)), int(m.group(2))
+    return status == 200 and nbytes < 1000
+
+
 def pull_orderlog(start: dt.date, end: dt.date, dest: Path) -> Path:
     """Direct .csv through Carlos's real-Chrome Tableau session (Lucy 2)."""
     from patchright.sync_api import sync_playwright
@@ -600,7 +635,22 @@ def main(argv=None) -> int:
         src = Path(args.from_file)
     else:
         src = OUT / f"orderlog_{monday.isoformat()}_{upto.isoformat()}.csv"
-        pull_orderlog(monday, upto, src)
+        try:
+            pull_orderlog(monday, upto, src)
+        except Exception as e:                        # noqa: BLE001
+            # MONDAY, BEFORE THE DAY'S ORDERS LAND (see orderlog_not_ready_yet).
+            # Not a failure: there is genuinely nothing to fill yet. Exit clean
+            # so the morning pass stops opening an incident that a later run
+            # closes by itself — and say plainly that a later run is what fills
+            # it, so nobody re-runs this in a loop trying to force data that
+            # does not exist yet (3 identical attempts on 2026-08-24).
+            if orderlog_not_ready_yet(monday, upto, e):
+                log(f"no B2B orders posted yet for {upto} (the export is "
+                    f"empty and the week is one day old) — nothing to fill. "
+                    f"This is normal on a Monday morning; a later run today "
+                    f"picks the orders up. NOT a failure.")
+                return 0
+            raise
     reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
 
     try:
