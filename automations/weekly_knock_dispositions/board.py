@@ -83,7 +83,14 @@ THEME_PLUM = {               # distinct from the amber daily knocks board
     "title_bg": (86, 44, 122),
     "header_bg": (46, 27, 63),
     "stripe": (245, 241, 248),
+    # The repeated bottom header band draws LIGHTER than the top one
+    # (Megan 2026-08-23) so the two never read as a duplicated screenshot.
+    "repeat_header_bg": (122, 82, 156),
 }
+
+# Comparison rows (CHAN PARK TOTALS) draw teal (Megan 2026-08-23) so the
+# guest office's row can't be misread as part of the host's totals.
+COMPARE_ROW_BG = (13, 110, 139)
 
 TOTALS_LABEL = "OFFICE TOTALS"
 
@@ -327,4 +334,8 @@ def render(office: str, monday: dt.date, saturday: dt.date,
                                highlight_last_row=n_totals,
                                # Raf 2026-08-23: header band re-drawn above
                                # the totals block so the bottom reads alone.
-                               repeat_header_before=n_totals)
+                               repeat_header_before=n_totals,
+                               # Host totals plum, comparison rows teal.
+                               total_row_bgs=([THEME_PLUM["header_bg"]]
+                                              + [COMPARE_ROW_BG]
+                                              * (n_totals - 1)))

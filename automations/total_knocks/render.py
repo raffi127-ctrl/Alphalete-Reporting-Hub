@@ -219,7 +219,8 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
           highlight_last_row: "bool | int" = False,
           highlight_first_row: "bool | int" = False,
           repeat_header_before: int = 0,
-          top_row_colors: "list | None" = None) -> Path:
+          top_row_colors: "list | None" = None,
+          total_row_bgs: "list | None" = None) -> Path:
     """Generic table → PNG. `name_col` (0-based) is left-aligned + bold.
 
     wrap_headers=False (default): every existing board unchanged — column
@@ -236,7 +237,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     repeat_header_before (Raf 2026-08-23, "add the heads to the bottom"):
     N > 0 re-draws the header band directly above the last N rows, so a
     long board's totals block is readable without scrolling to the top.
-    Default 0 = no band, every existing board byte-identical."""
+    The bottom band uses theme["repeat_header_bg"] when present (Megan
+    2026-08-23: lighter purple) — else the header colour.
+    total_row_bgs (Megan 2026-08-23, "make Chan's row teal"): per-row fills
+    for the trailing highlighted rows, in order — e.g. [plum, teal] paints
+    the host OFFICE TOTALS plum and the comparison row teal. None = the
+    theme default for all. Default None/0 = every existing board
+    byte-identical."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
@@ -320,11 +327,11 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     d.text((PAD + CELL_PAD_X, PAD + (TITLE_H - title_size) // 2), title,
            font=f_title, fill=TITLE_FG)
 
-    def _header_band(y0: int) -> int:
+    def _header_band(y0: int, band_bg=None) -> int:
         x0 = PAD
         for ci in range(ncol):
             d.rectangle([x0, y0, x0 + col_w[ci], y0 + header_h],
-                        fill=theme["header_bg"])
+                        fill=band_bg or theme["header_bg"])
             lines = head_lines[ci]
             block_h = head_lh * len(lines)
             ty = y0 + (header_h - block_h) // 2 + 1
@@ -341,7 +348,9 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
     _n_hl = int(highlight_last_row or 0)   # True==1; int N = last N rows
     for ri, r in enumerate(rows):
         if ri == _rep_at:
-            y = _header_band(y)            # the bottom header band
+            # The bottom header band — lighter shade when the theme has one
+            # (Megan 2026-08-23).
+            y = _header_band(y, theme.get("repeat_header_bg"))
         # highlight_first_row mirrors highlight_last_row: True==1; int N =
         # the first N rows (a board carrying other offices' totals above its
         # own, Raf 2026-08-23).
@@ -354,6 +363,13 @@ def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
         if ri < _n_top and top_row_colors and ri < len(top_row_colors) \
                 and top_row_colors[ri]:
             bg = top_row_colors[ri]
+        # …and for the trailing block: total_row_bgs in order — e.g.
+        # [plum, teal] = host OFFICE TOTALS plum, comparison row teal
+        # (Megan 2026-08-23).
+        _blk = ri - (len(rows) - _n_hl) if _n_hl else -1
+        if (is_total and total_row_bgs and 0 <= _blk < len(total_row_bgs)
+                and total_row_bgs[_blk]):
+            bg = total_row_bgs[_blk]
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
         for ci in range(ncol):
