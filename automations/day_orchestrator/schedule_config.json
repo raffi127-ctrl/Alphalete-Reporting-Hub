@@ -552,6 +552,26 @@
    "timeout_minutes": 5,
    "machine": "Lucy 1"
   },
+  "headshots_monday_now": {
+   "on_scheduler": false,
+   "_note": "Post this week's Monday headshot thread AS LUCY, on demand from Lucy 3 — for when the scheduled 8:30am slot was missed (held, machine asleep) or the post needs re-issuing after a delete. Idempotent: refuses if this week's marker post already exists, only posts on Mondays (module handles both). `lucy rerun headshots_monday_now --machine \"Lucy 3\"`.",
+   "display_name": "Post Monday headshot thread now (as Lucy)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.headshots.weekly_thread"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
+  },
   "headshots_ov_probe": {
    "on_scheduler": false,
    "_note": "READ-ONLY probe for the headshot bot's OwnerVille uploader (Phase 2): find a rep on Onboard -> View Progress and report the Photo pill, changing NOTHING. Runs where the session holder keeps the OV login warm (the mini) — the laptop's storage_state goes stale. `lucy rerun headshots_ov_probe` (default probe rep: Ahna Vanmeter, from Megan's 8/23 walkthrough).",
