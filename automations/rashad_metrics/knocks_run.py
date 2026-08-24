@@ -46,7 +46,13 @@ try:
 except Exception:
     pass
 
-from automations.rashad_metrics.knocks_pull import DEFAULT_OFFICE, pull_office_knocks
+import os
+
+from automations.rashad_metrics.knocks_pull import (
+    DEFAULT_OFFICE,
+    pull_office_knocks,
+    pull_offices_knocks,
+)
 from automations.total_knocks import render as _render
 from automations.total_knocks.pull import COL_TOTAL_KNOCKS
 from automations.total_knocks.pull import central_today
@@ -60,13 +66,44 @@ POST_TIME_GAPS    = ("🕐 Time Gaps", "clock1")
 
 OUT_DIR = Path("output")
 
+# Offices whose TOTAL line rides above this office's own on the fiber board
+# (Raf 2026-08-23: "Chan's numbers on everyone's metric post"). Pulled in the
+# SAME ownerville session as the office itself — one login covers both. The
+# NDS runner entries set KNOCKS_EXTRA_TOTALS="" (a fiber totals row doesn't
+# fit the wireless board); blank disables, comma-separated overrides.
+EXTRA_TOTALS_OFFICES = [o.strip() for o in
+                        os.environ.get("KNOCKS_EXTRA_TOTALS",
+                                       "Chan Park").split(",") if o.strip()]
+
 
 def run(target: dt.date | None = None, *, office_name: str | None = None,
         dry_run: bool = False) -> int:
     office_name = office_name or DEFAULT_OFFICE
 
     # 1. Pull (impersonate office → Disposition + Time Tracker gaps, merged).
-    target, rows = pull_office_knocks(office_name, target)
+    #    Extra-totals offices (Chan) ride in the same session; their failure
+    #    or absence never blocks this office's post.
+    extras = [o for o in EXTRA_TOTALS_OFFICES
+              if o.strip().lower() != office_name.strip().lower()]
+    if extras:
+        target, pulled = pull_offices_knocks([office_name] + extras, target)
+        _, rows, err0 = pulled[0]
+        if err0 is not None:
+            raise err0
+        extra_totals = []
+        for name, x_rows, x_err in pulled[1:]:
+            if x_err is not None:
+                print(f"[rashad_knocks] ⚠ {name} totals pull failed "
+                      f"({type(x_err).__name__}) — posting without it.",
+                      flush=True)
+            elif x_rows and COL_TOTAL_KNOCKS in x_rows[0]:
+                extra_totals.append((name, x_rows))
+            else:
+                print(f"[rashad_knocks] ⚠ {name}: no fiber rows — posting "
+                      "without that totals line.", flush=True)
+    else:
+        target, rows = pull_office_knocks(office_name, target)
+        extra_totals = []
     print(f"[rashad_knocks] {office_name} — data date {target.isoformat()} — "
           f"{len(rows)} rep(s).", flush=True)
 
@@ -118,7 +155,8 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
         img_tk = _render.render_telemapper_knocks(target, rows=rows,
                                                   out_dir=OUT_DIR)
     else:
-        img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows)
+        img_tk = _render.render_total_knocks(target, out_dir=OUT_DIR, rows=rows,
+                                             extra_totals=extra_totals)
     posts.append((img_tk, POST_TOTAL_KNOCKS))
     # Fiber (house shape): the combined board CARRIES Gaps + Total Gaps now
     # (Raf's Loom 2026-08-22) — no separate Time Gaps post. The NDS shapes

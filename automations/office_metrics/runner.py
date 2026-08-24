@@ -151,7 +151,10 @@ def _nds_metrics(o: Office) -> list[dict]:
         # reference screen, 2026-08-22) and posts Time Gaps as usual.
         dict(slug="knocks_gaps", label="🚪 TeleMapper Knocks + 🕐 Time Gaps",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
-             env={"KNOCKS_OFFICE": o.knocks_office},
+             # KNOCKS_EXTRA_TOTALS="" — an NDS board has no fiber columns, so
+             # Chan's fiber totals line (Raf 2026-08-23) is fiber-only.
+             env={"KNOCKS_OFFICE": o.knocks_office,
+                  "KNOCKS_EXTRA_TOTALS": ""},
              retry_on_fail=1, dry_flag="--dry-run", post_flag="--live"),
         # 📊 Wireless Churn — per-rep, day-over-day. nds_churn slices the shared
         # ChurnALlExp view to this owner + fills THIS office's own churn tab, so
