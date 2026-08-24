@@ -215,6 +215,43 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
     return result
 
 
+def send_text_to_group(name: str, text: str, *, dry_run: bool = True) -> Dict:
+    """Send a TEXT-ONLY message to a named group.
+
+    send_to_group refuses image-less sends because for the disposition posts
+    the image IS the content. The new-start reminders (new_start_followup) are
+    the opposite — pure text plus a Slack link that iMessage unfurls on its
+    own — so this is the text-only twin. Same rules as send_to_group: the
+    group is resolved by NAME fresh on every send (never a stored GUID), and
+    resolution runs even on a dry run because it's the half most likely to be
+    wrong.
+    """
+    if not (text or "").strip():
+        raise GroupTextError("refusing to send an empty text to %r" % name)
+
+    result = {"group": name, "text": text, "dry_run": dry_run, "ok": False}
+    info = resolve_group(name)
+    result["chat_id"] = info["id"]
+    result["resolved_name"] = info["name"]
+    result["participants"] = info["participants"]
+    if dry_run:
+        result["ok"] = True
+        return result
+
+    cid = info["id"].replace("\\", "\\\\").replace('"', '\\"')
+    # AppleScript 2.0 string literals understand \n, so newlines are escaped
+    # rather than embedded — a raw newline inside the quoted literal is a
+    # compile error.
+    safe = (text.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n"))
+    _osascript('tell application "Messages"\n'
+               '  set theChat to a reference to chat id "%s"\n'
+               '  send "%s" to theChat\n'
+               'end tell' % (cid, safe))
+    result["ok"] = True
+    return result
+
+
 def send_specs(specs: List[Dict], *, dry_run: bool = True) -> Dict:
     """Route every captured spec to its group and send.
 

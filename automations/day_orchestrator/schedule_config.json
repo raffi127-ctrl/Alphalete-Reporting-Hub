@@ -1816,6 +1816,80 @@
    "depends_on": [],
    "verify": null
   },
+  "new_start_texts_dry": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "New-Start Texts — dry-run rehearsal",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.new_start_followup.run"
+   ],
+   "base_args": [
+    "--mode",
+    "sat-texts"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "_note": "MANUAL, ALWAYS SAFE: `lucy rerun new_start_texts_dry` is the full sat-texts rehearsal with no --live — composes every text, resolves the 'Alphalete lvl 1's' iMessage group through Apple Events, fills phones from the OBCL book, sends NOTHING. Run this once on Lucy 1 before the first live Saturday: it proves the Messages grant + the group needle + the phone coverage in one shot. weekdays [] = never auto-run.",
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null
+  },
+  "new_start_sat_texts": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "New-Start Saturday Texts (iMessage)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.new_start_followup.run"
+   ],
+   "base_args": [
+    "--mode",
+    "sat-texts",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [5],
+    "not_before": "08:30"
+   },
+   "_note": "LIVE SEND (Raf's Loom 2026-08-23: leaders answer texts, not Slack). Saturday from 8:30am CST — after the 8:00 roll call so the thread the texts link to exists. iMessages every leader still owing a text from THIS machine's Messages (alphaletereporting@) + posts the reminder to the 'Alphalete lvl 1's' iMessage group and #alphalete-lvl1-chat. Scheduled through the orchestrator ON PURPOSE, never a bash-wrapper plist: macOS grants control-Messages per executable identity, and only the poller/orchestrator python identity holds it (same lesson as b2b_dispositions on Lucy 2). Idempotent per (week, leader) and per (slot, day) via .sent markers, so retries only send what they missed.",
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "new_start_daily_reminder": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "New-Start Daily Reminder (lvl-1 chats)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.new_start_followup.run"
+   ],
+   "base_args": [
+    "--mode",
+    "daily-reminder",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [0, 1, 2, 3, 4],
+    "not_before": "09:00"
+   },
+   "_note": "LIVE SEND (Raf 2026-08-23: 'ping the guys messaging on the daily update... 9:00am every day Monday - Friday. iMessage & Slack lvl 1 chat.'). Group posts ONLY — 'Hey guys, reminder to text any new starts you closed yesterday!' to the 'Alphalete lvl 1's' iMessage group + #alphalete-lvl1-chat. Thread-free: never reads the roster screenshot. Orchestrator-scheduled for the Messages grant (see new_start_sat_texts). One .sent marker per day.",
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_new_start_nudge_agent": {
    "on_scheduler": true,
    "_note": "MANUAL: `lucy rerun install_new_start_nudge_agent` installs com.alphalete.new-start-followup-sat (Sat 13:00 CST — ONE nudge). Cut from 10/13/17 on 2026-07-26 (too many pings; the 5pm -sat-pm plist was retired the same day). Reminds only the leaders who still haven't replied 'Sent'. weekdays [] = manual only.",

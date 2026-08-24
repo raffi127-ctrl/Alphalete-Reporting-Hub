@@ -11,13 +11,20 @@
     # Sunday roll-up checklist
     python -m automations.new_start_followup.run --mode checklist
 
+    # Saturday 8:30am: text every owing leader + both lvl-1 group reminders
+    # (RUNS ON LUCY 1 — its Messages is alphaletereporting@)
+    python -m automations.new_start_followup.run --mode sat-texts
+
+    # Mon-Fri 9:00am: "text the new starts you closed yesterday" group ping
+    python -m automations.new_start_followup.run --mode daily-reminder
+
 Nothing posts without --live. --dry-run is the default and prints the exact
 message, per the standing "ask before any Slack post" rule.
 
-Slack-only by design: there's no active iMessage number to text leaders from
-(Megan, 2026-07-22), so the report chases stragglers purely by tagging them in
-the thread. The texting modules (texts.py / contacts.py) are PARKED — kept in
-the tree but unwired — in case a number is added later.
+Texting UN-PARKED 2026-08-23 (Raf's Loom: leaders answer texts, not Slack).
+sat-texts sends individual iMessages from Lucy 1 + posts to the "Alphalete
+lvl 1's" iMessage group and #alphalete-lvl1-chat; daily-reminder does just
+the two group posts, Mon-Fri.
 """
 from __future__ import annotations
 
@@ -98,6 +105,19 @@ def _run_funnel(args, funnel, monday, when) -> int:
         print(report_mod.render_checklist(rec))
         return 0
 
+    if args.mode == "sat-texts":
+        from automations.new_start_followup import texts, group_reminders
+        outcomes = texts.run(rec, send=args.live)
+        print(texts.render(outcomes, send=args.live))
+        print()
+        out = group_reminders.send_all(
+            "saturday",
+            group_reminders.saturday_message(texts.thread_link(rec)),
+            dry_run=not args.live)
+        print(group_reminders.describe(out))
+        failed = [o for o in outcomes if o.error]
+        return 2 if (failed or out["errors"]) else 0
+
     if args.mode == "rollcall":
         # One Lucy roll call per week PER THREAD — a re-run must not repeat it.
         if rec.thread["our_rollcall_ts"] and not args.force:
@@ -130,9 +150,22 @@ def _run(args) -> int:
         hour = dt.datetime.now().hour
         when = "morning" if hour < 12 else ("midday" if hour < 16 else "evening")
 
+    # The daily reminder is thread-free: it's about yesterday's closes, not
+    # the weekly roster, so it never reads the screenshot or the thread.
+    if args.mode == "daily-reminder":
+        from automations.new_start_followup import group_reminders
+        out = group_reminders.send_all("daily", group_reminders.daily_message(),
+                                       dry_run=not args.live)
+        print(group_reminders.describe(out))
+        return 1 if out["errors"] else 0
+
     from automations.new_start_followup import thread as thread_mod
     funnels = (thread_mod.FUNNELS if args.funnel == "all"
                else [thread_mod.funnel_by_key(args.funnel)])
+    # The individual texts are Raf's funnel only — his Loom, his lvl-1 chats.
+    # Tiffani runs her own funnel's chasing by hand.
+    if args.mode == "sat-texts":
+        funnels = [thread_mod.funnel_by_key("main")]
     rc = 0
     for funnel in funnels:
         rc = max(rc, _run_funnel(args, funnel, monday, when))
@@ -156,10 +189,14 @@ def _hub_done(live_post: bool, hub_run_id, ok: bool) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
     ap.add_argument("--mode",
-                    choices=["status", "rollcall", "nudge", "checklist"],
+                    choices=["status", "rollcall", "nudge", "checklist",
+                             "sat-texts", "daily-reminder"],
                     default="status",
                     help="status = print only; rollcall = Saturday 8am tag-everyone; "
-                         "nudge = Saturday reminder; checklist = Sunday roll-up")
+                         "nudge = Saturday reminder; checklist = Sunday roll-up; "
+                         "sat-texts = Sat 8:30 individual iMessages + lvl-1 group "
+                         "posts (Lucy 1 only); daily-reminder = Mon-Fri 9am lvl-1 "
+                         "group posts")
     ap.add_argument("--force", action="store_true",
                     help="post the roll call again even if one is already in the thread")
     ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
@@ -184,7 +221,8 @@ def main(argv=None) -> int:
     # card's pill climbs as the Saturday passes land (Sat 4 -> green, Sun 1 ->
     # green), exactly like bg_check_sync. --mode status posts nothing, so it
     # never publishes.
-    live_post = args.live and args.mode in ("rollcall", "nudge", "checklist")
+    live_post = args.live and args.mode in ("rollcall", "nudge", "checklist",
+                                            "sat-texts", "daily-reminder")
     hub_run_id = None
     if live_post:
         try:

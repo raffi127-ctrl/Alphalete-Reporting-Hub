@@ -4520,34 +4520,39 @@ AUTOMATED_REPORTS = [
             "counts, leaders who never got tagged, and interviewers with no "
             "Slack account (named so someone chases them by hand).\n\n"
             "WHEN IT RUNS\n"
-            "**Saturday 8am** — roll call @-tagging every leader with a new "
-            "start (and their count); **1pm** — a reminder that tags only who "
-            "hasn't replied yet. **Sunday 1pm** — the numbered ✅ roll-up of "
-            "who sent and who didn't."
+            "**Saturday 8am** — numbered roll call @-tagging every leader with "
+            "a new start; **8:30am** — Lucy TEXTS each of those leaders from "
+            "her iMessage number and posts a reminder in the *Alphalete "
+            "lvl 1's* iMessage group + **#alphalete-lvl1-chat**; **1pm** — a "
+            "reminder tagging only who hasn't replied yet. **Sunday 1pm** — "
+            "the numbered ✅ roll-up. **Mon–Fri 9am** — a group-only "
+            "\"text the new starts you closed yesterday\" ping (both lvl-1 "
+            "chats)."
         ),
         "assignees": ["Lucy 1"],
         # Pinned to Lucy 1 (same as bg-check-sync): that's where Lucy's Slack
-        # user token and the thread state live, so it edits the existing thread
-        # rather than reposting. Slack-only — no iMessage (texting is parked).
+        # user token, the thread state, AND Lucy's iMessage account
+        # (alphaletereporting@) live — texting un-parked 2026-08-23 (Raf).
         "run_machine": "Lucy 1",
         "run_rerun_id": "new_start_followup",
-        # Own launchd timers (Sat ×2 + Sun ×1) — hide the DUE-TODAY + schedule
-        # pills and keep it out of the "due today" tallies, same as bg-check-sync.
+        # Own launchd timers — hide the DUE-TODAY + schedule pills and keep it
+        # out of the "due today" tallies, same as bg-check-sync.
         "hide_schedule": True,
         "self_scheduled": True,
-        # Pill climbs as each pass lands: Saturday = 2 (roll-call 8am + the 1pm
-        # nudge — cut from 10am/1pm/5pm on 2026-07-26, too many pings) greens at
-        # 2/2; Sunday = the single 1pm checklist greens at 1/1. Weekday-keyed
-        # (weekday(): Sat=5, Sun=6). Each live pass records itself via hub_publish
+        # Pill climbs as each pass lands: Saturday = 3 (roll-call 8am +
+        # sat-texts 8:30 + the 1pm nudge); Sunday = the 1pm checklist; Mon-Fri
+        # = the 9am group reminder. Weekday-keyed (weekday(): Mon=0 … Sun=6).
+        # Each live pass records itself via hub_publish
         # (new_start_followup -> this card).
-        "daily_runs": {"5": 2, "6": 1},
+        "daily_runs": {"0": 1, "1": 1, "2": 1, "3": 1, "4": 1, "5": 3, "6": 1},
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [5, 6],  # Saturday, Sunday
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
             "time": "8:00 AM",
-            # Weekday-keyed (Sat=5, Sun=6): each day's pill shows only its own
-            # times — no redundant "Sat …/Sun …" prefix in the day's column.
-            "time_label": {"5": "8am/1pm CST", "6": "1pm CST"},
+            # Weekday-keyed: each day's pill shows only its own times.
+            "time_label": {"0": "9am CST", "1": "9am CST", "2": "9am CST",
+                           "3": "9am CST", "4": "9am CST",
+                           "5": "8am/8:30am/1pm CST", "6": "1pm CST"},
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -4584,6 +4589,23 @@ AUTOMATED_REPORTS = [
                 "help": "Post the numbered ✅ roll-up to the thread.",
                 "module": "automations.new_start_followup.run",
                 "args_fn": lambda: ["--mode", "checklist", "--live"],
+            },
+            {
+                "label": "Text The Leaders",
+                "icon": "📱",
+                "help": "iMessage every leader still owing a text + post the "
+                        "lvl-1 group reminders. Only works on Lucy 1 (that's "
+                        "where Lucy's iMessage lives).",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "sat-texts", "--live"],
+            },
+            {
+                "label": "Preview Texts",
+                "icon": "👀",
+                "help": "Show exactly who'd be texted and the message, without "
+                        "sending anything.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "sat-texts"],
             },
         ],
     },
