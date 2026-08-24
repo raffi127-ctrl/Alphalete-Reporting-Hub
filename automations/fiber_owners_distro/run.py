@@ -99,6 +99,25 @@ def _current_group_emails(account: str, group: str) -> Optional[List[str]]:
     return None
 
 
+def protect_list(xlsx_path: Path) -> List[str]:
+    """Addresses the sync must never REMOVE: the manual keep list plus every
+    address on any roster tab (so a current Wireless/B2B owner already on the
+    list is not dropped).
+
+    EXCLUDES WIN OVER THE ROSTER. excludes.json says "keep this owner OFF the
+    distro even when they appear on Kelly's roster", but an excluded owner who is
+    still on a roster tab used to land in `protect` and therefore stayed in the
+    group forever — the exclude only stopped the re-ADD, so it did nothing for
+    someone already a member. Subtracting the excludes here makes the file mean
+    what it says: they come off at the next sync, through the normal 24h ✅/❌
+    departure window. (Eve 2026-08-24, sacando a Jesus Hawthorne.)
+    """
+    from automations.fiber_owners_distro.roster import canonical
+    excluded = {canonical(e) for e in load_excludes()}
+    keep = list(load_keep().keys()) + roster.all_roster_emails(xlsx_path)
+    return [e for e in keep if canonical(e) not in excluded]
+
+
 def preview(xlsx_path: Path, edate: dt.datetime, account: str, group: str) -> Path:
     kept, dropped, excludes = build_target(xlsx_path)
     target_emails = [o.email for o in kept]
@@ -123,7 +142,7 @@ def preview(xlsx_path: Path, edate: dt.datetime, account: str, group: str) -> Pa
 
     # Protect = manual keep list + EVERY address on any roster tab (never drop a
     # still-active owner, incl. Wireless/B2B already on the list).
-    protect = list(load_keep().keys()) + roster.all_roster_emails(xlsx_path)
+    protect = protect_list(xlsx_path)
 
     # Prefer the accurate PERSON-CENTRIC dry-run (needs a write token for the account).
     try:
@@ -183,7 +202,7 @@ def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
         return 2
     kept, _d, _e = build_target(xlsx)
     target = [(o.email, o.name) for o in kept]
-    protect = list(load_keep().keys()) + roster.all_roster_emails(xlsx)
+    protect = protect_list(xlsx)
     stamp = edate.strftime("%Y-%m-%d")
     print(f"phase POST ({'dry-run' if dry_run else 'LIVE'}) — roster {stamp} — "
           f"targets: {', '.join(a for a, _ in targets)}")
@@ -291,7 +310,7 @@ def phase_post(account: str, group: str, xlsx: Path, edate: dt.datetime,
             return 2
     kept, _d, _e = build_target(xlsx)
     target = [(o.email, o.name) for o in kept]
-    protect = list(load_keep().keys()) + roster.all_roster_emails(xlsx)
+    protect = protect_list(xlsx)
     plan = contacts_write.plan_sync(svc, grp, target, protect)
     stamp = edate.strftime("%Y-%m-%d")
     print(f"phase POST ({'dry-run' if dry_run else 'LIVE'}) — roster {stamp}: "

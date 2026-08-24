@@ -95,6 +95,17 @@ REMOVALS: dict = {
     "Khalil's Captainship": [
         ("Ayleen Gonzalez", "agonzalezz25@outlook.com"),
     ],
+    # 2026-08-24 (Eve): Jesus Hawthorne sale de TODAS las listas de distribución.
+    # Su tarjeta está en UN solo grupo vivo ("ATT Fiber Owners") y en ninguna lista
+    # de código (grep de nombre y de mail: 0 hits en distro_fallback.json,
+    # captainship_drafts.config.RECIPIENTS, scheduled_6_days_out.email_send y
+    # leaders_call). Para que el reset semanal no lo reponga va además en
+    # fiber_owners_distro/excludes.json. Ojo: ese grupo existe en DOS cuentas
+    # (raffi127 + alphaletereporting, ALL_TARGETS de fiber_owners_distro.run) y este
+    # módulo sólo escribe en alphaletereporting.
+    "ATT Fiber Owners": [
+        ("Jesus Hawthorne", "jesus_hawthorne@yahoo.com"),
+    ],
     "Colten's Captainship": [
         ("Javeon Lara", "javeonterrell@gmail.com"),
         ("Selena Powers", "selena.powersmiami@gmail.com"),   # listed twice on the card
@@ -146,18 +157,26 @@ def _find_group(svc, name: str):
             return None
 
 
-def _service(apply: bool):
-    """Read-only service for the plan; read-write for the apply."""
+def _service(apply: bool, account: str = ACCOUNT):
+    """Read-only service for the plan; read-write for the apply.
+
+    `account` exists because ONE group name can live in two mailboxes: the
+    reporting account and raffi127's personal contacts BOTH hold an "ATT Fiber
+    Owners" group, and fiber_owners_distro.run syncs the two (its ALL_TARGETS).
+    A removal run only here leaves the person on Raf's copy. The read-only plan
+    always reads the reporting account (the one token every machine has), so
+    --account only changes where --apply writes. (Eve 2026-08-24.)
+    """
     from googleapiclient.discovery import build
     if apply:
         from automations.fiber_owners_distro import contacts_write as cw
-        if not cw.token_path(ACCOUNT).exists():
+        if not cw.token_path(account).exists():
             raise SystemExit(
-                f"No hay token de ESCRITURA en {cw.token_path(ACCOUNT)}.\n"
+                f"No hay token de ESCRITURA en {cw.token_path(account)}.\n"
                 f"Corré una vez, con navegador:\n"
                 f"  python -m automations.fiber_owners_distro.contacts_write "
-                f"--authorize --account {ACCOUNT}")
-        creds = cw.load_credentials(ACCOUNT)
+                f"--authorize --account {account}")
+        creds = cw.load_credentials(account)
     else:
         from automations.shared import contacts_auth as ca
         creds = ca.load_credentials()
@@ -168,13 +187,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board.distro_remove")
     ap.add_argument("--apply", action="store_true", help="write (default: plan only)")
     ap.add_argument("--only", default=None, help="one group name, for a partial run")
+    ap.add_argument("--account", default=ACCOUNT,
+                    help="qué buzón de Contacts escribe --apply (default: la cuenta de reportes). 'ATT Fiber Owners' vive TAMBIÉN en raffi127@gmail.com, cuyo token rw está en la mini.")
     args = ap.parse_args(argv)
 
-    svc = _service(args.apply)
+    svc = _service(args.apply, args.account)
     todo = {k: v for k, v in REMOVALS.items()
             if not args.only or _norm(k) == _norm(args.only)}
     total = missing = 0
-    print(f"=== distro_remove ({'APPLY' if args.apply else 'plan'})")
+    print(f"=== distro_remove ({'APPLY' if args.apply else 'plan'}) "
+          f"— {args.account if args.apply else ACCOUNT}")
     for gname, targets in todo.items():
         g = _find_group(svc, gname)
         if not g:
