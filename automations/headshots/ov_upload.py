@@ -492,6 +492,41 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9 '-]", "", name).strip()
 
 
+def announce(res: dict, *, dry_run: bool = False) -> str | None:
+    """Post the outcome of a one-off OV retry into this week's headshot
+    thread, so a stale "please upload this one manually" note never stands
+    after the upload actually went through (Megan 2026-08-24).
+
+    Posts as whoever this machine is — run it on Lucy 3 so it lands as
+    Lucy, like every other message in the thread."""
+    from automations.headshots import weekly_thread as wt
+    name = res.get("name", "")
+    as_who = (f" (matched to *{res['matched_as']}* in OwnerVille)"
+              if res.get("matched_as") else "")
+    if res.get("status") == "uploaded":
+        text = (f":white_check_mark: *{name}* — sorted. The headshot is now "
+                f"on their OwnerVille profile{as_who}. The earlier "
+                "\u26a0\ufe0f note above is resolved.")
+    elif res.get("status") == "already_uploaded":
+        text = (f":white_check_mark: *{name}* — confirmed: the headshot is on "
+                f"their OwnerVille profile{as_who}. The earlier "
+                "\u26a0\ufe0f note above is resolved.")
+    else:
+        return None
+    cl = wt._client()
+    anchor = wt.find_week_anchor(cl, wt.CHANNEL_ID)
+    if not anchor:
+        print("  (no headshot thread this week — nothing to update)")
+        return None
+    if dry_run:
+        print(f"  WOULD post in thread {anchor['ts']}:\n    {text}")
+        return None
+    cl.chat_postMessage(channel=wt.CHANNEL_ID, thread_ts=anchor["ts"],
+                        text=text)
+    print(f"  posted the correction in this week's thread ({anchor['ts']})")
+    return anchor["ts"]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Upload a headshot to OwnerVille.")
     ap.add_argument("--name", required=True, help='rep name, "First Last"')
@@ -503,6 +538,11 @@ def main(argv=None) -> int:
                     help="find the rep + report the photo pill, change nothing")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debug)")
+    ap.add_argument("--announce", action="store_true",
+                    help="post the outcome in this week's headshot thread "
+                         "(clears a stale 'upload manually' note)")
+    ap.add_argument("--announce-dry", action="store_true",
+                    help="print the thread message instead of posting it")
     args = ap.parse_args(argv)
     photo = Path(args.file) if args.file else None
     if photo is None and args.from_archive:
@@ -514,6 +554,8 @@ def main(argv=None) -> int:
     res = upload(args.name, photo,
                  dry_run=args.dry_run, headless=not args.headed)
     print(res)
+    if args.announce or args.announce_dry:
+        announce(res, dry_run=args.announce_dry)
     return 0 if res["status"] in ("uploaded", "already_uploaded",
                                   "dry_run_found") else 1
 
