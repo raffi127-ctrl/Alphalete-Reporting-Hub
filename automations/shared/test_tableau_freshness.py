@@ -19,6 +19,9 @@ DD_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
           "DirectDepositICDVIEWVersion2_0/DDDETAIL?:iid=1")
 DAILY_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "B2BBOXEnergyTracker/BoxOrderLog?:iid=1")
+LEADPEN_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "NDS-SNRES-ATT-OOFWorkbook/LeadPenetrationOverview/"
+               "a15a85ac-e0c8-423d-ba85-6be048203b0b/THISWEEK?:iid=1")
 
 
 def _export(tmp: Path, newest: str, name: str = "x.csv") -> Path:
@@ -63,6 +66,14 @@ class WeeklyBar(unittest.TestCase):
             "DirectDepositICDVIEWVersion2_0/DDDETAILORG → ORG DD Detail"))
         self.assertFalse(tf.is_weekly_source(
             "B2BBOXEnergyTracker/BoxOrderLog → Order Log"))
+        self.assertTrue(tf.is_weekly_source(
+            "NDS-SNRES-ATT-OOFWorkbook/LeadPenetrationOverview.csv "
+            "→ LeadPenetrationOverview"))
+        # A different workbook that merely talks about lead penetration is NOT
+        # this view — int_wow_penetration pulls its by-zip sheet daily.
+        self.assertFalse(tf.is_weekly_source(
+            "ATTTRACKER2_1-D2D/FiberLeadPerformance "
+            "→ Office New Fiber Lead Penetration By Zip"))
 
     def test_needs_is_the_sunday_before_the_one_that_just_ended(self):
         # Wed 2026-08-19: week just ended 8/16, so one week of lag = 8/09.
@@ -119,6 +130,44 @@ class TheTwoFalseAlarms(unittest.TestCase):
                               needs=dt.date(2026, 8, 18),
                               today=dt.date(2026, 8, 19))
         self.assertEqual(out["verdict"], "stale")
+
+
+class TheMondayOnlySource(unittest.TestCase):
+    """LeadPenetrationOverview, 2026-08-24 — the thread that found the second
+    weekly source. `alphalete_org_focus` runs Mondays only (cadence.weekdays
+    [0]) against the view's THISWEEK cut, so the newest row is the Saturday that
+    closed the week: two days back on the only day it is ever pulled. Replayed
+    from the exports themselves, two Mondays eight weeks apart."""
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale = self._real
+
+    def _check(self, newest, today, name):
+        return tf.check_export(_export(self.tmp, newest, name),
+                               view_url=LEADPEN_URL,
+                               sheet="LeadPenetrationOverview", today=today)
+
+    def test_monday_8_24_saturday_data_is_fresh(self):
+        out = self._check("8/22/2026", dt.date(2026, 8, 24), "a.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_monday_6_29_saturday_data_is_fresh(self):
+        out = self._check("6/27/2026", dt.date(2026, 6, 29), "b.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(self._alerts, [])
+
+    def test_a_missed_week_is_still_loud(self):
+        # Mon 8/24 with nothing newer than Sat 8/15 = the 8/16 week never landed.
+        out = self._check("8/15/2026", dt.date(2026, 8, 24), "c.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
 
 
 class TheAlertSaysWhatActuallyHappened(unittest.TestCase):

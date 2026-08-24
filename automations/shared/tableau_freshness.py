@@ -25,7 +25,11 @@ then — which on the 8/13 incident means the first alert lands the morning of
 A source that is WEEKLY by nature is judged against the week, not the day —
 see WEEKLY_SOURCE_MARKERS. Direct Deposit posts one Sat/Sun pair per week, so
 "1 day behind" is a bar it can only clear on Mondays; asking for it produced two
-false alarms in two days before the rule existed (Eve 2026-08-19).
+false alarms in two days before the rule existed (Eve 2026-08-19). The other
+shape of the same problem: a WEEK-scoped view whose only report runs on Mondays
+(LeadPenetrationOverview / alphalete_org_report). Its newest row is always the
+Saturday that closed the week, so the daily bar is one it can never clear on the
+only day it is ever pulled — a thread every Monday, forever (Eve 2026-08-24).
 
 One day of slack is deliberate. Sunday-quiet campaigns, a supplier that posts
 overnight, a report that runs at 4am against a feed refreshed at 7am — all sit
@@ -412,6 +416,20 @@ _MIN_DISTINCT_TO_JUDGE = 2     # ...but only if it has ever changed
 # workbook and both the ICD and ORG cuts.
 WEEKLY_SOURCE_MARKERS = (
     "directdepositicdviewversion2_0",
+    # LeadPenetrationOverview (NDS-SNRES-ATT-OOFWorkbook) — the same shape, found
+    # 2026-08-24 when it opened its first thread ("newest 2026-08-22, needs
+    # 2026-08-23"). Its ONLY caller is alphalete_org_report/opt_nds, which the
+    # scheduler runs on Mondays alone (`alphalete_org_focus`, cadence.weekdays
+    # [0]), against the view's THISWEEK cut — so on the one day a year's worth of
+    # pulls ever happen, the newest row is the SATURDAY that closed the week, two
+    # days back, every time. Confirmed on two Mondays eight weeks apart from the
+    # exports themselves: 2026-06-29 → newest 6/27 (Sat), 2026-08-24 → newest
+    # 8/22 (Sat). The daily bar is one this source cannot clear on any day it is
+    # pulled, so it would have posted a thread every Monday forever.
+    # The judged column is "Date of Last  Sale in Zip" (last sale per zip, the
+    # export's only date header) — a per-zip metric, not a pull stamp, so
+    # the weekly bar still watches it move.
+    "leadpenetrationoverview",
 )
 # A weekly feed still has to move. `needs` becomes the Sunday BEFORE the one
 # that just ended, so ONE missed week is still loud: the deposits post mid-week
