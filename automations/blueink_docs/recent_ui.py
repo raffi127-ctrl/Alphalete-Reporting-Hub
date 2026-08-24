@@ -1,47 +1,162 @@
-"""Who already has a packet -- read off the WEB APP's own Sent list.
+"""Who already has a packet -- read off the WEB APP's own list.
 
 Why not the API (recent.py): that path needs a private API key, and on
 2026-08-24 no machine in the fleet had one -- Lucy 1, Lucy 2 and Lucy 3 all
-came back "No such file: blueink-creds.json". API Access is an Enterprise-only
+answered "No such file: blueink-creds.json". API Access is an Enterprise-only
 feature on this plan and both API send paths already 403, so leaning the
 pre-send duplicate check on a credential nobody has is what turned the report
-red. The web app is the route that demonstrably works: it is where the team's
-own ~50-90 sends a week go, where this report's four 2026-08-24 packets went,
-and Lucy 2 already holds a signed-in session for it.
+red on the day it shipped.
 
-So this asks the same question against the same screens a person would use:
-open the bundle list, search the signer's email, read the statuses that come
-back.
+The web app is the route that demonstrably works: it is where the team's own
+50-90 sends a week go, where this report's four 2026-08-24 packets went, and
+Lucy 2 already holds a signed-in session for it. So this asks the same question
+against the same screen a person would use.
 
-PROBE FIRST. The bundle list's markup is not mapped yet, so this module ships
-with `probe()` -- run it on the machine that HAS the session and it reports
-which URL is the list, what a row looks like, and whether the search box
-narrows it. `python -m automations.blueink_docs.run --probe-sent`.
+THE SCREEN (mapped against the live app 2026-08-24)
+
+  /dashboard/ is the list. /dashboard/bundles, /sent and /documents are all
+  nub-notFound, and the sidebar is a router with no <a href> to follow.
+
+  The search box is the one with placeholder "Search...". NOT
+  `[data-tid=nub-listSearch] input` -- that wrapper holds the Date Range field
+  too, and a selector ending in ` input` types into whichever comes first.
+
+  Searching a signer's email narrows the list. Rows carry their own status as a
+  prefix, e.g. "Sent8/24/26 Raf Documents AP". An address with nothing reads
+  "No Envelopes" in every section and has no "Showing" anywhere:
+
+    has a packet   Showing 2 of 2 Sent8/24/26 Raf Documents AP Sent8/24/26 Ange
+    has none       No Envelopes Sent Sort:Sent No Envelopes Completed Sort:Sent
+
+WHICH WAY TO BE WRONG. Over-blocking costs one person a same-day auto-send and
+prints why; under-blocking mails somebody a second packet that cannot be
+recalled. So anything this can't classify blocks.
 """
 from __future__ import annotations
 
+import datetime as dt
+import re
 from typing import Dict, List
 
 from automations.blueink_docs import session as S
 from automations.blueink_docs.roster import NewStart
 
 APP_ROOT = "https://secure.blueink.com"
-
-# The list has moved before and the app is a SPA, so try the plausible ones and
-# report which actually rendered a table rather than hardcoding a guess.
-CANDIDATE_URLS = [
-    f"{APP_ROOT}/dashboard/bundles",
-    f"{APP_ROOT}/dashboard/sent",
-    f"{APP_ROOT}/dashboard/documents",
-    f"{APP_ROOT}/dashboard/",
-]
+DASHBOARD = APP_ROOT + "/dashboard/"
+SEARCH_SEL = "input[placeholder='Search...']"
 
 NAV_TIMEOUT = 90_000
-STEP_TIMEOUT = 30_000
 
+# Same window the API check used: a packet from a previous WEEK shouldn't block
+# this week's send, but "sent 3 days ago" always should. New starts run
+# Monday-to-Monday, so a fortnight catches this cohort and still lets a rehire
+# months later get docs.
+LOOKBACK_DAYS = 14
+
+# Row prefixes that mean "they have a live or finished packet". A draft was
+# never delivered and a cancelled/declined/expired one genuinely needs
+# replacing, so neither blocks.
+BLOCKING = {"sent", "completed", "complete", "pending", "started", "new",
+            "ready", "signed"}
+
+_ROW_RE = re.compile(
+    r"(Draft|Sent|Completed|Complete|Pending|Started|New|Ready|Signed|"
+    r"Cancelled|Canceled|Declined|Expired|Failed|Voided)"
+    r"(\d{1,2}/\d{1,2}/\d{2,4})")
+
+
+def _search(page, term: str) -> str:
+    """Type `term` into the list search and return the resulting body text.
+
+    Clearing is page.fill(sel, "") -- pressing Meta+A/Control+A then Backspace
+    did NOT clear the box, and the second search of the 2026-08-24 probe ran
+    with 'zzz-nobody-has-this@example.invalidAngiep8k@gmail.com' in it. It
+    happened to match nothing, so it happened to look right.
+
+    The term is then TYPED, not filled: page.fill() sets the value without the
+    keystrokes the app listens for, and the list never narrows.
+
+    The selector is re-resolved on every call -- a search re-renders the list,
+    so a handle held across searches is stale and throws.
+    """
+    if page.query_selector(SEARCH_SEL) is None:
+        raise RuntimeError(
+            "No search box on the Blue Ink dashboard -- the app's layout "
+            "changed. Rerun `--probe-sent` and remap.")
+    page.click(SEARCH_SEL)
+    page.fill(SEARCH_SEL, "")
+    page.type(SEARCH_SEL, term, delay=40)
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(6000)
+    return " ".join((page.inner_text("body") or "").split())
+
+
+def _fresh(datestr: str, today: dt.date) -> bool:
+    """Is this row inside the lookback window? An unparseable date counts as
+    fresh -- see WHICH WAY TO BE WRONG."""
+    for fmt in ("%m/%d/%y", "%m/%d/%Y"):
+        try:
+            when = dt.datetime.strptime(datestr, fmt).date()
+        except ValueError:
+            continue
+        return (today - when).days <= LOOKBACK_DAYS
+    return True
+
+
+def verdict(text: str, today: dt.date = None) -> str:
+    """What the searched list says about this address: "" for nothing in the
+    way, otherwise a short phrase naming what is blocking."""
+    today = today or dt.date.today()
+    rows = _ROW_RE.findall(text or "")
+    for status, datestr in rows:
+        if status.lower() in BLOCKING and _fresh(datestr, today):
+            return status + " " + datestr
+    if rows:
+        return ""                      # only drafts / dead / stale rows
+    # Nothing parsed. If the page still counted results, something matched that
+    # this doesn't understand -- block rather than risk a duplicate.
+    if "Showing" in (text or ""):
+        return "a packet this report couldn't classify"
+    return ""
+
+
+def screen(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
+    """{lowercased email: what is blocking} for everyone who already has one.
+
+    One browser for the whole roster -- relaunching per person would turn a
+    ~7-minute check into an hour.
+    """
+    out: Dict[str, str] = {}
+    todo = [p for p in people if (p.email or "").strip()]
+    if not todo:
+        return out
+    today = dt.date.today()
+    sync_playwright = S._sync_api()
+    with sync_playwright() as p:
+        browser, ctx = S.open_context(p, headless=headless)
+        page = ctx.new_page()
+        try:
+            page.goto(DASHBOARD, wait_until="domcontentloaded",
+                      timeout=NAV_TIMEOUT)
+            page.wait_for_timeout(6000)
+            if "/login" in page.url:
+                raise RuntimeError(
+                    "The Blue Ink session on this machine has expired. At the "
+                    "keyboard here run: python -m "
+                    "automations.blueink_docs.session --login")
+            for person in todo:
+                email = person.email.strip()
+                why = verdict(_search(page, email), today)
+                if why:
+                    out[email.lower()] = why
+        finally:
+            browser.close()
+    return out
+
+
+# --- diagnostics ------------------------------------------------------------
 
 def _tids(page, want: str = "", limit: int = 40) -> str:
-    """Distinct data-tid values, optionally only those containing `want`."""
     seen = []
     for el in page.query_selector_all("[data-tid]"):
         t = el.get_attribute("data-tid")
@@ -52,73 +167,26 @@ def _tids(page, want: str = "", limit: int = 40) -> str:
     return ",".join(seen)
 
 
-def _chunks(label: str, text: str, size: int = 200, most: int = 12) -> None:
+def _chunks(label: str, text: str, size: int = 200, most: int = 4) -> None:
     """logtail hands back ~470 characters a call, so long text goes out in
     numbered pieces that can be grepped one at a time."""
     for i in range(0, min(len(text), size * most), size):
-        print(f"PROBE {label}{i // size}: {text[i:i + size]}")
-
-
-SEARCH_SEL = "input[placeholder='Search...']"
-
-
-def _search(page, term: str) -> str:
-    """Type `term` into the dashboard's list search and return the body text.
-
-    Three things this has to get right, all learned the hard way on 2026-08-24:
-
-    Target the box by its PLACEHOLDER. [data-tid=nub-listSearch] wraps more
-    than one input -- the Date Range field is in there too -- so a selector
-    ending in ` input` resolves to whichever comes first and the search term
-    went somewhere harmless. The list stayed at its unfiltered "Showing 40 of
-    436" for a real signer and an absent address alike.
-
-    Re-resolve it every call: a search re-renders the list, so a handle held
-    across searches is stale and throws.
-
-    And TYPE, don't fill: page.fill() sets the value without the keystrokes the
-    app listens for, so the list never narrows.
-    """
-    if page.query_selector(SEARCH_SEL) is None:
-        return ""
-    page.click(SEARCH_SEL)
-    page.keyboard.press("Meta+A")
-    page.keyboard.press("Control+A")
-    page.keyboard.press("Backspace")
-    page.type(SEARCH_SEL, term, delay=40)
-    # Read the value back: proof the characters landed in the box we meant,
-    # rather than inferring it from a list that may not have filtered.
-    got = ""
-    box = page.query_selector(SEARCH_SEL)
-    if box is not None:
-        got = box.get_attribute("value") or box.input_value() or ""
-    print(f"PROBE typed={term!r} boxvalue={got!r}")
-    page.keyboard.press("Enter")
-    page.wait_for_timeout(6000)
-    return " ".join((page.inner_text("body") or "").split())
+        print("PROBE " + label + str(i // size) + ": " + text[i:i + size])
 
 
 def probe(email: str = "", headless: bool = True) -> int:
-    """Map the dashboard's search so screen() can be written against it.
+    """Show what the list says for a signer who HAS a packet and one who has
+    none -- the check above is only meaningful if those read differently.
 
-    ALWAYS returns 0, and now actually keeps that promise -- v4 said so in its
-    docstring but let a stale-handle exception escape, which published a FAILED
-    run and opened a second incident against a diagnostic that sends nothing.
-
-    Established so far: /dashboard/<anything> is nub-notFound, the sidebar is a
-    router with no <a href>, and /dashboard/ itself carries the list plus a
-    search box at [data-tid=nub-listSearch] input. Searching a signer's email
-    narrows it and the page reports "Showing N of M" -- Angelica Pedroza, the
-    one person known to have been sent twice today, comes back "Showing 2 of 2".
-
-    The open question is the NEGATIVE case: an address with no packet has to
-    read differently, or screen() would block everybody.
+    ALWAYS returns 0. This hangs off a report card, and a non-zero exit
+    publishes a FAILED run: the first two versions opened incidents against
+    themselves on 2026-08-24 for a diagnostic that sends nothing.
     """
     try:
         return _probe(email, headless)
-    except Exception as exc:                 # a probe must never fail the card
-        print(f"PROBE crashed: {type(exc).__name__}: "
-              f"{str(exc).splitlines()[0][:200]}")
+    except Exception as exc:
+        print("PROBE crashed: " + type(exc).__name__ + ": "
+              + str(exc).splitlines()[0][:200])
         return 0
 
 
@@ -128,43 +196,26 @@ def _probe(email: str, headless: bool) -> int:
         browser, ctx = S.open_context(p, headless=headless)
         page = ctx.new_page()
         try:
-            page.goto(f"{APP_ROOT}/dashboard/", wait_until="domcontentloaded",
+            page.goto(DASHBOARD, wait_until="domcontentloaded",
                       timeout=NAV_TIMEOUT)
             page.wait_for_timeout(6000)
             if "/login" in page.url:
                 print("PROBE session is DEAD -- rerun session.py --login")
                 return 0
-
-            for tag in ("envelope", "bundle", "row", "list", "status"):
-                got = _tids(page, tag, 12)
-                if got:
-                    print(f"PROBE tid[{tag}]={got}")
-
+            print("PROBE tids=" + _tids(page, "list", 8))
             known = email or "Angiep8k@gmail.com"
             miss = "zzz-nobody-has-this@example.invalid"
             for label, term in (("HAS", known), ("NONE", miss)):
                 try:
                     text = _search(page, term)
                 except Exception as exc:
-                    print(f"PROBE {label} search failed: "
-                          f"{str(exc).splitlines()[0][:120]}")
+                    print("PROBE " + label + " search failed: "
+                          + str(exc).splitlines()[0][:120])
                     continue
-                mark = ""
-                for needle in ("Showing", "No Envelopes"):
-                    i = text.find(needle)
-                    if i >= 0:
-                        mark += f" | {text[i:i + 60]}"
-                print(f"PROBE {label} term={term} len={len(text)}{mark}")
-                _chunks(f"{label.lower()}body", text, most=2)
+                print("PROBE " + label + " term=" + term
+                      + " len=" + str(len(text))
+                      + " verdict=" + repr(verdict(text)))
+                _chunks(label.lower() + "body", text, most=2)
         finally:
             browser.close()
     return 0
-
-
-def screen(people: List[NewStart]) -> Dict[str, str]:
-    """{email: what we saw} for everyone the Sent list already shows a packet
-    for. Not wired yet -- probe() has to map the list first."""
-    raise NotImplementedError(
-        "recent_ui.screen is not mapped yet -- run "
-        "`python -m automations.blueink_docs.run --probe-sent` on the machine "
-        "with the Blue Ink session and write it against what that reports.")
