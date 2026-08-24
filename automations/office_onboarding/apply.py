@@ -36,6 +36,46 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEDULE_CONFIG = REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
 ICD_MAPPINGS = (REPO_ROOT / "automations" / "recruiting_report"
                 / "icd_office_mappings.json")
+# --- Offboarded offices ------------------------------------------------------
+# An office that has been TURNED OFF on purpose. `plan()` reads the 'Office
+# Onboarding' tab and this module only ever MERGES what it finds there
+# (_merge_json / _patch_schedule / _patch_icd_mappings all add-or-update, none of
+# them delete), so removing an office from the registries is not durable on its
+# own: while its row is still on that tab, the next `apply --write` puts it
+# straight back and the alerts resume.
+#
+# drew (Precision Management) is the case that proved it. Megan asked three
+# times to have Drew removed. He came out of both registries and the schedule on
+# 8/23 (commit fcb0145), and that commit's own note flagged this exact hole —
+# the tab still holds his row, and taking it off the tab is Megan's call because
+# it's her data (CLAUDE.md: never touch user data without confirming).
+#
+# So the denylist lives in CODE, where an offboard survives the next apply
+# without anybody editing a spreadsheet. Same pattern
+# weekly_knock_dispositions.offices already uses (_EXCLUDED_KEYS).
+#
+# TO RE-ENROLL an office: delete its line here. Its row on the tab is untouched,
+# so the next `apply --write` wires it back up exactly as before.
+OFFBOARDED_KEYS: Dict[str, str] = {
+    "drew": "Precision Management moved to another Slack workspace; every post "
+            "to C0A7871FAUV failed and alerted daily (Megan 2026-08-23, "
+            "'remove drew' — asked three times).",
+}
+
+
+def _drop_offboarded(plans: List[dict]) -> tuple:
+    """(kept, dropped) — split a plan list on the offboard denylist.
+
+    Applied BEFORE --only, so `apply --only drew` can't resurrect an office
+    either. Dropped offices are printed, never skipped silently: a submission
+    that quietly vanishes is its own kind of bug report."""
+    kept, dropped = [], []
+    for p in plans:
+        key = getattr(p.get("rec"), "key", None)
+        (dropped if key in OFFBOARDED_KEYS else kept).append(p)
+    return kept, dropped
+
+
 ONBOARDED_JSON = {
     "d2d": REPO_ROOT / "automations" / "office_metrics" / "onboarded_offices.json",
     "b2b": REPO_ROOT / "automations" / "b2b_metrics" / "onboarded_offices.json",
@@ -230,6 +270,13 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     plans = plan()
+    plans, offboarded = _drop_offboarded(plans)
+    for p in offboarded:
+        print(f"↷ SKIPPED (offboarded): {p['rec'].key} — "
+              f"{OFFBOARDED_KEYS[p['rec'].key]}\n"
+              f"   Still on the 'Office Onboarding' tab; nothing here will wire "
+              f"it up. To re-enroll, delete its line from "
+              f"apply.OFFBOARDED_KEYS.")
     if args.only:
         plans = [p for p in plans if p["rec"].key == args.only]
     if not plans:
