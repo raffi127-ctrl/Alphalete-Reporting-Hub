@@ -50,16 +50,17 @@ def _norm(s: str) -> str:
 
 
 def _campaign_select(page):
-    """The campaign dropdown top-left (RES-AT&T, ...). First visible <select>
-    above the table — resilient to id/name changes."""
-    sel = page.locator("select").first
+    """The campaign dropdown top-left (RES-AT&T, ...). The page also carries
+    HIDDEN selects (e.g. an address-form select#state, which the first probe
+    run grabbed and hung on) — so only a VISIBLE select counts."""
+    sel = page.locator("select:visible").first
     sel.wait_for(state="visible", timeout=20000)
     return sel
 
 
 def _search_box(page):
     """DataTables' search input top-right of the progress table."""
-    box = page.locator("input[type='search']").first
+    box = page.locator("input[type='search']:visible").first
     box.wait_for(state="visible", timeout=20000)
     return box
 
@@ -83,12 +84,12 @@ def _rep_row(page, name: str):
 
 
 def _show_all(page) -> None:
-    """Flip 'Filter by Activation Date' from Show Last 3 Weeks to Show All."""
-    radio = page.get_by_label("Show All")
-    if not radio.count():
-        radio = page.locator("input[type='radio']").last
-    radio.check()
+    """Flip 'Filter by Activation Date' from Show Last 3 Weeks to Show All.
+    Clicking the label text toggles its radio — sturdier than guessing which
+    input element is which."""
+    page.get_by_text("Show All", exact=True).first.click()
     page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(1000)
 
 
 def _photo_pill(row) -> str:
