@@ -88,34 +88,14 @@ class Outcome:
         return self.status.label
 
 
-def resolve_phones(rec) -> int:
-    """Fill in any missing leader numbers from the OBCL phone book.
-
-    A number already on the leader (the machine-local overlay) WINS -- that's
-    hand-entered and authoritative. This only fills blanks, and only for the
-    people we're about to text, so a normal status run never pays for it.
-    """
-    from automations.new_start_followup import obcl
-
-    need = [s.leader for s in rec.pending if not s.leader.phone]
-    if not need:
-        return 0
-    try:
-        book = obcl.phone_book()
-    except Exception as exc:  # noqa: BLE001
-        # A phone-book read failing shouldn't kill the run: everyone just gets
-        # reported as "no number" instead, which is already a handled path.
-        print("WARNING: couldn't read the OBCL phone book ({}). "
-              "Falling back to numbers on file only.".format(exc))
-        return 0
-    filled = 0
-    for leader in need:
-        for key in leader.keys():
-            if key in book:
-                leader.phone = book[key]
-                filled += 1
-                break
-    return filled
+# NEVER fill numbers from the OBCL sheet. Its Phone column is the NEW START'S
+# number, not the interviewer's (Megan 2026-08-23) — the old name-match fill
+# ("leaders were new starts once") was one collision away from texting a
+# brand-new hire a leader chase message. obcl.phone_book() was deleted for
+# this. Leader numbers come ONLY from the machine-local overlay
+# (~/.config/recruiting-report/new-start-leader-phones.json), which
+# roster.load() already applies — hand-entered, or filled from Lucy 1's
+# Contacts app via contacts.py --write.
 
 
 def _marker(monday, slack_id: str) -> Path:
@@ -124,7 +104,6 @@ def _marker(monday, slack_id: str) -> Path:
 
 def run(rec, send: bool = False) -> List[Outcome]:
     """Text every pending leader. `send=False` composes without sending."""
-    resolve_phones(rec)
     pending = rec.pending
     outcomes = []  # type: List[Outcome]
 
@@ -198,10 +177,12 @@ def render(outcomes: List[Outcome], send: bool) -> str:
     if blocked:
         lines.append("INCOMPLETE — {} leader(s) have no number: {}".format(
             len(blocked), ", ".join(o.label for o in blocked)))
-        lines.append("  They're not in the OBCL phone book (never a new start "
-                     "themselves, or a different name spelling).")
+        lines.append("  Numbers come ONLY from the machine-local overlay "
+                     "(never the OBCL — its Phone column is the new start's).")
         lines.append("  Fill them in with: python -m "
-                     "automations.new_start_followup.contacts --write   (on Lucy 1)")
+                     "automations.new_start_followup.contacts --write   (on Lucy 1),")
+        lines.append("  or hand-edit ~/.config/recruiting-report/"
+                     "new-start-leader-phones.json (slack_id -> E.164).")
     if failed:
         lines.append("INCOMPLETE — {} send(s) failed: {}".format(
             len(failed), ", ".join(o.label for o in failed)))

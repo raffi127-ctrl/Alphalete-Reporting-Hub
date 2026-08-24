@@ -1832,7 +1832,7 @@
    "cadence": {
     "weekdays": []
    },
-   "_note": "MANUAL, ALWAYS SAFE: `lucy rerun new_start_texts_dry` is the full sat-texts rehearsal with no --live — composes every text, resolves the 'Alphalete lvl 1's' iMessage group through Apple Events, fills phones from the OBCL book, sends NOTHING. Run this once on Lucy 1 before the first live Saturday: it proves the Messages grant + the group needle + the phone coverage in one shot. weekdays [] = never auto-run.",
+   "_note": "MANUAL, ALWAYS SAFE: `lucy rerun new_start_texts_dry` is the full sat-texts rehearsal with no --live — composes every text, resolves the 'Alphalete lvl 1's' iMessage group through Apple Events, sends NOTHING. Leader numbers come ONLY from the machine-local overlay on Lucy 1 (never the OBCL — its Phone column is the NEW START'S number, Megan 2026-08-23). Run this once on Lucy 1 before the first live Saturday: it proves the Messages grant + the group needle + the phone coverage in one shot. weekdays [] = never auto-run.",
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
