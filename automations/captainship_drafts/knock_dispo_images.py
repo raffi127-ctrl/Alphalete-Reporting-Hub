@@ -100,6 +100,28 @@ DAILY_SUMMARY_HEADERS = [
 _CHAN_DAILY_CACHE: Dict[str, list] = {}
 
 
+# An owner on the captainship roster who has NO ownerville office at all —
+# not a name-spelling drift an alias could fix (Megan checked Office Access
+# on Raf's login for Michael Murphy, 2026-08-24: absent under his name, his
+# nickname and his company). There is nothing to pull for that person, so
+# the section must say ACCESS GAP, not show what reads as a failed run —
+# the standing rule that a review email names the owners we can't scrape.
+# Matched on the impersonation failure text rather than a hardcoded name
+# list, so the next owner in this position is covered without a patch.
+_NO_OFFICE_MARKERS = ("not found in ownerville", "couldn't impersonate",
+                      "couldnt impersonate")
+
+
+def _owner_error_note(exc) -> str:
+    """The errors[] note for a failed owner pull — an ACCESS GAP reads as
+    one, anything else keeps its exception text for debugging."""
+    text = f"{type(exc).__name__}: {str(exc)[:200]}"
+    if any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS):
+        return ("no ownerville office for this name — access gap, not a run "
+                "failure: nothing can be pulled until the account exists")
+    return text
+
+
 def week_window(today: dt.date) -> Tuple[dt.date, dt.date, dt.date]:
     """(monday, saturday, we_sunday) — the completed Mon–Sat week for a run on
     `today`. Same math as weekly_knock_dispositions.run._week: the Sunday email
@@ -649,8 +671,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
                         logfn(f"    ✗ daily {display}: {type(e).__name__}: "
                               f"{str(e)[:200]}")
-                        errors[f"daily_knocks:{display}"] = (
-                            f"{type(e).__name__}: {str(e)[:200]}")
+                        errors[f"daily_knocks:{display}"] = _owner_error_note(e)
                         out_daily.append((display, None))
                     done_daily.add(display)
                 if want_weekly:
@@ -736,8 +757,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
                         logfn(f"    ✗ weekly {display}: {type(e).__name__}: "
                               f"{str(e)[:200]}")
-                        errors[f"knock_dispo:{display}"] = (
-                            f"{type(e).__name__}: {str(e)[:200]}")
+                        errors[f"knock_dispo:{display}"] = _owner_error_note(e)
                         out_weekly.append((display, None))
                     done_weekly.add(display)
             # Chan's comparison rows for the daily summary — while the
