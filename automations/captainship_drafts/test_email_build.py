@@ -73,13 +73,22 @@ def _bundle(tmp: Path, captain) -> dict:
         # silently drop out of the image-contract check.
         "boxes": {kind.split(":", 1)[1]: _png(tmp, f"{k}_{kind.split(':', 1)[1]}")
                   for _, kind in captain.sections if kind.startswith("box:")},
-        # Per-owner knock-dispo boards (rafael flavor, 2026-08-23) — driven by
-        # the captain's own SECTION_KINDS like the boxes above, so any flavor
-        # that gains the section is covered here the moment config.py says so.
+        # Per-owner knock boards (knock_dispo weekly + daily_knocks daily,
+        # rafael + fiber flavors, 2026-08-23) — driven by the captain's own
+        # SECTION_KINDS like the boxes above, so any flavor that gains a
+        # section is covered here the moment config.py says so. NOTE the
+        # build date below is deliberately a MONDAY (2026-07-27): knock_dispo
+        # is Sun/Mon-gated (config.SECTION_DAYS), and on any other weekday
+        # the section wouldn't render at all — these images would silently
+        # drop out of the contract check.
         "knock_dispo": ([(f"Owner {i}", _png(tmp, f"{k}_kd{i}"))
                          for i in range(2)]
                         if any(kind == "knock_dispo"
                                for _, kind in captain.sections) else []),
+        "daily_knocks": ([(f"Owner {i}", _png(tmp, f"{k}_dk{i}"))
+                          for i in range(2)]
+                         if any(kind == "daily_knocks"
+                                for _, kind in captain.sections) else []),
     }
 
 

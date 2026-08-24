@@ -42,9 +42,15 @@ _FONT_STACK = "Arial,Helvetica,sans-serif"
 PENDING_MARK = "could not be captured on this run"
 
 
-def _intro_html(captain: Captain) -> str:
-    greeting, items = captain.intro
-    lis = "".join(f"<li>{it}</li>" for it in items)
+def _intro_html(captain: Captain, today: dt.date) -> str:
+    """The greeting + numbered list of TODAY'S sections. The items come from
+    sections_on(today), not the full flavor list — a day-gated section (the
+    Sun/Mon-only Weekly Knock Dispositions) must vanish from the intro too,
+    or the list promises a section the body below doesn't carry. Since each
+    intro item IS its section's heading (config zips them), filtering the
+    sections filters the bullets for free and the two can't drift."""
+    greeting, _items = captain.intro
+    lis = "".join(f"<li>{h}</li>" for h, _k in captain.sections_on(today))
     return (f'<div style="font-size:14px">{greeting}</div>'
             f'<ol style="font-size:14px;margin:6px 0 16px 0">{lis}</ol>')
 
@@ -206,24 +212,28 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
                 body += imgs.img(path, slot=f"{kind.replace('_', '-')}-{i}")
         else:
             body += _pending("churn images", err.get(kind, ""))
-    elif kind == "knock_dispo":
-        # Per-owner Weekly Knock Dispositions boards (Raf's Loom 2026-08-23):
-        # a small owner sub-heading, then that owner's board. A single owner's
-        # failed pull renders as a pending note under THEIR name — the other
-        # owners' boards still show (mirror of the capture's per-owner
-        # isolation). An empty list means the roster/session itself failed,
-        # so the section carries ONE note with that reason instead.
-        items = bundle.get("knock_dispo") or []
+    elif kind in ("knock_dispo", "daily_knocks"):
+        # Per-owner knock boards — ONE branch for both the weekly boards
+        # (knock_dispo, Raf's Loom 2026-08-23, Sun/Mon only) and the daily
+        # boards (daily_knocks, Raf's Slack 2026-08-23 evening, every day):
+        # identical [(title, png|None), …] bundle contract, identical
+        # per-owner isolation. A small owner sub-heading, then that owner's
+        # board; a single owner's failed pull renders as a pending note under
+        # THEIR name — the other owners' boards still show. An empty list
+        # means the roster/session itself failed, so the section carries ONE
+        # note with that reason instead.
+        what = ("Weekly Knock Dispositions" if kind == "knock_dispo"
+                else "Daily Knocks")
+        items = bundle.get(kind) or []
         if not items:
-            body += _pending("Weekly Knock Dispositions boards",
-                             err.get("knock_dispo", ""))
+            body += _pending(f"{what} boards", err.get(kind, ""))
         for i, (owner, path) in enumerate(items):
             body += (f'<div style="font-size:14px;font-weight:bold;'
                      f'margin:14px 0 4px">{_html.escape(owner)}</div>')
-            body += (imgs.img(path, slot=f"knock-dispo-{i}") if path
-                     else _pending(f"{_html.escape(owner)}'s Weekly Knock "
-                                   f"Dispositions board",
-                                   err.get(f"knock_dispo:{owner}", "")))
+            body += (imgs.img(path, slot=f"{kind.replace('_', '-')}-{i}")
+                     if path
+                     else _pending(f"{_html.escape(owner)}'s {what} board",
+                                   err.get(f"{kind}:{owner}", "")))
     return head + body
 
 
@@ -269,8 +279,13 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     fiber_activation(Path), cancel_tableau(Path), teamstats_tableau(Path),
     churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]),
     boxes({slot: Path}), knock_dispo([(owner, Path|None)]),
+    daily_knocks([(owner, Path|None)]),
     errors({bundle key: reason}).  Missing keys render as a per-section
-    'pending' note, carrying that key's reason when there is one."""
+    'pending' note, carrying that key's reason when there is one.
+
+    Sections come from captain.sections_on(today) — a day-gated section (the
+    Sun/Mon-only knock_dispo) is simply not in the body OR the intro on its
+    off days, even if its bundle key is populated."""
     msg = EmailMessage()
     msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR
@@ -283,14 +298,14 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     imgs = _Images()
     sections_html = "".join(
         _section_html(captain, heading, kind, n, bundle, imgs)
-        for n, (heading, kind) in enumerate(captain.sections, 1))
+        for n, (heading, kind) in enumerate(captain.sections_on(today), 1))
 
     # Same short/semantic scheme as the section images (see _Images) — the
     # signature photo is just the last part in the same related bundle.
     cid_photo = f"<{len(imgs.pairs) + 1:02d}-signature@{_Images._DOMAIN}>"
     html = (
         f'<div style="font-family:{_FONT_STACK};color:#000">'
-        f'{_intro_html(captain)}'
+        f'{_intro_html(captain, today)}'
         f'{sections_html}'
         '<br>Kind regards,<br><br>'
         f'{_signature_html(cid_photo)}'

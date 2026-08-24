@@ -22,7 +22,11 @@ Where each kind comes from:
                                Dispositions board per OWNER in the captainship
                                (weekly_knock_dispositions reused as a library;
                                rafael-only for now — add the kind + intro line
-                               to another flavor and it joins, nothing else)
+                               to another flavor and it joins, nothing else).
+                               SUN+MON only — see SECTION_DAYS.
+  daily_knocks                 knock_dispo_images.py too — YESTERDAY's combined
+                               Total Knocks board per owner, with a captainship
+                               summary (Chan comparison row) first. Every day.
 
 Churn sources reference the EXISTING open_ws_* helpers + tab constants so
 tab names are never hardcoded (and we don't trip on the en-dash/hyphen
@@ -30,6 +34,7 @@ mismatch in the spec — the real tabs use a hyphen).
 """
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field
 from typing import Callable, List, Tuple
 
@@ -64,9 +69,18 @@ _INTRO = {
         "0-30 Day Ongoing Activation Rate ▶️",
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
+        # 2026-08-23 evening (Raf's Slack: "add the daily knocks to everyones
+        # captainship emails … and have Chan's comparison in there"): the
+        # daily combined knocks board, once per owner, EVERY day — a daily
+        # overall summary first (teal Chan comparison row), then each ICD
+        # broken out below it (Megan). Index-aligned with "daily_knocks" in
+        # SECTION_KINDS["rafael"] below.
+        "Daily Knocks (per owner) 🚪",
         # 2026-08-23 (Raf's Loom): the Sunday per-rep knock board, once per
         # owner in his captainship. Stays index-aligned with the
         # "knock_dispo" kind appended to SECTION_KINDS["rafael"] below.
+        # SUN+MON ONLY (SECTION_DAYS): Tue–Sat this line AND its section
+        # disappear from the email entirely.
         "Weekly Knock Dispositions (per owner) 🚪",
     ]),
     # Fiber went from 4 sections to 10 on 2026-07-29 (Eve's list, verbatim
@@ -84,6 +98,13 @@ _INTRO = {
         "0-30 Day Ongoing Activation Rate ▶️",
         "30-60 Day Ongoing Activation Rate 🚀",
         "Ongoing 6+ Days Sales Rate 🤝🏻",
+        # 2026-08-23 (Raf via Megan: "everyones captainship emails"): the two
+        # knock sections join every FIBER captain's draft too — same
+        # index-aligned pair as rafael's list above (daily every day, weekly
+        # Sun/Mon per SECTION_DAYS). b2b/nds stay OFF: their offices knock
+        # other campaigns / wireless-shaped tables — future work.
+        "Daily Knocks (per owner) 🚪",
+        "Weekly Knock Dispositions (per owner) 🚪",
     ]),
     # B2B churn switched to WIRELESS 2026-08-19 (Eve) — the four B2B tabs are
     # filled from the wireless slice of CHURNRATES now, so the section title and
@@ -114,18 +135,27 @@ _INTRO = {
 #                         (knock_dispo_images.py) — sub-heading + board PNG per
 #                         owner in the captainship. Scope another flavor in by
 #                         adding this kind (+ its intro line) to that flavor.
+#   daily_knocks       -> per-owner DAILY combined knocks boards + captainship
+#                         summary (knock_dispo_images.py again) — same
+#                         sub-heading + PNG shape as knock_dispo.
 SECTION_KINDS = {
     "rafael": ["product_summary",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
                "box:six-days",
-               "knock_dispo"],
+               "daily_knocks", "knock_dispo"],
+    # daily_knocks + knock_dispo joined fiber 2026-08-23 (Megan: Raf's
+    # captains ARE the fiber flavor). NOT b2b/nds: their offices knock other
+    # campaigns / wireless-shaped disposition tables, so the fiber knock
+    # scrape doesn't fit them yet — scope them in here (+ intro lines) once
+    # their shapes are handled.
     "fiber":  ["product_summary", "fiber_activation",
                "box:cancel-0-30", "box:cancel-30-60",
                "churn_ni", "churn_wireless",
                "box:abp", "box:activation-0-30", "box:activation-30-60",
-               "box:six-days"],
+               "box:six-days",
+               "daily_knocks", "knock_dispo"],
     # churn_WIRELESS since 2026-08-19: the four B2B tabs are filled from the
     # wireless slice now, so render_captain labels their buckets "Wireless
     # Churn" and run.py sorts them into churn_wireless. Leaving this at
@@ -135,6 +165,30 @@ SECTION_KINDS = {
     "b2b":    ["product_summary", "teamstats_tableau", "churn_wireless"],
     "nds":    ["product_summary", "teamstats_tableau", "churn_ni"],
 }
+
+
+# Which WEEKDAYS a section kind builds on (date.weekday(): Mon=0 … Sun=6).
+# A kind absent here runs every day — every pre-existing section is absent, so
+# every other flavor and day is untouched by this table existing.
+#
+# knock_dispo is SUN+MON only (Raf 2026-08-23: "Monday should re duplicate
+# sundays post so I can see it again in the email and use it one on ones").
+# Both days resolve to the SAME completed Mon–Sat week — knock_dispo_images
+# .week_window anchors on yesterday's completed week — so Monday's boards are
+# a true re-show of Sunday's, never the new week's empty one. On the other
+# five days the section vanishes from the draft entirely: no heading, no
+# pending note, no intro bullet (Captain.sections_on drops the pair before
+# either the capture or the email builder ever sees it).
+SECTION_DAYS = {
+    "knock_dispo": (6, 0),     # Sunday + Monday
+}
+
+
+def kind_runs_on(kind: str, today: "dt.date") -> bool:
+    """Does section `kind` build on `today`? True unless SECTION_DAYS says
+    that weekday is off."""
+    days = SECTION_DAYS.get(kind)
+    return days is None or today.weekday() in days
 
 
 @dataclass(frozen=True)
@@ -320,9 +374,19 @@ class Captain:
     @property
     def sections(self) -> List[Tuple[str, str]]:
         """[(heading, kind), ...] in body order — the intro item text as the
-        section heading, zipped with SECTION_KINDS for this flavor."""
+        section heading, zipped with SECTION_KINDS for this flavor. EVERY
+        declared section, day-agnostic — the capture/build paths go through
+        sections_on(today) instead, so day-gated sections drop cleanly."""
         _, items = _INTRO[self.flavor]
         return list(zip(items, SECTION_KINDS[self.flavor]))
+
+    def sections_on(self, today: dt.date) -> List[Tuple[str, str]]:
+        """The sections that actually RUN on `today` — `sections` minus any
+        kind SECTION_DAYS gates off this weekday. Both run.py (capture) and
+        email_build (numbered headings + intro bullets) resolve through this,
+        so on an off day a gated section leaves no trace at all: no heading,
+        no pending note, no intro line — and the numbering closes the gap."""
+        return [(h, k) for h, k in self.sections if kind_runs_on(k, today)]
 
 
 # Who each captain's report goes to (Eve, 2026-07-27 — copied from the

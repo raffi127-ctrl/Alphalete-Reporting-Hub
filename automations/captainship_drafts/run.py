@@ -40,11 +40,14 @@ Rafael / B2B / NDS still take their §2 from Tableau (Cancel Rates / Team Stats
 Breakout). Fiber no longer does, so a fiber-only run needs no Tableau session
 at all.
 
-Since 2026-08-23 Rafael's draft also carries the per-owner Weekly Knock
-Dispositions boards (knock_dispo_images.py — the wkd Sunday board, once per
-owner in his captainship). That capture needs a warm ownerville session, so a
-full rafael build runs where the Sunday board does (Lucy 1); elsewhere the
-section degrades to per-owner 'pending' notes and the rest still builds.
+Since 2026-08-23 the rafael + fiber drafts also carry the per-owner knock
+boards (knock_dispo_images.py): DAILY combined knocks boards every day, and
+the Weekly Knock Dispositions boards (the wkd Sunday board, once per owner)
+on Sun/Mon only — config.SECTION_DAYS gates the weekly section, and on its
+off days it vanishes from the draft entirely (no heading, no intro bullet).
+Those captures need a warm ownerville session, so a full build runs where the
+Sunday board does (Lucy 1); elsewhere the sections degrade to per-owner
+'pending' notes and the rest still builds.
 """
 from __future__ import annotations
 
@@ -299,21 +302,38 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
     churn_ni = [c for c in churn if not c[0].lower().startswith("wireless")]
 
-    # Per-owner Weekly Knock Dispositions boards (Raf's Loom 2026-08-23).
-    # Captured ONLY for flavors whose SECTION_KINDS declare "knock_dispo" —
+    # The sections that actually run TODAY — config.SECTION_DAYS gates (the
+    # Sun/Mon-only weekly knock boards) resolve here ONCE, and email_build
+    # resolves through the same sections_on, so capture and email can't
+    # disagree about what today's draft carries.
+    kinds_today = {k for _, k in captain.sections_on(today)}
+
+    # Per-owner knock boards (Raf's Loom + Slack asks, 2026-08-23): the DAILY
+    # combined knocks boards every day, plus the Weekly Knock Dispositions
+    # boards on Sun/Mon. ONE capture call serves both — one roster lookup,
+    # one ownerville session (see knock_dispo_images.capture_sections).
+    # Captured ONLY for flavors whose SECTION_KINDS declare the kinds —
     # scoping another flavor in or out is a config.py edit; nothing here
-    # changes. Never fatal: capture() already isolates per owner, and a
-    # roster/session-level crash degrades to the section's pending note.
+    # changes. Never fatal: capture_sections isolates per owner, and a
+    # roster/session-level crash degrades to the sections' pending notes.
     knock_dispo: list = []
-    if any(k == "knock_dispo" for _, k in captain.sections):
+    daily_knocks: list = []
+    if kinds_today & {"knock_dispo", "daily_knocks"}:
         try:
             from automations.captainship_drafts import knock_dispo_images
-            knock_dispo = knock_dispo_images.capture(
-                captain, today, render_dir, logfn=logfn, errors=errors)
+            kd = knock_dispo_images.capture_sections(
+                captain, today, render_dir,
+                want_daily="daily_knocks" in kinds_today,
+                want_weekly="knock_dispo" in kinds_today,
+                logfn=logfn, errors=errors)
+            daily_knocks = kd["daily_knocks"]
+            knock_dispo = kd["knock_dispo"]
         except Exception as e:  # noqa: BLE001
-            logfn(f"  ⚠ knock dispo boards skipped for {captain.key}: "
+            logfn(f"  ⚠ knock boards skipped for {captain.key}: "
                   f"{type(e).__name__}: {e}")
-            errors["knock_dispo"] = f"{type(e).__name__}: {e}"
+            for _k in ("daily_knocks", "knock_dispo"):
+                if _k in kinds_today:
+                    errors[_k] = f"{type(e).__name__}: {e}"
 
     if skip_sheets:
         logfn("  (‑‑skip-sheets) Sales Board screenshots skipped")
@@ -328,8 +348,8 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     # instead, so fiber no longer has a cancel_tableau section — capturing it
     # anyway would spend a Tableau session per captain on an image nothing
     # shows.
-    kinds = {k for _, k in captain.sections}
-    wants_tableau = bool(kinds & {"cancel_tableau", "teamstats_tableau"})
+    wants_tableau = bool(kinds_today & {"cancel_tableau",
+                                        "teamstats_tableau"})
     if skip_tableau or not wants_tableau:
         if skip_tableau:
             logfn("  (‑‑skip-tableau) Tableau §2 shot skipped")
@@ -353,7 +373,9 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         # (owner, png|None) per captainship owner — same (title, path) list
         # shape the churn/units keys ride, so the bundle plumbing (and
         # _normalize_sizes' per-index handling, if ever wanted) fits as-is.
+        # daily_knocks is the daily twin (summary first, then the owners).
         "knock_dispo": knock_dispo,
+        "daily_knocks": daily_knocks,
         "fiber_activation": (fiber_png.fiber_activation_png(
             captain.key, today, render_dir, logfn=logfn)
             if captain.flavor == "fiber" else None),
@@ -362,11 +384,12 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
     }
     # A box that rendered into nothing is a per-slot miss, not a whole-tab
     # failure — say which slot rather than leaving that one section mute.
-    for _h, _k in captain.sections:
+    for _h, _k in captain.sections_on(today):
         if _k.startswith("box:") and _k.split(":", 1)[1] not in boxes:
             errors.setdefault(_k, "no box rendered for this slot on this run")
     n_imgs = sum([ps is not None, len(units), len(churn), len(boxes),
                   len([1 for _o, _p in knock_dispo if _p]),
+                  len([1 for _o, _p in daily_knocks if _p]),
                   cancel_tableau is not None, teamstats_tableau is not None,
                   bundle["fiber_activation"] is not None])
     if not n_imgs:
@@ -417,8 +440,9 @@ def _normalize_sizes(built, *, logfn=print) -> None:
         # 7-day one's width would put back exactly the empty strip on the right
         # that Eve asked us to remove. Only the sheet SCREENSHOTS get matched,
         # which is what this step was built for (per-captain column widths).
-        # The per-owner knock-dispo boards stay out for the same reason: their
-        # width is the office's live disposition-column count.
+        # The per-owner knock boards (knock_dispo AND daily_knocks) stay out
+        # for the same reason: their width is the office's live
+        # disposition-column count.
         #
         # (caption, path) lists — normalize per index so fiber's New-Internet and
         # All-Units unit charts each match their counterpart across captains.

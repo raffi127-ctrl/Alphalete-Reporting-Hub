@@ -1,11 +1,21 @@
-"""Per-owner Weekly Knock Dispositions boards for the Sunday Captainship email.
+"""Per-owner knock boards for the Captainship Report emails — BOTH sections:
 
-Raf's Loom 2026-08-23: the Captainship Report email gains the Weekly Knock
-Dispositions board — the SAME per-rep Mon–Sat board the Sunday Metrics threads
-get (automations/weekly_knock_dispositions/) — once per OWNER in the
-captainship. Nothing here re-derives board logic: pull / compute / render are
-the wkd modules used as a library; this module only decides WHO and hands
-email_build a list of (owner, png-or-None).
+  * knock_dispo   (Sun+Mon)  — the Weekly Knock Dispositions board per owner,
+                               plus a captainship summary board first.
+  * daily_knocks  (every day) — YESTERDAY's combined Total Knocks board per
+                               owner (the amber board their metrics threads
+                               get daily), plus a daily summary board first
+                               with Chan Park's teal comparison row.
+
+Raf's Loom 2026-08-23 brought the weekly section: the SAME per-rep Mon–Sat
+board the Sunday Metrics threads get (automations/weekly_knock_dispositions/)
+— once per OWNER in the captainship. His Slack ask the same evening added the
+daily section ("add the daily knocks to everyones captainship emails … and
+have Chan's comparison in there") and gated the weekly one to Sun+Mon
+(config.SECTION_DAYS — Monday re-shows Sunday's completed week for
+one-on-ones). Nothing here re-derives board logic: pull / compute / render are
+the wkd + total_knocks + rashad_metrics modules used as libraries; this module
+only decides WHO and hands email_build lists of (title, png-or-None).
 
 WHO comes from the captainship roster on the Org Sales Board — the Sheet
 roster is truth. The captain's block is found by its "<NAME> CAPTAIN(SHIP)
@@ -17,17 +27,27 @@ roster costs no extra Sheets quota). Board name cells carry field tags
 the ownerville / PSS side resolves spelling drift through the ICD alias list
 (alias_to_canonical) rather than per-report patches.
 
-Per-owner isolation mirrors weekly_knock_dispositions/run.py: ONE ownerville
-session serves every owner (Raf is the MASTER login — the rhidalgo session IS
-his office; everyone else is an impersonation entered and exited around their
-pull), and one owner failing records errors["knock_dispo:<owner>"] and yields
-(owner, None) — the email shows a pending note under that owner's sub-heading
-while the rest still ship. One owner must never kill the section.
+SESSION ECONOMY (Raf's captains are 6 of the 12 drafts since 2026-08-23):
+capture_sections() does ONE roster lookup and opens ONE ownerville session per
+captain, and both sections' pulls run inside that session's owner loop — the
+weekly pull only even happens on Sun/Mon. Chan Park's comparison data is
+pulled AT MOST ONCE per build: when he's an owner of the captain being built
+(his own / Raf's captainship) his loop rows are reused, and either way the
+rows land in a per-process cache the other captains' summaries read instead
+of re-impersonating him.
+
+Per-owner isolation mirrors weekly_knock_dispositions/run.py: Raf is the
+MASTER login (the rhidalgo session IS his office; everyone else is an
+impersonation entered and exited around their pull), and one owner failing
+records errors["<kind>:<owner>"] and yields (owner, None) — the email shows a
+pending note under that owner's sub-heading while the rest still ship. One
+owner must never kill a section.
 
 Needs a warm ownerville session (the login is Turnstile-gated, so this can't
 run cold on a laptop) — runs on Lucy 1, like the Sunday board itself. The
-owner-list extraction and cfg-row building are pure and offline-testable;
-capture() only touches a browser once those are done.
+owner-list extraction, cfg-row building and summary aggregation are pure and
+offline-testable; capture_sections() only touches a browser once those are
+done.
 """
 from __future__ import annotations
 
@@ -45,24 +65,52 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
                / ".browser_profile_captainship_wkd")
 
 # TeleMapper campaign pin for the pulls (sticky-campaign guard): "3" = RES
-# AT&T, right for Raf's fiber captainship — the only flavor wired today. If an
-# NDS flavor ever joins SECTION_KINDS, its owners need "" here (no fiber
-# campaign), same distinction weekly_knock_dispositions/offices.py draws.
+# AT&T, right for every captain wired today (rafael + the five fiber captains
+# all knock RES AT&T). If a b2b/nds flavor ever joins SECTION_KINDS, its
+# owners need "" here (no fiber campaign), same distinction
+# weekly_knock_dispositions/offices.py draws.
 CAMPAIGN_ID = "3"
+
+# The daily summary board's columns, left→right (Raf's Slack + Megan
+# 2026-08-23: "a daily overall and then each ICD broken out below it").
+# Display labels only — the data keys stay total_knocks.pull's canonical
+# SHEET_COLUMNS names.
+DAILY_SUMMARY_HEADERS = [
+    "ICD", "Total Leads Knocked", "Total Knocks", "Total Talk To",
+    "Avg First Knock", "Avg Last Knock", "Gaps", "Total Gaps",
+]
+
+# Chan Park's yesterday rows, cached PER PROCESS keyed by the target date's
+# ISO string. Six captains build in one run.py process; Chan's teal
+# comparison row rides every daily summary, and this cache is what keeps
+# that at ONE ownerville pull per build instead of one per captain. Failures
+# are deliberately NOT cached, so a later captain's build retries.
+_CHAN_DAILY_CACHE: Dict[str, list] = {}
 
 
 def week_window(today: dt.date) -> Tuple[dt.date, dt.date, dt.date]:
     """(monday, saturday, we_sunday) — the completed Mon–Sat week for a run on
     `today`. Same math as weekly_knock_dispositions.run._week: the Sunday email
     build reports the week that just ended, and a Monday catch-up rerun still
-    resolves to that same week, not the empty new one."""
+    resolves to that same week, not the empty new one. This is also what makes
+    the SECTION_DAYS Sun+Mon gate coherent: Monday's boards re-show Sunday's
+    week (Raf: "Monday should re duplicate sundays post")."""
     sunday = week_ending(today - dt.timedelta(days=1))
     return sunday - dt.timedelta(days=6), sunday - dt.timedelta(days=1), sunday
 
 
+def daily_target(today: dt.date) -> dt.date:
+    """The day the daily_knocks section covers: YESTERDAY — the same today-1
+    anchor every other section of this draft uses (email_build.reported_date),
+    so a --date override moves the whole draft together. On the scheduled
+    Lucy 1 run this equals yesterday-Central (the machine runs on Central
+    time), matching the daily metrics-thread boards."""
+    return today - dt.timedelta(days=1)
+
+
 def _slug(name: str) -> str:
-    """Filesystem-safe per-owner dir name (board.render's filename is fixed
-    per week, so each owner renders into their OWN subdir)."""
+    """Filesystem-safe per-owner dir name (each board render's filename is
+    fixed per date, so each owner renders into their OWN subdir)."""
     return "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
 
 
@@ -138,32 +186,216 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list]
     return out
 
 
-def capture(captain, today: dt.date, render_dir,
-            *, logfn=print, errors: Optional[dict] = None
-            ) -> List[Tuple[str, Optional[Path]]]:
-    """One Weekly Knock Dispositions PNG per owner of `captain`'s captainship.
+# ---------------------------------------------------------------------------
+# daily_knocks — YESTERDAY's boards (Raf's Slack ask, 2026-08-23 evening)
+# ---------------------------------------------------------------------------
 
-    Returns [(owner_display, png_path_or_None), …] in roster order — the
-    bundle["knock_dispo"] shape email_build renders. A None path means that
-    owner's board could not be built; the reason sits in
-    errors["knock_dispo:<owner>"] and renders as that owner's pending note.
-    A roster/session-level failure records errors["knock_dispo"] instead.
-    Never raises for a single owner — mirror of the wkd runner's per-office
-    try/except."""
+def _daily_rows_for_owner(page, cfg: dict, aliases_raw, target: dt.date
+                          ) -> list:
+    """One owner's yesterday knock rows (records keyed by total_knocks.pull
+    SHEET_COLUMNS), on the already-open ownerville page.
+
+    Impersonated owners ride rashad_metrics.knocks_pull.pull_office_on_page —
+    the exact scrape the daily metrics-thread boards use (impersonate, pin
+    campaign, Disposition + Time Tracker merged by badge id, exit
+    impersonation). That helper impersonates UNCONDITIONALLY, so the MASTER
+    (Raf — the rhidalgo login IS his office) can't go through it: for him
+    this replicates total_knocks.pull.pull_disposition_day's body inline on
+    the shared page — capture rqst, pin the campaign (the sticky-campaign
+    guard applies to the master session too), _navigate, _header_index,
+    _scrape_rows, _scrape_time_tracker, merged by badge id — the same
+    master-vs-impersonate routing owner_cfgs decided for the weekly pull."""
+    from automations.rashad_metrics import knocks_pull as KP
+    from automations.total_knocks import pull as knocks
+    if cfg.get("ov") == "master":
+        mdy = target.strftime("%m/%d/%Y")
+        rqst = knocks._capture_rqst(page)
+        if not rqst:
+            raise RuntimeError("Couldn't capture ownerville rqst token from "
+                               f"{page.url!r} for the master office.")
+        KP._pin_campaign(page, rqst)
+        knocks._navigate(page, rqst, mdy)
+        idx = knocks._header_index(page)
+        rows = knocks._scrape_rows(page, idx)
+        tt = knocks._scrape_time_tracker(page, rqst, mdy)
+        for rec in rows:
+            rid = str(rec.get(knocks.COL_ID, "")).strip()
+            if rid in tt:
+                rec.update(tt[rid])
+        return rows
+    _t, rows = KP.pull_office_on_page(page, cfg["name"], aliases_raw, target)
+    return rows
+
+
+def daily_summary_row(label: str, rows: list) -> List[str]:
+    """One daily-summary board row aggregating `rows` (one owner's reps,
+    records keyed by total_knocks.pull SHEET_COLUMNS): the count columns SUM;
+    First/Last Knock are the AVERAGE of the reps' times (the wkd board's
+    _avg_knock — reps with a parsable time only); Gaps sums the gap counts;
+    Total Gaps sums the minutes and formats 'Xh Ym' like the daily board
+    (total_knocks.render._fmt_hm). Pure — offline-testable."""
+    from automations.weekly_knock_dispositions.board import _avg_knock
+    from automations.total_knocks import pull as knocks
+    from automations.total_knocks.render import _fmt_hm
+
+    def _i(rec: dict, col: str) -> int:
+        v = rec.get(col)
+        return v if isinstance(v, int) else knocks._to_int(str(v or ""))
+
+    return [
+        label,
+        str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
+        str(sum(_i(r, knocks.COL_TOTAL_KNOCKS) for r in rows)),
+        str(sum(_i(r, knocks.COL_TOTAL_TALK_TO) for r in rows)),
+        _avg_knock(rows, knocks.COL_FIRST_KNOCK),
+        _avg_knock(rows, knocks.COL_LAST_KNOCK),
+        str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
+        _fmt_hm(str(sum(_i(r, knocks.COL_TOTAL_GAPS) for r in rows))),
+    ]
+
+
+def daily_summary_table(captured: list, chan_rows: Optional[list] = None
+                        ) -> Tuple[List[List[str]], list]:
+    """The daily summary board's rows: one row per ICD of THIS captainship in
+    roster order, then the trailing highlight block — a teal CHAN PARK
+    comparison row (Raf: "have Chan's comparison in there"; teal =
+    weekly_knock_dispositions' COMPARE_ROW_BG, so a guest row reads the same
+    everywhere) and the plum CAPTAINSHIP TOTALS row.
+
+    `captured` is [(display, cfg, rows), …] per owner that produced daily
+    rows. `chan_rows` is Chan Park's rep rows — when None, they're looked up
+    IN `captured` (his own / Raf's captainship, where he is an owner); a
+    captain whose roster doesn't carry him passes the extra data-only pull
+    in. Either way the teal row just re-aggregates his reps, and TOTALS sums
+    only the captainship's own owners (a data-only Chan is not one of them).
+    No Chan data at all = no teal row, never a crash.
+
+    Returns (table_rows, trailing_bgs) — trailing_bgs colors the trailing
+    highlight block for _draw's total_row_bgs, teal row included, so its
+    length is also the highlight_last_row count. Pure — offline-testable."""
+    from automations.weekly_knock_dispositions.board import (
+        COMPARE_ROW_BG, THEME_PLUM)
+    from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
+    from automations.focus_office_att.aliases import _norm_name
+    body = [daily_summary_row(d, r) for d, _c, r in captured]
+    if chan_rows is None:
+        chan_norm = _norm_name(_CHAN["name"])
+        chan_rows = next((r for _d, c, r in captured
+                          if _norm_name(c.get("name", "")) == chan_norm), None)
+    tail: List[List[str]] = []
+    bgs: list = []
+    if chan_rows:
+        tail.append(daily_summary_row("CHAN PARK", chan_rows))
+        bgs.append(COMPARE_ROW_BG)
+    all_rows = [rec for _d, _c, r in captured for rec in r]
+    tail.append(daily_summary_row("CAPTAINSHIP TOTALS", all_rows))
+    bgs.append(THEME_PLUM["header_bg"])
+    return body + tail, bgs
+
+
+def render_daily_summary(captured: list, target: dt.date, out_dir,
+                         chan_rows: Optional[list] = None) -> Path:
+    """Draw the daily summary board PNG — plum theme like the weekly
+    captainship summary, so the two summary boards read as siblings above
+    their amber/plum per-owner boards. The trailing block (teal Chan row +
+    plum TOTALS) highlights via total_row_bgs; note _draw only paints
+    total_row_bgs INSIDE the highlighted trailing block, so
+    highlight_last_row must count the teal row too — not just the last row."""
+    from automations.weekly_knock_dispositions.board import THEME_PLUM
+    from automations.total_knocks import render as knocks_render
+    table, bgs = daily_summary_table(captured, chan_rows)
+    date_s = f"{target.strftime('%b')} {target.day}, {target.year}"
+    return knocks_render._draw(
+        list(DAILY_SUMMARY_HEADERS), table,
+        f"DAILY KNOCKS SUMMARY — {date_s}", THEME_PLUM,
+        Path(out_dir) / f"daily_knocks_summary_{target.isoformat()}.png",
+        name_col=0, wrap_headers=True,
+        highlight_last_row=len(bgs), total_row_bgs=bgs)
+
+
+def _chan_daily_rows(page, captured_daily: list, aliases_raw,
+                     target: dt.date, *, logfn=print) -> Optional[list]:
+    """Chan Park's yesterday rows for the summary's teal comparison row —
+    cheapest source first: (1) this captain's own loop, when Chan is one of
+    its owners; (2) the per-process cache, filled by an earlier captain in
+    the same build; (3) ONE extra data-only impersonated pull inside the
+    already-open session. (1) and (3) both fill the cache, which is what
+    holds the whole build to at most one Chan pull. None = unavailable — the
+    summary simply omits the teal row (logged, never fatal, never cached so
+    the next captain retries)."""
+    from automations.focus_office_att.aliases import (
+        _norm_name, alias_to_canonical)
+    from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
+    key = target.isoformat()
+    chan_norm = _norm_name(_CHAN["name"])
+    for _d, cfg, rows in captured_daily:
+        if _norm_name(cfg.get("name", "")) == chan_norm:
+            _CHAN_DAILY_CACHE[key] = rows
+            return rows
+    if key in _CHAN_DAILY_CACHE:
+        return _CHAN_DAILY_CACHE[key]
+    try:
+        from automations.rashad_metrics import knocks_pull as KP
+        try:
+            canonical = alias_to_canonical(_CHAN["name"], aliases_raw)
+        except Exception:  # noqa: BLE001 — a broken alias sheet ≠ no row
+            canonical = _CHAN["name"]
+        logfn(f"    Chan comparison: extra data-only pull ({canonical})")
+        _t, rows = KP.pull_office_on_page(page, canonical, aliases_raw,
+                                          target)
+        _CHAN_DAILY_CACHE[key] = rows
+        return rows
+    except Exception as e:  # noqa: BLE001 — a nicety, never the section
+        logfn(f"    ⚠ Chan comparison pull failed ({type(e).__name__}: "
+              f"{str(e)[:120]}) — daily summary omits the teal row")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# capture — both sections, one roster lookup, one ownerville session
+# ---------------------------------------------------------------------------
+
+def capture_sections(captain, today: dt.date, render_dir, *,
+                     want_daily: bool = True, want_weekly: bool = True,
+                     logfn=print, errors: Optional[dict] = None) -> dict:
+    """Both knock sections' images for `captain`, sharing ONE roster lookup
+    and ONE ownerville session (run.py passes want_* from sections_on(today),
+    so the weekly work simply doesn't happen Tue–Sat).
+
+    Returns {"daily_knocks": […], "knock_dispo": […]} — each the
+    [(title, png_path_or_None), …] shape email_build renders, summary board
+    first, then the owners in roster order (empty when not wanted). A None
+    path means that board could not be built; the reason sits in
+    errors["<kind>:<title>"] and renders as that item's pending note. A
+    roster/session-level failure records errors["<kind>"] for each wanted
+    kind instead. Never raises for a single owner — mirror of the wkd
+    runner's per-office try/except."""
     errors = {} if errors is None else errors
+    out = {"daily_knocks": [], "knock_dispo": []}
+    if not (want_daily or want_weekly):
+        return out
+    wanted = [k for k, w in (("daily_knocks", want_daily),
+                             ("knock_dispo", want_weekly)) if w]
+
     monday, saturday, we_sunday = week_window(today)
-    logfn(f"  knock dispo boards: {monday} → {saturday} ({captain.key})")
+    target = daily_target(today)
+    if want_daily:
+        logfn(f"  daily knocks boards: {target} ({captain.key})")
+    if want_weekly:
+        logfn(f"  knock dispo boards: {monday} → {saturday} ({captain.key})")
 
     try:
         names = owner_names(captain.key)
     except Exception as e:  # noqa: BLE001 — no roster = no section, not no draft
-        logfn(f"  ⚠ knock dispo roster lookup failed: {type(e).__name__}: {e}")
-        errors["knock_dispo"] = f"{type(e).__name__}: {e}"
-        return []
+        logfn(f"  ⚠ captainship roster lookup failed: {type(e).__name__}: {e}")
+        for k in wanted:
+            errors[k] = f"{type(e).__name__}: {e}"
+        return out
     if not names:
-        errors["knock_dispo"] = ("the captainship's Sales Board block has no "
-                                 "owner rows")
-        return []
+        for k in wanted:
+            errors[k] = ("the captainship's Sales Board block has no "
+                         "owner rows")
+        return out
     logfn(f"    {len(names)} owner(s): {', '.join(names)}")
 
     from automations.focus_office_att.aliases import load_aliases
@@ -176,16 +408,19 @@ def capture(captain, today: dt.date, render_dir,
 
     # The org-wide rep-level PSS crosstab, ONCE for every owner (the download
     # helper dedupes same-day pulls when the cache env is set, but one call per
-    # build is the contract either way). Failure = apps columns blank on every
-    # board, each flagged INCOMPLETE in its sub-heading — fill-but-flag, never
-    # a dead section.
-    from automations.weekly_knock_dispositions import apps as A
+    # build is the contract either way). WEEKLY-ONLY — the daily board carries
+    # no apps columns. Failure = apps columns blank on every weekly board,
+    # each flagged INCOMPLETE in its sub-heading — fill-but-flag, never a
+    # dead section.
     pss_path = None
-    try:
-        pss_path = A.download(we_sunday)
-    except Exception as e:  # noqa: BLE001
-        logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: {str(e)[:160]}) "
-              "— apps columns blank, boards flagged INCOMPLETE")
+    if want_weekly:
+        from automations.weekly_knock_dispositions import apps as A
+        try:
+            pss_path = A.download(we_sunday)
+        except Exception as e:  # noqa: BLE001
+            logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
+                  f"{str(e)[:160]}) — apps columns blank, weekly boards "
+                  "flagged INCOMPLETE")
 
     # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
     # thread, and a second sync start in the same thread dies with "you are
@@ -201,65 +436,117 @@ def capture(captain, today: dt.date, render_dir,
 
     from automations.weekly_knock_dispositions import board as B
     from automations.weekly_knock_dispositions import pull as P
+    from automations.total_knocks import render as knocks_render
     from automations.shared.tableau_patchright import ownerville_session
 
-    out: List[Tuple[str, Optional[Path]]] = []
-    # Everything the combined summary needs, kept as pulled: (display,
-    # ov_rows, apps, dispo_cols) per owner that produced a board.
-    captured: List[tuple] = []
-    out_root = Path(render_dir) / f"knock_dispo_{captain.key}"
+    out_daily: List[Tuple[str, Optional[Path]]] = out["daily_knocks"]
+    out_weekly: List[Tuple[str, Optional[Path]]] = out["knock_dispo"]
+    # Owners already answered per kind (board OR pending) — what the
+    # session-failure sweep below checks, kept separate from the label in
+    # `out` because a weekly label can carry an INCOMPLETE suffix.
+    done_daily: set = set()
+    done_weekly: set = set()
+    # Everything each summary needs, kept as pulled.
+    captured_daily: List[tuple] = []    # (display, cfg, rows)
+    captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
+    chan_rows: Optional[list] = None
+    daily_root = Path(render_dir) / f"daily_knocks_{captain.key}"
+    weekly_root = Path(render_dir) / f"knock_dispo_{captain.key}"
     try:
         with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
             for display, cfg in pairs:
-                try:
-                    ov_rows, dispo_cols = P.pull_office_week(
-                        page, cfg, aliases_raw, monday, saturday)
-                    office_apps = (
-                        A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
-                                             aliases_map)
-                        if pss_path is not None else None)
-                    if not ov_rows and not office_apps:
-                        # Visible absence, never a blank board (standing rule):
-                        # the email says so under this owner's name.
+                if want_daily:
+                    try:
+                        rows = _daily_rows_for_owner(page, cfg, aliases_raw,
+                                                     target)
+                        if not rows:
+                            # Visible absence, never a blank board (standing
+                            # rule): the email says so under this owner.
+                            errors[f"daily_knocks:{display}"] = (
+                                "no knock data for yesterday")
+                            out_daily.append((display, None))
+                        else:
+                            png = knocks_render.render_total_knocks(
+                                target, rows=rows,
+                                out_dir=daily_root / _slug(display),
+                                title_suffix=display)
+                            out_daily.append((display, png))
+                            captured_daily.append((display, cfg, rows))
+                            logfn(f"    ✓ daily {display}: {len(rows)} "
+                                  f"rep(s) → {png.name}")
+                    except Exception as e:  # noqa: BLE001 — one owner ≠ section
+                        logfn(f"    ✗ daily {display}: {type(e).__name__}: "
+                              f"{str(e)[:200]}")
+                        errors[f"daily_knocks:{display}"] = (
+                            f"{type(e).__name__}: {str(e)[:200]}")
+                        out_daily.append((display, None))
+                    done_daily.add(display)
+                if want_weekly:
+                    try:
+                        ov_rows, dispo_cols = P.pull_office_week(
+                            page, cfg, aliases_raw, monday, saturday)
+                        office_apps = (
+                            A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
+                                                 aliases_map)
+                            if pss_path is not None else None)
+                        if not ov_rows and not office_apps:
+                            # Visible absence, never a blank board (standing
+                            # rule): the email says so under this owner.
+                            errors[f"knock_dispo:{display}"] = (
+                                "no knock or sales data for this week")
+                            out_weekly.append((display, None))
+                            done_weekly.add(display)
+                            continue
+                        gaps_only = B.is_gaps_only(ov_rows)
+                        rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
+                        # office=display puts the owner's name in the image
+                        # title — many owners share one email, so every board
+                        # must say whose it is (unlike the Metrics-thread
+                        # post, where the channel already does).
+                        png = B.render(display, monday, saturday, rows,
+                                       weekly_root / _slug(display),
+                                       dispo_cols, gaps_only=gaps_only,
+                                       n_totals=1)
+                        # INCOMPLETE flag rides the display name so it lands
+                        # in the sub-heading next to the board it qualifies.
+                        label = (display if pss_path is not None
+                                 else f"{display} — ⚠ INCOMPLETE: apps "
+                                      "unavailable")
+                        out_weekly.append((label, png))
+                        captured_weekly.append((display, ov_rows, office_apps,
+                                                dispo_cols))
+                        logfn(f"    ✓ weekly {display}: {len(ov_rows)} "
+                              f"rep(s) → {png.name}")
+                    except Exception as e:  # noqa: BLE001 — one owner ≠ section
+                        logfn(f"    ✗ weekly {display}: {type(e).__name__}: "
+                              f"{str(e)[:200]}")
                         errors[f"knock_dispo:{display}"] = (
-                            "no knock or sales data for this week")
-                        out.append((display, None))
-                        continue
-                    gaps_only = B.is_gaps_only(ov_rows)
-                    rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
-                    # office=display puts the owner's name in the image title —
-                    # many owners share one email, so every board must say
-                    # whose it is (unlike the Metrics-thread post, where the
-                    # channel already does).
-                    png = B.render(display, monday, saturday, rows,
-                                   out_root / _slug(display), dispo_cols,
-                                   gaps_only=gaps_only, n_totals=1)
-                    # INCOMPLETE flag rides the display name so it lands in
-                    # the sub-heading next to the board it qualifies.
-                    label = (display if pss_path is not None
-                             else f"{display} — ⚠ INCOMPLETE: apps unavailable")
-                    out.append((label, png))
-                    captured.append((display, ov_rows, office_apps,
-                                     dispo_cols))
-                    logfn(f"    ✓ {display}: {len(ov_rows)} rep(s) → {png.name}")
-                except Exception as e:  # noqa: BLE001 — one owner ≠ the section
-                    logfn(f"    ✗ {display}: {type(e).__name__}: "
-                          f"{str(e)[:200]}")
-                    errors[f"knock_dispo:{display}"] = (
-                        f"{type(e).__name__}: {str(e)[:200]}")
-                    out.append((display, None))
+                            f"{type(e).__name__}: {str(e)[:200]}")
+                        out_weekly.append((display, None))
+                    done_weekly.add(display)
+            # Chan's comparison rows for the daily summary — while the
+            # session is still open, so a captainship that doesn't roster
+            # him can pull him data-only (once per build, see the cache).
+            if want_daily and captured_daily:
+                chan_rows = _chan_daily_rows(page, captured_daily,
+                                             aliases_raw, target, logfn=logfn)
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         logfn(f"  ⚠ ownerville session failed: {type(e).__name__}: "
               f"{str(e)[:200]}")
-        errors["knock_dispo"] = (f"ownerville session failed: "
-                                 f"{type(e).__name__}: {str(e)[:200]}")
-        done = {d for d, _ in out}
-        for display, _cfg in pairs:
-            if display not in done:
-                errors.setdefault(f"knock_dispo:{display}",
-                                  "ownerville session failed before this "
-                                  "owner's pull")
-                out.append((display, None))
+        reason = (f"ownerville session failed: {type(e).__name__}: "
+                  f"{str(e)[:200]}")
+        for kind, done, out_list in (
+                ("daily_knocks", done_daily, out_daily),
+                ("knock_dispo", done_weekly, out_weekly)):
+            if kind not in wanted:
+                continue
+            errors[kind] = reason
+            for display, _cfg in pairs:
+                if display not in done:
+                    errors.setdefault(f"{kind}:{display}",
+                                      "ownerville session failed before this "
+                                      "owner's pull")
+                    out_list.append((display, None))
 
     # Raf's email reply 2026-08-23 ("1 report of each ICD's averages so the
     # captain can look at one report for his whole captainship") + Megan
@@ -269,18 +556,18 @@ def capture(captain, today: dt.date, render_dir,
     # shows), with a CAPTAINSHIP TOTALS row under them. Built from the data
     # already pulled above — zero extra pulls; an owner whose pull failed has
     # no row here (their pending note below says why).
-    if captured:
+    if captured_weekly:
         try:
             from automations.weekly_knock_dispositions.board import (
                 THEME_PLUM, headers_for, totals_row)
-            from automations.total_knocks import render as knocks_render
-            common_cols = next((c for _d, _r, _a, c in captured if c), [])
+            common_cols = next(
+                (c for _d, _r, _a, c in captured_weekly if c), [])
             sum_rows = [totals_row(r, a, common_cols, label=d)
-                        for d, r, a, _c in captured]
-            all_rows = [rec for _d, r, _a, _c in captured for rec in r]
+                        for d, r, a, _c in captured_weekly]
+            all_rows = [rec for _d, r, _a, _c in captured_weekly for rec in r]
             merged_apps: dict = {}
             has_apps = False
-            for _d, _r, a, _c in captured:
+            for _d, _r, a, _c in captured_weekly:
                 if a:
                     has_apps = True
                     merged_apps.update(a)
@@ -293,15 +580,46 @@ def capture(captain, today: dt.date, render_dir,
             png = knocks_render._draw(
                 headers_for(common_cols), sum_rows,
                 f"CAPTAINSHIP SUMMARY — {span}", THEME_PLUM,
-                out_root / "summary"
+                weekly_root / "summary"
                 / f"knock_dispo_summary_{saturday.isoformat()}.png",
                 name_col=0, wrap_headers=True, highlight_last_row=1)
-            out.insert(0, ("Captainship Summary", png))
-            logfn(f"    ✓ captainship summary: {len(captured)} owner row(s)")
+            out_weekly.insert(0, ("Captainship Summary", png))
+            logfn(f"    ✓ captainship summary: {len(captured_weekly)} "
+                  "owner row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section
             errors["knock_dispo:Captainship Summary"] = (
                 f"{type(e).__name__}: {str(e)[:200]}")
-            out.insert(0, ("Captainship Summary", None))
+            out_weekly.insert(0, ("Captainship Summary", None))
             logfn(f"    ✗ captainship summary: {type(e).__name__}: "
                   f"{str(e)[:160]}")
+
+    # The daily counterpart (Megan: "a daily overall and then each ICD broken
+    # out below it") — one row per ICD, teal Chan comparison row, plum
+    # CAPTAINSHIP TOTALS. Same zero-extra-pulls economy (Chan's extra pull,
+    # when it happened at all, happened once inside the session above).
+    if captured_daily:
+        summary_label = f"Daily Summary — {target.strftime('%b')} {target.day}"
+        try:
+            png = render_daily_summary(captured_daily, target,
+                                       daily_root / "summary",
+                                       chan_rows=chan_rows)
+            out_daily.insert(0, (summary_label, png))
+            logfn(f"    ✓ daily summary: {len(captured_daily)} ICD row(s)")
+        except Exception as e:  # noqa: BLE001 — summary ≠ the section
+            errors[f"daily_knocks:{summary_label}"] = (
+                f"{type(e).__name__}: {str(e)[:200]}")
+            out_daily.insert(0, (summary_label, None))
+            logfn(f"    ✗ daily summary: {type(e).__name__}: {str(e)[:160]}")
     return out
+
+
+def capture(captain, today: dt.date, render_dir,
+            *, logfn=print, errors: Optional[dict] = None
+            ) -> List[Tuple[str, Optional[Path]]]:
+    """The weekly boards alone — the original entry point, kept so a caller
+    (or a scoped rerun) can still build just the Sunday section. run.py goes
+    through capture_sections instead, which shares the roster lookup and the
+    ownerville session between both sections."""
+    return capture_sections(captain, today, render_dir, want_daily=False,
+                            want_weekly=True, logfn=logfn,
+                            errors=errors)["knock_dispo"]
