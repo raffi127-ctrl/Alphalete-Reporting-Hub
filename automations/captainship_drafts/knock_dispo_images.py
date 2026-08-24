@@ -367,6 +367,41 @@ def _chan_daily_rows(page, captured_daily: list, aliases_raw,
 # capture — both sections, one roster lookup, one ownerville session
 # ---------------------------------------------------------------------------
 
+class _ReusedDaily(Exception):
+    """This owner's daily board came off disk — skip the pull, keep the loop."""
+
+
+def _owner_png(root: Path, display: str, stem: str, stamp: dt.date) -> Path:
+    """Where one owner's board for `stamp` lands — the SAME path the render
+    helpers write to, derived once so reuse and capture can never disagree."""
+    return Path(root) / _slug(display) / f"{stem}_{stamp.isoformat()}.png"
+
+
+def _owner_rows_file(png: Path) -> Path:
+    """The pull's rows, parked next to the board they drew.
+
+    The PNG alone is enough to re-show one owner's board, but NOT enough to
+    rebuild the captainship SUMMARY, which aggregates every owner's rows. Kept
+    as its own file so an older run's PNG (no sidecar) still gets reused — the
+    summary just says so instead of quietly dropping that ICD."""
+    return png.parent / f"rows_{png.stem}.json"
+
+
+def _read_rows(png: Path):
+    try:
+        f = _owner_rows_file(png)
+        return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+    except Exception:  # noqa: BLE001 — a bad sidecar = pull-quality summary
+        return None
+
+
+def _write_rows(png: Path, payload) -> None:
+    try:
+        _owner_rows_file(png).write_text(json.dumps(payload), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — best effort, never fails a capture
+        pass
+
+
 def _manifest_path(render_dir, captain_key: str, target: dt.date,
                    saturday: dt.date) -> Path:
     """One file per captain per DAY — the daily target and the week's Saturday
@@ -558,6 +593,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     captured_daily: List[tuple] = []    # (display, cfg, rows)
     captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
     chan_rows: Optional[list] = None
+    # Set when a board was reused from disk WITHOUT its rows sidecar (drawn
+    # before the sidecar existed). That owner's own board is intact; only the
+    # captainship SUMMARY loses their line, and it says so rather than showing
+    # a total that silently misses an office.
+    daily_partial = False
+    weekly_partial = False
     daily_root = Path(render_dir) / f"daily_knocks_{captain.key}"
     weekly_root = Path(render_dir) / f"knock_dispo_{captain.key}"
     try:
@@ -565,6 +606,26 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             for display, cfg in pairs:
                 if want_daily:
                     try:
+                        # ALREADY DRAWN TODAY? Reuse it. Per OWNER, not per
+                        # captain: on 2026-08-24 a rebuild had to re-pull all
+                        # ~50 owner-slots to fix the handful that had failed,
+                        # and the run that succeeded for the other forty had
+                        # left their boards right here on disk.
+                        done_png = _owner_png(daily_root, display,
+                                              "total_knocks", target)
+                        if done_png.exists() and done_png.stat().st_size:
+                            out_daily.append((display, done_png))
+                            prev = _read_rows(done_png)
+                            if prev is not None:
+                                captured_daily.append((display, cfg, prev))
+                            else:
+                                daily_partial = True
+                            logfn(f"    · daily {display}: reusing "
+                                  f"{done_png.name}")
+                            done_daily.add(display)
+                            if not want_weekly:
+                                continue
+                            raise _ReusedDaily
                         rows = _daily_rows_for_owner(page, cfg, aliases_raw,
                                                      target)
                         if not rows:
@@ -580,8 +641,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                 title_suffix=display)
                             out_daily.append((display, png))
                             captured_daily.append((display, cfg, rows))
+                            _write_rows(png, rows)
                             logfn(f"    ✓ daily {display}: {len(rows)} "
                                   f"rep(s) → {png.name}")
+                    except _ReusedDaily:
+                        pass          # reused above; the weekly half follows
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
                         logfn(f"    ✗ daily {display}: {type(e).__name__}: "
                               f"{str(e)[:200]}")
@@ -591,6 +655,26 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     done_daily.add(display)
                 if want_weekly:
                     try:
+                        # Board already drawn today? Same reuse as the daily
+                        # half — and it saves more, because a weekly pull is
+                        # ~12 ownerville round-trips against the daily's one.
+                        done_png = _owner_png(weekly_root, display,
+                                              "weekly_knock_dispositions",
+                                              saturday)
+                        if done_png.exists() and done_png.stat().st_size:
+                            out_weekly.append((display, done_png))
+                            logfn(f"    · weekly {display}: reusing "
+                                  f"{done_png.name}")
+                            prev = _read_rows(done_png)
+                            if prev is not None:
+                                captured_weekly.append(
+                                    (display, prev.get("ov_rows") or [],
+                                     prev.get("apps"),
+                                     prev.get("dispo_cols") or []))
+                            else:
+                                weekly_partial = True
+                            done_weekly.add(display)
+                            continue
                         # Shared week cache (shared/knock_week_cache.py): the
                         # completed Mon–Sat week is frozen, and Sunday's
                         # weekly_knock_dispositions run + MONDAY's re-build of
@@ -644,6 +728,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         out_weekly.append((label, png))
                         captured_weekly.append((display, ov_rows, office_apps,
                                                 dispo_cols))
+                        _write_rows(png, {"ov_rows": ov_rows,
+                                          "apps": office_apps,
+                                          "dispo_cols": dispo_cols})
                         logfn(f"    ✓ weekly {display}: {len(ov_rows)} "
                               f"rep(s) → {png.name}")
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
@@ -685,6 +772,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # shows), with a CAPTAINSHIP TOTALS row under them. Built from the data
     # already pulled above — zero extra pulls; an owner whose pull failed has
     # no row here (their pending note below says why).
+    wsummary_png = (weekly_root / "summary"
+                    / f"knock_dispo_summary_{saturday.isoformat()}.png")
+    if not captured_weekly and want_weekly and wsummary_png.exists():
+        # Same reasoning as the daily summary above: reuse the board
+        # the earlier run drew instead of showing none.
+        out_weekly.insert(0, ("Captainship Summary", wsummary_png))
     if captured_weekly:
         try:
             from automations.weekly_knock_dispositions.board import (
@@ -712,7 +805,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 weekly_root / "summary"
                 / f"knock_dispo_summary_{saturday.isoformat()}.png",
                 name_col=0, wrap_headers=True, highlight_last_row=1)
-            out_weekly.insert(0, ("Captainship Summary", png))
+            out_weekly.insert(0, ("Captainship Summary" + (
+                " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
+                if weekly_partial else ""), png))
             logfn(f"    ✓ captainship summary: {len(captured_weekly)} "
                   "owner row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section
@@ -726,13 +821,24 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # out below it") — one row per ICD, teal Chan comparison row, plum
     # CAPTAINSHIP TOTALS. Same zero-extra-pulls economy (Chan's extra pull,
     # when it happened at all, happened once inside the session above).
+    summary_png = (daily_root / "summary"
+                   / f"daily_knocks_summary_{target.isoformat()}.png")
+    if not captured_daily and want_daily and summary_png.exists():
+        # Every owner came off disk and none carried rows, so there is nothing
+        # to re-aggregate — but the summary this run would have drawn is
+        # already sitting there from the run that drew them. Show that one
+        # rather than dropping the board.
+        out_daily.insert(0, (f"Daily Summary — {target.strftime('%b')} "
+                             f"{target.day}", summary_png))
     if captured_daily:
         summary_label = f"Daily Summary — {target.strftime('%b')} {target.day}"
         try:
             png = render_daily_summary(captured_daily, target,
                                        daily_root / "summary",
                                        chan_rows=chan_rows)
-            out_daily.insert(0, (summary_label, png))
+            out_daily.insert(0, (summary_label + (
+                " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
+                if daily_partial else ""), png))
             logfn(f"    ✓ daily summary: {len(captured_daily)} ICD row(s)")
         except Exception as e:  # noqa: BLE001 — summary ≠ the section
             errors[f"daily_knocks:{summary_label}"] = (
