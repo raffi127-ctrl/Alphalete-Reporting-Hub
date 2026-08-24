@@ -70,6 +70,20 @@ STATUS_ACTIVE = "Active"
 STATUS_CR = "Showed to Classroom"
 STATUS_NOT_ACTIVE = "Not Active"
 STATUS_ADMIN = "Admin"
+# Carlos 8/24: people scheduled to start carry their own status until the
+# classroom outcome lands (Showed -> Showed to Classroom; no-show or the
+# date passing quietly -> Not Active).
+STATUS_ORIENT = "Orientation Scheduled"
+
+
+def _orient_date(v, today):
+    m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(v))
+    if not m:
+        return None
+    try:
+        return dt.date(today.year, int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
 # Vantura master (Carlos, 2026-08-24): terminations and classroom flips ONLY —
 # no sale=>Active automation of ANY flavor there (the WeekData-history variant
 # inflated his Actives to 162). Actives on the master are set by hand. The
@@ -467,6 +481,8 @@ def sync_statuses(name_label, sh, tab, write) -> int:
     col_a = [_n(c) for c in ws.col_values(1)]
     col_b = [_n(c) for c in ws.col_values(2)]
     col_t = [_n(c) for c in ws.col_values(20)]
+    col_r = [_n(c) for c in ws.col_values(18)]
+    today_ = dt.datetime.now(CENTRAL).date()
     data, flips = [], 0
     for idx, nm in enumerate(col_i):
         if not nm:
@@ -491,8 +507,17 @@ def sync_statuses(name_label, sh, tab, write) -> int:
                 want = STATUS_NOT_ACTIVE
         elif cl.startswith("1 - orientation"):
             want = STATUS_NOT_ACTIVE
-        elif cl.startswith("2 - showed") or (not cur and t == CR_SHOW):
+        elif cl.startswith("2 - showed") or (t == CR_SHOW and cur in
+                ("", STATUS_ORIENT)):
             want = STATUS_CR
+        elif cur == STATUS_ORIENT and (t == CR_NOSHOW or (
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                 or today_) < today_ - dt.timedelta(days=2))):
+            want = STATUS_NOT_ACTIVE     # orientation came and went, no show
+        elif cur in ("", STATUS_NOT_ACTIVE) and not t and (
+                (_orient_date(col_r[idx] if idx < len(col_r) else "", today_)
+                 or dt.date(1, 1, 1)) >= today_):
+            want = STATUS_ORIENT         # scheduled to start
         else:
             continue                     # Not Active / Active / blank stand
         if cur != want:
