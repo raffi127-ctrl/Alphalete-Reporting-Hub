@@ -39,6 +39,7 @@ import requests
 from google.auth.transport.requests import Request as _GARequest
 from google.oauth2.credentials import Credentials
 
+from automations.shared import sheets_export as _sx
 from automations.recruiting_report.fill import (
     open_by_key, _client, SCOPES, OAUTH_TOKEN_PATH,
 )
@@ -288,7 +289,8 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
                 time.sleep(4 * (a + 1))
                 continue
             r.raise_for_status()
-            return r.content
+            # A hidden tab exports as an empty 993-byte PDF with HTTP 200.
+            return _sx.check_pdf(r.content, where=f"export {rng}")
         raise RuntimeError(f"export {rng}: {r.status_code if r else '??'} after retries")
 
     dpi = 200

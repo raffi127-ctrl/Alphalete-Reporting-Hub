@@ -15,6 +15,7 @@ from pathlib import Path
 import requests
 
 from automations.recruiting_report import fill as rfill
+from automations.shared import sheets_export as _sx
 
 
 def _access_token() -> str:
@@ -56,7 +57,9 @@ def export_png(spreadsheet_id: str, gid: int, rng: str, out_path: Path,
             if "pdf" not in r.headers.get("Content-Type", "").lower():
                 raise RuntimeError(f"export {rng} did not return a PDF; first "
                                    f"bytes: {r.content[:120]!r}")
-            return r.content
+            # …and a PDF is not enough: a hidden tab exports a VALID, empty
+            # 993-byte one with HTTP 200.
+            return _sx.check_pdf(r.content, where=f"export {rng}")
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
     # Fit-to-WIDTH landscape (crisp for the short, wide table). Fall back to

@@ -24,6 +24,7 @@ import requests
 from google.auth.transport.requests import Request as _GARequest
 from google.oauth2.credentials import Credentials
 
+from automations.shared import sheets_export as _sx
 from automations.recruiting_report.fill import SCOPES, OAUTH_TOKEN_PATH
 from automations.vantura_churn.fill import SHEET_ID
 
@@ -68,25 +69,6 @@ def visible_range(ws, helper_first_col: str = None) -> str:
             f"{max(last_row, 20)}")
 
 
-def _tab_hidden(ws) -> bool:
-    """Is this worksheet hidden on the spreadsheet?"""
-    try:
-        meta = ws.spreadsheet.fetch_sheet_metadata()
-        for sh in meta.get("sheets", []):
-            p = sh.get("properties", {})
-            if p.get("sheetId") == ws.id:
-                return bool(p.get("hidden", False))
-    except Exception:  # noqa: BLE001 — never let a visibility read break a shot
-        pass
-    return False
-
-
-def _set_tab_hidden(ws, hidden: bool) -> None:
-    ws.spreadsheet.batch_update({"requests": [{"updateSheetProperties": {
-        "properties": {"sheetId": ws.id, "hidden": hidden},
-        "fields": "hidden"}}]})
-
-
 def render(ws, out_path: Path, rng: str | None = None) -> Path:
     """Render `rng` of `ws` to a trimmed PNG."""
     import fitz  # PyMuPDF
@@ -114,7 +96,8 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
                 time.sleep(5 * (attempt + 1))
                 continue
             r.raise_for_status()
-            return r.content
+            return _sx.check_pdf(r.content,
+                                 where=f"{ws.title}!{rng}")
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
     # A HIDDEN tab exports as an empty page. Google does not say so — the
@@ -128,18 +111,12 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
     # NOT to leave it visible: reveal it for the length of the export and put it
     # back. try/finally, because a tab left visible by a crash is a change to
     # someone else's board that nobody asked for.
-    was_hidden = _tab_hidden(ws)
-    if was_hidden:
-        _set_tab_hidden(ws, False)
-    try:
+    with _sx.visible_for_export(ws):
         dpi = 200
         doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
         if doc.page_count > 1:          # tall list — refit so it stays one page
             doc = fitz.open(stream=_fetch("&portrait=true&scale=4"), filetype="pdf")
             dpi = 320
-    finally:
-        if was_hidden:
-            _set_tab_hidden(ws, True)
 
     def _trim(im):
         bg = Image.new("RGB", im.size, (255, 255, 255))

@@ -42,12 +42,20 @@ class _Resp:
 
 
 def _pdf(text: str | None) -> bytes:
-    """A one-page PDF, blank or with a line of text."""
+    """A one-page PDF: blank, or carrying enough content to look like a real
+    Google export.
+
+    The padding is not decoration. `check_pdf` floors at 2000 bytes because
+    Google's SMALLEST real export — one populated cell — measured 14,570 while
+    the empty one is 993. A bare fitz page with one line of text is 814 bytes,
+    so an unpadded fixture would fail the floor and prove nothing about the
+    code."""
     import fitz
     doc = fitz.open()
     page = doc.new_page()
     if text:
-        page.insert_text((72, 144), text, fontsize=48)
+        for i in range(40):
+            page.insert_text((72, 60 + i * 16), f"{text} row {i:02d}", fontsize=11)
     return doc.tobytes()
 
 
@@ -67,10 +75,14 @@ def test_an_empty_export_raises_instead_of_saving_a_white_png():
         try:
             _run(_pdf(None), out)
         except RuntimeError as e:
-            assert "blank page" in str(e), e
-            # The message has to send the reader at the credential, because the
-            # board being empty is the wrong place to look and costs an hour.
-            assert "sheets_whoami" in str(e), e
+            # Either guard may catch it — the byte floor fires at fetch time,
+            # the pixel check after rasterising — but both must send the reader
+            # at the TAB first and the credential second, because "the board is
+            # empty" is the wrong place to look and costs an hour.
+            msg = str(e)
+            assert "EMPTY" in msg or "blank page" in msg, msg
+            assert "HIDDEN" in msg or "hidden tab" in msg.lower(), msg
+            assert "sheets_whoami" in msg, msg
         else:
             raise AssertionError("a blank export must not produce a file")
         assert not out.exists(), "nothing should be written on a blank export"

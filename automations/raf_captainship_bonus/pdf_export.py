@@ -17,6 +17,7 @@ from typing import Optional
 import requests
 
 from automations.recruiting_report import fill as rfill
+from automations.shared import sheets_export as _sx
 
 
 def _access_token() -> str:
@@ -64,9 +65,12 @@ def export_pdf(spreadsheet_id: str, gid: int, out_path: Path,
     if "pdf" not in ctype.lower():
         raise RuntimeError(f"export did not return a PDF (Content-Type={ctype}); "
                            f"first bytes: {r.content[:200]!r}")
+    # A hidden tab exports as a VALID but empty 993-byte PDF with HTTP 200,
+    # so the Content-Type check above passes and the bonus PDF goes out blank.
+    content = _sx.check_pdf(r.content, where=f"bonus export {spreadsheet_id}")
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_bytes(r.content)
+    out_path.write_bytes(content)
     return out_path
 
 

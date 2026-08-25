@@ -36,6 +36,7 @@ from google.oauth2.credentials import Credentials
 from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import open_by_key, OAUTH_TOKEN_PATH, SCOPES
+from automations.shared import sheets_export as _sx
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 TAB = "Raf PNL 2026"
@@ -142,7 +143,8 @@ def export_png(rng: str, out_path: Path, token: str) -> Path:
                 time.sleep(5 * (attempt + 1))
                 continue
             r.raise_for_status()
-            return r.content
+            # A hidden tab exports as an empty 993-byte PDF with HTTP 200.
+            return _sx.check_pdf(r.content, where=f"export {rng}")
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
     doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")

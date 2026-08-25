@@ -42,6 +42,7 @@ from automations.recruiting_report.fill import (
     open_by_key, _retry, SCOPES, OAUTH_TOKEN_PATH,
 )
 from automations.shared import board_email_html as _beh
+from automations.shared import sheets_export as _sx
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password,
     PHOTO_EMBED_PX, PHOTO_IMG, _signature_html, _circular_photo_png, _SIGNATURE_TEXT,
@@ -484,7 +485,9 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
                 time.sleep(wait)
                 continue
             r.raise_for_status()
-            return r.content
+            # A hidden tab exports as an empty 993-byte PDF with HTTP 200 —
+            # nothing above catches that. [[shared.sheets_export]]
+            return _sx.check_pdf(r.content, where=f"export {rng}")
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
     # Default: fit-to-WIDTH, landscape (crisp for the wide short tables). If that

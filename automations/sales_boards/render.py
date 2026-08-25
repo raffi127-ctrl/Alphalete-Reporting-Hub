@@ -27,6 +27,7 @@ from PIL import Image, ImageChops
 from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import _retry
+from automations.shared import sheets_export as _sx
 
 NAME_COL = 2                 # col B — REP / totals labels
 CAMPAIGN_COL = 12            # col L
@@ -146,7 +147,11 @@ def export(sheet_id, gid, rng, token) -> Image.Image:
         r.raise_for_status()
         break
     import fitz
-    pm = fitz.open(stream=r.content, filetype="pdf")[0].get_pixmap(dpi=200)
+    # A hidden tab exports as an empty 993-byte PDF with HTTP 200 — the
+    # rasteriser below would happily turn that into a clean white board.
+    content = _sx.check_pdf(r.content if r is not None else b"",
+                            where=f"{sheet_id}!{rng}")
+    pm = fitz.open(stream=content, filetype="pdf")[0].get_pixmap(dpi=200)
     im = Image.open(io.BytesIO(pm.tobytes("png"))).convert("RGB")
     bg = Image.new("RGB", im.size, (255, 255, 255))
     bb = ImageChops.difference(im, bg).getbbox()
