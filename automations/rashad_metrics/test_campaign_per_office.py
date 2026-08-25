@@ -132,3 +132,51 @@ class BothKnocksReportsAgree(unittest.TestCase):
             self.assertEqual(got, "16")
         finally:
             KP.CAMPAIGN_OVERRIDES.pop(_norm_name(target), None)
+
+
+class NoDataDayPostsOnce(unittest.TestCase):
+    """A verified-empty day used to announce TWO metrics — Total Knocks and
+    Time Gaps — left over from when every office posted two images. Nobody
+    posts two on a data day now, so two no-data lines promised a board that
+    was never coming."""
+
+    def _run_no_data(self, monkey_rows):
+        """Run knocks_run.run() with the pull stubbed to return no rows and
+        Slack stubbed out, capturing what it would post."""
+        import io, contextlib
+        from automations.rashad_metrics import knocks_run as KR
+        posted = []
+
+        def _fake_pull(office_name, extras, target):
+            import datetime as dt
+            return monkey_rows, [], target or dt.date(2026, 8, 23)
+
+        def _fake_post(text, react_emoji=None, today=None):
+            posted.append(text)
+            return {"ok": True}
+
+        import automations.shared.slack_metrics_post as SMP
+        orig_pull, orig_post = KR._pull, SMP.post_reply_text_only
+        KR._pull, SMP.post_reply_text_only = _fake_pull, _fake_post
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = KR.run(dry_run=False)
+            return rc, posted, buf.getvalue()
+        finally:
+            KR._pull, SMP.post_reply_text_only = orig_pull, orig_post
+
+    def test_exactly_one_no_data_line(self):
+        rc, posted, _out = self._run_no_data([])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(posted), 1,
+                         f"expected ONE no-data line, got {posted}")
+        self.assertIn("No data available", posted[0])
+
+    def test_the_line_is_the_knocks_slot_not_time_gaps(self):
+        _rc, posted, _out = self._run_no_data([])
+        from automations.rashad_metrics.knocks_run import (
+            POST_TOTAL_KNOCKS, POST_TIME_GAPS,
+        )
+        self.assertIn(POST_TOTAL_KNOCKS[0], posted[0])
+        self.assertNotIn(POST_TIME_GAPS[0], posted[0])

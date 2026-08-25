@@ -101,30 +101,38 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
           f"{len(rows)} rep(s).", flush=True)
 
     # No-data day — VERIFIED empty (the scrape completed and the office
-    # logged nothing). Post the 'No data available' one-liner per metric,
-    # same as Raf's run.
+    # logged nothing). ONE 'No data available' line, not one per board.
+    #
+    # It used to post two — Total Knocks AND Time Gaps — from back when every
+    # office posted two images. On a data day nobody does any more: fiber and
+    # gaps-only send one board, so two no-data lines said the same thing twice
+    # and implied a second board that was never coming.
+    #
+    # No shape hint is needed to decide this, and that is the point: empty
+    # `rows` means BOTH the Disposition page and the Time Tracker came back
+    # with nothing, so there is no knocks board and no Time Gaps board to
+    # announce for ANY shape — including wireless, the one shape that still
+    # posts a pair on a day with data.
     if not rows:
         print("[rashad_knocks] ⚠ No rows for that day (verified empty).",
               flush=True)
+        label, emoji = POST_TOTAL_KNOCKS
+        text = (f"{label} — {target.strftime('%b')} {target.day} "
+                f"— No data available")
         if dry_run:
-            for label, _ in (POST_TOTAL_KNOCKS, POST_TIME_GAPS):
-                print(f"[rashad_knocks] --dry-run — would post 'No data "
-                      f"available' for {label}.", flush=True)
+            print(f"[rashad_knocks] --dry-run — would post: {text}",
+                  flush=True)
             print("[rashad_knocks] ✅ Finished (dry-run, no data).", flush=True)
             return 0
         from automations.shared.slack_metrics_post import post_reply_text_only
         slack_today = central_today()   # post into TODAY's thread (Central)
-        for label, emoji in (POST_TOTAL_KNOCKS, POST_TIME_GAPS):
-            text = (f"{label} — {target.strftime('%b')} {target.day} "
-                    f"— No data available")
-            resp = post_reply_text_only(text, react_emoji=emoji,
-                                        today=slack_today)
-            if resp.get("ok"):
-                print(f"[rashad_knocks] ✅ Posted '{label}' no-data notice.",
-                      flush=True)
-            else:
-                print(f"[rashad_knocks] ⚠ Slack response for '{label}': {resp}",
-                      flush=True)
+        resp = post_reply_text_only(text, react_emoji=emoji, today=slack_today)
+        if resp.get("ok"):
+            print(f"[rashad_knocks] ✅ Posted '{label}' no-data notice.",
+                  flush=True)
+        else:
+            print(f"[rashad_knocks] ⚠ Slack response for '{label}': {resp}",
+                  flush=True)
         print("[rashad_knocks] ✅ Finished (no data).", flush=True)
         return 0
 
