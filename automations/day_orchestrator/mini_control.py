@@ -1638,12 +1638,27 @@ def _action_sheets_whoami(args: str) -> tuple[bool, str]:
             f"AUTH FAILED: {type(e).__name__}: {e} — the token itself is the "
             "problem (re-auth), NOT sheet sharing"])
 
-    # Per-board open test. Names are the B2B office boards; a 403 here is a
-    # per-FILE denial for whatever identity the token carries.
+    # Per-board open test. A 403 here is a per-FILE denial for whatever identity
+    # the token carries.
+    #
+    # The three captainship workbooks were added 2026-08-25, when captainship_
+    # drafts + captainship_knocks moved from Lucy 1 to Lucy 3. That move changes
+    # the Sheets IDENTITY the build reads with — Lucy 1 is raffi127@, Lucy 3 is
+    # alphaletereporting@ — and two of the three are owned by somebody else
+    # (rafael by alphaletereception@, sales board by maudmiller4@), so a share
+    # that exists for raffi127@ says nothing about alphaletereporting@. This is
+    # the same trap that 403'd brand_audit on Lucy 3 on 2026-08-23. Drive's
+    # permission list is no help from a non-owner account — it returns the owner
+    # and nothing else — so the only honest check is opening them AS the machine.
     boards = [
         ("carlos", "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"),
         ("atef", "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30"),
         ("jamis", "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU"),
+        # captainship_drafts reads all three; captainship_knocks reads the roster
+        # off the sales board.
+        ("rafael", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"),
+        ("orgboard", "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"),
+        ("fibercap", "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8"),
     ]
     for name, key in boards:
         try:

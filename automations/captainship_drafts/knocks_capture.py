@@ -3,9 +3,19 @@
 WHY THIS IS ITS OWN STEP (Eve, 2026-08-24). The knock sections
 (knock_dispo_images) are the expensive half of the drafts by an order of
 magnitude: one ownerville session, every ICD in every captainship impersonated,
-scraped and un-impersonated in single file — impersonation is per-account
-server state, so it cannot be parallelised. Measured 2026-08-24: ~2h, twice
-that morning, while the rest of the day queued behind it.
+scraped and un-impersonated in single file. That LOOP cannot be parallelised
+WITHIN a session, because each impersonation replaces the last. Measured
+2026-08-24: ~2h, twice that morning, while the rest of the day queued behind it.
+
+NOT an account-wide limit (corrected by Megan 2026-08-24; this docstring said
+"impersonation is per-account server state" until 2026-08-25 and that was
+wrong). Impersonation is scoped to the ColdFusion SESSION — _exit_impersonation
+returns "the server's session" to master mode, and _find_owner_and_impersonate
+gets a fresh per-session rqst — and each Lucy logs into ownerville itself
+(mini_control._CRED_FILES pushes ownerville-creds.json, never the storage_state
+cookies). Two machines CAN impersonate on the same account at the same time,
+which is what makes running this capture on Lucy 3 while Lucy 1 works ownerville
+safe. This step moved to Lucy 3 on 2026-08-25 for exactly that reason.
 
 Splitting it changes what that 2h blocks, not how long it takes:
 

@@ -3330,8 +3330,10 @@
    "report_id": "captainship-knock-access"
   },
   "captainship_knocks": {
-   "order": 36.2,
-   "_order_note": "36.2 = right before captainship_drafts (36.3), and AFTER every office Metrics report (rashad 27 through nii 36.1). Megan 2026-08-24: EVERY office's metrics run before the knocks capture. At its old 23.5 slot this ~2h pull sat between the captainship fills and the eleven per-office threads, so on a clean morning the 7am Metrics threads would not post until 08:00-09:00; it only looked fine on 8/24 because a hand-queued recruiting rerun displaced the capture to 09:14. The capture only needs the Org Sales Board roster, so it is free to run late; keeping it adjacent to the build still means a day where this step dies has the build's own fallback pull right behind it.",
+   "order": 1,
+   "machine": "Lucy 3",
+   "_machine_note": "MOVED TO LUCY 3 2026-08-25 (Megan, approved 8/24). This ~2h ownerville capture dominated Lucy 1's morning; Lucy 3 is idle 04:22-06:42 (tableau_screenshots ends 04:22, tableau_screenshots_box does not start until 06:42), so the capture now runs in a window that was empty and Lucy 1's queue gets its two hours back. SAFE TO RUN CONCURRENTLY WITH LUCY 1's OWNERVILLE WORK: impersonation is scoped to the ColdFusion SESSION, not the account - _exit_impersonation returns 'the server's session' to master mode and _find_owner_and_impersonate gets a fresh per-session rqst - and each Lucy logs into ownerville itself (mini_control._CRED_FILES pushes ownerville-creds.json, never the storage_state cookies). Two machines can therefore impersonate on the same account at once. NOTE THE TENSION, it is deliberate: daily_rep_breakdown._machine_note (2026-08-22) fences ITSELF at 05:00 to stay clear of 'Lucy 1's 4:00-4:45 ownerville window (SAME rhidalgo account; concurrent logins can kick sessions)'. That fence predates Megan's 2026-08-24 correction and is the cautious read of the same facts. This entry follows the correction. If knock captures start coming back short or Lucy 1's early ownerville reports start failing on kicked sessions, THAT is the symptom - put a cadence.not_before '05:15' on this entry (after Lucy 1's board fill ends ~05:14) and the two never overlap again.",
+   "_order_note": "1 = FIRST on Lucy 3 after tableau_screenshots (0.5), which must keep the front of the queue - it posts the tracker boards to 11 channels and a 2h capture in front of it would delay every one. Slot 1 puts the capture in the 04:22-06:42 hole and it finishes ~06:22, so tableau_screenshots_box (25) + daily_rep_breakdown (60) still start on time at ~06:42. Was 36.2 on Lucy 1 (behind every office Metrics report) - that constraint was about Lucy 1's SHARED serial queue and does not apply on a different machine with a different queue.",
    "on_scheduler": true,
    "display_name": "Captainship Knock Boards (capture)",
    "_note": "THE EXPENSIVE HALF OF captainship_drafts, SPLIT OUT (Eve 2026-08-24). One ownerville session impersonates every ICD of the six fiber captainships in single file - ~2h measured 8/24 - and that LOOP cannot be parallelised WITHIN a session, because each impersonation replaces the last. Corrected 2026-08-24 (Megan): this is NOT an account-wide limit. Impersonation is scoped to the ColdFusion SESSION - _exit_impersonation returns 'the server's session' to master mode, and _find_owner_and_impersonate gets a fresh per-session rqst - and each Lucy logs into ownerville itself (mini_control._CRED_FILES pushes ownerville-creds.json, never the storage_state cookies). So two machines CAN impersonate on Raf's account at the same time, which is what makes moving this capture to Lucy 3 safe. CAPTURES ONLY: no Sheet write, no mail, no Slack. captainship_drafts then finds these images through knock_dispo_images' per-captain manifest and opens no session at all, which is what turns a rebuild - or the 07:15 review-link agent building the previews itself - back into a minutes-long job instead of a two-hour one that also blocks every other job on the mini. If this step fails nothing breaks: the build pulls whatever the manifest doesn't cover, exactly as it did before the split.",
@@ -3356,10 +3358,8 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "after": [
-    "org_sales_board"
-   ],
-   "_after_note": "SOFT, not depends_on (Megan 2026-08-24: every office's metrics run BEFORE the knocks capture). registry.run_order pulls any report with depends_on to sit IMMEDIATELY AFTER the last of its deps, which overrides the explicit order slot - with depends_on org_sales_board this ~2h capture was yanked from slot 36.2 to right behind the board at slot 15, ahead of all eleven per-office Metrics reports, and the 7am threads would have posted 08:00-09:00. `after` gives the same 'board first' guarantee without the pull, so the slot holds. Behaviour change to know about: `after` is satisfied by ANY terminal state, so on a morning the board fill FAILS the capture now still runs (reading the previous roster) where depends_on would have blocked it.",
+   "after": [],
+   "_after_note": "`after: org_sales_board` DROPPED 2026-08-25 with the move to Lucy 3 - it had become an ordering nobody could enforce, exactly like daily_rep_breakdown's on the same day. org_sales_board runs on Lucy 1 and day state is per machine (output/day_state/<date>.json is local), so Lucy 3 can never see its status; deps.py classifies that as KIND_OTHER_MACHINE, and a SOFT `after` in that bucket runs anyway while alerting through _alert_unenforceable_deps on EVERY pass. Keeping it would have bought no ordering and one guaranteed #claudecorrections alert every morning. WHAT IS ACTUALLY LOST: the capture reads the Org Sales Board roster, and at ~04:22 on Lucy 3 that read now lands BEFORE Lucy 1's board fill (04:56-05:14) instead of after - so a captaincy roster change made yesterday reaches the knock boards one day late. Judged acceptable because reading the previous roster was already the tolerated fallback (the old note: on a morning the board fill FAILS the capture still runs on the previous roster) and the roster changes rarely. If that one-day lag ever matters, the fix is cadence.not_before '05:15' on this entry, NOT putting the `after` back.",
    "timeout_minutes": 210,
    "verify": null,
    "report_id": "captainship-knocks"
@@ -3367,8 +3367,10 @@
   "captainship_drafts": {
    "timeout_minutes": 210,
    "_timeout_note": "90 -> 210 (2026-08-23 night): the six fiber-side drafts now carry the Daily Knocks section (per-owner ownerville pulls) every day, and Sun+Mon ALSO the weekly knock_dispo section (6 day-pulls per owner). The 2-captain both-sections validation ran ~34m with sheets+tableau SKIPPED - six captains with everything real needs the headroom; 210 still fails a genuine hang before the review window closes.",
-   "order": 36.3,
-   "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
+   "order": 1.1,
+   "machine": "Lucy 3",
+   "_machine_note": "MOVED TO LUCY 3 2026-08-25 (Megan, approved 8/24), AS A PAIR WITH captainship_knocks - they cannot be split. The capture writes its PNGs + knocks_manifest_*.json into a LOCAL render_dir that this build reads back through captainship_drafts/knock_dispo_images.py; on separate machines the build would find no manifest and silently fall back to pulling every knock section itself, which is the 2h job the 8/24 split existed to remove. The .eml previews this writes are local to output/ as well, which is why BOTH review LaunchAgents have to follow it (see install_captainship_review_post_agent + install_captainship_review_agent).",
+   "_order_note": "1.1 = immediately behind captainship_knocks (1) on Lucy 3. Was 36.3 in Megan's master sequence 2026-08-20; that sequence orders LUCY 1's shared serial queue and no longer applies here. The cadence.not_before 06:15 clock, not this slot, is what holds the build until Lucy 1's fills are in.",
    "on_scheduler": true,
    "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau §2 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 — the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. RAFAEL followed on 2026-07-30 (Eve): his draft went from 4 sections to 9 in her exact order — Product Summary, the two cancel-rate boxes, NI churn, Wireless churn, then ABP %, activation 0-30 / 30-60 and 6+ days out. All six of those boxes are filled by captainship_raf_metrics on his own workbook, ABP included — it comes from his 'Captainship - ABP' tab, NOT from 'Local Office - New Internet ABP%' in the same workbook. His Tableau Cancel-Rates §2 shot is gone with the change, so only B2B/NDS still need a Tableau session for their second section. B2B / NDS are otherwise unchanged.",
    "display_name": "Captainship Report Drafts (12)",
@@ -3381,6 +3383,8 @@
     "--dry-run"
    ],
    "cadence": {
+    "not_before": "06:15",
+    "_not_before_note": "THE CLOCK FENCE THAT REPLACED EIGHT depends_on (2026-08-25, with the move to Lucy 3) - see _depends_note. 06:15 because all eight Lucy 1 fills this build reads are done by ~06:06 on a normal morning (measured 2026-08-25: org_sales_board 05:14, captainship_activations 05:37, captainship_churn 05:40, captainship_cancel_rate 05:42, owners_metrics_churn 06:00, captainship_activation_rate 06:02, captainship_abp_6days 06:04, captainship_raf_metrics 06:06), leaving ~9 min of margin. It is a FLOOR, not a guarantee: on a morning a fill runs late this build still goes at 06:15 and shows 'pending' notes in the boxes that fill feeds. That is the same exposure the 10:00 deadline in deploy/captainship_review.sh and the 07:15/07:45/08:15/09:15 review slots already cover, and it is the price of the two reports living on a machine that cannot see Lucy 1's day state. If late fills start showing up in the previews, raise this number rather than trying to restore the cross-machine deps.",
     "_note": "SEVEN DAYS since 2026-08-10 (Eve). Monday used to be excluded here and handled by deploy/board_catchup.sh at 14:30, on the theory that these reports had to wait for last week's Sunday like the Org Sales Board email does. They don't: the late-posting sources are Retail JE (~13:53) and SARA/Retail (~14:00), and NONE of them feed these drafts - section 1 reads the Copy tab's Product Summary + Captainship Units, section 2 the fiber activations PNGs, sections 3/4 the churn tabs, and every one of those is filled by the morning batch (09:23-11:07 on 2026-08-10). Eve confirmed the same day. What the Monday detour actually cost was visibility: the catch-up writes no orchestrator row, so Monday's drafts had no pill, no dependency gate and no failure alert, and the only way to know they hadn't posted was to notice the channel was empty at 3pm. On the morning path they are an ordinary report seven days a week. The Monday block in board_catchup.sh was removed in the same change - leaving it would rebuild 12 previews for 17 minutes of the serial queue and REPLACE a morning link Eve may already be reviewing. The Org Sales Board email was the one that genuinely still waited for the afternoon, and it stayed Tue-Sun with the catch-up owning its Monday - until 2026-08-17, when Eve moved it to 07:00 seven days too and left board_catchup.sh's Monday branch as a silent numbers-only refresh. So NOTHING posts from the catch-up any more, on any day.",
     "weekdays": [
      0,
@@ -3397,23 +3401,17 @@
    "after": [
     "captainship_knocks"
    ],
-   "_after_note": "The build reads the capture's per-captain manifest, so it must never run ahead of it. This is SOFT on purpose: its own depends_on (board + churn + fills) still pulls it to a slot ahead of the metrics, and this gate simply skips it there each pass until the capture is terminal - it then runs on the next pass, within 12 min. Soft rather than depends_on so a FAILED capture doesn't strand the drafts: they fall back to pulling the knock sections themselves, exactly as before the split.",
-   "depends_on": [
-    "org_sales_board",
-    "captainship_churn",
-    "owners_metrics_churn",
-    "captainship_activations",
-    "captainship_cancel_rate",
-    "captainship_activation_rate",
-    "captainship_abp_6days",
-    "captainship_raf_metrics"
-   ],
+   "_after_note": "The build reads the capture's per-captain manifest, so it must never run ahead of it. THIS GATE SURVIVES THE MOVE and is now the only enforced ordering here: captainship_knocks moved to Lucy 3 in the same change, so it is same-machine, in this runner's day state, and deps.py classifies it KIND_LOCAL. Still SOFT rather than depends_on, for the original reason: a FAILED capture must not strand the drafts - they fall back to pulling the knock sections themselves, exactly as before the 8/24 split. Each pass simply skips this build until the capture is terminal, then runs it within 12 min.",
+   "depends_on": [],
+   "_depends_note": "ALL EIGHT depends_on REMOVED 2026-08-25 and replaced by the cadence.not_before 06:15 clock fence above. They were org_sales_board, captainship_churn, owners_metrics_churn, captainship_activations, captainship_cancel_rate, captainship_activation_rate, captainship_abp_6days, captainship_raf_metrics - EVERY ONE of them runs on Lucy 1, and this build now runs on Lucy 3. Day state is per machine (output/day_state/<date>.json is local), so Lucy 3 cannot see any of their statuses. Since deps.py landed (2026-08-24) a HARD depends_on in that bucket does not silently vanish, it BLOCKS: DepEdge.blocks is true for an unenforceable depends_on, so this report would have sat PENDING every morning, been retired MISSED_NOT_READY by the noon backstop, and the twelve captainship reports would simply never have been built. Leaving them in was not an option in either direction - before 8/24 they were dropped silently and the build ran on unfilled tabs; after 8/24 they deadlock. The clock fence is what a cross-machine ordering can actually be. validate() at startup would have flagged all eight as ERROR; it now has nothing to say about this entry.",
    "verify": null,
    "report_id": "captainship-drafts"
   },
   "captainship_drafts_review": {
    "order": 4.969,
    "on_scheduler": false,
+   "machine": "Lucy 3",
+   "_machine_note": "FOLLOWS captainship_drafts TO LUCY 3 (2026-08-25). It is off the scheduler, so the 4am batch never runs it either way — but it is still the documented by-hand re-post handle (`lucy rerun captainship_drafts_review --machine \"Lucy 3\"`), and it prints the PDF from the LOCAL output/ previews, so run on Lucy 1 it would print yesterday's set or nothing. Pinning it also clears the startup deps.validate() ERROR the move created: its depends_on captainship_drafts had become cross-machine, which validate() reports every morning.",
    "_off_scheduler_note": "OFF THE SCHEDULER 2026-08-19 (Eve). The review link now runs on a CLOCK, from the standalone com.alphalete.captainship-review-post LaunchAgent (deploy/captainship_review_post.sh, 07:15 every day with 07:45 / 08:15 / 09:15 as a safety net), so it lands ~15 min after the Org Sales Board's 07:00 link and the two get approved and sent together - Eve's ask: 'que se envien practicamente juntos, aprox 7:15/20am central'. Kept here so `lucy rerun captainship_drafts_review` still works (and it is still what re-posts a link by hand). WHY A CLOCK AND NOT AN ORDER: a pass runs every ready report SEQUENTIALLY, so a queue position is not a time - the block ahead of it decides when it fires, and it fired 09:14-09:30 while the board's link was at 07:03. Moving the whole captainship block to 4.961-4.968 makes the previews exist by ~06:10-06:30, but leaving the post in the queue right behind them would put the link up at 06:30, an hour before the board's. A clock cannot be starved by the queue and does not drift with it. The agent runs review_gate --ensure-posted, not --post: it is a no-op when the day is already up for review (approved or not) and builds the previews itself if the morning chain never produced them, so the later slots cannot double-post and a failed build still gets a link up. The 10:00 backstop in deploy/captainship_review.sh (same --ensure-posted) is unchanged. SENDS NOTHING: com.alphalete.captainship-review still mails the 12 reports only on a checkmark - its window moved 9am -> 7am the same day so a 07:20 checkmark is not parked until 09:00.",
    "_note": "The review half of the Captainship Reports (Eve 2026-07-30). Sends NOTHING: it prints the 12 previews captainship_drafts just built into ONE PDF, drops it in Drive and posts the link in the review channel AS LUCY (the mini's Slack token). The reports go out only when an approver reacts with a checkmark - picked up within 15 min by com.alphalete.captainship-review (deploy/captainship_review.sh, 9am-8pm), which runs review_gate --check --send and mails the reviewed .eml files untouched. Kept as its OWN entry rather than folded into captainship_drafts so a build that half-fails still shows as its own red pill, and so re-posting (`lucy rerun captainship_drafts_review`) never rebuilds the drafts. Re-posting is safe: --post replaces its own earlier post for the same day and refuses to touch one that already carries an approval. depends_on captainship_drafts so it can only run once the previews exist. source_type 'local' - it reads previews off disk and talks to Drive + Slack; no Tableau, no chrome guard. Same shape as org_sales_board_email on purpose: one review habit for both emails, one channel.",
    "display_name": "Captainship Reports (in review)",
@@ -3453,6 +3451,8 @@
    "command": [
     "automations.day_orchestrator.install_agent"
    ],
+   "machine": "Lucy 3",
+   "_machine_note": "FOLLOWS captainship_drafts TO LUCY 3 (2026-08-25). review_gate --ensure-posted builds the previews itself when the morning chain did not, and it prints/uploads the .eml + .html set from the LOCAL output/ - so this agent has to live on the machine that holds them. Install with `lucy rerun install_captainship_review_post_agent --machine \"Lucy 3\"`, and retire Lucy 1's copy with `lucy rerun disable_captainship_review_post_agent` FIRST - two loaded copies means two machines racing to post the day's review link.",
    "base_args": [
     "captainship-review-post"
    ],
@@ -3474,6 +3474,52 @@
    "command": [
     "automations.day_orchestrator.install_agent"
    ],
+   "machine": "Lucy 3",
+   "_machine_note": "MUST FOLLOW captainship_drafts TO LUCY 3 (2026-08-25) - this is the half that MAILS. deploy/captainship_review.sh says it outright: 'The previews the send mails are the ones the 4am build wrote HERE; a checker on another box would find an empty output/.' Left on Lucy 1 it would not mis-send - review_gate.eml_digest fingerprints the local .eml set and compares it to the digest stamped on the Drive PDF, so a mismatch is caught - it would do something quieter and worse: the digest would never match, the checkmark would never turn into a send, and the twelve captainship reports would stop going out with no error anywhere. Install with `lucy rerun install_captainship_review_agent --machine \"Lucy 3\"` and retire Lucy 1's copy with `lucy rerun disable_captainship_review_agent`.",
+   "base_args": [
+    "captainship-review"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5
+  },
+  "disable_captainship_review_post_agent": {
+   "on_scheduler": true,
+   "_note": "Unload com.alphalete.captainship-review-post on LUCY 1 and move its plist to .plist.disabled — the documented inverse of install_captainship_review_post_agent, added 2026-08-25 when captainship_drafts + captainship_knocks moved to Lucy 3. RUN THIS BEFORE installing the agent on Lucy 3: with both loaded, two machines race to post the day's review link, and the one that wins is whichever fires first, not whichever holds the previews. Its own registry id with pinned base_args because extra args land AFTER base_args, so borrowing another disable_* entry retires the wrong agent. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there, and on_scheduler:false makes it invisible to `lucy rerun`); cadence.weekdays [] is what stops the 4am orchestrator ever running it. `lucy rerun disable_captainship_review_post_agent`.",
+   "display_name": "Disable Captainship review-post agent (Lucy 1)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "machine": "Lucy 1",
+   "base_args": [
+    "captainship-review-post"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5
+  },
+  "disable_captainship_review_agent": {
+   "on_scheduler": true,
+   "_note": "Unload com.alphalete.captainship-review on LUCY 1 and move its plist to .plist.disabled — the documented inverse of install_captainship_review_agent, added 2026-08-25 with the move of captainship_drafts + captainship_knocks to Lucy 3. This is the agent that MAILS the twelve reports on a checkmark, and it must run where the .eml previews are. Leaving Lucy 1's copy loaded does not double-send (review_gate.eml_digest would not match the Drive PDF's stamp, and the CAPTAINSHIP-SENT marker in the Slack thread is a lock both machines can see) but it does leave a second checker posting reminders and close-day notices into the review thread for a day it cannot send. Retire it. Own registry id with pinned base_args so extra args cannot retire the wrong agent. on_scheduler:true ONLY so registry.load_config keeps it for `lucy rerun`; cadence.weekdays [] keeps the 4am orchestrator off it. `lucy rerun disable_captainship_review_agent`.",
+   "display_name": "Disable Captainship review/send agent (Lucy 1)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "machine": "Lucy 1",
    "base_args": [
     "captainship-review"
    ],
