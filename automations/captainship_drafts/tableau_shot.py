@@ -604,10 +604,23 @@ def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
     from automations.shared.tableau_patchright import tableau_session
     from automations.tableau_screenshots import capture
     out_dir = Path(out_dir)
-    # One session per captain for now. TODO(perf): batch every configured §2 shot
-    # into ONE tableau_session (login once) via a pre-pass in run.main, mirroring
-    # how sheet_shot captures all ranges in one browser. Fine pre-go-live (manual
-    # cadence); an unconfigured captain never reaches here, so no wasted login.
+    # One session per captain, and that is the FLOOR — not a TODO. (The old note
+    # here proposed batching every §2 shot into one login; it was written while
+    # fiber still had a cancel_tableau section. Measured 2026-08-25, when Tableau
+    # flagged the account for over-use: it saves nothing, so don't spend a
+    # session on it again.)
+    #
+    # Every day is the same 6 boards: 3 B2B captains on _B2B_VIEW and 3 NDS
+    # captains on _NDS_VIEW, each pair differing ONLY by a URL filter param.
+    # That is exactly the shape the fiber_activations proof (2026-08-17) found
+    # UNSAFE to share: on one login the second pull inherits the first's filter
+    # and renders the wrong team with NO error. A fresh page does not fix it —
+    # the state lives in the browser context. Different-worksheet boards could
+    # share, but there aren't any left: fiber dropped its cancel_tableau section
+    # on 2026-07-29 and reads cancel rates off the sheet boxes instead.
+    #
+    # So 6 boards = 6 logins here. To spend fewer, the boards themselves have to
+    # change (one pull of the unfiltered view sliced 3 ways), not the plumbing.
     # The B2B 1-PAGER is wider than the 1680px default window, so its right-hand
     # "Non - Pmt (60-90)" table came back sliced mid-column — a whole column of
     # numbers missing from a report that goes to ~145 people (Eve 2026-08-13).

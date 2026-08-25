@@ -224,6 +224,35 @@ def summarize(days: int = 1, end: Optional[_dt.date] = None) -> str:
     if fails:
         lines.append(f"FAILED/RETRIED pulls: {len(fails)} "
                      f"(each retry is another access Tableau counts)")
+        # WHICH ones (Megan 2026-08-25, after Tableau flagged the account): a
+        # bare count says there is waste, not where to go get it. A view that
+        # fails every morning burns MAX_ATTEMPTS accesses a day and hands back
+        # nothing, so it is the cheapest access to remove — you fix a broken
+        # report and drop the hits in the same change.
+        lines.append("")
+        lines.append("FAILED/RETRIED BY VIEW — worst first. A view here is "
+                     "costing accesses AND producing no data.")
+        lines.append("-" * 72)
+        lines.append(f"{'view :: sheet':52s} {'fails':>6s} {'reports':>8s}")
+        by_fail = {}
+        for r in fails:
+            by_fail.setdefault(r.get("key") or _short(r.get("view", ""),
+                                                      r.get("sheet", "")),
+                               []).append(r)
+        for _k, rs in sorted(by_fail.items(), key=lambda kv: -len(kv[1]))[:15]:
+            r0 = rs[0]
+            nrep = len({x.get("report") for x in rs})
+            lines.append(f"{_short(r0.get('view', ''), r0.get('sheet', ''))[:51]:52s} "
+                         f"{len(rs):6d} {nrep:8d}")
+        lines.append("")
+        lines.append("FAILED/RETRIED BY REPORT")
+        lines.append("-" * 72)
+        by_frep = {}
+        for r in fails:
+            k = r.get("report", "unknown")
+            by_frep[k] = by_frep.get(k, 0) + 1
+        for rep, n in sorted(by_frep.items(), key=lambda kv: -kv[1])[:15]:
+            lines.append(f"  {rep[:40]:42s} {n:5d}")
 
     # TL;DR last, on purpose. `lucy rerun tableau_ledger_summary` shows the TAIL
     # of the output in a ~470-char Sheet cell, so the headline number has to be
@@ -239,8 +268,14 @@ def summarize(days: int = 1, end: Optional[_dt.date] = None) -> str:
         top = "  |  worst: " + ", ".join(
             f"{rep} {n}" for rep, n in
             sorted(by_rep_login.items(), key=lambda kv: -kv[1])[:4])
+    fail_note = ""
+    if fails:
+        worst_f = sorted(by_frep.items(), key=lambda kv: -kv[1])[:3]
+        fail_note = (f"  |  wasted on failed/retried: {len(fails)} "
+                     f"({len(fails) / max(days, 1):.0f}/day) — "
+                     + ", ".join(f"{r} {n}" for r, n in worst_f))
     lines.append(f"TL;DR — LOGINS {len(logins)} over {days}d "
-                 f"= {len(logins) / max(days, 1):.0f}/day{top}")
+                 f"= {len(logins) / max(days, 1):.0f}/day{top}{fail_note}")
     return "\n".join(lines)
 
 
