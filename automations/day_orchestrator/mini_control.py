@@ -5592,6 +5592,7 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     ⏳, which the daily sweep clears."""
     if auto and not str(by).startswith(AUTO_BY_PREFIX):
         by = "{}{}".format(AUTO_BY_PREFIX, by)
+    # NOTE _tab_is_live (module level) is what "a runner reads this tab" means.
     # An EXPLICIT --machine target whose tab doesn't exist is a typo, not a new
     # machine: _open would silently create a tab no poller reads and the row
     # would sit "queued" forever (--machine lucy2 vs 'Lucy 2', 2026-08-20 —
@@ -5615,21 +5616,33 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
             print("[mini_control] UNKNOWN machine '{}' — nothing queued. "
                   "Known machines: {}".format(machine, known))
             return
+        # EXISTING is not the same as READ (Megan 2026-08-25). The check above
+        # only refuses a tab that isn't there, so it stopped NEW orphan tabs and
+        # nothing else — an orphan created before it landed still matches, still
+        # passes, and still swallows the row. 'Mini Control - Mini' is exactly
+        # that: `--machine "Mini"` (Lucy 1's tab is plain 'Mini Control') made it
+        # before 1839245, and Eve lost a push_cred_file into it on 8/24, FOUR DAYS
+        # after the guard shipped. It sat 'queued' for five days with no error,
+        # which is the whole failure mode this was supposed to end.
+        #
+        # So the bar is a tab a RUNNER has demonstrably drained, applied to a lone
+        # candidate too, not just to twins.
+        proven = [t for t in cands if _tab_is_live(sh, t)]
         if len(cands) == 1:
+            if not proven:
+                print("[mini_control] machine '{}' has a tab ({}) but NO runner "
+                      "has ever drained it — nothing queued, it would sit "
+                      "'queued' forever. Known machines: {}".format(
+                          machine, cands[0], ", ".join(sorted(
+                              (t[len(prefix):] if t != CONTROL_TAB
+                               else DEFAULT_MACHINE) for t in tabs
+                              if _tab_is_live(sh, t)))))
+                return
             target = cands[0]
         else:
             # Twin tabs that differ only in case/spacing (an orphan from an old
             # typo next to the real one): route to the tab a poller has
             # DEMONSTRABLY read — it has processed rows; an orphan never does.
-            proven = []
-            for t in cands:
-                try:
-                    vals = sh.worksheet(t).get_all_values()
-                    if any(len(r) > 4 and r[4] not in ("", "queued")
-                           for r in vals[1:]):
-                        proven.append(t)
-                except Exception:  # noqa: BLE001
-                    pass
             target = proven[0] if len(proven) == 1 else (
                 wanted if wanted in tabs else cands[0])
         machine = DEFAULT_MACHINE if target == CONTROL_TAB \
@@ -5642,6 +5655,34 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     shown = "<redacted>" if action in SECRET_ACTIONS else args
     print(f"[mini_control] queued: {action} {shown} (by {by}) "
           f"→ {_control_tab_for(_machine_profile(machine))}")
+
+
+#: Statuses only a RUNNER writes. A tab carrying one of these has been drained
+#: by a real poller at least once, which is the only proof that queueing into it
+#: will ever do anything.
+#:
+#: `canceled` is deliberately NOT here, and that is the whole subtlety (Megan
+#: 2026-08-25). The orphan 'Mini Control - Mini' reads
+#: {'canceled': 10, 'queued': 4} — a human clearing out rows that were never
+#: going to run. So the obvious test, "any row not queued", calls that tab LIVE
+#: and lets the next row strand exactly like the last five. Only done/failed are
+#: written by a poller finishing work.
+_RUNNER_STATUSES = ("done", "failed")
+
+
+def _tab_is_live(sh, title: str) -> bool:
+    """Has a runner ever drained this control tab?
+
+    Fail-SAFE on a read error: answers False, so an unreadable tab is treated as
+    an orphan and the caller refuses to queue rather than dropping the row into
+    something that may never be read. The cost of a false 'no' is a clear error
+    message; the cost of a false 'yes' is silence for five days."""
+    try:
+        vals = sh.worksheet(title).get_all_values()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(len(r) > 4 and str(r[4]).strip().lower() in _RUNNER_STATUSES
+               for r in vals[1:])
 
 
 def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False) -> None:
