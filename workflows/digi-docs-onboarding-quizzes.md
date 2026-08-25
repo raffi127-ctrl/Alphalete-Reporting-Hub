@@ -61,8 +61,14 @@ chip. For a brand-new rep (Megan's screenshot, 2026-08-25):
 
 Expand **ONBOARDING DOCUMENTS** (the chevron on the right). It reads
 *"Digital doc not yet generated."* above a gray button,
-**`🔗 Access Digital Doc Portal`** — that button is the way into the Generate
-Document flow below.
+**`🔗 Access Digital Doc Portal`**.
+
+That button **opens a NEW TAB** (Megan 2026-08-25), which is where the campaign
+gets chosen and the bundle generated. Implementation note: a click that spawns a
+tab has to be caught with `context.expect_page()` — the click alone returns
+before the new page exists, and patchright's `evaluate` runs in an isolated
+world, so the usual "read it off the current page" shortcut will silently look
+at the OLD tab.
 
 **This modal is probably the better read-back for both ticks.** It names each
 step in words with an explicit state chip (`COMPLETED` / `REQUIRED ACTION` /
@@ -103,15 +109,18 @@ the OBCL tab has a "UID Request" and an "Owner Submit" column to match.
 
 ## Sending the docs (what "Digi Docs" means)
 
-Reached either from the left nav (**Digital Docs → Generate Document**) or from
-the rep's own **Access Digital Doc Portal** button in step 2. The form is
-*Generate Document for Employee*:
+In the new tab from step 2, **choose the campaign they need onboarded for**
+(the left nav route, **Digital Docs → Generate Document**, reaches the same
+form). Then *Generate Document for Employee*:
 
 1. **Employee** — dropdown, pick the new start.
-2. **Bundle Type** — radio. The video picks
-   **Base [Door to Door / Business to Business]**. Other options on screen:
+2. **Bundle Type** — radio. **Everyone gets `Base (Door to Door/Business to
+   Business)` right now** (Megan 2026-08-25). The other options on screen are
    Base (Default), Base (Retail), Base (Wireless — MOD…), Commission Grid,
-   Financing, Administrative.
+   Financing and Administrative — so make this a named constant rather than a
+   literal buried in the click-path. "Right now" is Megan saying it is a
+   decision, not a law: a wireless or retail office will want a different one,
+   and the day that changes nobody should be hunting for it in a selector.
 3. **Select Bundle*** — dropdown → **"Door to Door- General 1"**.
 4. **Select Associated Commission Bundle(s)*** — checkboxes:
    - ☑ **AT&T Door to Door with Drug Free Workplace Policy**
@@ -140,10 +149,12 @@ A rep who is not on View Progress yet is added first with **Add Sales Rep**
 
 ## Open questions before this can be built
 
-1. **Bundle selection per rep.** The video shows one rep getting Door to
-   Door- General 1 + the AT&T commission bundle. Is that the same for every
-   D2D new start, or does it vary by campaign (Energy reps presumably take
-   the Energy D2D grid)? Guessing here mails the wrong contract.
+1. ~~Bundle selection per rep.~~ **ANSWERED** (Megan 2026-08-25): every new
+   start gets **Base (Door to Door/Business to Business)** for now. Still worth
+   confirming whether the **Select Bundle** dropdown ("Door to Door- General 1")
+   and the **commission** checkbox ("AT&T Door to Door with Drug Free Workplace
+   Policy") are likewise the same for everyone, or follow the campaign chosen in
+   the new tab.
 2. **What "Onboarding Quizzes" ticks on** — all six training/compliance
    columns green, or just the FTC course? See above.
 3. Whether generating a bundle twice for the same rep re-sends or errors
