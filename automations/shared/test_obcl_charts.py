@@ -64,3 +64,27 @@ def test_column_matches_on_substring():
     vals[1].append("\\nBG Status : Last Checked ")
     c = oc.find_charts(vals)[0]
     assert oc.column(c, "BG Status") == len(H) + 1
+
+
+def test_any_number_of_charts_not_just_two():
+    """Monday has two today; Megan says there could be more. Nothing here
+    counts charts, so this pins that: seven, of MIXED shape -- some with a
+    header row, some opened by a date row alone -- plus a stray row at the
+    bottom belonging to nobody."""
+    names = ["Ana", "Ben", "Cara", "Dan", "Eve", "Finn", "Gus"]
+    vals = []
+    for i, n in enumerate(names):
+        vals.append(["8/%d/2026" % (3 + i), "", "", "", "", ""])
+        if i % 2 == 0:
+            vals.append(list(H))
+        vals.append(_p(n, "Surname%d" % i))
+        vals.append(list(BLANK))
+    vals.append(["", "", "Stray", "Person", "", ""])
+
+    charts = oc.find_charts(vals)
+    assert len(charts) == len(names)
+    assert sum(1 for c in charts if c["header_row"] is None) == 3
+    # every chart holds exactly its one person, and the stray is in none
+    for c in charts:
+        assert c["start_row"] == c["end_row"]
+    assert not any(c["start_row"] <= len(vals) <= c["end_row"] for c in charts)

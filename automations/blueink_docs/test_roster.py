@@ -39,7 +39,8 @@ def test_reads_every_section_not_just_the_first():
 
 def test_three_or_more_sections_are_all_read():
     # The tab grew a second stacked block without warning; assume a third will
-    # turn up too. Every header row starts a new section, however many there are.
+    # turn up too. Megan 2026-08-24: "it shouldn't just be limited to 2 charts
+    # ... could have more so we need to read all". Nothing counts charts.
     people = parse_tab(_tab([_row("A", "One", "a@x.com")],
                             [_row("B", "Two", "b@x.com")],
                             [_row("C", "Three", "c@x.com")],
@@ -201,3 +202,22 @@ def test_a_date_row_is_still_required_for_headerless_rows():
     values = _tab([_row("Ana", "Lopez", "ana@x.com")])
     values.append(_row("Stray", "Person", "stray@x.com"))
     assert [p.name for p in parse_tab(values, "t")] == ["Ana Lopez"]
+
+
+def test_many_charts_of_mixed_shape_all_read():
+    # Seven charts, every other one opened by a date row with NO header of its
+    # own, plus a stray row at the bottom that belongs to no chart.
+    names = ["Ana", "Ben", "Cara", "Dan", "Eve", "Finn", "Gus"]
+    values = []
+    for i, n in enumerate(names):
+        values.append(["8/%d/2026" % (3 + i)] + [""] * 13)
+        if i % 2 == 0:
+            values.append(list(HEADER))
+        values.append(_row(n, "Surname%d" % i, "%s@x.com" % n.lower()))
+        values.append([""] * 14)
+    values.append(["", "", "", "Stray", "Person"] + [""] * 9)
+
+    people = parse_tab(values, "t")
+    assert [p.first for p in people] == names
+    assert [p.section for p in people] == list(range(1, len(names) + 1))
+    assert "Stray" not in [p.first for p in people]
