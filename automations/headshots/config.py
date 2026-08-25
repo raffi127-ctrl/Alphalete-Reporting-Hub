@@ -36,3 +36,8 @@ OV_UPLOAD_ENABLED = True
 
 # Archive of processed headshots (clean + named), grouped by date.
 OUTPUT_DIR = os.path.join("output", "headshots")
+
+# Phase 3 (Megan 2026-08-24): after a successful OV upload, tick the rep's
+# "Headshot Photo" checkbox on that week's D2D OBCL tab and tint it green —
+# the same marking blueink_docs does for its own column. See sheet_log.py.
+SHEET_LOG_ENABLED = True

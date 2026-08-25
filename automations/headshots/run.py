@@ -195,10 +195,11 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
                   if res.get("matched_as") else "")
         if res["status"] == "uploaded":
             ok = "" if res.get("verified") else " (verify pill manually)"
-            return f"\nOwnerVille: uploaded to their profile ✅{ok}{as_who}"
+            return (f"\nOwnerVille: uploaded to their profile ✅{ok}{as_who}"
+                    + _sheet_note(name, act))
         if res["status"] == "already_uploaded":
             return ("\nOwnerVille: a photo is already on their profile — "
-                    f"left as-is{as_who}")
+                    f"left as-is{as_who}" + _sheet_note(name, act))
         return (f"\n⚠ OwnerVille: couldn't find *{name}* in View Progress "
                 "(tried every campaign + Show All) — please upload this one "
                 "manually")
@@ -208,6 +209,38 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
               f"{str(e)[:150]}")
         return ("\n⚠ OwnerVille: upload didn't go through — please upload "
                 "this one manually")
+
+
+def _sheet_note(name: str, act: dict) -> str:
+    """Tick the rep's "Headshot Photo" box on the week's D2D OBCL tab and
+    return the line for the thread reply. Never raises — the photo and the
+    OV upload already happened; a sheet problem must not hide that.
+
+    Only NEW STARTS have a row (the tab's Name/Last Name columns). Office
+    staff submitting their own headshot have no row to tick, which is not an
+    error — it is just reported quietly."""
+    from automations.headshots import config as _cfg
+    if not getattr(_cfg, "SHEET_LOG_ENABLED", True):
+        return ""
+    try:
+        from automations.headshots.sheet_log import log_upload
+        res = log_upload(name, verbose=True)
+        act["sheet"] = res
+        if res["status"] == "marked":
+            as_who = (f" (as *{res['matched_as']}*)"
+                      if res.get("matched_as", "").lower() != name.lower()
+                      else "")
+            return (f"\nOBCL {res['tab']}: Headshot Photo ✅ ticked"
+                    f"{as_who}")
+        if res["status"] == "already_marked":
+            return f"\nOBCL {res['tab']}: already ticked"
+        # Not on the week's tab — normal for office staff, so keep it quiet.
+        return f"\n_OBCL {res['tab']}: no new-start row to tick_"
+    except Exception as e:  # noqa: BLE001
+        act["sheet"] = {"status": "error", "error": str(e)[:200]}
+        print(f"  ⚠ sheet log failed for {name}: {type(e).__name__}: "
+              f"{str(e)[:150]}")
+        return "\n⚠ OBCL sheet: couldn't tick the Headshot Photo box"
 
 
 # ---- the polled processor ----------------------------------------------------
