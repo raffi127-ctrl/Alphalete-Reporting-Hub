@@ -51,6 +51,17 @@ _SKIP_FINANCIAL = {
     # 'jacob dover' removed 2026-05-29 (Eve flagged) — his data is now
     # in the RAF workbook as ROCKSTARWORLD INCORPORATED (JACOB DOVER-TN)
     # and his tab name matches exactly so no alias is needed.
+    #
+    # 'edgar muniz ii' added 2026-08-24 (Eve): terminated 2026-07-22 — the
+    # recruiting office-mapping already carries him under `skip` with
+    # "keeps filled tab; excluded from pull", and the rest of his tab dropped
+    # from ~67 filled rows a week to 14 from the 7/26 column on. His financials
+    # kept arriving in the TRANG book for three more weeks (the close lags the
+    # termination) and then stopped, which surfaced as a WENT-DARK alert on the
+    # 8/23 column. It is a closed office, not a missing file, so skip it rather
+    # than page Megan about it every week. The tab stays visible on purpose —
+    # its history is still wanted.
+    "edgar muniz ii",
 }
 # A tab-name campaign suffix, e.g. ' - NDS' / ' - BOX' / ' - B2B'.
 _CAMPAIGN_SUFFIX = re.compile(r"\s*-\s*[A-Za-z0-9/&]+\s*$")
