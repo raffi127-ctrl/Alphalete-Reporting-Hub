@@ -233,30 +233,16 @@ def _daily_rows_for_owner(page, cfg: dict, aliases_raw, target: dt.date
     the exact scrape the daily metrics-thread boards use (impersonate, pin
     campaign, Disposition + Time Tracker merged by badge id, exit
     impersonation). That helper impersonates UNCONDITIONALLY, so the MASTER
-    (Raf — the rhidalgo login IS his office) can't go through it: for him
-    this replicates total_knocks.pull.pull_disposition_day's body inline on
-    the shared page — capture rqst, pin the campaign (the sticky-campaign
-    guard applies to the master session too), _navigate, _header_index,
-    _scrape_rows, _scrape_time_tracker, merged by badge id — the same
-    master-vs-impersonate routing owner_cfgs decided for the weekly pull."""
+    (Raf — the rhidalgo login IS his office) can't go through it and takes
+    knocks_pull.pull_master_on_page instead: the same scrape minus the office
+    switch. Both live in knocks_pull now, so on-demand `/knocks` routes the
+    master exactly the way this build does — the same master-vs-impersonate
+    routing owner_cfgs decided for the weekly pull."""
     from automations.rashad_metrics import knocks_pull as KP
-    from automations.total_knocks import pull as knocks
     if cfg.get("ov") == "master":
-        mdy = target.strftime("%m/%d/%Y")
-        rqst = knocks._capture_rqst(page)
-        if not rqst:
-            raise RuntimeError("Couldn't capture ownerville rqst token from "
-                               f"{page.url!r} for the master office.")
-        KP._pin_campaign(page, rqst)
-        knocks._navigate(page, rqst, mdy)
-        idx = knocks._header_index(page)
-        rows = knocks._scrape_rows(page, idx)
-        tt = knocks._scrape_time_tracker(page, rqst, mdy)
-        for rec in rows:
-            rid = str(rec.get(knocks.COL_ID, "")).strip()
-            if rid in tt:
-                rec.update(tt[rid])
-        return rows
+        # Was inline here; now knocks_pull.pull_master_on_page, so the
+        # on-demand /knocks path runs the identical master scrape.
+        return KP.pull_master_on_page(page, target)
     _t, rows = KP.pull_office_on_page(page, cfg["name"], aliases_raw, target)
     return rows
 

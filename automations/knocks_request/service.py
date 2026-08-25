@@ -72,6 +72,7 @@ class Board:
     source: str = ""             # "cache" | "build" | "live"
     note: str = ""
     partial: bool = False        # today's board: the day isn't over yet
+    compared_to: str = ""        # office whose teal TOTAL line rides the board
 
 
 def central_today() -> dt.date:
@@ -201,6 +202,45 @@ def wait_for_ownerville(*, timeout_s: int = WAIT_TIMEOUT_S,
         time.sleep(poll_s)
 
 
+
+# ------------------------------------------------------------- compare ----
+# Raf 2026-08-23 ("add Chan's totals above ours daily") put a teal CHAN PARK
+# TOTAL line on the morning board; a board pulled on demand is the same board,
+# so it carries the same line. render_total_knocks already takes `extra_totals`
+# for exactly this — nothing is drawn here.
+def compare_office() -> str:
+    """Whose totals ride every board as the comparison line."""
+    from automations.weekly_knock_dispositions.offices import CHAN
+    return resolve_office(CHAN["name"])
+
+
+def compare_rows(canonical: str, target: dt.date, *, allow_live: bool,
+                 logfn: Callable[[str], None] = print
+                 ) -> Optional[list]:
+    """The comparison office's rows for `target`, or None to omit the line.
+
+    NEVER opens an ownerville session of its own: a comparison is a nicety and
+    a second session would fight the one the real pull needs. `allow_live` is
+    True only when the caller is already inside a live pull and can afford the
+    extra office in the SAME session."""
+    compare = compare_office()
+    if _norm(compare) == _norm(canonical):
+        return None                     # asking for Chan: nothing to compare to
+    rows, source = cached_rows(compare, target)
+    if rows:
+        logfn(f"comparison: {compare} from the {source}")
+        return rows
+    if not allow_live:
+        logfn(f"comparison: no stored {compare} rows for {target} — board "
+              "goes out without the teal line")
+        return None
+    return None                         # live path fills this in; see board_for
+
+
+def _norm(name: str) -> str:
+    return " ".join((name or "").lower().split())
+
+
 # ---------------------------------------------------------------- board ----
 def board_for(office: str, target: Optional[dt.date] = None, *,
               allow_live: bool = True,
@@ -225,6 +265,11 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
     if canonical.lower() != office.strip().lower():
         logfn(f"'{office}' resolves to '{canonical}'")
 
+    # Cache-first for the comparison too, so a cached board stays a
+    # zero-session answer. allow_live=False here: the live branch below pulls
+    # it in the session it is already opening.
+    chan_rows = compare_rows(canonical, target, allow_live=False, logfn=logfn)
+
     rows, source = cached_rows(canonical, target)
     if rows:
         logfn(f"{canonical} {target}: {len(rows)} rep(s) from the {source} "
@@ -238,9 +283,33 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
             raise RuntimeError(
                 "Ownerville is still busy with the scheduled reports — nothing "
                 "was pulled. Ask again once they finish.")
-        from automations.rashad_metrics.knocks_pull import pull_office_knocks
-        logfn(f"pulling {canonical} for {target} from ownerville…")
-        _t, rows = pull_office_knocks(canonical, target, verbose=True)
+        # One session, both offices (pull_offices_knocks exists for exactly
+        # this): a second session for the comparison line would race the
+        # first for the same Chrome profile. The comparison office rides
+        # along ONLY when it isn't already on disk.
+        # ALWAYS the multi-office helper, even for one office: it is the
+        # path that routes the MASTER office (Raf) around impersonation.
+        # pull_office_knocks impersonates unconditionally, so asking it for
+        # Raf reports his own office as an access gap.
+        from automations.rashad_metrics.knocks_pull import pull_offices_knocks
+        compare = compare_office()
+        want_compare = (chan_rows is None
+                        and _norm(compare) != _norm(canonical))
+        wanted = [canonical] + ([compare] if want_compare else [])
+        logfn(f"pulling {' + '.join(wanted)} for {target} from ownerville…")
+        _t, pulled = pull_offices_knocks(wanted, target, verbose=True)
+        _n, rows, err = pulled[0]
+        if err is not None:
+            raise err                          # THIS office failing is fatal
+        if want_compare:
+            _cn, c_rows, c_err = pulled[1]
+            if c_err is not None:
+                # A missing comparison costs one line, never the board.
+                logfn(f"⚠ {compare} comparison pull failed "
+                      f"({type(c_err).__name__}) — board goes out without it")
+            elif c_rows:
+                chan_rows = c_rows
+                save_rows(compare, target, c_rows)
         source = "live"
         save_rows(canonical, target, rows)
 
@@ -254,9 +323,13 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
         return b
 
     from automations.total_knocks import render as knocks_render
+    extra = []
+    if chan_rows:
+        extra.append((compare_office(), chan_rows))
+        b.compared_to = compare_office()
     b.png = knocks_render.render_total_knocks(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical)
+        title_suffix=canonical, extra_totals=extra)
     logfn(f"board -> {b.png}")
     return b
 

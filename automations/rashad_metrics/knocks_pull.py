@@ -331,6 +331,50 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
     return target, rows
 
 
+def is_master_office(name: str) -> bool:
+    """Is `name` the MASTER ownerville office — the login itself?
+
+    The rhidalgo login IS office 11280, so Raf is not in his own Office Access
+    list and `_find_owner_and_impersonate` can never find him. Asking for him
+    by impersonation fails with "name not found in ownerville", which reads
+    exactly like a permissions gap and is not one (Megan 2026-08-24: `/knocks
+    Rafael Hidalgo` answered "16 offices are in this position").
+    """
+    from automations.focus_office_att.aliases import _norm_name
+    from automations.weekly_knock_dispositions.offices import RAF
+    return _norm_name(name or "") == _norm_name(RAF["name"])
+
+
+def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
+    """The master office's rows on an ALREADY-OPEN page — no impersonation,
+    because the session is already on that office.
+
+    Same steps as the impersonated path minus the office switch: capture rqst,
+    pin the campaign (the sticky-campaign guard applies to the master session
+    too), Disposition + Time Tracker merged by badge id. Lived inline in
+    captainship_drafts.knock_dispo_images._daily_rows_for_owner until
+    on-demand `/knocks` needed the same routing; extracted here so the two
+    callers share ONE master scrape instead of keeping two copies in step.
+    """
+    mdy = target.strftime("%m/%d/%Y")
+    rqst = knocks._capture_rqst(page)
+    if not rqst:
+        raise RuntimeError("Couldn't capture ownerville rqst token from "
+                           f"{page.url!r} for the master office.")
+    _pin_campaign(page, rqst, verbose=verbose)
+    knocks._navigate(page, rqst, mdy)
+    idx = knocks._header_index(page)
+    rows = knocks._scrape_rows(page, idx)
+    tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
+    for rec in rows:
+        rid = str(rec.get(COL_ID, "")).strip()
+        if rid in tt:
+            rec.update(tt[rid])
+    if verbose:
+        print(f"-> master office: {len(rows)} rep(s)", flush=True)
+    return rows
+
+
 def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
                         verbose: bool = True, profile_dir=None):
     """Scrape SEVERAL offices inside ONE ownerville session.
@@ -362,8 +406,12 @@ def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
                 print(f"-> Office '{name}' resolves to canonical '{canonical}'",
                       flush=True)
             try:
-                _, rows = pull_office_on_page(page, canonical, aliases_raw,
-                                              target, verbose=verbose)
+                if is_master_office(canonical):
+                    # The login IS this office — impersonating it would fail.
+                    rows = pull_master_on_page(page, target, verbose=verbose)
+                else:
+                    _, rows = pull_office_on_page(page, canonical, aliases_raw,
+                                                  target, verbose=verbose)
                 out.append((name, rows, None))
             except Exception as e:  # noqa: BLE001 — one office must not kill the rest
                 if verbose:

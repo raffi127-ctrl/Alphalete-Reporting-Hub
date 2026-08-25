@@ -190,8 +190,8 @@ def process(web, user_id: str, office: str, target: dt.date) -> None:
         if service.access_gap(e):
             say(f":lock: I can't pull *{canonical}* — that office isn't on the "
                 "Ownerville account these reports run on, so there's nothing "
-                "to fetch until someone grants Office Access to it. (16 offices "
-                "are in this position; it's a permissions gap, not a typo.)")
+                "to fetch until someone grants Office Access to it. It's a "
+                "permissions gap, not a typo.")
         else:
             say(f":x: Couldn't get *{canonical}* for {pretty} — "
                 f"{type(e).__name__}: {str(e)[:200]}")
