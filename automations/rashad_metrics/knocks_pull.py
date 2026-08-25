@@ -158,28 +158,63 @@ DEFAULT_OFFICE = (os.environ.get("KNOCKS_OFFICE")
 KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 
 
-def _pin_campaign(page, rqst: str, verbose: bool = True) -> None:
+def campaign_for_office(name: str) -> str:
+    """The TeleMapper campaign to pin for `name` — "" means DON'T pin.
+
+    An NDS/wireless office does not knock the fiber campaign, so pinning RES
+    AT&T on it forces the session onto a campaign that office never uses.
+    weekly_knock_dispositions has always drawn this distinction per office
+    ("" if nds else "3"); this pull pinned one process-wide value for
+    everybody, so a single session could not serve a fiber office and an NDS
+    office correctly — which is exactly what an on-demand request does when it
+    pulls the asked-for office plus the comparison office together.
+
+    NDS-ness comes from office_metrics (the committed isaiah/drew set, or an
+    office whose onboarding form said nds_d2d), so a newly onboarded wireless
+    office is covered without editing anything here. A name we don't recognise
+    keeps the default pin — the behaviour before this function existed.
+    """
+    try:
+        from automations.focus_office_att.aliases import _norm_name
+        from automations.office_metrics import offices as OM
+    except Exception:  # noqa: BLE001 — a lookup failure must not stop a pull
+        return KNOCKS_CAMPAIGN_ID
+    want = _norm_name(name or "")
+    if not want:
+        return KNOCKS_CAMPAIGN_ID
+    for o in OM.OFFICES.values():
+        for attr in ("knocks_office", "owner"):
+            if _norm_name(getattr(o, attr, "") or "") == want:
+                return "" if getattr(o, "nds", False) else KNOCKS_CAMPAIGN_ID
+    return KNOCKS_CAMPAIGN_ID
+
+
+def _pin_campaign(page, rqst: str, campaign_id: Optional[str] = None,
+                  verbose: bool = True) -> None:
     """Force the impersonated session's TeleMapper campaign so a stale sticky
     selection can't silently blank the whole pull. Best-effort: a failure here
     leaves us exactly where we were before this guard existed.
 
-    An EMPTY KNOCKS_CAMPAIGN_ID skips the pin — the session keeps whatever
-    campaign it already had. That's what weekly_knock_dispositions does for an
-    NDS office ("" if nds else "3"), and it's how `lucy probe_knocks …
-    campaign=none` asks whether the pin is what's blanking an office."""
-    if not KNOCKS_CAMPAIGN_ID:
+    `campaign_id` None means "use the module default" (what every caller did
+    before per-office campaigns existed). An EMPTY campaign skips the pin —
+    the session keeps whatever campaign it already had. That's what
+    weekly_knock_dispositions does for an NDS office, and it's how
+    `lucy probe_knocks … campaign=none` asks whether the pin is what's
+    blanking an office."""
+    campaign_id = (KNOCKS_CAMPAIGN_ID if campaign_id is None else campaign_id)
+    if not campaign_id:
         if verbose:
             print("  · TeleMapper campaign pin SKIPPED "
-                  "(KNOCKS_CAMPAIGN_ID empty)", flush=True)
+                  "(no campaign for this office)", flush=True)
         return
     try:
         page.goto(f"https://v2.ownerville.com/index.cfm?p=88&rqst={rqst}"
-                  f"&invD2DClientId={KNOCKS_CAMPAIGN_ID}",
+                  f"&invD2DClientId={campaign_id}",
                   wait_until="networkidle", timeout=45000)
         page.wait_for_timeout(1000)
         if verbose:
             print(f"  ✓ Pinned TeleMapper campaign (invD2DClientId="
-                  f"{KNOCKS_CAMPAIGN_ID})", flush=True)
+                  f"{campaign_id})", flush=True)
     except Exception as e:  # noqa: BLE001
         if verbose:
             print(f"  ⚠ Campaign pin failed ({type(e).__name__}) — "
@@ -276,7 +311,8 @@ def pull_office_days_on_page(page, canonical: str, aliases_raw,
         # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above. Pinned once
         # for the impersonated session, not once per day: the campaign is a
         # property of the session, and re-pinning would cost a navigation a day.
-        _pin_campaign(page, rqst, verbose=verbose)
+        _pin_campaign(page, rqst, campaign_for_office(canonical),
+                      verbose=verbose)
 
         for target in targets:
             out[target] = _scrape_day_on_page(page, rqst, target,
@@ -395,7 +431,9 @@ def pull_master_days_on_page(page, targets: "list[dt.date]", *,
     if not rqst:
         raise RuntimeError("Couldn't capture ownerville rqst token from "
                            f"{page.url!r} for the master office.")
-    _pin_campaign(page, rqst, verbose=verbose)
+    from automations.weekly_knock_dispositions.offices import RAF as _RAF
+    _pin_campaign(page, rqst, campaign_for_office(_RAF["name"]),
+                  verbose=verbose)
     out: dict = {}
     for target in targets:
         rows = _scrape_day_on_page(page, rqst, target, verbose=verbose)
