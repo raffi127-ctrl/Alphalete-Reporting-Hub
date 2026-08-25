@@ -230,12 +230,13 @@ def _sheet_note(name: str, act: dict) -> str:
             as_who = (f" (as *{res['matched_as']}*)"
                       if res.get("matched_as", "").lower() != name.lower()
                       else "")
-            return (f"\nOBCL {res['tab']}: Headshot Photo ✅ ticked"
-                    f"{as_who}")
+            return f"\nOBCL Sheet: Headshot Photo ✅ ticked{as_who}"
         if res["status"] == "already_marked":
-            return f"\nOBCL {res['tab']}: already ticked"
-        # Not on the week's tab — normal for office staff, so keep it quiet.
-        return f"\n_OBCL {res['tab']}: no new-start row to tick_"
+            return "\nOBCL Sheet: already ticked"
+        # Not on the tab (or too close to two names to be sure). One plain
+        # line, Megan's wording (2026-08-24) — the admin just needs to know
+        # to log this one by hand; the reason is in the run log.
+        return "\nNot found on OBCL Sheet"
     except Exception as e:  # noqa: BLE001
         act["sheet"] = {"status": "error", "error": str(e)[:200]}
         print(f"  ⚠ sheet log failed for {name}: {type(e).__name__}: "
