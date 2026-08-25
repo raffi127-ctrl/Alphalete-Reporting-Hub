@@ -20,11 +20,21 @@
 # ~05:20 with its retries and failure alerts intact); the public post already
 # runs on its own agent at 07:05; this puts the link right behind it.
 #
-#   07:00 (then 07:30 / 08:00 / 09:00 as a safety net). Eve 2026-08-13: "el
+#   07:09 (then 07:30 / 08:00 / 09:00 as a safety net). Eve 2026-08-13: "el
 #   link de revision todos los dias a las 7am para aprobar y que se envie a las
-#   7:15 mas tardar" — so the link is UP at 07:00 (the board's own post runs at
-#   06:55, five minutes ahead), and com.alphalete.org-board-email-review polls
-#   every 5 min, so a checkmark at ~07:05 is a sent email by ~07:10-07:15.
+#   7:15 mas tardar", and com.alphalete.org-board-email-review polls every
+#   5 min, so a checkmark at ~07:15 is a sent email by ~07:20.
+#
+#   WHY 07:09 AND NOT 07:00 (Eve 2026-08-25). The morning moved nine minutes so
+#   BOX makes it into the picture people approve. Box's Tableau extract does not
+#   refresh with yesterday's final numbers until ~06:50-08:00, well after the
+#   04:50 fill, so until now the emailed board showed Box a day behind. A
+#   one-section re-pull is 2-5 min (the full fill is 9-14), so the morning is
+#   now: com.alphalete.org-board-box-repull tops off Box at 06:52 / 06:58 ->
+#   public post 07:05 -> THIS LINK 07:09 -> email out by 07:25. This slot has to
+#   stay behind the re-pull, because the PDF is rendered off the board.
+#   If Box is still late that morning the re-pull no-ops and everything below
+#   runs exactly as before, on the same clock — nothing here waits on Box.
 #
 # ONE POST PER DAY. review_gate --post REPLACES its own un-approved post for the
 # day, so running it four times would delete and re-post the link under the

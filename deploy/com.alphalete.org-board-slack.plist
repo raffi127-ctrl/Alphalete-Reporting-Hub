@@ -54,13 +54,29 @@
              has to be already out. 06:55 puts it there; the q25m ladder below
              is unchanged and still covers a late board.
 
-             This post now shows a BOX section that is normally a day behind.
-             That is the accepted trade (Eve 2026-08-12: 'aunque Box esté
-             siempre un día atrasado'); the 2:30pm board-catchup fixes the
-             board itself the same afternoon. slack_post.fill_gate is LIGHT —
-             it holds only if yesterday is empty across EVERY section — so a
-             blank BOX column does not push this to the next slot. -->
-        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>55</integer></dict>
+             06:55 -> 07:05 (Eve 2026-08-25), TO GET BOX INTO THIS PICTURE.
+             Until now this post showed a BOX section a day behind — the
+             accepted trade from 2026-08-12 ('aunque Box esté siempre un día
+             atrasado'), because the Box extract does not land until
+             ~06:50-08:00 and the fill runs at 04:50. The trade was only ever
+             needed for the FULL fill (5 sections + captainships, 9-14 min);
+             ONE section is 2-5 min, so com.alphalete.org-board-box-repull now
+             tops off Box alone at 06:52 / 06:58 and this post moved behind it.
+             Ten minutes buys a current Box on most mornings.
+
+             THIS SLOT MUST STAY AFTER THE BOX RE-PULL. Exporting the PNG while
+             that pull is mid-write screenshots a half-written BOX block, which
+             is worse than a day-behind one; org_board_slack.sh hard-waits for
+             the re-pull process before it exports, but the clock should not be
+             relying on that guard. Move this and move 06:52/06:58 with it.
+
+             ON A MORNING BOX IS STILL LATE the re-pull no-ops and this post
+             goes out at 07:05 with Box a day behind — exactly the old
+             behaviour, never a delay. The 2:30pm board-catchup still fixes the
+             board itself either way. slack_post.fill_gate is LIGHT — it holds
+             only if yesterday is empty across EVERY section — so a blank BOX
+             column does not push this to the next slot. -->
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.org-board-box-repull</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to the mini's repo path (lucy rerun install_org_board_box_repull_agent). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/org_board_box_repull.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key), machine LOCAL time — the mini is
+         Central.
+
+         WHY 06:52 AND 06:58. This tops off the ONE section the 04:50 fill cannot
+         have: the Box extract does not refresh with the prior day's final
+         numbers until ~06:50-08:00. Measured 8/04-8/11 it was in by 06:50-07:06
+         every day, so both slots sit inside that window instead of spraying
+         attempts across an hour where Box is not there anyway. One section is a
+         2-5 min pull, so the 06:58 pass is done by ~07:03 — clear of the 07:05
+         public post, which waits on this process before it exports.
+
+         TWO PASSES, NOT MORE: each is a Tableau crosstab download and the shared
+         session dies after ~8 in a morning.
+
+         FAIL-OPEN: a morning where Box is still missing at 06:58 (8/12 it was
+         missing at 07:30) just leaves Box a day behind, which is the board we
+         had before this agent existed. Nothing downstream waits or alerts.
+
+         TIME KNOB: edit these entries. Moving them LATER means moving the 07:05
+         post and the 07:09 review link with them — the whole point is that the
+         email is out by 07:25. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>52</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>58</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/org-board-box-repull.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/org-board-box-repull.launchd.err.log</string>
+</dict>
+</plist>
