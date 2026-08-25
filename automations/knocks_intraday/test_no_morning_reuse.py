@@ -194,15 +194,26 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
         rec.update(over)
         return rec
 
-    def test_a_missing_token_skips_rather_than_posting_as_lucy(self):
+    def test_a_missing_token_fails_loudly_rather_than_posting_as_lucy(self):
+        """Both halves matter, and they pull in opposite directions.
+
+        It must NOT post with Lucy's token — against a FRESH SUCCESS channel id
+        that could land the board in a different org, which is worse than no
+        board. But it must also NOT exit clean: this asserted code == 0 as a
+        "structural skip" until 2026-08-25, and that is what let a missing token
+        publish SUCCESS and green the card while Trang got nothing (Megan: "it
+        should fail loudly"). Non-zero here is what turns the card red and fires
+        publish_done's corrections-channel alert."""
+        lines = []
         with mock.patch.object(intraday, "token_path",
                                lambda r: Path("/nope/absent-token.txt")), \
              mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image") as never:
             code = intraday.post([self._rec()], EOD, dry_run=False,
-                                 logfn=lambda m: None)
-        never.assert_not_called()
-        self.assertEqual(code, 0)     # structural skip, not a red run
+                                 logfn=lines.append)
+        never.assert_not_called()          # never Lucy's token
+        self.assertEqual(code, 1)          # and never a clean exit
+        self.assertIn("❌", "\n".join(lines))
 
     def test_the_offices_own_token_is_used_and_then_restored(self):
         import os

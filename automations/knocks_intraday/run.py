@@ -257,9 +257,25 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
     CROSS-WORKSPACE OFFICES POST WITH THEIR OWN TOKEN, never Lucy's. Trang's
     channel lives in the FRESH SUCCESS workspace; posting her board on the AO
     token would either fail or, worse, land a channel id that means something
-    different over there. When the token file isn't on this machine that is a
-    structural SKIP — the office simply can't be posted from this box — not a
-    failure, and never a fallback to the default token.
+    different over there. The no-fallback rule is absolute.
+
+    A MISSING CROSS-WORKSPACE TOKEN IS A FAILURE, NOT A SKIP (Megan 2026-08-25:
+    "it should fail loudly"). This used to count as `skipped` and reasoned that
+    the office "simply can't be posted from this box" — structural, so benign.
+    It isn't benign: the run then exited 0, the wrapper published SUCCESS, and
+    the card went GREEN while an office got no board and nobody heard about it.
+    That is exactly the silent drop the never-post-blank rule exists to stop,
+    only quieter — a blank board is at least visible.
+
+    It is the likeliest way this breaks, too: push_slack_tokens moves only the
+    MAIN workspace pair, so every new machine starts without the cross-workspace
+    ones. Lucy 3 posted the 2026-08-23 trackers to all 15 orgs except Trang's
+    for precisely this reason.
+
+    So it counts as FAILED: non-zero exit -> the wrapper publishes 'failed' ->
+    the card goes red AND publish_done's alert_on_fail posts to the corrections
+    channel. The other offices still post — one office's missing credential must
+    not cost the other eleven their boards.
     """
     import os
 
@@ -277,9 +293,14 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
             continue
         tok = token_path(rec)
         if tok is not None and not tok.exists():
-            skipped += 1
-            logfn(f"[knocks] skip {rec['key']} — cross-workspace token "
-                  f"({tok}) isn't on this machine; not posting with Lucy's")
+            # LOUD, not quiet — see the note above. Counted as failed so the run
+            # exits non-zero and the Hub card cannot go green over a missing board.
+            failed += 1
+            logfn(f"[knocks] ❌ {rec['key']}: cross-workspace token ({tok}) "
+                  f"isn't on this machine — NOT posting with Lucy's token, and "
+                  f"NOT calling this a clean run. Push it with "
+                  f"`lucy push_cred_file {tok.name} \"<this machine>\"` "
+                  f"from a box that has it.")
             continue
         if dry_run:
             who = " (own workspace token)" if tok else ""

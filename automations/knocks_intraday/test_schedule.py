@@ -204,3 +204,51 @@ class RosterRaf(unittest.TestCase):
         raf = [o for o in roster.enrolled("eod") if o.key == "raf"][0]
         self.assertTrue(raf.channel_id)
         self.assertEqual(raf.timezone, "America/Chicago")
+
+
+class MissingCrossWorkspaceToken(unittest.TestCase):
+    """Megan 2026-08-25: "it should fail loudly".
+
+    A cross-workspace office (Trang -> FRESH SUCCESS) whose token file isn't on
+    this machine used to count as `skipped`: the run exited 0, the wrapper
+    published SUCCESS and the card went green while she got no board. That is
+    the silent drop, and it is the likeliest failure here — push_slack_tokens
+    moves only the MAIN workspace pair, so every new machine starts without the
+    cross-workspace ones (Lucy 3, 2026-08-23)."""
+
+    def _rec(self, key, token_file):
+        from automations.office_metrics.offices import Office
+        import datetime as _dt
+        return {"office": key, "key": key, "day": _dt.date(2026, 8, 25),
+                "abbr": "CST",
+                "label": key.title(), "channel_id": "C1",
+                "channel_name": "#" + key, "header_label": "",
+                "token_file": token_file, "png": "/tmp/x.png",
+                "rows": [{"Rep": "A"}], "error": None}
+
+    def _post(self, recs):
+        import datetime as _dt
+        from automations.knocks_intraday import run as intraday, schedule as S
+        lines = []
+        # dry_run=False would post; token_path returns a path that does NOT
+        # exist, so the guard fires before any Slack call is reached.
+        code = intraday.post(recs, S.SLOTS_BY_KEY["eod"], dry_run=False,
+                             logfn=lines.append)
+        return code, lines
+
+    def test_a_missing_token_is_a_nonzero_exit(self):
+        code, _ = self._post([self._rec("trang", "slack-token-does-not-exist")])
+        self.assertEqual(code, 1, "a missing token must not exit clean")
+
+    def test_it_says_so_loudly_in_the_log(self):
+        _, lines = self._post([self._rec("trang", "slack-token-does-not-exist")])
+        blob = "\n".join(lines)
+        self.assertIn("❌", blob)
+        self.assertIn("trang", blob)
+        self.assertIn("NOT posting with Lucy's token", blob)
+
+    def test_it_never_falls_back_to_the_default_token(self):
+        """The dangerous fix is worse than the outage: Lucy's token against a
+        FRESH SUCCESS channel id could land the board in a different org."""
+        _, lines = self._post([self._rec("trang", "slack-token-does-not-exist")])
+        self.assertNotIn("posted trang", "\n".join(lines))
