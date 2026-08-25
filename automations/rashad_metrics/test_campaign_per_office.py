@@ -28,26 +28,41 @@ class _StubPage:
 
 class CampaignForOffice(unittest.TestCase):
 
-    def test_wireless_office_gets_no_pin(self):
-        # Isaiah knocks NDS/wireless — pinning the fiber campaign would put his
-        # session on a campaign his office never uses.
-        self.assertEqual(KP.campaign_for_office("Isaiah Revelle"), "")
+    def test_an_nds_office_still_knocks_the_default_campaign(self):
+        # Isaiah IS NDS, and that is why his Disposition page is empty — his
+        # reps don't disposition, so there are no knock counts to pull. It is
+        # NOT why the campaign would differ: his picker offers BASE Energy /
+        # RES AT&T / RES-ENERGYWELL and he knocks RES AT&T like everyone
+        # (Megan checked ownerville 2026-08-25). Deriving the pin from NDS
+        # left his session free to drift onto another campaign and go quiet.
+        self.assertEqual(KP.campaign_for_office("Isaiah Revelle"),
+                         KP.KNOCKS_CAMPAIGN_ID)
 
-    def test_wireless_lookup_is_case_and_spacing_tolerant(self):
-        self.assertEqual(KP.campaign_for_office("  isaiah   revelle "), "")
-
-    def test_fiber_offices_keep_the_default_pin(self):
-        for name in ("Rafael Hidalgo", "Chan Park", "Haytham Nagi"):
+    def test_every_known_office_gets_the_default(self):
+        for name in ("Rafael Hidalgo", "Chan Park", "Haytham Nagi",
+                     "Rashad Reed", "Isaiah Revelle"):
             with self.subTest(name=name):
                 self.assertEqual(KP.campaign_for_office(name),
                                  KP.KNOCKS_CAMPAIGN_ID)
 
     def test_unknown_name_falls_back_to_the_default(self):
-        # The behaviour before this function existed: an office we can't
-        # classify is pinned, not silently left on a stale campaign.
         self.assertEqual(KP.campaign_for_office("Nobody At All"),
                          KP.KNOCKS_CAMPAIGN_ID)
         self.assertEqual(KP.campaign_for_office(""), KP.KNOCKS_CAMPAIGN_ID)
+
+    def test_an_override_wins_when_one_is_written_down(self):
+        # The escape hatch for an office PROVEN to knock something else.
+        KP.CAMPAIGN_OVERRIDES["someone else"] = "16"
+        try:
+            self.assertEqual(KP.campaign_for_office("Someone Else"), "16")
+            self.assertEqual(KP.campaign_for_office("  SOMEONE   ELSE "), "16")
+        finally:
+            KP.CAMPAIGN_OVERRIDES.pop("someone else", None)
+
+    def test_overrides_start_empty(self):
+        # A guessed override silently blanks an office's whole board, so the
+        # map stays empty until an exception is actually observed.
+        self.assertEqual(KP.CAMPAIGN_OVERRIDES, {})
 
 
 class PinCampaign(unittest.TestCase):
@@ -71,11 +86,12 @@ class PinCampaign(unittest.TestCase):
         KP._pin_campaign(page, "TOKEN", None, verbose=False)
         self.assertIn(f"invD2DClientId={KP.KNOCKS_CAMPAIGN_ID}", page.gotos[0])
 
-    def test_a_wireless_office_end_to_end_skips_the_pin(self):
+    def test_an_nds_office_end_to_end_gets_pinned(self):
         page = _StubPage()
         KP._pin_campaign(page, "TOKEN", KP.campaign_for_office("Isaiah Revelle"),
                          verbose=False)
-        self.assertEqual(page.gotos, [])
+        self.assertEqual(len(page.gotos), 1)
+        self.assertIn(f"invD2DClientId={KP.KNOCKS_CAMPAIGN_ID}", page.gotos[0])
 
 
 if __name__ == "__main__":

@@ -158,35 +158,33 @@ DEFAULT_OFFICE = (os.environ.get("KNOCKS_OFFICE")
 KNOCKS_CAMPAIGN_ID = os.environ.get("KNOCKS_CAMPAIGN_ID", "3")
 
 
+# An office that knocks a campaign OTHER than the default goes here, keyed by
+# ownerville name. Empty on purpose: every office we have actually looked at
+# knocks RES AT&T, so this stays empty until one is PROVEN different — a guess
+# here silently blanks a whole office's board.
+CAMPAIGN_OVERRIDES: "dict[str, str]" = {}
+
+
 def campaign_for_office(name: str) -> str:
-    """The TeleMapper campaign to pin for `name` — "" means DON'T pin.
+    """The TeleMapper campaign to pin for `name`. "" would mean DON'T pin.
 
-    An NDS/wireless office does not knock the fiber campaign, so pinning RES
-    AT&T on it forces the session onto a campaign that office never uses.
-    weekly_knock_dispositions has always drawn this distinction per office
-    ("" if nds else "3"); this pull pinned one process-wide value for
-    everybody, so a single session could not serve a fiber office and an NDS
-    office correctly — which is exactly what an on-demand request does when it
-    pulls the asked-for office plus the comparison office together.
+    Everyone gets the default unless CAMPAIGN_OVERRIDES says otherwise.
 
-    NDS-ness comes from office_metrics (the committed isaiah/drew set, or an
-    office whose onboarding form said nds_d2d), so a newly onboarded wireless
-    office is covered without editing anything here. A name we don't recognise
-    keeps the default pin — the behaviour before this function existed.
+    This USED to return "" for any office flagged NDS, on the reasoning that a
+    wireless office has no fiber campaign. That was wrong, and Isaiah is why
+    (Megan checked his ownerville on 2026-08-25): his campaign picker offers
+    BASE Energy / RES AT&T / RES-ENERGYWELL, and his reps knock RES AT&T like
+    everyone else. His Disposition page is empty because his reps don't
+    disposition at all — they clock in and knock, and Time Tracker is the only
+    record. NDS describes the BUSINESS, not the campaign; conflating the two
+    left his session free to drift onto BASE Energy or RES-ENERGYWELL and
+    quietly return nothing.
+
+    So the pin is not derived from anything about the office any more — an
+    exception has to be observed and written down, not inferred.
     """
-    try:
-        from automations.focus_office_att.aliases import _norm_name
-        from automations.office_metrics import offices as OM
-    except Exception:  # noqa: BLE001 — a lookup failure must not stop a pull
-        return KNOCKS_CAMPAIGN_ID
-    want = _norm_name(name or "")
-    if not want:
-        return KNOCKS_CAMPAIGN_ID
-    for o in OM.OFFICES.values():
-        for attr in ("knocks_office", "owner"):
-            if _norm_name(getattr(o, attr, "") or "") == want:
-                return "" if getattr(o, "nds", False) else KNOCKS_CAMPAIGN_ID
-    return KNOCKS_CAMPAIGN_ID
+    from automations.focus_office_att.aliases import _norm_name
+    return CAMPAIGN_OVERRIDES.get(_norm_name(name or ""), KNOCKS_CAMPAIGN_ID)
 
 
 def _pin_campaign(page, rqst: str, campaign_id: Optional[str] = None,
