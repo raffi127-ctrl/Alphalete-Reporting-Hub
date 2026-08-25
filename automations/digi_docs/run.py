@@ -89,13 +89,70 @@ def main(argv=None) -> int:
                     help="a specific D2D OBCL tab (default: the newest)")
     args = ap.parse_args(argv)
 
-    if not args.live:
+    if not args.add_only and not args.send_only:
         return preview(args.tab)
+    return _phases(args)
 
-    print("The OwnerVille phases are not built yet — the click-path is in "
-          "workflows/digi-docs-onboarding-quizzes.md.\n"
-          "Run without --live for the roster preview.", file=sys.stderr)
-    return 2
+
+def _phases(args) -> int:
+    """Add every rep, then send every bundle — batched, never a full cycle per
+    person. The two phases live on different pages, so interleaving pays the
+    expensive transition once per rep instead of once; the Show All filter is
+    flipped once at the top; and if the send phase dies halfway, everyone still
+    EXISTS in OwnerVille rather than the roster being half-added."""
+    from automations.digi_docs import ownerville as ov
+
+    ws, values = _open_tab(args.tab)
+    cands = roster.candidates(values, ws.title)
+    send = roster.to_send(cands)
+    dry = not args.live
+    print(f"\n{ws.title}: {len(send)} to work "
+          f"({'DRY RUN' if dry else 'LIVE'})\n")
+
+    added, done, refused = [], [], []
+    with ov.session(headless=not dry) as page:
+        if args.add_only or not args.send_only:
+            print("PHASE: add reps")
+            for c in send:
+                try:
+                    outcome = ov.add_sales_rep(page, c.name, dry_run=dry)
+                    if outcome in ("added", "dry"):
+                        added.append(c.name)
+                except ov.Refused as e:
+                    refused.append(str(e))
+                    print(f"  ⛔ {e}")
+
+        if args.send_only:
+            print("\nPHASE: send bundles")
+            ov._show_all(page)          # once, at the top — not per rep
+            for c in send:
+                try:
+                    modal, matched = ov.open_set_status(page, c.name)
+                    if not ov.docs_still_owed(modal):
+                        print(f"  · {c.name}: already has documents")
+                        continue
+                    tab = ov.open_docs_portal(page, modal)
+                    ov.generate_bundle(tab, c.name, dry_run=dry)
+                    if not dry and not ov.confirm_generated(tab, c.name):
+                        refused.append(f"{c.name}: no success banner")
+                        continue
+                    tab.close()
+                    ticked = ov.tick_attestations(page, modal, dry_run=dry)
+                    done.append((c.name, matched, ticked))
+                except ov.Refused as e:
+                    refused.append(str(e))
+                    print(f"  ⛔ {e}")
+
+    print(f"\nadded {len(added)} · sent {len(done)} · refused {len(refused)}")
+    for r in refused:
+        print(f"  ⛔ {r}")
+    # Attestations are logged per rep on purpose: the drug-test box asserts a
+    # completed review, and an assertion nobody can audit later is worse than
+    # one nobody made.
+    for name, matched, ticked in done:
+        as_ = f" (as {matched})" if matched and matched != name else ""
+        print(f"  ✓ {name}{as_}: attested {len(ticked)}")
+    return 0 if not refused else 1
 
 
 if __name__ == "__main__":
