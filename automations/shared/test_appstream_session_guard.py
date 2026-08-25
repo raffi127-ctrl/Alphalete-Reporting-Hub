@@ -113,5 +113,38 @@ class ReseedError(unittest.TestCase):
         self.assertIn("Missing AppStream credential", str(err))
 
 
+class FleetPushCoversEveryMachine(unittest.TestCase):
+    """Every machine that runs AppStream reports must be in the fleet push.
+
+    2026-08-24: the list ended at Lucy 2 behind a comment reading "extend here
+    when Lucy 3 exists". Lucy 3 went live 8/21 and nobody did, so the daily
+    re-seed silently covered two machines out of three for three days. Lucy 3
+    runs alphalete_org_focus, whose Recruiting pull is AppStream, and that step
+    failed on an expired session the morning this was found. Nothing reports a
+    machine being absent from the list — it only surfaces as that machine's
+    reports failing."""
+
+    def _fleet_block(self) -> str:
+        """The destination list itself — anchored on `_dests = [`, NOT on
+        `args.appstream_push_fleet`, which also appears in an earlier argument
+        guard and matched there on the first cut of this test."""
+        import inspect
+        src = inspect.getsource(tp)
+        i = src.index("_dests = [")
+        return src[i:src.index("]", i) + 1]
+
+    def test_lucy_3_is_in_the_fleet(self):
+        self.assertIn('"Lucy 3"', self._fleet_block(),
+                      "Lucy 3 runs AppStream reports and must get the re-seed")
+
+    def test_lucy_1_and_2_are_still_there(self):
+        block = self._fleet_block()
+        for m in ('"Lucy 1"', '"Lucy 2"'):
+            self.assertIn(m, block)
+
+    def test_lucy_2_keeps_its_alt_slot(self):
+        self.assertIn("set_appstream_alt_state", self._fleet_block())
+
+
 if __name__ == "__main__":
     unittest.main()

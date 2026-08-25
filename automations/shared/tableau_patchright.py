@@ -1853,15 +1853,28 @@ if __name__ == "__main__":
             print("❌ saved session has no rqst_ token — re-run --appstream-login")
             _sys.exit(1)
         from automations.day_orchestrator import mini_control as _mc
-        # Where each machine wants the rcaptain session. Since 2026-08-21 BOTH
+        # Where each machine wants the rcaptain session. Since 2026-08-21 ALL
         # machines run rcaptain as primary (Megan: rcaptain sees everything
         # CarlosNLR did, so one account, one daily re-seed); Lucy 2 also keeps
         # its alt slot fresh so `--account alt` flags keep working unchanged.
-        # Extend here when Lucy 3 exists.
+        #
+        # LUCY 3 ADDED 2026-08-24. This list used to end at Lucy 2 with a note
+        # saying "extend here when Lucy 3 exists" — Lucy 3 went live 8/21 and
+        # nobody came back to it, so the daily re-seed quietly covered two of
+        # three machines for three days. Lucy 3 runs alphalete_org_focus, whose
+        # Recruiting pull is AppStream, and on 8/24 that step failed on an
+        # expired session while Lucy 1 and Lucy 2 were freshly seeded. A machine
+        # missing from THIS list has no other way to get the session, and
+        # nothing reports the gap — the miss only shows up as that machine's
+        # AppStream reports failing the next morning.
+        #
+        # ADDING A MACHINE: one line here. The push is idempotent and each
+        # machine installs + verifies its own copy.
         if args.appstream_push_fleet:
             _dests = [("Lucy 1", "set_appstream_state"),
                       ("Lucy 2", "set_appstream_state"),
-                      ("Lucy 2", "set_appstream_alt_state")]
+                      ("Lucy 2", "set_appstream_alt_state"),
+                      ("Lucy 3", "set_appstream_state")]
         else:
             _dests = [(args.appstream_push_primary, "set_appstream_state")]
         for _m, _act in _dests:
