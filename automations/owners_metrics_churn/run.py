@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -477,6 +478,26 @@ def main(argv=None) -> int:
                          "Defaults to all.")
     args = ap.parse_args(argv)
 
+    # HARVEST CUTOVER (Megan 2026-08-25, after Tableau flagged the account for
+    # over-use). harvest_prime already pulls all 19 churn views into the dated
+    # cache at order 8; this report runs at order 20 and was re-scraping every
+    # one of them. Reading the cache instead removes the same bytes being pulled
+    # twice -- once for the whole batch instead of once per report. 11 of this
+    # report's 16 views are in that primed registry today; the other 5
+    # (FIBER/NDS/B2B ALLTEAM, FIBER_ARON, FIBER_WIRELESS_ORG) aren't declared
+    # yet and keep pulling live until they are.
+    #
+    # This cannot change a number. pull._dl only consults the cache, and
+    # adapter.try_cache_view returns None -- falling straight through to the
+    # live scrape -- on a miss, a checksum mismatch, a wrong-date entry, or ANY
+    # error. loader.load_harvest hard-fails rather than serving stale data. The
+    # worst case is that we pull live exactly as we do today.
+    #
+    # setdefault, not assignment: HARVEST_MODE=off in the environment still
+    # wins, so a rollback needs no code change or deploy.
+    os.environ.setdefault("HARVEST_MODE", "on")
+    os.environ.setdefault("HARVEST_VERBOSE", "1")
+
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     only = _parse_only(args.only)
     selected = [r for r in REPORTS if only is None or r[0] in only]
@@ -488,6 +509,8 @@ def main(argv=None) -> int:
     print(f"=== Owners Metrics Churn — {today.isoformat()} "
           f"({'DRY-RUN' if args.dry_run else 'LIVE'}) ===")
     print(f"Reports: {[r[1] for r in selected]}")
+    print(f"  harvest cache: {os.environ.get('HARVEST_MODE')} "
+          f"(a miss falls back to a live pull)")
 
     # --- Phase 1: pull each CSV (shared Tableau session) ---
     csvs: dict = {}
