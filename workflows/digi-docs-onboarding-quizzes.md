@@ -111,22 +111,30 @@ the OBCL tab has a "UID Request" and an "Owner Submit" column to match.
 
 In the new tab from step 2, **choose the campaign they need onboarded for**
 (the left nav route, **Digital Docs → Generate Document**, reaches the same
-form). Then *Generate Document for Employee*:
+form). Then *Generate Document for Employee*, in this order — the form reveals
+itself a step at a time, so the whole thing is NOT on screen at once:
 
-1. **Employee** — dropdown, pick the new start.
-2. **Bundle Type** — radio. **Everyone gets `Base (Door to Door/Business to
-   Business)` right now** (Megan 2026-08-25). The other options on screen are
-   Base (Default), Base (Retail), Base (Wireless — MOD…), Commission Grid,
-   Financing and Administrative — so make this a named constant rather than a
-   literal buried in the click-path. "Right now" is Megan saying it is a
-   decision, not a law: a wireless or retail office will want a different one,
-   and the day that changes nobody should be hunting for it in a selector.
-3. **Select Bundle*** — dropdown → **"Door to Door- General 1"**.
-4. **Select Associated Commission Bundle(s)*** — checkboxes:
-   - ☑ **AT&T Door to Door with Drug Free Workplace Policy**
-   - ☐ Energy D2D- Commission Grid
-   ("Select all Commission bundles that apply.")
-5. **Get Documents for Selected Bundle** → **Generate Bundle**.
+1. **Employee** — the new start.
+2. **Bundle Type** — **`Base (Door to Door/Business to Business)`** for
+   everyone right now (Megan 2026-08-25). Other options: Base (Default),
+   Base (Retail), Base (Wireless — MOD…), Commission Grid, Financing,
+   Administrative. Keep it a named constant; a wireless or retail office will
+   want a different one.
+3. Hit **`Generate Bundle`**. This does NOT generate anything yet — it reveals
+   the next dropdown (Megan 2026-08-25).
+4. **Select Bundle*** — now visible. Choose **`Door to Door- General 1`**.
+   It is a typeahead select (a text input inside the open list), not a plain
+   `<select>`, so it needs a click-then-type-then-pick, not `select_option`.
+   Under this bundle type the list holds exactly ONE real option besides the
+   `-Select a Bundle-` placeholder. **Assert that.** If it ever offers more
+   than one, the campaign or the plan changed and the run should refuse and
+   say so rather than pick the first row — the whole point of pinning the
+   bundle is that nobody gets mailed the wrong contract.
+5. **`Get Documents for Selected Bundle`**.
+6. **Select Associated Commission Bundle(s)*** — checkboxes:
+   ☑ **AT&T Door to Door with Drug Free Workplace Policy**,
+   ☐ Energy D2D- Commission Grid. ("Select all Commission bundles that apply."
+   A note beside it points at **Download** for pulling a Commission Grid.)
 
 Result banner: **"Successfully Added Document(s) for <Name>"**, listing the
 bundle it created:
