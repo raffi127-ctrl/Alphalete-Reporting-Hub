@@ -64,8 +64,11 @@ So the run is three passes:
 The modal has:
 
 - an employee dropdown (`-Select-`),
-- a team dropdown (`-Select a Team-`, with a "Click here to set up teams" link),
-- **☑ Activate Now** — checked by default,
+- a team dropdown (`-Select a Team-`, with a "Click here to set up teams" link)
+  — **leave it alone. No team gets selected** (Megan 2026-08-25). It looks like
+  a required field sitting between two things you do touch, which is exactly
+  how it would end up filled in by mistake.
+- **☑ Activate Now** — checked by default, leave it,
 - `Close` / **`Add`**.
 
 Then **search their name** in the table's search box (top right). If they don't
@@ -134,28 +137,20 @@ Return to the rep's **Edit → "<Name> - Set Status"** modal and, in order:
    and another office or campaign will want it.
 4. **Save Changes**, bottom right.
 
-### ⚠️ These are attestations, not status flags
+### The attestation checkboxes — decided
 
-Read what the second drug-test box actually says: *Alphalete Marketing, INC. has
-reviewed the drug screen and confirmed that it passes.* That is the company
-asserting, to AT&T, that a review happened. The first box is a forward-looking
-commitment to comply; the second is a claim about a completed act.
+The second drug-test box is not a status flag; it states that *"Alphalete
+Marketing, INC. has reviewed the drug screen and confirmed that it passes."*
+Raised with Megan 2026-08-25 because it is the only action in this flow that
+asserts something to AT&T rather than writing to our own systems.
 
-For a brand-new rep the DRUG TEST row reads `REQUIRED ACTION` and the screen has
-not come back yet — so a batch that ticks box 2 unconditionally has the software
-attesting to a review nobody performed, for every new start, every week.
+**Her answer: tick them — "we know how to do it."** Decided; the automation
+does what the hand process does, and this is not to be re-litigated by a later
+session.
 
-**This is Megan's documented process and the automation will follow it** — it is
-her call to make, not the tool's, and the same click happens by hand today. But
-it is worth stating plainly once, because it is the one action in this whole
-flow that carries weight outside our own systems: the rest write to our sheet or
-mail someone their own paperwork. Two things follow from that:
-
-- The run should record, per rep, that it ticked these — the ledger is what
-  makes an attestation auditable rather than invisible.
-- If the drug screen result is ever available to us (BG Status already is, via
-  `bg_check_sync`), gating box 2 on it costs nothing and makes the statement
-  true by construction. Worth revisiting; not a blocker.
+One thing carried over from raising it, because it costs nothing: the run
+records per rep that it ticked these, so the attestation is auditable after the
+fact rather than invisible.
 
 ### The full Set Status row list
 
