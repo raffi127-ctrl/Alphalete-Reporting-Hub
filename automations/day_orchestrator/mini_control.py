@@ -4224,6 +4224,30 @@ def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(lines)[:400] or (out or "")[-300:])
 
 
+def _action_box_backfill_pending(args: str) -> tuple[bool, str]:
+    """Drop the Pending Orders image into TODAY's BOX thread and fix its header.
+
+    For the day a section ships: the morning thread posted before the code
+    existed, so it has no pending image and its header doesn't list one. Must
+    run HERE, not from a laptop — a reply goes out under the token the machine
+    holds, and Slack only lets the AUTHOR edit a message, so only the identity
+    that posted the thread can correct the header.
+
+    Default = LIVE (--post). Re-running is a no-op: it checks the thread for an
+    existing pending image first. Pass `--date YYYY-MM-DD` for an older day, or
+    `--owner-office "..."` when the day's pull is the shared all-offices file."""
+    import shlex
+    extra = shlex.split(args) if (args or "").strip() else []
+    if not any(a in ("--post", "--dry-run") for a in extra):
+        extra.append("--post")
+    extra = [a for a in extra if a != "--dry-run"]
+    ok, out = _run_cmd([sys.executable, "-m",
+                        "automations.box_order_log.backfill_pending", *extra],
+                       timeout_s=300, log_name="box-backfill-pending.log")
+    lines = [ln.strip() for ln in (out or "").splitlines() if ln.strip()]
+    return ok, (" · ".join(lines)[:400] or (out or "")[-300:])
+
+
 def _action_focus_owner(args: str) -> tuple[bool, str]:
     """Re-scrape ONE (or a few) Focus Office ATT owner tab(s) from ownerville —
     the surgical fix for when the full daily_rep_breakdown finished but a single
@@ -5526,6 +5550,7 @@ ACTIONS = {
     "install_bg_check_sync": _action_install_bg_check_sync,
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
+    "box_backfill_pending": _action_box_backfill_pending,
     "post_nsf_correction": _action_post_nsf_correction,
     "reseed_appstream": _action_reseed_appstream,
     "sheets_login": _action_sheets_login,
