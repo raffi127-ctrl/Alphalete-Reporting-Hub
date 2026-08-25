@@ -83,6 +83,11 @@ OWNER_RE = re.compile(r"captainship|captain team|special team|'s org", re.I)
 NAMELESS_RE = re.compile(r"^(captain'?s?\s+team|captainship)$", re.I)
 END_LABELS = {"totals", "total", "captainship", "last week", "prior week",
               "2 weeks prior", "3 weeks prior", "grand total"}
+# The delta boxes close with a summary line END_LABELS doesn't name: TRANG'S ORG
+# ends in 'Total Org', RAF SPECIAL TEAM in 'TOTAL' / 'Raf Org' / 'Carlos Org'.
+# Owned by delta_ranks, which numbers those same boxes — one definition, so the
+# rows it skips and the rows this skips cannot drift apart.
+from automations.org_sales_board.delta_ranks import DELTA_SUMMARY_RE   # noqa: E402
 
 
 def text(grid, r, c) -> str:
@@ -185,13 +190,20 @@ def index_rep_rows(grid) -> list:
         if cC == "total this week":
             title = text(grid, r - 1, 1) or text(grid, r - 1, 0)
             owner, rr = _owner_above(grid, r), r + 1
+            # Delta boxes were the one per-rep table with no rank column; they
+            # were numbered 2026-08-25 (`delta_ranks.py`), so the flag is read
+            # off the table itself instead of pinned to False — a box that is
+            # numbered gets renumbered after a delete, one that isn't is left
+            # alone. Trailing SUMMARY lines ('Total Org', 'Raf Org') are not
+            # reps and must not take a rank of their own.
+            ranked = text(grid, rr, 0).isdigit()
             while rr < len(grid) and not _blank(grid, rr):
                 b = text(grid, rr, 1)
-                if b.lower() in END_LABELS:
+                if b.lower() in END_LABELS or DELTA_SUMMARY_RE.search(b):
                     break
                 if b:
                     out.append({"row0": rr, "kind": "delta", "table": title,
-                                "owner": owner, "name": b, "ranked": False})
+                                "owner": owner, "name": b, "ranked": ranked})
                 rr += 1
             r = rr
             continue

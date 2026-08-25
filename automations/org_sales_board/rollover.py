@@ -1137,8 +1137,11 @@ def check_delta_totals_lastweek(grid: List[List[str]]) -> List[tuple]:
             continue
         # the totals row sits right under the last rep row, labelled or not
         tot = rows[-1] + 1
-        title = next((_c(grid, rr, 1) for rr in range(hdr - 1, max(-1, hdr - 4), -1)
-                      if _c(grid, rr, 1)), "?")
+        # col B or col A — the title bar spans both and the text sits in the
+        # merge's top-left, which is col A on every box with a rank gutter.
+        title = next((_c(grid, rr, 1) or _c(grid, rr, 0)
+                      for rr in range(hdr - 1, max(-1, hdr - 4), -1)
+                      if _c(grid, rr, 1) or _c(grid, rr, 0)), "?")
         for c in t["this_cols"]:                 # 1-based 'This week' columns
             lw = c + 1                           # its 'Last week' neighbour
             raw = _c(grid, tot, lw - 1)

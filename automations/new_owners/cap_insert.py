@@ -68,11 +68,20 @@ def _table_width(grid: List[List[str]], rows: List[int]) -> int:
 
 def _delta_captain(grid: List[List[str]], header_row: int) -> str:
     """Which captainship a delta table belongs to, from the '<NAME> CAPTAINSHIP'
-    label sitting just above its header. Empty when nothing claims it."""
+    label sitting just above its header. Empty when nothing claims it.
+
+    Read from col B **or col A**. The title bar of a delta box spans A:B, so the
+    label lives in whichever of the two is the merge's top-left — col A on the
+    boxes that carry a rank gutter (all of them since 2026-08-25,
+    `org_sales_board/delta_ranks.py`), col B on any that still don't. Scanning
+    col B alone left Raf's, Carlos' and Eveliz' boxes claimed by nobody, so a
+    rep added to those captainships got a leaderboard and a daily row but no
+    delta row."""
     for r in range(header_row - 1, max(header_row - 4, 0), -1):
-        m = CAPTAINSHIP_LABEL.match(_cell(grid, r, 2))
-        if m and m.group(1).strip():
-            return m.group(1).strip()
+        for c in (2, 1):
+            m = CAPTAINSHIP_LABEL.match(_cell(grid, r, c))
+            if m and m.group(1).strip():
+                return m.group(1).strip()
     return ""
 
 
@@ -118,7 +127,11 @@ def tables_for(grid: List[List[str]], captain_title: str) -> List[dict]:
         rows = t["data_rows"]
         if not rows:
             continue
-        label = _cell(grid, t["header_row"], 2) or "delta"
+        # col B or col A — see _delta_captain. Without the col-A fallback a
+        # captain's two boxes both come back as 'delta/delta' and the log stops
+        # saying which one a rep landed in.
+        label = (_cell(grid, t["header_row"], 2)
+                 or _cell(grid, t["header_row"], 1) or "delta")
         out.append({"kind": f"delta/{label.lower()}", "rows": rows,
                     "width": _table_width(grid, rows),
                     "ranked": _cell(grid, rows[0], 1).isdigit()})
