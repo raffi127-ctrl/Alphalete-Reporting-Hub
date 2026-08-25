@@ -25,12 +25,20 @@ box**: daytime reruns, new-report testing, and (optionally) a slice of the
 
 ## Known gotchas (why this isn't just "run the installer")
 
-- **Same-account double sessions**: two machines holding warm sessions on
-  the SAME ownerville/Tableau/AppStream accounts can kick each other's
-  logins — which is itself a wedge cause. Mitigations: the session holder
-  (ownerville keep-warm) runs on ONE box per account — leave it on Lucy 1;
-  Lucy 3 logs in on demand via the normal patchright auto-login. Watch the
-  first week for session-kick loops between the two.
+- ~~**Same-account double sessions**~~ — **WRONG, and struck 2026-08-25.**
+  This warned that two machines warm on the same ownerville/Tableau/AppStream
+  account would kick each other's logins, and told Lucy 3 to log in on demand
+  instead of holding warm. Both halves are false. **OwnerVille impersonation is
+  SESSION-scoped: the same account can be logged in on several machines at
+  once**, and Megan has now had to say so more times than anyone should.
+  Megan added Lucy 1 and Lucy 3 to `APPSTREAM_HOLD_MACHINES` on 2026-08-24 for
+  the opposite reason — NEITHER was holding warm, a token seeded ~06:00 expired
+  at 14:05, and the cost was five reports on Lucy 1 plus alphalete_org_focus's
+  Recruiting pull on Lucy 3, fixed by a human clearing Turnstile twice in a day.
+  The standing rule is: **the Lucys always hold warm sessions.** A cold session
+  is a fault to fix, not a constraint to design around. Left struck rather than
+  deleted because this paragraph kept regenerating the same question in session
+  after session, and a reader needs to see it was considered and is wrong.
 - **Tableau access budget**: eStream flagged ~10k views/week; target is
   <10/day per the ledger. A second Raf-account box must ride the
   harvest-once caches, not re-pull. Any report moved to Lucy 3 keeps
