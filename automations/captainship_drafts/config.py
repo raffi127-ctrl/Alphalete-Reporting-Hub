@@ -456,7 +456,9 @@ RECIPIENTS: dict = {
         "maudmiller4@gmail.com", "milly.vinceremarketing@gmail.com",
         "nataliagwarda@gmail.com", "omniamanagementinc@gmail.com",
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
-        "William@optimabusinessmgmt.com",
+        # OUT 2026-08-25, two-week zero rule: William Sassenberg
+        # (William@optimabusinessmgmt.com) — 0 in both of Starr's boxes
+        # for WE 08.23 and WE 08.16.
     ],
     "chan": [
         "carissang46@gmail.com", "parkwchan19@gmail.com",

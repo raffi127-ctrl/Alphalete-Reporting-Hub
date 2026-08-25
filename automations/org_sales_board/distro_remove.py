@@ -83,6 +83,10 @@ REMOVALS: dict = {
     ],
     "Starr's Captainship": [
         ("Jason Strid", "jason.vyzahinc@gmail.com"),
+        # 2026-08-25 (Eve): two-week zero rule — WE 08.23 and WE 08.16 at 0
+        # in BOTH of Starr's fiber boxes. Kobe Cireus flagged the same day
+        # stays: he is still selling Fiber - All Units.
+        ("William Sassenberg", "William@optimabusinessmgmt.com"),
     ],
     "Tony's Captainship": [
         ("Melik El Jaiez", "melikeljaiez@yahoo.com"),        # no display name on the card

@@ -76,7 +76,8 @@ EXCLUDE: Dict[str, tuple] = {
                "Ryan Kabbes", "Kevin Driggs"),
     "Raf":    ("Edgar Muniz II",),           # 2026-08-19
     "Wayne":  ("Mason Davis",),              # 2026-08-19
-    "Starr":  ("Jason Strid",),              # 2026-08-19
+    "Starr":  ("Jason Strid",                # 2026-08-19
+               "William Sassenberg"),        # 2026-08-25
     # 2026-08-21 (Eve): Jeremiah Minor. Held out of the 2026-08-19 batch because
     # WE 07.26 / 07.19 were BLANK, which read as "new owner, no history" — but
     # the blanks were only "no board row yet": his 30-60 cancel window already

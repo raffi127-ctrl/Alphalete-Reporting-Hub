@@ -62,5 +62,7 @@ EXCLUDE = (
     "Jimmy Bonilla",        # Khalil's captainship
     "Ayleen Gonzalez",      # Khalil's captainship
     "Javeon Lara",          # Colten's captainship
+    # --- two-week zero rule, 2026-08-25 ---
+    "William Sassenberg",   # Starr's captainship (both boxes)
 )
 

@@ -102,8 +102,8 @@ RECIPIENTS: dict[str, List[str]] = {
         "iraffi127@icloud.com",
         "dylanjtwaddle@gmail.com", "jpascual@elevaremanagementinc.com", "maudmiller4@gmail.com",
         "milly.vinceremarketing@gmail.com", "omniamanagementinc@gmail.com",
+        # OUT 2026-08-25, two-week zero rule: William Sassenberg.
         "raffi127@gmail.com", "starr.novamanagement@gmail.com",
-        "William@optimabusinessmgmt.com",
     ],
 }
 
