@@ -64,21 +64,44 @@ def _print_templates() -> int:
     return 0
 
 
-def _test_send(email: str, name: str, send: bool) -> int:
-    """One packet to a chosen address -- how you check the template, the
-    subject line and the signing flow WITHOUT mailing a real new start.
+def _test_send(email: str, name: str, send: bool,
+               headless: bool = True) -> int:
+    """One packet to a chosen address -- how you check the template, the email
+    and the signing flow WITHOUT mailing a real new start.
+
+    Goes through the WEB APP, like every other send here. It used to call the
+    API, which needs blueink-creds.json and 403s on this plan anyway -- so the
+    one safe way to rehearse a send was itself the only path that couldn't
+    run (found 2026-08-24, while trying to prove the send chain before arming
+    the Monday job).
+
+    Without --send this still drives the whole wizard and stops at the Send
+    button, which is the cheapest way to prove the flow after a Blue Ink UI
+    change. The draft it leaves behind delivers nothing.
 
     Deliberately not logged in the ledger: a test isn't a person's real packet,
     and a stray row there would make the batch skip somebody.
     """
-    tid = config.template_id()
-    print(f"Template {tid} -> {name} <{email}>")
-    if not send:
-        print("\nDRY RUN -- nothing sent. Add --send to mail this one packet.")
-        return 0
-    bundle = blueink.send_from_template(name=name, email=email, template_id_=tid)
-    print(f"\nSent. Bundle {bundle.bundle_id} ({bundle.status}). "
-          "Not written to the log -- this was a test.")
+    parts = (name or "").split()
+    first = parts[0] if parts else "Test"
+    last = " ".join(parts[1:]) or "Signer"
+    print(f"Template {config.TEMPLATE_NAME!r} -> {first} {last} <{email}>")
+    with bi_session._sync_api()() as p:
+        browser, ctx = ui_send.open_browser(p, headless=headless)
+        page = ctx.new_page()
+        try:
+            r = ui_send.send_one(page, first=first, last=last, email=email,
+                                 template_name=config.TEMPLATE_NAME,
+                                 really_send=send)
+        finally:
+            browser.close()
+    if send:
+        print(f"\nSent. Bundle {r.bundle_id} ({r.status}). "
+              "Not written to the log -- this was a test.")
+    else:
+        print(f"\nWalked the whole wizard and stopped at Send "
+              f"(bundle {r.bundle_id}). NOTHING WAS SENT. "
+              "Add --send to mail this one packet.")
     return 0
 
 
@@ -353,7 +376,8 @@ def _main(argv=None) -> int:
                                headless=not args.headed)
 
     if args.test_to:
-        return _test_send(args.test_to, args.test_name, args.send)
+        return _test_send(args.test_to, args.test_name, args.send,
+                          headless=not args.headed)
 
     workbook = _workbook()
     if args.sync_status:
