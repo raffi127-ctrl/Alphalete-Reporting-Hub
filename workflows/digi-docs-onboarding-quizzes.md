@@ -38,6 +38,39 @@ same fallback `headshots/ov_upload.py` already implements, including the
 The campaign dropdown sits top-left (e.g. **RES-AT&T**); a rep lives under ONE
 campaign, so the existing code tries each until the name matches.
 
+## Step 2 — open the rep and reach the docs portal
+
+Click **Edit** under the rep's name. That opens the **"<Name> - Set Status"**
+modal — the SAME modal `headshots/ov_upload.py` already opens for the photo
+upload, so the navigation to this point is code we have.
+
+The modal is one collapsible row per onboarding step, each with its own state
+chip. For a brand-new rep (Megan's screenshot, 2026-08-25):
+
+| Row | State |
+|---|---|
+| LOGIN CREATED | `COMPLETED` |
+| ONBOARDING DOCUMENTS | `REQUIRED ACTION` |
+| BACKGROUND CHECK | `REQUIRED ACTION` |
+| DRUG TEST | `REQUIRED ACTION` |
+| FTC DIRECTV COMPLIANCE TRAINING | `PENDING` |
+| AT&T PROTECTIVE ADVANTAGE COURSE | `PENDING` |
+| AT&T BROADBAND FACTS | `PENDING` |
+| AT&T PROTECTING CPNI | `PENDING` |
+| AT&T COMPLIANCE – 2023 | `PENDING` |
+
+Expand **ONBOARDING DOCUMENTS** (the chevron on the right). It reads
+*"Digital doc not yet generated."* above a gray button,
+**`🔗 Access Digital Doc Portal`** — that button is the way into the Generate
+Document flow below.
+
+**This modal is probably the better read-back for both ticks.** It names each
+step in words with an explicit state chip (`COMPLETED` / `REQUIRED ACTION` /
+`PENDING`), per rep, instead of colour-coded pills in a twenty-column
+DataTable — and `_photo_pill` already exists as a warning about how easily
+those pills mislead (both states render the same inner_text, which once made
+every rep look like they needed a photo).
+
 ## Where the truth lives
 
 Both columns read back from that same **Onboard → View Progress** table (p=201,
@@ -70,8 +103,9 @@ the OBCL tab has a "UID Request" and an "Owner Submit" column to match.
 
 ## Sending the docs (what "Digi Docs" means)
 
-**OwnerVille → Digital Docs → Generate Document** → *Generate Document for
-Employee*:
+Reached either from the left nav (**Digital Docs → Generate Document**) or from
+the rep's own **Access Digital Doc Portal** button in step 2. The form is
+*Generate Document for Employee*:
 
 1. **Employee** — dropdown, pick the new start.
 2. **Bundle Type** — radio. The video picks

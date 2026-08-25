@@ -46,11 +46,39 @@ class _Base(unittest.TestCase):
         omr.MAIN_OFFICE_LABEL, omr.MAIN_OFFICE_CHANNEL = "Local Office", "C1"
         self.rows = []
         omr.record_status = lambda label, ch, **kw: self.rows.append(kw)
+        # Stub BOTH resolution paths, not just sys.modules. `from pkg import
+        # sub` resolves through the PACKAGE ATTRIBUTE once anything in the
+        # process has genuinely imported that submodule, so a sys.modules-only
+        # patch is silently bypassed — and these stubs then fall through to the
+        # REAL modules. That is not a red test, it is a test that posts: on
+        # 2026-08-25 a full-suite run (where b2b_metrics/test_manifest_merge
+        # imports section_drop_alert for real first) put four genuine
+        # dropped-section alerts into #claudecorrections-and-requests for drops
+        # that never happened, and wrote their "sent" markers under
+        # output/section_drop_alerts/. Patch the attribute too, and sandbox
+        # _STATE_DIR regardless — a stub that degrades to the real thing is not
+        # a stub.
+        import importlib
+        # Belt and braces, BEFORE the stubs shadow it: even if a stub is
+        # bypassed, the real alert's day-marker dir points at the temp dir, so
+        # nothing lands in the real output/ and nothing can post twice.
+        real_sda = importlib.import_module("automations.shared.section_drop_alert")
+        patcher = mock.patch.object(real_sda, "_STATE_DIR", tmp / "drop_alerts")
+        patcher.start()
+        self.addCleanup(patcher.stop)
         for name, mod in (("automations.shared.section_drop_alert", sda),
                           ("automations.office_metrics.runner", omr)):
-            patcher = mock.patch.dict(sys.modules, {name: mod})
-            patcher.start()
-            self.addCleanup(patcher.stop)
+            pkg_name, _, attr = name.rpartition(".")
+            for patcher in (
+                    mock.patch.dict(sys.modules, {name: mod}),
+                    # create=True: the package may not have imported that
+                    # submodule yet, so the attribute legitimately doesn't
+                    # exist until something does `from pkg import sub`.
+                    mock.patch.object(importlib.import_module(pkg_name),
+                                      attr, mod, create=True)):
+                patcher.start()
+                self.addCleanup(patcher.stop)
+
         self.addCleanup(self._tmp.cleanup)
 
     def manifest(self):

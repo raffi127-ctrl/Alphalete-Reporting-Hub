@@ -30,8 +30,11 @@ would re-open a day that was clean.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from automations.b2b_metrics import runner
@@ -59,14 +62,43 @@ class _Written:
         return self.calls[-1]
 
 
+@contextlib.contextmanager
+def _stubbed(fake):
+    """Install `fake` as automations.shared.run_manifest, on BOTH resolution
+    paths, with the real module's output dir sandboxed underneath.
+
+    `runner._write_manifest` does `from automations.shared import run_manifest`,
+    and once anything in the process has genuinely imported that submodule, the
+    import resolves through the PACKAGE ATTRIBUTE, not sys.modules — so a
+    sys.modules-only patch is silently bypassed. That made these tests
+    order-dependent: green on their own, and in a full-suite run (where
+    daily_metrics/test_manifest_merge imports run_manifest for real first) they
+    called the REAL write_manifest, left the recorder empty, and failed with an
+    IndexError that pointed nowhere near the cause. Worse than the red: the real
+    call WROTE output/manifests/b2b_metrics.json — a fixture claiming a clean
+    run, for a report that runs on Lucy 2, sitting exactly where the Hub reads
+    run outcomes (Megan 2026-08-25).
+
+    So: patch the attribute too, and point MANIFEST_DIR at a temp dir whatever
+    happens. A stub that degrades to writing production data is not a stub.
+    """
+    import automations.shared as _pkg
+    from automations.shared import run_manifest as _real
+    with tempfile.TemporaryDirectory() as tmp:
+        with mock.patch.dict("sys.modules",
+                             {"automations.shared.run_manifest": fake}), \
+             mock.patch.object(_pkg, "run_manifest", fake), \
+             mock.patch.object(_real, "MANIFEST_DIR", Path(tmp)):
+            yield
+
+
 def _run_write(per_office, *, scoped, prior):
     """Call _write_manifest with run_manifest stubbed; returns the recorder."""
     w = _Written()
     fake = mock.Mock()
     fake.write_manifest = w
     fake.read_manifest = mock.Mock(return_value=prior)
-    with mock.patch.dict("sys.modules",
-                         {"automations.shared.run_manifest": fake}):
+    with _stubbed(fake):
         runner._write_manifest(per_office, scoped=scoped)
     return w
 
@@ -152,8 +184,7 @@ class AFullRunJustStatesTheResult(unittest.TestCase):
         fake.read_manifest = mock.Mock(return_value=FULL_RUN_PRIOR)
         full = [{"key": "carlos", "present": ["sales_metrics"], "missed": [],
                  "deferred": [], "failed": False}]
-        with mock.patch.dict("sys.modules",
-                             {"automations.shared.run_manifest": fake}):
+        with _stubbed(fake):
             runner._write_manifest(full, scoped=False)
         fake.read_manifest.assert_not_called()
 
@@ -178,8 +209,7 @@ class TheGuardRails(unittest.TestCase):
         fake = mock.Mock()
         fake.read_manifest = mock.Mock(side_effect=RuntimeError("disk gone"))
         fake.write_manifest = mock.Mock(side_effect=RuntimeError("disk gone"))
-        with mock.patch.dict("sys.modules",
-                             {"automations.shared.run_manifest": fake}):
+        with _stubbed(fake):
             runner._write_manifest(REPAIR, scoped=True)      # must not raise
             runner._write_manifest(REPAIR, scoped=False)     # must not raise
 
