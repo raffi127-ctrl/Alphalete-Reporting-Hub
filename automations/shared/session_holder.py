@@ -160,16 +160,49 @@ def _export_appstream(ctx) -> int:
     return 0
 
 
+def _ctx_rqst_count(ctx) -> int:
+    """How many applicantstream rqst_ SSO tokens the LIVE context is carrying.
+
+    This is the thing reports actually need. A console can render without one:
+    ColdFusion keeps #searchMC alive off CFID/CFTOKEN, which the holder's own
+    reload refreshes forever."""
+    try:
+        return sum(1 for c in ctx.storage_state().get("cookies", [])
+                   if "applicantstream" in (c.get("domain") or "")
+                   and (c.get("name") or "").lower().startswith("rqst"))
+    except Exception:  # noqa: BLE001 — a probe must never break the holder
+        return 0
+
+
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
     """Keep the AppStream (applicantstream) console session alive in the holder's
     context so unattended reports reuse it. Reload the open console to refresh the
-    ColdFusion session; if it dropped, restore from the saved storage_state (still
-    holds live CFID/CFTOKEN + the rqst SSO token). True if #searchMC is present."""
+    ColdFusion session; if it dropped — or if it renders but carries NO rqst token
+    — restore from the saved storage_state, which is also where a fleet push
+    delivers a freshly minted session. True once the context holds a token.
+
+    A RENDERING CONSOLE IS NOT A LIVE SESSION (Megan 2026-08-25). This used to
+    return True the moment #searchMC was present after a reload, and never reach
+    the storage_state branch. But #searchMC renders off CFID/CFTOKEN alone, and
+    the holder's own 6-minute reload keeps those alive indefinitely — so once the
+    rqst token aged out, the holder sat warming a console with no token, exported
+    0 cookies, and printed ✓ every cycle. Worse, it could not be rescued: a
+    `--appstream-push-fleet` writes a fresh token to APPSTREAM_STORAGE_STATE, and
+    _reuse_appstream_storage_state re-reads that file on every call — but the
+    early return meant it was never called, so the one process whose whole job is
+    to hold that session was the one process a successful re-seed could not
+    reach. Lucy 1 was in that state all morning on 8/25, after an 08:42 push that
+    verified clean on all three machines.
+
+    So the bar is now the TOKEN, not the render."""
     try:
         if "applicantstream" in (page.url or ""):
             page.reload(wait_until="domcontentloaded")
-            if page.locator("#searchMC").count() > 0:
+            if page.locator("#searchMC").count() > 0 and _ctx_rqst_count(ctx):
                 return True
+            if verbose and page.locator("#searchMC").count() > 0:
+                print("-> console renders but carries no rqst token — "
+                      "re-reading storage_state", flush=True)
     except Exception:
         pass
     try:
@@ -256,8 +289,12 @@ def main() -> int:
                 appstream_page = ctx.new_page()
                 if _warm_appstream(ctx, appstream_page, verbose=False):
                     apn = _export_appstream(ctx)
-                    print(f"[{_stamp()}] AppStream ✓ — console restored ({apn} cookies).",
-                          flush=True)
+                    if apn:
+                        print(f"[{_stamp()}] AppStream ✓ — console restored "
+                              f"({apn} cookies).", flush=True)
+                    else:
+                        print(f"[{_stamp()}]  ⚠️ AppStream console warm but NO rqst "
+                              f"token — nothing exported", flush=True)
                 else:
                     print(f"[{_stamp()}]  ⚠️ AppStream session stale — re-seed once:  "
                           f"PYTHONPATH=. .venv/bin/python -m "
@@ -357,8 +394,18 @@ def main() -> int:
                         try:
                             if _warm_appstream(ctx, appstream_page, verbose=False):
                                 apn = _export_appstream(ctx)
-                                print(f"[{_stamp()}] AppStream ✓ — {apn} cookies "
-                                      f"(office-11580 console warm)", flush=True)
+                                # A 0-cookie export is NOT a success. _export_appstream
+                                # returns 0 only when the context carries no rqst token,
+                                # and that is precisely the state reports die on — so
+                                # printing ✓ here is the line that hid this for days
+                                # (Lucy 1, every 6 min, all of 8/25).
+                                if apn:
+                                    print(f"[{_stamp()}] AppStream ✓ — {apn} cookies "
+                                          f"(office-11580 console warm)", flush=True)
+                                else:
+                                    print(f"[{_stamp()}]  ⚠️ AppStream console warm but "
+                                          f"NO rqst token — nothing exported; reports "
+                                          f"will fail until a re-seed lands", flush=True)
                             else:
                                 print(f"[{_stamp()}]  ⚠️ AppStream stale — re-seed:  "
                                       f"--appstream-login", flush=True)
