@@ -4266,13 +4266,11 @@
    "timeout_minutes": 170,
    "_timeout_note": "Heavy: ~30-owner ownerville scrape + Tableau fill (35m). The flat 45m orchestrator cap killed it mid-scrape every run, which corrupted the sheet. Runs last (P3) so a long run blocks nothing. Phase 2's budget is 60m Tue-Sun but 85m on MONDAY, where the shift-day scrape covers a whole week at ~2.5 min/owner instead of one day at ~1.5 (killed at owner 23 of 26 on 2026-08-17 under the flat 60m; 2026-08-10, the Monday before, logged the same 60m timeout). 130 was raised to 170 to hold 85 + 35 + the Sheet work (banners, Monday freeze, colors) with slack; the PHASE caps in daily.py are the real guard against a hung run, this outer cap is only the runaway backstop.",
    "_freshness_note": "Megan's example: least important day-to-day, but should be as current as possible by Monday morning.",
-   "_depends_note": "Runs AFTER org_sales_board via SOFT `after` ordering (Megan 2026-07-13): this is the heaviest run (~90m) and must never start before the board (or the board gets stuck behind it for the browser). But a board GLITCH must never skip this — so `after` (unblocks once the board hits ANY terminal state: done/incomplete/FAILED/missed), NOT depends_on (which would strand it on a board failure).",
+   "_depends_note": "`after: org_sales_board` DROPPED 2026-08-25 — it had become an ordering nobody could enforce. It existed for ONE reason (Megan 2026-07-13): both reports ran on Lucy 1, and this ~90m browser run must not take the browser ahead of the board. The 2026-08-22 move to Lucy 3 ended that reason — separate machine, separate browser — and `after` cannot cross machines anyway: day state is per runner (output/day_state/<date>.json is local), so Lucy 3 never saw Lucy 1's board and ran without waiting. It was silent until day_orchestrator/deps.py started classifying every declared dep (2026-08-24), which is what alerted. The ordering that DOES still hold is `depends_on: tableau_screenshots_box` — also Lucy 3, so it is enforced — plus the cadence.not_before 05:00 ownerville fence. If this ever moves back to Lucy 1, put the `after` back with it.",
    "depends_on": [
     "tableau_screenshots_box"
    ],
-   "after": [
-    "org_sales_board"
-   ],
+   "after": [],
    "scoped_rerun_cmd": "lucy focus_owner",
    "_scoped_rerun_note": "Megan 2026-07-23: when this finishes INCOMPLETE with a few owners still missing, the problem alert re-runs JUST those owners — `lucy focus_owner \"A\" \"B\"` (surgical per-owner ownerville re-scrape, --daily-window, MERGE) — not the whole ~90m report. Owner names come from the manifest failed[] list.",
    "verify": {
