@@ -4,14 +4,32 @@ never surprise-fail at 4am.
 
 WHY THIS EXISTS
 The recruiting console is authenticated by an `rqst` SSO token (+ ColdFusion
-CFID/CFTOKEN) that carries a FIXED, server-set expiry (~daily). The session-holder
-reloads the console every few minutes, which keeps the ColdFusion session from
-*idle*-timing-out — but it CANNOT refresh the rqst token or the Cloudflare
-clearance. Only a fresh, human-cleared login mints a new rqst token, and clearing
-the Cloudflare Turnstile is bot-detection (prohibited + actually blocked). So the
-session dies on the server's schedule and a human MUST re-seed. We can't prevent
-that — but the rqst expiry is a readable timestamp, so we can predict it and
-shrink the human's job to a single 30-second click at a convenient time.
+CFID/CFTOKEN) that carries a FIXED, server-set expiry. The session-holder reloads
+the console every few minutes, which keeps the ColdFusion session from
+*idle*-timing-out — but it CANNOT refresh the rqst token.
+
+WHY THE PING USED TO BE UNSATISFIABLE (Eve 2026-08-24). This module said the
+rqst expiry was "~daily" and that only a human-cleared login could mint one.
+Measured, both are off, and together they made the 6pm/3am ping impossible to
+act on:
+
+  • A freshly-minted rqst lives ~2 HOURS, not a day — measured twice on
+    2026-08-24 (login 20:54 → expiry 22:54; login 21:09 → 23:09). The 24h number
+    belongs to CFID/CFTOKEN riding alongside it. The ping demands a token that
+    survives to 4am + SURVIVAL_BUFFER_MIN (~5:30am), so an evening re-seed is
+    already dead ~3h before the batch it was meant to protect. Pushing it to the
+    fleet doesn't extend it either — the same 2h token lands on every runner.
+  • The unattended rcaptain form login DOES still reach the console: verified
+    2026-08-24 from Windows, no human, `--appstream-form-login` landing on
+    #searchMC twice in a row. `appstream_direct_session(allow_form_login=True)`
+    — the default — therefore re-logs-in whenever the stored session is stale,
+    and THAT self-heal is what carries the 4am batch.
+
+So the stored token's expiry is not a verdict on health, and neither is any
+belief about the login form. Before waking anyone this watch now PROVES the
+self-heal is broken by driving the very login the reports drive
+(`selfheal_ok()`). A ping means the automation genuinely could not log in — the
+one case where the human re-seed below is the fix.
 
 WHAT EVE DOES (everything but the click):
   • PREDICT  — read the rqst expiry from the stored session (cheap, no network,
@@ -32,6 +50,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 from pathlib import Path
 
 from automations.shared.tableau_patchright import (
@@ -148,11 +167,52 @@ def _reseed_cmd() -> str:
     # human-check, so the re-seed happens on WHATEVER machine a human is at
     # (laptop is fine) — the second command then pushes the fresh session to
     # every runner (Lucy 1 primary + Lucy 2 alternate) via the control queue.
+    #
+    # Written for the machine the watch is running on: '.venv/bin/python' is not
+    # a path on Windows, and "on any machine you're at" only holds if the lines
+    # can be pasted where the reader actually is (Eve 2026-08-24). Same
+    # cross-platform rule as the hand-built `when` string in session_status().
+    mod = "automations.shared.tableau_patchright"
+    if os.name == "nt":
+        py = r".\.venv\Scripts\python.exe"
+        pre = "$env:PYTHONPATH='.'; $env:PYTHONUTF8='1'; "
+    else:
+        py, pre = ".venv/bin/python", "PYTHONPATH=. "
     return ("# run from your repo folder, on any machine you're at:\n"
-            "PYTHONPATH=. .venv/bin/python -m automations.shared.tableau_patchright "
-            "--appstream-login\n"
-            "PYTHONPATH=. .venv/bin/python -m automations.shared.tableau_patchright "
-            "--appstream-push-fleet")
+            f"{pre}{py} -m {mod} --appstream-login\n"
+            f"{pre}{py} -m {mod} --appstream-push-fleet")
+
+
+def selfheal_ok(verbose: bool = False) -> tuple[bool, str]:
+    """Drive the UNATTENDED rcaptain form login exactly as the 4am reports do,
+    and report whether it reached the office console (#searchMC).
+
+    This is the only honest health check for AppStream: the reports don't consume
+    the stored token, they re-mint one. It costs ~40s and a headed browser, so
+    watch() calls it ONLY when the cheap expiry check says "stale" AND it is
+    about to ping a human — at most twice a day.
+
+    Side effect, and the point: a successful probe leaves a fresh session in
+    APPSTREAM_STORAGE_STATE, so on the machine it runs on the probe IS the
+    re-seed. It does NOT push to the other runners — a human still runs
+    --appstream-push-fleet for that, which is why a failure still pings.
+
+    'profile busy' counts as healthy — another AppStream report is holding a live
+    session right now, which is proof the login works."""
+    from automations.shared.tableau_patchright import (
+        AppStreamBusy, appstream_direct_session)
+    try:
+        with appstream_direct_session(force_form_login=True, allow_form_login=True,
+                                      headless=False, verbose=verbose,
+                                      yield_if_busy=True) as page:
+            if page.locator("#searchMC").count() > 0:
+                return True, "unattended rcaptain login reached the console"
+            return False, "unattended login did not render #searchMC"
+    except AppStreamBusy:
+        return True, "profile busy — another AppStream report holds a live session"
+    except Exception as e:                                      # noqa: BLE001
+        return False, "unattended login failed: {}: {}".format(
+            type(e).__name__, str(e)[:110])
 
 
 def _ov_reseed_cmd() -> str:
@@ -218,7 +278,9 @@ def _reseed_alert_text(stale, when: str) -> str:
     lines = [f"⚠️ *Session re-seed needed* {when}."]
     for stt, reseed in stale:
         lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
-                     f"  Fix from any machine you're at (clear the check once):\n```{reseed}```")
+                     f"  The automated login already tried and could NOT recover "
+                     f"this one. Fix from any machine you're at (clear the check "
+                     f"once):\n```{reseed}```")
     lines.append("\nThe moment it's healthy I'll auto-run what I can — "
                  "you don't have to touch anything else.")
     return "\n".join(lines)
@@ -228,10 +290,13 @@ def _reseed_alert_text(stale, when: str) -> str:
 # The watch — one evaluation
 # ---------------------------------------------------------------------------
 
-def watch(dry_run: bool = False) -> dict:
+def watch(dry_run: bool = False, probe: bool = True) -> dict:
     """One evaluation across BOTH sessions (AppStream recruiting console +
     ownerville/Tableau). Predict / ping / recover. Safe to call every few minutes
-    (throttled to one ping + one rerun-batch per day). Never raises."""
+    (throttled to one ping + one rerun-batch per day). Never raises.
+
+    probe=False skips the live AppStream self-heal check and judges by the stored
+    token's expiry alone — the old, cry-wolf behaviour. Debugging only."""
     state = _load_state()
     now = _now()
     today = now.date().isoformat()
@@ -246,6 +311,15 @@ def watch(dry_run: bool = False) -> dict:
         ("ownerville", session_status(OWNERVILLE_STORAGE_STATE, "Ownerville"),
          _ov_reseed_cmd(), []),
     ]
+
+    # Which ping window (if any) is open right now — computed BEFORE the loop
+    # because the AppStream self-heal probe is expensive and only worth running
+    # when we are actually about to wake someone.
+    evening_due = (now.hour >= PING_HOUR
+                   and state.get("alerted_evening_for") != today)
+    prebatch_due = (PRE_BATCH_PING_HOUR <= now.hour < MORNING_WINDOW[0]
+                    and state.get("alerted_prebatch_for") != today)
+    ping_due = evening_due or prebatch_due
 
     stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive the batch
     healthy_all = True
@@ -263,6 +337,20 @@ def watch(dry_run: bool = False) -> dict:
                    else " — but there is no export file (holder never ran)"
             stt = {**stt, "reason": stt["reason"] + note}
         healthy = token_ok and export_fresh
+        # AppStream only: the expiry check alone cries wolf every night (see the
+        # module docstring — a fresh token can't reach 4am, so "stale at 6pm" is
+        # the normal, healthy state). Before pinging, PROVE the self-heal is
+        # broken by driving the same login the reports drive. Success also
+        # re-seeds this machine, so the probe fixes what it checks.
+        if key == "appstream" and not healthy and ping_due and probe:
+            probe_ok, why = selfheal_ok()
+            if probe_ok:
+                healthy = True
+                stt = {**stt, "reason": "{} self-heal OK — {} (stored token: {})"
+                                        .format(stt["what"], why, stt["reason"])}
+            else:
+                stt = {**stt, "reason": "{} — and the self-heal is BROKEN: {}"
+                                        .format(stt["reason"], why)}
         healthy_all = healthy_all and healthy
         was_ok = state.get(f"last_ok_{key}")
         if healthy:
@@ -287,12 +375,13 @@ def watch(dry_run: bool = False) -> dict:
     #   • 3am — a last-chance check ~1h before the 4am batch, catching a session
     #           that went stale AFTER the evening ping (which used to surface only
     #           as a 7am surprise). Both re-seeds need a human at the mini.
+    # AppStream can only reach here after FAILING the live self-heal probe, so a
+    # ping about it is a real "the automation cannot log in", not a countdown.
     if stale:
-        if now.hour >= PING_HOUR and state.get("alerted_evening_for") != today:
+        if evening_due:
             _alert(_reseed_alert_text(stale, "before tomorrow's 4am reports"), dry_run)
             state["alerted_evening_for"] = today
-        elif (PRE_BATCH_PING_HOUR <= now.hour < MORNING_WINDOW[0]
-              and state.get("alerted_prebatch_for") != today):
+        elif prebatch_due:
             _alert(_reseed_alert_text(stale, "before the 4am batch (~1h out)"), dry_run)
             state["alerted_prebatch_for"] = today
 
@@ -313,6 +402,12 @@ def main(argv=None) -> int:
     ap.add_argument("--test-ping", action="store_true",
                     help="send a test Slack DM to the alert recipients to prove the path")
     ap.add_argument("--dry-run", action="store_true", help="no Slack / no enqueue")
+    ap.add_argument("--probe", action="store_true",
+                    help="run the AppStream self-heal probe now and exit (drives "
+                         "the unattended rcaptain login -> re-seeds this machine)")
+    ap.add_argument("--no-probe", action="store_true",
+                    help="judge AppStream by the stored token's expiry alone "
+                         "(the old cry-wolf behaviour - debugging only)")
     a = ap.parse_args(argv)
     if a.status:
         for path, what in ((APPSTREAM_STORAGE_STATE, "AppStream"),
@@ -326,7 +421,12 @@ def main(argv=None) -> int:
                "this, the 6pm re-seed alerts will reach you. No action needed.",
                dry_run=False)
         return 0
-    res = watch(dry_run=a.dry_run)
+    if a.probe:
+        ok, why = selfheal_ok(verbose=True)
+        print("[appstream_watch] self-heal probe: {} — {}".format(
+            "OK" if ok else "BROKEN", why))
+        return 0 if ok else 1
+    res = watch(dry_run=a.dry_run, probe=not a.no_probe)
     print(f"[appstream_watch] survives next 4am batch: {res['survives_next_4am_batch']} "
           f"(stale: {res['stale'] or 'none'}; needs valid until {res['next_threshold']})")
     return 0
