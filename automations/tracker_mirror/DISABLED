@@ -4,3 +4,21 @@ Recruiting Dashboard are live again — each holds
 (the NEW<->OLD grant already existed, no Allow click was needed). Running the
 ferry now would OVERWRITE those formulas with static values. Delete this file
 only if the live imports are torn back out.
+
+CHECKED 2026-08-24 (Megan's session, same evening) — the premise above did NOT
+hold when measured. Scanned all 21 manager tabs in the Recruiting Dashboard:
+every one is STATIC VALUES, zero IMPORTRANGE (full A1:Z1000 formula scan on 8 of
+them, 0 hits), and their contents match the old tracker's MIRROR staging tabs
+row-for-row — the signature of this job's last write, not of a live import.
+Likely the formulas were restored and then clobbered by the unpublished 9:35
+ferry pass before this file was written.
+
+So nothing is refreshing those tabs. As of this check they show 8/20/2026 data
+(Salik Mallick: 8/13), and all 21 display Report Date as a raw serial (46254)
+instead of a date — the destination column has no date number-format, so the
+UNFORMATTED_VALUE serials from ef64414 land bare. That formatting bug is real
+whether or not the ferry comes back.
+
+Left as-is deliberately: confirm with Carlos before deleting this file, in case
+he is mid-restore. If he isn't, deleting it resumes the ferry at 7:30 and it
+now publishes to the Hub, so the card will actually green.
