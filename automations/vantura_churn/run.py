@@ -175,9 +175,11 @@ def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
     and Rajendra J (Internet) — all posted 7/25, all sitting at the top of the
     tab's own roll-off helper the day before, all correctly dropped by us and
     still counted by the dashboard. Re-summarising the same Order Log against
-    YESTERDAY's cutoff gives 25/389 = 6.43% vs the dashboard's 25/391 = 6.40%:
-    a textbook reconciliation. Our numbers were right and the gate blocked the
-    write anyway, so the board kept Sunday's figures all day.
+    YESTERDAY's cutoff gave 25/390 vs the dashboard's base 391 / 6.40% — a
+    textbook reconciliation (measured, not predicted: that is the line this
+    branch logged on the run that finally wrote the board). Our numbers were
+    right and the gate blocked the write anyway, so the board sat on Sunday's
+    figures until 07:14.
 
     The rescue is deliberately narrow: only ONE day back, and the shifted
     numbers must clear the SAME tolerances — a genuine structural break (wrong
