@@ -130,8 +130,49 @@ def verdict(text: str, today: dt.date = None) -> str:
     return ""
 
 
-def screen(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
+ABSENT = "zzz-nobody-has-this@example.invalid"
+
+
+def _canaries(page, known_sent: str, today: dt.date) -> None:
+    """Prove the search still works BEFORE trusting a word it says.
+
+    This reads a screen nobody versions, and it can break in two directions
+    that both look like a clean run:
+
+      it stops FILTERING  -- every search returns the whole list, so everyone
+                             reads "already has a packet" and nobody is sent.
+                             Annoying, visible, recoverable.
+      it stops FINDING    -- every search returns nothing, so everyone reads
+                             clear and the batch mails a second packet to
+                             people who already have one. That cannot be undone,
+                             and it is the exact failure this check exists to
+                             prevent.
+
+    So: an address that cannot exist must come back clear, and a packet WE sent
+    and logged ourselves must come back blocked. Costs ~20s once per run.
+    """
+    if verdict(_search(page, ABSENT), today):
+        raise RuntimeError(
+            "Blue Ink's search isn't filtering -- an address that cannot exist "
+            "came back with a packet. Everyone would look already-sent. "
+            "Rerun `--probe-sent` and remap before trusting this.")
+    if known_sent:
+        if not verdict(_search(page, known_sent), today):
+            raise RuntimeError(
+                "Blue Ink's search can't find a packet this report sent itself "
+                f"({known_sent}, in the Blue Ink Log) -- so a clear result "
+                "means nothing right now, and sending would duplicate. Rerun "
+                "`--probe-sent` and remap.")
+
+
+def screen(people: List[NewStart], headless: bool = True,
+           known_sent: str = "") -> Dict[str, str]:
     """{lowercased email: what is blocking} for everyone who already has one.
+
+    `known_sent` is an address this report has already sent and logged -- the
+    positive canary. Pass one whenever the ledger has any; without it the only
+    check on the search is the negative one, and a search that finds NOTHING
+    would sail through.
 
     One browser for the whole roster -- relaunching per person would turn a
     ~7-minute check into an hour.
@@ -154,6 +195,7 @@ def screen(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
                     "The Blue Ink session on this machine has expired. At the "
                     "keyboard here run: python -m "
                     "automations.blueink_docs.session --login")
+            _canaries(page, known_sent, today)
             for person in todo:
                 email = person.email.strip()
                 why = verdict(_search(page, email), today)

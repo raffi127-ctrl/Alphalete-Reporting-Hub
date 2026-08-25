@@ -56,10 +56,64 @@ def main() -> int:
         bad += not ok
         print(("  ok  " if ok else "FAIL  ") + name.ljust(30)
               + ("blocked: " + got if got else "clear"))
+    bad += canaries()
     print()
     print("all good" if not bad else str(bad) + " FAILURE(S)")
     return 1 if bad else 0
 
+
+
+# --- the canaries -----------------------------------------------------------
+# The check reads a screen nobody versions, and it can break in two directions
+# that both LOOK like a clean run. These prove each one is caught.
+
+_HAS = "Showing 2 of 2 Sent8/24/26 Raf Documents AP Sent8/24/26 Angelica"
+_NONE = "Draft No Envelopes Sent Sort:Sent No Envelopes Completed Sort:Sent"
+_WHOLE_LIST = "Showing 40 of 436 Sent8/24/26 Employee Sent8/17/26 Employee"
+
+
+class _FakePage(object):
+    def __init__(self, mode):
+        self.mode = mode
+
+    def reply(self, term):
+        if self.mode == "healthy":
+            return _HAS if term == "known@x.com" else _NONE
+        if self.mode == "not_filtering":       # every search returns everything
+            return _WHOLE_LIST
+        return _NONE                           # every search returns nothing
+
+
+CANARY_CASES = [
+    # (name, mode, known-sent address, should it stop the run?)
+    ("search working", "healthy", "known@x.com", False),
+    # Everyone would read already-sent and nobody would be mailed.
+    ("search stopped filtering", "not_filtering", "known@x.com", True),
+    # Everyone would read clear and the batch would send SECOND packets.
+    ("search finds nothing", "finds_nothing", "known@x.com", True),
+    # First ever run: nothing logged, so there is no positive canary to use.
+    ("nothing logged yet", "finds_nothing", "", False),
+]
+
+
+def canaries() -> int:
+    import automations.blueink_docs.recent_ui as R
+    real = R._search
+    bad = 0
+    try:
+        R._search = lambda page, term: page.reply(term)
+        for name, mode, known, want_stop in CANARY_CASES:
+            try:
+                R._canaries(_FakePage(mode), known, TODAY)
+                stopped, detail = False, "ran"
+            except RuntimeError as exc:
+                stopped, detail = True, str(exc).split(" -- ")[0]
+            ok = stopped == want_stop
+            bad += not ok
+            print(("  ok  " if ok else "FAIL  ") + name.ljust(30) + detail[:70])
+    finally:
+        R._search = real
+    return bad
 
 if __name__ == "__main__":
     sys.exit(main())
