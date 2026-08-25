@@ -56,8 +56,19 @@ _HUB_CARD = {
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
     "org_sales_board_email": "sales-board-screenshot-email",
-    "country_sales_board_email": "country-sales-board-email",
-    "all_units_board_email": "all-units-board-email",
+    # LIVE, and its hyphenated card is gone (Megan 2026-08-25). It published to
+    # `country-sales-board-email` through 2026-08-02; that card no longer exists
+    # in either set, so since then the phantom guard has been auto-creating and
+    # using the library card `country_sales_board_email` — which is where every
+    # run since (incl. 2026-08-25 09:54 success) actually landed. Name the card it
+    # really uses instead of a dead id the guard has to route around.
+    "country_sales_board_email": "country_sales_board_email",
+    # all_units_board_email: RETIRED 2026-07-31 — the All Units board stopped
+    # being its own email and became the second section of the Org Sales Board
+    # email (org_sales_board.screenshot_email, ALLUNITS_PREFIX). Its board entry
+    # is gone from board_emails.boards, so the command now exits "unknown board
+    # all-units". Last run 2026-08-01; its card is gone too. Mapping removed
+    # rather than repointed — there is nothing left to publish.
     # The daily 'All Units' board FILL (all_campaigns_board, runs right after the
     # org board every day) was self-wiring to its own auto-registered
     # all_campaigns_board card, leaving the real hand-built "All Units Org Sales
@@ -199,7 +210,11 @@ _HUB_CARD = {
     # Churn variants that belong to an existing card, not their own.
     "vantura_churn_daily": "vantura-churn",
     "churn_eveliz_fix": "owners-metrics-churn",
-    "frontier_opt": "frontier-opt-data-pull",
+    # frontier_opt: RETIRED 2026-08-23 (Megan: "we no longer use anything with
+    # frontier"). Sunday agent uninstalled, on_scheduler false, and no frontier
+    # card exists in either set. The module is kept for history / a one-off
+    # `lucy rerun frontier_opt`; if that ever runs, the resolver registers it a
+    # library card on the spot. Mapping removed — it named a card that is gone.
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",
     "social_inbox": "social-media-posting",
@@ -235,7 +250,12 @@ _HUB_CARD = {
     # Its wrapper publishes FAILURES every time but SUCCESS only once a day —
     # publishing all 84 would add ~2.5k rows/month to Hub Activity and slow
     # every dashboard/digest read for one report's heartbeat.
-    "resume_pushing": "resume-pushing",
+    # Still runnable (merged into applicant_push 2026-08-10, but the entry is kept
+    # so `lucy rerun resume_pushing` works) and it still publishes — 2026-08-21
+    # success. Its hyphenated card went away after 2026-08-04; every run since has
+    # landed on the library card `resume_pushing` via the phantom guard, so that
+    # is the card this should have named all along.
+    "resume_pushing": "resume_pushing",
     # applicant_push: the unified batch + OAT-leftovers push (office 11580) that
     # supersedes resume_pushing + oat_processing on one warm CDP session.
     "applicant_push": "applicant-push",

@@ -38,6 +38,73 @@ def _card_ids() -> set:
     return {c["id"] for c in AUTOMATED_REPORTS if c.get("id")}
 
 
+# Library cards keep the UNDERSCORE report_id as their id (hub_coverage:
+# "The created library card's id is the underscore report_id"), and hand-written
+# cards in hub_cards.py are hyphenated. So a HYPHENATED target that is not a
+# hardcoded card cannot be a library card either — it can only be a card that
+# never existed or has since been deleted, which is the whole bug class below.
+# One documented exception exists in the other direction (a hyphenated LIBRARY
+# card), so it is listed rather than silently widening the rule.
+_HYPHENATED_LIBRARY_CARDS = {"indeed-source-report"}
+
+
+class NoTargetNamesADeletedCard(unittest.TestCase):
+    """The dangling-target bug class, made offline-checkable.
+
+    Four targets named cards that no longer exist anywhere (2026-08-25):
+    `country-sales-board-email` and `resume-pushing` (both cards deleted while
+    their reports kept running), `all-units-board-email` (report retired
+    2026-07-31) and `frontier-opt-data-pull` (report retired 2026-08-23).
+
+    Nothing was lost — hub_coverage's PHANTOM GUARD falls through to
+    slug-match/auto-create precisely so a live report always lands somewhere
+    real. But the map was then describing cards that didn't exist, every run
+    paid for the guard, and if anyone ever recreated a card under the old
+    hyphenated name the runs would silently move back onto it.
+    """
+
+    def test_no_hyphenated_target_is_missing_from_the_hardcoded_cards(self):
+        from automations.day_orchestrator import hub_coverage
+
+        hard = hub_coverage._hardcoded_card_ids()
+        dangling = {rid: card for rid, card in hub_publish._HUB_CARD.items()
+                    if "-" in card
+                    and card not in hard
+                    and card not in _HYPHENATED_LIBRARY_CARDS}
+        self.assertEqual(dangling, {},
+                         "hyphenated _HUB_CARD targets that are not hardcoded "
+                         "cards cannot exist as library cards either: "
+                         + repr(dangling))
+
+    def test_the_four_retired_or_deleted_targets_are_gone(self):
+        targets = set(hub_publish._HUB_CARD.values())
+        for dead in ("country-sales-board-email", "all-units-board-email",
+                     "frontier-opt-data-pull", "resume-pushing"):
+            with self.subTest(card=dead):
+                self.assertNotIn(dead, targets)
+
+    def test_the_two_live_reports_now_name_the_card_they_actually_use(self):
+        """Both publish to a library card, whose id is the report_id itself."""
+        for rid in ("country_sales_board_email", "resume_pushing"):
+            with self.subTest(report_id=rid):
+                self.assertEqual(hub_publish._HUB_CARD.get(rid), rid)
+
+    def test_the_two_retired_reports_are_no_longer_mapped(self):
+        for rid in ("all_units_board_email", "frontier_opt"):
+            with self.subTest(report_id=rid):
+                self.assertNotIn(rid, hub_publish._HUB_CARD)
+
+    def test_sharing_one_card_between_passes_is_still_allowed(self):
+        """The rule must not outlaw the several-report_ids-one-card pattern —
+        promo_checkin, b2b_dispositions and owner-chat-texts all rely on it."""
+        for rid, card in (("promo_checkin_mon", "promo_checkin"),
+                          ("promo_checkin_final", "promo_checkin"),
+                          ("b2b_dispositions_hourly", "b2b_dispositions"),
+                          ("b2b_dispositions_final", "b2b_dispositions")):
+            with self.subTest(report_id=rid):
+                self.assertEqual(hub_publish._HUB_CARD.get(rid), card)
+
+
 class OwnerChatTextsReachesItsCard(unittest.TestCase):
     """The specific card this test module was written for."""
 
