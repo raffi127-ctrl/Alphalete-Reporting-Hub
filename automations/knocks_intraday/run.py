@@ -74,14 +74,16 @@ def _slug(name: str) -> str:
 
 
 def _caption(office_label: str, day: dt.date, partial: bool) -> str:
-    """What rides above the image. A 9 PM board is a partial day and a
-    screenshot of it outlives this message, so the caption says so — the same
-    rule the on-demand board follows for today."""
+    """What rides above the image.
+
+    A 9 PM board is a partial day, so it carries the time it was taken —
+    a screenshot of it outlives this message. Just the stamp, though: how the
+    morning re-pull works is our plumbing, not something the channel needs
+    reading every night (Megan 2026-08-25)."""
     when = f"{day.strftime('%B')} {day.day}, {day.year}"
     cap = f"{POST_EMOJI} *Total Knocks — {SLOT_LABEL} — {office_label} — {when}*"
     if partial:
-        cap += ("\n_As of 9:00 PM Central. Reps can still knock after this, so "
-                "tomorrow morning's board re-pulls the day and may read higher._")
+        cap += "\n_As of 9:00 PM Central._"
     return cap
 
 

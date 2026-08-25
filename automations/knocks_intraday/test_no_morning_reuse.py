@@ -231,17 +231,24 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
 
 
 class TheCaptionSaysItIsPartial(unittest.TestCase):
-    """A screenshot of a 9 PM board outlives the message under it."""
+    """A screenshot of a 9 PM board outlives the message under it, so the
+    board still carries the time it was taken — just the stamp, though."""
 
-    def test_todays_board_says_the_day_is_not_over(self):
+    def test_todays_board_carries_the_time_it_was_taken(self):
         with mock.patch.object(intraday, "central_today", lambda: TODAY):
             cap = intraday._caption("Cody Cannon", TODAY, True)
-        self.assertIn("9:00 PM Central", cap)
-        self.assertIn("re-pulls the day", cap)
+        self.assertIn("As of 9:00 PM Central", cap)
+
+    def test_it_does_not_explain_the_morning_re_pull(self):
+        # Megan 2026-08-25: the stamp stays, the explanation goes — how the
+        # morning re-pulls is plumbing, not nightly reading for the channel.
+        cap = intraday._caption("Cody Cannon", TODAY, True)
+        for phrase in ("re-pulls", "read higher", "still knock", "tomorrow"):
+            self.assertNotIn(phrase, cap)
 
     def test_a_finished_day_carries_no_partial_note(self):
         cap = intraday._caption("Cody Cannon", dt.date(2026, 8, 20), False)
-        self.assertNotIn("still knock", cap)
+        self.assertNotIn("As of", cap)
 
 
 class TheRoster(unittest.TestCase):
