@@ -5,6 +5,10 @@ Fills a fresh week column on the "Captainship Head count" tab of the
 live from Tableau (ATTTRACKER-B2B / D2D1-PAGERV3, current week). Recomputes
 the Total (SUM formula) and sorts the active owners high->low.
 
+WHO COUNTS comes from the Org Sales Board's captainship block, not from whichever
+rows the tab happens to carry — an owner who joined gets a row, an owner who left
+is blanked and hidden. See ``roster.py``.
+
 Idempotent: if this week's column already exists it refreshes in place
 instead of inserting a duplicate (override with --force-insert).
 
@@ -13,6 +17,11 @@ instead of inserting a duplicate (override with --force-insert).
   python -m automations.carlos_captainship_headcount.run --week 2026-07-05
   python -m automations.carlos_captainship_headcount.run --force-insert
   python -m automations.carlos_captainship_headcount.run --skip-download
+
+CATCHING UP A WEEK THAT ALREADY CLOSED needs --last-week too — the view has no
+week filter, so --week on its own relabels the column and writes today's numbers:
+
+  … --week 2026-08-23 --last-week
 """
 from __future__ import annotations
 
@@ -59,35 +68,60 @@ def _run(args) -> dict:
           f"· {'DRY-RUN' if args.dry_run else 'LIVE'}", flush=True)
 
     # 1) Rep Counts from Tableau (live pull unless --skip-download reuses cache).
+    which = "LAST week (closed)" if args.last_week else "the CURRENT week"
     if args.skip_download:
-        counts = tableau_pull.parse_counts(tableau_pull.CACHE)
-        print(f"  Tableau (cached): {len(counts)} B2B ICD rep counts", flush=True)
+        counts = tableau_pull.parse_counts(
+            tableau_pull.cache_path(args.last_week))
+        print(f"  Tableau (cached, {which}): {len(counts)} B2B ICD rep counts",
+              flush=True)
     else:
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(verbose=True) as page:
-            counts = tableau_pull.pull_rep_counts(page=page, verbose=True)
-        print(f"  Tableau: {len(counts)} B2B ICD rep counts pulled", flush=True)
+            counts = tableau_pull.pull_rep_counts(page=page, verbose=True,
+                                                  last_week=args.last_week)
+        print(f"  Tableau ({which}): {len(counts)} B2B ICD rep counts pulled",
+              flush=True)
     if not counts:
         raise RuntimeError("Tableau returned no rep counts — aborting "
                            "(nothing filled).")
 
-    # 2) Fill the sheet.
+    # 2) Who is on the captainship right now — the Org Sales Board block, not
+    #    whatever rows this tab happens to carry. See roster.py for why.
+    roster_names = None
+    alias_table = None
+    if not args.no_roster:
+        from automations.carlos_captainship_headcount import roster as croster
+        from automations.focus_office_att.aliases import load_aliases
+        roster_names = croster.board_roster()
+        alias_table = load_aliases()
+
+    # 3) Fill the sheet.
     ws, sh = sheet_fill.open_tab()
     rep = sheet_fill.run_fill(ws, sh, counts, we,
                               dry_run=args.dry_run,
-                              force_insert=args.force_insert)
+                              force_insert=args.force_insert,
+                              roster=roster_names,
+                              alias_table=alias_table)
 
     print("\n=== " + ("PLAN" if args.dry_run else "RESULT") + " ===", flush=True)
     for line in rep["log"]:
         print(line if line.startswith("  ") else "  " + line, flush=True)
     print(f"\n  Total {rep['label']} = {rep['total']}  "
           f"({len(rep['matched'])} owners matched)", flush=True)
+    if rep.get("added"):
+        print("  ➕ new on the captainship: " + ", ".join(rep["added"]),
+              flush=True)
+    if rep.get("departed"):
+        print("  ➖ off the captainship (blanked + hidden, history kept): "
+              + ", ".join(rep["departed"]), flush=True)
     if rep["ambiguous"]:
         print("  ⚠ AMBIGUOUS (pin one in sheet_fill.ALIASES): "
               + "; ".join(rep["ambiguous"]), flush=True)
     if rep["unmatched"]:
-        print("  ⚠ NOT FOUND in Tableau — possible roster change; if an owner "
-              "left Carlos' team move+hide their row, if new add a row: "
+        print("  ⚠ NOT FOUND in Tableau — these owners ARE on Carlos' "
+              "captainship but the crosstab has no row for them: either a "
+              "zero-sales week, or Tableau spells them differently (that goes "
+              "in the 'ICD Aliases' tab, never a patch in this module): "
               + ", ".join(rep["unmatched"]), flush=True)
 
     # --- DELIVERY: screenshot the past-4-weeks view + DM it to Carlos + Maud ---
@@ -142,6 +176,15 @@ def main() -> int:
                     help="insert a new column even if this week's exists")
     ap.add_argument("--skip-download", action="store_true",
                     help="reuse the cached Tableau CSV (no live pull)")
+    ap.add_argument("--last-week", action="store_true",
+                    help="pull the 'ICD Summary (LW)' sheet instead of (TW) — "
+                         "the week that has CLOSED. Use it for any catch-up "
+                         "run: the view has no week filter, so --week alone "
+                         "relabels the column without changing the numbers")
+    ap.add_argument("--no-roster", action="store_true",
+                    help="skip the captainship reconciliation and fill whatever "
+                         "rows the tab has (the pre-2026-08-25 behaviour) — for "
+                         "when the Org Sales Board is mid-edit")
     ap.add_argument("--no-image", action="store_true",
                     help="skip the screenshot + Slack DM (sheet fill only)")
     ap.add_argument("--no-send", action="store_true",

@@ -22,6 +22,15 @@ REP_COUNT_COL = "Rep Count"
 OWNER_COL = "ICD Owner Name"
 CACHE = DOWNLOAD_DIR / "captainship_headcount_d2d1.csv"
 
+# The SAME dashboard also publishes "ICD Summary - ATT (V2) (LW)" — LW = Last
+# Week. It is what makes a re-run for a week that has already closed honest:
+# there is no week filter on this view (`week_filter_field=None`), so `--week`
+# on its own only changes the COLUMN LABEL while the numbers stay whatever
+# "current week" happens to hold at download time. Pull LW instead and a
+# catch-up run writes the week it says it is writing.
+LW_THUMBNAIL = "ICD Summary - ATT (V2) (LW)"
+CACHE_LW = DOWNLOAD_DIR / "captainship_headcount_d2d1_lw.csv"
+
 
 def to_int(s: str) -> Optional[int]:
     """Tableau rep-count cell -> int. '-' / blank -> 0; junk -> None."""
@@ -46,12 +55,27 @@ def parse_counts(csv_path: Path) -> Dict[str, int]:
     return counts
 
 
-def pull_rep_counts(page=None, verbose: bool = True,
-                    out_path: Optional[Path] = None) -> Dict[str, int]:
-    """Live download the current-week ICD Summary crosstab and return
-    {ICD Owner Name (lower): Rep Count}. Pass a shared patchright `page`
-    to reuse one ownerville login."""
+def view_config(last_week: bool = False):
+    """The d2d1 view, aimed at the This-Week or Last-Week ICD Summary sheet."""
     view = next(v for v in VIEWS if v.key == "d2d1")
-    out = out_path or CACHE
-    download_view_crosstab(view, out, verbose=verbose, page=page)
+    if not last_week:
+        return view
+    from dataclasses import replace
+    return replace(view, key="d2d1_lw", sheet_thumbnail_match=LW_THUMBNAIL)
+
+
+def cache_path(last_week: bool = False) -> Path:
+    return CACHE_LW if last_week else CACHE
+
+
+def pull_rep_counts(page=None, verbose: bool = True,
+                    out_path: Optional[Path] = None,
+                    last_week: bool = False) -> Dict[str, int]:
+    """Live download the ICD Summary crosstab and return
+    {ICD Owner Name (lower): Rep Count}. Pass a shared patchright `page`
+    to reuse one ownerville login. `last_week=True` reads the LW sheet — the
+    week that has CLOSED, which is the one a catch-up run means."""
+    out = out_path or cache_path(last_week)
+    download_view_crosstab(view_config(last_week), out, verbose=verbose,
+                           page=page)
     return parse_counts(out)
