@@ -96,3 +96,39 @@ class PinCampaign(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BothKnocksReportsAgree(unittest.TestCase):
+    """The weekly report used to decide the campaign itself ("" if nds else
+    "3"), so the two knocks reports could disagree about the same office —
+    which is how Isaiah ended up pinned by one and unpinned by the other."""
+
+    def test_weekly_rows_take_their_campaign_from_knocks_pull(self):
+        from automations.weekly_knock_dispositions import offices as W
+        rows = W.enrolled_offices()
+        self.assertTrue(rows, "no enrolled offices to check")
+        for r in rows:
+            with self.subTest(office=r["name"]):
+                self.assertEqual(r["campaign_id"],
+                                 KP.campaign_for_office(r["name"]))
+
+    def test_no_enrolled_office_skips_the_pin(self):
+        # An empty campaign means "don't pin", which leaves the session on
+        # whatever was last selected. Nothing should be in that state today.
+        from automations.weekly_knock_dispositions import offices as W
+        blank = [r["name"] for r in W.enrolled_offices()
+                 if not r["campaign_id"]]
+        self.assertEqual(blank, [])
+
+    def test_an_override_reaches_the_weekly_report_too(self):
+        from automations.weekly_knock_dispositions import offices as W
+        rows = W.enrolled_offices()
+        target = rows[0]["name"]
+        from automations.focus_office_att.aliases import _norm_name
+        KP.CAMPAIGN_OVERRIDES[_norm_name(target)] = "16"
+        try:
+            got = next(r["campaign_id"] for r in W.enrolled_offices()
+                       if r["name"] == target)
+            self.assertEqual(got, "16")
+        finally:
+            KP.CAMPAIGN_OVERRIDES.pop(_norm_name(target), None)

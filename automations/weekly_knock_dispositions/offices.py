@@ -44,7 +44,7 @@ INCLUDE_ENROLLED = True     # Raf's go-wide, 2026-08-22: "for everyone
                             # this for them on Sunday"
 
 RAF = {
-    "name": "Rafael Hidalgo", "ov": "master", "campaign_id": "3",
+    "name": "Rafael Hidalgo", "ov": "master", "campaign_id": "3",  # see _campaign_for
     "pss_owner": "Rafael Hidalgo",
     "channel_id": "", "channel_name": "#alphalete-sales",
     "header_label": "", "slack_token_file": "",
@@ -96,6 +96,21 @@ def compare_targets(host: str) -> list[str]:
     return out
 
 
+def _campaign_for(name: str) -> str:
+    """The TeleMapper campaign for `name`, from the ONE place that decides it.
+
+    Imported lazily: knocks_pull pulls in the ownerville/patchright stack at
+    module scope, and this module is imported by things that only want the
+    roster. A failure here keeps the historical default rather than silently
+    dropping the pin — an unpinned session is exactly the drift this is for.
+    """
+    try:
+        from automations.rashad_metrics.knocks_pull import campaign_for_office
+    except Exception:  # noqa: BLE001
+        return "3"
+    return campaign_for_office(name)
+
+
 def enrolled_offices() -> list[dict]:
     """WKD rows for every office whose metrics thread already carries the
     Knocks/Time-Gaps board — mirrors the runner's section resolution:
@@ -116,10 +131,17 @@ def enrolled_offices() -> list[dict]:
         if not has_kg:
             continue
         nds = bool(getattr(o, "nds", False)) or key in OM.NDS_OFFICES
+        _name = o.knocks_office or o.owner
         out.append({
-            "name": o.knocks_office or o.owner,
+            "name": _name,
             "ov": "impersonate",
-            "campaign_id": "" if nds else "3",
+            # NOT derived from `nds` any more. NDS describes the BUSINESS, not
+            # the campaign: Isaiah is NDS and still knocks RES AT&T (Megan
+            # checked his ownerville picker 2026-08-25 — BASE Energy / RES
+            # AT&T / RES-ENERGYWELL). Skipping his pin left the session free
+            # to drift onto another campaign and return zero rows silently.
+            # knocks_pull owns the answer so both knocks reports agree.
+            "campaign_id": _campaign_for(_name),
             # NDS sales live in the NDS workbook, not the D2D PSS this
             # report pulls — apps stay blank + flagged until that's wired.
             "pss_owner": None if nds else o.owner,

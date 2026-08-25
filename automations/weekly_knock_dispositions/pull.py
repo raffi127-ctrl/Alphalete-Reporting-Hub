@@ -301,7 +301,9 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
                                f"{page.url!r} after login.")
 
     try:
-        if cfg.get("campaign_id"):     # NDS offices have no fiber campaign
+        # Empty = an office PROVEN to knock something else (none today) — see
+        # knocks_pull.CAMPAIGN_OVERRIDES. It is no longer an NDS thing.
+        if cfg.get("campaign_id"):
             _pin_campaign(page, rqst, str(cfg["campaign_id"]),
                           verbose=verbose)
         if verbose:
