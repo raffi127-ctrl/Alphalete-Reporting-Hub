@@ -1875,9 +1875,23 @@ if __name__ == "__main__":
         # ADDING A MACHINE: one line here. The push is idempotent and each
         # machine installs + verifies its own copy.
         if args.appstream_push_fleet:
+            # Lucy 2's ALT slot came off this list 2026-08-25. It had been
+            # failing its verify every push since the 8/20 human-gate: the alt
+            # profile belongs to another account, so installing rcaptain's
+            # session there falls through to a login form that can no longer
+            # complete unattended ("console never rendered #searchMC"). Nothing
+            # depended on it — since 8/21 every machine runs rcaptain as primary
+            # and NO scheduled report passes --alt-appstream or --account — so
+            # the only thing the push produced was a red `failed` row every
+            # morning that named no real problem, which is worse than silence:
+            # it trains people to skim past a failed re-seed row.
+            # The capability is NOT gone. If an ICD ever needs the alternate
+            # account again, capture it and ship it on purpose with
+            #   --appstream-login --account <name>
+            #   --appstream-push-primary "Lucy 2" --account <name>
+            # (or --appstream-push-alt "Lucy 2"), and put the line back here.
             _dests = [("Lucy 1", "set_appstream_state"),
                       ("Lucy 2", "set_appstream_state"),
-                      ("Lucy 2", "set_appstream_alt_state"),
                       ("Lucy 3", "set_appstream_state")]
         else:
             _dests = [(args.appstream_push_primary, "set_appstream_state")]

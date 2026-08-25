@@ -142,8 +142,16 @@ class FleetPushCoversEveryMachine(unittest.TestCase):
         for m in ('"Lucy 1"', '"Lucy 2"'):
             self.assertIn(m, block)
 
-    def test_lucy_2_keeps_its_alt_slot(self):
-        self.assertIn("set_appstream_alt_state", self._fleet_block())
+    def test_the_alt_slot_is_not_in_the_daily_push(self):
+        """The alt slot was REMOVED 2026-08-25 and must stay out.
+
+        It failed its verify on every push after the 8/20 human-gate (the alt
+        profile is another account, so the install falls through to a login
+        form that can't complete unattended), and no scheduled report uses that
+        account. Re-adding it here re-adds a daily red `failed` row that names
+        no real problem. Ship the alternate account deliberately instead —
+        --appstream-push-primary/--appstream-push-alt with --account."""
+        self.assertNotIn("set_appstream_alt_state", self._fleet_block())
 
 
 if __name__ == "__main__":
