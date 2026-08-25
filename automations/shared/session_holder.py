@@ -52,11 +52,32 @@ from pathlib import Path
 
 # Which machine is this? Read the gitignored `.machine-profile` marker at the repo
 # root directly (the SAME marker registry/mini_control use) — a lightweight read so
-# `shared` doesn't import `day_orchestrator`. Absent → "Lucy 1". Used ONLY to gate
-# the opt-in AppStream warming to Lucy 2 (office 11580), so other machines that
-# happen to have a stale .appstream_storage_state.json never re-activate it.
+# `shared` doesn't import `day_orchestrator`. Absent → "Lucy 1".
 _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
-APPSTREAM_HOLD_MACHINE = "Lucy 2"
+
+# WHICH MACHINES KEEP THE APPSTREAM CONSOLE WARM.
+#
+# Was a single machine ("Lucy 2", office 11580). The gate existed so a machine
+# carrying a STALE .appstream_storage_state.json from before the 2026-06-30
+# removal couldn't silently re-activate warming — a good reason, and the reason
+# this is a list rather than "any machine with a seed file".
+#
+# LUCY 1 + LUCY 3 ADDED 2026-08-24 (Megan). Both run AppStream reports and
+# NEITHER was holding its session warm, so the token simply aged out: seeded
+# ~06:00, expired 14:05 — about eight hours — and the 4am flow the next morning
+# would have found it dead. Today that cost five reports on Lucy 1 (daily_focus,
+# applicant_sync_morning, both recruiter_retention) plus alphalete_org_focus's
+# Recruiting pull on Lucy 3, and the fix was a human clearing a Turnstile twice
+# in one day. Holding it warm is what makes the seed last: the holder never
+# closes the session, so it is never re-challenged.
+#
+# Safe to extend now because all three were freshly seeded + verified tonight
+# (Lucy 1 reported reachable=8/8), so none of them is the stale-file case the
+# gate was written for. A machine still needs its OWN seed file — the
+# APPSTREAM_STORAGE_STATE.exists() half of the check is unchanged.
+APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
+# Back-compat for anything importing the old singular name.
+APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[1]
 
 
 def _this_machine() -> str:
@@ -223,12 +244,12 @@ def main() -> int:
         #     console so the batch/resume side rides a held session instead of a
         #     flaky fresh login. All AppStream work is try/except-contained so it
         #     can never crash the ownerville holder. ---
-        # Gate on BOTH a seed file AND this being the AppStream-hold machine
-        # (Lucy 2). Other machines can carry a stale .appstream_storage_state.json
-        # from before the 2026-06-30 removal — the machine check stops that from
-        # silently re-activating warming there.
+        # Gate on BOTH a seed file AND this being an AppStream-hold machine
+        # (see APPSTREAM_HOLD_MACHINES — all three Lucys since 2026-08-24). The
+        # machine check stops a box carrying a stale .appstream_storage_state.json
+        # from before the 2026-06-30 removal silently re-activating warming.
         as_enabled = (APPSTREAM_STORAGE_STATE.exists()
-                      and _this_machine() == APPSTREAM_HOLD_MACHINE)
+                      and _this_machine() in APPSTREAM_HOLD_MACHINES)
         appstream_page = None
         if as_enabled:
             try:
