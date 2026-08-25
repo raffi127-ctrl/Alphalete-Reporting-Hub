@@ -5352,7 +5352,10 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
     """READ-ONLY: list one thread's replies with their ts, author and, for image
     files, the byte size — which is how you spot a capture that posted blank.
 
-      slack_thread <channel_id> <thread_ts>
+      slack_thread <channel_id> <thread_ts> [max_bytes]
+
+    `max_bytes` lists ONLY file messages at or below that size — the delete
+    list, without the good captures crowding the 470-char Result cell.
 
     Why the size matters (2026-08-25): a Sheets PDF export of a HIDDEN tab comes
     back as an empty page, so the section posts a white rectangle that looks
@@ -5365,6 +5368,10 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
         return False, "slack_thread needs <channel_id> <thread_ts>"
     cid, ts = parts[0], parts[1]
     try:
+        max_bytes = int(parts[2]) if len(parts) > 2 else None
+    except ValueError:
+        max_bytes = None
+    try:
         import certifi
         from slack_sdk import WebClient
         from automations.shared.slack_metrics_post import _load_token
@@ -5374,9 +5381,17 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"conversations.replies FAILED: {type(e).__name__} {str(e)[:140]}"
     lines = []
+    total = 0
     for m in r.get("messages", []) or []:
+        total += 1
         bits = [m.get("ts", "?")]
         files = m.get("files") or []
+        if max_bytes is not None:
+            small = [f for f in files
+                     if isinstance(f.get("size"), int) and f["size"] <= max_bytes]
+            if not small:
+                continue
+            files = small
         for f in files:
             bits.append("{} {}B {}x{}".format(
                 (f.get("title") or f.get("name") or "?")[:24],
@@ -5385,7 +5400,9 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
         if not files:
             bits.append((m.get("text") or "")[:38].replace(chr(10), " "))
         lines.append(" | ".join(str(b) for b in bits))
-    head = f"{len(lines)} msg(s) in {cid}/{ts}:" + chr(10)
+    head = (f"{len(lines)} of {total} msg(s) in {cid}/{ts}"
+            + (f" at/below {max_bytes}B" if max_bytes is not None else "")
+            + ":" + chr(10))
     return True, (head + chr(10).join(lines))[:470]
 
 
