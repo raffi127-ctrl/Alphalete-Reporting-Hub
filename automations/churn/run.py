@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 import tempfile
 import time
@@ -204,6 +205,35 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
 
 
 def main(argv=None) -> int:
+    # HARVEST CUTOVER (Megan 2026-08-25, cutting Tableau access after they
+    # flagged the account). This one entry point is where BOTH churn pulls
+    # happen for every caller — daily_metrics, office_metrics (all 11 offices),
+    # rashad_metrics, aya_metrics and any hand run — so the switch belongs here
+    # rather than in new_internet_churn / wireless_churn, which have no process
+    # of their own on the scheduled path.
+    #
+    # What it actually saves: offices.CHURN_USE_ALL_OFFICE is True, so all 11
+    # offices pull the SAME two org-wide views (INTAllTeams / WirelessAllTeams)
+    # and slice to their owner in Python — 22 live pulls a day of 2 distinct
+    # views. Those two are now declared in the harvest registry, so the batch
+    # pulls them once at order 8 and every office reads the file. Rashad's and
+    # Raf's own churn views were already harvested and were being re-scraped too.
+    #
+    # It cannot change a number. Each report still slices the same bytes it
+    # would have downloaded: the adapter serves a byte-identical cached file or
+    # returns None and the live scrape runs exactly as today — on a miss, a
+    # checksum mismatch, a wrong-date entry, or ANY error. The loader hard-fails
+    # rather than serve stale data, and the cached file is COPIED to each
+    # caller's out_path, so no two offices share a file handle.
+    #
+    # An office whose view isn't declared (and jamis_metrics, which runs at 7.9,
+    # BEFORE the harvest) simply misses and scrapes live, as it does today.
+    #
+    # setdefault, not assignment: HARVEST_MODE=off in the environment still
+    # wins, so a rollback needs no code change or deploy.
+    os.environ.setdefault("HARVEST_MODE", "on")
+    os.environ.setdefault("HARVEST_VERBOSE", "1")
+
     ap = argparse.ArgumentParser(prog="churn")
     ap.add_argument("--date", default=None,
                     help="Override today's date (YYYY-MM-DD).")

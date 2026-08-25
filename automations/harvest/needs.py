@@ -177,6 +177,14 @@ REPORT_NEEDS: Dict[str, List[DataNeed]] = {
     "owners_metrics_churn":  [NEED_OWN_WAYNE, NEED_OWN_STARR, NEED_OWN_CHAN,
                               NEED_OWN_TONY, NEED_OWN_SAHIL,
                               NEED_OWN_KHALIL, NEED_OWN_COLTEN, NEED_OWN_JAIRO],
+    # office_metrics is THE case the harvest was built for (added 2026-08-25).
+    # `offices.CHURN_USE_ALL_OFFICE` is True, so all 11 offices' churn metric
+    # pulls the SAME two org-wide views and slices to its owner in Python. That
+    # was 22 live pulls a day of 2 distinct views; harvested once at order 8 and
+    # read by every office at order 27-36, it is 2. This is the multi-consumer
+    # payoff — the opposite of the single-consumer views deliberately left out
+    # below. Both constants already existed; they were simply never declared.
+    "office_metrics":        [NEED_D2D_NI_ALLTEAM, NEED_D2D_WL_ALLTEAM],
     "rashad_metrics":        [NEED_NI_RASHAD, NEED_WL_RASHAD],
     "rashad_churn":          [NEED_NI_RASHAD, NEED_WL_RASHAD],
     "aya_metrics":           [NEED_NI_AYA, NEED_WL_AYA],
@@ -213,7 +221,7 @@ REPORT_NEEDS: Dict[str, List[DataNeed]] = {
 # NEED_OWN_CARLOS / _EVELIZ / _LUIS stay DEFINED above — proof.py and
 # proof_orgwide.py reference them directly — they are just no longer harvested.
 
-# The whole churn cluster, de-duplicated (16 distinct pulls).
+# The whole churn cluster, de-duplicated (18 distinct pulls).
 CHURN_CLUSTER_NEEDS: List[DataNeed] = dedupe_by_cache_key(
     [n for needs in REPORT_NEEDS.values() for n in needs]
 )

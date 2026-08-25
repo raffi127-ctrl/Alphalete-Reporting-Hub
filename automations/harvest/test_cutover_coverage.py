@@ -69,6 +69,20 @@ def _pairs_single_view_reports():
             ("wireless_churn", wl.VIEW_URL, wl.WORKSHEET)]
 
 
+def _pairs_office_metrics_churn():
+    """All 11 offices pull the SAME two org-wide churn views and slice in
+    Python (offices.CHURN_USE_ALL_OFFICE). That sharing is the whole reason
+    harvesting them pays, so the test fails loudly if the flag flips back to
+    per-office views — at which point declaring them stops being worth it."""
+    from automations.office_metrics import offices as off
+    from automations.new_internet_churn import pull as ni
+    from automations.wireless_churn import pull as wl
+    if not getattr(off, "CHURN_USE_ALL_OFFICE", False):
+        return []
+    return [("office_metrics NI", off.ALL_OFFICE_CHURN_NI, ni.WORKSHEET),
+            ("office_metrics WL", off.ALL_OFFICE_CHURN_WL, wl.WORKSHEET)]
+
+
 class TestFlippedReportsHitTheCache(unittest.TestCase):
     """Every view a cut-over report pulls must resolve to a declared need."""
 
@@ -88,9 +102,16 @@ class TestFlippedReportsHitTheCache(unittest.TestCase):
         self._assert_all_hit(_pairs_owners_fiber_and_nds())
 
     def test_new_internet_and_wireless_churn(self):
-        # Not flipped yet, but their views ARE harvested for daily_metrics, so
-        # this pins that the free flip stays available.
         self._assert_all_hit(_pairs_single_view_reports())
+
+    def test_office_metrics_org_wide_churn(self):
+        """The 22-pulls-of-2-views case: every office must resolve to the two
+        declared org-wide needs, or the whole saving silently evaporates."""
+        pairs = _pairs_office_metrics_churn()
+        self.assertTrue(pairs, "CHURN_USE_ALL_OFFICE is off — offices are back "
+                               "on per-office views and the two org-wide needs "
+                               "in the registry now have no consumer")
+        self._assert_all_hit(pairs)
 
 
 class TestNoDeadNeeds(unittest.TestCase):
@@ -107,7 +128,8 @@ class TestNoDeadNeeds(unittest.TestCase):
         consumed = set()
         for _n, url, sheet in (_pairs_captainship_churn()
                                + _pairs_owners_fiber_and_nds()
-                               + _pairs_single_view_reports()):
+                               + _pairs_single_view_reports()
+                               + _pairs_office_metrics_churn()):
             consumed.add(_key(url, sheet))
         orphans = [n.label for n in CHURN_CLUSTER_NEEDS
                    if cache_key(n) not in consumed
