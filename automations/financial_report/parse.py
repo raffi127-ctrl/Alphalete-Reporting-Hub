@@ -54,6 +54,27 @@ _GERMAN_METRICS: Dict[str, str] = {
     "owners draw/atm":            "OWNERS WITHDRAWAL",
     "bottom line profit/loss":    "PROFIT/LOSS",
 }
+# The SAME report, revamped by the sender from WE 8.1 2026 ("revamped Excel
+# spreadsheet coming later this week!" — jsanchez, 2026-08-05). Same shape (one
+# office, weeks across columns, labels down column A) but every anchor label was
+# renamed, so the old dict matched nothing and German's tab sat blank from the
+# WE 7.26 column on. Kept as a SEPARATE dict rather than merged into the one
+# above because the two templates disagree on which row is the bottom line:
+#   - old: 'BOTTOM LINE PROFIT/LOSS', a delta-of-balances row that the sender's
+#     own sheet had shifted one column left (its 7/18 cell held the 7/25 delta).
+#   - new: 'NET INCOME FOR WEEK', aligned to its column and matching the
+#     figure the sender quotes in the email body ("TOTAL PROFIT/LOSS").
+# Merging them would have let 'net income for week' win on old workbooks too and
+# silently rewrite that history. (Eve 2026-08-24)
+_GERMAN_METRICS_REVAMP: Dict[str, str] = {
+    "current bank balance":       "TOTAL FUNDS AVAILABLE",
+    "owner payroll":              "OWNERS PAYROLL",
+    "total costs for week":       "TOTAL EXPENSES",
+    "aptel - interview services": "APTEL",
+    "recruiter - nlr/arcadia":    "ARCADIA CONSULTING",
+    "owners draw/atm":            "OWNERS WITHDRAWAL",
+    "net income for week":        "PROFIT/LOSS",
+}
 _COEL_METRICS: Dict[str, str] = {
     "local balance":  "TOTAL FUNDS AVAILABLE",
     "owner payroll":  "OWNERS PAYROLL",
@@ -115,6 +136,31 @@ def _state_from_office(header: str) -> str:
     return sm.group(1).upper() if sm else ""
 
 
+_COMPANY_WORDS = re.compile(
+    r"\b(inc|llc|l\.l\.c|corp|corporation|ltd|company|group|consulting|"
+    r"marketing|enterprises|acquisitions|management|solutions)\b")
+
+
+def _person_and_company(a: str, b: str) -> Tuple[str, str]:
+    """(person, company) from the workbook's two header values, whichever
+    order the sender labelled them in.
+
+    German's old book had them backwards — 'Company Name:' held 'German Lopez'
+    and 'Owners Name:' held 'Orbit Consulting, Inc.' — and the revamped one
+    (WE 8.1 2026) fixed that. Reading them positionally therefore keys the owner
+    off the legal entity on the new template, which matches no tab. Decide by
+    what the VALUE looks like, and fall back to the historical order when the
+    test can't separate them. (Eve 2026-08-24)"""
+    a, b = (a or "").strip(), (b or "").strip()
+    a_co = bool(_COMPANY_WORDS.search(_lbl(a)) or "," in a)
+    b_co = bool(_COMPANY_WORDS.search(_lbl(b)) or "," in b)
+    if a_co and not b_co:
+        return b, a
+    if b_co and not a_co:
+        return a, b
+    return a, b            # historical order: first cell is the person
+
+
 def _detect_format(wb) -> str:
     """'german' | 'coel' | 'logan' | 'summary' — by a signature in the workbook.
 
@@ -126,11 +172,18 @@ def _detect_format(wb) -> str:
     if {"profit", "breakeven"} <= names:
         return "logan"
     for name in wb.sheetnames:
-        a4 = _lbl(wb[name]["A4"].value)
-        if "monthly report" in a4:
-            return "german"
-        if "statement of cash flows" in a4:
+        ws = wb[name]
+        if "statement of cash flows" in _lbl(ws["A4"].value):
             return "coel"
+        # 'MONTHLY REPORT' used to sit in A4; the revamped German template
+        # (WE 8.1 2026) moved it to the F1 banner, which dropped the whole
+        # workbook to the 'summary' parser — it "succeeded" on 2 junk offices,
+        # so there was no parse PROBLEM to alert on and the tab just went quiet.
+        # Scan the header block instead of one fixed cell. (Eve 2026-08-24)
+        for row in ws.iter_rows(min_row=1, max_row=8, max_col=8):
+            for cell in row:
+                if "monthly report" in _lbl(cell.value):
+                    return "german"
     return "summary"
 
 
@@ -272,18 +325,28 @@ def _resign_profit_loss(offices: List[dict]) -> None:
 def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
     """MONTHLY REPORT layout — one office, weeks across columns, metric
     labels down column A. Parses every sheet (one per ~6-week block) and
-    merges; the latest sheet wins a boundary week."""
+    merges; the latest sheet wins a boundary week.
+
+    TWO GENERATIONS of the template are read here: the original, and the
+    revamp the sender shipped from WE 8.1 2026, which renamed the metric rows
+    and swapped the two name headers. Per sheet, the header row's own title
+    ('WEEK ENDING' vs 'DATE') picks the label set. (Eve 2026-08-24)"""
     owner = office = None
     metrics: Dict[str, Dict[dt.date, object]] = {}
     weeks_seen: set = set()
     for name in wb.sheetnames:
+        # The revamped template ships a blank 'TEMPLATE' sheet alongside the
+        # live month — same week headers, every value 0. It parses fine and
+        # would contribute zeros for weeks the live sheet leaves empty.
+        if _lbl(name) == "template":
+            continue
         rows = list(wb[name].iter_rows(min_row=1, max_row=wb[name].max_row))
-        for r in rows[:4]:
-            a = _lbl(r[0].value)
-            if a.startswith("company name") and len(r) > 1:
-                owner = owner or str(r[1].value or "").strip()
-            elif a.startswith("owner") and "name" in a and len(r) > 1:
-                office = office or str(r[1].value or "").strip()
+        header_vals = [str(r[1].value or "").strip() for r in rows[:4]
+                       if len(r) > 1 and _lbl(r[0].value).endswith("name:")]
+        if len(header_vals) >= 2:
+            person, company = _person_and_company(header_vals[0], header_vals[1])
+            owner = owner or person
+            office = office or company
         # The DATE row — first row with 4+ datetimes in columns B-G.
         date_cols: Dict[int, dt.date] = {}
         for r in rows:
@@ -295,8 +358,13 @@ def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
         if not date_cols:
             continue
         weeks_seen.update(date_cols.values())
+        # Which label set this sheet speaks. The revamped template titles its
+        # header row 'WEEK ENDING'; the original called it 'DATE'.
+        labels = {_lbl(r[0].value) for r in rows if r}
+        metric_map = (_GERMAN_METRICS_REVAMP if "week ending" in labels
+                      else _GERMAN_METRICS)
         for r in rows:
-            canon = _GERMAN_METRICS.get(_lbl(r[0].value)) if r else None
+            canon = metric_map.get(_lbl(r[0].value)) if r else None
             if not canon:
                 continue
             m = metrics.setdefault(canon, {})
