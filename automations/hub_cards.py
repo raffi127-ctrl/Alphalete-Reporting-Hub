@@ -514,171 +514,6 @@ def _tableau_box_card() -> dict:
             for o in _sp.ORGS
         ],
     }
-
-
-def _onboarding_card() -> dict:
-    """ONE card for every onboarding surface (Megan 2026-08-25).
-
-    Onboarding arrived one automation at a time — metrics, then trackers — and
-    each brought its own Hub presence: its own link block on the Office
-    Operations page, its own scheduler handles, its own card. They are separate
-    runs but they are one job, so they share one card, exactly the way the
-    twelve per-office metric runs share the D2D Office Daily Metrics card.
-
-    The surface list is read from shared.onboarding_surfaces.SURFACES and every
-    section + button below is GENERATED from it, so the NEXT onboarding
-    automation is one Surface(...) row with no card to hand-write.
-
-    Absorbs the old `enrollment_pending_check` card and the self-registered
-    `tracker_auto_commit` library row. Both runners now log to this card's id
-    (shared.onboarding_surfaces.CARD_ID) — hub_activity keys on the CARD id, so
-    a runner still logging its scheduler handle would split the history across
-    a phantom duplicate card. Their old ids are in dashboard's library-dupe
-    hide-list."""
-    from automations.shared import onboarding_surfaces as _os
-
-    # The runners log to _os.CARD_ID; this card's id is a literal (see below).
-    assert _os.CARD_ID == "office-onboarding", _os.CARD_ID
-
-    surfaces = _os.live_surfaces()
-    # WHAT IT SETS UP — one block per surface, in setup order.
-    surface_blocks = []
-    for s in surfaces:
-        legs = []
-        legs.append(f"  ↳ form writes the **{s.sheet_tab}** tab")
-        legs.append(f"  ↳ apply: `{s.apply_module} "
-                    f"{' '.join(s.apply_args)}` (dry-run without the flag)")
-        if s.pending_module:
-            legs.append(f"  ↳ safety net: flags un-applied rows to the "
-                        f"corrections channel, {s.pending_when}")
-        if s.auto_commit_module:
-            legs.append(f"  ↳ auto-commit: {s.auto_commit_when}")
-        surface_blocks.append(
-            f"{s.emoji} **{s.label}** — gives the office {s.gives}.\n"
-            + "\n".join(legs)
-            + (f"\n  ↳ {s.note}" if s.note else ""))
-    # Single newlines, NOT blank lines: _render_report_breakdown splits
-    # sections on a blank line and renders each first line as an ALL-CAPS
-    # gold header, which would shout every surface name.
-    surface_text = "\n".join(surface_blocks)
-
-    forms_text = "\n".join(
-        f"• {ln.label.split(' ', 1)[-1]} — {ln.url}"
-        + (f"  ({ln.caption})" if ln.caption else "")
-        for _s, ln in _os.all_links())
-
-    # BUTTONS. One apply per surface (each writes its own registry), plus ONE
-    # shared auto-commit + one pending check — those two legs are single
-    # modules that cover every surface, so a button per surface would just run
-    # the same pass twice.
-    actions = [
-        {
-            "label": s.apply_label or f"Apply {s.label}",
-            "icon": "▶" if i == 0 else "➕",
-            "primary": i == 0,
-            "help": (f"Reads the '{s.sheet_tab}' tab and writes every "
-                     f"submitted office into the committed registry. Refuses "
-                     f"on a validation problem (duplicate channel / key / "
-                     f"view) BEFORE writing anything. Nothing is committed or "
-                     f"pushed — review `git diff`, dry-run the office on its "
-                     f"machine, then commit."),
-            "module": s.apply_module,
-            "args_fn": (lambda a=s.apply_args: list(a)),
-        }
-        for i, s in enumerate(surfaces)
-    ]
-    if _os.auto_commit_surfaces():
-        actions.append({
-            "label": "Auto-commit confirmed offices",
-            "icon": "🔁",
-            "help": ("The same pass the 3:15 AM / 5:30 PM LaunchAgent runs on "
-                     "Lucy 1 — applies every confirmed enrollment and commits "
-                     "it. Harmless when nothing is pending ('Nothing to do', "
-                     "exit 0). Registries only: it never touches "
-                     "schedule_config.json, which is hot on the runners."),
-            "module": _os._AUTO_COMMIT_SHARED,
-            "args_fn": lambda: [],
-        })
-    for s in _os.pending_surfaces():
-        actions.append({
-            "label": "Check for pending enrollments now",
-            "icon": "🔍",
-            "help": ("Reads the onboarding tabs and posts to the corrections "
-                     "channel if an enrollment is sitting un-applied. Finds "
-                     "nothing → says nothing, and never writes."),
-            "module": s.pending_module,
-            "args_fn": lambda: [],
-        })
-
-    return {
-        # LITERAL, not _os.CARD_ID: hub_coverage._hardcoded_card_ids() finds
-        # cards by regex-scanning this file for `"id": "kebab-case"` (it must
-        # not import Streamlit), so a computed id is invisible to the phantom
-        # guard — every run would pay for the fallback and the curated
-        # _HUB_CARD targets would read as dangling. The assert above keeps the
-        # two spellings from drifting.
-        "id": "office-onboarding",
-        "name": "Office Onboarding",
-        "creator": "Megan & Claude",
-        "emoji": "🚀",
-        # Amber = an ONGOING self-running job, matching the other continuous
-        # Ops cards (sara-plus-issues, rc-autoread, stf-field-check).
-        "color": "#F59E0B",
-        "category": "📲 Ops",
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "sheet_url": _os.MASTER_SHEET_URL,
-        "description": (
-            "Everything that wires a NEW OFFICE in, on one card — "
-            + ", ".join(s.label.replace(" Onboarding", "").lower()
-                        for s in surfaces)
-            + ". Each is its own form → its own tab on the AUTOMATION MASTER "
-              "sheet → its own apply, but they are one job, so they share one "
-              "card. The hourly pending check is the safety net: a quiet card "
-              "is the normal, healthy state."),
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "An office submits the form for each surface it needs. The form "
-            "writes a row to the AUTOMATION MASTER sheet; `apply` turns that "
-            "row into committed config; the daily runs pick it up with no "
-            "dashboard edit.\n\n"
-            "SURFACES\n" + surface_text + "\n\n"
-            "FORMS\n" + forms_text + "\n\n"
-            "WHY ONE CARD\n"
-            "Separate runs, one job — the same reason the twelve per-office "
-            "metric runs share the D2D Office Daily Metrics card. Adding the "
-            "next onboarding automation is one row in "
-            "`automations/shared/onboarding_surfaces.py`; its section, its "
-            "buttons and its link block on the Office Operations page all "
-            "generate from it.\n\n"
-            "WHEN IT RUNS\n"
-            "**Hourly, 9 AM–10 PM** — the pending-enrollment safety net "
-            "(com.alphalete.enrollment-pending-hourly, Lucy 1). "
-            "**3:15 AM + 5:30 PM** — the auto-commit pass "
-            "(com.alphalete.tracker-auto-commit, Lucy 1). Applying a "
-            "brand-new office stays a reviewed, hand-triggered step: it "
-            "rewrites the committed registry and schedule_config, so it is "
-            "deliberately NOT auto-applied at 4am."),
-        "assignee_note": (
-            "Runs unattended on Lucy 1 (the mini) as two LaunchAgents. The "
-            "buttons here are the manual triggers — apply a submitted office, "
-            "run the auto-commit pass, or force a pending check."),
-        # Two self-running agents on different clocks: no single run time to
-        # show, so keep it out of the 4am batch, the due-today counter and the
-        # time/DUE pills (same treatment as sara-plus-issues).
-        "self_scheduled": True,
-        "hide_schedule": True,
-        "schedule": {
-            "frequency": "daily",
-            "time": "9:00 AM",
-            "time_label": "hourly 9 AM–10 PM · 3:15 AM + 5:30 PM",
-            "estimated_minutes": 1,
-        },
-        "checklist": [],
-        "actions": actions,
-    }
-
-
 def _new_start_onboarding_card() -> dict:
     """ONE card for every new-start onboarding step (Megan 2026-08-25).
 
@@ -1169,13 +1004,59 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
     },
-    # Onboarding — ONE card for every surface a new office gets wired into
-    # (Megan 2026-08-25). Absorbed the standalone 'Pending Enrollments Check
-    # (Hourly)' card and the self-registered tracker_auto_commit library row;
-    # both runners now log to this card's id. Generated from
-    # shared/onboarding_surfaces.py — the next onboarding automation is one
-    # row there, not a card here.
-    _onboarding_card(),
+    {
+        # Promoted from an auto-registered library row (Megan 2026-08-19) so it
+        # renders like the other Ops cards — the library path does not apply a
+        # card's `color`, which is why it sat white next to the amber ones.
+        "id": "enrollment_pending_check",
+        # Cadence in the name, same pattern as Sara+ / RingCentral above.
+        "name": "Pending Enrollments Check (Hourly)",
+        "creator": "Megan & Claude",
+        "emoji": "📋",
+        # Amber = an ONGOING self-running job, matching the other continuous Ops
+        # cards (sara-plus-issues, rc-autoread, stf-field-check, bg-check-sync).
+        "color": "#F59E0B",
+        # 📲 Ops category → renders under the "OPS" divider.
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "enrollment_pending_check",
+        "description": "Safety net for office onboarding — every hour from 9 AM to 10 PM it checks the 'Office Onboarding' sheet and posts to the corrections channel if an enrollment is sitting un-applied. A quiet card is the normal, healthy state.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads the **Office Onboarding** sheet and looks for an "
+            "enrollment that has been submitted but never applied.\n"
+            "**•** If it finds one, it posts to the corrections channel so it "
+            "gets picked up the same day.\n"
+            "**•** Finds nothing → says nothing. It never writes anything.\n\n"
+            "WHY IT EXISTS\n"
+            "Section EDITS (Thread Builder) sync themselves each morning, but a "
+            "BRAND-NEW office needs a reviewed `office_onboarding.apply --write` "
+            "plus a commit — it rewrites the committed registry and "
+            "schedule_config, so it is deliberately NOT auto-applied at 4am. "
+            "This is what stops a new office sitting unnoticed in the meantime. "
+            "Apply the flagged ones via the **apply_enrollments** handle.\n\n"
+            "WHEN IT RUNS\n"
+            "**Hourly, 9 AM–10 PM**, on its own LaunchAgent "
+            "(com.alphalete.enrollment-pending-hourly). It used to run once in "
+            "the 4am batch, which meant an enrollment added at 9:05am waited a "
+            "full day to be noticed (Megan 2026-08-19). Nothing overnight — a "
+            "2am enrollment is caught by the 9 AM pass."
+        ),
+        "assignee_note": "Runs unattended on Lucy 1 (the mini) as a LaunchAgent. Nothing to run from here.",
+        # Hourly self-runner: self_scheduled + hide_schedule keep it out of the
+        # 4am batch, the due-today counter, and any time/DUE pills — there is no
+        # single run time to show (same treatment as sara-plus-issues).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 AM",
+            "time_label": "hourly 9 AM–10 PM",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+    },
     {
         "id": "sara-plus-issues",
         # Cadence in the name, same as the RingCentral Auto-Read card. The

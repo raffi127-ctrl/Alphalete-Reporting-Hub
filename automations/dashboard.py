@@ -1088,14 +1088,6 @@ def _read_shared_library() -> list[dict]:
                             # card ("no card of its own"), so hide its
                             # auto-registered library dupe (Megan 8/23).
                             "weekly_knock_dispositions",
-                            # Onboarding merged into ONE card, office-onboarding
-                            # (Megan 8/25). Both runners now log to that card
-                            # id, but their old self-registered library rows are
-                            # still in the shared library Sheet — without this
-                            # they'd render as two extra cards beside the merged
-                            # one, which is exactly what the merge removed.
-                            "enrollment_pending_check", "tracker_auto_commit",
-                            "apply_enrollments",
                             # New-start onboarding merged into ONE card,
                             # new-start-onboarding (Megan 8/25). The Monday
                             # headshot thread had self-registered its own
@@ -8338,10 +8330,7 @@ else:  # st.session_state.view == "user"
             # day would bury the once-daily reports), so no run-status ever comes
             # back and the default pill reads white/gray. Permanent orange OPS
             # pill like the other always-on cards. (Megan 2026-08-19)
-            # Office Onboarding — merged card (Megan 2026-08-25), was
-            # enrollment_pending_check. Two always-on agents on different clocks
-            # → permanent orange OPS pill like the other continuous cards.
-            "[class*='office-onboarding__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            "[class*='enrollment_pending_check__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Sara+ Issue Escalation is the same kind of background OPS automation
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
@@ -8455,35 +8444,56 @@ else:  # st.session_state.view == "user"
                         use_container_width=True)
                     st.caption("Add passwords · see who's filled in")
                     st.markdown("Admin code: **A\\*\\*\\*\\*123**")
-            # ---- Office Onboarding (Office Operations) — ONE block for every
-            # onboarding surface (Megan 2026-08-25). Was two sections, "Metrics
-            # Onboarding" and "Tracker Onboarding", each hand-written with its
-            # own links; they are separate forms but one job, so they share one
-            # block the same way they now share one Hub card. Every row is
-            # GENERATED from shared/onboarding_surfaces.SURFACES — the next
-            # onboarding automation adds itself here by adding a row there.
-            from automations.shared import onboarding_surfaces as _obs
-            st.markdown("### 🚀 Office Onboarding")
+            # ---- Metrics Onboarding + Thread Builder (Office Operations) — one
+            # card, two links (Pay Structure pattern): LEFT enroll a new office
+            # (writes the Office Onboarding tab), RIGHT the password-gated admin
+            # editor for an enrolled office's thread (sections + order; the
+            # morning reports sync those edits automatically). ?admin=1 opens the
+            # same app straight into the editor mode.
+            st.markdown("### 🏢 Metrics Onboarding")
             with st.container(border=True):
                 st.markdown(
-                    "**Wire a new office in** — one form per surface. Each "
-                    "writes its own tab on the AUTOMATION MASTER sheet; the "
-                    "Hub's *Office Onboarding* card applies them and flags "
-                    "anything left sitting.")
-                for _sf in _obs.live_surfaces():
-                    st.markdown(f"**{_sf.emoji} {_sf.label}** — gives the "
-                                f"office {_sf.gives}.")
-                    _ln = list(_sf.links)
-                    # Rows of 2, matching the Pay Structure / Document Builder
-                    # blocks above.
-                    for _i in range(0, len(_ln), 2):
-                        _row = st.columns(2)
-                        for _j, _l in enumerate(_ln[_i:_i + 2]):
-                            with _row[_j]:
-                                _safe_link_button(_l.label, _l.url,
-                                                  use_container_width=True)
-                                if _l.caption:
-                                    st.caption(_l.caption)
+                    "**Enroll an office or edit its thread** — enroll writes the "
+                    "office's config (which machine runs it + the sheet tabs it "
+                    "needs); the admin editor turns sections on/off and reorders "
+                    "them per office, and the morning run picks edits up "
+                    "automatically.")
+                _mo = st.columns(2)
+                with _mo[0]:
+                    _safe_link_button(
+                        "🏢 Open onboarding form",
+                        "https://alphaletemetricsintake.streamlit.app",
+                        use_container_width=True)
+                    st.caption("Add a new office")
+                with _mo[1]:
+                    _safe_link_button(
+                        "🧵 Thread Builder (admin)",
+                        "https://alphaletemetricsintake.streamlit.app/?admin=1",
+                        use_container_width=True)
+                    st.caption("Edit sections + order")
+                    st.markdown("Admin password: **A\\*\\*\\*\\*123**")
+                # Owner-facing request form: send this link to an office owner and
+                # they pick their program + which metrics they want. Their request
+                # lands on the Metric Requests tab + pings the corrections channel,
+                # then pre-fills the onboarding form above so you just add the sheet.
+                _safe_link_button(
+                    "📤 Owner request form (send to an office)",
+                    "https://alphaletemetricsrequest.streamlit.app",
+                    use_container_width=True)
+                st.caption("Owner picks program + metrics → you get pinged to finalize")
+            # ---- Tracker Onboarding (Office Operations) — add an office to the
+            # daily Tableau tracker screenshots: its Slack channel + which trackers
+            # + order. The daily run + trackers card pick it up automatically.
+            st.markdown("### 📊 Tracker Onboarding")
+            with st.container(border=True):
+                st.markdown(
+                    "**Add an office to the daily tracker screenshots** — pick its "
+                    "Slack channel and which Tableau trackers to post, in what "
+                    "order. Same boards everyone gets; the daily run picks it up.")
+                _safe_link_button(
+                    "📊 Open tracker form",
+                    "https://alphaletetrackerintake.streamlit.app",
+                    use_container_width=True)
                 st.caption("For Megan & Eve")
             st.markdown("---")
 

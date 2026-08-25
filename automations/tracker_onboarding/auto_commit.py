@@ -126,13 +126,8 @@ def main() -> int:
     Standing rule: LaunchAgent reports publish to the Hub. This job had never
     logged a run, so its card sat on "no run logged" every single day — on
     2026-08-21 the 03:15 run had provably happened (its commit was in git) while
-    the Hub said it hadn't run at all.
-
-    The id must be the Hub CARD id — since 2026-08-25 that is the merged
-    "Office Onboarding" card (shared/onboarding_surfaces.CARD_ID), which
-    absorbed this job's own tracker_auto_commit library card. hub_activity
-    self-registers a card for an id it doesn't know, so logging the old handle
-    would rebuild that duplicate."""
+    the Hub said it hadn't run at all. The id must match the library card
+    (automations/uploaded/_shared/tracker_auto_commit.py)."""
     import datetime as _dt
     import os
     started_at = _dt.datetime.now()
@@ -144,9 +139,8 @@ def main() -> int:
         if not os.environ.get("HUB_REPORT_ID"):
             try:
                 from automations.shared import hub_activity
-                from automations.shared import onboarding_surfaces as _os
                 hub_activity.log_completed(
-                    _os.CARD_ID, "Office Onboarding",
+                    "tracker_auto_commit", "Tracker Auto Commit",
                     status=("success" if rc == 0 else "failed"),
                     started_at=started_at)
             except Exception as e:                    # noqa: BLE001
