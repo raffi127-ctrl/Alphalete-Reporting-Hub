@@ -3,6 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.alphalete.knocks-9pm</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP. Every TEAM machine (Lucy 1/2/3) clones the
+         repo to ~/recruiting-report, so installing this on Lucy 3 means
+         rewriting the three paths below to /Users/<user>/recruiting-report
+         first — a plist pointing at a directory that isn't there fails
+         silently at 9 PM and the card just never goes green. -->
     <key>ProgramArguments</key>
     <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/knocks_9pm.sh</string><string>--send</string></array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>

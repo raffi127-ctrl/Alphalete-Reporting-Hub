@@ -520,6 +520,73 @@ AUTOMATED_REPORTS = [
     # forced BRIGHT YELLOW (temp) via the calstat CSS override below (search
     # 'owner-showdown__calstat'); it still turns GREEN when the day's run
     # succeeds. Fills the KTS tab; Sunday digest emails Raf only.
+    # 9 PM knock board — its own LaunchAgent (com.alphalete.knocks-9pm) at
+    # 21:00, NOT the 4am batch, so self_scheduled puts it under ⏰ TIME SET
+    # REPORTS with its real time on the pill (Megan 2026-08-25).
+    {
+        "id": "knocks-9pm",
+        "name": "Knocks 9 PM 🚪",
+        "creator": "Raf & Claude",
+        "emoji": "🚪",
+        # The knocks amber, same as the board it posts.
+        "color": "#B45309",
+        # Lucy 3: the rerun/overflow box, on Raf's accounts with
+        # ownerville-creds.json already in place, so it impersonates the same
+        # offices Lucy 1 does. Picked for load, not access — at 9 PM Lucy 1 is
+        # holding the Jiraiya socket listener and has the 11 PM STF Field Check
+        # right behind it, while Lucy 3 is idle. The job runs its OWN Chrome
+        # profile, so the old one-warm-session-per-account rule doesn't bind
+        # (superseded 2026-08-24: ownerville sessions parallelise).
+        "assignees": ["Lucy 3"],
+        "run_machine": "Lucy 3",
+        "run_rerun_id": "knocks_9pm",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 PM",
+            "time_label": "9 PM CST",
+            "estimated_minutes": 12,
+        },
+        "description": (
+            "Every D2D-metrics office's knock board for the CURRENT day, "
+            "posted to its own channel at 9 PM CST — the day's full breakdown "
+            "to read at night. The morning board still re-pulls the same day "
+            "from scratch, because reps keep knocking after 9."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** At **9 PM Central** pulls each enrolled office's **current "
+            "day** from Ownerville (Disposition by Rep + Time Tracker) and "
+            "posts the same amber **Total Knocks** board the morning thread "
+            "uses — one image per office, in that office's own channel.\n"
+            "**•** **One clock for everyone** — 9 PM Central, not each "
+            "office's local 9 PM. Local times would need a timezone per "
+            "office, which nothing in the Hub stores yet.\n"
+            "**•** Header is the owner's **first name + date** (8/25) — the "
+            "channel already says whose office it is.\n"
+            "**•** **Tonight's pull is never reused tomorrow.** It writes only "
+            "to `output/knocks_intraday/`, never the caches the morning board "
+            "reads, so the morning re-collects the day and picks up every "
+            "knock that landed after 9.\n"
+            "**•** **Never posts blank** — an office with no rows is skipped "
+            "and named in the log, never posted as an empty board.\n"
+            "**•** One office failing (or one channel refusing an image) does "
+            "not stop the others.\n\n"
+            "WHO GETS IT\n"
+            "**•** Everyone enrolled in **D2D metrics** — the same roster the "
+            "metrics threads use, so enrolling an office enrolls it here too.\n"
+            "**•** **Isaiah is excluded** (wireless-only: his gaps-only rows "
+            "still render as 'no rows'). The reason prints in the log every "
+            "night so the exclusion can't quietly outlive the bug.\n"
+            "**•** **Trang** posts with her own FRESH SUCCESS workspace token; "
+            "if that token file isn't on the machine she's skipped rather than "
+            "posted with Lucy's."
+        ),
+        "post_run": {
+            "message_success": "✅ Knocks 9 PM — every enrolled office posted.",
+            "message_failed": "❌ Knocks 9 PM failed — see the log above.",
+        },
+    },
     {
         "id": "owner-showdown",
         "name": "August Owner Showdown 🏆",

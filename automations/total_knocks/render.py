@@ -457,6 +457,17 @@ def _title_span(target: dt.date, end: "dt.date | None" = None) -> str:
     return f"{_title_date(target)} – {_title_date(end)}"
 
 
+def _date_text(target: dt.date, end: "dt.date | None" = None,
+               override: str = "") -> str:
+    """The date as it appears in a board's title bar.
+
+    `override` (default '') lets ONE caller print it its own way without
+    changing every knocks board in the fleet — the 9 PM post wants a compact
+    '8/25' where the morning boards keep 'August 25, 2026'. Empty means the
+    house format, so every existing caller is untouched."""
+    return override or _title_span(target, end)
+
+
 def _file_span(target: dt.date, end: "dt.date | None" = None) -> str:
     """Filename stem for the span — unchanged for a single day, so nothing
     that globs for an existing board's name stops finding it."""
@@ -471,6 +482,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         rows: list[dict] | None = None,
                         title_suffix: str = "",
                         end: "dt.date | None" = None,
+                        date_text: str = "",
                         extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
@@ -527,7 +539,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
     return _draw(disp, table,
-                 f"TOTAL KNOCKS — {_office}{_title_span(target, end)}",
+                 f"TOTAL KNOCKS — {_office}{_date_text(target, end, date_text)}",
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=0, wrap_headers=True,
@@ -555,7 +567,8 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
                      out_dir: Path = OUT_DIR_DEFAULT,
                      rows: list[dict] | None = None,
                      title_suffix: str = "",
-                     end: "dt.date | None" = None) -> Path:
+                     end: "dt.date | None" = None,
+                     date_text: str = "") -> Path:
     """PNG 2 — ID, Rep, First/Last Knock, Gaps, Total Gaps (min), sorted by
     Total Gaps (min) desc, teal theme. Total Gaps is shown as 'Xh Ym' (like
     Ownerville); the Sheet column itself stays in plain minutes.
@@ -593,7 +606,7 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
         r[tg_pos] = _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(TIME_GAPS_COLUMNS), sub,
-                 f"TIME GAPS — {_office}{_title_span(target, end)}",
+                 f"TIME GAPS — {_office}{_date_text(target, end, date_text)}",
                  THEME_TEAL,
                  out_dir / f"time_gaps_{_file_span(target, end)}.png")
 
@@ -698,7 +711,8 @@ def _knock_time_key(v: str) -> int:
 def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
                              out_dir: Path = OUT_DIR_DEFAULT,
                              title_suffix: str = "",
-                             end: "dt.date | None" = None) -> Path:
+                             end: "dt.date | None" = None,
+                             date_text: str = "") -> Path:
     """The gaps-only (NDS/wireless) office's stand-in for the Total Knocks
     board: the ownerville Time Tracker table itself, amber theme (it fills the
     Total Knocks slot in the thread). A wireless office has no Disposition
@@ -724,7 +738,7 @@ def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
         r[tg_pos] = "" if r[tg_pos].strip() == "0" else _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(TELEMAPPER_KNOCKS_COLUMNS), table,
-                 f"TELEMAPPER KNOCKS — {_office}{_title_span(target, end)}",
+                 f"TELEMAPPER KNOCKS — {_office}{_date_text(target, end, date_text)}",
                  THEME_AMBER,
                  out_dir / f"telemapper_knocks_{_file_span(target, end)}.png")
 
@@ -732,7 +746,8 @@ def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
 def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                                  out_dir: Path = OUT_DIR_DEFAULT,
                                  title_suffix: str = "",
-                                 end: "dt.date | None" = None) -> Path:
+                                 end: "dt.date | None" = None,
+                                 date_text: str = "") -> Path:
     """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
     house one, but the wireless disposition column set (one Not Interested
     bucket, no Talk-To split, no Sale). Rows come from the wireless-shaped
@@ -749,7 +764,7 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
         raise RuntimeError("No wireless disposition rows to render.")
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(WIRELESS_KNOCKS_COLUMNS), table,
-                 f"TOTAL KNOCKS — {_office}{_title_span(target, end)}",
+                 f"TOTAL KNOCKS — {_office}{_date_text(target, end, date_text)}",
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png")
 
@@ -784,6 +799,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          out_dir: Path = OUT_DIR_DEFAULT,
                          title_suffix: str = "",
                          end: "dt.date | None" = None,
+                         date_text: str = "",
                          extra_totals=None) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -804,18 +820,21 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
     shape = knocks_shape(rows)
     if shape == SHAPE_GAPS_ONLY:
         first = render_telemapper_knocks(target, rows=rows, out_dir=out_dir,
-                                         title_suffix=title_suffix, end=end)
+                                         title_suffix=title_suffix, end=end,
+                                         date_text=date_text)
     elif shape == SHAPE_WIRELESS:
         first = render_wireless_total_knocks(target, rows=rows,
                                              out_dir=out_dir,
                                              title_suffix=title_suffix,
-                                             end=end)
+                                             end=end, date_text=date_text)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
                                      title_suffix=title_suffix, end=end,
+                                     date_text=date_text,
                                      extra_totals=extra_totals)], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,
-                            title_suffix=title_suffix, end=end)
+                            title_suffix=title_suffix, end=end,
+                            date_text=date_text)
     return ([first, gaps], shape)
 
 

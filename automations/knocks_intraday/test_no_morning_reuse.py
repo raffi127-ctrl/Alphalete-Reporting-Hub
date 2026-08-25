@@ -58,7 +58,7 @@ class NoMorningReuse(unittest.TestCase):
         self.wrote = []          # every path the renderer was asked to write
 
         def fake_render(day, *, rows, out_dir, title_suffix="", end=None,
-                        extra_totals=None):
+                        date_text="", extra_totals=None):
             self.wrote.append(Path(out_dir))
             return ([Path(out_dir) / f"total_knocks_{day}.png"], "house")
 
@@ -237,7 +237,36 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
     def test_todays_board_carries_the_time_it_was_taken(self):
         with mock.patch.object(intraday, "central_today", lambda: TODAY):
             cap = intraday._caption("Cody Cannon", TODAY, True)
-        self.assertIn("As of 9:00 PM Central", cap)
+        self.assertIn("As of 9:00 PM CST", cap)
+
+    def test_the_header_carries_the_first_name_and_a_short_date(self):
+        # The full ICD name says what the channel already says (Megan
+        # 2026-08-25); the date is 8/25, not 'August 25, 2026'.
+        cap = intraday._caption("Cody Cannon", TODAY, True)
+        self.assertIn("Cody — 8/25", cap)
+        self.assertNotIn("Cannon", cap)
+        self.assertNotIn("August", cap)
+
+    def test_a_shared_channel_still_tells_the_two_offices_apart(self):
+        """Hammad and Salik both post into #elite-prime-sales. With no name at
+        all their boards would be indistinguishable sitting side by side."""
+        a = intraday._caption("Hammad Haque", TODAY, True)
+        b = intraday._caption("Salik Mallick", TODAY, True)
+        self.assertIn("Hammad", a)
+        self.assertIn("Salik", b)
+        self.assertNotEqual(a, b)
+
+    def test_first_name_handles_a_one_word_or_empty_owner(self):
+        self.assertEqual(intraday.first_name("Cher"), "Cher")
+        self.assertEqual(intraday.first_name(""), "")
+        self.assertEqual(intraday.first_name("  "), "")
+        # An office with no name resolvable still gets a clean header.
+        self.assertIn("Total Knocks — End of Day — 8/25",
+                      intraday._caption("", TODAY, True))
+
+    def test_the_short_date_has_no_leading_zeros(self):
+        self.assertEqual(intraday._date_text(dt.date(2026, 8, 5)), "8/5")
+        self.assertEqual(intraday._date_text(dt.date(2026, 12, 25)), "12/25")
 
     def test_it_does_not_explain_the_morning_re_pull(self):
         # Megan 2026-08-25: the stamp stays, the explanation goes — how the
@@ -245,6 +274,8 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
         cap = intraday._caption("Cody Cannon", TODAY, True)
         for phrase in ("re-pulls", "read higher", "still knock", "tomorrow"):
             self.assertNotIn(phrase, cap)
+        # Abbreviation, not the word.
+        self.assertNotIn("Central", cap)
 
     def test_a_finished_day_carries_no_partial_note(self):
         cap = intraday._caption("Cody Cannon", dt.date(2026, 8, 20), False)

@@ -62,6 +62,11 @@ PROFILE_DIR = (Path(__file__).resolve().parents[1] / "uploaded"
 
 SLOT_LABEL = "End of Day"
 POST_EMOJI = ":door:"
+# Abbreviation, not the word (Megan 2026-08-25: "CST instead of central").
+# NOTE it is the literal string, not the live zone: on 2026-08-25 Central is
+# actually on daylight time (CDT). CST is what everyone here writes year-round,
+# so it is what the post says — change this one constant if that ever bites.
+POST_TZ = "CST"
 
 
 def central_today() -> dt.date:
@@ -73,17 +78,34 @@ def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in name.lower()).strip("-")
 
 
-def _caption(office_label: str, day: dt.date, partial: bool) -> str:
+def first_name(owner: str) -> str:
+    """'Cody Cannon' -> 'Cody'. The board posts in that office's OWN channel,
+    so the full ICD name in the header is saying what the channel already says
+    (Megan 2026-08-25). The first name stays because two offices SHARE
+    #elite-prime-sales — Hammad and Salik — and with no name at all their two
+    boards are indistinguishable sitting next to each other."""
+    return (owner or "").strip().split()[0] if (owner or "").strip() else ""
+
+
+def _date_text(day: dt.date) -> str:
+    """'8/25' — no leading zeros. Built by hand, not %-m/%-d, which is
+    glibc/BSD only and throws on Windows (the cross-platform rule)."""
+    return f"{day.month}/{day.day}"
+
+
+def _caption(owner: str, day: dt.date, partial: bool) -> str:
     """What rides above the image.
 
     A 9 PM board is a partial day, so it carries the time it was taken —
     a screenshot of it outlives this message. Just the stamp, though: how the
     morning re-pull works is our plumbing, not something the channel needs
     reading every night (Megan 2026-08-25)."""
-    when = f"{day.strftime('%B')} {day.day}, {day.year}"
-    cap = f"{POST_EMOJI} *Total Knocks — {SLOT_LABEL} — {office_label} — {when}*"
+    who = first_name(owner)
+    who = f"{who} — " if who else ""
+    cap = (f"{POST_EMOJI} *Total Knocks — {SLOT_LABEL} — {who}"
+           f"{_date_text(day)}*")
     if partial:
-        cap += "\n_As of 9:00 PM Central._"
+        cap += f"\n_As of 9:00 PM {POST_TZ}._"
     return cap
 
 
@@ -141,7 +163,8 @@ def build(target: Optional[dt.date] = None, *, only: Optional[str] = None,
             # offices in one run would otherwise overwrite each other.
             pngs, shape = knocks_render.render_knocks_boards(
                 day, rows=rows, out_dir=OUT_DIR / _slug(o.knocks_office),
-                title_suffix=rec["label"])
+                title_suffix=first_name(rec["label"]),
+                date_text=_date_text(day))
             rec["png"] = pngs[0]
             rec["shape"] = shape
             logfn(f"[knocks9pm] {o.key}: {len(rows)} rep(s) -> {pngs[0].name}")
