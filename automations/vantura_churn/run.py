@@ -5,7 +5,9 @@ Rates dashboard from Tableau → compute 0-30 bases/disconnects → RECONCILE
 against the dashboard's 0-30 cell → only then write the live sheet
 (Carlos: 'LUCY CHURN' + Activations tabs; Atef: Churn - Atef). If the derived
 numbers don't match the dashboard, nothing is written and the run fails
-loudly — that reconciliation is the whole safety story.
+loudly — that reconciliation is the whole safety story. The ONE exception is
+a dashboard that hasn't rolled its 0-30 window forward yet, which reads as us
+being wrong when we are the fresh side (_reconcile_stale_window).
 
   python -m automations.vantura_churn.run                # full daily run
   python -m automations.vantura_churn.run --dry-run      # compute + print only
@@ -136,9 +138,76 @@ BASE_TOL_MIN = 10          # absolute floor, so small bases aren't hair-trigger
 RATE_TOL_PP = 0.005        # 0.5 percentage points on the churn rate
 
 
-def _reconcile(who: str, summary: dict, dash: dict, log) -> list[str]:
+def _reconcile(who: str, summary: dict, dash: dict, log,
+               prev_summary: dict | None = None,
+               prev2_summary: dict | None = None) -> list[str]:
     """Compare computed 0-30 numbers to the Churn Rates dashboard.
     Returns a list of mismatch descriptions (empty = reconciled).
+
+    `prev_summary` is the SAME Order Log summarised against YESTERDAY's 0-30
+    window (cutoff one day earlier). When today's window doesn't reconcile but
+    yesterday's does, the disagreement is CHURNRATES not having rolled its
+    window forward yet — see _reconcile_stale_window. `prev2_summary` (two days
+    back) is diagnostic only: it never rescues a run, it just says so in the
+    failure text.
+    """
+    problems = _compare(who, summary, dash, log)
+    if not problems:
+        return problems
+    return _reconcile_stale_window(who, summary, dash, log, problems,
+                                   prev_summary, prev2_summary)
+
+
+def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
+                            problems: list[str],
+                            prev_summary: dict | None,
+                            prev2_summary: dict | None) -> list[str]:
+    """Rescue the ONE disagreement that is the dashboard's fault, not ours.
+
+    Every day the 0-30 window drops the accounts posted 31 days ago, and that
+    cohort is the MATURE end of the list — it carries a disproportionate share
+    of the disconnects. So the morning CHURNRATES hasn't rolled its window
+    forward yet, the dashboard still counts that cohort and reads HIGHER than
+    we do on both the base and (much more visibly) the rate.
+
+    2026-08-25 is the exact shape: CARLOS computed 22/383 = 5.74%, dashboard
+    391 / 6.40%. The three missing disconnects were NORBERTO P (Air), Baibhav G
+    and Rajendra J (Internet) — all posted 7/25, all sitting at the top of the
+    tab's own roll-off helper the day before, all correctly dropped by us and
+    still counted by the dashboard. Re-summarising the same Order Log against
+    YESTERDAY's cutoff gives 25/389 = 6.43% vs the dashboard's 25/391 = 6.40%:
+    a textbook reconciliation. Our numbers were right and the gate blocked the
+    write anyway, so the board kept Sunday's figures all day.
+
+    The rescue is deliberately narrow: only ONE day back, and the shifted
+    numbers must clear the SAME tolerances — a genuine structural break (wrong
+    owner, a dropped product type, a truncated pull) misses by far too much for
+    a one-day shift to close it. Today's FRESH numbers are what gets written;
+    the D-1 view is only ever used to decide who is behind.
+    """
+    if prev_summary is not None and not _compare(who, prev_summary, dash,
+                                                 lambda *a: None):
+        rate = (summary["disc_total"] / summary["base_total"]
+                if summary["base_total"] else 0.0)
+        log(f"    ↳ {who}: today's window does NOT match the dashboard, but "
+            f"YESTERDAY's does ({prev_summary['disc_total']}/"
+            f"{prev_summary['base_total']} vs base={dash['base']}) — "
+            "CHURNRATES has not rolled its 0-30 window forward yet. Writing "
+            f"today's numbers ({summary['disc_total']}/{summary['base_total']}"
+            f" = {rate:.2%}); the dashboard is the stale side.")
+        return []
+    if prev2_summary is not None and not _compare(who, prev2_summary, dash,
+                                                  lambda *a: None):
+        problems.append(
+            f"{who}: the dashboard matches our TWO-day-old window, so "
+            "CHURNRATES is ≥2 days behind — that is a CHURNRATES refresh "
+            "problem, not an Order Log one. Not auto-tolerated: check the "
+            "workbook's extract schedule before re-running.")
+    return problems
+
+
+def _compare(who: str, summary: dict, dash: dict, log) -> list[str]:
+    """The tolerance check itself — computed vs dashboard, no interpretation.
 
     Drift inside tolerance is REPORTED, not hidden — a run that passes with a
     visible gap should still look different in the log from an exact match.
@@ -482,7 +551,15 @@ def main(argv=None) -> int:
             f"{summary['base_total']})")
         if not args.skip_reconcile:
             dash = pull.parse_churnrates(churnrates_path, prefix)
-            problems += _reconcile(key.upper(), summary, dash, log)
+            # Same Order Log, older 0-30 cutoffs: what the dashboard would say
+            # if it were a day (or two) behind on rolling its window forward.
+            # Only used to decide WHO is stale — never written.
+            problems += _reconcile(
+                key.upper(), summary, dash, log,
+                prev_summary=compute.churn_summary(
+                    lines, today - dt.timedelta(days=1)),
+                prev2_summary=compute.churn_summary(
+                    lines, today - dt.timedelta(days=2)))
 
     # ------------------------------------------- activation rates (per office)
     rates_by_office: dict = {}
@@ -715,13 +792,17 @@ def _fail_manifest(msg: str) -> None:
                 reason=msg,
                 fix=f"A re-run probably will NOT clear this. The gate already "
                     f"tolerates normal refresh drift (base ±{BASE_TOL_PCT:.0%},"
-                    f" churn ±{RATE_TOL_PP * 100:.1f}pp), so reaching here "
-                    "means the Order Log and the CHURN RATES dashboard "
-                    "genuinely disagree by more than that. Check the Order Log "
-                    "pull first (owner filter applied? 60-day window?), then "
-                    "whether CHURNRATES has finished refreshing — compare its "
-                    "0-30 'Activated SPE/SP' with the computed base. Re-run "
-                    "only after one of those explains the gap. The board is "
+                    f" churn ±{RATE_TOL_PP * 100:.1f}pp) AND a CHURNRATES that "
+                    "is one day behind on rolling its 0-30 window forward "
+                    "(the common morning race — it makes the dashboard read "
+                    "high because the cohort about to roll off carries most of "
+                    "the disconnects). Reaching here means neither explains "
+                    "it. Read the lines above this one: '≥2 days behind' is a "
+                    "CHURNRATES extract problem, not ours — check the "
+                    "workbook's refresh schedule. Otherwise check the Order "
+                    "Log pull (owner filter applied? 60-day window? a product "
+                    "type Tableau renamed?) and compare the dashboard's 0-30 "
+                    "'Activated SPE/SP' with the computed base. The board is "
                     "stale, not wrong, meanwhile.",
                 link="https://us-east-1.online.tableau.com/#/site/sci/views/"
                      "ATTTRACKER-B2B/CHURNRATES",
