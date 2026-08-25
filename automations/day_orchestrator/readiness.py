@@ -681,17 +681,36 @@ class ReadinessCache:
         tableau_session(), i.e. a fresh SSO login every probe. The access ledger
         proved it (day_orchestrator: 16 logins on 2026-08-18). See
         ReadinessCache.probe_pass for the shared-login fix."""
+        # FAIL-OPEN FLOOR — added 2026-08-25, and the reason is the paragraph in
+        # _probe_source about a gate starving a report to death. Every other
+        # probe here carries a fallback_hhmm; this one did not, and it is also
+        # the one the daily_metrics notes tell the next person to wire when a
+        # metric comes out with yesterday's numbers. Wired without a floor, a
+        # not-ready verdict has no way out: the pass circles all morning and the
+        # report never runs, which is worse than the stale number it was meant
+        # to prevent. No source used this probe type when the floor was added,
+        # so nothing changed behaviour; the omission was a loaded gun, not a
+        # working design. (att_orderlog keeps its own copy of this check — that
+        # path is live and was left untouched on purpose.)
+        past, why_floor = _past_fallback(probe.get("fallback_hhmm"))
+        if past:
+            return Readiness(True, why_floor)
+
         view_url = probe.get("view_url")
         crosstab_sheet = probe.get("crosstab_sheet")
         date_col = probe.get("date_col")
         min_rows = int(probe.get("min_rows", 1))
+        # A wiring mistake is NOT evidence the data is missing — same rule as
+        # the unknown-probe-type branch. Run UNGATED and say so loudly rather
+        # than hold a report on a typo.
         if not (view_url and crosstab_sheet and date_col):
-            return Readiness(False, "probe misconfigured (need view_url/crosstab_sheet/date_col)")
+            return Readiness(True, "MISCONFIGURED: probe needs view_url/"
+                                   "crosstab_sheet/date_col — running UNGATED")
 
         try:
             from automations.shared.tableau_patchright import download_crosstab_patchright
         except Exception as e:
-            return Readiness(False, f"cannot import tableau helper ({e})")
+            return Readiness(True, f"cannot import tableau helper ({e}) — running")
 
         out = Path(tempfile.gettempdir()) / f"probe_{source_id.replace(':', '_')}.csv"
         try:
@@ -700,8 +719,31 @@ class ReadinessCache:
             line = str(e).splitlines()[0][:120] if str(e) else repr(e)
             return Readiness(False, f"extract not pullable yet ({line})")
 
-        ok, why = _csv_covers_date(out, date_col, self.target_date, min_rows)
+        # days_back: which day must the extract reach. 0 (default) = today, the
+        # old behaviour. 1 = the latest COMPLETED day, which is what an extract
+        # that refreshes overnight with yesterday's finalised rows can actually
+        # satisfy — gating such a source on TODAY is unsatisfiable at 4am and
+        # just burns the morning down to the floor. att_orderlog learned this
+        # the same way and defaults to 1.
+        check = self.target_date - dt.timedelta(days=int(probe.get("days_back", 0)))
+        ok, why = _csv_covers_date(out, date_col, check, min_rows)
         return Readiness(ok, why)
+
+
+def _past_fallback(fallback) -> Tuple[bool, str]:
+    """Is the clock past a probe's fail-open floor? (False, "") when there is no
+    floor configured or the string is unparseable — a bad `fallback_hhmm` must
+    never itself decide a gate."""
+    if not fallback:
+        return False, ""
+    try:
+        fb_h, fb_m = (int(x) for x in str(fallback).split(":"))
+    except Exception:  # noqa: BLE001 — a bad floor string is not a verdict
+        return False, ""
+    now = dt.datetime.now()
+    if (now.hour, now.minute) >= (fb_h, fb_m):
+        return True, f"past {fallback} fallback — running ungated"
+    return False, ""
 
 
 def _csv_covers_date(csv_path: Path, date_col: str, target: dt.date,
