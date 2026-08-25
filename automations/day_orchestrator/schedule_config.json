@@ -4166,15 +4166,37 @@
    },
    "timeout_minutes": 15
   },
-  "install_knocks_9pm_agent": {
+  "disable_knocks_9pm_agent": {
    "on_scheduler": true,
-   "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_9pm_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-9pm on LUCY 3 from the committed plist: 21:00 Central, every enrolled D2D-metrics office's CURRENT-day knock board posted to that office's own channel. install_agent rewrites the committed laptop path to this machine's repo, so the plist's ~/1st Claude Folder paths become ~/recruiting-report automatically \u2014 do NOT copy the plist by hand. Installed 2026-08-25 at Megan's request; the authoring session had deliberately left it uninstalled, and its office-LOCAL scheduling refactor (knocks_intraday/schedule.py) was still uncommitted at that point \u2014 if that lands, this single 21:00 Central fire is what it replaces. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
-   "display_name": "Install: Knocks 9 PM LaunchAgent (Lucy 3)",
+   "_note": "Unload com.alphalete.knocks-9pm and move its plist to .plist.disabled. That label was installed on Lucy 3 on 2026-08-25 (fb1e606) firing a single 21:00 CENTRAL clock for every office; 214936b replaced it with com.alphalete.knocks-intraday, which ticks every 5 minutes and fires each office at its OWN local time. THE OLD LABEL MUST BE UNLOADED BEFORE THE NEW ONE IS INSTALLED — with both loaded every office posts its board twice. It also has to go on its own terms rather than by deletion: 214936b removes deploy/knocks_9pm.sh, so a Lucy 3 that pulls while the label is still loaded fires at 21:00 into a missing script, which is a silent no-op that never announces itself. Its own registry id because `lucy rerun` needs one and every other disable_* entry has a pinned base_args (extra args land AFTER base_args, so borrowing another entry retires the wrong agent). Kept permanently as the documented inverse of install_knocks_intraday_agent. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there, and with on_scheduler:false it is invisible to `lucy rerun`); cadence.weekdays [] is what actually means the 4am orchestrator NEVER auto-runs it. `lucy rerun disable_knocks_9pm_agent --machine \"Lucy 3\"`.",
+   "display_name": "Disable Knocks 9 PM agent (superseded by Intraday Knocks)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "knocks-9pm"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
+  },
+  "install_knocks_intraday_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_intraday_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-intraday on LUCY 3 from the committed plist. It TICKS every 5 minutes (StartInterval 300) and posts whatever is due; the slot times are NOT in the plist, they live in knocks_intraday/schedule.py in each office's OWN timezone \u2014 2:00 PM + 5:15 PM for Cody's channel only, 9:00 PM for every enrolled office, Mon-Sat. One calendar fire cannot serve two zones: four offices are Eastern (aya, hammad, salik, nii), so a single 21:00 Central fire reached them at 10 PM local. REPLACES install_knocks_9pm_agent (fb1e606, installed 2026-08-25): before installing this, UNLOAD the old label com.alphalete.knocks-9pm on Lucy 3 \u2014 leaving it loaded means both agents fire and every office gets its board twice. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
+   "display_name": "Install: Intraday Knocks LaunchAgent (Lucy 3)",
    "command": [
     "automations.day_orchestrator.install_agent"
    ],
    "base_args": [
-    "knocks-9pm"
+    "knocks-intraday"
    ],
    "cadence": {
     "weekdays": []
