@@ -165,14 +165,53 @@ def open_docs_portal(page, modal):
     isolated world, so any "read the current page" shortcut quietly reads the
     OLD tab.
     """
-    row = modal.locator("div,li,tr").filter(
-        has_text=config.DOCS_ROW).first
-    row.click(timeout=10000)                       # expand the section
+    _expand(modal, config.DOCS_ROW, page)
     with page.context.expect_page(timeout=30000) as popup:
         _click_any(modal, "Access Digital Doc Portal", page=page)
     tab = popup.value
     tab.wait_for_load_state("domcontentloaded", timeout=60000)
     return tab
+
+
+def _expand(modal, label: str, page, *, reveals: str = "",
+            verbose: bool = True) -> None:
+    """Open one collapsible Set Status section and WAIT for its contents.
+
+    Two traps, both hit on the first Lucy 3 probe (2026-08-25):
+
+    `filter(has_text=...).first` matches the OUTERMOST element containing the
+    text -- and since the whole modal contains it, that is the modal. Clicking
+    that expands nothing, and the probe then reported the portal button simply
+    absent. `.last` is the innermost match, which is the row itself.
+
+    And the click has to be FOLLOWED by a wait. These sections render their
+    contents on expand, so looking immediately finds nothing even when the
+    click worked -- the same reveal-one-control-at-a-time shape as the document
+    form, in a different place.
+    """
+    rows = modal.locator("div,li,tr").filter(has_text=label)
+    target = rows.last if rows.count() else modal.get_by_text(label).first
+    target.scroll_into_view_if_needed(timeout=8000)
+    target.click(timeout=10000)
+    marker = reveals or "Access Digital Doc Portal"
+    try:
+        modal.get_by_text(marker, exact=False).first.wait_for(
+            state="visible", timeout=8000)
+        return
+    except Exception:
+        pass
+    # Some rows only respond on the chevron, not the label. Try the last
+    # clickable thing on the row before giving up.
+    if verbose:
+        print(f"    ({label}: label click didn't reveal — trying the chevron)")
+    try:
+        target.locator("svg,i,button,span").last.click(timeout=6000)
+        modal.get_by_text(marker, exact=False).first.wait_for(
+            state="visible", timeout=8000)
+    except Exception:
+        if verbose:
+            print(f"    ({label}: still not expanded — the caller will say "
+                  f"what it could not find)")
 
 
 def _pick_typeahead(tab, wanted: str, *, expect_single: bool) -> None:
@@ -305,8 +344,7 @@ def tick_attestations(page, modal, *, dry_run: bool = True,
                                                      "BACKGROUND CHECK"),
                              config.BG_CHECK_TICK),
                             ("DRUG TEST", config.DRUG_TEST_TICK)):
-        modal.locator("div,li,tr").filter(has_text=section).first.click(
-            timeout=10000)                              # expand
+        _expand(modal, section, page, reveals=labels[0][:28])
         for frag in labels:
             box = modal.locator("label", has_text=frag).first
             box.wait_for(state="visible", timeout=15000)
@@ -314,8 +352,7 @@ def tick_attestations(page, modal, *, dry_run: bool = True,
                 box.click(timeout=10000)
             ticked.append(frag)
 
-    modal.locator("div,li,tr").filter(has_text="SERVICE").first.click(
-        timeout=10000)
+    _expand(modal, "SERVICE", page, reveals=config.SERVICE_RADIO)
     radio = modal.locator("label", has_text=config.SERVICE_RADIO).first
     radio.wait_for(state="visible", timeout=15000)
     if not dry_run:
