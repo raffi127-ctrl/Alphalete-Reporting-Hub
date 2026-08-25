@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -211,12 +212,30 @@ def main(argv=None) -> int:
                     help="Run only one of the two reports.")
     args = ap.parse_args(argv)
 
+    # HARVEST CUTOVER (Megan 2026-08-25, cutting Tableau access after they
+    # flagged the account). Both of this report's views -- NEED_NI_CAP and
+    # NEED_WL_CAP -- are already pulled every morning by harvest_prime at
+    # order 8, and this report ran at order 18 and scraped them AGAIN. That was
+    # a pure duplicate: 2 accesses a day for bytes we already had on disk.
+    #
+    # It cannot change a number. pull._dl only consults the cache, and the
+    # adapter returns None -- straight through to the live scrape -- on a miss,
+    # a checksum mismatch, a wrong-date entry, or ANY error, while the loader
+    # hard-fails rather than serving stale data. Worst case is today's behaviour.
+    #
+    # setdefault, not assignment: HARVEST_MODE=off in the environment still
+    # wins, so a rollback needs no code change or deploy.
+    os.environ.setdefault("HARVEST_MODE", "on")
+    os.environ.setdefault("HARVEST_VERBOSE", "1")
+
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     selected = [r for r in REPORTS if args.only is None or r[0] == args.only]
 
     print(f"=== Captainship Churn — {today.isoformat()} "
           f"({'DRY-RUN' if args.dry_run else 'LIVE'}) ===")
     print(f"Reports: {[r[1] for r in selected]}")
+    print(f"  harvest cache: {os.environ.get('HARVEST_MODE')} "
+          f"(a miss falls back to a live pull)")
 
     # --- Phase 1: pull both CSVs (single Tableau session) ---
     csvs: dict = {}

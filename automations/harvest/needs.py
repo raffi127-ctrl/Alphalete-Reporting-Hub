@@ -173,16 +173,47 @@ NEED_WL_AYA = DataNeed(_D2D, _T + _D2D + "/43c24436-272f-444a-91b9-b7c467d19704/
 REPORT_NEEDS: Dict[str, List[DataNeed]] = {
     "daily_metrics":         [NEED_NI_LOCAL, NEED_WL_LOCAL],
     "captainship_churn":     [NEED_NI_CAP, NEED_WL_CAP],
+    # B2B DELIBERATELY ABSENT (Megan 2026-08-25) — see the note below.
     "owners_metrics_churn":  [NEED_OWN_WAYNE, NEED_OWN_STARR, NEED_OWN_CHAN,
                               NEED_OWN_TONY, NEED_OWN_SAHIL,
-                              NEED_OWN_CARLOS, NEED_OWN_EVELIZ, NEED_OWN_LUIS,
                               NEED_OWN_KHALIL, NEED_OWN_COLTEN, NEED_OWN_JAIRO],
     "rashad_metrics":        [NEED_NI_RASHAD, NEED_WL_RASHAD],
     "rashad_churn":          [NEED_NI_RASHAD, NEED_WL_RASHAD],
     "aya_metrics":           [NEED_NI_AYA, NEED_WL_AYA],
 }
 
-# The whole churn cluster, de-duplicated (19 distinct pulls).
+# WHAT DOES *NOT* BELONG IN THIS LIST, and why (Megan 2026-08-25, while cutting
+# Tableau access after they flagged the account).
+#
+# THE RULE: everything in this list is pulled EVERY morning by harvest_prime
+# whether or not anyone reads it. So —
+#   * a view already in the list, still being scraped live by its report, is a
+#     PURE DUPLICATE. Flipping that report to HARVEST_MODE=on halves it. Free.
+#   * adding a NEW view whose only consumer pulls it ONCE saves NOTHING. It just
+#     moves the same single pull from the report's slot to the harvest's. The
+#     harvest only pays where a view has more than one consumer, or where the
+#     pull is already being spent for somebody else.
+#
+# Dropped on that basis: owners_metrics_churn's three B2B captainship views.
+# The report appends a WIRELESS product param to every B2B view (pull._wireless),
+# so these URLs — declared before that param existed — hash to a different cache
+# key than anything the report actually asks for. They were being pulled every
+# morning and read by NOTHING: 3 accesses a day for nobody.
+#
+# Re-pointing them at the param-carrying URLs would cost MORE than it saves. A
+# param-filtered need on a worksheet other needs share must be isolated onto its
+# own login (harvester._isolation_groups — the fiber PSS pulls proved that state
+# leaks between them), so those 3 pulls would go from riding a shared login to
+# needing 3 extra sign-ins, to save 3 pulls the report makes exactly once.
+#
+# Not added for the same reason: owners_metrics_churn's ALLTEAM backfills
+# (fiber / NDS / B2B) and its wireless-org view — one consumer, one pull each.
+# And FIBER_ARON_URL is dead code: `aron` is not in run.REPORTS at all.
+#
+# NEED_OWN_CARLOS / _EVELIZ / _LUIS stay DEFINED above — proof.py and
+# proof_orgwide.py reference them directly — they are just no longer harvested.
+
+# The whole churn cluster, de-duplicated (16 distinct pulls).
 CHURN_CLUSTER_NEEDS: List[DataNeed] = dedupe_by_cache_key(
     [n for needs in REPORT_NEEDS.values() for n in needs]
 )
