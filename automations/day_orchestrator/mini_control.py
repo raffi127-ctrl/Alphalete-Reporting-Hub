@@ -200,7 +200,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # `update` still succeeds and the queue looks alive while every rerun sits at
 # "queued" for hours. Reading a log should never spend a fix.
 READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
-                    "slack_channel", "slack_find"}
+                    "slack_channel", "slack_find", "slack_thread"}
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -5348,6 +5348,74 @@ def _action_daystate(args: str) -> tuple[bool, str]:
     return True, (head + ((" · " + shown + more) if detail else " · all terminal-clean"))
 
 
+def _action_slack_thread(args: str) -> tuple[bool, str]:
+    """READ-ONLY: list one thread's replies with their ts, author and, for image
+    files, the byte size — which is how you spot a capture that posted blank.
+
+      slack_thread <channel_id> <thread_ts>
+
+    Why the size matters (2026-08-25): a Sheets PDF export of a HIDDEN tab comes
+    back as an empty page, so the section posts a white rectangle that looks
+    exactly like a good one in the Result cell and in the log. The tell is the
+    file size — a real churn shot is 130-210KB, the blank ones were ~15KB — so
+    this prints it and lets a human decide what to delete."""
+    import ssl as _ssl
+    parts = (args or "").split()
+    if len(parts) < 2:
+        return False, "slack_thread needs <channel_id> <thread_ts>"
+    cid, ts = parts[0], parts[1]
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+        r = client.conversations_replies(channel=cid, ts=ts, limit=200)
+    except Exception as e:  # noqa: BLE001
+        return False, f"conversations.replies FAILED: {type(e).__name__} {str(e)[:140]}"
+    lines = []
+    for m in r.get("messages", []) or []:
+        bits = [m.get("ts", "?")]
+        files = m.get("files") or []
+        for f in files:
+            bits.append("{} {}B {}x{}".format(
+                (f.get("title") or f.get("name") or "?")[:24],
+                f.get("size", "?"), f.get("original_w", "?"),
+                f.get("original_h", "?")))
+        if not files:
+            bits.append((m.get("text") or "")[:38].replace(chr(10), " "))
+        lines.append(" | ".join(str(b) for b in bits))
+    head = f"{len(lines)} msg(s) in {cid}/{ts}:" + chr(10)
+    return True, (head + chr(10).join(lines))[:470]
+
+
+def _action_slack_delete(args: str) -> tuple[bool, str]:
+    """Delete ONE Slack message by channel + ts — the only way to retract a
+    capture that posted blank, since chat.delete only touches messages the
+    caller owns and everything in these channels goes out as Lucy.
+
+      slack_delete <channel_id> <ts>
+
+    Deliberately one ts per call and no globbing: this is the single destructive
+    Slack verb on the whitelist, and a pattern match here could erase a thread
+    nobody can rebuild. Get the ts from `slack_thread` first."""
+    import ssl as _ssl
+    parts = (args or "").split()
+    if len(parts) < 2:
+        return False, "slack_delete needs <channel_id> <ts> (exactly one message)"
+    cid, ts = parts[0], parts[1]
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+        client.chat_delete(channel=cid, ts=ts)
+    except Exception as e:  # noqa: BLE001
+        return False, f"chat.delete FAILED: {type(e).__name__} {str(e)[:160]}"
+    return True, f"deleted {ts} from {cid}"
+
+
 ACTIONS = {
     "ping": _action_ping,
     "messages_diag": _action_messages_diag,
@@ -5446,6 +5514,8 @@ ACTIONS = {
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
     "slack_find": _action_slack_find,
+    "slack_thread": _action_slack_thread,
+    "slack_delete": _action_slack_delete,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,
