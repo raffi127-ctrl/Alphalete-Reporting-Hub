@@ -320,18 +320,25 @@ generating the bundle IS the send. There is no separate mail step.
 A rep who is not on View Progress yet is added first with **Add Sales Rep**
 (button top-left of the progress table; a modal with an employee dropdown).
 
-## Open questions before this can be built
+## Guards the build keeps
 
-1. ~~Bundle selection per rep.~~ **ANSWERED** (Megan 2026-08-25): every new
-   start gets **Base (Door to Door/Business to Business)** for now. Still worth
-   confirming whether the **Select Bundle** dropdown ("Door to Door- General 1")
-   and the **commission** checkbox ("AT&T Door to Door with Drug Free Workplace
-   Policy") are likewise the same for everyone, or follow the campaign chosen in
-   the new tab.
-2. **What "Onboarding Quizzes" ticks on** — all six training/compliance
-   columns green, or just the FTC course? See above.
-3. Whether generating a bundle twice for the same rep re-sends or errors
-   (blueink's rule is "already has one → skip"; this needs the same guard).
+Every open question is now answered. Three defensive rules stay in anyway, each
+cheap and each guarding an expensive mistake:
+
+1. **Assert the bundle dropdown holds exactly one option.** If it ever holds
+   more, the campaign or the plan changed: refuse the rep and say so. Taking
+   row one of a list that quietly grew is how someone gets the wrong contract.
+2. **Verify the required fields are non-empty before submitting.** They
+   pre-fill (Megan: "I don't think anything is hand typed"), but that is a
+   belief about a form nobody has watched populate itself, and being wrong means
+   a contract mailed with a blank employee name. One read turns it into a
+   refusal.
+3. **Skip anyone not showing `REQUIRED ACTION` on Onboarding Documents.**
+   OwnerVille refuses a second generate for the same rep (Megan 2026-08-25), so
+   this is not what stops a double-send — the platform is. It is what keeps a
+   re-run quiet, and what keeps a refusal meaningful: if we only ever generate
+   for reps we think still need it, a "won't allow" means our picture is wrong
+   and deserves saying, rather than being the expected noise of every re-run.
 
 ## What it inherits from the two built siblings
 

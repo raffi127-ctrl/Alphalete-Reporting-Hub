@@ -76,8 +76,16 @@ DRUG_TEST_TICK = (
 SERVICE_RADIO = "RES-ATT"          # the other option is RES-ATT-OOF
 
 # The Set Status row whose state says whether documents are still owed. A rep
-# NOT showing this has their bundle already — skip, never regenerate. Batching
-# makes re-runs the normal path, so this guard is load-bearing.
+# NOT showing this has their bundle already — skip.
+#
+# OwnerVille itself refuses a second generate for the same rep (Megan
+# 2026-08-25), so this is NOT what prevents a double-send — the platform is.
+# It is what keeps a re-run QUIET: batching makes re-running the send phase the
+# normal path, and without this check every already-done rep would walk the
+# whole nine-step click-path just to collect a refusal at the end. It also keeps
+# that refusal MEANINGFUL: if we only ever generate for reps we believe still
+# need it, a "won't allow" coming back means our picture is wrong and is worth
+# saying out loud, instead of being the expected noise of every re-run.
 DOCS_ROW = "ONBOARDING DOCUMENTS"
 DOCS_NEEDED_STATE = "REQUIRED ACTION"
 
