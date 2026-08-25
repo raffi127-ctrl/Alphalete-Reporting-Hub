@@ -393,13 +393,20 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
     _render_html_to_png(html, ps_path, scale=scale,
                         fonts_present="fonts.googleapis" in html)
 
-    # --- Units: names+total strip (B:E) spliced onto the prior day's group --
+    # --- Units: names+total strip (A:E) spliced onto the prior day's group --
     units_out: List = []
     for i, ub in enumerate(blocks.units):
         day_name, d_first, d_last = prior_day_columns(ub, today, vals)
-        # One table: cols B..E, then the prior-day's 3-col group. The columns
+        # One table: cols A..E, then the prior-day's 3-col group. The columns
         # between them (the other days) are simply not fetched.
-        left = _fetch_grid("B", "E", ub.start_row, ub.end_row)
+        #
+        # Starts at A, not B (Eve, 2026-08-25: "no se ven los titulos de los
+        # cuadros ... para ningun delta chart"). The block's two title rows
+        # live in col A — "Raf Captainship" and "NEW INTERNET UNITS" / "ALL
+        # UNITS" — so a B:E window cut them off and every chart arrived with a
+        # blank top-left corner. Col A also carries the rank numbers and the
+        # totals row's label, which is the sheet's own layout.
+        left = _fetch_grid("A", "E", ub.start_row, ub.end_row)
         day = _fetch_grid(d_first, d_last, ub.start_row, ub.end_row)
         u_path = out_dir / f"captainship_{captain_key}_units{i}.png"
         html = _spliced_units_html(left, day)
@@ -413,9 +420,23 @@ def _spliced_units_html(left: dict, day: dict) -> str:
     """Build one table from two column windows (B:E and the day's 3 cols),
     row-aligned, skipping the days in between — the render equivalent of the
     old _hstack of two separate screenshots."""
-    n_left = 4                                   # B,C,D,E
+    n_left = 5                                   # A,B,C,D,E
     n_day = len(day["col_meta"]) or 3
     fonts: set = set()
+
+    # SPILL. Col A is a narrow rank column, but its title rows hold long text
+    # ("NEW INTERNET UNITS"): on the sheet that text simply flows over the
+    # empty B beside it. This table is table-layout:fixed with overflow:hidden,
+    # so without help the title would be CLIPPED to the rank column's width —
+    # a blank corner again, by a different route. Reproduce the spill: an A
+    # cell with text whose B neighbour is empty spans both columns.
+    def _spills(ri: int) -> bool:
+        vals_ = (left["rows"][ri].get("values", [])
+                 if ri < len(left["rows"]) else [])
+        a_txt = (vals_[0].get("formattedValue") or "").strip() if vals_ else ""
+        b_txt = ((vals_[1].get("formattedValue") or "").strip()
+                 if len(vals_) > 1 else "")
+        return bool(a_txt) and not b_txt
 
     def widths(g, n):
         w = [(c.get("pixelSize", 100) + 1) for c in g["col_meta"][:n]]
@@ -438,15 +459,18 @@ def _spliced_units_html(left: dict, day: dict) -> str:
         for (g, n, mg) in ((left, n_left, lmerge), (day, n_day, dmerge)):
             values = g["rows"][ri].get("values", []) if ri < len(
                 g["rows"]) else []
+            spill = g is left and _spills(ri)
             for ci in range(n):
                 span = mg.get((ri, ci))
                 if span and span.get("skip"):
+                    continue
+                if spill and ci == 1:      # covered by A's colspan
                     continue
                 cell = values[ci] if ci < len(values) else {}
                 fmt = cell.get("effectiveFormat", {})
                 val = _html.escape(
                     cell.get("formattedValue", "") or "").replace("\n", "<br>")
-                attrs = ""
+                attrs = ' colspan="2"' if (spill and ci == 0) else ""
                 if span:
                     if span.get("rowspan", 1) > 1:
                         attrs += f' rowspan="{span["rowspan"]}"'

@@ -610,7 +610,7 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
     Product Summary: the A:K span (New-Internet + All-Units sub-blocks for
     fiber/Rafael) with its collapsed weekly-historical row groups EXPANDED
     for the shot (shared view state — expanded only during this capture).
-    Units: for each chart, the names+'Total for week' strip (B:E) spliced
+    Units: for each chart, the title+names+'Total for week' strip (A:E) spliced
     next to the PRIOR DAY's 3-col group; the in-between days are hidden.
 
     Returns {'product_summary': Path, 'units': [(caption, Path), ...]}."""
@@ -654,8 +654,12 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
         u_left = out_dir / f"_{captain_key}_units{i}_left.tmp.png"
         u_day = out_dir / f"_{captain_key}_units{i}_day.tmp.png"
         try:
+            # A:E, not B:E — col A carries the block's two title rows
+            # ("Raf Captainship" / "NEW INTERNET UNITS") and a B-start left
+            # every chart with a blank corner (Eve, 2026-08-25). A screenshot
+            # gets the sheet's own spill over the empty B for free.
             capture_ranges(
-                [(f"B{ub.start_row}:E{ub.end_row}", u_left),
+                [(f"A{ub.start_row}:E{ub.end_row}", u_left),
                  (f"{d_first}{ub.start_row}:{d_last}{ub.end_row}", u_day)],
                 scale=scale)
             _hstack([u_left, u_day], u_path)
