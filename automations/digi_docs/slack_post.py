@@ -22,8 +22,8 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
     # -- the bundle goes out and the boxes get ticked in the same pass -- so
     # splitting it across a headline and a trailing note just made the reader
     # assemble it themselves (Megan 2026-08-25).
-    lines = [f"*{sent}* new start{'' if sent == 1 else 's'}: digi docs sent · "
-             f"BG checked · drug test checked"]
+    lines = [f"*{sent}* new start{'' if sent == 1 else 's'} sent digi docs "
+             f">> BG & drug test checked"]
     if refused:
         lines.append("")
         lines.append(f"*Needs doing by hand ({len(refused)}):*")
