@@ -50,10 +50,23 @@ NEVER_WRITE_CHECKBOX = True
 # workaround are all in place. It is also the lightest machine (17 scheduler
 # handles against Lucy 1's 59 and Lucy 2's 56).
 #
-# The other two new-start steps stay where THEIR logins are, which is why the
-# merged Hub card spans three machines: BG Check Sync on Lucy 1 (reads the
-# Sterling / First Advantage mailbox), Blue Ink on Lucy 2 (needs its Blue Ink
-# browser session). Wrong box = wrong identity = wrong data.
+# It is ALL Raf's logins (Megan 2026-08-25), and Lucy 3 mirrors Lucy 1's
+# accounts -- rcaptain AppStream, ownerville, Tableau (workflows/
+# lucy3-provisioning.md). So the usual "wrong box = wrong data" rule does NOT
+# bite here: that one is about Raf vs Carlos, and nothing in new-start
+# onboarding is Carlos's.
+#
+# What actually pins each step to a machine is which SESSION is seeded there:
+# BG Check on Lucy 1 for the raffi127@ gmail app-password, Blue Ink on Lucy 2
+# for its hand-seeded Blue Ink browser session, the OwnerVille steps wherever an
+# OV session lives. Those are re-seedable, so consolidating all three onto one
+# box is possible -- it just is not free, and nobody has asked for it.
+#
+# One real risk from sharing an account across boxes, worth knowing before
+# anything else moves: two machines holding warm sessions on the SAME ownerville
+# account can kick each other's logins, which is itself a wedge cause. The OV
+# keep-warm holder deliberately runs on ONE box (Lucy 1); Lucy 3 logs in on
+# demand instead. This report follows headshots and does the same.
 MACHINE = "Lucy 3"
 
 # OWN browser profile, never the shared one. headshots learned this the hard

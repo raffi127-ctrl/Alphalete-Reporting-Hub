@@ -43,20 +43,35 @@ Two things that follow:
   profiles stop them blocking each other, not from hammering the same site with
   the same reps on the same morning.
 
-### Why the merged card still spans three machines
+### Why the merged card spans three machines
 
-Each new-start step sits where its own LOGIN is, and that is not negotiable:
+**It is all Raf's logins** (Megan 2026-08-25), and Lucy 3 mirrors Lucy 1's
+accounts — rcaptain AppStream, ownerville, Tableau (see
+`workflows/lucy3-provisioning.md`). So the usual *wrong box = wrong data* rule
+does **not** apply here: that rule is about Raf vs Carlos, and nothing in
+new-start onboarding is Carlos's.
 
-| Step | Machine | Because |
+What actually pins each step to a machine is which **session is seeded** there:
+
+| Step | Machine | What's seeded there |
 |---|---|---|
-| BG Check Sync | Lucy 1 | reads the Sterling / First Advantage mailbox |
-| Blue Ink | Lucy 2 | needs its Blue Ink browser session |
-| Headshot Photo | Lucy 3 | needs an OwnerVille session |
-| **Digi Docs** | **Lucy 3** | needs an OwnerVille session |
+| BG Check Sync | Lucy 1 | the `raffi127@` gmail app-password |
+| Blue Ink | Lucy 2 | a hand-seeded Blue Ink browser session |
+| Headshot Photo | Lucy 3 | an OwnerVille session |
+| **Digi Docs** | **Lucy 3** | an OwnerVille session |
 
-Wrong box means the wrong identity and therefore the wrong data. This is also
-why the Hub card has no `daily_runs` count — three clocks on three machines,
-so no fixed N is honest.
+Those are all re-seedable, so **consolidating all three onto one box is
+possible** — it is a session-seeding job, not an identity problem. Nobody has
+asked for it, and it is not free, but it is worth knowing the option is open.
+
+One thing to know before anything moves: two machines holding warm sessions on
+the **same** OwnerVille account can kick each other's logins, which is itself a
+known wedge cause. That is why the OV keep-warm holder runs on exactly one box
+(Lucy 1) and Lucy 3 logs in on demand. This report follows headshots and does
+the same.
+
+The card still carries no `daily_runs` count regardless — three clocks on three
+machines means no fixed N is honest.
 
 ## Run it in phases, not one flow per rep
 
