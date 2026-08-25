@@ -310,8 +310,7 @@ def main(argv=None) -> int:
         for key, _w, status in d["lost"]:
             print(f"    - {key}  (now: {_LABEL.get(status, status)})")
     if d.get("moved"):
-        print("
-  moved, but still not reachable:")
+        print("\n  moved, but still not reachable:")
         for key, was, status in d["moved"]:
             print(f"    ~ {key}: {_LABEL.get(was, was)} -> "
                   f"{_LABEL.get(status, status)}")
