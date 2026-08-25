@@ -217,18 +217,74 @@ class BoardForWalksTheDays(unittest.TestCase):
         self.assertEqual(name, "Chan Park")
         self.assertEqual(c_rows[0]["Total Knocks"], 12)      # 3 × 4, same span
 
-    def test_a_partial_comparison_is_dropped_rather_than_compared_short(self):
-        # We hold Chan for ONE of the three days, and no session is opened
-        # (our own days are all cached), so his line would sum one day beside
-        # our three. Better no teal line than a misleading one.
+    def test_a_partial_comparison_is_pulled_up_to_the_full_span(self):
+        """Megan 2026-08-25: "we want exact comparison of the same date range
+        at chan's to show." So a short comparison is COMPLETED, not dropped —
+        even when our own days are all cached and nothing else needs a
+        session."""
+        start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
+        for d in service.span_days(start, end):
+            self.on_disk[("Rafael Hidalgo", d)] = rows_for(d, knocks=10)
+        self.on_disk[("Chan Park", start)] = rows_for(start, knocks=4)
+
+        b = service.board_for("Rafael Hidalgo", start, end,
+                              logfn=lambda m: None)
+        # A session opened for Chan ALONE — our days needed nothing.
+        jobs = dict((n, days) for n, days in self.pulled[0])
+        self.assertNotIn("Rafael Hidalgo", jobs)
+        self.assertEqual(jobs["Chan Park"], [dt.date(2026, 8, 23),
+                                             dt.date(2026, 8, 24)])
+        # And the line that lands covers all three days: the cached 4 plus the
+        # two pulled days (10 each, from the stub) = 24.
+        name, c_rows = self.rendered["extra_totals"][0]
+        self.assertEqual(name, "Chan Park")
+        self.assertEqual(c_rows[0]["Total Knocks"], 24)
+        self.assertEqual(b.compared_to, "Chan Park")
+        # Our own rows are still the cached ones, untouched by that session.
+        self.assertEqual(b.rows[0]["Total Knocks"], 30)
+
+    def test_a_comparison_that_cannot_be_fetched_is_dropped_not_compared_short(self):
+        # The pull is the thing that completes the span; when it FAILS there is
+        # nothing to draw. A teal line summing 1 day beside our 3 would read as
+        # Chan falling behind — worse than no line.
         start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
         for d in service.span_days(start, end):
             self.on_disk[("Rafael Hidalgo", d)] = rows_for(d)
         self.on_disk[("Chan Park", start)] = rows_for(start)
-        b = service.board_for("Rafael Hidalgo", start, end,
-                              logfn=lambda m: None)
+
+        def failing_compare(jobs, verbose=True, profile_dir=None):
+            return [(n, {}, RuntimeError("ownerville said no"))
+                    for n, _ in jobs]
+
+        with mock.patch(
+                "automations.rashad_metrics.knocks_pull.pull_offices_days",
+                failing_compare):
+            b = service.board_for("Rafael Hidalgo", start, end,
+                                  logfn=lambda m: None)
+        # The board still went out — a lost comparison never costs the board.
         self.assertEqual(self.rendered["extra_totals"], [])
         self.assertEqual(b.compared_to, "")
+        self.assertEqual(len(b.rows), 1)
+
+    def test_cache_only_keeps_the_board_and_drops_the_short_comparison(self):
+        # --cache-only can't complete the span, and failing the whole request
+        # over the comparison line would be worse than going without it.
+        start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
+        for d in service.span_days(start, end):
+            self.on_disk[("Rafael Hidalgo", d)] = rows_for(d)
+        self.on_disk[("Chan Park", start)] = rows_for(start)
+        b = service.board_for("Rafael Hidalgo", start, end, allow_live=False,
+                              logfn=lambda m: None)
+        self.assertEqual(self.pulled, [])
+        self.assertEqual(self.rendered["extra_totals"], [])
+        self.assertEqual(len(b.rows), 1)
+
+    def test_cache_only_still_refuses_when_our_own_days_are_missing(self):
+        with self.assertRaises(RuntimeError) as cm:
+            service.board_for("Rafael Hidalgo", dt.date(2026, 8, 22),
+                              dt.date(2026, 8, 24), allow_live=False,
+                              logfn=lambda m: None)
+        self.assertIn("live pulls are off", str(cm.exception))
 
     def test_missing_comparison_days_ride_the_session_we_are_opening(self):
         start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
@@ -281,12 +337,28 @@ class MissingDaysReporting(unittest.TestCase):
 
     def setUp(self):
         self.on_disk = {}
-        p = mock.patch.object(
-            service, "cached_rows",
-            lambda o, d: ((rows_for(d), "build")
-                          if (o, d) in self.on_disk else (None, "")))
-        p.start()
-        self.addCleanup(p.stop)
+        for attr, new in (
+            ("cached_rows",
+             lambda o, d: ((rows_for(d), "build")
+                           if (o, d) in self.on_disk else (None, ""))),
+            ("compare_office", lambda: "Chan Park"),
+        ):
+            p = mock.patch.object(service, attr, new)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_pull_plan_counts_the_comparison_office_too(self):
+        # Ours are all on disk, Chan's are not: this request is a MINUTE, not
+        # "one second", and the DM has to say so.
+        start, end = dt.date(2026, 8, 22), dt.date(2026, 8, 24)
+        for d in service.span_days(start, end):
+            self.on_disk[("Rafael Hidalgo", d)] = True
+        ours, theirs = service.pull_plan("Rafael Hidalgo", start, end)
+        self.assertEqual(ours, [])
+        self.assertEqual(theirs, service.span_days(start, end))
+
+    def test_pull_plan_has_nothing_to_compare_when_you_ask_for_chan(self):
+        self.assertEqual(service.pull_plan("Chan Park", YESTERDAY)[1], [])
 
     def test_missing_days_lists_only_what_is_absent(self):
         start, end = dt.date(2026, 8, 20), dt.date(2026, 8, 24)
@@ -402,6 +474,58 @@ class ThePopup(unittest.TestCase):
                 "day": {"v": {"selected_date": day}},
                 "through": {"v": {"selected_date": through}}}
         return {"user": {"id": "U1"}, "view": {"state": {"values": vals}}}
+
+
+class WhatTheDmPromises(unittest.TestCase):
+    """The waiting message has to match the work actually about to happen."""
+
+    def _say(self, on_disk, board=None):
+        sent = []
+        web = mock.Mock()
+        web.conversations_open.return_value = {"channel": {"id": "D1"}}
+        web.chat_postMessage.side_effect = lambda **kw: sent.append(kw["text"])
+        with mock.patch.object(service, "central_today", lambda: TODAY), \
+             mock.patch.object(service, "resolve_office", lambda o: o), \
+             mock.patch.object(service, "compare_office", lambda: "Chan Park"), \
+             mock.patch.object(service, "ownerville_busy", lambda: []), \
+             mock.patch.object(
+                 service, "cached_rows",
+                 lambda o, d: ((rows_for(d), "build")
+                               if (o, d) in on_disk else (None, ""))), \
+             mock.patch.object(
+                 # Stop after the waiting message: a Board with no png is the
+                 # quiet "nothing to draw" answer, so `process` says its piece
+                 # and returns without a pull, an upload or a stack trace.
+                 service, "board_for",
+                 lambda *a, **k: service.Board(
+                     office="Rafael Hidalgo", asked_as="Rafael Hidalgo",
+                     target=dt.date(2026, 8, 22), end=dt.date(2026, 8, 24),
+                     note="nothing to draw")):
+            handler.process(web, "U1", "Rafael Hidalgo",
+                            dt.date(2026, 8, 22), dt.date(2026, 8, 24))
+        return sent
+
+    def test_everything_cached_promises_one_second(self):
+        on_disk = {(o, d): True
+                   for o in ("Rafael Hidalgo", "Chan Park")
+                   for d in service.span_days(dt.date(2026, 8, 22),
+                                              dt.date(2026, 8, 24))}
+        self.assertIn("one second", self._say(on_disk)[0])
+
+    def test_only_the_comparison_missing_says_so_by_name(self):
+        # Otherwise the minute-long wait looks unexplained: the requester knows
+        # we already have the office they asked about.
+        on_disk = {("Rafael Hidalgo", d): True
+                   for d in service.span_days(dt.date(2026, 8, 22),
+                                              dt.date(2026, 8, 24))}
+        first = self._say(on_disk)[0]
+        self.assertIn("Chan Park", first)
+        self.assertIn("comparison lines up", first)
+
+    def test_our_own_missing_days_are_counted_not_the_whole_span(self):
+        on_disk = {("Rafael Hidalgo", dt.date(2026, 8, 22)): True}
+        first = self._say(on_disk)[0]
+        self.assertIn("1 of the 3 days already on hand", first)
 
 
 class TheDmNeverSendsOnARefusal(unittest.TestCase):

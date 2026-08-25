@@ -218,26 +218,34 @@ def process(web, user_id: str, office: str, target: dt.date,
         return
 
     canonical = service.resolve_office(office)
-    need = service.missing_days(canonical, target, end)
+    # The comparison office counts toward the wait: its days are pulled to
+    # match the span, so a request can take a minute even when every one of
+    # our own days is already on disk.
+    need, need_cmp = service.pull_plan(canonical, target, end)
     total = len(service.span_days(target, end))
-    if not need:
+    if not need and not need_cmp:
         say(f":door: Getting *{canonical}*'s knocks for {pretty} — one second.")
     else:
-        # Say how many days are actually being scraped, not how many were
-        # asked for: "6 days" when 5 are already on disk reads as a wait that
-        # never comes.
-        how_long = ("about a minute" if len(need) == 1
-                    else f"a minute or two for {len(need)} day"
-                         f"{'s' if len(need) != 1 else ''}")
-        got = (f" ({total - len(need)} of the {total} days already on hand.)"
-               if total > len(need) else "")
         busy = service.ownerville_busy()
         if busy:
             say(f":door: *{canonical}* — {pretty}. The scheduled reports are "
                 "using Ownerville right now, so I'm queued behind them. I'll "
                 "send the board as soon as they're done — no need to ask "
-                f"again.{got}")
+                "again.")
+        elif not need:
+            # Ours are all on hand; the wait is entirely the comparison line.
+            # Say which office we're waiting on, or the delay looks unexplained.
+            say(f":door: I have *{canonical}*'s knocks for {pretty} — pulling "
+                f"*{service.compare_office()}*'s numbers for the same stretch "
+                "so the comparison lines up. About a minute.")
         else:
+            # Say how many days are actually being scraped, not how many were
+            # asked for: "6 days" when 5 are already on disk reads as a wait
+            # that never comes.
+            how_long = ("about a minute" if len(need) == 1
+                        else f"a minute or two for {len(need)} days")
+            got = (f" ({total - len(need)} of the {total} days already on "
+                   "hand.)" if total > len(need) else "")
             say(f":door: Pulling *{canonical}*'s knocks for {pretty} from "
                 f"Ownerville — {how_long}.{got}")
 

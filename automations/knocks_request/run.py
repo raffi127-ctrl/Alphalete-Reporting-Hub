@@ -42,11 +42,18 @@ def main() -> int:
     if problem:
         print(f"[knocks] {problem}")
         return 1
-    need = service.missing_days(service.resolve_office(a.office), target, end)
+    total = len(service.span_days(target, end))
+    need, need_cmp = service.pull_plan(service.resolve_office(a.office),
+                                       target, end)
     if need:
-        print(f"[knocks] {len(need)} of {len(service.span_days(target, end))} "
-              f"day(s) need a live pull: "
+        print(f"[knocks] {len(need)} of {total} day(s) need a live pull: "
               f"{', '.join(d.isoformat() for d in need)}", flush=True)
+    if need_cmp:
+        # The comparison line covers the same span or it isn't drawn, so its
+        # missing days are real work this run has to do.
+        print(f"[knocks] {service.compare_office()} (comparison) needs "
+              f"{len(need_cmp)} of {total} day(s): "
+              f"{', '.join(d.isoformat() for d in need_cmp)}", flush=True)
     busy = service.ownerville_busy()
     if busy:
         print(f"[knocks] ownerville is busy: {', '.join(busy)}", flush=True)

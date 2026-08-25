@@ -306,11 +306,24 @@ def compare_rows(canonical: str, target: dt.date, *, allow_live: bool,
 
 def missing_days(canonical: str, start: dt.date,
                  end: Optional[dt.date] = None) -> List[dt.date]:
-    """Which days of the span are NOT already on disk — i.e. what a request
-    would have to open ownerville for. The Slack handler asks this before
-    saying anything, so it can promise "one second" or "about a minute" and be
-    right."""
+    """Which days of the span are NOT already on disk for this office."""
     return [d for d in span_days(start, end) if not cached_rows(canonical, d)[0]]
+
+
+def pull_plan(canonical: str, start: dt.date, end: Optional[dt.date] = None
+              ) -> "tuple[List[dt.date], List[dt.date]]":
+    """(our missing days, the comparison office's missing days) — everything a
+    request would open ownerville for, BEFORE it opens it.
+
+    The Slack handler asks this so it can promise "one second" or "about a
+    minute" and be right. The comparison office counts: its days are pulled to
+    match the span, so a request can be a minute's work even when every one of
+    our own days is already on disk."""
+    ours = missing_days(canonical, start, end)
+    compare = compare_office()
+    if _norm(compare) == _norm(canonical):
+        return ours, []
+    return ours, missing_days(compare, start, end)
 
 
 def _norm(name: str) -> str:
@@ -373,58 +386,77 @@ def board_for(office: str, target: Optional[dt.date] = None,
             if c_rows:
                 theirs[d] = c_rows
     need = [d for d in days if d not in ours]
-    if not need:
+    # The comparison is pulled to the SAME span, not merely topped up when we
+    # happen to be opening a session for our own days (Megan 2026-08-25: "we
+    # want exact comparison of the same date range at chan's to show"). So a
+    # request whose own days are entirely cached still opens a session when the
+    # comparison office is short a day — that line is part of the board, not a
+    # bonus. In practice it rarely fires: the morning build pulls the
+    # comparison office every day too, so both are usually on disk.
+    compare_need = [d for d in days if want_compare_office and d not in theirs]
+    if not need and not compare_need:
         logfn(f"{canonical} {target}..{end}: {len(days)} day(s) from the "
               f"{'/'.join(sorted(sources)) or 'cache'} "
               "(no ownerville session needed)")
 
     # ---- everything else, in ONE session ----------------------------------
-    if need:
+    if need or compare_need:
         if not allow_live:
-            raise RuntimeError(
-                f"No stored knocks for {canonical} on "
-                f"{', '.join(d.isoformat() for d in need)} and live pulls are "
-                "off for this run.")
-        if not wait_for_ownerville(timeout_s=wait_timeout_s, logfn=logfn):
-            raise RuntimeError(
-                "Ownerville is still busy with the scheduled reports — nothing "
-                "was pulled. Ask again once they finish.")
-        # One session, both offices: a second session for the comparison line
-        # would race the first for the same Chrome profile. The comparison
-        # office rides along only for the days it ISN'T already on disk — and
-        # only when we're opening a session anyway.
-        # ALWAYS the multi-office helper, even for one office: it is the path
-        # that routes the MASTER office (Raf) around impersonation.
-        # pull_office_knocks impersonates unconditionally, so asking it for
-        # Raf reports his own office as an access gap.
-        from automations.rashad_metrics.knocks_pull import pull_offices_days
-        compare_need = [d for d in days
-                        if want_compare_office and d not in theirs]
-        jobs = [(canonical, need)]
-        if compare_need:
-            jobs.append((compare, compare_need))
-        logfn(f"pulling {' + '.join(n for n, _ in jobs)} for "
-              f"{len(need)} day(s) from ownerville…")
-        pulled = pull_offices_days(jobs, verbose=True)
-        _n, got, err = pulled[0]
-        if err is not None:
-            raise err                          # THIS office failing is fatal
-        for d, rows in got.items():
-            if rows:
-                ours[d] = rows
-                save_rows(canonical, d, rows)
-        sources.add("live")
-        if compare_need:
-            _cn, c_got, c_err = pulled[1]
-            if c_err is not None:
-                # A missing comparison costs one line, never the board.
-                logfn(f"⚠ {compare} comparison pull failed "
-                      f"({type(c_err).__name__}) — board goes out without it")
-            else:
-                for d, c_rows in c_got.items():
-                    if c_rows:
-                        theirs[d] = c_rows
-                        save_rows(compare, d, c_rows)
+            if need:
+                raise RuntimeError(
+                    f"No stored knocks for {canonical} on "
+                    f"{', '.join(d.isoformat() for d in need)} and live pulls "
+                    "are off for this run.")
+            # Only the comparison is short. That costs one line, never the
+            # board — failing the whole request over it would be worse.
+            logfn(f"comparison: {compare} is missing "
+                  f"{len(compare_need)} day(s) and live pulls are off — board "
+                  "goes out without the teal line")
+            compare_need = []
+        else:
+            if not wait_for_ownerville(timeout_s=wait_timeout_s, logfn=logfn):
+                raise RuntimeError(
+                    "Ownerville is still busy with the scheduled reports — "
+                    "nothing was pulled. Ask again once they finish.")
+            # ONE session for both offices: a second session for the comparison
+            # would race the first for the same Chrome profile.
+            # ALWAYS the multi-office helper, even for one office: it is the
+            # path that routes the MASTER office (Raf) around impersonation.
+            # pull_office_knocks impersonates unconditionally, so asking it for
+            # Raf reports his own office as an access gap.
+            from automations.rashad_metrics.knocks_pull import pull_offices_days
+            jobs = ([(canonical, need)] if need else [])
+            if compare_need:
+                jobs.append((compare, compare_need))
+            logfn("pulling " + ", ".join(
+                f"{n} ({len(ds)} day{'s' if len(ds) != 1 else ''})"
+                for n, ds in jobs) + " from ownerville…")
+            # Indexed by name, not by position: `jobs` may hold the comparison
+            # office ALONE when our own days were all cached.
+            got = {n: (rows_by_day, err) for n, rows_by_day, err in
+                   pull_offices_days(jobs, verbose=True)}
+
+            if need:
+                rows_by_day, err = got[canonical]
+                if err is not None:
+                    raise err                  # THIS office failing is fatal
+                for d, rows in rows_by_day.items():
+                    if rows:
+                        ours[d] = rows
+                        save_rows(canonical, d, rows)
+                sources.add("live")
+            if compare_need:
+                c_by_day, c_err = got[compare]
+                if c_err is not None:
+                    # A missing comparison costs one line, never the board.
+                    logfn(f"⚠ {compare} comparison pull failed "
+                          f"({type(c_err).__name__}) — board goes out without "
+                          "it")
+                else:
+                    for d, c_rows in c_by_day.items():
+                        if c_rows:
+                            theirs[d] = c_rows
+                            save_rows(compare, d, c_rows)
 
     # ---- fold the days ----------------------------------------------------
     from automations.total_knocks.aggregate import aggregate_days
@@ -442,10 +474,12 @@ def board_for(office: str, target: Optional[dt.date] = None,
                   "knocked, or that office has no data that far back")
         return b
 
-    # The teal comparison line is drawn ONLY when the comparison office covers
-    # the SAME days. A partial span there would print a smaller total next to
-    # ours and read as Chan being behind, when it's really us holding fewer
-    # days of his numbers — a wrong comparison is worse than no comparison.
+    # The teal comparison line covers the SAME days as ours — that is the whole
+    # point of it, and the branch above pulls the comparison office to the span
+    # so it does. It is dropped ONLY when those days genuinely couldn't be
+    # fetched (a failed pull, or --cache-only): a line summing 3 days beside our
+    # 6 reads as the comparison office falling behind, when really we're just
+    # holding fewer of their days. A wrong comparison is worse than none.
     chan_rows = None
     if want_compare_office:
         have = [d for d in days if d in theirs]
@@ -453,8 +487,8 @@ def board_for(office: str, target: Optional[dt.date] = None,
             chan_rows = aggregate_days([theirs[d] for d in days])
         elif have:
             logfn(f"comparison: only {len(have)}/{len(days)} day(s) of "
-                  f"{compare} on hand — board goes out without the teal line "
-                  "rather than comparing different spans")
+                  f"{compare} could be fetched — board goes out without the "
+                  "teal line rather than comparing different spans")
 
     from automations.total_knocks import render as knocks_render
     extra = [(compare, chan_rows)] if chan_rows else []
