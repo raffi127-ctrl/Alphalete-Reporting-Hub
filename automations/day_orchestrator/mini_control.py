@@ -3928,15 +3928,21 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
 
 
 def _action_post_note(args: str) -> tuple[bool, str]:
-    """post_note <channel_id> [thread=<ts>] <text>: post a plain message to Slack
-    from THIS machine's Slack identity. On a mini that identity is Lucy, which is
-    the whole point — a note typed from the laptop would go out as Evelyn, and a
-    reminder to the team about the reports should come from the account that runs
-    them ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
+    """post_note <channel_id> [thread=<ts> | edit=<ts>] <text>: post a plain
+    message to Slack from THIS machine's Slack identity. On a mini that identity
+    is Lucy, which is the whole point — a note typed from the laptop would go out
+    as Evelyn, and a reminder to the team about the reports should come from the
+    account that runs them ([[reference_lucy-slack-identity]],
+    [[project_two-lucy-slack-accounts]]).
 
-    The text is everything after the channel id (and the optional thread=). A
-    literal '\\n' becomes a newline, since the queue carries the whole thing in
+    The text is everything after the channel id (and the optional thread=/edit=).
+    A literal '\\n' becomes a newline, since the queue carries the whole thing in
     one Sheet cell. Slack mrkdwn works (*bold*, `code`, <@U…> mentions).
+
+    `edit=<ts>` REWRITES a message this identity already posted instead of adding
+    another one — for fixing a note in place rather than following it with a
+    correction the channel then has to read twice. Only Lucy's own messages can
+    be edited, which is the same reason this action lives on the mini at all.
 
     `thread=<ts>` REPLIES INSTEAD OF POSTING (Megan 2026-08-25). #claudecorrections
     is one-thread-per-problem on purpose: Megan triages the channel by scanning
@@ -3957,17 +3963,48 @@ def _action_post_note(args: str) -> tuple[bool, str]:
                        "(channel id looks like C0BK5PRG259 — "
                        "#claudecorrections-and-requests)")
     channel, rest = parts[0].strip(), parts[1].strip()
-    thread_ts = None
-    if rest.lower().startswith("thread="):
+    thread_ts = edit_ts = None
+    for _ in range(2):          # thread= and edit= are mutually exclusive, but
+        low = rest.lower()      # accept them in either position
+        if not (low.startswith("thread=") or low.startswith("edit=")):
+            break
         bits = rest.split(None, 1)
-        thread_ts = bits[0].split("=", 1)[1].strip()
+        opt, val = bits[0].split("=", 1)
+        val = val.strip()
         rest = bits[1].strip() if len(bits) > 1 else ""
         # A ts Slack won't recognise silently becomes a TOP-LEVEL post, which is
         # exactly the noise the option exists to avoid — so reject it here
-        # rather than let the channel gain a stray item.
-        if not re.fullmatch(r"\d{10}\.\d{6}", thread_ts):
-            return False, (f"thread= wants a Slack ts like 1787568657.523449, "
-                           f"got {thread_ts!r}")
+        # rather than let the channel gain a stray item. (chat.update is
+        # stricter and errors, but there is no reason to spend the API call.)
+        if not re.fullmatch(r"\d{10}\.\d{6}", val):
+            return False, (f"{opt.lower()}= wants a Slack ts like "
+                           f"1787568657.523449, got {val!r}")
+        if opt.lower() == "thread":
+            thread_ts = val
+        else:
+            edit_ts = val
+    if thread_ts and edit_ts:
+        return False, ("post_note takes thread= OR edit=, not both — an edit "
+                       "already knows which thread its message is in")
+
+    # UNWRAP THE QUEUE'S QUOTING (Megan 2026-08-25). `--enqueue` joins its
+    # argv with shlex.join, so a note passed as one quoted argument arrives as
+    # a single shlex TOKEN — and post_note, which takes the rest of the line
+    # verbatim, used to post the surrounding quotes into the channel along with
+    # it. Every other action that takes free text calls shlex.split; this one
+    # can't, because splitting would shred the note into words. So: split, and
+    # accept the result ONLY when it is exactly one token, which is precisely
+    # the "whole note was quoted" case. Anything else (an unquoted multi-word
+    # note, or text with an unbalanced apostrophe that makes shlex raise) keeps
+    # the raw string, so mrkdwn, backticks and <@U…> mentions pass through
+    # untouched.
+    try:
+        tokens = shlex.split(rest)
+        if len(tokens) == 1:
+            rest = tokens[0]
+    except ValueError:
+        pass
+
     text = rest.replace("\\n", "\n")
     if not text:
         return False, "post_note got an empty message"
@@ -3978,13 +4015,18 @@ def _action_post_note(args: str) -> tuple[bool, str]:
             who = smp._client().auth_test().get("user", "?")
         except Exception:  # noqa: BLE001
             pass
-        kw = {"channel": channel, "text": text}
-        if thread_ts:
-            kw["thread_ts"] = thread_ts
-        smp._client().chat_postMessage(**kw)
+        if edit_ts:
+            smp._client().chat_update(channel=channel, ts=edit_ts, text=text)
+        else:
+            kw = {"channel": channel, "text": text}
+            if thread_ts:
+                kw["thread_ts"] = thread_ts
+            smp._client().chat_postMessage(**kw)
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't post to {channel} "
                        f"({type(e).__name__}: {str(e).splitlines()[0][:120]})")
+    if edit_ts:
+        return True, f"edited {channel} message {edit_ts} as {who} ({len(text)} chars)"
     where = f"{channel} thread {thread_ts}" if thread_ts else channel
     return True, f"posted to {where} as {who} ({len(text)} chars)"
 

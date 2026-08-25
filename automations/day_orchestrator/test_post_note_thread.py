@@ -30,13 +30,18 @@ TS = "1787568657.523449"
 
 
 class _Slack:
-    """Records chat_postMessage kwargs instead of sending."""
+    """Records chat_postMessage / chat_update kwargs instead of sending."""
 
     def __init__(self):
         self.calls: list[dict] = []
+        self.edits: list[dict] = []
 
     def chat_postMessage(self, **kw):
         self.calls.append(kw)
+        return {"ok": True}
+
+    def chat_update(self, **kw):
+        self.edits.append(kw)
         return {"ok": True}
 
     def auth_test(self):
@@ -132,6 +137,80 @@ class ABadTsNeverBecomesATopLevelPost(unittest.TestCase):
             ok, _ = _action_post_note("not-a-channel hello")
         self.assertFalse(ok)
         self.assertEqual(slack.calls, [])
+
+
+class TheQueuesQuotingNeverReachesTheChannel(unittest.TestCase):
+    """`--enqueue` joins its argv with shlex.join, so a note passed as ONE quoted
+    argument arrives as a single shlex token. post_note takes the rest of the
+    line verbatim, so those quotes used to be posted into the channel with the
+    note — which is exactly what happened to the 8/25 captainship correction.
+    """
+
+    def test_a_fully_quoted_note_is_unwrapped(self):
+        with _Patch() as slack:
+            _action_post_note(f"{CH} 'Correction to my note: not one issue.'")
+        self.assertEqual(slack.calls[0]["text"],
+                         "Correction to my note: not one issue.")
+
+    def test_it_is_unwrapped_for_a_thread_reply_too(self):
+        with _Patch() as slack:
+            _action_post_note(f"{CH} thread={TS} 'one tight line'")
+        self.assertEqual(slack.calls[0]["text"], "one tight line")
+
+    def test_an_unquoted_note_is_left_exactly_as_typed(self):
+        """Two-plus tokens means it was never wrapped — splitting it would shred
+        the note into words."""
+        with _Patch() as slack:
+            _action_post_note(f"{CH} plain words with  spacing")
+        self.assertEqual(slack.calls[0]["text"], "plain words with  spacing")
+
+    def test_mrkdwn_inside_a_quoted_note_survives(self):
+        """*bold*, backticks and mentions have to reach Slack intact."""
+        note = "*Board* is stale — see `run.py` <@U0BCG8F9B5Z>"
+        with _Patch() as slack:
+            _action_post_note(f"{CH} '{note}'")
+        self.assertEqual(slack.calls[0]["text"], note)
+
+    def test_an_unbalanced_apostrophe_does_not_break_the_post(self):
+        """shlex raises on this; the raw text must still go out rather than the
+        note being lost."""
+        with _Patch() as slack:
+            ok, _ = _action_post_note(f"{CH} Raf's board is stale")
+        self.assertTrue(ok)
+        self.assertEqual(slack.calls[0]["text"], "Raf's board is stale")
+
+
+class EditsInPlace(unittest.TestCase):
+    """A note that needs fixing is better rewritten than followed by a
+    correction the channel has to read twice."""
+
+    def test_edit_calls_chat_update_and_posts_nothing_new(self):
+        with _Patch() as slack:
+            ok, msg = _action_post_note(f"{CH} edit={TS} 'the fixed line'")
+        self.assertTrue(ok, msg)
+        self.assertEqual(slack.calls, [])
+        self.assertEqual(slack.edits[0]["ts"], TS)
+        self.assertEqual(slack.edits[0]["text"], "the fixed line")
+
+    def test_the_result_line_says_it_edited(self):
+        with _Patch():
+            _, msg = _action_post_note(f"{CH} edit={TS} hello")
+        self.assertIn("edited", msg)
+
+    def test_a_malformed_edit_ts_is_rejected(self):
+        with _Patch() as slack:
+            ok, _ = _action_post_note(f"{CH} edit=p1787568657523449 hello")
+        self.assertFalse(ok)
+        self.assertEqual(slack.edits, [])
+
+    def test_thread_and_edit_together_are_rejected(self):
+        """An edit already knows which thread its message is in; accepting both
+        would silently ignore one of them."""
+        with _Patch() as slack:
+            ok, _ = _action_post_note(f"{CH} thread={TS} edit={TS} hello")
+        self.assertFalse(ok)
+        self.assertEqual(slack.calls, [])
+        self.assertEqual(slack.edits, [])
 
 
 if __name__ == "__main__":
