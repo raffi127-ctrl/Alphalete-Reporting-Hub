@@ -131,7 +131,10 @@ def _office_metrics_card() -> dict:
             "thread per office per day, created first if it isn't up yet).\n\n"
             f"OFFICES\n{office_bullets}\n\n"
             "METRICS POSTED (in thread order)\n"
-            "• 🚪 Total Knocks (one combined board — knocks + time gaps)\n"
+            "• 🚪 Total Knocks (one combined board — knocks + time gaps). A "
+            "wireless office gets TeleMapper Knocks instead: its reps don't "
+            "disposition, so Ownerville records knock times and gaps, not "
+            "knock counts. Also one board.\n"
             "• 📋 Order Log\n"
             "• 📅 Sales Scheduled 6+ Days Out\n"
             "• 🚫 Canceled Orders\n"
@@ -827,7 +830,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         # The card's link opens the DD log sheet (one tab per ICD).
         "sheet_url": "https://docs.google.com/spreadsheets/d/1RB07z5xmXBzFgKPRmbvqsvbFJ4yymrsk2z0tkMeCbpQ/edit",
-        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab. The same bot also answers /knocks: pick an office and a day — or a stretch of days — and get that knock board back in a DM.",
+        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab. The same bot also answers /knocks: pick an office and a day — or a stretch of days — and get that knock board back in a DM, with Chan's totals on it for comparison.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Any leader types **/dd** in Slack → a popup opens (ICD / Leader "
@@ -851,6 +854,13 @@ AUTOMATED_REPORTS = [
             "pulled. Only an older day needs a live Ownerville pull, and it waits "
             "its turn behind the scheduled reports instead of taking their "
             "session away.\n"
+            "**•** Every board carries **Chan Park's totals** as a comparison "
+            "line above the office's own, the same way the morning board "
+            "does.\n"
+            "**•** A **wireless office** comes back as a TeleMapper Knocks "
+            "board — knock times and gaps, no knock counts, because its reps "
+            "don't disposition and Ownerville has no counts to give. One "
+            "board, not two.\n"
             "**•** An office we have no Ownerville access to says so plainly — "
             "that one is a permissions gap, not a spelling mistake.\n\n"
             "WHEN IT RUNS\n"
