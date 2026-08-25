@@ -5,6 +5,7 @@ Run:  PYTHONPATH=. .venv/bin/python -m unittest \
 """
 from __future__ import annotations
 
+import datetime as dt
 import unittest
 
 from automations.digi_docs import roster
@@ -86,6 +87,42 @@ class TwoChartsOnOneTab(unittest.TestCase):
         self.assertEqual(first.digi_col, HEADER.index("Digi Docs") + 1)
         self.assertEqual(second.digi_col, shifted.index("Digi Docs") + 1)
         self.assertNotEqual(first.digi_col, second.digi_col)
+
+
+class TheDayOneNoShowRule(unittest.TestCase):
+    """No "showed up" marking and no location, once the chart's date has passed,
+    means nobody ever saw them (Megan 2026-08-25).
+
+    Distinct from blueink's block-list, which names explicit bad outcomes. A
+    no-show leaves NO outcome -- two empty cells -- so the block-list passes
+    them straight through. Without this, contracts go to people who never came.
+    """
+
+    def _cands(self, today):
+        values = [["WEEK OF 8.24"], HEADER,
+                  _row(1, "Ignacio", "Lara", final="Showed Up To CR"),
+                  _row(2, "Angelica", "Pedroza"),          # no status, no loc
+                  _row(3, "Carol", "Pena")]
+        values[4][8] = "Dallas"                            # location only
+        return roster.candidates(values, "D2D OBCL 8.24", today=today)
+
+    def test_blank_status_and_blank_location_is_a_no_show(self):
+        c = self._cands(dt.date(2026, 8, 25))
+        by = {x.name: x for x in c}
+        self.assertTrue(by["Angelica Pedroza"].no_show)
+        self.assertIn("No-showed", by["Angelica Pedroza"].skip_reason)
+
+    def test_either_signal_alone_is_enough_to_count_as_showed_up(self):
+        c = self._cands(dt.date(2026, 8, 25))
+        by = {x.name: x for x in c}
+        self.assertFalse(by["Ignacio Lara"].no_show)   # status only
+        self.assertFalse(by["Carol Pena"].no_show)     # location only
+
+    def test_nobody_is_a_no_show_before_the_chart_date_passes(self):
+        """On or before the date, blank cells just mean the day has not happened
+        -- judging then would skip the entire week."""
+        c = self._cands(dt.date(2026, 8, 24))
+        self.assertEqual([x.name for x in c if x.no_show], [])
 
 
 class TheColumnCanBeMissing(unittest.TestCase):
