@@ -274,6 +274,9 @@ _HUB_CARD = {
     # differ by an underscore vs a hyphen, which is exactly the mismatch that
     # leaves a pill stuck). [[reference_phase_pill_id_match]]
     "blueink_docs": "blueink-docs",
+    # Headshot Bot (2026-08-24): run.py publishes under "headshots"
+    # after each processed submission.
+    "headshots": "headshot-bot",
     # ONE CARD, TWO PASSES (Megan 2026-08-25). The 'Owner Chat Texts → iMessage
     # owner chats' card covers both morning passes — 7:30 trackers PDF, 7:45 WOW
     # board — but each pass runs under its OWN report_id, and neither slug-matches

@@ -4591,6 +4591,102 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "headshot-bot",
+        "name": "Headshot Bot",
+        "creator": "Megan",
+        "emoji": "\U0001F4F8",
+        "color": "#0EA5E9",
+        # \U0001F3AF Recruiting, next to blueink-docs: same workbook, same
+        # weekly new-start cohort, same Slack room.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Collects new-start headshots in a Monday Slack thread, cuts each "
+            "one onto a white background, uploads it to their OwnerVille "
+            "profile, and ticks Headshot Photo on the OBCL tab."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every **Monday 8:30am** Lucy posts a *Headshot Submissions* "
+            "thread in **#11280-alphalete-marketing-inc-rafael-hidalgo**. "
+            "Anyone replies with a photo and the person's first and last name "
+            "in the same message. Within 5 minutes the bot:\n"
+            "**\u2022** removes the background and crops to head-and-shoulders "
+            "on pure white (1200\u00d71500), no text on the photo;\n"
+            "**\u2022** posts the finished headshot back in the thread and "
+            "\u2705 the submission;\n"
+            "**\u2022** uploads it to that person's **OwnerVille** profile "
+            "(Onboard \u2192 View Progress \u2192 Edit \u2192 Upload "
+            "Documents \u2192 Save Changes);\n"
+            "**\u2022** ticks **Headshot Photo** on that week's "
+            "**`D2D OBCL <m.d>`** tab and tints the cell light green.\n\n"
+            "WHEN IT RUNS\n"
+            "The Monday post is its own 8:30am timer on Lucy 3. The processing "
+            "tick runs **every 5 minutes, all week**, and also watches LAST "
+            "week's thread so weekend stragglers still get handled.\n\n"
+            "NAMES DON'T HAVE TO BE PERFECT\n"
+            "Typos are forgiven \u2014 *Anna Griffin* finds *Ana Griffin*, "
+            "*Thomes Crenshawe* finds *Thomas Crenshaw*. When two people are "
+            "too close to tell apart (Ana Gonzalez vs Ana Griffin) it refuses "
+            "to guess and says so instead. Whenever a typo is forgiven, the "
+            "thread reply names who it actually matched.\n\n"
+            "WHAT IT WILL NOT DO\n"
+            "**\u2022** Overwrite a photo already on someone's OwnerVille "
+            "profile \u2014 it reports *already on their profile* and leaves "
+            "it.\n"
+            "**\u2022** Touch anything on the OBCL tab but that one Headshot "
+            "Photo cell.\n"
+            "**\u2022** Process the same reply twice.\n\n"
+            "WHEN SOMETHING DOESN'T FIT\n"
+            "Each thread reply carries a line per step, so a miss is visible "
+            "immediately: *Not found on OBCL Sheet* (nobody by that name on "
+            "the tab \u2014 normal for people who aren't new starts, nothing "
+            "to do), or a \u26a0\ufe0f asking for a manual OwnerVille upload. "
+            "A photo posted with no name gets asked once, in the thread."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1430069873#gid=1430069873"),
+        "assignees": ["Lucy 3"],
+        # Two launchd timers of its own (the Monday post + the 5-min tick), so
+        # it self-reports rather than sitting in the due-today tallies \u2014
+        # same shape as blueink-docs and bg-check-sync.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday post; the tick then runs all week
+            "time": "8:30 AM",
+            "time_label": "Raf's Office \u00b7 Mon 8:30am, then every 5 min",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Headshots processed \u2014 posted in the thread, uploaded to OwnerVille, and ticked on the OBCL tab.",
+            "message_failed": "\u274C Run failed. Most often the OwnerVille session on Lucy 3 has gone stale \u2014 the photos still posted in Slack; re-run once the session is warm.",
+        },
+        "actions": [
+            {
+                "label": "Check for New Photos",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Run one pass now instead of waiting for the 5-minute tick: process any new replies, upload them, and tick the sheet.",
+                "module": "automations.headshots.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Post This Week's Thread",
+                "icon": "\U0001F4E2",
+                "help": "Post the Monday Headshot Submissions thread now \u2014 for a missed or deleted Monday. Will not post twice in the same week.",
+                "module": "automations.headshots.weekly_thread",
+                "args_fn": lambda: ["--force"],
+            },
+            {
+                "label": "Why Was A Photo Skipped?",
+                "icon": "\U0001F50D",
+                "help": "Read-only: show what the bot decided about every reply in the current thread, and why. Changes nothing.",
+                "module": "automations.headshots.run",
+                "args_fn": lambda: ["--diag"],
+            },
+        ],
+    },
+    {
         "id": "blueink-docs",
         "name": "Blue Ink New Start Docs",
         "creator": "Megan",
