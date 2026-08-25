@@ -4348,7 +4348,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📦",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "Carlos's B2B counterpart to Raf's Fiber order log — keeps a rolling 6-week log on the Vantura Master Sales Board and posts the daily workbook + payout image + Box Tier Bonus Rep Level board to #alphalete-gp-sales AND #a-players-b2b.",
+        "description": "Carlos's B2B counterpart to Raf's Fiber order log — keeps a rolling 6-week log on the Vantura Master Sales Board and posts the daily workbook + payout image + pending-orders worklist + Box Tier Bonus Rep Level board to #alphalete-gp-sales AND #a-players-b2b.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Pulls Carlos's **Box Order Log** Tableau view and collapses "
@@ -4358,15 +4358,20 @@ AUTOMATED_REPORTS = [
             "Master Sales Board.\n"
             "**•** Posts one dated thread to **#alphalete-gp-sales** AND "
             "**#a-players-b2b** — each channel gets its own thread — carrying "
-            "the workbook, a payout image showing last week and this week, "
-            "and the **Box Tier Bonus Rep Level** board from Tableau, which "
-            "shows where each of Carlos's reps lands on the tier ladder this "
-            "week (Carlos, 2026-08-15).\n\n"
+            "the workbook, a payout image showing last week and this week, a "
+            "**Pending Orders** image, and the **Box Tier Bonus Rep Level** "
+            "board from Tableau, which shows where each of Carlos's reps "
+            "lands on the tier ladder this week (Carlos, 2026-08-15).\n"
+            "**•** **Pending Orders** (Carlos, 2026-08-25) is the workbook's "
+            "pending tab as a picture — every deal still open, grouped by "
+            "rep, with what has to happen next on each one, so nobody has to "
+            "open the spreadsheet to work the list.\n\n"
             "EMAILED COPIES (per owner)\n"
             "**•** **Roshan Amin Ahmad** and **Abel Draper** each get their "
             "**own office's** BOX order log **by email** (not Slack) — their "
             "production only, same 7-8am window, and it also fills their own "
-            "metrics sheet.\n\n"
+            "metrics sheet. They get the **same three artifacts** Carlos's "
+            "thread carries: workbook, payout image, pending orders.\n\n"
             "WHEN IT RUNS\n"
             "**Twice a day, 7:00am and 8:30am CST.** "
             "**Only the 7:00 run posts** — 8:30 just refreshes the sheet. If "
@@ -4377,6 +4382,15 @@ AUTOMATED_REPORTS = [
             "**•** The **payout** is grouped by the week the supplier "
             "**accepted** it — that's the week it pays. The two will not "
             "match, and that's correct.\n\n"
+            "READING THE PAYOUT IMAGE\n"
+            "**•** **Accepted by Supplier** and **Cancelled** are that "
+            "week's figures. **Still Open** is not — it's every deal of that "
+            "rep's still waiting on acceptance, whatever week it sold, so it "
+            "reads the same in both tables.\n"
+            "**•** **Submitted to Supplier** (Carlos, 2026-08-25) is a "
+            "**slice of Still Open**, not a column beside it — a submitted "
+            "deal is counted in **both**. The columns are not meant to add "
+            "up.\n\n"
             "SAFETY GATES\n"
             "**•** The sheet is **merged, never overwritten** — the Tableau "
             "view only reaches back ~44 days, so a straight rewrite would "
@@ -4448,8 +4462,9 @@ AUTOMATED_REPORTS = [
                 "icon": "📣",
                 "help": "Everything the 7:00am run does: refreshes the "
                         "6-week log on the sheet, then posts today's thread "
-                        "(workbook + payout image + Box Tier Bonus Rep Level "
-                        "board) to #alphalete-gp-sales AND #a-players-b2b.",
+                        "(workbook + payout image + pending orders + Box Tier "
+                        "Bonus Rep Level board) to #alphalete-gp-sales AND "
+                        "#a-players-b2b.",
                 "module": "automations.box_order_log.run",
                 "args_fn": lambda: ["--sheet", "--xlsx", "--post"],
             },
