@@ -111,9 +111,13 @@ _INTRO = {
         # que nos otorgan acceso".
         # Lo que hace viable el parcial son dos cosas, las dos ya en el
         # código y ninguna con lista de oficinas que mantener:
-        #   * un ICD sin acceso sale GRIS (knock_dispo_images._owner_error_note
-        #     marca el hueco con NO_DATA_MARK), así se VE en el correo pero no
-        #     retiene a los otros cuatro capitanes;
+        #   * un ICD sin acceso NO va al correo (Eve 2026-08-25: "esas 12
+        #     oficinas no las vamos a incluir por ahora aunque hayamos pedido
+        #     los accesos"). knock_dispo_images.is_access_gap lo detecta y lo
+        #     saca de la lista; queda en el LOG y en el rótulo de los totales.
+        #     Si NINGUNA oficina de la capitanía es alcanzable, la sección sale
+        #     como una nota GRIS que lo dice — nunca la amarilla, que llevaría
+        #     PENDING_MARK y retendría el correo entero de ese capitán;
         #   * los boards se arman sobre el roster del Org Sales Board, así que
         #     el día que ownerville otorga una oficina la impersonación deja de
         #     fallar y ese ICD aparece solo — no hay allowlist que tocar. El

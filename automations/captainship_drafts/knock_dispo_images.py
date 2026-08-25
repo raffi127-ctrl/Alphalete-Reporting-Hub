@@ -119,6 +119,12 @@ _NO_OFFICE_MARKERS = ("not found in ownerville", "couldn't impersonate",
                       "couldnt impersonate")
 
 
+def is_access_gap(exc) -> bool:
+    """True when this owner's pull failed because the reporting account has no
+    Office Access to their office — a permission, not a run failure."""
+    return any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS)
+
+
 def _owner_error_note(exc) -> str:
     """The errors[] note for a failed owner pull — an ACCESS GAP reads as
     one, anything else keeps its exception text for debugging.
@@ -683,6 +689,15 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # too.
     answered_daily: set = set()
     answered_weekly: set = set()
+    # Owners left OUT of the email entirely because we have no Office Access
+    # to them yet. Eve 2026-08-25: "esas 12 oficinas no las vamos a incluir por
+    # ahora aunque hayamos pedido los accesos" — the twelve pending requests
+    # were turning each captain's knock section into a wall of grey notes about
+    # offices nobody can act on from the email. They stay in the LOG and in the
+    # summary board's "(N of M ICDs)" label, which is what keeps the totals
+    # honest; what they lose is a sub-heading of their own.
+    gapped_daily: List[str] = []
+    gapped_weekly: List[str] = []
     # Everything each summary needs, kept as pulled.
     captured_daily: List[tuple] = []    # (display, cfg, rows)
     captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
@@ -747,7 +762,10 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         logfn(f"    ✗ daily {display}: {type(e).__name__}: "
                               f"{str(e)[:200]}")
                         errors[f"daily_knocks:{display}"] = _owner_error_note(e)
-                        out_daily.append((display, None))
+                        if is_access_gap(e):
+                            gapped_daily.append(display)
+                        else:
+                            out_daily.append((display, None))
                     done_daily.add(display)
                 if want_weekly:
                     try:
@@ -836,7 +854,10 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         logfn(f"    ✗ weekly {display}: {type(e).__name__}: "
                               f"{str(e)[:200]}")
                         errors[f"knock_dispo:{display}"] = _owner_error_note(e)
-                        out_weekly.append((display, None))
+                        if is_access_gap(e):
+                            gapped_weekly.append(display)
+                        else:
+                            out_weekly.append((display, None))
                     done_weekly.add(display)
             # Chan's comparison rows for the daily summary — while the
             # session is still open, so a captainship that doesn't roster
@@ -945,9 +966,27 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 f"{type(e).__name__}: {str(e)[:200]}")
             out_daily.insert(0, (summary_label, None))
             logfn(f"    ✗ daily summary: {type(e).__name__}: {str(e)[:160]}")
+    # A captainship where EVERY office is still waiting on Office Access ends
+    # up with nothing to show. email_build reads an empty list as "the roster or
+    # the session died" and renders the yellow pending note — which carries
+    # PENDING_MARK and would hold that captain's whole email, the exact trap
+    # this partial mode exists to avoid. So say what actually happened, in grey.
+    for kind, out_list, gapped in (("daily_knocks", out_daily, gapped_daily),
+                                   ("knock_dispo", out_weekly, gapped_weekly)):
+        if kind in wanted and not out_list and gapped:
+            errors[kind] = (
+                NO_DATA_MARK + f"no office in this captainship is reachable yet "
+                f"— {len(gapped)} still waiting on ownerville Office Access")
+
     # Written LAST, so it only ever describes a finished pull: a run that dies
     # mid-session leaves no manifest and the next build pulls properly instead
     # of inheriting half a captainship.
+    for kind, gapped in (("daily_knocks", gapped_daily),
+                         ("knock_dispo", gapped_weekly)):
+        if kind in wanted and gapped:
+            logfn(f"    · {kind}: {len(gapped)} owner(s) left OUT of the email "
+                  f"(no Office Access): {', '.join(gapped)}")
+
     _save_manifest(render_dir, captain.key, target, saturday, wanted,
                    out, errors, logfn=logfn)
     return out

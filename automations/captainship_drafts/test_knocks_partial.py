@@ -55,6 +55,36 @@ class AccessGapIsNotAFailure(unittest.TestCase):
                       EB._pending("Daily Knocks — Jay Turnage", note))
 
 
+class OfficesWeCannotPullStayOutOfTheEmail(unittest.TestCase):
+    """Eve 2026-08-25: "esas 12 oficinas no las vamos a incluir por ahora
+    aunque hayamos pedido los accesos". Twelve grey notes about offices the
+    captain cannot do anything about is not information, it is noise."""
+
+    def test_an_access_gap_is_recognised(self):
+        for msg in ("Wayne Rude not found in ownerville",
+                    "Couldn't impersonate 'Brian Tran' in ownerville: ov "
+                    "access request pending (request sent in office access "
+                    "table)"):
+            self.assertTrue(KD.is_access_gap(RuntimeError(msg)), msg)
+
+    def test_a_real_failure_is_not_an_access_gap(self):
+        """Still shown, still yellow, still blocks — that is the point of the
+        distinction."""
+        self.assertFalse(KD.is_access_gap(
+            TimeoutError("Page.goto: Timeout 20000ms exceeded")))
+
+    def test_an_all_gapped_section_is_grey_not_yellow(self):
+        """A captainship with nothing reachable must not fall into
+        email_build's empty-list branch, which is a PENDING_MARK note and
+        would hold that captain's entire email."""
+        err = {"daily_knocks": EB.NO_DATA_MARK + "no office in this "
+               "captainship is reachable yet — 6 still waiting on ownerville "
+               "Office Access"}
+        html = EB._pending("Daily Knocks boards", err["daily_knocks"])
+        self.assertNotIn(EB.PENDING_MARK, html)
+        self.assertIn("no data available", html)
+
+
 class TotalsLabelTellsTheTruth(unittest.TestCase):
     def test_partial_says_how_many(self):
         self.assertEqual(KD.totals_label(4, 8),
