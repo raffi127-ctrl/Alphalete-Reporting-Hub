@@ -2584,17 +2584,25 @@ AUTOMATED_REPORTS = [
             "phase failing fires the orchestrator alert.\n\n"
             "IF A SECTION IS BLANK\n"
             "*'Could not be captured on this run'* = the Sales Board render is "
-            "signed out on the runner. Fix: `sheets_login check` on the mini, "
-            "then `sheets_login` (a human clears Google 2FA there)."
+            "signed out on the runner. Fix: `sheets_login check --machine "
+            "\"Lucy 3\"`, then `sheets_login` (a human clears Google 2FA "
+            "there). The runner is LUCY 3 since 2026-08-25 — not the mini."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2_iCFDdmBBLPQNQ8x8xLQPTUOJcxHOMRj5RWu6E/edit"),
-        "assignees": ["Lucy 1"],
-        # Phase 2 posts to Slack AS LUCY using the mini's token — route Hub-
-        # triggered runs to Lucy 1 so a manual "Post to Slack" click can't post
-        # from a laptop under the wrong user (same reason Country Sales Board
-        # pins run_machine).
-        "run_machine": "Lucy 1",
+        "assignees": ["Lucy 3"],
+        # Phase 2 posts to Slack AS LUCY — route Hub-triggered runs to a Lucy so
+        # a manual "Post to Slack" click can't post from a laptop under the
+        # wrong user (same reason Country Sales Board pins run_machine).
+        #
+        # LUCY 1 -> LUCY 3 (2026-08-25), with captainship_knocks + captainship_
+        # drafts. run_machine is a HARD PIN and does NOT follow schedule_config
+        # the way `assignees` does (dashboard._machine_card_assignments only
+        # rewrites assignees), so it has to be moved by hand or every Hub button
+        # on this card keeps firing on Lucy 1 — where there is now no knock
+        # manifest and no output/*.eml, so "Build the 12" would silently do the
+        # 2h pull again and "Send now" would find nothing to mail.
+        "run_machine": "Lucy 3",
         # THIRD PHASE = THE APPROVAL (Megan 2026-08-10: "a phase hub card that
         # goes green on approval so we have visual on it"). The first two rows
         # are both written by machines the moment they exit 0 — the build, then
@@ -2611,7 +2619,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Built — the 12 previews are in output/ as .html. Open them, check the numbers, then press 'Post to Slack for approval' (or let the 4am flow post it).",
-            "message_failed": "❌ Run failed. If §1 is blank the Sales Board render is signed out — run `sheets_login` on the mini.",
+            "message_failed": "❌ Run failed. If §1 is blank the Sales Board render is signed out — run `sheets_login --machine \"Lucy 3\"` (the runner moved off the mini on 2026-08-25).",
         },
         "actions": [
             {
@@ -2626,7 +2634,7 @@ AUTOMATED_REPORTS = [
                 "label": "2. Post to Slack for approval",
                 "icon": "📮",
                 "primary": False,
-                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn is what mails the reports. Posts as Lucy from the mini — run it there, not from a laptop, or it posts under your own account.",
+                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn is what mails the reports. Posts as Lucy from LUCY 3 (the runner since 2026-08-25) — the card routes there for you; don't run it from a laptop or it posts under your own account.",
                 "module": "automations.captainship_drafts.review_gate",
                 "args_fn": lambda: ["--post"],
             },
