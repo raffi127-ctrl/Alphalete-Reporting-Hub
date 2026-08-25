@@ -71,6 +71,7 @@ class Board:
     rows: List[dict] = field(default_factory=list)
     source: str = ""             # "cache" | "build" | "live"
     note: str = ""
+    partial: bool = False        # today's board: the day isn't over yet
 
 
 def central_today() -> dt.date:
@@ -148,8 +149,12 @@ def cached_rows(canonical: str, target: dt.date) -> tuple[Optional[list], str]:
 
 
 def save_rows(canonical: str, target: dt.date, rows: list) -> None:
-    """Park a live pull so the second person asking the same thing is free."""
-    if not rows:
+    """Park a live pull so the second person asking the same thing is free.
+
+    TODAY IS NEVER CACHED. A mid-day pull is a snapshot of a day still being
+    knocked; storing it would hand the next person this morning's half-numbers
+    as if they were the day's, hours later. Only a finished day is frozen."""
+    if not rows or target >= central_today():
         return
     p = _cache_path(canonical, target)
     try:
@@ -205,8 +210,18 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
     failure (no such office, ownerville still busy, a broken pull) — a day
     with genuinely no knocks comes back as a Board with png=None and a note."""
     target = target or default_target()
+    today = central_today()
+    # A day that hasn't happened is not an empty day. Ownerville answers a
+    # future date with an empty grid — exactly what a real zero looks like —
+    # so it has to be refused HERE, or the requester is told "no knocks
+    # recorded" about tomorrow.
+    if target > today:
+        raise ValueError(
+            f"{target.isoformat()} hasn't happened yet — pick today or a day "
+            "that's already gone by.")
     canonical = resolve_office(office)
-    b = Board(office=canonical, asked_as=office, target=target)
+    b = Board(office=canonical, asked_as=office, target=target,
+              partial=(target == today))
     if canonical.lower() != office.strip().lower():
         logfn(f"'{office}' resolves to '{canonical}'")
 
@@ -231,7 +246,11 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
 
     b.rows, b.source = rows, source
     if not rows:
-        b.note = "no knocks recorded that day"
+        # An empty grid is genuinely ambiguous: a day nobody knocked and a day
+        # the office has no data for at all look identical coming back. Say
+        # both possibilities rather than asserting the flattering one.
+        b.note = ("Ownerville returned no rows for that day — either nobody "
+                  "knocked, or that office has no data that far back")
         return b
 
     from automations.total_knocks import render as knocks_render

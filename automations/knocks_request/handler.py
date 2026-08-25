@@ -160,9 +160,16 @@ def process(web, user_id: str, office: str, target: dt.date) -> None:
             "the name.")
         return
 
+    pretty = _pretty(target)
+    # Refused before any work: a future day comes back from Ownerville as an
+    # empty grid, indistinguishable from a day nobody knocked.
+    if target > service.central_today():
+        say(f":calendar: {pretty} hasn't happened yet — ask me for today or "
+            "any day that's already gone by.")
+        return
+
     canonical = service.resolve_office(office)
     have, _src = service.cached_rows(canonical, target)
-    pretty = _pretty(target)
     if have:
         say(f":door: Getting *{canonical}*'s knocks for {pretty} — one second.")
     else:
@@ -197,7 +204,11 @@ def process(web, user_id: str, office: str, target: dt.date) -> None:
     reps = len(board.rows)
     cap = (f":door: *Total Knocks — {canonical} — {pretty}*  "
            f"({reps} rep{'s' if reps != 1 else ''})")
-    if board.source in ("cache", "build"):
+    if board.partial:
+        # Today's numbers keep moving; say so on the image itself, because a
+        # screenshot of it will outlive this message.
+        cap += "\n_Today so far — the day isn't over, these numbers will grow._"
+    elif board.source in ("cache", "build"):
         cap += "\n_From this morning's run — same numbers the report used._"
     try:
         web.files_upload_v2(channel=chan, file=str(board.png),
