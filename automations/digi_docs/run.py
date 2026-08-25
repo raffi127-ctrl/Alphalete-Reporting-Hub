@@ -143,7 +143,16 @@ def _phases(args) -> int:
                     refused.append(str(e))
                     print(f"  ⛔ {e}")
 
-    print(f"\nadded {len(added)} · sent {len(done)} · refused {len(refused)}")
+    # Write-back: tint the Digi Docs CELL for whoever actually got their
+    # bundle. Never the name, never the checkbox.
+    from automations.digi_docs import mark, slack_post
+    sent_names = {n for n, _m, _t in done}
+    tinted = mark.tint(ws, [c for c in send if c.name in sent_names],
+                       dry_run=dry)
+    slack_post.post(len(done), refused, done, dry_run=dry)
+
+    print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
+          f"refused {len(refused)}")
     for r in refused:
         print(f"  ⛔ {r}")
     # Attestations are logged per rep on purpose: the drug-test box asserts a
