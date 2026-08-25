@@ -108,6 +108,11 @@ class ScrapeSpec:
     #   Confirm a new spec's caption in the view's own filter card before
     #   trusting week_pin.
 
+    day_behind: bool = False     # this source publishes YESTERDAY's sales later
+    #   today, so on the day the reporting week rolls (Tuesday) the pinned week
+    #   has NOTHING in it yet. See empty_week_expected() below — that's a wait,
+    #   not a failure, and the 14:30 board-catchup pulls it.
+
 
 def _norm_section_owner(raw: str, strip_office: bool) -> str:
     """Normalize an owner cell to the engine key. _norm_owner already cuts a
@@ -338,6 +343,57 @@ def pinned_view_url(spec: ScrapeSpec, today: Optional[dt.date] = None,
     return f"{view_url}{sep_r}:refresh=yes"
 
 
+# Hour after which an empty week stops being "not published yet". The 14:30
+# board-catchup (deploy/board_catchup.sh) re-pulls every day-behind section, so
+# before noon an empty BOX week is a wait; at 14:30 it would be a real failure
+# and has to fail loudly.
+CATCHUP_HHMM = "12:00"
+
+
+def is_empty_crosstab_dialog(err: BaseException) -> bool:
+    """True for the 'the viz rendered NOTHING' flavour of the crosstab failure.
+
+    opt_phase raises "Couldn't find the <sheet> sheet in the Crosstab dialog —
+    saw N thumb(s): [...]". N > 0 means the dialog listed OTHER worksheets, i.e.
+    the sheet was renamed or the view changed — always a real failure. N == 0
+    means the dialog came up completely empty (after opt_phase's own reopen +
+    extra-hydration retry), which is what Tableau does when the view has no
+    rows at all."""
+    return "saw 0 thumb(s)" in str(err)
+
+
+def empty_week_expected(spec: ScrapeSpec, today: Optional[dt.date] = None,
+                        now: Optional[dt.datetime] = None) -> bool:
+    """True when `spec`'s pinned week CANNOT have data yet, so an empty view is
+    a WAIT, not a breakage.
+
+    A `day_behind` source publishes yesterday's sales later today. On TUESDAY —
+    the day the board's week rolls (week.py) — the new reporting week's only
+    completed day is Monday, which this source hasn't published yet, so the
+    pinned view returns zero rows. Tableau then lists no worksheets in the
+    Crosstab dialog at all and the pull dies with "saw 0 thumb(s)".
+
+    That is exactly what BOX did on Tue 2026-08-18 and Tue 2026-08-25, every
+    Tuesday since the week-pin caption started working (commit 8dcfc39c) —
+    a weekly `drop-org-sales-board` alert for a section that is a day behind ON
+    PURPOSE (Eve 2026-08-12) and gets filled by the 14:30 catchup anyway.
+
+    Deliberately narrow, so a REAL BOX outage still shouts:
+      • only for specs flagged `day_behind`,
+      • only while the reporting week has at most ONE completed day (Tuesday),
+      • only before CATCHUP_HHMM — the afternoon catchup runs after the data
+        has landed, so an empty week there is a genuine failure.
+    """
+    if not spec.day_behind:
+        return False
+    from automations.org_sales_board import week as _wk
+    today = today or dt.date.today()
+    if len(_wk.completed_days(today)) > 1:
+        return False
+    now = now or dt.datetime.now()
+    return now.strftime("%H:%M") < CATCHUP_HHMM
+
+
 def pull_section_byday(
     spec: ScrapeSpec,
     out_dir: Path,
@@ -473,6 +529,13 @@ BOX_SPEC = ScrapeSpec(
     #   never cover a second time. That's why BOX's Sunday cells were blank
     #   while the rest of the board was complete (Eve 2026-08-10). Verified
     #   live: pinning WE 2026-08-09 returns Mon 08-03 … Sun 08-09.
+    # BOX runs a day behind ON PURPOSE (Eve 2026-08-12): its extract publishes
+    # yesterday's sales during the day, so the morning fill leaves the newest
+    # column short and the 14:30 board-catchup fills it. On TUESDAY that means
+    # the freshly-rolled week is entirely empty at 5am — see
+    # empty_week_expected(), which turns that into a logged wait instead of a
+    # weekly false 'section: BOX' drop alert.
+    day_behind=True,
     out_name="org_sales_board_box_byday.csv",
 )
 

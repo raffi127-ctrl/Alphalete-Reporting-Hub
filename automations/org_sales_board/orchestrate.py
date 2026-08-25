@@ -118,8 +118,26 @@ def _make_section_adapter(spec_key: str):
             csv_path = ctx.from_csv
             ctx.logfn(f"  [{spec_key}] offline CSV {csv_path}")
         else:
-            csv_path = section_pull.pull_section_byday(
-                spec, ctx.out_dir, ctx.page, logfn=ctx.logfn, today=today)
+            try:
+                csv_path = section_pull.pull_section_byday(
+                    spec, ctx.out_dir, ctx.page, logfn=ctx.logfn, today=today)
+            except RuntimeError as e:
+                # A day-behind source whose week hasn't published yet returns an
+                # EMPTY view, and Tableau answers an empty view with an empty
+                # Crosstab dialog ("saw 0 thumb(s)"). That is a wait, not a
+                # breakage — same shape as JE / Frontier above, which return {}
+                # when their week isn't posted. Anything else (a dialog that
+                # listed OTHER sheets, any other error, or an empty one past
+                # noon) still raises and is reported as a dropped section.
+                if not (section_pull.is_empty_crosstab_dialog(e)
+                        and section_pull.empty_week_expected(spec, today)):
+                    raise
+                ctx.logfn(
+                    f"  ⚠ {spec.section_label} hasn't published this week yet "
+                    f"(day behind) — the pinned view is empty, so Tableau's "
+                    f"Crosstab dialog lists no sheets. Not filling it; the "
+                    f"14:30 board-catchup pulls it. Self-heals.")
+                return {}
         return section_pull.parse_byday(spec, csv_path, today)
     return _adapter
 
