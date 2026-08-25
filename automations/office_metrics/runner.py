@@ -144,12 +144,16 @@ def _nds_metrics(o: Office) -> list[dict]:
     absent from the thread. Same dict shape as metrics_for so build_destinations /
     _run_one treat them identically. SECTION_OVERRIDES still gates which post."""
     return [
-        # 🚪 TeleMapper Knocks + 🕐 Time Gaps — an NDS owner has no Disposition
-        # page (no door-knock campaign), so knocks_run fills the Total Knocks
-        # slot with the TELEMAPPER KNOCKS board (the ownerville Time Tracker
-        # table: first/last knock, breaks, gaps, sales time, sales — Raf's
-        # reference screen, 2026-08-22) and posts Time Gaps as usual.
-        dict(slug="knocks_gaps", label="🚪 TeleMapper Knocks + 🕐 Time Gaps",
+        # 🚪 TeleMapper Knocks — an NDS owner has no Disposition page (their
+        # reps don't disposition; they clock in and knock), so knocks_run
+        # fills the Total Knocks slot with the TELEMAPPER KNOCKS board (the
+        # ownerville Time Tracker table: first/last knock, breaks, gaps,
+        # sales time, sales — Raf's reference screen, 2026-08-22).
+        # ONE post, like fiber: that board already carries Gaps + Total Gaps,
+        # so the separate Time Gaps image was the same data twice (Megan
+        # 2026-08-25, "should have been universal"). Label says so, because
+        # the thread header is a promise about what's coming.
+        dict(slug="knocks_gaps", label="🚪 TeleMapper Knocks (with Time Gaps)",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              # KNOCKS_EXTRA_TOTALS="" — an NDS board has no fiber columns, so
              # Chan's fiber totals line (Raf 2026-08-23) is fiber-only.
