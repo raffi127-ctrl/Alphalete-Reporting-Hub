@@ -215,74 +215,197 @@ def _expand(modal, label: str, page, *, reveals: str = "",
 
 
 def _choose_bundle_type(tab, label: str, *, verbose: bool = True) -> None:
-    """Select the Bundle Type radio.
+    """Select the Bundle Type radio, then SAY whether it actually took.
 
     Prefer the INPUT associated with the label over the label's text: clicking
     text can land on a node that isn't wired to the control, leaving the radio
-    unset — and then `Generate Bundle` reveals nothing and step 2 gets blamed
+    unset -- and then `Generate Bundle` reveals nothing and step 2 gets blamed
     for step 1's failure.
+
+    Run 4 (2026-08-25) is exactly that ambiguity: the log showed the click
+    happening and the next control missing, with no way to tell which of the
+    two had gone wrong. So the click is now followed by a read of the radio's
+    checked state, and the answer goes in the log either way.
     """
-    for attempt in (
-            lambda: tab.get_by_role("radio", name=label, exact=False),
-            lambda: tab.locator("label", has_text=label).locator(
-                "input[type='radio']"),
-            lambda: tab.locator("label", has_text=label),
-            lambda: tab.get_by_text(label, exact=False)):
+    how = ""
+    for name, attempt in (
+            ("role=radio", lambda: tab.get_by_role("radio", name=label,
+                                                   exact=False)),
+            ("label>input", lambda: tab.locator("label", has_text=label
+                                                ).locator("input[type='radio']")),
+            ("label", lambda: tab.locator("label", has_text=label)),
+            ("text", lambda: tab.get_by_text(label, exact=False))):
         try:
             loc = attempt().first
             loc.wait_for(state="visible", timeout=6000)
             loc.click(timeout=6000)
-            return
+            how = name
+            break
         except Exception:
             continue
-    raise Refused(f"couldn't select bundle type {label!r}")
+    if not how:
+        raise Refused(f"couldn't select bundle type {label!r}")
+    if verbose:
+        print(f"    bundle type via {how}: {_radio_state(tab, label)}")
 
 
-def _bundle_dropdown(tab, *, timeout: int = 20000):
-    """The Select Bundle control, whatever shape it renders as, or None.
+def _radio_state(tab, label: str) -> str:
+    """'CHECKED' / 'NOT checked' / 'unreadable' for the radio named `label`.
 
-    Tried in order: the placeholder text from Megan's screenshot, a visible
-    <select>, an ARIA combobox. Logging what IS present on failure is the point
-    — a bare 'waiting for -Select a Bundle-' says nothing about why.
-    """
-    shapes = ("text=-Select a Bundle-", "select:visible", "[role='combobox']")
-    per = max(3000, timeout // len(shapes))
-    for sel in shapes:
+    The last two shapes _choose_bundle_type tries click TEXT, which can leave
+    the radio untouched while the click itself reports success. This is the
+    read that tells those apart."""
+    for attempt in (
+            lambda: tab.get_by_role("radio", name=label, exact=False),
+            lambda: tab.locator("label", has_text=label
+                                ).locator("input[type='radio']")):
         try:
-            loc = tab.locator(sel).first
-            loc.wait_for(state="visible", timeout=per)
-            return loc
+            loc = attempt().first
+            if loc.count():
+                return "CHECKED" if loc.is_checked(timeout=3000) else "NOT checked"
         except Exception:
             continue
-    try:
-        print("    (no bundle dropdown. Visible controls: "
-              + ", ".join(
-                  t.strip()[:40] for t in
-                  tab.locator("select:visible, [role='combobox'], "
-                              "button:visible").all_inner_texts()[:8]) + ")")
-    except Exception:
-        pass
-    return None
+    return "unreadable"
 
 
-def _pick_typeahead(tab, wanted: str, *, expect_single: bool) -> None:
-    """Select Bundle. A typeahead, not a <select> — select_option never touches
-    it, so: click it open, type, then click the option.
+_DUMP_JS = """() => {
+  const vis = (el) => { const r = el.getBoundingClientRect();
+                        return r.width > 0 && r.height > 0; };
+  const cut = (s, n) => (s || '').replace(/\\s+/g, ' ').trim().slice(0, n);
+  const out = [];
+  document.querySelectorAll('select').forEach((s) => {
+    if (!vis(s)) return;
+    const opts = Array.from(s.options).slice(0, 5)
+                      .map((o) => cut(o.text, 24));
+    out.push('SEL ' + cut(s.name || s.id, 18) + ' n=' + s.options.length +
+             ' [' + opts.join(' / ') + ']');
+  });
+  document.querySelectorAll('input').forEach((i) => {
+    if (i.type === 'hidden') return;
+    const box = (i.type === 'radio' || i.type === 'checkbox');
+    if (!vis(i) && !box) return;
+    const lab = (i.labels && i.labels[0]) ? i.labels[0].innerText : '';
+    out.push('IN ' + i.type + ' ' + cut(i.name || i.id, 16) +
+             (box ? (i.checked ? ' CHECKED' : ' off') : '') +
+             (vis(i) ? '' : ' offscreen') +
+             ' "' + cut(box ? lab : i.value, 30) + '"');
+  });
+  document.querySelectorAll('button, input[type=submit], a.btn').forEach((b) => {
+    if (!vis(b)) return;
+    out.push('BTN "' + cut(b.innerText || b.value, 38) + '"');
+  });
+  return out;
+}"""
 
-    REFUSAL: under this bundle type the list holds exactly ONE real option
-    besides the placeholder. If it ever holds more, the campaign or the plan
-    changed, and taking row one of a list that quietly grew is how somebody gets
-    mailed the wrong contract. Stop instead.
+
+def _dump_controls(tab, when: str, *, limit: int = 44) -> None:
+    """Print every control this page renders, one short line each.
+
+    This is the lesson of runs 3 and 4 (2026-08-25). Both failed the same way:
+    the code decided a control was there, walked on, and timed out clicking a
+    different one -- and the log could only name the selector that missed,
+    never what the page actually contains. Two rounds went on guessing at the
+    markup from that. One read ends it.
+
+    Lines are prefixed `PG|<nn>|` and deliberately SHORT. The mini's result
+    cell holds ~470 characters, so this gets read back a slice at a time
+    (`lucy logtail <log> 'PG|0'`, then `'PG|1'`, ...); long lines would cost a
+    whole round trip each.
     """
-    box = tab.locator("input[type='search']:visible, "
-                      ".select2-search__field, [role='combobox']").first
-    tab.locator("text=-Select a Bundle-").first.click(timeout=15000)
-    box.wait_for(state="visible", timeout=10000)
+    try:
+        rows = tab.evaluate(_DUMP_JS)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"PG|--| {when}: dump failed: {str(e).splitlines()[0][:70]}")
+        return
+    try:
+        print(f"PG|--| {when} @ {tab.url[:64]}")
+    except Exception:                                       # noqa: BLE001
+        print(f"PG|--| {when}")
+    for i, row in enumerate(rows[:limit]):
+        print(f"PG|{i:02d}| {row[:72]}")
+    if len(rows) > limit:
+        print(f"PG|--| ...and {len(rows) - limit} more")
 
-    opts = [o.strip() for o in
-            tab.locator("li[role='option'], .select2-results__option"
-                        ).all_inner_texts()]
-    real = [o for o in opts if o and not o.lower().startswith("-select")]
+
+def _bundle_dropdown(tab, wanted: str, *, timeout: int = 20000):
+    """Find the Select Bundle control and return (kind, locator), or (None, None).
+
+    It has to BE that control. The previous version accepted the first visible
+    `<select>` on the page, and that is precisely how run 4 (2026-08-25)
+    reported the dropdown present and then timed out clicking a placeholder
+    that was never there -- some other control on the form matched, the guard
+    that should have said "Generate Bundle revealed nothing" stayed quiet, and
+    the diagnostic it guards never printed.
+
+    So a candidate only counts if it NAMES the bundle: the placeholder text, or
+    `wanted` among its options. Anything else is not this dropdown, whatever
+    shape it has.
+    """
+    waited, step = 0, 1000
+    while waited < timeout:
+        try:
+            loc = tab.locator("text=-Select a Bundle-").first
+            if loc.count() and loc.is_visible():
+                return "text", loc
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            sels = tab.locator("select:visible")
+            for i in range(sels.count()):
+                sel = sels.nth(i)
+                opts = " | ".join(
+                    o.strip() for o in sel.locator("option").all_inner_texts())
+                low = opts.lower()
+                if "select a bundle" in low or wanted.lower() in low:
+                    return "select", sel
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
+            boxes = tab.locator("[role='combobox']")
+            for i in range(boxes.count()):
+                box = boxes.nth(i)
+                if "bundle" in (box.inner_text(timeout=2000) or "").lower():
+                    return "combobox", box
+        except Exception:                                   # noqa: BLE001
+            pass
+        tab.wait_for_timeout(step)
+        waited += step
+    return None, None
+
+
+def _bundle_options(tab, kind: str, control) -> list:
+    """Every real option the bundle control offers, placeholder removed."""
+    if kind == "select":
+        opts = [o.strip() for o in control.locator("option").all_inner_texts()]
+    else:
+        opts = [o.strip() for o in
+                tab.locator("li[role='option'], .select2-results__option"
+                            ).all_inner_texts()]
+    return [o for o in opts if o and not o.lower().startswith("-select")]
+
+
+def _pick_typeahead(tab, wanted: str, *, kind: str, control,
+                    expect_single: bool, verbose: bool = True) -> None:
+    """Choose the bundle, whichever shape the control turned out to be.
+
+    Megan's Loom shows a typeahead (a text input inside an open list), so
+    `select_option` would never touch it -- but the run has to survive being
+    wrong about that, because being wrong about it is what cost run 4. If the
+    control IS a real `<select>`, use select_option; otherwise click it open,
+    type, and click the option.
+
+    REFUSAL, either shape: under this bundle type the list holds exactly ONE
+    real option. If it ever holds more, the campaign or the plan changed, and
+    taking row one of a list that quietly grew is how somebody gets mailed the
+    wrong contract. Stop instead.
+    """
+    if kind != "select":
+        control.click(timeout=15000)
+        tab.wait_for_timeout(600)
+
+    real = _bundle_options(tab, kind, control)
+    if verbose:
+        print(f"    bundle list ({kind}): {real[:4]}")
     if expect_single and len(real) > 1:
         raise Refused(
             f"Select Bundle offers {len(real)} options ({real[:4]}), expected "
@@ -291,8 +414,14 @@ def _pick_typeahead(tab, wanted: str, *, expect_single: bool) -> None:
     if wanted not in real:
         raise Refused(f"Select Bundle has no {wanted!r} (saw {real[:4]})")
 
-    box.press_sequentially(wanted[:12], delay=40)
-    tab.wait_for_timeout(600)
+    if kind == "select":
+        control.select_option(label=wanted)
+        return
+    box = tab.locator("input[type='search']:visible, .select2-search__field, "
+                      "[role='combobox'] input:visible").first
+    if box.count():
+        box.press_sequentially(wanted[:12], delay=40)
+        tab.wait_for_timeout(600)
     tab.locator("li[role='option'], .select2-results__option").filter(
         has_text=wanted).first.click(timeout=10000)
 
@@ -325,6 +454,12 @@ def generate_bundle(tab, name: str, *, dry_run: bool = True,
 
     Only that last click sends anything, and it cannot be undone.
     """
+    # 0. On a dry run, say what this page HAS before touching it. The probe
+    #    exists to read the page, and a selector timeout on its own never says
+    #    what was actually rendered — two rounds were spent guessing that.
+    if dry_run:
+        _dump_controls(tab, "portal opened")
+
     # 1. Bundle Type. It is a RADIO, so click the input rather than the text —
     #    a text click lands on the label's text node and can leave the radio
     #    unset, which then makes step 2 look like the broken one.
@@ -332,16 +467,20 @@ def generate_bundle(tab, name: str, *, dry_run: bool = True,
 
     # 2. Reveals the bundle dropdown — it does NOT generate anything.
     _click_any(tab, "Generate Bundle", page=tab)
-    if not _bundle_dropdown(tab, timeout=20000):
+    kind, control = _bundle_dropdown(tab, config.BUNDLE, timeout=20000)
+    if control is None:
+        _dump_controls(tab, "after Generate Bundle")
         raise Refused(
             f"{name}: 'Generate Bundle' revealed no bundle dropdown. Either the "
-            f"bundle type {config.BUNDLE_TYPE!r} never got selected, or the "
-            "dropdown renders differently than expected — the run log above "
-            "lists what IS on the page.")
+            f"bundle type {config.BUNDLE_TYPE!r} never got selected (the line "
+            "above says whether its radio is CHECKED), or the dropdown renders "
+            "differently than expected — the PG| lines list every control that "
+            "IS on the page.")
 
     # 3. Reveals the commission checkboxes.
-    _pick_typeahead(tab, config.BUNDLE,
-                    expect_single=config.BUNDLE_EXPECT_SINGLE_OPTION)
+    _pick_typeahead(tab, config.BUNDLE, kind=kind, control=control,
+                    expect_single=config.BUNDLE_EXPECT_SINGLE_OPTION,
+                    verbose=verbose)
 
     # 4. Tick ours, leave the others strictly alone.
     for label in config.COMMISSION_BUNDLES_TICK:
@@ -352,6 +491,8 @@ def generate_bundle(tab, name: str, *, dry_run: bool = True,
     # 5. Opens the long per-document form. Still not the submit.
     _click_any(tab, "Get Documents for Selected Bundle", page=tab)
     tab.wait_for_load_state("networkidle", timeout=60000)
+    if dry_run:
+        _dump_controls(tab, "document form")
 
     # 6. Refuse rather than submit a half-filled contract.
     ok, empties = _required_fields_filled(tab)
