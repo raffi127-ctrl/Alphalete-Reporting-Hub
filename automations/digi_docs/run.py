@@ -124,7 +124,12 @@ def _phases(args) -> int:
 
         if args.send_only:
             print("\nPHASE: send bundles")
-            ov._show_all(page)          # once, at the top — not per rep
+            # NO top-level Show All flip. The first probe on Lucy 3 died here
+            # (2026-08-25): the filter lives on View Progress, and at this point
+            # the session is still on whatever page it opened, so there was
+            # nothing to click. find_rep already widens to Show All per search
+            # when a rep isn't in the default 3-week window -- which is the
+            # proven path and the one a just-added rep needs anyway.
             for c in send:
                 try:
                     modal, matched = ov.open_set_status(page, c.name)
