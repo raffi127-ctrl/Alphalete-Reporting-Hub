@@ -130,9 +130,14 @@ def _activation_cfg():
 # So: keep the CHURN RATE tight (that's the number people read) and let the
 # base drift within a band that still catches every structural failure.
 #   wrong owner            base off ~70%   -> caught
-#   a product type dropped base off ~14%   -> caught
 #   truncated/empty pull   base off >30%   -> caught
 #   refresh race           base off <5%    -> tolerated, and LOGGED
+#
+# This table used to claim "a product type dropped -> base off ~14% -> caught".
+# It no longer holds and was corrected 2026-08-25: Wireless has grown to 88% of
+# CARLOS's base, so losing Air (7%) or Internet (5%) now lands INSIDE the ±10%
+# band. Only Wireless still breaks it alone. `_vanished_products` covers that
+# gap against the tab's own previous numbers instead of against a percentage.
 BASE_TOL_PCT = 0.10        # relative band on the dashboard's own base
 BASE_TOL_MIN = 10          # absolute floor, so small bases aren't hair-trigger
 RATE_TOL_PP = 0.005        # 0.5 percentage points on the churn rate
@@ -206,6 +211,44 @@ def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
             "problem, not an Order Log one. Not auto-tolerated: check the "
             "workbook's extract schedule before re-running.")
     return problems
+
+
+# A product that still had this many active accounts yesterday cannot honestly
+# reach zero overnight: the 0-30 base is a 30-day rolling population, so an
+# office that stops selling something decays through 8, 5, 2, 1 over weeks. A
+# clean drop to 0 from a real number is a LABEL problem, not a sales one.
+VANISH_FLOOR = 5
+
+
+def _vanished_products(who: str, bases: dict, prev_bases: dict,
+                       log) -> list[str]:
+    """Catch a product type that stopped being recognised, which the base band
+    can no longer see.
+
+    The tolerance table above claims "a product type dropped -> base off ~14%
+    -> caught". That stopped being true as Wireless grew: Internet is 19 of
+    CARLOS's 383 units (5%) and Air 28 (7%), so PRODUCT_MAP failing to match
+    either — Tableau renaming 'NEW INTERNET', a stray suffix, a new casing —
+    lands well inside the ±10% band and writes a quietly wrong board. Only
+    Wireless (88%) still breaks the band on its own.
+
+    So compare against what the tab ALREADY says instead of against a
+    percentage. No baseline (fresh tab, unreadable box) = no opinion.
+    """
+    if not prev_bases:
+        return []
+    gone = [(p, prev_bases[p]) for p in sorted(bases)
+            if bases.get(p, 0) == 0 and prev_bases.get(p, 0) >= VANISH_FLOOR]
+    if not gone:
+        return []
+    for p, was in gone:
+        log(f"  ✗ {who}: {p} computed 0 units, but the tab still shows {was} "
+            "from the last run")
+    return [f"{who}: {p} went from {was} active accounts to 0 in one run — "
+            f"the Order Log almost certainly renamed the '{p}' product label "
+            "(check PRODUCT_MAP against the crosstab's 'Product Type (Broken "
+            "Out)' values); a real wind-down decays over weeks, it does not "
+            "drop to zero" for p, was in gone]
 
 
 def _compare(who: str, summary: dict, dash: dict, log) -> list[str]:
@@ -604,15 +647,9 @@ def main(argv=None) -> int:
                 rates_by_office[k] = (office, reps)
 
     if problems:
-        log("\n✗ RECONCILIATION FAILED — NOTHING WRITTEN:")
-        for p in problems:
-            log(f"   {p}")
-        detail = ("Computed churn numbers do not match the Churn Rates "
-                  "dashboard: " + "; ".join(problems))
-        _fail_manifest(detail)
-        if not args.dry_run:
-            _email_failure(detail, log=log)
-        return 2
+        return _abort(problems,
+                      "Computed churn numbers do not match the Churn Rates "
+                      "dashboard: " + "; ".join(problems), log, args.dry_run)
 
     if args.dry_run:
         for key, *_ in owners:
@@ -624,15 +661,34 @@ def main(argv=None) -> int:
         log("\n[dry-run] no writes performed.")
         return 0
 
-    # ------------------------------------------------------------- writes
-    churn_ws = {}               # office key -> its resolved churn worksheet
-    act_problems: list = []     # offices whose activations tab couldn't be written
+    # ------------------------------------ resolve the tabs + structural check
+    # Resolve every office's tab BEFORE writing any of them, and read back the
+    # numbers already on it. Reconciliation is deliberately all-or-nothing (see
+    # STAGED); a check that only fired on office #3 would leave #1 and #2
+    # written and #3 stale — the split state the all-or-nothing rule exists to
+    # prevent. The handles are reused below, so this costs no extra lookups.
+    sheets = {}                 # office key -> (spreadsheet, worksheet)
     for key, prefix, sid, tab, has_act in owners:
         sh = fill.open_sheet(sid)   # each office writes its OWN board
         # Resolve the tab ONCE, case-tolerantly (a hand-duplicated board spells
         # it 'Lucy Churn', not 'LUCY CHURN' — Jamis, 2026-08-01), and reuse the
         # handle: 4 lookups per office was also 4 Sheets calls per office.
         ws = _fill_shared.worksheet_ci(sh, tab)
+        sheets[key] = (sh, ws)
+        problems += _vanished_products(key.upper(),
+                                       results[key]["summary"]["base"],
+                                       fill.read_product_bases(ws, log=log),
+                                       log)
+    if problems:
+        return _abort(problems,
+                      "A product type stopped being recognised, so nothing was "
+                      "written: " + "; ".join(problems), log, args.dry_run)
+
+    # ------------------------------------------------------------- writes
+    churn_ws = {}               # office key -> its resolved churn worksheet
+    act_problems: list = []     # offices whose activations tab couldn't be written
+    for key, prefix, sid, tab, has_act in owners:
+        sh, ws = sheets[key]
         churn_ws[key] = ws
         log(f"▶ updating '{ws.title}' on sheet {sid[:8]}…")
         # Self-heal the 'Viewing:' dropdown: editing the tab's headers can
@@ -783,6 +839,19 @@ def _email_failure(msg: str, log=print) -> None:
         _send_email(subject, html, text, FAILURE_TO, False, "vantura-churn-fail")
     except Exception as e:  # noqa: BLE001 — never mask the real failure
         log(f"  ⚠ failure email not sent: {e}")
+
+
+def _abort(problems: list[str], detail: str, log, dry_run: bool) -> int:
+    """One exit for every "we will not write" verdict: log the reasons, record
+    the manifest, mail it, exit 2. Shared so the structural check can't drift
+    into a quieter failure than the reconciliation one."""
+    log("\n✗ NOTHING WRITTEN:")
+    for p in problems:
+        log(f"   {p}")
+    _fail_manifest(detail)
+    if not dry_run:
+        _email_failure(detail, log=log)
+    return 2
 
 
 def _fail_manifest(msg: str) -> None:

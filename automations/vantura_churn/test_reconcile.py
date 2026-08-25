@@ -1,4 +1,4 @@
-"""The stale-CHURNRATES rescue in the Vantura churn reconciliation gate.
+"""The two guards on the Vantura churn write: stale-CHURNRATES, vanished product.
 
 Pinned from the real 2026-08-25 failure. The 0-30 window drops the accounts
 posted 31 days ago every morning, and that cohort is the mature end of the
@@ -19,6 +19,9 @@ What these pin:
       truncated pull) is NOT rescued — a one-day shift can't close those;
   (c) a dashboard two or more days behind still FAILS, with the reason named,
       because that is a CHURNRATES problem nobody should sleep through.
+
+The second half pins `_vanished_products`, which replaced a tolerance-table
+claim that had quietly gone false — see its own comment block below.
 
 Run:  python -m automations.vantura_churn.test_reconcile   (or via pytest)
 """
@@ -100,6 +103,48 @@ def test_unreadable_dashboard_cell_still_fails():
     dash = {"base": None, "rate": None, "raw": {"Churn Rate": "%null%"}}
     assert vc._reconcile("CARLOS", _s(22, 383), dash, _quiet,
                          prev_summary=_s(25, 389))
+
+
+# --------------------------------------------------------- vanished products
+# The base band (±10%) is blind to a product type that stops being recognised:
+# Internet is 19 of CARLOS's 383 units. These pin the check that replaced it.
+
+CARLOS_BASES = {"Wireless": 336, "Air": 28, "Internet": 19}
+
+
+def test_internet_label_renamed_blocks_the_write():
+    """PRODUCT_MAP stops matching 'NEW INTERNET' — 19 units become 0."""
+    bases = dict(CARLOS_BASES, Internet=0)
+    problems = vc._vanished_products("CARLOS", bases, CARLOS_BASES, _quiet)
+    assert len(problems) == 1, problems
+    assert "Internet" in problems[0]
+
+
+def test_a_normal_day_says_nothing():
+    assert vc._vanished_products("CARLOS", CARLOS_BASES, CARLOS_BASES,
+                                 _quiet) == []
+
+
+def test_a_real_wind_down_is_not_a_rename():
+    """A product decaying to zero passes through small numbers first — below
+    VANISH_FLOOR the check stays quiet, so a genuine stop isn't a failure."""
+    prev = dict(CARLOS_BASES, Internet=3)
+    bases = dict(CARLOS_BASES, Internet=0)
+    assert vc._vanished_products("CARLOS", bases, prev, _quiet) == []
+
+
+def test_no_baseline_means_no_opinion():
+    """Fresh tab or an unreadable control box: never read as 'all vanished'."""
+    bases = {"Wireless": 0, "Air": 0, "Internet": 0}
+    assert vc._vanished_products("CARLOS", bases, {}, _quiet) == []
+
+
+def test_two_products_gone_are_both_named():
+    bases = dict(CARLOS_BASES, Air=0, Internet=0)
+    problems = vc._vanished_products("CARLOS", bases, CARLOS_BASES, _quiet)
+    assert len(problems) == 2
+    assert any("Air" in p for p in problems)
+    assert any("Internet" in p for p in problems)
 
 
 def _main() -> int:

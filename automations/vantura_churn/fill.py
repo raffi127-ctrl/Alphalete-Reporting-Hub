@@ -693,6 +693,38 @@ def _grow_helper_formulas(ws: gspread.Worksheet, old_cap: int, new_cap: int,
         f"{', '.join(u['range'] for u in updates) or 'none'})")
 
 
+def read_product_bases(ws: gspread.Worksheet, log=print) -> dict:
+    """What the tab currently shows as Activations per product — the previous
+    run's numbers, read back BEFORE this run overwrites them.
+
+    Located by the LABEL in column A, not by row: `update_churn_tab` writes
+    B5:B7 positionally, and a check built on that would compare the wrong rows
+    the day somebody nudges the control box.
+
+    Returns {} when the labels can't be found or the cells aren't numbers. The
+    caller must read that as "no baseline to compare against" and carry on —
+    never as "every product vanished".
+    """
+    from automations.vantura_churn.compute import PRODUCT_ORDER
+    try:
+        grid = _retry(lambda: ws.get("A4:B12"))
+    except Exception as e:  # noqa: BLE001 — a baseline read must never fail a run
+        log(f"  ⚠ {ws.title}: could not read the product box ({e}) — "
+            "no vanish check this run")
+        return {}
+    out = {}
+    for row in grid or []:
+        label = str((row[0] if row else "") or "").strip()
+        if label not in PRODUCT_ORDER:
+            continue
+        raw = str(row[1] if len(row) > 1 else "").replace(",", "").strip()
+        try:
+            out[label] = int(float(raw))
+        except ValueError:
+            continue
+    return out
+
+
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
                      helper_rows: list[list], log=print) -> None:
     b = helper_bounds(ws)
