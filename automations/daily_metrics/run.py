@@ -38,6 +38,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import shlex
 import subprocess
@@ -108,6 +109,125 @@ def _run_one(label: str, module: str, base_args: list[str],
         return False, f"TIMED OUT after {PER_METRIC_TIMEOUT_S//60}m"
     except Exception as e:  # launch failure — keep going
         return False, f"launch error: {e}"
+
+
+def _todays_manifest():
+    """This report's run-manifest, but ONLY if it was written today.
+
+    Same freshness gate the orchestrator's manifest verifier applies: yesterday's
+    result says nothing about today. Returns None when there isn't one."""
+    try:
+        from automations.shared import run_manifest as _rm
+        m = _rm.read_manifest("daily_metrics")
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(m, dict):
+        return None
+    if (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
+        return None
+    return m
+
+
+def _record_outcome(selected, failed: list[str], *, scoped: bool) -> None:
+    """Record what this run means for TODAY as a whole: the run-manifest the
+    orchestrator verifies against, plus this office's row on the shared card.
+
+    A FULL run speaks for every metric, so it just states the result. A SCOPED
+    (--only) run speaks for the metrics it ran and nothing else, so it MERGES:
+    the metrics it didn't touch keep whatever the full run said about them, and
+    the ones it did are replaced by what just happened.
+
+    WHY MERGE, and not skip (Megan 2026-08-25): skipping was there to stop a
+    one-metric run from clobbering the full run's result, and it did — but it also
+    meant a re-run that FIXED the missing metric never cleared it. The manifest
+    kept naming churn as missing, so the orchestrator kept verifying INCOMPLETE
+    and kept asking for the same re-run, and each one re-posted all 8 churn images
+    into the Metrics thread. 16 duplicate charts in #alphalete-sales before anyone
+    could tell the alert was describing a problem that no longer existed. A scoped
+    repair has to be able to close the day out. [[feedback_recheck_state_before_delivering]]"""
+    try:
+        from automations.shared import run_manifest as _rm
+    except Exception:  # noqa: BLE001 — bookkeeping must never fail the run
+        return
+
+    label_to_slug = {label: slug for slug, label, _m, _b in METRICS}
+    ran = {label for _s, label, _m, _b in selected}
+
+    prior_failed: list[str] = []
+    if scoped:
+        prior = _todays_manifest()
+        if prior is None:
+            # Nothing from today to merge into — the full run never reached its
+            # summary. A one-metric run can't vouch for the other nine, so leave
+            # the state alone rather than invent one.
+            print("  (scoped run: no manifest from today, leaving it untouched)")
+            return
+        prior_failed = list(prior.get("failed") or [])
+
+    # Metrics this run didn't touch keep their prior verdict; the ones it did are
+    # replaced by this run's result.
+    all_failed = [f for f in prior_failed if f not in ran]
+    all_failed += [f for f in failed if f not in all_failed]
+    fslugs = [label_to_slug.get(l, l) for l in all_failed]
+
+    # When a metric drops, the fix RE-RUNS JUST THAT METRIC (--only <slug>),
+    # not the whole 10-metric thread (Megan 2026-07-05). The scoped rerun
+    # rides in retry_args → the failure email emits it as the fix command.
+    retry_args = ["--only", ",".join(fslugs)] if fslugs else []
+    rerun = f"lucy rerun daily_metrics --only {','.join(fslugs)}"
+    scope_note = ""
+    # Tighter still when the ONE failed metric can name the ONE piece it dropped
+    # (see automations/shared/repair_hint.py): re-run that piece, not the metric.
+    # Only when it's the lone failure — --module-args needs exactly one --only slug.
+    if len(fslugs) == 1:
+        try:
+            from automations.shared import repair_hint as _rh
+            hint = _rh.read(fslugs[0])
+        except Exception:  # noqa: BLE001
+            hint = None
+        if hint and hint.get("module_args"):
+            margs = hint["module_args"]
+            retry_args = ["--only", fslugs[0], "--module-args", margs]
+            rerun = (f'lucy rerun daily_metrics --only {fslugs[0]} '
+                     f'--module-args "{margs}"')
+            scope_note = (f" Only {', '.join(hint.get('missed') or [])} is "
+                          f"missing — the rest of that metric already posted, so "
+                          f"this re-does just that one and doesn't duplicate them.")
+
+    n_ok_day = len(METRICS) - len(all_failed)
+    note = (f"{n_ok_day}/{len(METRICS)} metrics posted to #alphalete-sales"
+            + (f"; ⚠ MISSING: {', '.join(all_failed)}" if all_failed else ""))
+
+    rem = None
+    if all_failed:
+        rem = _rm.make_remediation(
+            reason=f"{len(all_failed)} daily metric(s) didn't post to "
+                   f"#alphalete-sales: {', '.join(all_failed)}.",
+            fix=f"Re-run ONLY the missing metric(s) — the rest already "
+                f"posted, so don't re-post the whole thread: {rerun}",
+            message=f"The Daily Metrics thread is missing "
+                    f"{len(all_failed)} metric(s): {', '.join(all_failed)}. "
+                    f"Re-running just those fills them into the existing "
+                    f"thread.{scope_note}")
+    try:
+        _rm.write_manifest("daily_metrics", failed=all_failed,
+                           retry_args=retry_args, note=note, remediation=rem)
+    except Exception:  # noqa: BLE001 — manifest write must never fail the run
+        return
+
+    # Feed the shared Hub card's per-office ✅/❌ checklist. This report is
+    # Raf's local office — Megan 2026-07-16 folded it onto the ONE "Office
+    # Daily Metrics" card with the other offices, so it needs a row there
+    # like they do (its 4am run comes through here, not the runner's --all).
+    # `all_failed` is the whole day's state, not just this run's, so a scoped
+    # repair that empties it correctly flips the row green.
+    try:
+        from automations.office_metrics import runner as _omr
+        _omr.record_status(_omr.MAIN_OFFICE_LABEL, _omr.MAIN_OFFICE_CHANNEL,
+                           ok=not all_failed,
+                           error=("; ".join(all_failed) if all_failed else ""))
+    except Exception:  # noqa: BLE001 — checklist must never fail the run
+        pass
 
 
 def main(argv=None) -> int:
@@ -204,54 +324,12 @@ def main(argv=None) -> int:
     # Run-manifest for the orchestrator's completeness verify. daily_metrics is
     # configured verify=manifest/report_id 'daily_metrics' but never wrote one, so
     # there was nothing to check — a metric that failed to post could read green.
-    # Now a full LIVE run always records it (ok=false + the failed units when a
-    # metric drops), so the Hub flags INCOMPLETE instead of trusting the exit code.
-    # A --only/dry run must not clobber the full-run result. [[feedback_flag_unfilled_cells]]
-    if not args.dry_run and not args.only:
-        try:
-            from automations.shared import run_manifest as _rm
-            _label_to_slug = {label: slug for slug, label, _m, _b in selected}
-            _fslugs = [_label_to_slug.get(l, l) for l in failed]
-            # When a metric drops, the fix RE-RUNS JUST THAT METRIC (--only <slug>),
-            # not the whole 10-metric thread (Megan 2026-07-05). The scoped rerun
-            # rides in retry_args → the failure email emits it as the fix command.
-            _rem = None
-            if failed:
-                _only = ",".join(_fslugs)
-                _rem = _rm.make_remediation(
-                    reason=f"{len(failed)} daily metric(s) didn't post to "
-                           f"#alphalete-sales: {', '.join(failed)}.",
-                    fix=f"Re-run ONLY the missing metric(s) — the rest already "
-                        f"posted, so don't re-post the whole thread: "
-                        f"lucy rerun daily_metrics --only {_only}",
-                    message=f"The Daily Metrics thread is missing "
-                            f"{len(failed)} metric(s): {', '.join(failed)}. "
-                            f"Re-running just those (--only {_only}) fills them "
-                            f"into the existing thread.")
-            _rm.write_manifest(
-                "daily_metrics",
-                failed=failed,
-                retry_args=(["--only", ",".join(_fslugs)] if _fslugs else []),
-                note=(f"{n_ok}/{len(results)} metrics posted to #alphalete-sales"
-                      + (f"; ⚠ MISSING: {', '.join(failed)}" if failed else "")),
-                remediation=_rem,
-            )
-        except Exception:  # noqa: BLE001 — manifest write must never fail the run
-            pass
-
-        # Feed the shared Hub card's per-office ✅/❌ checklist. This report is
-        # Raf's local office — Megan 2026-07-16 folded it onto the ONE "Office
-        # Daily Metrics" card with the other offices, so it needs a row there
-        # like they do (its 4am run comes through here, not the runner's --all).
-        # Only a FULL live run speaks for the office; an --only re-run covers a
-        # single metric and must not overwrite the row. Best-effort.
-        try:
-            from automations.office_metrics import runner as _omr
-            _omr.record_status(_omr.MAIN_OFFICE_LABEL, _omr.MAIN_OFFICE_CHANNEL,
-                               ok=not failed,
-                               error=("; ".join(failed) if failed else ""))
-        except Exception:  # noqa: BLE001 — checklist must never fail the run
-            pass
+    # Now every LIVE run records it (ok=false + the failed units when a metric
+    # drops), so the Hub flags INCOMPLETE instead of trusting the exit code.
+    # A --only run MERGES rather than clobbering; see _record_outcome.
+    # [[feedback_flag_unfilled_cells]]
+    if not args.dry_run:
+        _record_outcome(selected, failed, scoped=bool(args.only))
 
     # PARTIAL FAILURE = "ran with a note", NOT a hard failure (Megan 2026-07-11).
     # Exit 0 so the orchestrator does NOT retry the WHOLE --live run (which

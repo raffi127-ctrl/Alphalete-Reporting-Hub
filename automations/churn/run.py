@@ -32,12 +32,19 @@ from automations.shared.tableau_patchright import tableau_session
 from automations.shared.slack_metrics_post import (
     post_reply_with_file, SlackPostError,
 )
+from automations.shared import repair_hint
 from automations.new_internet_churn import (
     pull as ni_pull, fill as ni_fill, render as ni_render,
 )
 from automations.wireless_churn import (
     pull as wl_pull, fill as wl_fill, render as wl_render,
 )
+
+
+# The slug daily_metrics knows this metric by (METRICS in
+# automations/daily_metrics/run.py). It is how a dropped image finds its way back
+# to a scoped repair command instead of a whole-metric re-run.
+HINT_SLUG = "churn"
 
 
 SLACK_CONFIG = {
@@ -262,6 +269,10 @@ def main(argv=None) -> int:
     elif args.skip_slack:
         print("\nPhase 3: (--skip-slack, sheet fill only)")
     else:
+        # The hint describes the run that just happened and nothing else — a
+        # leftover from this morning would have the runner above us suggest
+        # re-posting one image when today's problem is a dead Tableau pull.
+        repair_hint.clear(HINT_SLUG)
         post_failures = _post_to_slack(selected, today,
                                        only_period=args.only_period)
         if post_failures:
@@ -291,6 +302,9 @@ def _post_to_slack(selected, today: dt.date,
     out_dir.mkdir(parents=True, exist_ok=True)
     failures = 0  # Slack posts that raised or came back ok=False
     missed: list[str] = []  # "<label> <period>-day" for each one that didn't land
+    # The same misses as (report slug, period) so we can hand the runner above us
+    # the EXACT re-post command instead of "re-run the whole metric".
+    missed_parts: list[tuple[str, str]] = []
 
     for slug, label, _pull_mod, fill_mod in selected:
         title_prefix, render_mod, react_emoji = SLACK_CONFIG[slug]
@@ -332,6 +346,7 @@ def _post_to_slack(selected, today: dt.date,
                 if not result.get("ok", True):
                     failures += 1
                     missed.append(f"{title_prefix} {period}-day")
+                    missed_parts.append((slug, period))
             # Catch EVERY post failure, not just SlackPostError. On 2026-08-25 a
             # bare urllib URLError (SSL handshake timeout inside the slack_sdk
             # upload) escaped this handler on the LAST of the 8 posts: 7 images
@@ -346,12 +361,27 @@ def _post_to_slack(selected, today: dt.date,
                 kind = "" if isinstance(e, SlackPostError) else f"{type(e).__name__}: "
                 print(f"      {period}-day: ⚠ Slack post failed: {kind}{e}")
                 missed.append(f"{title_prefix} {period}-day")
+                missed_parts.append((slug, period))
 
     if missed:
         print(f"\n  Images that did NOT reach the thread: {', '.join(missed)}")
         print(f"  Everything else posted — re-post ONLY these, e.g. "
               f"--only <report> --only-period <period> --skip-download, "
               f"never the whole metric.")
+        # Say it in a file too, so the runner above us can put that scoped
+        # command in the alert instead of `--only churn` (which re-posts all 8
+        # and duplicates the ones that landed — 16 dupes on 2026-08-25).
+        # --only/--only-period each take ONE value, so a single command can only
+        # express a SINGLE dropped image; more than one falls back to the plain
+        # re-run, where re-posting the set really is the practical fix.
+        module_args = None
+        if len(missed_parts) == 1:
+            m_slug, m_period = missed_parts[0]
+            # No --skip-download: hours later the cached CSV may be gone and the
+            # module would just exit 1. A fresh pull costs ~1 minute and the
+            # sheet fill is idempotent, so the repair always works.
+            module_args = f"--only {m_slug} --only-period {m_period}"
+        repair_hint.write(HINT_SLUG, missed=missed, module_args=module_args)
     return failures
 
 
