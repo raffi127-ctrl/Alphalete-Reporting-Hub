@@ -232,6 +232,22 @@ def main(argv=None) -> int:
     for line in summary_lines(report):
         print("  " + line)
 
+    # The actionable half of a "not on the list": ownerville rows carrying this
+    # owner's surname. An office granted under a DIFFERENT spelling reads as no
+    # access at all, and that is the one case the ICD Aliases sheet fixes — but
+    # you cannot tell it from a missing grant unless the near-misses are
+    # printed. Wayne Rude is the case: ownerville has him as "Floyd Rude"
+    # (2026-08-25), so his granted office looked like an ungranted one.
+    hints = [(f"{key}/{o['display']}", o["near"])
+             for key, block in report.items() for o in block["owners"]
+             if o["status"] == A.MISSING and o.get("near")]
+    if hints:
+        print("\n  NOT LISTED, but ownerville has a similar name — check "
+              "whether this is an ICD Aliases row rather than a missing "
+              "grant:")
+        for who, near in hints:
+            print(f"    ? {who} -> ownerville: {', '.join(near)}")
+
     if d["gained"]:
         print("\n  NEW ACCESS since the last check:")
         for key, was, _s in d["gained"]:

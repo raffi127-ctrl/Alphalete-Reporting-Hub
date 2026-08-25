@@ -180,7 +180,12 @@ def classify(rosters_map, office_rows, aliases=None) -> dict:
             cand, row = find(display)
             if row is None:
                 surname = (display.split() or [""])[-1].lower()
-                near = [r[2] for r in office_rows
+                # Office number included on purpose: an owner can hold TWO
+                # offices and have access to only one of them (Wayne Rude,
+                # 19910 vs 21570 — the second was granted, the first errored,
+                # 2026-08-25). Without the number the hint cannot tell you
+                # WHICH office you actually got.
+                near = [f"{r[2]} (#{r[0]})" for r in office_rows
                         if len(surname) > 2 and surname in (r[2] or "").lower()]
                 owners.append({"display": display, "canonical": canonical,
                                "status": MISSING, "near": near[:4]})

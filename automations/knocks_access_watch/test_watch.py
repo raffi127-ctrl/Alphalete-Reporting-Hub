@@ -55,7 +55,7 @@ class Classify(unittest.TestCase):
         would miss it, so the watch must not announce it as access."""
         got = self._one("Andre Burton", aliases={})
         self.assertEqual(got["status"], A.MISSING)
-        self.assertIn("Andre Burton Jr", got["near"])
+        self.assertIn("Andre Burton Jr (#22041)", got["near"])
 
     def test_still_a_request_is_pending(self):
         self.assertEqual(self._one("Jay Turnage")["status"], A.PENDING)
