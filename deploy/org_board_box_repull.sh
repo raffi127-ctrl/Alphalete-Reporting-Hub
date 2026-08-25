@@ -18,6 +18,15 @@
 # expensive work can stay at 04:50 and Box can be topped off in the few minutes
 # right before the post. That is all this script is.
 #
+# --no-manifest IS LOAD-BEARING. This is a ONE-SECTION re-pull, not the day's
+# board run, so it must not give the day's verdict. Without the flag a SUCCESS
+# here calls mark_clean("org-sales-board"), which "clears any prior failure
+# manifest" — a genuinely INCOMPLETE 04:50 board would flip GREEN at 06:55 and
+# lose its "Retry failed only" button, hiding a real Retail JE or B2B failure
+# every morning. And a FAILED Box pull would paint an otherwise-perfect board
+# orange and fire a drop-org-sales-board alert. Neither verdict is this run's
+# to give. (Same footgun deploy/board_catchup.sh has at 14:30.)
+#
 # FAIL-OPEN, ALWAYS. If Box has not published yet, the pull writes what Box has
 # (which is yesterday) and this exits quietly — exactly the board we would have
 # had without this script. It NEVER holds the post, never delays the review
@@ -84,7 +93,7 @@ LOG_FILE="$LOG_DIR/org-board-box-repull-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] BOX top-off starting (extra args: ${*:-none})" > "$LOG_FILE"
 
 "$VENV_PY" -u -m automations.org_sales_board.run \
-    --step daily --skip-compare --sections "BOX" "$@" >> "$LOG_FILE" 2>&1
+    --step daily --skip-compare --no-manifest --sections "BOX" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] BOX top-off finished exit=$ST" >> "$LOG_FILE"
 

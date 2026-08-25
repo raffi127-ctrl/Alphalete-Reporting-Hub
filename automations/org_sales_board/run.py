@@ -146,6 +146,20 @@ def main(argv=None) -> int:
                          "being ahead — pure noise that marked the fill INCOMPLETE "
                          "every morning. The compare runs on its own at 9am CST "
                          "(report_id 'board_compare'), once the VAs are done.")
+    ap.add_argument("--no-manifest", action="store_true",
+                    help="Don't write this run's outcome to the 'org-sales-board' "
+                         "manifest. For an UNATTENDED SURGICAL re-pull that is not "
+                         "the day's board run — the 06:52/06:58 BOX top-off "
+                         "(deploy/org_board_box_repull.sh). Without it a one-section "
+                         "re-pull OVERWRITES the morning fill's verdict: mark_clean() "
+                         "'clears any prior failure manifest', so a successful BOX "
+                         "top-off would turn a genuinely INCOMPLETE 04:50 board GREEN "
+                         "and take its 'Retry failed only' button with it; and a BOX "
+                         "pull that fails would paint an otherwise-perfect board "
+                         "orange and fire a drop-org-sales-board alert. Neither "
+                         "verdict is this run's to give — it looked at ONE "
+                         "section. Do NOT pass it on the Hub's granular retry: THAT "
+                         "re-run is supposed to clear the failure it just fixed.")
     args = ap.parse_args(argv)
     _sections = [s.strip() for s in args.sections.split(",") if s.strip()] if args.sections else None
     _programs = [p.strip() for p in args.programs.split(",") if p.strip()] if args.programs else None
@@ -375,7 +389,9 @@ def main(argv=None) -> int:
             # "Retry failed only" button where the failure is one clean category
             # (--step captainships / --step daily); mixed/compare failures show
             # the help with no granular button (re-run via the normal Run).
-            if not args.dry_run:
+            # --no-manifest: a surgical unattended re-pull leaves the day's
+            # verdict exactly as the real board run left it (see the flag's help).
+            if not (args.dry_run or args.no_manifest):
                 try:
                     from automations.shared import run_manifest as _rm
                     if (_skipped or _failed_prog or _failed_caps

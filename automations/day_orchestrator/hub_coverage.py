@@ -111,6 +111,13 @@ _NOT_A_REPORT = frozenset({
     # they are not. Nothing to run from the Hub; they run via `lucy rerun <id>`.
     "session_proof_fiber", "session_proof_captainship", "session_proof_probes",
     "tableau_ledger_summary",
+    # The Org Sales Board's 06:52/06:58 BOX top-off (Eve 2026-08-25). It is a
+    # one-section re-pull of the SAME board, run by com.alphalete.org-board-box-repull
+    # so the 07:05 post carries yesterday's real Box; it is a sub-step of
+    # org_sales_board, not a report anyone runs, and it publishes nothing of its
+    # own (the wrapper passes --no-manifest so it cannot even colour the parent
+    # card). It self-registered a card the first time install_agent ran.
+    "org_board_box_repull",
 })
 
 
