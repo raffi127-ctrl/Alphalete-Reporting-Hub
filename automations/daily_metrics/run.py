@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -118,6 +119,19 @@ def main(argv=None) -> int:
                          f"({', '.join(m[0] for m in METRICS)}).")
     ap.add_argument("--no-header", action="store_true",
                     help="Skip ensuring the Metrics header thread.")
+    # REPAIR HATCH (2026-08-25). A metric module can drop ONE of the several
+    # images it posts — on 2026-08-25 the churn module posted 7 of its 8 and
+    # died on a flaky SSL handshake on the last one. The only rerun handle the
+    # mini has for these modules is `daily_metrics --only <slug>`, which re-posts
+    # ALL of them and duplicates the ones that landed. This forwards module-level
+    # flags (e.g. churn's --only-period) so the repair can be scoped to the one
+    # image that's missing. Deliberately restricted to a SINGLE --only slug:
+    # module flags are per-module, so fanning them across metrics is meaningless.
+    ap.add_argument("--module-args", default=None,
+                    help="Extra CLI args passed straight to the metric module. "
+                         "Requires exactly one --only slug. Quote them, e.g. "
+                         "--only churn --module-args \"--only wireless "
+                         "--only-period 90 --skip-download\".")
     args = ap.parse_args(argv)
 
     only = _parse_only(args.only)
@@ -126,6 +140,16 @@ def main(argv=None) -> int:
         print(f"No metrics match --only={args.only}. "
               f"Valid slugs: {[m[0] for m in METRICS]}")
         return 1
+
+    module_args: list[str] = []
+    if args.module_args:
+        if len(selected) != 1:
+            print(f"--module-args needs exactly ONE --only slug (got "
+                  f"{len(selected)}: {[m[0] for m in selected]}). Module flags "
+                  f"belong to a single module.")
+            return 1
+        module_args = shlex.split(args.module_args)
+        print(f"   ↳ extra args for {selected[0][0]}: {module_args}")
 
     mode = "DRY-RUN" if args.dry_run else "LIVE"
     print(f"=== Daily Metrics — {mode} — {len(selected)} metric module(s) ===")
@@ -165,7 +189,7 @@ def main(argv=None) -> int:
         # Rollback = delete this env branch. Plan: output/harvest-cutover-plan.md.
         env = ({**os.environ, "HARVEST_MODE": "on", "HARVEST_VERBOSE": "1"}
                if slug == "churn" else None)
-        ok, note = _run_one(label, module, base, env=env)
+        ok, note = _run_one(label, module, base + module_args, env=env)
         results.append((label, ok, note))
 
     # --- Summary ---

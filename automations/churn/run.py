@@ -11,6 +11,8 @@ SSO each daily run.
   python -m automations.churn.run --skip-download # reuse cached CSVs
   python -m automations.churn.run --only new-internet   # one or the other
   python -m automations.churn.run --only wireless
+  # repair ONE image that a flaky Slack upload dropped (no duplicates):
+  python -m automations.churn.run --only wireless --only-period 90 --skip-download
 
 After both fills complete, each report renders 4 multi-week PNG
 images (one per period bucket) and posts them as replies in today's
@@ -207,6 +209,12 @@ def main(argv=None) -> int:
                          "is already present (for side-by-side verification).")
     ap.add_argument("--only", choices=("new-internet", "wireless"), default=None,
                     help="Run only one of the two reports.")
+    ap.add_argument("--only-period", choices=("0-30", "30", "60", "90"),
+                    default=None,
+                    help="Post ONLY this period's image. For repairing a run "
+                         "where one image didn't land (a flaky Slack upload) "
+                         "without re-posting the 3 that did. Sheet fill is "
+                         "unaffected — it stays idempotent.")
     ap.add_argument("--skip-slack", action="store_true",
                     help="Sheet-only run, no Slack post. Use for mid-day "
                          "re-runs (e.g. URL fix) when you don't want to "
@@ -254,7 +262,8 @@ def main(argv=None) -> int:
     elif args.skip_slack:
         print("\nPhase 3: (--skip-slack, sheet fill only)")
     else:
-        post_failures = _post_to_slack(selected, today)
+        post_failures = _post_to_slack(selected, today,
+                                       only_period=args.only_period)
         if post_failures:
             print(f"\n✗ {post_failures} Slack post(s) FAILED — the sheets were "
                   f"filled but those metric(s) did NOT reach the thread. Exiting "
@@ -266,7 +275,8 @@ def main(argv=None) -> int:
     return 0
 
 
-def _post_to_slack(selected, today: dt.date) -> int:
+def _post_to_slack(selected, today: dt.date,
+                   only_period: str | None = None) -> int:
     """For each selected report: render 4 multi-week PNGs from the
     freshly-filled sheet + post each as a reply in today's 7am Metrics
     workflow thread. Adds the matching workflow-header reaction on the
@@ -274,9 +284,13 @@ def _post_to_slack(selected, today: dt.date) -> int:
     other 3 posts re-attempt but Slack's already-reacted is silent)."""
     print("\nPhase 3: render + post to today's Metrics thread")
     PERIODS = ("0-30", "30", "60", "90")
+    if only_period:
+        PERIODS = (only_period,)
+        print(f"  (--only-period {only_period}: posting just that image — the others are already in the thread)")
     out_dir = Path(tempfile.gettempdir()) / "churn_slack_post"
     out_dir.mkdir(parents=True, exist_ok=True)
     failures = 0  # Slack posts that raised or came back ok=False
+    missed: list[str] = []  # "<label> <period>-day" for each one that didn't land
 
     for slug, label, _pull_mod, fill_mod in selected:
         title_prefix, render_mod, react_emoji = SLACK_CONFIG[slug]
@@ -317,10 +331,27 @@ def _post_to_slack(selected, today: dt.date) -> int:
                 print(f"      {period}-day: posted (file={result.get('file')})")
                 if not result.get("ok", True):
                     failures += 1
-            except SlackPostError as e:
+                    missed.append(f"{title_prefix} {period}-day")
+            # Catch EVERY post failure, not just SlackPostError. On 2026-08-25 a
+            # bare urllib URLError (SSL handshake timeout inside the slack_sdk
+            # upload) escaped this handler on the LAST of the 8 posts: 7 images
+            # were already in the thread, but the exception unwound main() so the
+            # run exited 1 and the alert reported BOTH churn metrics as "did NOT
+            # post" — with a fix command (--only churn) that would have
+            # re-posted those 7. A flaky post is a per-post failure like any
+            # other: count it, say which one, and keep going so the rest of the
+            # thread still lands.
+            except Exception as e:  # noqa: BLE001
                 failures += 1
-                print(f"      {period}-day: ⚠ Slack post failed: {e}")
+                kind = "" if isinstance(e, SlackPostError) else f"{type(e).__name__}: "
+                print(f"      {period}-day: ⚠ Slack post failed: {kind}{e}")
+                missed.append(f"{title_prefix} {period}-day")
 
+    if missed:
+        print(f"\n  Images that did NOT reach the thread: {', '.join(missed)}")
+        print(f"  Everything else posted — re-post ONLY these, e.g. "
+              f"--only <report> --only-period <period> --skip-download, "
+              f"never the whole metric.")
     return failures
 
 
