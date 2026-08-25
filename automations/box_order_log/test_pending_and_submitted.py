@@ -16,7 +16,8 @@ from __future__ import annotations
 import datetime as dt
 import unittest
 
-from automations.box_order_log import clean, payout, pending, png
+from automations.box_order_log import backfill_pending, clean, payout, pending, png
+from automations.box_order_log.run import PENDING_LINE
 
 
 def sale(rep, status, *, sale_date=None, accepted=None, history=(),
@@ -165,6 +166,35 @@ class PendingWorklist(unittest.TestCase):
         self.assertEqual(vals[4], "281682")
         self.assertEqual(vals[5], clean.SUBMITTED)
         self.assertIn("supplier", vals[6].lower())
+
+
+class BackfillIsIdempotent(unittest.TestCase):
+    """Slack stores a posted emoji as its :shortcode:, so a literal caption
+    NEVER matches the text read back. That made the duplicate check silently
+    return False — a re-run double-posted the image and appended a second
+    header line."""
+
+    def test_caption_matches_what_slack_reads_back(self):
+        m = backfill_pending.marker
+        self.assertEqual(m(PENDING_LINE), "Pending orders")
+        self.assertIn(m(PENDING_LINE), m(":card_index_dividers: Pending orders"))
+
+    def test_updated_board_does_not_match_the_original_board(self):
+        """The morning thread already has a plain ':dollar: Accepted by
+        supplier'. If that counted as a match the updated board would never
+        post at all."""
+        m = backfill_pending.marker
+        self.assertNotIn(m(backfill_pending.BOARD_LINE),
+                         m(":dollar: Accepted by supplier"))
+
+    def test_updated_board_matches_itself_once_posted(self):
+        m = backfill_pending.marker
+        posted = ":dollar: " + m(backfill_pending.BOARD_LINE)
+        self.assertIn(m(backfill_pending.BOARD_LINE), m(posted))
+
+    def test_marker_survives_an_empty_or_missing_text(self):
+        self.assertEqual(backfill_pending.marker(""), "")
+        self.assertEqual(backfill_pending.marker(None), "")
 
 
 if __name__ == "__main__":

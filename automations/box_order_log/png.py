@@ -52,6 +52,13 @@ BANDS = [
     (1, (217, 217, 217)),
     (0, (234, 153, 153)),
 ]
+# The one caption for this board. run.py, run_owner.py and backfill_pending.py
+# all pass it; it lived inline in the first two and had already been edited in
+# lockstep once, which is one time too many.
+SUBTITLE = ("Accepted & Cancelled are for that week — pay follows the week "
+            "after. Still Open = deals not yet accepted, any week; Submitted "
+            "to Supplier is the slice of those already with the supplier.")
+
 HEADER_BG = (242, 242, 242)
 GRID = (0, 0, 0)
 TEXT = (0, 0, 0)

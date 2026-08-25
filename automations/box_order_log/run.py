@@ -441,10 +441,7 @@ def main(argv: Optional[list] = None) -> int:
         from . import payout, png
         tables = payout.build_week_tables(sales, today)
         png.render(tables, out_png,
-                   subtitle="Accepted & Cancelled are for that week — pay "
-                            "follows the week after. Still Open = deals not "
-                            "yet accepted, any week; Submitted to Supplier "
-                            "is the slice of those already with the supplier.")
+                   subtitle=png.SUBTITLE)
         # The Pending Orders tab, drawn as its own image. Built off the FULL
         # pull like the workbook it mirrors, not the six-week window: a deal
         # that has sat unaccepted for two months is exactly the one Carlos

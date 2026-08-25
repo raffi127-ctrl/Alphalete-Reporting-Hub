@@ -24,12 +24,21 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from . import clean, pending, pending_png
+from . import clean, payout, pending, pending_png, png
 from .run import OUTPUT_DIR, PENDING_LINE, TARGETS
+
+# The accepted-by-supplier board is REPLACED, not just added: the morning
+# thread already carries one under the plain PAYOUT_LINE, and two boards that
+# look alike is how somebody reads the stale one. Slack can't edit an uploaded
+# file, so the caption has to do the work of saying which is current — the same
+# reasoning as review_gate's "never a second link".
+BOARD_LINE = ("\U0001F4B5 Accepted by supplier — updated: adds the Submitted "
+              "to Supplier column. Use this one, not the earlier board above.")
 
 
 def todays_csv(today: dt.date) -> Tuple[Optional[Path], bool]:
@@ -73,22 +82,38 @@ def find_thread(client, channel: str, today: dt.date) -> Optional[dict]:
     return None
 
 
-def already_there(client, channel: str, ts: str) -> bool:
-    """True if a pending image is already hanging off this thread.
+def marker(line: str) -> str:
+    """The emoji-free words of a caption — what an 'is it already there?' test
+    can actually compare.
+
+    Slack stores a posted \U0001F5C2\uFE0F as `:card_index_dividers:`, so the
+    literal caption NEVER matches the text read back and every check silently
+    returns False. That made a re-run double-post the image and append a second
+    header line — the exact duplicate this module exists to avoid. Compare the
+    words instead; they survive the round trip.
+    """
+    return re.sub(r"^[^A-Za-z0-9]+", "",
+                  re.sub(r":[a-z0-9_+-]+:", "", line or "")).strip()
+
+
+def already_there(client, channel: str, ts: str, line: str) -> bool:
+    """True if a reply carrying `line` is already hanging off this thread.
 
     Makes a second run a no-op instead of a duplicate — a queued job can be
     re-run by anyone, and a double-posted board is exactly the confusion the
     one-thread-a-day marker exists to prevent.
     """
+    want = marker(line)
     resp = client.conversations_replies(channel=channel, ts=ts, limit=200)
     for m in resp["messages"][1:]:
-        if PENDING_LINE in (m.get("text") or "") and m.get("files"):
+        if want and want in marker(m.get("text") or "") and m.get("files"):
             return True
     return False
 
 
 def run(today: Optional[dt.date] = None, *, post: bool = False,
-        owner_office: str = "", from_file: str = "",
+        owner_office: str = "", from_file: str = "", board: bool = False,
+        pending_image: bool = True,
         targets: Optional[List[Tuple[str, str]]] = None) -> int:
     today = today or dt.date.today()
     targets = targets if targets is not None else TARGETS
@@ -114,13 +139,30 @@ def run(today: Optional[dt.date] = None, *, post: bool = False,
               .format(src.name), file=sys.stderr)
         return 1
 
-    work = pending.build(sales, today=today)
-    out = OUTPUT_DIR / "BOX Pending Orders {}.png".format(
-        today.strftime("%m-%d-%Y"))
-    pending_png.render(work, out)
-    print("  built {}  ({} open: {})".format(
-        out.name, work["count"],
-        ", ".join(s["title"] for s in work["sections"])))
+    # (caption, file) in the order they should land in the thread.
+    uploads: List[Tuple[str, Path]] = []
+    if pending_image:
+        work = pending.build(sales, today=today)
+        out = OUTPUT_DIR / "BOX Pending Orders {}.png".format(
+            today.strftime("%m-%d-%Y"))
+        pending_png.render(work, out)
+        print("  built {}  ({} open: {})".format(
+            out.name, work["count"],
+            ", ".join(s["title"] for s in work["sections"])))
+        uploads.append((PENDING_LINE, out))
+    if board:
+        tables = payout.build_week_tables(sales, today)
+        board_out = OUTPUT_DIR / "BOX Payout {}.png".format(
+            today.strftime("%m-%d-%Y"))
+        png.render(tables, board_out, subtitle=png.SUBTITLE)
+        subm = sum(r["submitted"] for r in tables["this"]["rows"])
+        print("  built {}  (submitted this week: {})".format(
+            board_out.name, subm))
+        uploads.append((BOARD_LINE, board_out))
+    if not uploads:
+        print("✗ nothing to post — pass --board and/or leave the pending image on",
+              file=sys.stderr)
+        return 2
 
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
@@ -136,25 +178,26 @@ def run(today: Optional[dt.date] = None, *, post: bool = False,
             rc = rc or 1
             continue
         ts = parent["ts"]
-        if already_there(client, cid, ts):
-            print("  = {}: pending image already in the thread — skipped"
-                  .format(name))
-            continue
-        if not post:
-            print("  [dry-run] {}: would reply to {} and {}".format(
-                name, ts,
-                "append the header line" if PENDING_LINE not in parent["text"]
-                else "leave the header alone (already lists it)"))
-            continue
-        client.files_upload_v2(channel=cid, thread_ts=ts, file=str(out),
-                               filename=out.name, title=out.stem,
-                               initial_comment=PENDING_LINE)
-        print("  ✓ {}: posted".format(name))
+        for line, path in uploads:
+            if already_there(client, cid, ts, line):
+                print("  = {}: {} already in the thread — skipped".format(
+                    name, path.name))
+                continue
+            if not post:
+                print("  [dry-run] {}: would reply to {} with {}".format(
+                    name, ts, path.name))
+                continue
+            client.files_upload_v2(channel=cid, thread_ts=ts, file=str(path),
+                                   filename=path.name, title=path.stem,
+                                   initial_comment=line)
+            print("  ✓ {}: posted {}".format(name, path.name))
+
         # Header last, so it never lists an attachment that isn't there yet.
-        # It goes on the END: today the image lands after the tier board, and
-        # the header should read in the order the thread actually reads.
-        if PENDING_LINE in parent["text"]:
-            print("    header already lists it")
+        # Only the pending image earns a NEW header line — the updated board
+        # replaces one the header already names, so adding a second 💵 line
+        # would make the contents list disagree with itself.
+        if (not post or not pending_image
+                or marker(PENDING_LINE) in marker(parent["text"])):
             continue
         try:
             client.chat_update(channel=cid, ts=ts,
@@ -162,7 +205,7 @@ def run(today: Optional[dt.date] = None, *, post: bool = False,
             print("    header updated")
         except Exception as exc:                          # noqa: BLE001
             # Only the author can edit. Say so plainly rather than failing the
-            # whole backfill — the image is the part people read.
+            # whole backfill — the images are the part people read.
             print("    ⚠ header NOT updated ({}) — run this from the machine "
                   "whose token posted the thread".format(exc), file=sys.stderr)
             rc = rc or 1
@@ -181,6 +224,12 @@ def main(argv: Optional[list] = None) -> int:
                          "all-offices crosstab")
     ap.add_argument("--from-file", default="",
                     help="use this crosstab instead of the day's pull")
+    ap.add_argument("--board", action="store_true",
+                    help="also post the accepted-by-supplier board, rebuilt "
+                         "with the Submitted to Supplier column")
+    ap.add_argument("--no-pending", action="store_true",
+                    help="skip the pending image (use with --board when the "
+                         "pending one already went out)")
     ap.add_argument("--channel", default="",
                     help="post to ONE channel id instead of both of Carlos's")
     ap.add_argument("--channel-name", default="",
@@ -191,7 +240,8 @@ def main(argv: Optional[list] = None) -> int:
     targets = ([(args.channel_name or args.channel, args.channel)]
                if args.channel else None)
     return run(day, post=args.post, owner_office=args.owner_office,
-               from_file=args.from_file, targets=targets)
+               from_file=args.from_file, board=args.board,
+               pending_image=not args.no_pending, targets=targets)
 
 
 if __name__ == "__main__":

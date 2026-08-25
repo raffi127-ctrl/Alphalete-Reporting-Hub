@@ -414,10 +414,7 @@ def main(argv: Optional[list] = None) -> int:
         xlsx.build(sales, out_xlsx, today=today)
         tables = payout.build_week_tables(sales, today)
         png.render(tables, out_png,
-                   subtitle="Accepted & Cancelled are for that week — pay "
-                            "follows the week after. Still Open = deals not "
-                            "yet accepted, any week; Submitted to Supplier "
-                            "is the slice of those already with the supplier.")
+                   subtitle=png.SUBTITLE)
         from . import pending as pending_mod, pending_png
         work = pending_mod.build(sales, today=today)
         pending_png.render(work, out_pending)
