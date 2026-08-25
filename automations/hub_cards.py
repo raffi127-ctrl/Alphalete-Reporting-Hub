@@ -728,7 +728,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         # The card's link opens the DD log sheet (one tab per ICD).
         "sheet_url": "https://docs.google.com/spreadsheets/d/1RB07z5xmXBzFgKPRmbvqsvbFJ4yymrsk2z0tkMeCbpQ/edit",
-        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab. The same bot also answers /knocks: pick an office and a day, get that day's knock board back in a DM.",
+        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab. The same bot also answers /knocks: pick an office and a day — or a stretch of days — and get that knock board back in a DM.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Any leader types **/dd** in Slack → a popup opens (ICD / Leader "
@@ -745,6 +745,9 @@ AUTOMATED_REPORTS = [
             "**•** Type **/knocks** → pick **whose office** and **which day** "
             "(defaults to yesterday) → the knock board comes back in a DM, the "
             "same one the morning thread posts.\n"
+            "**•** A third box, **Through which day?**, is optional — leave it "
+            "blank for a single day, or pick an end date to get one board "
+            "covering the whole stretch (counts added up, up to 31 days).\n"
             "**•** Usually instant: it answers from what the morning run already "
             "pulled. Only an older day needs a live Ownerville pull, and it waits "
             "its turn behind the scheduled reports instead of taking their "

@@ -2,6 +2,8 @@
 
     python -m automations.knocks_request.run "Rafael Hidalgo"
     python -m automations.knocks_request.run "Chan Park" --date 2026-08-23
+    python -m automations.knocks_request.run "Chan Park" --date 2026-08-18 \
+                                                         --through 2026-08-23
     python -m automations.knocks_request.run "Chan Park" --cache-only
 
 Prints where the PNG landed. `--cache-only` never opens ownerville, so it is
@@ -27,16 +29,29 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="One office's knock board, on demand.")
     ap.add_argument("office", help="ICD / owner name, e.g. 'Rafael Hidalgo'")
     ap.add_argument("--date", help="YYYY-MM-DD (default: yesterday, Central)")
+    ap.add_argument("--through",
+                    help="YYYY-MM-DD — last day of a range (default: --date, "
+                         "i.e. a single day)")
     ap.add_argument("--cache-only", action="store_true",
                     help="never open ownerville — answer from stored pulls only")
     a = ap.parse_args()
     target = dt.date.fromisoformat(a.date) if a.date else service.default_target()
+    end = dt.date.fromisoformat(a.through) if a.through else target
 
+    problem = service.check_span(target, end)
+    if problem:
+        print(f"[knocks] {problem}")
+        return 1
+    need = service.missing_days(service.resolve_office(a.office), target, end)
+    if need:
+        print(f"[knocks] {len(need)} of {len(service.span_days(target, end))} "
+              f"day(s) need a live pull: "
+              f"{', '.join(d.isoformat() for d in need)}", flush=True)
     busy = service.ownerville_busy()
     if busy:
         print(f"[knocks] ownerville is busy: {', '.join(busy)}", flush=True)
     try:
-        b = service.board_for(a.office, target, allow_live=not a.cache_only)
+        b = service.board_for(a.office, target, end, allow_live=not a.cache_only)
     except Exception as e:  # noqa: BLE001 — the CLI reports, it doesn't trace
         if service.access_gap(e):
             print(f"[knocks] ACCESS GAP: '{a.office}' is not on this "
@@ -45,11 +60,12 @@ def main() -> int:
             print(f"[knocks] FAILED: {type(e).__name__}: {e}")
         return 1
 
+    span = b.target.isoformat() if not b.is_range else f"{b.target}..{b.end}"
     if b.png is None:
-        print(f"[knocks] {b.office} {b.target}: {b.note}")
+        print(f"[knocks] {b.office} {span}: {b.note}")
         return 0
-    print(f"[knocks] {b.office} {b.target}: {len(b.rows)} rep(s) "
-          f"({b.source}) -> {b.png}")
+    print(f"[knocks] {b.office} {span}: {len(b.rows)} rep(s) over "
+          f"{b.days} day(s) ({b.source}) -> {b.png}")
     print("=== done ===")
     return 0
 

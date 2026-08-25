@@ -1,4 +1,5 @@
-"""The engine behind `/knocks`: one office + one day -> the knock board PNG.
+"""The engine behind `/knocks`: one office + one day (or a range of days) ->
+the knock board PNG.
 
 CACHE FIRST, AND THAT IS THE WHOLE DESIGN. Not because ownerville is
 one-session-per-account — it is NOT, sessions parallelise fine and impersonation
@@ -15,6 +16,13 @@ Order of attempts, first hit wins:
   1. our own cache        output/knocks_request/<office>/<date>.json
   2. the build's sidecar  <RENDER_DIR>/daily_knocks_*/<office>/rows_total_knocks_<date>.json
   3. a live pull          rashad_metrics.knocks_pull.pull_office_knocks
+
+A RANGE runs that same ladder ONCE PER DAY and folds the results
+(`total_knocks.aggregate`). That is why it isn't an ownerville date range:
+day-by-day keeps every day individually cacheable, so a week overlapping the
+mornings we already pulled is answered from disk with no session at all — and
+it keeps 'Avg. Hrs Knocking', which is single-day clock arithmetic, correct.
+Only the days we're missing reach step 3, and they share ONE session.
 
 Only step 3 opens a browser, and it refuses to start while another module on
 this machine is holding the SHARED profile (proc_guard) — `wait_for_ownerville`
@@ -65,20 +73,26 @@ WAIT_POLL_S = 45
 
 @dataclass
 class Board:
-    """What a request produced. `png` is None only when the day is a real
+    """What a request produced. `png` is None only when the span is a real
     zero — an office that recorded no knocks — which is an answer, not a
     failure, and `note` says so."""
     office: str                  # the canonical office/owner name
     asked_as: str                # what the requester typed
-    target: dt.date
+    target: dt.date              # first day of the span
+    end: Optional[dt.date] = None   # last day; None/== target = a single day
     png: Optional[Path] = None   # the knocks board — pngs[0]
     pngs: List[Path] = field(default_factory=list)   # NDS shapes add Time Gaps
     shape: str = ""              # house | wireless | gaps_only
     rows: List[dict] = field(default_factory=list)
-    source: str = ""             # "cache" | "build" | "live"
+    source: str = ""             # "cache" | "build" | "live" | "mixed"
     note: str = ""
-    partial: bool = False        # today's board: the day isn't over yet
+    partial: bool = False        # the span runs to today: it isn't over yet
     compared_to: str = ""        # office whose teal TOTAL line rides the board
+    days: int = 1                # how many days were folded into it
+
+    @property
+    def is_range(self) -> bool:
+        return self.end is not None and self.end != self.target
 
 
 def central_today() -> dt.date:
@@ -89,6 +103,53 @@ def central_today() -> dt.date:
 def default_target() -> dt.date:
     """Yesterday, Central — the day this morning's board covers."""
     return central_today() - dt.timedelta(days=1)
+
+
+def span_days(start: dt.date, end: Optional[dt.date] = None) -> List[dt.date]:
+    """Every day the request covers. `end` None means a single day."""
+    from automations.total_knocks.aggregate import daterange
+    return daterange(start, end or start)
+
+
+def check_span(start: dt.date, end: Optional[dt.date] = None) -> Optional[str]:
+    """The reason this span can't be served, in words a requester can act on —
+    or None when it's fine. Returned rather than raised so the Slack handler
+    can say it before doing any work, and the CLI can print the same sentence.
+
+    A span is refused, never silently repaired: swapping a backwards range
+    would hand back a board for dates nobody asked for, and the requester would
+    have no way to tell."""
+    from automations.total_knocks.aggregate import MAX_RANGE_DAYS
+    end = end or start
+    today = central_today()
+    if end < start:
+        return (f"{pretty_day(end)} comes before {pretty_day(start)} — I didn't "
+                "want to guess which way round you meant, so nothing was "
+                "pulled. Send them the other way and I'll get it.")
+    if end > today:
+        which = "that day hasn't" if end == start else "those days haven't"
+        return (f"{pretty_day(end)} hasn't happened yet — {which} finished, so "
+                "there's nothing to pull. Ask me for today or any day that's "
+                "already gone by.")
+    days = len(span_days(start, end))
+    if days > MAX_RANGE_DAYS:
+        return (f"That's {days} days. I cap a request at {MAX_RANGE_DAYS} so "
+                "nobody ends up waiting on a month of scraping — ask me for a "
+                "shorter stretch and I'll get it.")
+    return None
+
+
+def pretty_day(d: dt.date) -> str:
+    """'August 23, 2026' — %-d is glibc/BSD only, so build it by hand."""
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def pretty_span(start: dt.date, end: Optional[dt.date] = None) -> str:
+    """How a span reads in a Slack line: 'August 23, 2026' for one day,
+    'August 18–23, 2026' for a range. Mirrors the board's own title so the
+    message and the image agree."""
+    from automations.total_knocks.render import _title_span
+    return _title_span(start, end)
 
 
 def _slug(name: str) -> str:
@@ -243,103 +304,168 @@ def compare_rows(canonical: str, target: dt.date, *, allow_live: bool,
     return None                         # live path fills this in; see board_for
 
 
+def missing_days(canonical: str, start: dt.date,
+                 end: Optional[dt.date] = None) -> List[dt.date]:
+    """Which days of the span are NOT already on disk — i.e. what a request
+    would have to open ownerville for. The Slack handler asks this before
+    saying anything, so it can promise "one second" or "about a minute" and be
+    right."""
+    return [d for d in span_days(start, end) if not cached_rows(canonical, d)[0]]
+
+
 def _norm(name: str) -> str:
     return " ".join((name or "").lower().split())
 
 
 # ---------------------------------------------------------------- board ----
-def board_for(office: str, target: Optional[dt.date] = None, *,
+def board_for(office: str, target: Optional[dt.date] = None,
+              end: Optional[dt.date] = None, *,
               allow_live: bool = True,
               wait_timeout_s: int = WAIT_TIMEOUT_S,
               logfn: Callable[[str], None] = print) -> Board:
     """The whole request: cache, else pull, then draw. Raises only on a real
-    failure (no such office, ownerville still busy, a broken pull) — a day
-    with genuinely no knocks comes back as a Board with png=None and a note."""
+    failure (no such office, a bad span, ownerville still busy, a broken pull)
+    — a span with genuinely no knocks comes back as a Board with png=None and
+    a note.
+
+    `end` (optional) makes it a RANGE, start and end inclusive. Every day is
+    fetched on its own — from the cache where we have it, in one shared
+    ownerville session where we don't — and folded by total_knocks.aggregate.
+    `end` None, or equal to `target`, is the original single-day request and
+    takes the original code path: one day gathered, `aggregate_days` hands the
+    rows straight back, and the board renders byte-identically.
+    """
     target = target or default_target()
-    today = central_today()
+    end = end or target
     # A day that hasn't happened is not an empty day. Ownerville answers a
     # future date with an empty grid — exactly what a real zero looks like —
     # so it has to be refused HERE, or the requester is told "no knocks
-    # recorded" about tomorrow.
-    if target > today:
-        raise ValueError(
-            f"{target.isoformat()} hasn't happened yet — pick today or a day "
-            "that's already gone by.")
+    # recorded" about tomorrow. Same for a backwards or oversized span.
+    problem = check_span(target, end)
+    if problem:
+        raise ValueError(problem)
+    today = central_today()
+    days = span_days(target, end)
     canonical = resolve_office(office)
-    b = Board(office=canonical, asked_as=office, target=target,
-              partial=(target == today))
+    b = Board(office=canonical, asked_as=office, target=target, end=end,
+              partial=(end == today), days=len(days))
     if canonical.lower() != office.strip().lower():
         logfn(f"'{office}' resolves to '{canonical}'")
 
+    compare = compare_office()
+    want_compare_office = _norm(compare) != _norm(canonical)
+
+    # ---- what's already on disk -------------------------------------------
     # Cache-first for the comparison too, so a cached board stays a
     # zero-session answer. allow_live=False here: the live branch below pulls
     # it in the session it is already opening.
-    chan_rows = compare_rows(canonical, target, allow_live=False, logfn=logfn)
-
-    rows, source = cached_rows(canonical, target)
-    if rows:
-        logfn(f"{canonical} {target}: {len(rows)} rep(s) from the {source} "
+    ours: dict = {}
+    theirs: dict = {}
+    sources: set = set()
+    for d in days:
+        rows, src = cached_rows(canonical, d)
+        if rows:
+            ours[d] = rows
+            sources.add(src)
+        if want_compare_office:
+            c_rows = compare_rows(canonical, d, allow_live=False,
+                                  logfn=lambda m: None)
+            if c_rows:
+                theirs[d] = c_rows
+    need = [d for d in days if d not in ours]
+    if not need:
+        logfn(f"{canonical} {target}..{end}: {len(days)} day(s) from the "
+              f"{'/'.join(sorted(sources)) or 'cache'} "
               "(no ownerville session needed)")
-    else:
+
+    # ---- everything else, in ONE session ----------------------------------
+    if need:
         if not allow_live:
             raise RuntimeError(
-                f"No stored knocks for {canonical} on {target} and live pulls "
-                "are off for this run.")
+                f"No stored knocks for {canonical} on "
+                f"{', '.join(d.isoformat() for d in need)} and live pulls are "
+                "off for this run.")
         if not wait_for_ownerville(timeout_s=wait_timeout_s, logfn=logfn):
             raise RuntimeError(
                 "Ownerville is still busy with the scheduled reports — nothing "
                 "was pulled. Ask again once they finish.")
-        # One session, both offices (pull_offices_knocks exists for exactly
-        # this): a second session for the comparison line would race the
-        # first for the same Chrome profile. The comparison office rides
-        # along ONLY when it isn't already on disk.
-        # ALWAYS the multi-office helper, even for one office: it is the
-        # path that routes the MASTER office (Raf) around impersonation.
+        # One session, both offices: a second session for the comparison line
+        # would race the first for the same Chrome profile. The comparison
+        # office rides along only for the days it ISN'T already on disk — and
+        # only when we're opening a session anyway.
+        # ALWAYS the multi-office helper, even for one office: it is the path
+        # that routes the MASTER office (Raf) around impersonation.
         # pull_office_knocks impersonates unconditionally, so asking it for
         # Raf reports his own office as an access gap.
-        from automations.rashad_metrics.knocks_pull import pull_offices_knocks
-        compare = compare_office()
-        want_compare = (chan_rows is None
-                        and _norm(compare) != _norm(canonical))
-        wanted = [canonical] + ([compare] if want_compare else [])
-        logfn(f"pulling {' + '.join(wanted)} for {target} from ownerville…")
-        _t, pulled = pull_offices_knocks(wanted, target, verbose=True)
-        _n, rows, err = pulled[0]
+        from automations.rashad_metrics.knocks_pull import pull_offices_days
+        compare_need = [d for d in days
+                        if want_compare_office and d not in theirs]
+        jobs = [(canonical, need)]
+        if compare_need:
+            jobs.append((compare, compare_need))
+        logfn(f"pulling {' + '.join(n for n, _ in jobs)} for "
+              f"{len(need)} day(s) from ownerville…")
+        pulled = pull_offices_days(jobs, verbose=True)
+        _n, got, err = pulled[0]
         if err is not None:
             raise err                          # THIS office failing is fatal
-        if want_compare:
-            _cn, c_rows, c_err = pulled[1]
+        for d, rows in got.items():
+            if rows:
+                ours[d] = rows
+                save_rows(canonical, d, rows)
+        sources.add("live")
+        if compare_need:
+            _cn, c_got, c_err = pulled[1]
             if c_err is not None:
                 # A missing comparison costs one line, never the board.
                 logfn(f"⚠ {compare} comparison pull failed "
                       f"({type(c_err).__name__}) — board goes out without it")
-            elif c_rows:
-                chan_rows = c_rows
-                save_rows(compare, target, c_rows)
-        source = "live"
-        save_rows(canonical, target, rows)
+            else:
+                for d, c_rows in c_got.items():
+                    if c_rows:
+                        theirs[d] = c_rows
+                        save_rows(compare, d, c_rows)
 
-    b.rows, b.source = rows, source
+    # ---- fold the days ----------------------------------------------------
+    from automations.total_knocks.aggregate import aggregate_days
+    rows = aggregate_days([ours[d] for d in days if d in ours])
+    b.rows = rows
+    b.source = ("live" if sources == {"live"}
+                else "mixed" if len(sources) > 1
+                else (next(iter(sources), "")))
     if not rows:
         # An empty grid is genuinely ambiguous: a day nobody knocked and a day
         # the office has no data for at all look identical coming back. Say
         # both possibilities rather than asserting the flattering one.
-        b.note = ("Ownerville returned no rows for that day — either nobody "
+        what = "that day" if b.end == b.target else "any of those days"
+        b.note = (f"Ownerville returned no rows for {what} — either nobody "
                   "knocked, or that office has no data that far back")
         return b
 
+    # The teal comparison line is drawn ONLY when the comparison office covers
+    # the SAME days. A partial span there would print a smaller total next to
+    # ours and read as Chan being behind, when it's really us holding fewer
+    # days of his numbers — a wrong comparison is worse than no comparison.
+    chan_rows = None
+    if want_compare_office:
+        have = [d for d in days if d in theirs]
+        if len(have) == len(days):
+            chan_rows = aggregate_days([theirs[d] for d in days])
+        elif have:
+            logfn(f"comparison: only {len(have)}/{len(days)} day(s) of "
+                  f"{compare} on hand — board goes out without the teal line "
+                  "rather than comparing different spans")
+
     from automations.total_knocks import render as knocks_render
-    extra = []
-    if chan_rows:
-        extra.append((compare_office(), chan_rows))
+    extra = [(compare, chan_rows)] if chan_rows else []
     # An NDS office gets a PAIR of boards and no comparison line; the shape
     # decides, so a fiber office that goes wireless needs no config change.
     b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
-        title_suffix=canonical, extra_totals=extra)
+        title_suffix=canonical, end=end, extra_totals=extra)
     b.png = b.pngs[0]
     if extra and b.shape == knocks_render.SHAPE_HOUSE:
-        b.compared_to = compare_office()
+        b.compared_to = compare
     logfn(f"board -> {b.png}")
     return b
 

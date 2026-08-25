@@ -22,6 +22,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from automations.recruiting_report.fill import open_by_key
+from automations.total_knocks.aggregate import (
+    COL_HRS_KNOCKING,
+    hours_between,
+    knock_time_key as _knock_time_key,
+)
 from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_ROW
 from automations.total_knocks.pull import (
     COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
@@ -77,8 +82,9 @@ COMBINED_KNOCKS_DISPLAY = {
 # Derived at render time (Raf 2026-08-23: "AVG Hrs knocking per day"):
 # (last knock − first knock) − total gaps, the same formula his weekly
 # dispositions board uses. Rep rows show that day's hours; the TOTAL rows
-# show the office average.
-COL_HRS_KNOCKING = "Avg. Hrs Knocking"
+# show the office average. The column name and the formula live in
+# `total_knocks.aggregate` (imported above) so a multi-day fold, which has to
+# average the per-day figure rather than re-derive it, shares both.
 COMBINED_KNOCKS_HEADERS = (
     COMBINED_KNOCKS_COLUMNS[:COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1]
     + [COL_HRS_KNOCKING]
@@ -160,6 +166,11 @@ def _table_from_rows(
     is identical to the Sheet-backed one.
     """
     header = list(SHEET_COLUMNS)
+    # A multi-day fold carries Avg. Hrs Knocking as DATA (averaged per knocking
+    # day) instead of leaving the board to derive it from folded times — see
+    # total_knocks.aggregate. Only then does the column join the header.
+    if any(COL_HRS_KNOCKING in rec for rec in records):
+        header.append(COL_HRS_KNOCKING)
     rows: list[list[str]] = []
     for rec in records:
         cells = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
@@ -408,11 +419,37 @@ def _title_date(target: dt.date) -> str:
     return f"{target.strftime('%B')} {target.day}, {target.year}"
 
 
+def _title_span(target: dt.date, end: "dt.date | None" = None) -> str:
+    """The board's date line: one day, or a range when `end` is a later day.
+
+    'August 18–23, 2026' inside a month, 'August 30 – September 2, 2026'
+    across one, both years spelled out across a year boundary. `end` None or
+    equal to `target` returns EXACTLY what the single-day board always said —
+    the range feature must be invisible to a one-day request."""
+    if end is None or end == target:
+        return _title_date(target)
+    if (target.year, target.month) == (end.year, end.month):
+        return f"{target.strftime('%B')} {target.day}–{end.day}, {end.year}"
+    if target.year == end.year:
+        return (f"{target.strftime('%B')} {target.day} – "
+                f"{end.strftime('%B')} {end.day}, {end.year}")
+    return f"{_title_date(target)} – {_title_date(end)}"
+
+
+def _file_span(target: dt.date, end: "dt.date | None" = None) -> str:
+    """Filename stem for the span — unchanged for a single day, so nothing
+    that globs for an existing board's name stops finding it."""
+    if end is None or end == target:
+        return target.isoformat()
+    return f"{target.isoformat()}_{end.isoformat()}"
+
+
 def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sheet_id: str = SHEET_ID,
                         out_dir: Path = OUT_DIR_DEFAULT,
                         rows: list[dict] | None = None,
                         title_suffix: str = "",
+                        end: "dt.date | None" = None,
                         extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
@@ -427,6 +464,10 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     'TOTAL KNOCKS — SAHIL MULTANI — August 17, 2026'. Needed when SEVERAL
     offices' images land in the SAME Slack thread, so an image read on its own
     still says whose office it is. Default ('') keeps the original title.
+
+    `end` (optional): the last day of a multi-day board, for the title and the
+    filename. The ROWS must already be folded (total_knocks.aggregate) — this
+    only labels them. None / same-as-target renders exactly as it always did.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -465,8 +506,9 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
     return _draw(disp, table,
-                 f"TOTAL KNOCKS — {_office}{_title_date(target)}",
-                 THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png",
+                 f"TOTAL KNOCKS — {_office}{_title_span(target, end)}",
+                 THEME_AMBER,
+                 out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=0, wrap_headers=True,
                  highlight_first_row=1 + len(extra_rows),
                  top_row_colors=_colors)
@@ -491,7 +533,8 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
                      sheet_id: str = SHEET_ID,
                      out_dir: Path = OUT_DIR_DEFAULT,
                      rows: list[dict] | None = None,
-                     title_suffix: str = "") -> Path:
+                     title_suffix: str = "",
+                     end: "dt.date | None" = None) -> Path:
     """PNG 2 — ID, Rep, First/Last Knock, Gaps, Total Gaps (min), sorted by
     Total Gaps (min) desc, teal theme. Total Gaps is shown as 'Xh Ym' (like
     Ownerville); the Sheet column itself stays in plain minutes.
@@ -529,8 +572,9 @@ def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
         r[tg_pos] = _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(TIME_GAPS_COLUMNS), sub,
-                 f"TIME GAPS — {_office}{_title_date(target)}",
-                 THEME_TEAL, out_dir / f"time_gaps_{target.isoformat()}.png")
+                 f"TIME GAPS — {_office}{_title_span(target, end)}",
+                 THEME_TEAL,
+                 out_dir / f"time_gaps_{_file_span(target, end)}.png")
 
 
 def _combined_sub(header: list[str], rows: list[list[str]],
@@ -547,23 +591,34 @@ def _combined_sub(header: list[str], rows: list[list[str]],
     if missing:
         raise RuntimeError(f"{where or 'data'} missing column(s) for Total "
                            f"Knocks: {missing}. Header: {header}")
-    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
-    sub = [[(r[i] if i < len(r) else "") for i in sel] for r in rows]
-    rep_pos = COMBINED_KNOCKS_COLUMNS.index(COL_REP)
-    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
-    # Insert the derived Hrs Knocking cell: (last − first) − total gaps.
     fk = COMBINED_KNOCKS_COLUMNS.index(COL_FIRST_KNOCK)
     lk = COMBINED_KNOCKS_COLUMNS.index(COL_LAST_KNOCK)
     tg = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
     hrs_at = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
-    for r in sub:
-        f, l = _knock_time_key(str(r[fk])), _knock_time_key(str(r[lk]))
-        gaps_min = str(r[tg]).strip()
-        gaps_min = int(gaps_min) if gaps_min.isdigit() else 0
-        if f >= 24 * 60 or l >= 24 * 60 or l <= f:
-            r.insert(hrs_at, "")
+    # Hrs Knocking is (last − first) − total gaps… UNLESS the caller already
+    # computed it. A multi-day fold must AVERAGE the per-day figure; re-deriving
+    # it from folded cells would subtract a week of gaps from one day's span and
+    # quietly print a wrong number. See total_knocks.aggregate.
+    pre = idx.get(_norm(COL_HRS_KNOCKING))
+    sel = [idx[_norm(c)] for c in COMBINED_KNOCKS_COLUMNS]
+
+    def _cell(r: list[str], i: int) -> str:
+        return r[i] if i < len(r) else ""
+
+    sub = []
+    for r in rows:
+        cells = [_cell(r, i) for i in sel]
+        if pre is None:
+            hrs = hours_between(cells[fk], cells[lk], cells[tg])
+            hrs = "" if hrs is None else str(hrs)
         else:
-            r.insert(hrs_at, str(max(l - f - gaps_min, 0)))
+            hrs = str(_cell(r, pre))
+        # Insert BEFORE the sort — building the row whole keeps the derived
+        # cell tied to its own rep no matter how the table is ordered.
+        cells.insert(hrs_at, hrs)
+        sub.append(cells)
+    rep_pos = COMBINED_KNOCKS_HEADERS.index(COL_REP)
+    sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
     return sub
 
 
@@ -611,7 +666,8 @@ def _knock_time_key(v: str) -> int:
 
 def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
                              out_dir: Path = OUT_DIR_DEFAULT,
-                             title_suffix: str = "") -> Path:
+                             title_suffix: str = "",
+                             end: "dt.date | None" = None) -> Path:
     """The gaps-only (NDS/wireless) office's stand-in for the Total Knocks
     board: the ownerville Time Tracker table itself, amber theme (it fills the
     Total Knocks slot in the thread). A wireless office has no Disposition
@@ -637,14 +693,15 @@ def render_telemapper_knocks(target: dt.date, *, rows: list[dict],
         r[tg_pos] = "" if r[tg_pos].strip() == "0" else _fmt_hm(r[tg_pos])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(TELEMAPPER_KNOCKS_COLUMNS), table,
-                 f"TELEMAPPER KNOCKS — {_office}{_title_date(target)}",
+                 f"TELEMAPPER KNOCKS — {_office}{_title_span(target, end)}",
                  THEME_AMBER,
-                 out_dir / f"telemapper_knocks_{target.isoformat()}.png")
+                 out_dir / f"telemapper_knocks_{_file_span(target, end)}.png")
 
 
 def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                                  out_dir: Path = OUT_DIR_DEFAULT,
-                                 title_suffix: str = "") -> Path:
+                                 title_suffix: str = "",
+                                 end: "dt.date | None" = None) -> Path:
     """TOTAL KNOCKS for a WIRELESS (NDS) office — same amber board as the
     house one, but the wireless disposition column set (one Not Interested
     bucket, no Talk-To split, no Sale). Rows come from the wireless-shaped
@@ -661,9 +718,9 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
         raise RuntimeError("No wireless disposition rows to render.")
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     return _draw(list(WIRELESS_KNOCKS_COLUMNS), table,
-                 f"TOTAL KNOCKS — {_office}{_title_date(target)}",
+                 f"TOTAL KNOCKS — {_office}{_title_span(target, end)}",
                  THEME_AMBER,
-                 out_dir / f"total_knocks_{target.isoformat()}.png")
+                 out_dir / f"total_knocks_{_file_span(target, end)}.png")
 
 
 # ---------------------------------------------------------------- shapes ---
@@ -695,6 +752,7 @@ def knocks_shape(rows: "list[dict]") -> str:
 def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          out_dir: Path = OUT_DIR_DEFAULT,
                          title_suffix: str = "",
+                         end: "dt.date | None" = None,
                          extra_totals=None) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
@@ -706,21 +764,27 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
     `extra_totals` (a comparison office's TOTAL line) applies to the house
     board ONLY — the comparison office is fiber, so its totals have no column
     to sit under on an NDS board.
+
+    `end` (optional): last day of a multi-day board. It only labels the title
+    and filename — `rows` must already be folded by total_knocks.aggregate —
+    and it reaches BOTH boards of an NDS pair, so a gaps-only office's Time
+    Gaps image carries the same span as the one above it.
     """
     shape = knocks_shape(rows)
     if shape == SHAPE_GAPS_ONLY:
         first = render_telemapper_knocks(target, rows=rows, out_dir=out_dir,
-                                         title_suffix=title_suffix)
+                                         title_suffix=title_suffix, end=end)
     elif shape == SHAPE_WIRELESS:
         first = render_wireless_total_knocks(target, rows=rows,
                                              out_dir=out_dir,
-                                             title_suffix=title_suffix)
+                                             title_suffix=title_suffix,
+                                             end=end)
     else:
         return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
-                                     title_suffix=title_suffix,
+                                     title_suffix=title_suffix, end=end,
                                      extra_totals=extra_totals)], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,
-                            title_suffix=title_suffix)
+                            title_suffix=title_suffix, end=end)
     return ([first, gaps], shape)
 
 

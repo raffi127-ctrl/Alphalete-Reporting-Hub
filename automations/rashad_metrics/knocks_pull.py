@@ -220,17 +220,25 @@ def pull_office_knocks(office_name: Optional[str] = None,
                                    verbose=verbose)
 
 
-def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
-                        *, verbose: bool = True) -> tuple[dt.date, list[dict]]:
-    """The scrape itself, on an ALREADY-OPEN ownerville page: impersonate
-    `canonical`, pull Disposition + Time Tracker for `target`, exit
-    impersonation. Exactly the work pull_office_knocks always did — pulled out
-    into its own function ONLY so several offices can share one session (see
-    pull_offices_knocks). pull_office_knocks still wraps it in a session of its
-    own, so nothing changes for the single-office callers.
+def pull_office_days_on_page(page, canonical: str, aliases_raw,
+                             targets: "list[dt.date]", *,
+                             verbose: bool = True) -> "dict":
+    """SEVERAL days for one office on an ALREADY-OPEN page: impersonate
+    `canonical` ONCE, scrape each day in `targets`, exit impersonation once.
+    Returns {date: rows}.
+
+    Why days loop INSIDE the impersonation: switching offices is the expensive
+    step (Office Access page, row search, token handoff) and the sticky-campaign
+    pin goes with it. A day is just a re-navigation of p=89 plus one JSON fetch,
+    so a week costs one impersonation, not seven.
+
+    NOT a date-range request to ownerville, deliberately: p=510 (Time Tracker)
+    has no range parameter, and 'Avg. Hrs Knocking' is single-day clock
+    arithmetic that a server-side aggregate would silently break. The days are
+    folded afterwards by total_knocks.aggregate, where the arithmetic is right
+    and each day stays individually cacheable.
     """
-    mdy = target.strftime("%m/%d/%Y")
-    gap_rows: list = []   # Time-Tracker-sourced rows for a gaps-only (NDS) office
+    out: dict = {}
     # Bound every op so a stuck page can't hang the run (same guard
     # run_all_owners uses).
     page.set_default_timeout(60_000)
@@ -265,41 +273,14 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
         # back to the value we already have.
         rqst = page_rqst(page) or rqst
 
-        # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above.
+        # Sticky-campaign guard — see KNOCKS_CAMPAIGN_ID above. Pinned once
+        # for the impersonated session, not once per day: the campaign is a
+        # property of the session, and re-pinning would cost a navigation a day.
         _pin_campaign(page, rqst, verbose=verbose)
 
-        # --- SCRAPE (identical to pull_disposition_day) ---------------
-        if verbose:
-            print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
-                  flush=True)
-        knocks._navigate(page, rqst, mdy)
-        idx = knocks._header_index(page)
-        # A WIRELESS (NDS) office's Disposition table has its own shape —
-        # scrape it with the wireless column set instead of letting the house
-        # scrape raise "missing expected column(s)". The wireless rows keep
-        # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
-        if _is_wireless_dispo(idx):
-            rows = _scrape_wireless_rows(page, idx)
-            if verbose:
-                print(f"-> Wireless-shaped disposition: {len(rows)} rep(s)",
-                      flush=True)
-        else:
-            rows = knocks._scrape_rows(page, idx)
-        # Supplementary while we have disposition rows, the last source
-        # standing when we don't — only then is a failed fetch fatal.
-        tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose,
-                                         required=not rows)
-        if verbose:
-            print(f"-> Time Tracker: gap data for {len(tt)} rep(s)",
-                  flush=True)
-        # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
-        # rows and there's nothing to hang the gaps on. Build Time-Gaps rows
-        # straight from the Time Tracker (name + knock times live in its JSON)
-        # while the session is still open. Only the Time Gaps board renders;
-        # knocks_run skips Total Knocks when there's no knock data.
-        if not rows:
-            gap_rows = knocks._scrape_time_tracker_rows(
-                page, rqst, mdy, verbose=verbose)
+        for target in targets:
+            out[target] = _scrape_day_on_page(page, rqst, target,
+                                              verbose=verbose)
     finally:
         # ALWAYS exit impersonation before the session closes so the
         # next run / other reports start from master, not a stuck
@@ -310,13 +291,55 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
         elif verbose:
             print("  ⚠ Exit-impersonation call didn't succeed", flush=True)
 
-    # Gaps-only (NDS/wireless) office: no disposition rows — return the
-    # Time-Tracker rows so ONLY the Time Gaps board renders.
-    if not rows and gap_rows:
+    return out
+
+
+def _scrape_day_on_page(page, rqst: str, target: dt.date, *,
+                        verbose: bool = True) -> list:
+    """ONE day's rows on a page that is already impersonating the right office
+    with its campaign pinned — Disposition by Rep merged with Time Tracker
+    gaps, exactly as pull_office_on_page always did inline. Extracted so the
+    multi-day loop and the single-day wrapper can't drift apart."""
+    mdy = target.strftime("%m/%d/%Y")
+
+    # --- SCRAPE (identical to pull_disposition_day) ---------------
+    if verbose:
+        print(f"-> Disposition by Rep for {mdy} (rqst {rqst[:12]}…)",
+              flush=True)
+    knocks._navigate(page, rqst, mdy)
+    idx = knocks._header_index(page)
+    # A WIRELESS (NDS) office's Disposition table has its own shape —
+    # scrape it with the wireless column set instead of letting the house
+    # scrape raise "missing expected column(s)". The wireless rows keep
+    # COL_TOTAL_KNOCKS, so knocks_run renders a real Total Knocks board.
+    if _is_wireless_dispo(idx):
+        rows = _scrape_wireless_rows(page, idx)
         if verbose:
-            print(f"-> Disposition empty; {len(gap_rows)} Time-Tracker gap "
-                  f"row(s) (gaps-only office).", flush=True)
-        return target, gap_rows
+            print(f"-> Wireless-shaped disposition: {len(rows)} rep(s)",
+                  flush=True)
+    else:
+        rows = knocks._scrape_rows(page, idx)
+    # Supplementary while we have disposition rows, the last source
+    # standing when we don't — only then is a failed fetch fatal.
+    tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose,
+                                     required=not rows)
+    if verbose:
+        print(f"-> Time Tracker: gap data for {len(tt)} rep(s)", flush=True)
+
+    # A wireless/NDS owner has NO Disposition campaign, so p=89 returns 0
+    # rows and there's nothing to hang the gaps on. Build Time-Gaps rows
+    # straight from the Time Tracker (name + knock times live in its JSON)
+    # while the session is still open. Only the Time Gaps board renders;
+    # knocks_run skips Total Knocks when there's no knock data.
+    if not rows:
+        gap_rows = knocks._scrape_time_tracker_rows(page, rqst, mdy,
+                                                    verbose=verbose)
+        if gap_rows:
+            if verbose:
+                print(f"-> Disposition empty; {len(gap_rows)} Time-Tracker gap "
+                      f"row(s) (gaps-only office).", flush=True)
+            return gap_rows
+        return []
 
     # --- Merge gaps onto disposition rows by badge ID (same as Raf's) -----
     matched = 0
@@ -328,7 +351,17 @@ def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
     if verbose:
         print(f"-> Merged gaps onto {matched}/{len(rows)} disposition rep(s)",
               flush=True)
-    return target, rows
+    return rows
+
+
+def pull_office_on_page(page, canonical: str, aliases_raw, target: dt.date,
+                        *, verbose: bool = True) -> tuple[dt.date, list[dict]]:
+    """ONE day for one office on an already-open page — the original
+    single-date entry point, now a thin wrapper over the multi-day loop so both
+    paths impersonate, pin and scrape through identical code."""
+    days = pull_office_days_on_page(page, canonical, aliases_raw, [target],
+                                    verbose=verbose)
+    return target, days.get(target, [])
 
 
 def is_master_office(name: str) -> bool:
@@ -345,39 +378,88 @@ def is_master_office(name: str) -> bool:
     return _norm_name(name or "") == _norm_name(RAF["name"])
 
 
-def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
-    """The master office's rows on an ALREADY-OPEN page — no impersonation,
-    because the session is already on that office.
+def pull_master_days_on_page(page, targets: "list[dt.date]", *,
+                             verbose: bool = True) -> "dict":
+    """The master office's rows for SEVERAL days on an ALREADY-OPEN page — no
+    impersonation, because the session is already on that office. Returns
+    {date: rows}.
 
     Same steps as the impersonated path minus the office switch: capture rqst,
     pin the campaign (the sticky-campaign guard applies to the master session
-    too), Disposition + Time Tracker merged by badge id. Lived inline in
-    captainship_drafts.knock_dispo_images._daily_rows_for_owner until
+    too), then Disposition + Time Tracker merged by badge id per day. Lived
+    inline in captainship_drafts.knock_dispo_images._daily_rows_for_owner until
     on-demand `/knocks` needed the same routing; extracted here so the two
     callers share ONE master scrape instead of keeping two copies in step.
     """
-    mdy = target.strftime("%m/%d/%Y")
     rqst = knocks._capture_rqst(page)
     if not rqst:
         raise RuntimeError("Couldn't capture ownerville rqst token from "
                            f"{page.url!r} for the master office.")
     _pin_campaign(page, rqst, verbose=verbose)
-    knocks._navigate(page, rqst, mdy)
-    idx = knocks._header_index(page)
-    rows = knocks._scrape_rows(page, idx)
-    tt = knocks._scrape_time_tracker(page, rqst, mdy, verbose=verbose)
-    for rec in rows:
-        rid = str(rec.get(COL_ID, "")).strip()
-        if rid in tt:
-            rec.update(tt[rid])
-    if verbose:
-        print(f"-> master office: {len(rows)} rep(s)", flush=True)
-    return rows
+    out: dict = {}
+    for target in targets:
+        rows = _scrape_day_on_page(page, rqst, target, verbose=verbose)
+        if verbose:
+            print(f"-> master office {target}: {len(rows)} rep(s)", flush=True)
+        out[target] = rows
+    return out
+
+
+def pull_master_on_page(page, target: dt.date, *, verbose: bool = True) -> list:
+    """ONE day for the master office — the original entry point, wrapping the
+    multi-day loop so both paths run identical code."""
+    return pull_master_days_on_page(page, [target], verbose=verbose).get(
+        target, [])
+
+
+def pull_offices_days(jobs, verbose: bool = True, profile_dir=None):
+    """Scrape SEVERAL offices, each for its OWN list of days, in ONE session.
+
+    `jobs`: [(office_name, [date, ...]), ...]. Per-office date lists rather
+    than one shared list because the caller's two offices rarely need the same
+    days — the board's office may be missing Thursday while the comparison
+    office is missing all week, and pulling days we already have on disk is
+    pure waste.
+
+    Returns [(office_name, {date: rows}, error_or_None), ...] in the order
+    given. One office raising does NOT abort the rest — its error rides in the
+    tuple so the caller can report it per office. A partial failure mid-office
+    loses that office's whole dict: the days share one impersonation, so there
+    is no half-office state worth handing back.
+    """
+    aliases_raw = load_aliases()
+    out: list = []
+    with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
+        for name, targets in jobs:
+            targets = sorted(set(targets))
+            canonical = alias_to_canonical(name, aliases_raw)
+            if verbose and canonical != name:
+                print(f"-> Office '{name}' resolves to canonical '{canonical}'",
+                      flush=True)
+            if verbose and len(targets) > 1:
+                print(f"-> {canonical}: {len(targets)} day(s), "
+                      f"{targets[0]} → {targets[-1]}", flush=True)
+            try:
+                if is_master_office(canonical):
+                    # The login IS this office — impersonating it would fail.
+                    days = pull_master_days_on_page(page, targets,
+                                                    verbose=verbose)
+                else:
+                    days = pull_office_days_on_page(page, canonical,
+                                                    aliases_raw, targets,
+                                                    verbose=verbose)
+                out.append((name, days, None))
+            except Exception as e:  # noqa: BLE001 — one office must not kill the rest
+                if verbose:
+                    print(f"  ✗ {name}: {type(e).__name__}: {str(e)[:120]}",
+                          flush=True)
+                out.append((name, {}, e))
+    return out
 
 
 def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
                         verbose: bool = True, profile_dir=None):
-    """Scrape SEVERAL offices inside ONE ownerville session.
+    """Scrape SEVERAL offices inside ONE ownerville session, one day each.
 
     Why one session: each `ownerville_session` launches real Chrome on a shared
     user-data-dir, and the next launch can be adopted by the one before it if
@@ -395,29 +477,15 @@ def pull_offices_knocks(office_names, target: Optional[dt.date] = None,
     Returns (target, [(office_name, rows, error_or_None), ...]) in the order
     given. One office raising does NOT abort the rest — its error rides in the
     tuple so the caller can report it per office.
+
+    A thin wrapper over `pull_offices_days` since on-demand ranges arrived;
+    every existing caller keeps this exact signature and return shape.
     """
     target = target or knocks._yesterday()
-    aliases_raw = load_aliases()
-    out: list = []
-    with ownerville_session(verbose=verbose, profile_dir=profile_dir) as page:
-        for name in office_names:
-            canonical = alias_to_canonical(name, aliases_raw)
-            if verbose and canonical != name:
-                print(f"-> Office '{name}' resolves to canonical '{canonical}'",
-                      flush=True)
-            try:
-                if is_master_office(canonical):
-                    # The login IS this office — impersonating it would fail.
-                    rows = pull_master_on_page(page, target, verbose=verbose)
-                else:
-                    _, rows = pull_office_on_page(page, canonical, aliases_raw,
-                                                  target, verbose=verbose)
-                out.append((name, rows, None))
-            except Exception as e:  # noqa: BLE001 — one office must not kill the rest
-                if verbose:
-                    print(f"  ✗ {name}: {type(e).__name__}: {str(e)[:120]}",
-                          flush=True)
-                out.append((name, [], e))
+    out = [(name, days.get(target, []), err)
+           for name, days, err in pull_offices_days(
+               [(n, [target]) for n in office_names],
+               verbose=verbose, profile_dir=profile_dir)]
     return target, out
 
 
