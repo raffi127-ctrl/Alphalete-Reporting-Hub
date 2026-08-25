@@ -80,6 +80,13 @@ PER_SLIDE = 2 * MAX_PER_COL                      # reps per slide before splitti
 from automations.shared.name_case import (          # noqa: E402  (kept by name)
     _ROMAN, _recase_word, titlecase_name)
 
+# The closing R&R 2026 (Cancun) slide — Maud's poster, re-cut for 16:9.
+from automations.leaders_call.rr_slide import RRSlide     # noqa: E402
+
+# Drop the R&R slide once the trip is over, so the deck can't keep closing on a
+# trip that already happened. Bump the date (or pass rr=False) when it changes.
+RR_THROUGH = dt.date(2026, 10, 18)
+
 
 def clean_owner(owner):
     b = str(owner).split("\n")[0].split("[")[0].strip()
@@ -508,12 +515,13 @@ def _rows_ok(rows) -> bool:
 
 def build_pdf(results: dict, out_path, qualifiers: dict,
               week_end: "dt.date | None" = None, summary: "str | None" = None,
-              promotions: "list | None" = None) -> Path:
+              promotions: "list | None" = None, rr: bool = True) -> Path:
     """Render the Leader's Call widescreen deck from a run's `results` dict.
 
     results: {section_title: [(rep, owner, value)]}. Empty/None sections are
     skipped. `qualifiers` maps section_title -> sub-title (e.g. "12+ Apps").
-    week_end (the recognized week's Sunday) and summary are derived if omitted."""
+    week_end (the recognized week's Sunday) and summary are derived if omitted.
+    rr=False drops the closing R&R trip slide."""
     out_path = Path(out_path)
     bases = bases_from_campaigns()
     if week_end is None:
@@ -557,6 +565,14 @@ def build_pdf(results: dict, out_path, qualifiers: dict,
 
     if story and isinstance(story[-1], PageBreak):
         story.pop()
+
+    # Last slide: the R&R trip. Fail-soft — a missing villa asset must never
+    # cost us the deck the call is about to project.
+    if rr and dt.date.today() <= RR_THROUGH:
+        try:
+            story += [PageBreak(), RRSlide(week_label)]
+        except Exception as e:
+            print(f"   \u26a0 R&R slide skipped: {e}")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(str(out_path), pagesize=(PAGE_W, PAGE_H),
