@@ -679,6 +679,128 @@ def _onboarding_card() -> dict:
     }
 
 
+def _new_start_onboarding_card() -> dict:
+    """ONE card for every new-start onboarding step (Megan 2026-08-25).
+
+    Employee onboarding was three cards — BG Check Sync, Blue Ink New Start
+    Docs, Headshot Bot — that were already the same job: the same weekly cohort
+    on the same `D2D OBCL <m.d>` tab of the same workbook, each ticking its own
+    column, all reporting into the same Slack room. Separate runs, one thing,
+    one card, exactly like the twelve per-office metric runs on the D2D Office
+    Daily Metrics card.
+
+    Generated from shared.new_start_steps.STEPS, so the fourth step (Digi Docs
+    + Onboarding Quizzes) is one row there rather than a card here.
+
+    NOT a `daily_runs` card. The three steps run on three machines on three
+    different clocks (Lucy 1 twice daily, Lucy 2 Mondays, Lucy 3 every 5 min),
+    so there is no honest N-passes-per-day count to ramp a phase pill with —
+    a fixed N would either green early or never green at all. Each step keeps
+    its own report_id and therefore its own Report Name on its Hub Activity
+    row, so the card's run feed still says WHICH step ran; that is what stops
+    one card hiding a single failing step."""
+    from automations.shared import new_start_steps as _ns
+
+    assert _ns.CARD_ID == "new-start-onboarding", _ns.CARD_ID
+    steps = _ns.live_steps()
+
+    # STEPS section — one paragraph per step. Single newlines, NOT blank lines:
+    # _render_report_breakdown splits sections on a blank line and renders each
+    # first line as an ALL-CAPS gold header.
+    blocks = []
+    for st_ in steps:
+        lines = [f"{st_.emoji} **{st_.label}** \u2192 ticks **{st_.column}** "
+                 f"\u2014 {st_.does}.",
+                 f"  \u21b3 {st_.machine}, {st_.when}"]
+        lines += [f"  \u21b3 {n}" for n in st_.notes]
+        blocks.append("\n".join(lines))
+    steps_text = "\n".join(blocks)
+
+    actions = []
+    for st_ in steps:
+        for a in st_.actions:
+            actions.append({
+                "label": a.label,
+                "icon": a.icon,
+                "primary": a.primary,
+                "help": f"[{st_.label}] {a.help}",
+                "module": a.module,
+                "args_fn": (lambda args=a.args: list(args)),
+            })
+    # Exactly one primary — the Hub's retry path takes the primary action's
+    # module, and Blue Ink's preview is the safe default to land on.
+    if not any(a["primary"] for a in actions) and actions:
+        actions[0]["primary"] = True
+
+    return {
+        # LITERAL, not _ns.CARD_ID: hub_coverage._hardcoded_card_ids() finds
+        # cards by regex-scanning this file for `"id": "kebab-case"` (it must
+        # not import Streamlit), so a computed id is invisible to the phantom
+        # guard. The assert above keeps the two spellings from drifting.
+        "id": "new-start-onboarding",
+        "name": "New Start Onboarding",
+        "creator": "Megan, Raf & Claude",
+        "emoji": "\U0001F393",
+        "color": "#2563EB",
+        "category": "\U0001F3AF Recruiting",
+        "assignees": _ns.machines(),
+        "sheet_url": _ns.SHEET_URL,
+        "description": (
+            "Everything a NEW HIRE gets put through, on one card \u2014 "
+            + ", ".join(s.label.lower() for s in steps)
+            + f". Every step reads the same week's **{_ns.DATED_TAB_PREFIX} "
+              f"<m.d>** tab, ticks its own column, and posts whoever still "
+              f"needs doing by hand to {_ns.SLACK_CHANNEL}."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "One weekly cohort, one sheet, one Slack room. Each step below "
+            "owns a single column on that week's OBCL tab and fills it in "
+            "without touching anything else on the tab.\n\n"
+            "STEPS\n" + steps_text + "\n\n"
+            "WHY ONE CARD\n"
+            "These were three cards for the same job \u2014 same cohort, same "
+            "tab, same room. Separate runs, one thing, the same reason the "
+            "twelve per-office metric runs share the D2D Office Daily Metrics "
+            "card. Each step still reports under its own name, so the run feed "
+            "shows which one ran and a single failing step can't hide behind "
+            "the other two. Adding the next step is one row in "
+            "`automations/shared/new_start_steps.py`.\n\n"
+            "NOT YET WIRED\n"
+            "**Digi Docs** and **Onboarding Quizzes** are still done by hand. "
+            "The OwnerVille click-path is written up in "
+            "`workflows/digi-docs-onboarding-quizzes.md` (read off Megan's "
+            "2026-08-24 Loom): Digital Docs \u2192 Generate Document \u2192 "
+            "pick the employee + bundle \u2192 Generate Bundle, which mails "
+            "the rep their 9-document packet; the tick reads back from "
+            "Onboard \u2192 View Progress. Three questions in that file need "
+            "answering before it can be built \u2014 chiefly whether every "
+            "D2D new start takes the same bundle, since guessing there mails "
+            "someone the wrong contract.\n\n"
+            "WHEN IT RUNS\n"
+            + "\n".join(f"**\u2022** {s.label} \u2014 {s.when}, {s.machine}"
+                         for s in steps)),
+        "assignee_note": (
+            "Three machines, three clocks: "
+            + "; ".join(f"{s.label} on {s.machine}" for s in steps)
+            + ". The buttons here are the manual triggers."),
+        # Three self-running jobs on three clocks: no single run time to show.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # the Monday cohort is the anchor
+            "time": "7:30 AM",
+            "time_label": "Raf's Office \u00b7 Mon 7:30am + 8:30am \u00b7 BG 2\u00d7/day",
+            "estimated_minutes": 60,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Step finished \u2014 column ticked and the summary posted to #11280.",
+            "message_failed": "\u274C A step failed. Check WHICH one in the run feed: Blue Ink usually means the session on Lucy 2 expired, Headshots the OwnerVille session on Lucy 3.",
+        },
+        "actions": actions,
+    }
+
+
 AUTOMATED_REPORTS = [
     # 🏆 TEMP COMPETITION CARD — August Owner Showdown (Raf, 2026-07-29).
     # Two $5,000 battles for August only: personal new-internet sales (daily)
@@ -4707,274 +4829,12 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "headshot-bot",
-        "name": "Headshot Bot",
-        "creator": "Megan",
-        "emoji": "\U0001F4F8",
-        "color": "#0EA5E9",
-        # \U0001F3AF Recruiting, next to blueink-docs: same workbook, same
-        # weekly new-start cohort, same Slack room.
-        "category": "\U0001F3AF Recruiting",
-        "description": (
-            "Collects new-start headshots in a Monday Slack thread, cuts each "
-            "one onto a white background, uploads it to their OwnerVille "
-            "profile, and ticks Headshot Photo on the OBCL tab."),
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Every **Monday 8:30am** Lucy posts a *Headshot Submissions* "
-            "thread in **#11280-alphalete-marketing-inc-rafael-hidalgo**. "
-            "Anyone replies with a photo and the person's first and last name "
-            "in the same message. Within 5 minutes the bot:\n"
-            "**\u2022** removes the background and crops to head-and-shoulders "
-            "on pure white (1200\u00d71500), no text on the photo;\n"
-            "**\u2022** posts the finished headshot back in the thread and "
-            "\u2705 the submission;\n"
-            "**\u2022** uploads it to that person's **OwnerVille** profile "
-            "(Onboard \u2192 View Progress \u2192 Edit \u2192 Upload "
-            "Documents \u2192 Save Changes);\n"
-            "**\u2022** ticks **Headshot Photo** on that week's "
-            "**`D2D OBCL <m.d>`** tab and tints the cell light green.\n\n"
-            "WHEN IT RUNS\n"
-            "The Monday post is its own 8:30am timer on Lucy 3. The processing "
-            "tick runs **every 5 minutes, all week**, and also watches LAST "
-            "week's thread so weekend stragglers still get handled.\n\n"
-            "NAMES DON'T HAVE TO BE PERFECT\n"
-            "Typos are forgiven \u2014 *Anna Griffin* finds *Ana Griffin*, "
-            "*Thomes Crenshawe* finds *Thomas Crenshaw*. When two people are "
-            "too close to tell apart (Ana Gonzalez vs Ana Griffin) it refuses "
-            "to guess and says so instead. Whenever a typo is forgiven, the "
-            "thread reply names who it actually matched.\n\n"
-            "WHAT IT WILL NOT DO\n"
-            "**\u2022** Overwrite a photo already on someone's OwnerVille "
-            "profile \u2014 it reports *already on their profile* and leaves "
-            "it.\n"
-            "**\u2022** Touch anything on the OBCL tab but that one Headshot "
-            "Photo cell.\n"
-            "**\u2022** Process the same reply twice.\n\n"
-            "WHEN SOMETHING DOESN'T FIT\n"
-            "Each thread reply carries a line per step, so a miss is visible "
-            "immediately: *Not found on OBCL Sheet* (nobody by that name on "
-            "the tab \u2014 normal for people who aren't new starts, nothing "
-            "to do), or a \u26a0\ufe0f asking for a manual OwnerVille upload. "
-            "A photo posted with no name gets asked once, in the thread."),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
-                      "?gid=1430069873#gid=1430069873"),
-        "assignees": ["Lucy 3"],
-        # Two launchd timers of its own (the Monday post + the 5-min tick), so
-        # it self-reports rather than sitting in the due-today tallies \u2014
-        # same shape as blueink-docs and bg-check-sync.
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],   # Monday post; the tick then runs all week
-            "time": "8:30 AM",
-            "time_label": "Raf's Office \u00b7 Mon 8:30am, then every 5 min",
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "\u2705 Headshots processed \u2014 posted in the thread, uploaded to OwnerVille, and ticked on the OBCL tab.",
-            "message_failed": "\u274C Run failed. Most often the OwnerVille session on Lucy 3 has gone stale \u2014 the photos still posted in Slack; re-run once the session is warm.",
-        },
-        "actions": [
-            {
-                "label": "Check for New Photos",
-                "icon": "\U0001F441",
-                "primary": True,
-                "help": "Run one pass now instead of waiting for the 5-minute tick: process any new replies, upload them, and tick the sheet.",
-                "module": "automations.headshots.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Post This Week's Thread",
-                "icon": "\U0001F4E2",
-                "help": "Post the Monday Headshot Submissions thread now \u2014 for a missed or deleted Monday. Will not post twice in the same week.",
-                "module": "automations.headshots.weekly_thread",
-                "args_fn": lambda: ["--force"],
-            },
-            {
-                "label": "Why Was A Photo Skipped?",
-                "icon": "\U0001F50D",
-                "help": "Read-only: show what the bot decided about every reply in the current thread, and why. Changes nothing.",
-                "module": "automations.headshots.run",
-                "args_fn": lambda: ["--diag"],
-            },
-        ],
-    },
-    {
-        "id": "blueink-docs",
-        "name": "Blue Ink New Start Docs",
-        "creator": "Megan",
-        "emoji": "\U0001F58A\uFE0F",
-        "color": "#2563EB",
-        # \U0001F3AF Recruiting, next to bg-check-sync: same workbook, same
-        # weekly new-start cohort, same Slack room.
-        "category": "\U0001F3AF Recruiting",
-        "description": (
-            "Sends each week's new starts their Blue Ink onboarding packet "
-            "(I-9, W-4, Direct Deposit), skips anyone who isn't starting or "
-            "already has one, and posts who still needs doing by hand."),
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Reads the newest dated **`D2D OBCL <m.d>`** tab \u2014 every "
-            "**chart** on it, and Monday's has two \u2014 and sends each "
-            "eligible new start "
-            "their packet through the Blue Ink **web app**, then tints their "
-            "first name light green in column D and logs the send to the "
-            "**Blue Ink Log** tab.\n\n"
-            "WHEN IT RUNS\n"
-            "**Monday 7:30am CST** on Lucy 2, its own launchd timer. A full "
-            "week takes about an hour \u2014 roughly a minute a person.\n\n"
-            "WHO IT SKIPS\n"
-            "**\u2022** Any **Final Status** meaning they aren't starting "
-            "(quit, failed BGC, terminated, no show, rescheduling).\n"
-            "**\u2022** **BG Status** of Failed or Adverse Action.\n"
-            "**\u2022** **Friday Confirmation** of Declined or Failed "
-            "Background.\n"
-            "**\u2022** Anyone who already has a packet \u2014 matched on "
-            "email **and name**, whoever sent it, so a hand-send is never "
-            "duplicated.\n\n"
-            "GOOD TO KNOW\n"
-            "**\u2022** It sends through the web app on purpose: API sends "
-            "bill as **Bulk Envelopes**, capped at 50/YEAR on this plan and "
-            "long spent. Web-app sends draw on the unlimited bucket.\n"
-            "**\u2022** That means it needs a **browser session** on Lucy 2. "
-            "When it expires the run refuses to send and says so \u2014 a "
-            "human re-seeds with `session.py --login` at that machine.\n"
-            "**\u2022** A **wrong email on the sheet** doesn't cause a bad "
-            "send; the name check holds that person back and names them in "
-            "Slack instead.\n\n"
-            "THE \u201cBLUE INK\u201d COLUMN\n"
-            "That one cell carries two different facts:\n"
-            "**\u2022** **Light green background** \u2014 we sent it.\n"
-            "**\u2022** **Checkbox ticked** \u2014 they have SIGNED it. A "
-            "separate pass re-reads Blue Ink's Completed list (last 7 days) "
-            "and ticks whoever has finished since. It only ever ticks ON, so a "
-            "box someone checked by hand is never cleared.\n"
-            "**\u2022** If the column is missing the run says so in Slack and "
-            "**still sends** \u2014 paperwork beats a marking.\n\n"
-            "AFTER IT RUNS\n"
-            "Posts **Blueink Status Update** to "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**: how many went "
-            "out, and a bullet per person who still needs doing by hand, "
-            "tagging Tiff, Aimee and Alisson. The correct skips aren't listed "
-            "\u2014 they'd bury the names that need acting on."),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
-                      "?gid=1430069873#gid=1430069873"),
-        "assignees": ["Lucy 2"],
-        # Its own Monday launchd timer, so it self-reports rather than sitting
-        # in the due-today tallies \u2014 same shape as bg-check-sync.
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],   # Monday
-            "time": "7:30 AM",
-            # No weekday here: the card already sits on Monday's tile, so
-            # "Mon" was just noise. The office DOES need saying -- these tabs
-            # are Raf's, and other offices will want their own card.
-            "time_label": "Raf's Office \u00b7 7:30am CST",
-            "estimated_minutes": 60,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "\u2705 Packets sent, names tinted green, and the status summary posted to #11280.",
-            "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 someone at that machine runs `python -m automations.blueink_docs.session --login`. Nothing was sent.",
-        },
-        "actions": [
-            {
-                "label": "Preview",
-                "icon": "\U0001F441",
-                "primary": True,
-                "help": "Show who WOULD be sent to this week, and who wouldn't and why. Sends nothing.",
-                "module": "automations.blueink_docs.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Send Now",
-                "icon": "\u25B6",
-                "help": "Send this week's packets for real, then post the summary to Slack. Cannot be undone.",
-                "module": "automations.blueink_docs.run",
-                "args_fn": lambda: ["--send", "--slack"],
-            },
-            {
-                "label": "Refresh Signed",
-                "icon": "\u2705",
-                "help": "Sends nothing. Just ticks the Blue Ink checkbox for anyone whose packet has been signed since the last run.",
-                "module": "automations.blueink_docs.run",
-                "args_fn": lambda: ["--sync-completed"],
-            },
-        ],
-    },
-    {
-        "id": "bg-check-sync",
-        "name": "BG Check Sync",
-        "creator": "Raf",
-        "emoji": "🪪",
-        "color": "#F59E0B",
-        # 🎯 Recruiting (not Ops): Ops cards are routed to the OPS section, which
-        # kept this out of ⏰ TIME SET REPORTS. It syncs new-hire background
-        # checks, so Recruiting is the right home and it sorts at its 11:30am start.
-        "category": "🎯 Recruiting",
-        # Fires 2× a day (11:30am / 4pm). The tile stays amber showing "N/2"
-        # until the 4pm pass lands, then turns green. TWO passes not three: the
-        # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
-        # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
-        "daily_runs": 2,
-        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
-            "inbox) and updates **column K “BG Status”** for the week's new "
-            "starts on both `D2D OBCL` tabs. Then posts a weekly "
-            "thread in "
-            "**#11280-alphalete-marketing-inc-rafael-hidalgo**, grouping everyone into Passed / "
-            "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
-            "edited-in-place reply, so the thread never grows).\n\n"
-            "WHEN IT RUNS\n"
-            "**11:30am / 4pm CST** on the mini. Monday 11:30 starts the "
-            "new week's thread.\n\n"
-            "GOOD TO KNOW\n"
-            "**•** **Passed** only from an explicit “Score PASS” email; "
-            "forward-only (never downgrades or overwrites a hand-set status).\n"
-            "**•** A **“Passed but no matching email”** flag is usually a name "
-            "mismatch — compound surnames auto-match under `[fuzzy-match]`."
-        ),
-        # Deep-links to the D2D OBCL tab this run updates.
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
-                      "?gid=963403896#gid=963403896"),
-        "assignees": ["Lucy 1"],
-        # Own launchd timer, 2x a day — hide the DUE-TODAY + schedule pills and
-        # keep it out of the "due today / not completed" tallies (same as
-        # rc-autoread). Cadence lives in the breakdown.
-        "hide_schedule": True,
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "daily",
-            # Sortable START time; time_label shows the real cadence at a glance.
-            "time": "11:30 AM",
-            "time_label": "11:30am / 4pm CST",
-            "estimated_minutes": 1,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ BG statuses synced to both D2D OBCL tabs and the weekly Slack thread updated.",
-            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo.",
-        },
-        "actions": [
-            {
-                "label": "Run Now",
-                "icon": "▶",
-                "primary": True,
-                "help": "Re-read the BG emails, update both tabs, and refresh the Slack thread.",
-                "module": "automations.bg_check_sync.run",
-                "args_fn": lambda: ["--post", "--since-days", "30"],
-            },
-        ],
-    },
+    # New-start onboarding — ONE card for every step a new hire is put
+    # through (Megan 2026-08-25). Absorbed three cards that were already the
+    # same job on the same weekly OBCL tab: Headshot Bot, Blue Ink New Start
+    # Docs and BG Check Sync. Generated from shared/new_start_steps.py — the
+    # next step (Digi Docs + Onboarding Quizzes) is one row there.
+    _new_start_onboarding_card(),
     {
         "id": "new-start-followup",
         "name": "New-Start Follow-Up",

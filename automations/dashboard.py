@@ -1095,7 +1095,13 @@ def _read_shared_library() -> list[dict]:
                             # they'd render as two extra cards beside the merged
                             # one, which is exactly what the merge removed.
                             "enrollment_pending_check", "tracker_auto_commit",
-                            "apply_enrollments"}):
+                            "apply_enrollments",
+                            # New-start onboarding merged into ONE card,
+                            # new-start-onboarding (Megan 8/25). The Monday
+                            # headshot thread had self-registered its own
+                            # library card under this id; without this it
+                            # renders beside the merged card as a dupe.
+                            "headshots_monday"}):
             continue
         module = report.get("module")
         if not module:

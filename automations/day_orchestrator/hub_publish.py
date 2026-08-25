@@ -101,6 +101,18 @@ _HUB_CARD = {
     # vantura_churn: without this entry its card stays grey and a missed/failed run
     # looks identical to a clean one.
     "att_churn": "att-churn",
+    # New-start onboarding — three scheduler handles, ONE card (Megan
+    # 2026-08-25). BG Check Sync, Blue Ink and the Headshot Bot were three
+    # cards for the same job on the same weekly OBCL tab, so their runs now all
+    # land on new-start-onboarding. Each keeps its own report_id, which is what
+    # keeps its own Report Name on the row: the card's run feed still says
+    # WHICH step ran, so one card can't hide a single failing step.
+    # headshots_monday is the Monday thread post (weekly_thread.py), which had
+    # self-registered a library card of its own.
+    "bg_check_sync": "new-start-onboarding",
+    "blueink_docs": "new-start-onboarding",
+    "headshots": "new-start-onboarding",
+    "headshots_monday": "new-start-onboarding",
     # Onboarding — three scheduler handles, ONE card (Megan 2026-08-25). The
     # hourly pending check, the one-click apply and the auto-commit pass are
     # separate runs of the same job, so they all report onto the merged
@@ -187,7 +199,6 @@ _HUB_CARD = {
     # dd_populate (fills owners) — both publish here so the pill climbs 1/2 -> 2/2
     # green on Thursday (Megan 2026-08-02: "should these consolidate into 1 card").
     "dd_week_roll": "dd_populate",
-    "bg_check_sync": "bg-check-sync",
     # New-Start Follow-Up's Saturday roll-call + nudges (and Sunday checklist)
     # run as their own launchd jobs, not the 4am batch. Each live pass publishes
     # here so the card's pill climbs as the passes land (Sat 4/4, Sun 1/1) —
@@ -283,10 +294,6 @@ _HUB_CARD = {
     # library card self-registration made on 2026-08-24 (report_id and card id
     # differ by an underscore vs a hyphen, which is exactly the mismatch that
     # leaves a pill stuck). [[reference_phase_pill_id_match]]
-    "blueink_docs": "blueink-docs",
-    # Headshot Bot (2026-08-24): run.py publishes under "headshots"
-    # after each processed submission.
-    "headshots": "headshot-bot",
     # ONE CARD, TWO PASSES (Megan 2026-08-25). The 'Owner Chat Texts → iMessage
     # owner chats' card covers both morning passes — 7:30 trackers PDF, 7:45 WOW
     # board — but each pass runs under its OWN report_id, and neither slug-matches
@@ -448,13 +455,21 @@ def incomplete_status(report_id: str) -> str:
     return "partial"
 
 
-def _find_open_row_for_card(ws, card: str):
+def _find_open_row_for_card(ws, card: str, report_name: str = ""):
     """Row index (1-based) of the most-recent OPEN 'started' row for `card` — one a
     publish_running opened and never closed (Status col 8 == 'started', Ended At
     col 9 empty). Lets a standalone wrapper pair its start/end WITHOUT threading a
     RunID through shell: it publish_running's at the top, then its existing
     publish_done (no run_id) finds and closes that same row here. Returns None if
-    no open row (→ publish_done appends a fresh finished row, the old behaviour)."""
+    no open row (→ publish_done appends a fresh finished row, the old behaviour).
+
+    Matched on `report_name` too, because a card can now carry SEVERAL reports
+    (Megan 2026-08-25: the three new-start steps share new-start-onboarding).
+    Blue Ink's wrapper publish_running's at 7:30 Monday and stays open for the
+    best part of an hour, straddling the Headshot Bot's 8:30 Monday post and its
+    5-minute tick — on card alone, whichever finished first would close Blue
+    Ink's row and stamp it with the wrong step's status. Callers that pass no
+    name keep the old card-only behaviour."""
     try:
         vals = ws.get_all_values()
     except Exception:
@@ -463,7 +478,9 @@ def _find_open_row_for_card(ws, card: str):
     for i, row in enumerate(vals[1:], start=2):     # skip header row
         row = (row + [""] * 9)[:9]
         # cols: 0 RunID,1 Started,2 Report ID(card),3 Name,4 User,5 Machine,6 PID,7 Status,8 Ended
-        if row[2] == card and str(row[7]).lower() == "started" and not str(row[8]).strip():
+        if (row[2] == card and str(row[7]).lower() == "started"
+                and not str(row[8]).strip()
+                and (not report_name or row[3] == report_name)):
             hit = i                                 # keep the LAST match = most recent
     return hit
 
@@ -582,7 +599,7 @@ def publish_done(report_id: str, report_name: str, status: str = "success",
             cell = ws.find(str(run_id))
             row = cell.row if cell else None
         else:
-            row = _find_open_row_for_card(ws, card)   # pair a wrapper's start/end
+            row = _find_open_row_for_card(ws, card, report_name)  # pair a wrapper's start/end
         if row:
             ws.update_cell(row, 8, status)                        # Status
             ws.update([[now]], f"I{row}", value_input_option="RAW")   # Ended At
