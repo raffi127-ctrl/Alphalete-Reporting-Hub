@@ -90,10 +90,14 @@ SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / "AlphaleteSwagCards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
 _SWAG_PHONE = _SWAG_DIR / "phone.txt"   # phone written here too (file is context-safe)
-# Card auto-send via the "Alphalete Swag Card" Shortcut is WORKING (verified
-# 2026-07-13): text via AppleScript, card via the Shortcut. Needs the Shortcut
-# built + its send-messages permission granted on each sending machine.
-_AUTO_SEND_CARD = True
+# Card auto-send via the "Alphalete Swag Card" Shortcut is OFF (Megan,
+# 2026-08-25). It worked on 2026-07-13, but a bad recipient makes the Shortcut
+# park a "No recipients" compose sheet on the sending Mac's screen and block
+# there indefinitely — one sat on Megan's laptop for hours. Texts still send
+# via AppleScript; cards are still built into output/swag_welcome/ to attach by
+# hand. Flip back to True once the Shortcut is proven on macOS 26+ AND the
+# recipient gate below has been exercised on a real batch.
+_AUTO_SEND_CARD = False
 
 
 def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
@@ -114,6 +118,21 @@ def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
     return _find_shortcut(name) is not None
 
 
+def _looks_like_phone(value: str) -> bool:
+    """True only for something the Shortcut's 'Get Phone Numbers' can resolve.
+
+    Hard gate before we hand anything to the Shortcut. When the value isn't a
+    number, Send Message can't resolve a recipient, so macOS opens a compose
+    sheet reading "No recipients" and parks it on whoever's screen — the card
+    attached, waiting on a human, forever. (Megan, 2026-08-25: a stray value of
+    "discover" left one of those sheets popping up all morning.) Fail here
+    instead.
+    """
+    digits = "".join(c for c in (value or "") if c.isdigit())
+    return 7 <= len(digits) <= 15 and all(
+        c.isdigit() or c in "+-() ." for c in (value or "").strip())
+
+
 def _send_image_via_shortcut(phone: str, attachment: str,
                              name: str = SHORTCUT_NAME) -> str:
     """Phone → clipboard (text), card → the Shortcut's input file. The Shortcut
@@ -121,6 +140,11 @@ def _send_image_via_shortcut(phone: str, attachment: str,
     run` only passes input as a FILE, and reading text from it is unreliable —
     so the phone (which must be text) rides the clipboard, and the card (a file)
     rides the input. No focus-steal; sends from this Mac's iMessage."""
+    if not _looks_like_phone(phone):
+        raise IMessageError(
+            f"refusing to run the card Shortcut — {phone!r} isn't a phone number. "
+            "It would leave a 'No recipients' compose window stranded on screen."
+        )
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
@@ -141,8 +165,23 @@ def _send_image_via_shortcut(phone: str, attachment: str,
         pass
     clip = subprocess.run(["pbpaste"], capture_output=True, text=True,
                           timeout=10).stdout
-    proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
-                          capture_output=True, text=True, timeout=60)
+    # Popen + explicit kill on timeout, NOT subprocess.run(timeout=): run()
+    # raises but leaves `shortcuts` alive, orphaning a blocked compose sheet on
+    # the user's screen with no parent left to clean it up.
+    child = subprocess.Popen(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True)
+    try:
+        out, err = child.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.communicate()
+        raise IMessageError(
+            f"card Shortcut hung >60s for {phone} — killed it so no compose "
+            "window is left on screen. Check that 'Show When Run' is unchecked "
+            f"in the '{actual}' Shortcut."
+        )
+    proc = subprocess.CompletedProcess(child.args, child.returncode, out, err)
     # Diagnostic breadcrumb: what the clipboard actually held right before the
     # run, and the Shortcut's exit/stdout/stderr. Surfaced in the Hub so a
     # "sent but nothing arrived" is finally explainable instead of silent.
@@ -184,6 +223,11 @@ def send(phone: str, text: str, attachment: str | None = None,
         elif attachment and _AUTO_SEND_CARD:
             result["image_error"] = ("Shortcut 'Alphalete Swag Card' not found by "
                                      "`shortcuts list` in this process")
+        elif attachment:
+            # Say WHY out loud. A silent "no card" is how the last round of
+            # Shortcut breakage stayed invisible for weeks.
+            result["image_error"] = ("card auto-send is switched off — attach the "
+                                     "card from output/swag_welcome/ by hand")
     except Exception as e:
         result["error"] = str(e)
     return result
