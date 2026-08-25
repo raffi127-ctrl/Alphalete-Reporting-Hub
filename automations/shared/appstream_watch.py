@@ -70,15 +70,23 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8", "C0BK5PRG259"]
 
 # Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
-# One entry now: daily_focus runs every captainship in one pass (--captainship all).
-APPSTREAM_REPORTS = ["daily_focus"]
+# FALLBACK ONLY. The live list is derived per-day by _appstream_reports_to_rerun()
+# from schedule_config + today's day-state; this is what we use when either of
+# those can't be read.
+APPSTREAM_REPORTS_FALLBACK = ["daily_focus"]
 
 # The session must stay valid through the 4am batch — require it to outlast 4am
 # by this margin so the token covers the whole daily_focus run, not just its start.
 SURVIVAL_BUFFER_MIN = 90
 # A recovery during this window means a 4am failure we should re-run; a recovery
 # outside it (e.g. an evening proactive re-seed) needs no rerun.
-MORNING_WINDOW = (4, 12)   # [4am, noon)
+# Ran to noon until 2026-08-25. Since the login form went human-gated the re-seed
+# happens whenever a person gets to it, from wherever they are — Eve re-seeds from
+# Argentina, and a 10am start there is already 7am CT with no margin left. A
+# re-seed at 10am CT used to recover nothing and say nothing. Widened to 3pm: an
+# evening proactive re-seed is still outside it, the day-state filter keeps a
+# finished report from re-running, and the once-a-day guard still holds.
+MORNING_WINDOW = (4, 15)   # [4am, 3pm)
 
 # Send the proactive "re-seed tonight" ping in the EVENING only — a predictable
 # 6pm heads-up you can act on before bed beats a random-time one (Megan
@@ -259,15 +267,77 @@ def _alert(text: str, dry_run: bool) -> None:
                   f"{type(e).__name__}: {str(e)[:100]})")
 
 
-def _enqueue_rerun(report_id: str, dry_run: bool) -> None:
-    print(f"[appstream_watch] enqueue rerun {report_id}")
+def _appstream_reports_to_rerun(now: dt.datetime | None = None) -> list[tuple[str, str]]:
+    """(report_id, machine) for every AppStream-backed report today's batch did
+    NOT finish — what a morning re-seed should pick up — in run order.
+
+    This was a hardcoded ["daily_focus"], so a re-seed landing after 4am
+    recovered exactly one of the AppStream reports and left the rest to be
+    re-queued by hand, every morning, since the 2026-08-20 release human-gated
+    the login form (Eve 2026-08-25: applicant_sync_morning +
+    recruiter_retention_daily, every day). Derived now from the same two files
+    the batch itself uses, which also settles the two ways a list like this goes
+    wrong:
+
+      • It must not re-run a report that already reached DONE. Several of these
+        post to Slack, and the rqst token only lives ~2h — a wasted run can cost
+        a real one.
+      • It must not go stale the way the push-fleet machine list did, which
+        quietly covered two of three runners for three days (see
+        tableau_patchright --appstream-push-fleet). A new AppStream report is
+        covered here the day it lands on the scheduler.
+    """
+    try:
+        from automations.day_orchestrator import registry
+        from automations.day_orchestrator import state as day_state
+        day = (now or _now()).date()
+        cfg = registry.load_config()
+        pending = [r for r in registry.scheduled_today(cfg, day)
+                   if r.source_type == "appstream"]
+        if not pending:
+            return []
+        state_file = day_state.STATE_DIR / f"{day.isoformat()}.json"
+        if state_file.exists():
+            raw = json.loads(state_file.read_text(encoding="utf-8"))
+            done = {rid for rid, rs in raw.get("reports", {}).items()
+                    if rs.get("status") == day_state.DONE}
+            pending = [r for r in pending if r.report_id not in done]
+        pending.sort(key=lambda r: (r.order if r.order is not None else 10_000,
+                                    r.report_id))
+        return [(r.report_id, r.machine) for r in pending]
+    except Exception as e:
+        print(f"[appstream_watch] (couldn't derive the rerun list, falling back "
+              f"to {APPSTREAM_REPORTS_FALLBACK}: {type(e).__name__}: {str(e)[:100]})")
+        return [(rid, _registry_default_machine()) for rid in APPSTREAM_REPORTS_FALLBACK]
+
+
+def _registry_default_machine() -> str:
+    """'Lucy 1' unless the registry says otherwise — kept out of the import path
+    above so a broken registry import can still name a machine."""
+    try:
+        from automations.day_orchestrator.registry import DEFAULT_MACHINE
+        return DEFAULT_MACHINE
+    except Exception:
+        return "Lucy 1"
+
+
+def _enqueue_rerun(report_id: str, dry_run: bool,
+                   machine: str | None = None) -> None:
+    print(f"[appstream_watch] enqueue rerun {report_id}"
+          + (f" -> {machine}" if machine else ""))
     if dry_run:
         return
     try:
         from automations.day_orchestrator import mini_control
         # auto=True: a watchdog re-running a report is not a person working its
         # alert thread, so this rerun must not leave a :pending: on it.
-        mini_control.enqueue("rerun", report_id, by="appstream_watch", auto=True)
+        # machine: these reports are spread across the runners (alphalete_org_focus
+        # is Lucy 3), and the re-seed pushes the session to all of them — so each
+        # rerun has to land on the tab whose poller actually owns the report.
+        kw = {"by": "appstream_watch", "auto": True}
+        if machine and machine != _registry_default_machine():
+            kw["machine"] = machine
+        mini_control.enqueue("rerun", report_id, **kw)
     except Exception as e:
         print(f"[appstream_watch] (enqueue failed: {type(e).__name__}: {str(e)[:100]})")
 
@@ -307,7 +377,7 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
     # lists those reports with their `lucy rerun` lines, so we don't double-fire.
     sessions = [
         ("appstream",  session_status(APPSTREAM_STORAGE_STATE, "AppStream"),
-         _reseed_cmd(),    APPSTREAM_REPORTS),
+         _reseed_cmd(),    _appstream_reports_to_rerun(now)),
         ("ownerville", session_status(OWNERVILLE_STORAGE_STATE, "Ownerville"),
          _ov_reseed_cmd(), []),
     ]
@@ -359,10 +429,11 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
             if (was_ok is False and reports
                     and MORNING_WINDOW[0] <= now.hour < MORNING_WINDOW[1]
                     and state.get(f"reran_{key}") != today):
-                for rid in reports:
-                    _enqueue_rerun(rid, dry_run)
+                for rid, rmachine in reports:
+                    _enqueue_rerun(rid, dry_run, machine=rmachine)
                 _alert(f"✅ {stt['what']} session is healthy again — auto-re-running "
-                       f"{', '.join(reports)} so nothing's missing. ({stt['reason']})",
+                       f"{', '.join(rid for rid, _ in reports)} so nothing's "
+                       f"missing. ({stt['reason']})",
                        dry_run)
                 state[f"reran_{key}"] = today
             state[f"last_ok_{key}"] = True
