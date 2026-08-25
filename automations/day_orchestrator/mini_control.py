@@ -5352,7 +5352,11 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
     """READ-ONLY: list one thread's replies with their ts, author and, for image
     files, the byte size — which is how you spot a capture that posted blank.
 
-      slack_thread <channel_id> <thread_ts> [max_bytes]
+      slack_thread <channel_id> <thread_ts|last> [max_bytes]
+
+    `last` picks the most recent message in the channel that HAS replies, so a
+    mirror channel's thread can be reached without knowing its ts — the mirror
+    gets its own parent, unrelated to the one in the office channel.
 
     `max_bytes` lists ONLY file messages at or below that size — the delete
     list, without the good captures crowding the 470-char Result cell.
@@ -5377,6 +5381,13 @@ def _action_slack_thread(args: str) -> tuple[bool, str]:
         from automations.shared.slack_metrics_post import _load_token
         client = WebClient(token=_load_token(),
                            ssl=_ssl.create_default_context(cafile=certifi.where()))
+        if ts == "last":
+            hist = client.conversations_history(channel=cid, limit=60)
+            roots = [m for m in (hist.get("messages") or [])
+                     if int(m.get("reply_count", 0) or 0) > 0]
+            if not roots:
+                return False, f"no threaded message in the last 60 of {cid}"
+            ts = roots[0]["ts"]
         r = client.conversations_replies(channel=cid, ts=ts, limit=200)
     except Exception as e:  # noqa: BLE001
         return False, f"conversations.replies FAILED: {type(e).__name__} {str(e)[:140]}"
