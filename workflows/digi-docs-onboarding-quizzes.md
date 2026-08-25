@@ -175,7 +175,44 @@ itself a step at a time, so the whole thing is NOT on screen at once:
    Leave ☐ Energy D2D- Commission Grid unticked. (The note beside them reads
    "Select all Commission Grids that apply. If you are missing a Commission
    Grid, go to 'Download' to download it.")
-6. **`Get Documents for Selected Bundle`** — this is the actual submit.
+6. **`Get Documents for Selected Bundle`** — NOT the submit either. It opens
+   a long per-document form (Megan 2026-08-25).
+7. **Scroll to the bottom of that form and hit the gray `Generate Document`
+   button.** THAT is the submit.
+
+### The per-document form (step 6 → 7)
+
+One titled section per document in the bundle, each saying how many fields it
+found, e.g.:
+
+- **Drug Free Workplace Policy- General** — *(Found 1 fields)* → `Company Name:` *
+- **Drug Testing Consent Form** — *(Found 2 fields)* → `EMPLOYEE NAME:` *,
+  `Company Name:` *
+- **GPS Tracking Policy** — *(Found 1 fields)* → `Company Name:` *
+
+Above them sit `Commissionable Product 1…25` / `Amount Due for Product 1…25`
+pairs, all reading **N/A**.
+
+**Open question — are the starred fields pre-filled or do we type them?** In
+Megan's screenshot `Company Name` and `EMPLOYEE NAME` render as empty inputs
+with a red required asterisk, but the success banner afterwards says "click
+'View' to see the document with any form field values assigned to each
+document", which reads like something assigns them. It matters a lot:
+
+- If they auto-fill, step 7 is just scroll-and-click.
+- If they do NOT, the run has to fill a variable number of fields whose count
+  and labels come from the bundle, and a batch that skips them either fails
+  validation or — far worse — generates contracts with a blank employee name
+  on them.
+
+Whichever it is, the run should **verify the required fields are non-empty
+before clicking Generate Document**, and refuse that rep rather than submit a
+half-filled contract. This is the same instinct as asserting the bundle
+dropdown holds one option: the failure to design out is a legally-meaningful
+document going to someone with the wrong or missing details.
+
+Note the form is LONG (25 product pairs plus a section per document), so the
+button needs a scroll-into-view, not a blind click at a fixed position.
 
 **The form reveals itself one control at a time.** Employee + bundle type →
 `Generate Bundle` reveals the bundle dropdown → choosing the bundle reveals the
