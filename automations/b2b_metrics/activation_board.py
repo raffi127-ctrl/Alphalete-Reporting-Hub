@@ -353,6 +353,60 @@ def render_html(board: Board, title_date: str = "") -> str:
 </body></html>"""
 
 
+# A correctly rendered board is ~50% non-white (the navy header band alone is a
+# big block of ink). 0.5% is a floor for "the screenshot came back empty", not a
+# quality bar — it must never argue with a real board that happens to be short.
+_BLANK_MIN_INK = 0.005
+
+
+def _looks_blank(path: Path) -> str:
+    """Why this image reads as empty, or "" if it carries content.
+
+    Added 2026-08-25: `render_png` handed back whatever the screenshot produced
+    without ever looking at it, so a blank capture posted to Slack exactly like
+    a good one — the section was reported "posted", the log said "recreated, all
+    rows", and the only thing that noticed was a person opening the thread.
+    Pillow is already a dependency of this package (capture.py), but a missing
+    one returns "" — no opinion beats a false alarm on a working board."""
+    try:
+        from PIL import Image
+    except Exception:  # noqa: BLE001 — no Pillow, no verdict
+        return ""
+    def _ink(img) -> float:
+        # reduce() is a box filter: it averages rather than samples, so thin ink
+        # survives the shrink instead of falling between sample points.
+        small = img.reduce(max(1, min(img.width, img.height) // 200))
+        raw = small.tobytes()          # getdata() is deprecated in Pillow 14
+        n = len(raw) // 3
+        if not n:
+            return 0.0
+        inked = sum(1 for i in range(0, n * 3, 3)
+                    if raw[i:i + 3] != b"\xff\xff\xff")
+        return inked / n
+
+    try:
+        with Image.open(path) as im:
+            rgb = im.convert("RGB")
+            if not rgb.width or not rgb.height:
+                return "no pixels"
+            overall = _ink(rgb)
+            # The BOTTOM half specifically. The navy title band renders even
+            # when the table behind it does not, and a box filter smears a thin
+            # band into enough grey to clear a whole-image floor. Height tracks
+            # content here (1 rep -> 842px, 35 -> 3834), so the table always
+            # occupies the lower half: measured 42-55% ink at 1, 3 and 35 reps,
+            # against 0% for a header-band-only image.
+            bottom = _ink(rgb.crop((0, rgb.height // 2, rgb.width, rgb.height)))
+    except Exception as e:  # noqa: BLE001 — an unreadable file IS worth naming
+        return f"unreadable ({type(e).__name__})"
+    if overall < _BLANK_MIN_INK:
+        return f"only {overall:.2%} of pixels carry ink"
+    if bottom < _BLANK_MIN_INK:
+        return (f"the table area is empty ({bottom:.2%} ink below the fold) — "
+                "the header rendered but the board did not")
+    return ""
+
+
 def render_png(board: Board, out_path: Path, title_date: str = "") -> Path:
     """HTML -> PNG via headless Chromium (patchright). Screenshots the .board
     element at 2x for crispness. Renders every rep (no scroll clip)."""
@@ -382,6 +436,15 @@ def render_png(board: Board, out_path: Path, title_date: str = "") -> Path:
             el.screenshot(path=str(out_path))
         finally:
             browser.close()
+    # Look at what we just produced. Raising here is deliberate: the caller
+    # (capture.activation_board_image) catches it, logs the reason loudly and
+    # falls back to Tableau's Download→Image — a clipped-but-real board beats a
+    # white rectangle, and either way the run stops being silent about it.
+    blank = _looks_blank(out_path)
+    if blank:
+        raise RuntimeError(
+            f"activation board rendered blank ({blank}) — {len(board.reps)} rep "
+            "row(s) went in, so this is the screenshot, not the data")
     return out_path
 
 
