@@ -23,21 +23,26 @@ COL_DIGI_DOCS = "Digi Docs"
 # once the chart's date has passed, means nobody ever saw them.
 COL_LOCATION = "Location"
 
-# --- Day-1 no-show rule: ON ----------------------------------------------
+# --- Day-1 no-show: DETECTED, NOT A SEND GATE ----------------------------
 # Megan 2026-08-25: "if they haven't been marked as showed up or a location
-# entered by the date on the chart that means they no showed to day 1."
+# entered by the date on the chart that means they no showed to day 1" -- and
+# then, decisively: "these will send to everyone on the OBCL that's scheduled to
+# start. But they may not show."
 #
-# Coded in roster._showed_up. I briefly disabled this on the grounds that it
-# flagged 38 of 71 -- Angelica Pedroza among them, the rep in Megan's Loom --
-# and that the send list collapsing to 1 of 71 had to be a bug. Megan: Angelica
-# WAS a no-show. The Loom was demonstrating the click-path on a rep, not
-# evidence that rep started, and I read a demo as data.
+# Those are not in tension once the SEND TIME is in the picture. We send Monday
+# 7:45am. Nobody has shown up at 7:45am on Monday; the location and status cells
+# fill in as the week runs. So a showed-up gate at send time sends to almost
+# nobody -- it gave 1 of 71 on the 8.24 tab, which I briefly read as a healthy
+# steady state rather than as the gate being wrong.
 #
-# The number is not a red flag, it is the business: most of a D2D day-1 lineup
-# does not turn up. And the remaining 1 is exactly what a healthy steady state
-# looks like -- the people who showed up have already been processed and carry a
-# ticked box, so what is left to send is whoever showed up since.
-NO_SHOW_RULE_ENABLED = True
+# The rule describes how to READ a tab after the fact, not who to send to. We
+# send to everyone scheduled to start, knowing some will not turn up. Sending a
+# no-show their onboarding documents costs nothing; withholding them from
+# somebody who does start costs them their first day.
+#
+# So the detection stays and is reported -- useful for a mid-week re-run and for
+# saying who we sent to that never came -- and it filters nothing.
+DETECT_NO_SHOWS = True
 COL_QUIZZES = "Onboarding Quizzes"   # reference only -- never written
 
 # Our own log tab, created on first send. We never write into OBCL columns

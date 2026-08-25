@@ -113,7 +113,19 @@ class TheDayOneNoShowRule(unittest.TestCase):
         c = self._cands(dt.date(2026, 8, 25))
         by = {x.name: x for x in c}
         self.assertTrue(by["Angelica Pedroza"].no_show)
-        self.assertIn("No-showed", by["Angelica Pedroza"].skip_reason)
+
+    def test_a_no_show_is_still_sent_to(self):
+        """The flag REPORTS, it does not gate. We send Monday 7:45am, before
+        anyone has shown up -- gating on it would send to almost nobody, and
+        withholding documents from someone who does start costs them their first
+        day (Megan 2026-08-25: "these will send to everyone on the OBCL that's
+        scheduled to start. But they may not show.")."""
+        c = self._cands(dt.date(2026, 8, 25))
+        by = {x.name: x for x in c}
+        self.assertTrue(by["Angelica Pedroza"].no_show)
+        self.assertTrue(by["Angelica Pedroza"].eligible)
+        self.assertIn("Angelica Pedroza",
+                      [x.name for x in roster.to_send(c)])
 
     def test_either_signal_alone_is_enough_to_count_as_showed_up(self):
         c = self._cands(dt.date(2026, 8, 25))

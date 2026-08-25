@@ -26,7 +26,9 @@ class Candidate:
     digi_col: int = 0               # 1-indexed "Digi Docs" column, 0 if absent
     digi_val: str = ""              # what the cell holds now
     location: str = ""              # the chart's "Location" cell
-    no_show: bool = False           # never turned up to day 1 (see below)
+    # INFORMATIONAL ONLY -- never gates a send. True once the chart's date has
+    # passed with no status and no location against their name.
+    no_show: bool = False
 
     @property
     def name(self) -> str:
@@ -38,13 +40,15 @@ class Candidate:
 
     @property
     def skip_reason(self) -> str:
-        if self.no_show:
-            return "No-showed day 1 (no status, no location)"
         return self.person.skip_reason
 
     @property
-    def eligible(self) -> bool:      # noqa: F811 - overrides the plain property
-        return self.person.eligible and not self.no_show
+    def eligible(self) -> bool:
+        # `no_show` deliberately does NOT appear here. We send to everyone
+        # scheduled to start (Megan 2026-08-25); at the Monday 7:45 send time
+        # nobody has shown up yet, so gating on it would send to almost nobody.
+        # It is reported, not enforced.
+        return self.person.eligible
 
 
 def _header_above(values: List[List[str]], row_1indexed: int) -> Optional[List[str]]:
@@ -65,7 +69,8 @@ def _showed_up(final_status: str, location: str) -> bool:
     Megan 2026-08-25: "if they haven't been marked as showed up or a location
     entered by the date on the chart that means they no showed to day 1."
 
-    Either signal counts. Final Status carries the progress values ("Showed Up
+    Reported, never enforced -- see config.DETECT_NO_SHOWS. Either signal
+    counts. Final Status carries the progress values ("Showed Up
     To CR", "Activations Email sent", "Owner submitted"), and Location gets
     filled in when they are placed — so a blank in BOTH, once that chart's date
     has passed, is the sheet saying nobody ever saw them.
@@ -92,7 +97,7 @@ def candidates(values: List[List[str]], tab_name: str,
     # day has not happened yet, and calling those people no-shows would skip the
     # entire week. The rule only bites once day 1 is behind us.
     chart_date = _bir._tab_date(tab_name)
-    day_one_passed = bool(config.NO_SHOW_RULE_ENABLED
+    day_one_passed = bool(config.DETECT_NO_SHOWS
                           and chart_date and today > chart_date)
 
     out: List[Candidate] = []
