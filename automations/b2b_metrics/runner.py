@@ -196,7 +196,34 @@ def _alert_after_for(per_office: list, now: dt.datetime = None) -> str:
     return floor.isoformat(timespec="seconds") if now < floor else None
 
 
-def _write_manifest(per_office: list) -> None:
+_CRASH_TAG = " (office run failed)"
+
+
+def _entry_base(entry: str) -> str:
+    """The '<office>: <section>' identity of a manifest entry, with the
+    office-run-crash marker stripped — so the same section is recognised
+    whichever way it was recorded last time."""
+    return entry[:-len(_CRASH_TAG)] if entry.endswith(_CRASH_TAG) else entry
+
+
+def _todays_manifest():
+    """Today's b2b_metrics manifest, or None if there isn't one from today.
+
+    Yesterday's must never be merged into: it would resurrect yesterday's
+    missing sections into today's verdict."""
+    try:
+        from automations.shared import run_manifest
+        m = run_manifest.read_manifest("b2b_metrics")
+    except Exception:  # noqa: BLE001
+        return None
+    if not m:
+        return None
+    if (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
+        return None
+    return m
+
+
+def _write_manifest(per_office: list, *, scoped: bool = False) -> None:
     """Persist section-level completeness so the orchestrator's reconciler can
     turn a silent partial post into an INCOMPLETE alert (the AT&T Order Log went
     missing 2026-07-26 and nothing paged Megan). Additive: the runner already
@@ -213,6 +240,23 @@ def _write_manifest(per_office: list) -> None:
       retry_args -> ["--all", "--post"]  (a re-post skips items already in the
                     thread state, so it backfills ONLY the missing sections)
 
+    A FULL run speaks for every section, so it just states the result. A SCOPED
+    (--only) run speaks for the sections it ran and nothing else, so it MERGES:
+    sections it didn't touch keep whatever the full run said about them, and the
+    ones it did are replaced by what just happened.
+
+    WHY MERGE, and not skip (Megan 2026-08-25): a --only run used to write no
+    manifest at all — `publishable` gated this call, and it is false for any
+    --only run. Skipping stopped a one-section run from clobbering the full run's
+    result, and it did, but it also meant the re-run that FIXED the section never
+    cleared it. The manifest kept naming `carlos: order_tiered_bonus` as missing,
+    so the report kept verifying INCOMPLETE and kept asking for the same repair,
+    and Carlos's 8/25 thread collected a duplicate Activation Rate and TWO extra
+    Customer Churns before anyone could tell the alert was describing a problem
+    that no longer existed. Same defect, same morning, as the one 31db227 fixed
+    for daily_metrics. A scoped repair has to be able to close the day out.
+    [[feedback_recheck_state_before_delivering]]
+
     Best-effort: a manifest write must NEVER fail the report. `ok` is true only
     when nothing missed across every office; a partial run records failed[] which
     the manifest verifier renders as INCOMPLETE with the named sections."""
@@ -228,6 +272,20 @@ def _write_manifest(per_office: list) -> None:
                 tag = "{}: {} (office run failed)".format(key, sid) if po.get("failed") \
                     else "{}: {}".format(key, sid)
                 failed.append(tag)
+        if scoped:
+            prior = _todays_manifest()
+            if prior is None:
+                # Nothing from today to merge into — the full run never reached
+                # its summary. A one-section run can't vouch for the others, so
+                # leave the state alone rather than invent one.
+                print("  (scoped run: no b2b_metrics manifest from today, "
+                      "leaving it untouched)")
+                return
+            ran = {_entry_base(e) for e in succeeded + failed}
+            succeeded = [e for e in (prior.get("succeeded") or [])
+                         if _entry_base(e) not in ran] + succeeded
+            failed = [e for e in (prior.get("failed") or [])
+                      if _entry_base(e) not in ran] + failed
         n = len(failed)
         note = "" if not n else "{} section(s) missing from the thread".format(n)
         after = _alert_after_for(per_office)
@@ -678,6 +736,17 @@ def main(argv=None) -> int:
     # for the batch (the ONE 'b2b-metrics' card covers every office).
     publishable = args.post and not args.channel and not args.only
 
+    # The MANIFEST is a wider gate than the Hub card on purpose (Megan
+    # 2026-08-25). A --only run must not flip the whole card off one item — that
+    # is what `publishable` protects — but it DOES know the truth about the
+    # section it just re-posted, and that truth is the only thing that can clear
+    # the section from today's manifest. Gating both on `publishable` meant the
+    # repair could never close the day: see _write_manifest's WHY MERGE note.
+    # Still excludes --dry-run and a --channel verification post, neither of
+    # which speaks for the office's real thread.
+    records_manifest = args.post and not args.channel
+    scoped = bool(args.only)
+
     # Open a live 'running' pill so the card PULSES while the offices post — gated
     # on the SAME `publishable` as the _publish_hub close below, so a --channel /
     # --only / dry run never opens a row that then never closes (Megan 2026-07-29).
@@ -711,20 +780,26 @@ def main(argv=None) -> int:
             # The whole office run raised BEFORE (or mid) posting — treat every
             # section it was supposed to post as missing, so the manifest names
             # them rather than recording an empty (falsely-clean) office.
+            # A SCOPED run only ever attempted its one section, so that is all it
+            # may report missing: claiming the full set here would merge over
+            # sections this run never touched and re-open a day that was clean.
+            crashed_ids = [args.only] if args.only else expected_ids(o)
             per_office.append({"key": key, "present": [],
-                               "missed": expected_ids(o), "deferred": [],
+                               "missed": crashed_ids, "deferred": [],
                                "failed": True})
             if not args.all_offices:      # single-office: fail loud as before
+                if records_manifest:
+                    _write_manifest(per_office, scoped=scoped)
                 if publishable:
-                    _write_manifest(per_office)
                     _publish_hub("failed")
                 raise
             traceback.print_exc()         # --all: one office must not kill the rest
 
-    if publishable:
+    if records_manifest:
         # Record section-level completeness for the orchestrator's reconciler
         # (drives the INCOMPLETE / missing-section alert once verify is wired).
-        _write_manifest(per_office)
+        _write_manifest(per_office, scoped=scoped)
+    if publishable:
         # Green only if EVERY office fully posted; orange if some did; red if none.
         if all(s == "success" for s in statuses):
             status = "success"
