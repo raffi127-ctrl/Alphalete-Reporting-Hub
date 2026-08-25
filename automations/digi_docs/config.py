@@ -19,7 +19,7 @@ from automations.blueink_docs.config import (      # noqa: F401
 
 # --- Columns on the OBCL tabs ----------------------------------------------
 COL_DIGI_DOCS = "Digi Docs"
-COL_QUIZZES = "Onboarding Quizzes"
+COL_QUIZZES = "Onboarding Quizzes"   # reference only -- never written
 
 # Our own log tab, created on first send. We never write into OBCL columns
 # other than the two above.
@@ -81,8 +81,16 @@ SERVICE_RADIO = "RES-ATT"          # the other option is RES-ATT-OOF
 DOCS_ROW = "ONBOARDING DOCUMENTS"
 DOCS_NEEDED_STATE = "REQUIRED ACTION"
 
-# The six training rows the REP completes; we only ever read them.
-QUIZ_ROWS = (
+# --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
+# No completion sweep, unlike Blue Ink's signed-packet check. The six rows below
+# are the REP's own coursework and stay PENDING long after our run finishes, so
+# ticking that column would mean polling for work we do not do and cannot make
+# happen. Megan's call: leave it to a person.
+#
+# Kept here as reference only -- nothing reads them today. They are what the
+# Set Status modal shows, and the day someone does want that sweep, this is the
+# list rather than a fresh screenshot-reading exercise.
+QUIZ_ROWS_REFERENCE_ONLY = (
     "FTC DIRECTV COMPLIANCE TRAINING",
     "AT&T PROTECTIVE ADVANTAGE COURSE",
     "AT&T BROADBAND FACTS",
@@ -90,10 +98,8 @@ QUIZ_ROWS = (
     "AT&T COMPLIANCE - 2023",
     "2024 CONSENT DECREE MANUAL CPNI/SPI",
 )
-# OPEN (workflows/digi-docs-onboarding-quizzes.md): do all six have to be done
-# to tick "Onboarding Quizzes", or just the FTC course? Until Megan answers,
-# the sweep REPORTS per-row state and ticks nothing.
-QUIZ_TICK_REQUIRES_ALL = None
+# The "do all six count, or just FTC?" question is retired with the sweep --
+# nothing ticks that column, so it never needed answering.
 
 # Where the by-hand leftovers get posted, same room as its two siblings.
 SLACK_CHANNEL = "#11280-alphalete-marketing-inc-rafael-hidalgo"

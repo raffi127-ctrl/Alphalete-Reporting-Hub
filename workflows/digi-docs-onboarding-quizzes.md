@@ -178,9 +178,19 @@ AT&T BROADBAND FACTS · AT&T PROTECTING CPNI · AT&T COMPLIANCE – 2023 ·
 SERVICE · SUPPLEMENT · OWNER SUBMIT · BADGE · SARA PLUS`
 
 The six training rows stay `PENDING` through all of the above — **the rep
-completes those themselves.** So the Onboarding Quizzes tick is a read-only
-poll of work we do not perform, which is why it belongs on a recurring pass
-(like Blue Ink's signed-sweep) rather than in the send batch.
+completes those themselves.**
+
+**And that is where this report stops (Megan 2026-08-25): no completion sweep.**
+Blue Ink polls for signed packets because a signature is a thing we asked for
+and are waiting on. These six are the rep's own coursework; watching them would
+mean polling for work we neither perform nor can hurry along, to write a tick
+whose only reader is a person already looking at the same sheet. `Onboarding
+Quizzes` stays a human column, and the "do all six count or just FTC?" question
+retires unanswered with the sweep that would have needed it.
+
+So the report is **send-only**: add the reps, generate the bundles, tint the
+`Digi Docs` cell, post the leftovers. Everything else on that tab belongs to
+somebody.
 
 ## Where the truth lives
 
