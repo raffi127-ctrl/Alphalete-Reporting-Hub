@@ -327,10 +327,16 @@ class TheRoster(unittest.TestCase):
 
     def test_blocks_are_explained_not_silent(self):
         # An office left out has to say why, in the run log, every night.
+        # This used to also assert isaiah WAS blocked. He was unblocked
+        # 2026-08-25 (the gaps-only render bug it rested on had been fixed), and
+        # pinning a specific key here is what would make the NEXT stale block
+        # look like passing behaviour. Assert the invariant, not the roster.
         for key in roster.BLOCKED:
             self.assertTrue(roster.BLOCKED[key].strip(),
                             f"{key} is blocked with no reason given")
-        self.assertTrue(any("isaiah" in l for l in roster.blocked_lines()))
+        self.assertEqual(len(roster.blocked_lines()),
+                         len([k for k in roster.BLOCKED if k in roster.OFFICES]),
+                         "every real blocked office must reach the run log")
 
     def test_blocked_offices_are_in_no_slot(self):
         for slot_key in ("first", "money", "eod"):

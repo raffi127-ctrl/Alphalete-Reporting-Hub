@@ -45,13 +45,17 @@ INTRADAY_KEYS = ("cody",)
 # key -> why this office is held back from EVERY slot, including the 9 PM one.
 # A real blocker, not a preference. Printed in the run log so a stale entry
 # can't quietly outlive the thing that caused it.
-BLOCKED = {
-    # Wireless-only: ownerville has no Disposition page for him, so the pull
-    # comes back gaps-only and the board renders as "no rows" (open bug,
-    # 785ad46). Posting that would be a blank board wearing a real title — the
-    # one thing the standing rule forbids. See [[project_isaiah_legacy_wireless]].
-    "isaiah": "wireless-only: gaps-only rows still render as no-rows (785ad46)",
-}
+# isaiah was here until 2026-08-25, held back as "gaps-only rows still render as
+# no-rows (785ad46)". That stopped being true: render_knocks_boards dispatches on
+# knocks_shape(), and a gaps-only office routes to render_telemapper_knocks —
+# which carries Gaps + Total Gaps itself, so needs_time_gaps() is False and he
+# gets ONE merged image like everyone else (Megan 2026-08-25: "Isaiah should post
+# just like the others just with more limited data"). Verified against his real
+# 2026-08-21 rows (probe_knocks): shape gaps_only, one 20KB board, not "no rows".
+# His knock counts / Talk-To / Sale columns stay blank — ownerville has no
+# Disposition page for a wireless office — but First/Last Knock, Gaps and Total
+# Gaps are all real. [[project_isaiah_legacy_wireless]]
+BLOCKED: dict = {}
 
 
 def enrolled(slot_key: str) -> List[Office]:

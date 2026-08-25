@@ -127,3 +127,39 @@ class Schedule(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RosterIsaiah(unittest.TestCase):
+    """2026-08-25: isaiah sat in roster.BLOCKED as "gaps-only rows still render
+    as no-rows (785ad46)". The render path had since learned the shape, so the
+    entry outlived its cause and quietly cost him every board (Megan: "Isaiah
+    should post just like the others just with more limited data")."""
+
+    def test_isaiah_is_enrolled_in_the_eod_slot(self):
+        from automations.knocks_intraday import roster
+        self.assertIn("isaiah", {o.key for o in roster.enrolled("eod")})
+
+    def test_nothing_is_blocked_without_a_reason_string(self):
+        """A BLOCKED entry must carry WHY. An empty dict is fine; a key with a
+        blank reason is the stale-entry failure mode all over again."""
+        from automations.knocks_intraday import roster
+        for key, why in roster.BLOCKED.items():
+            self.assertTrue(str(why).strip(), "%s is blocked with no reason" % key)
+
+    def test_a_gaps_only_office_renders_one_real_board(self):
+        """The claim the old block rested on, pinned: gaps-only rows must route
+        to the TeleMapper board and produce ONE image, not a 'no rows' render."""
+        import datetime as _dt, tempfile
+        from pathlib import Path
+        from automations.total_knocks import render as R
+        rows = [{"ID": "9402597", "Rep": "Lorena Valverde",
+                 "First Knock": "2:57 PM", "Last Knock": "6:20 PM",
+                 "Breaks (min)": "", "Gaps": "3", "Total Gaps (min)": "113",
+                 "Sales Time (min)": "", "Sales": ""}]
+        self.assertEqual(R.knocks_shape(rows), R.SHAPE_GAPS_ONLY)
+        pngs, shape = R.render_knocks_boards(
+            _dt.date(2026, 8, 21), rows=rows, out_dir=Path(tempfile.mkdtemp()),
+            title_suffix="isaiah", date_text="8/21")
+        self.assertEqual(shape, R.SHAPE_GAPS_ONLY)
+        self.assertEqual(len(pngs), 1)          # merged, not a pair
+        self.assertGreater(pngs[0].stat().st_size, 5000)
