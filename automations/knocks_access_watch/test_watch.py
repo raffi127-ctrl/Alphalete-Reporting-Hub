@@ -55,7 +55,14 @@ class Classify(unittest.TestCase):
         would miss it, so the watch must not announce it as access."""
         got = self._one("Andre Burton", aliases={})
         self.assertEqual(got["status"], A.MISSING)
-        self.assertIn("Andre Burton Jr (#22041)", got["near"])
+        self.assertIn("Andre Burton Jr (#22041, granted)", got["near"])
+
+    def test_a_near_miss_says_whether_that_office_is_granted(self):
+        """An alias only helps if the office behind the near-miss is actually
+        granted — otherwise you paper a permission over with a spelling."""
+        got = self._one("Wayne Turnage", aliases={})
+        self.assertEqual(got["status"], A.MISSING)
+        self.assertIn("Jay Turnage (#21959, Request Access)", got["near"])
 
     def test_still_a_request_is_pending(self):
         self.assertEqual(self._one("Jay Turnage")["status"], A.PENDING)

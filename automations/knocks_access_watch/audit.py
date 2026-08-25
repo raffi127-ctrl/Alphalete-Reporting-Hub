@@ -185,7 +185,15 @@ def classify(rosters_map, office_rows, aliases=None) -> dict:
                 # 19910 vs 21570 — the second was granted, the first errored,
                 # 2026-08-25). Without the number the hint cannot tell you
                 # WHICH office you actually got.
-                near = [f"{r[2]} (#{r[0]})" for r in office_rows
+                # The ACTION column rides along too: a near-miss is only worth
+                # an alias row if that office is actually granted. Otherwise
+                # you would add the alias, the build would find the office, and
+                # the impersonation would still fail — an alias papering over a
+                # permission, which is the exact confusion of 2026-08-24.
+                near = [f"{r[2]} (#{r[0]}"
+                        + (f", {r[-1].strip()}" if (r[-1] or "").strip()
+                           else ", granted") + ")"
+                        for r in office_rows
                         if len(surname) > 2 and surname in (r[2] or "").lower()]
                 owners.append({"display": display, "canonical": canonical,
                                "status": MISSING, "near": near[:4]})

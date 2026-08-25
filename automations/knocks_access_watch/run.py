@@ -76,11 +76,18 @@ def load_state() -> dict:
         return {}
 
 
-def save_state(report: dict, when: dt.datetime) -> None:
+def save_state(report: dict, when: dt.datetime, offices=None) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     payload = {"checked_at": when.isoformat(timespec="seconds"),
                "statuses": A.statuses(report),
                "counts": {k: list(v) for k, v in A.counts(report).items()},
+               # The RAW Office Access rows, so --find can answer "is this
+               # office listed, and under what name / with what action?"
+               # without opening a session. That question comes up every time
+               # a near-miss hint fires, and taking the ownerville session to
+               # re-read a table we already read is the one cost worth
+               # avoiding here.
+               "offices": offices or [],
                "report": report}
     STATE_PATH.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     # A dated copy too: the snapshots are how we'll answer "when did Wayne's
@@ -199,7 +206,33 @@ def main(argv=None) -> int:
                          "run on a laptop only — never on the mini.")
     ap.add_argument("--show", action="store_true",
                     help="Print the last snapshot and exit. Opens nothing.")
+    ap.add_argument("--find", metavar="TEXT",
+                    help="Search the LAST SNAPSHOT's Office Access rows for "
+                         "TEXT (owner, company or office number) and print the "
+                         "whole row, action column included. Opens nothing.")
     args = ap.parse_args(argv)
+
+    if args.find:
+        # Answers "is this office on the list at all, and under what name?" —
+        # the question a near-miss hint raises and the summary can't settle.
+        # Whole row on purpose: the action column is what separates a GRANTED
+        # office from one whose request is still sitting there (Wayne Rude's
+        # two offices, 2026-08-25).
+        state = load_state()
+        rows = state.get("offices")
+        if not rows:
+            # Older snapshots kept only the classified report. Say so instead
+            # of printing nothing and looking like "no match".
+            print("this snapshot has no raw Office Access rows — run the watch "
+                  "once more, then --find again")
+            return 0
+        needle = args.find.lower().strip()
+        hits = [r for r in rows if any(needle in (c or "").lower() for c in r)]
+        print(f"{len(hits)} row(s) matching {args.find!r} "
+              f"(snapshot {state.get('checked_at')}):")
+        for r in hits:
+            print("  " + " | ".join((c or "").strip() for c in r))
+        return 0
 
     if args.show:
         state = load_state()
@@ -266,7 +299,7 @@ def main(argv=None) -> int:
     if not prev:
         print("\n  (first run — recorded as the baseline, nothing announced)")
 
-    save_state(report, now)
+    save_state(report, now, data["offices"])
 
     if args.post and prev:
         text = change_text(d, report)
