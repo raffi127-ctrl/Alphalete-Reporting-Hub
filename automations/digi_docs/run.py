@@ -155,12 +155,12 @@ def _phases(args) -> int:
           f"refused {len(refused)}")
     for r in refused:
         print(f"  ⛔ {r}")
-    # Attestations are logged per rep on purpose: the drug-test box asserts a
-    # completed review, and an assertion nobody can audit later is worse than
-    # one nobody made.
+    # The audit trail the Slack post points at. Per rep, by name, with what was
+    # ticked: the drug-test box asserts a completed review to AT&T, so who we
+    # said it about has to be recoverable even though Slack only shows a count.
     for name, matched, ticked in done:
         as_ = f" (as {matched})" if matched and matched != name else ""
-        print(f"  ✓ {name}{as_}: attested {len(ticked)}")
+        print(f"  ✓ {name}{as_}: ticked {', '.join(ticked)}")
     return 0 if not refused else 1
 
 
