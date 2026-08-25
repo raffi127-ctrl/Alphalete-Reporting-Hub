@@ -403,6 +403,26 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
         highlight_last_row=len(bgs), total_row_bgs=bgs)
 
 
+def compare_totals_for(display: str, chan_rows) -> list:
+    """The `extra_totals` a per-owner daily board carries — the teal CHAN PARK
+    TOTAL line above the office's own (Raf 2026-08-23, "add Chan's totals above
+    ours daily"; Eve 2026-08-25 asked for it on EVERY owner's board in the
+    Captainship Reports, the way the metrics-thread and /knocks boards already
+    have it).
+
+    Empty for Chan's OWN board: a comparison line identical to the TOTAL right
+    under it is noise, and worse, it reads like the office was counted twice.
+    Empty when the comparison pull failed too — the board goes out without the
+    line rather than with a wrong one."""
+    from automations.focus_office_att.aliases import _norm_name
+    from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
+    if not chan_rows:
+        return []
+    if _norm_name(display) == _norm_name(_CHAN["name"]):
+        return []
+    return [(_CHAN["name"], chan_rows)]
+
+
 def _chan_daily_rows(page, captured_daily: list, aliases_raw,
                      target: dt.date, *, logfn=print) -> Optional[list]:
     """Chan Park's yesterday rows for the summary's teal comparison row —
@@ -720,6 +740,15 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     weekly_root = Path(render_dir) / f"knock_dispo_{captain.key}"
     try:
         with ownerville_session(verbose=True, profile_dir=PROFILE_DIR) as page:
+            # Chan's rows FIRST, because every owner's board carries them as
+            # its comparison line — they have to exist before the first board
+            # is drawn, not after the loop like when only the summary used
+            # them. Costs nothing extra across a build: _CHAN_DAILY_CACHE is
+            # per-process, so the first captain pays the one pull and the
+            # other five read it.
+            if want_daily:
+                chan_rows = _chan_daily_rows(page, [], aliases_raw, target,
+                                             logfn=logfn)
             for display, cfg in pairs:
                 if want_daily:
                     try:
@@ -765,13 +794,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                 # is how someone reads a day's number as the
                                 # week's.
                                 title_prefix="DAILY ",
-                                # Talk To's per Rep only carries a number on
-                                # the TOTAL row (a rep row is one rep), so on
-                                # this board it is a blank stripe. The same
-                                # figure per ICD is on the DAILY KNOCKS
-                                # SUMMARY right above (Eve 2026-08-25).
-                                hide_columns=(
-                                    knocks_render.COL_TALK_TO_PER_REP,))
+                                extra_totals=compare_totals_for(display,
+                                                                chan_rows))
                             out_daily.append((display, png))
                             captured_daily.append((display, cfg, rows))
                             _write_rows(png, rows)
@@ -882,12 +906,6 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         else:
                             out_weekly.append((display, None))
                     done_weekly.add(display)
-            # Chan's comparison rows for the daily summary — while the
-            # session is still open, so a captainship that doesn't roster
-            # him can pull him data-only (once per build, see the cache).
-            if want_daily and captured_daily:
-                chan_rows = _chan_daily_rows(page, captured_daily,
-                                             aliases_raw, target, logfn=logfn)
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         logfn(f"  ⚠ ownerville session failed: {type(e).__name__}: "
               f"{str(e)[:200]}")
