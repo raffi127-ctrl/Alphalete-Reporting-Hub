@@ -183,7 +183,30 @@ if [ "$(date +%u)" = "1" ]; then
   # with the re-run command — which is the visibility the Monday detour never
   # had (it wrote no orchestrator row at all).
 else
+  # --no-manifest (Eve 2026-08-25): TUE-SUN this run must NOT give the day's
+  # verdict. It is a 4-of-8-section top-up, but it is the SAME run.py, so it was
+  # writing the 'org-sales-board' manifest right over the morning fill's. What
+  # that looked like: the 04:50 board ran perfectly and the Hub card was green
+  # all morning; at 14:35 the catch-up hit a flaky Retail JE pull and the card
+  # went ORANGE with a drop-org-sales-board alert — reading as "the board
+  # failed", which it had not. Worse, whoever chased it opened
+  # orch-<date>-org_sales_board.log, found it CLEAN, and lost the afternoon: the
+  # failing run logs to output/logs/board-catchup-<date>-<HHMMSS>.log instead.
+  # A success was just as wrong the other way — mark_clean() "clears any prior
+  # failure manifest", so a genuinely INCOMPLETE morning board would go green
+  # here and lose its "Retry failed only" button.
+  #
+  # NOTHING IS LOST BY GOING QUIET, Tue-Sun. This branch's own words: a bad
+  # catch-up "costs one day and the next morning's fill re-pulls it anyway". The
+  # exit code still reaches $ST, still lands in the log, and still fires the
+  # desktop notification below.
+  #
+  # MONDAY DELIBERATELY KEEPS ITS MANIFEST — see that branch above: it is a FULL
+  # fill with captainships, it IS the day's board run, and it is the last pass
+  # before Tuesday's rollover freezes the closed week. It also has its own
+  # catchup_alert(), which never depended on the manifest.
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
+    --no-manifest \
     --sections "Retail NL,Retail Internet,Retail JE,BOX" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
 fi
