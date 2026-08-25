@@ -4166,6 +4166,27 @@
    },
    "timeout_minutes": 15
   },
+  "install_knocks_9pm_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_9pm_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-9pm on LUCY 3 from the committed plist: 21:00 Central, every enrolled D2D-metrics office's CURRENT-day knock board posted to that office's own channel. install_agent rewrites the committed laptop path to this machine's repo, so the plist's ~/1st Claude Folder paths become ~/recruiting-report automatically \u2014 do NOT copy the plist by hand. Installed 2026-08-25 at Megan's request; the authoring session had deliberately left it uninstalled, and its office-LOCAL scheduling refactor (knocks_intraday/schedule.py) was still uncommitted at that point \u2014 if that lands, this single 21:00 Central fire is what it replaces. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
+   "display_name": "Install: Knocks 9 PM LaunchAgent (Lucy 3)",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "knocks-9pm"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_tracker_mirror_agent": {
    "on_scheduler": true,
    "_note": "NOT a report — installs the tracker-mirror LaunchAgent on THIS machine, run via `lucy rerun install_tracker_mirror_agent` (same pattern as install_brand_audit_agent). Bootstraps com.alphalete.tracker-mirror from the committed plist (every-2h 7:30–17:30 schedule). Covered by the nightly schedule guard once loaded. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs.",

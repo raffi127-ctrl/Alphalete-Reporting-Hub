@@ -30,7 +30,7 @@ rc=$?; echo "[$(date)] knocks-9pm END rc=$rc" >> "$LOG"
 if [ "$PUBLISH" -eq 1 ]; then
     "$VENV_PY" -c "
 from automations.day_orchestrator import hub_publish
-hub_publish.publish_done('knocks_9pm', 'Knocks 9 PM', ok=($rc == 0), run_id='$RUN_ID' or None)
+hub_publish.publish_done('knocks_9pm', 'Knocks 9 PM', status=('success' if $rc == 0 else 'failed'), run_id='$RUN_ID' or None)
 " >> "$LOG" 2>&1
 fi
 exit $rc
