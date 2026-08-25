@@ -89,6 +89,10 @@ def main(argv=None) -> int:
                     help="skip the 'Still to deactivate' checklist (the one "
                          "message per weekly thread that reads the tracker's "
                          "Ownerville / Slack Deact columns)")
+    ap.add_argument("--pending-now", dest="pending_now", action="store_true",
+                    help="write the 'Still to deactivate' checklist even "
+                         "mid-week (normally it only goes up once the week "
+                         "closes, from its Sunday on)")
     ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
                     help="how many PREVIOUS week tabs to read as well "
                          "(default 1 — Monday's new tab leaves the weekend's "
@@ -191,13 +195,15 @@ def main(argv=None) -> int:
         # The week's deactivation checklist, read off the tracker's own
         # Ownerville / Slack Deact columns. Only from the REAL tab — a sandbox
         # run reporting on the real tab's checkboxes would be reporting on
-        # somebody else's data.
+        # somebody else's data. It goes up once the week closes, not daily
+        # (slack_post.pending_is_due); --pending-now overrides that.
         lookup = None
         if not args.sandbox and not args.no_pending:
             from automations.terminated_reps import deactivate
             lookup = deactivate.pending_for_week
         slack_post.post(rows, today, channel=args.channel, dry_run=post_dry,
-                        checks=checks, pending_lookup=lookup)
+                        checks=checks, pending_lookup=lookup,
+                        pending_now=args.pending_now)
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the

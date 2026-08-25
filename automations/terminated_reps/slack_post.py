@@ -437,6 +437,23 @@ def find_reply_ts(client, thread_ts: str, title: str,
     return None
 
 
+def pending_is_due(day: dt.date, sunday: dt.date) -> bool:
+    """Whether the week ending `sunday` should get its deactivation checklist on
+    a run of `day`.
+
+    Only once the week is CLOSING — its own Sunday, or any later run still
+    touching that thread (Eve, 2026-08-25). Nobody needs a fresh "Still to
+    deactivate" list every morning; what they need is one at the end of the
+    week, when it's actually the week's outstanding work.
+
+    `day >= sunday` and not `day == sunday` on purpose: the module runs a day
+    behind ([[project_terminated-reps-runs-a-day-behind]]), so Sunday's
+    terminations only land on Monday's run — which still writes into last
+    week's thread, and has to be able to bring its checklist up to date.
+    """
+    return day >= sunday
+
+
 def post_pending(client, thread_ts: str, sunday: dt.date, pending: list,
                  channel: str = CHANNEL, logfn=print) -> str | None:
     """Put the week's checklist in the thread, or bring the existing one up to
@@ -492,7 +509,7 @@ def checks_by_week(checks: list[Check],
 
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
          dry_run: bool = True, checks: list[Check] | None = None,
-         pending_lookup=None, logfn=print) -> dict:
+         pending_lookup=None, pending_now: bool = False, logfn=print) -> dict:
     """Post every not-yet-posted day into the thread of the week it belongs to,
     plus any row the board contradicts itself about.
 
@@ -503,7 +520,9 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
     `pending_lookup(sunday) -> list[Pending]` adds the week's deactivation
     checklist to its thread (deactivate.pending_for_week). Left out, no
     checklist is written at all — which is what a --sandbox run wants, since
-    the checkboxes it would be reporting on are the real tab's.
+    the checkboxes it would be reporting on are the real tab's. It is only
+    consulted once the week is closing (`pending_is_due`); `pending_now`
+    forces it on any day.
     """
     title = week_title(day)
     checks = list(checks or [])
@@ -534,9 +553,13 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
                 for line in render_check(c).splitlines():
                     logfn(f"       {line}")
             if pending_lookup is not None:
-                for line in render_pending(pending_lookup(sunday),
-                                           sunday).splitlines():
-                    logfn(f"       {line}")
+                if pending_now or pending_is_due(day, sunday):
+                    for line in render_pending(pending_lookup(sunday),
+                                               sunday).splitlines():
+                        logfn(f"       {line}")
+                else:
+                    logfn(f"       (no checklist — {week_title(sunday)} "
+                          f"doesn't close until {sunday.month}/{sunday.day})")
         return {"dry_run": True, "posted": False, "title": title,
                 "channel": channel,
                 "weeks": [{"title": week_title(s),
@@ -599,11 +622,17 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             logfn(f"  {wtitle}: every termination is already in the thread — "
                   f"nothing to add")
 
-        # The checklist is rewritten every run, whether or not anything else
-        # changed — that is the point of it: it has to be current when someone
-        # opens the thread, not current as of the last termination.
+        # The checklist is rewritten on every run FROM the week's Sunday on,
+        # whether or not anything else changed — that is the point of it: it
+        # has to be current when someone opens the thread, not current as of
+        # the last termination. Before the week closes it isn't written at all
+        # (see pending_is_due), so a mid-week thread carries the days only.
         still = None
-        if pending_lookup is not None:
+        if pending_lookup is not None and not (pending_now
+                                               or pending_is_due(day, sunday)):
+            logfn(f"  {wtitle}: checklist held until the week closes "
+                  f"({sunday.month}/{sunday.day})")
+        elif pending_lookup is not None:
             try:
                 still = pending_lookup(sunday)
                 post_pending(client, thread_ts, sunday, still, channel, logfn)
