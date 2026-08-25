@@ -3928,24 +3928,47 @@ def _action_post_nsf_correction(args: str) -> tuple[bool, str]:
 
 
 def _action_post_note(args: str) -> tuple[bool, str]:
-    """post_note <channel_id> <text>: post a plain message to Slack from THIS
-    machine's Slack identity. On a mini that identity is Lucy, which is the whole
-    point — a note typed from the laptop would go out as Evelyn, and a reminder
-    to the team about the reports should come from the account that runs them
-    ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
+    """post_note <channel_id> [thread=<ts>] <text>: post a plain message to Slack
+    from THIS machine's Slack identity. On a mini that identity is Lucy, which is
+    the whole point — a note typed from the laptop would go out as Evelyn, and a
+    reminder to the team about the reports should come from the account that runs
+    them ([[reference_lucy-slack-identity]], [[project_two-lucy-slack-accounts]]).
 
-    The text is everything after the channel id. Literal '\\n' becomes a newline,
-    since the queue carries the whole thing in one Sheet cell. Slack mrkdwn
-    works (*bold*, `code`, <@U…> mentions).
+    The text is everything after the channel id (and the optional thread=). A
+    literal '\\n' becomes a newline, since the queue carries the whole thing in
+    one Sheet cell. Slack mrkdwn works (*bold*, `code`, <@U…> mentions).
+
+    `thread=<ts>` REPLIES INSTEAD OF POSTING (Megan 2026-08-25). #claudecorrections
+    is one-thread-per-problem on purpose: Megan triages the channel by scanning
+    top-level items and their reactions, so a top-level post is a claim that
+    there is a NEW problem. A follow-up on something already in the channel —
+    correcting an earlier note, saying an item is waiting on an upstream feed —
+    is not new, and posting it at top level costs her a triage decision on a
+    non-item. incident_thread's own alerts already reply into the thread; this
+    is the same courtesy for a note typed by hand. The ts is the parent's, the
+    one in its permalink (…/p1787568657523449 → 1787568657.523449).
 
     Not a report and not idempotent — it posts once per queued row. Queue it
     again and the channel gets a second copy."""
     raw = (args or "").strip()
     parts = raw.split(None, 1)
     if len(parts) < 2 or not parts[0].upper().startswith("C"):
-        return False, ("post_note needs '<channel_id> <text>' (channel id looks "
-                       "like C0BK5PRG259 — #claudecorrections-and-requests)")
-    channel, text = parts[0].strip(), parts[1].strip().replace("\\n", "\n")
+        return False, ("post_note needs '<channel_id> [thread=<ts>] <text>' "
+                       "(channel id looks like C0BK5PRG259 — "
+                       "#claudecorrections-and-requests)")
+    channel, rest = parts[0].strip(), parts[1].strip()
+    thread_ts = None
+    if rest.lower().startswith("thread="):
+        bits = rest.split(None, 1)
+        thread_ts = bits[0].split("=", 1)[1].strip()
+        rest = bits[1].strip() if len(bits) > 1 else ""
+        # A ts Slack won't recognise silently becomes a TOP-LEVEL post, which is
+        # exactly the noise the option exists to avoid — so reject it here
+        # rather than let the channel gain a stray item.
+        if not re.fullmatch(r"\d{10}\.\d{6}", thread_ts):
+            return False, (f"thread= wants a Slack ts like 1787568657.523449, "
+                           f"got {thread_ts!r}")
+    text = rest.replace("\\n", "\n")
     if not text:
         return False, "post_note got an empty message"
     try:
@@ -3955,11 +3978,15 @@ def _action_post_note(args: str) -> tuple[bool, str]:
             who = smp._client().auth_test().get("user", "?")
         except Exception:  # noqa: BLE001
             pass
-        smp._client().chat_postMessage(channel=channel, text=text)
+        kw = {"channel": channel, "text": text}
+        if thread_ts:
+            kw["thread_ts"] = thread_ts
+        smp._client().chat_postMessage(**kw)
     except Exception as e:  # noqa: BLE001
         return False, (f"couldn't post to {channel} "
                        f"({type(e).__name__}: {str(e).splitlines()[0][:120]})")
-    return True, f"posted to {channel} as {who} ({len(text)} chars)"
+    where = f"{channel} thread {thread_ts}" if thread_ts else channel
+    return True, f"posted to {where} as {who} ({len(text)} chars)"
 
 
 def _action_incident_resolve(args: str) -> tuple[bool, str]:
