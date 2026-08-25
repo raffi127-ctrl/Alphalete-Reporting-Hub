@@ -666,6 +666,64 @@ def render_wireless_total_knocks(target: dt.date, *, rows: list[dict],
                  out_dir / f"total_knocks_{target.isoformat()}.png")
 
 
+# ---------------------------------------------------------------- shapes ---
+# Ownerville hands back THREE row shapes and each gets a different board (Raf
+# 2026-08-22, "telemapper knocks … should be on there for the NDS guys"). The
+# test is which COLUMNS the scrape found, not which office asked — an office's
+# campaign can change without anyone editing config.
+SHAPE_HOUSE = "house"          # fiber: full disposition columns
+SHAPE_WIRELESS = "wireless"    # NDS disposition shape: counts, no Talk-To split
+SHAPE_GAPS_ONLY = "gaps_only"  # no disposition page at all: Time Tracker only
+
+
+def knocks_shape(rows: "list[dict]") -> str:
+    """Which of the three board shapes `rows` is.
+
+    Reads the first record's KEYS — a gaps-only office has no Total Knocks key
+    at all (not a blank value), because those rows come from the Time Tracker
+    JSON rather than the Disposition table. Lived as two inline booleans in
+    rashad_metrics.knocks_run until on-demand /knocks needed the same routing.
+    """
+    if not rows:
+        raise ValueError("knocks_shape() needs at least one row")
+    first = rows[0]
+    if COL_TOTAL_KNOCKS not in first:
+        return SHAPE_GAPS_ONLY
+    return SHAPE_WIRELESS if COL_TALK_TO_NI not in first else SHAPE_HOUSE
+
+
+def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
+                         out_dir: Path = OUT_DIR_DEFAULT,
+                         title_suffix: str = "",
+                         extra_totals=None) -> "tuple[list[Path], str]":
+    """Every board this row shape deserves, in post order: ([paths], shape).
+
+    House is ONE combined board — it already carries Gaps + Total Gaps (Raf's
+    Loom 2026-08-22), so a second Time Gaps image would repeat itself. The two
+    NDS shapes are a PAIR: their knocks slot is the wireless disposition board
+    or the TeleMapper mirror, and Time Gaps rides alongside it.
+
+    `extra_totals` (a comparison office's TOTAL line) applies to the house
+    board ONLY — the comparison office is fiber, so its totals have no column
+    to sit under on an NDS board.
+    """
+    shape = knocks_shape(rows)
+    if shape == SHAPE_GAPS_ONLY:
+        first = render_telemapper_knocks(target, rows=rows, out_dir=out_dir,
+                                         title_suffix=title_suffix)
+    elif shape == SHAPE_WIRELESS:
+        first = render_wireless_total_knocks(target, rows=rows,
+                                             out_dir=out_dir,
+                                             title_suffix=title_suffix)
+    else:
+        return ([render_total_knocks(target, rows=rows, out_dir=out_dir,
+                                     title_suffix=title_suffix,
+                                     extra_totals=extra_totals)], shape)
+    gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,
+                            title_suffix=title_suffix)
+    return ([first, gaps], shape)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("date", nargs="?", default=None, help="YYYY-MM-DD (title)")

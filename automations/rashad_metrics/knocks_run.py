@@ -173,9 +173,9 @@ def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
     #                 the TELEMAPPER KNOCKS board (the ownerville Time Tracker
     #                 table — first/last knock, breaks, gaps, sales time,
     #                 sales), so the thread never silently drops the metric.
-    from automations.total_knocks.pull import COL_TALK_TO_NI
-    wireless = (COL_TOTAL_KNOCKS in rows[0] and COL_TALK_TO_NI not in rows[0])
-    gaps_only = COL_TOTAL_KNOCKS not in rows[0]
+    shape = _render.knocks_shape(rows)
+    wireless = shape == _render.SHAPE_WIRELESS
+    gaps_only = shape == _render.SHAPE_GAPS_ONLY
     posts = []
     if wireless:
         img_tk = _render.render_wireless_total_knocks(target, rows=rows,
@@ -194,8 +194,6 @@ def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
     if wireless or gaps_only:
         img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
         posts.append((img_tg, POST_TIME_GAPS))
-    shape = ("wireless" if wireless else
-             "telemapper-knocks fallback" if gaps_only else "house combined")
     print(f"[rashad_knocks] Rendered {shape} -> "
           f"{'; '.join(str(p[0]) for p in posts)}", flush=True)
 

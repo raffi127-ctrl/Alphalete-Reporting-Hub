@@ -1,9 +1,11 @@
 """The engine behind `/knocks`: one office + one day -> the knock board PNG.
 
-CACHE FIRST, AND THAT IS THE WHOLE DESIGN. Ownerville allows ONE live session
-per account, so an on-demand pull that just opens a browser would fight the
-morning build for it — the build that is already scraping every office on the
-same login. The way out is that the build already leaves what it pulled on
+CACHE FIRST, AND THAT IS THE WHOLE DESIGN. Not because ownerville is
+one-session-per-account — it is NOT, sessions parallelise fine and impersonation
+is scoped to the session (Megan 2026-08-24) — but because a pull that opens a
+browser on the SHARED Chrome profile fights the morning build for that profile,
+and because the answer is usually already on disk anyway. The build leaves what
+it pulled on
 disk: `captainship_drafts.knock_dispo_images` writes each owner's board PNG
 plus a `rows_*.json` sidecar of the very records it scraped. So for the day
 people actually ask about — today's board, i.e. yesterday's knocks — this
@@ -14,10 +16,12 @@ Order of attempts, first hit wins:
   2. the build's sidecar  <RENDER_DIR>/daily_knocks_*/<office>/rows_total_knocks_<date>.json
   3. a live pull          rashad_metrics.knocks_pull.pull_office_knocks
 
-Only step 3 needs ownerville, and it refuses to start while another module on
-this machine is holding the session (proc_guard) — `wait_for_ownerville` polls
-instead, so a request during the 07:15 build lands when the build is done
-rather than stealing its session and failing both.
+Only step 3 opens a browser, and it refuses to start while another module on
+this machine is holding the SHARED profile (proc_guard) — `wait_for_ownerville`
+polls instead, so a request during the 07:15 build lands when the build is done
+rather than losing the profile race. A caller that passes its own `profile_dir`
+to `pull_offices_knocks` does not need this wait at all: the constraint is one
+browser per profile directory, not one session per ownerville account.
 
 NOTHING HERE IS A NEW SCRAPE OR A NEW DRAWING. The pull is the same
 `pull_office_knocks` the Rashad/other-office reports use (impersonate by name,
@@ -39,8 +43,8 @@ from typing import Callable, List, Optional
 
 OUT_DIR = Path("output") / "knocks_request"
 
-# Modules that hold the ONE ownerville session while they run. A live pull
-# waits for all of them. Names are `python -m` module paths, which is what
+# Modules that hold the SHARED Chrome profile while they run. A live pull on
+# that profile waits for all of them (a run on its own profile_dir need not). Names are `python -m` module paths, which is what
 # proc_guard matches on.
 OWNERVILLE_MODULES = (
     "automations.captainship_drafts.run",
@@ -67,7 +71,9 @@ class Board:
     office: str                  # the canonical office/owner name
     asked_as: str                # what the requester typed
     target: dt.date
-    png: Optional[Path] = None
+    png: Optional[Path] = None   # the knocks board — pngs[0]
+    pngs: List[Path] = field(default_factory=list)   # NDS shapes add Time Gaps
+    shape: str = ""              # house | wireless | gaps_only
     rows: List[dict] = field(default_factory=list)
     source: str = ""             # "cache" | "build" | "live"
     note: str = ""
@@ -326,10 +332,14 @@ def board_for(office: str, target: Optional[dt.date] = None, *,
     extra = []
     if chan_rows:
         extra.append((compare_office(), chan_rows))
-        b.compared_to = compare_office()
-    b.png = knocks_render.render_total_knocks(
+    # An NDS office gets a PAIR of boards and no comparison line; the shape
+    # decides, so a fiber office that goes wireless needs no config change.
+    b.pngs, b.shape = knocks_render.render_knocks_boards(
         target, rows=rows, out_dir=OUT_DIR / _slug(canonical),
         title_suffix=canonical, extra_totals=extra)
+    b.png = b.pngs[0]
+    if extra and b.shape == knocks_render.SHAPE_HOUSE:
+        b.compared_to = compare_office()
     logfn(f"board -> {b.png}")
     return b
 

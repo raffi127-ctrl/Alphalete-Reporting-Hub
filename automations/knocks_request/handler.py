@@ -202,19 +202,35 @@ def process(web, user_id: str, office: str, target: dt.date) -> None:
         return
 
     reps = len(board.rows)
-    cap = (f":door: *Total Knocks — {canonical} — {pretty}*  "
+    # A gaps-only (NDS) office has no Disposition page, so there are no knock
+    # COUNTS to send — calling that board "Total Knocks" would read as a
+    # report of zero. Name it what it is and say why in one line.
+    gaps_only = board.shape == "gaps_only"
+    title = "TeleMapper Knocks" if gaps_only else "Total Knocks"
+    cap = (f":door: *{title} — {canonical} — {pretty}*  "
            f"({reps} rep{'s' if reps != 1 else ''})")
+    if gaps_only:
+        cap += ("\n_This office knocks without a Disposition page, so "
+                "Ownerville records knock activity — times and gaps — not "
+                "knock counts. Time Gaps below._")
     if board.partial:
         # Today's numbers keep moving; say so on the image itself, because a
         # screenshot of it will outlive this message.
         cap += "\n_Today so far — the day isn't over, these numbers will grow._"
     elif board.source in ("cache", "build"):
         cap += "\n_From this morning's run — same numbers the report used._"
-    try:
-        web.files_upload_v2(channel=chan, file=str(board.png),
-                            filename=f"{canonical} knocks {target}.png",
-                            initial_comment=cap)
-    except Exception as e:  # noqa: BLE001
-        traceback.print_exc()
-        say(f":x: The board rendered but Slack wouldn't take the image — "
-            f"{type(e).__name__}: {str(e)[:160]}")
+
+    # NDS shapes come back as a PAIR (board + Time Gaps); house is one image.
+    names = [f"{canonical} knocks {target}.png",
+             f"{canonical} time gaps {target}.png"]
+    caps = [cap, f":hourglass: *Time Gaps — {canonical} — {pretty}*"]
+    for i, img in enumerate(board.pngs or [board.png]):
+        try:
+            web.files_upload_v2(channel=chan, file=str(img),
+                                filename=names[min(i, 1)],
+                                initial_comment=caps[min(i, 1)])
+        except Exception as e:  # noqa: BLE001 — image 2 failing ≠ image 1 lost
+            traceback.print_exc()
+            say(f":x: {'The board' if i == 0 else 'The Time Gaps board'} "
+                f"rendered but Slack wouldn't take the image — "
+                f"{type(e).__name__}: {str(e)[:160]}")
