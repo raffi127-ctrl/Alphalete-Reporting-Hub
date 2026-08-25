@@ -18,21 +18,21 @@ HEADER = "🗂️ Digi Docs"
 
 def post(sent: int, refused: List[str], attested: List[Tuple],
          *, dry_run: bool = True) -> bool:
-    lines = [f"*{sent}* new start{'' if sent == 1 else 's'} sent their document "
-             f"bundle."]
+    # One line, not three. Everything the run did to a person happens together
+    # -- the bundle goes out and the boxes get ticked in the same pass -- so
+    # splitting it across a headline and a trailing note just made the reader
+    # assemble it themselves (Megan 2026-08-25).
+    lines = [f"*{sent}* new start{'' if sent == 1 else 's'}: digi docs sent · "
+             f"BG checked · drug test checked"]
     if refused:
         lines.append("")
         lines.append(f"*Needs doing by hand ({len(refused)}):*")
         lines += [f"• {r}" for r in refused]
-    if attested:
-        # A COUNT here, the names in the run log. These ticks assert a completed
-        # drug-screen review to AT&T, so the names have to be recoverable -- but
-        # thirty of them on a full Monday is a wall of text between the reader
-        # and the two lines they actually have to act on, which is the one thing
-        # this post exists to prevent.
-        lines.append("")
-        lines.append(f"_Background + drug-test boxes ticked for "
-                     f"{len(attested)}. Names are in the run log._")
+    # No separate attestation line: the headline above already says the boxes
+    # were ticked. The NAMES still matter -- the drug-test box asserts a
+    # completed review to AT&T, not a status -- so they stay in the run log,
+    # per rep and per box, where they are recoverable without putting thirty
+    # names between the reader and the lines they have to act on.
 
     body = "\n".join(lines)
     if dry_run:
