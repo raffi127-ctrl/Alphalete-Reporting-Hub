@@ -249,6 +249,11 @@ _HUB_CARD = {
     # without that the morning would write BOTH rows and turn a 2-run pill green
     # on its own, hiding a missed 8pm. [[reference_phase_pill_id_match]]
     "applicant_sync_morning": "applicant-tracker-sync",
+    # Curated so runs land on the real Recruiting card instead of the bare
+    # library card self-registration made on 2026-08-24 (report_id and card id
+    # differ by an underscore vs a hyphen, which is exactly the mismatch that
+    # leaves a pill stuck). [[reference_phase_pill_id_match]]
+    "blueink_docs": "blueink-docs",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 

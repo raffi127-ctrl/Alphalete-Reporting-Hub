@@ -4438,6 +4438,85 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "blueink-docs",
+        "name": "Blue Ink New Start Docs",
+        "creator": "Megan",
+        "emoji": "\U0001F58A\uFE0F",
+        "color": "#2563EB",
+        # \U0001F3AF Recruiting, next to bg-check-sync: same workbook, same
+        # weekly new-start cohort, same Slack room.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Sends each week's new starts their Blue Ink onboarding packet "
+            "(I-9, W-4, Direct Deposit), skips anyone who isn't starting or "
+            "already has one, and posts who still needs doing by hand."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the newest dated **`D2D OBCL <m.d>`** tab \u2014 every "
+            "stacked section on it \u2014 and sends each eligible new start "
+            "their packet through the Blue Ink **web app**, then tints their "
+            "first name light green in column D and logs the send to the "
+            "**Blue Ink Log** tab.\n\n"
+            "WHEN IT RUNS\n"
+            "**Monday 7:30am CST** on Lucy 2, its own launchd timer. A full "
+            "week takes about an hour \u2014 roughly a minute a person.\n\n"
+            "WHO IT SKIPS\n"
+            "**\u2022** Any **Final Status** meaning they aren't starting "
+            "(quit, failed BGC, terminated, no show, rescheduling).\n"
+            "**\u2022** **BG Status** of Failed or Adverse Action.\n"
+            "**\u2022** **Friday Confirmation** of Declined or Failed "
+            "Background.\n"
+            "**\u2022** Anyone who already has a packet \u2014 matched on "
+            "email **and name**, whoever sent it, so a hand-send is never "
+            "duplicated.\n\n"
+            "GOOD TO KNOW\n"
+            "**\u2022** It sends through the web app on purpose: API sends "
+            "bill as **Bulk Envelopes**, capped at 50/YEAR on this plan and "
+            "long spent. Web-app sends draw on the unlimited bucket.\n"
+            "**\u2022** That means it needs a **browser session** on Lucy 2. "
+            "When it expires the run refuses to send and says so \u2014 a "
+            "human re-seeds with `session.py --login` at that machine.\n"
+            "**\u2022** A **wrong email on the sheet** doesn't cause a bad "
+            "send; the name check holds that person back and names them in "
+            "Slack instead."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1430069873#gid=1430069873"),
+        "assignees": ["Lucy 2"],
+        # Its own Monday launchd timer, so it self-reports rather than sitting
+        # in the due-today tallies \u2014 same shape as bg-check-sync.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "7:30 AM",
+            "time_label": "Mon 7:30am CST",
+            "estimated_minutes": 60,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Packets sent, names tinted green, and the status summary posted to #11280.",
+            "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 someone at that machine runs `python -m automations.blueink_docs.session --login`. Nothing was sent.",
+        },
+        "actions": [
+            {
+                "label": "Preview",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Show who WOULD be sent to this week, and who wouldn't and why. Sends nothing.",
+                "module": "automations.blueink_docs.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Send Now",
+                "icon": "\u25B6",
+                "help": "Send this week's packets for real, then post the summary to Slack. Cannot be undone.",
+                "module": "automations.blueink_docs.run",
+                "args_fn": lambda: ["--send", "--slack"],
+            },
+        ],
+    },
+    {
         "id": "bg-check-sync",
         "name": "BG Check Sync",
         "creator": "Raf",
