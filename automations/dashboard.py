@@ -1785,13 +1785,13 @@ def _next_due(report: dict, today: dt.date):
 
 def _was_due_on(report: dict, day: dt.date) -> bool:
     """Was this report scheduled to run on `day`?"""
-    # A stood-down report is never due (Megan 2026-08-25). This is the one place
-    # every "due" question funnels through — the DUE TODAY pill, the "N reports
-    # due today" counts on the Pack cards, the calendar tiles and the
-    # Needs-attention list — so pausing it here switches all of them off at once
-    # rather than leaving one surface still nagging.
-    if _paused_reason(report):
-        return False
+    # NOT gated on `paused` — deliberately (Megan 2026-08-25). Pausing here did
+    # switch off every count in one go, but this same function also decides which
+    # cards a day's views LIST, so tracker_mirror vanished from the Hub entirely
+    # and Megan couldn't see that it was paused at all. "Doesn't count as work"
+    # and "isn't on the page" are different things: a stood-down report has to
+    # stay visible, wearing its grey pill, or the pause is indistinguishable from
+    # a deleted card. The exclusion lives at the COUNTING sites instead.
     sched = report.get("schedule")
     if not sched:
         return False
@@ -7672,8 +7672,12 @@ if st.session_state.view == "home":
     # how many have a successful run logged. Time-set reports (self_scheduled
     # but not hide_schedule) count too, so a failed 8:30 post drops the ratio
     # instead of hiding; only always-on pollers (hide_schedule) are excluded.
+    # Paused reports are excluded from the day's ratio: they are not work the
+    # day is expected to complete, so counting them would hold the number below
+    # 100% forever. They stay VISIBLE on their card — see _paused_reason.
     _due_today = [r for r in AUTOMATED_REPORTS
-                  if _is_due_today(r, today) and not r.get("hide_schedule")]
+                  if _is_due_today(r, today) and not r.get("hide_schedule")
+                  and not _paused_reason(r)]
     _ran_today = sum(1 for r in _due_today if _was_run_successfully_today(r["id"], today))
     _due_n = len(_due_today)
     st.markdown(f"""
@@ -7823,6 +7827,7 @@ if st.session_state.view == "home":
                         1 for r in my_reports
                         if _is_due_today(r, today)
                         and not r.get("hide_schedule")
+                        and not _paused_reason(r)   # stood down ≠ needs running
                         and not _was_run_successfully_today(r["id"], today)
                     )
                 with st.container(border=True):

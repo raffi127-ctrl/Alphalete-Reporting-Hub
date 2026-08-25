@@ -54,30 +54,36 @@ class TheReasonLookup(unittest.TestCase):
             "")
 
 
-class APausedReportIsNeverDue(unittest.TestCase):
-    """_was_due_on is the single funnel — the DUE pill, the 'N due today'
-    counts, the calendar tiles and Needs-attention all ask it."""
+class PausedStaysVISIBLEButUncounted(unittest.TestCase):
+    """The correction (Megan 2026-08-25). Gating _was_due_on on `paused` did stop
+    every count at once — but that function ALSO decides which cards a day's views
+    LIST, so tracker_mirror disappeared from the Hub completely and there was no
+    way to see it was paused. 'Doesn't count as work' and 'isn't on the page' are
+    different things."""
 
-    def test_paused_beats_a_daily_schedule(self):
+    def test_a_paused_report_is_still_due_on_so_it_stays_listed(self):
         r = {"id": "tracker_mirror", "schedule": DAILY}
-        self.assertFalse(dashboard._was_due_on(r, TODAY))
+        self.assertTrue(dashboard._was_due_on(r, TODAY),
+                        "paused must NOT hide the card from the day's views")
 
-    def test_the_same_card_would_be_due_if_it_were_not_paused(self):
-        """Proves the schedule itself says 'due' — so paused is what changed it,
-        not a malformed schedule."""
-        r = {"id": "not-paused-anywhere", "schedule": DAILY}
-        self.assertTrue(dashboard._was_due_on(r, TODAY))
-
-    def test_a_live_daily_report_is_still_due(self):
-        r = {"id": "org-sales-board", "schedule": DAILY}
-        self.assertTrue(dashboard._is_due_today(r, TODAY))
-
-    def test_the_real_tracker_mirror_card_is_not_due(self):
-        """End to end against the card the Hub actually loads."""
+    def test_the_real_tracker_mirror_card_is_still_visible(self):
         card = next((c for c in dashboard.AUTOMATED_REPORTS
                      if c.get("id") == "tracker_mirror"), None)
         self.assertIsNotNone(card, "tracker_mirror card missing from the Hub")
-        self.assertFalse(dashboard._is_due_today(card, TODAY))
+        self.assertTrue(dashboard._is_due_today(card, TODAY))
+        self.assertTrue(dashboard._paused_reason(card))
+
+    def test_the_pack_count_excludes_paused(self):
+        import inspect
+        src = inspect.getsource(dashboard)
+        self.assertIn("and not _paused_reason(r)   # stood down \u2260 needs running",
+                      src, "the per-person 'N due today' count must skip paused")
+
+    def test_the_day_ratio_excludes_paused(self):
+        import inspect
+        src = inspect.getsource(dashboard)
+        self.assertIn("and not _paused_reason(r)]", src,
+                      "the day's ran/due ratio must skip paused")
 
 
 class TheColourIsReservedForOff(unittest.TestCase):
