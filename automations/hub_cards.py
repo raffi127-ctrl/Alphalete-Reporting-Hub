@@ -4490,7 +4490,10 @@ AUTOMATED_REPORTS = [
             "frequency": "weekly",
             "weekdays": [0],   # Monday
             "time": "7:30 AM",
-            "time_label": "Mon 7:30am CST",
+            # No weekday here: the card already sits on Monday's tile, so
+            # "Mon" was just noise. The office DOES need saying -- these tabs
+            # are Raf's, and other offices will want their own card.
+            "time_label": "Raf's Office \u00b7 7:30am CST",
             "estimated_minutes": 60,
         },
         "checklist": [],
