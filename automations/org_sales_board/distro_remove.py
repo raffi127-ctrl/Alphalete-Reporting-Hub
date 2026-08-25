@@ -106,6 +106,15 @@ REMOVALS: dict = {
     "ATT Fiber Owners": [
         ("Jesus Hawthorne", "jesus_hawthorne@yahoo.com"),
     ],
+    # 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz's captainship only — same
+    # shape as Milan Godbolt below. Her address also left
+    # captainship_drafts.config.RECIPIENTS["eveliz"] and Tableau is pinned in
+    # shared/captainship_pins under "Eveliz". This group is NOT shared with the
+    # org board mail, and her card stays on "Alphalete Org Owners": she is
+    # still a B2B ICD of the org, just not one of Eveliz's.
+    "Eveliz's Captainship": [
+        ("Lizette Ruiz", "lizetteruiz0510@gmail.com"),
+    ],
     "Colten's Captainship": [
         ("Javeon Lara", "javeonterrell@gmail.com"),
         ("Selena Powers", "selena.powersmiami@gmail.com"),   # listed twice on the card

@@ -78,6 +78,9 @@ except Exception:
 BACKUP_TAB = "backup_pre_roster_remove"
 WE_RE = re.compile(r"^WE\s+\d", re.IGNORECASE)
 OWNER_RE = re.compile(r"captainship|captain team|special team|'s org", re.I)
+# A banner that names nobody. It is the leaderboard header of a captainship
+# block ("CAPTAIN TEAM" in col A), not an owner — see _owner_above.
+NAMELESS_RE = re.compile(r"^(captain'?s?\s+team|captainship)$", re.I)
 END_LABELS = {"totals", "total", "captainship", "last week", "prior week",
               "2 weeks prior", "3 weeks prior", "grand total"}
 
@@ -103,13 +106,37 @@ def _blank(grid, r) -> bool:
 def _owner_above(grid, r) -> str:
     """Whose block this is: the nearest '<X>'s Captainship' / 'RAF SPECIAL TEAM'
     banner above the header. The 8 campaign sections have none — they belong to
-    the org board itself."""
+    the org board itself.
+
+    A NAMELESS banner is skipped, not returned: a captainship's daily block sits
+    under the bare "CAPTAIN TEAM" header of its own leaderboard, so stopping at
+    the first hit made every captain's daily rows read as the same anonymous
+    owner and `--owner` could not tell them apart. The named banner above it
+    ("EVELIZ'S CAPTAIN TEAM") is the answer; the nameless one is only the
+    fallback when the block has no named banner at all."""
+    nameless = ""
     for rr in range(r - 1, max(-1, r - 30), -1):
         for c in (0, 1, 2):
             t = text(grid, rr, c)
             if t and OWNER_RE.search(t):
+                if NAMELESS_RE.match(t.strip()):
+                    nameless = nameless or t
+                else:
+                    return t
+    if not nameless:
+        return "ALPHALETE ORG"
+    # The window is widened ONLY once a nameless banner has been seen, i.e.
+    # inside a captainship block for certain. Raf's leaderboard is 26 reps long
+    # and Colten's 12, so their daily header sits further than 30 rows below
+    # the block's name. Widening for everyone would instead let a block with no
+    # banner of its own (the org's 8 campaign sections) borrow the captainship
+    # banner above it, which is the opposite of what this is for.
+    for rr in range(r - 30, max(-1, r - 70), -1):
+        for c in (0, 1, 2):
+            t = text(grid, rr, c)
+            if t and OWNER_RE.search(t) and not NAMELESS_RE.match(t.strip()):
                 return t
-    return "ALPHALETE ORG"
+    return nameless
 
 
 def index_rep_rows(grid) -> list:
@@ -260,6 +287,12 @@ def main(argv=None) -> int:
                     help="Pipe-separated rep names, exactly as they read in col B.")
     ap.add_argument("--apply", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--tab", default=SANDBOX_TAB)
+    ap.add_argument("--owner", default=None,
+                    help="Scope the removal to the blocks whose banner contains "
+                         "this text — e.g. --owner eveliz takes a rep off HER "
+                         "captainship (leaderboard + daily + delta box) and "
+                         "leaves her rows in the org's own campaign sections "
+                         "alone. Default: every table on the tab.")
     ap.add_argument("--allow-unexcluded", action="store_true",
                     help="delete even for a captainship rep not pinned in "
                          "captain_gate.EXCLUDE (the gate WILL offer them back)")
@@ -269,6 +302,11 @@ def main(argv=None) -> int:
     ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(args.tab))
     grid = _retry(lambda: ws.get("A1:ZZ2200", value_render_option="UNFORMATTED_VALUE")) or []
     plan = plan_removals(grid, names)
+    if args.owner:
+        key, before = norm(args.owner), len(plan)
+        plan = [h for h in plan if key in norm(h["owner"])]
+        print(f"  --owner {args.owner!r}: {len(plan)} de {before} fila(s) "
+              f"en scope; el resto queda donde está")
 
     found = {h["asked"] for h in plan}
     print(f"=== roster_remove — {args.tab!r} ({'APPLY' if args.apply else 'dry-run'})")
@@ -309,7 +347,8 @@ def main(argv=None) -> int:
     if ranks:
         _retry(lambda: ws.batch_update(ranks, value_input_option="USER_ENTERED"))
     print(f"  ranks renumerados en {len(ranks)} tabla(s)")
-    left = plan_removals(grid2, names)
+    left = [h for h in plan_removals(grid2, names)
+            if not args.owner or norm(args.owner) in norm(h["owner"])]
     print(f"  quedan {len(left)} fila(s) con esos nombres "
           f"{'— revisar' if left else '(ok)'}")
     return 0

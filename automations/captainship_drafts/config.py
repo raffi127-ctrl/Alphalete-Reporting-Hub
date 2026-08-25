@@ -511,8 +511,15 @@ RECIPIENTS: dict = {
         "raffi127@gmail.com", "vincentsmith24.att@gmail.com",
     ],
     "eveliz": [
+        # OUT 2026-08-24 (Eve): lizetteruiz0510@ — Lizette Ruiz is not on
+        # Eveliz's captainship, whatever Tableau's B2B captain filter says
+        # (pinned in shared/captainship_pins.NOT_ON_TEAM under "Eveliz"). Taken
+        # out of the live "Eveliz's Captainship" group the same day; it has to
+        # leave this list too or seed_groups.py puts her straight back. That
+        # group is NOT shared with the Org Sales Board mail, and she stays on
+        # "Alphalete Org Owners" — she is still an ICD of the org.
         "themillenders@gmail.com", "evelizroca.ssm@gmail.com",
-        "gregoryahalstead@gmail.com", "lizetteruiz0510@gmail.com",
+        "gregoryahalstead@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
         "shalonda@dime-llc.com", "valeriatristan.amg@gmail.com",
     ],

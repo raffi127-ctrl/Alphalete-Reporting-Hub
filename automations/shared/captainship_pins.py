@@ -58,9 +58,19 @@ from typing import Dict, Iterable, Optional
 # his address left the "Colten's Captainship" distro. He stays an NDS ICD
 # everywhere else — this pin is scoped to Colten, which is the whole point of
 # the key.
+#
+# 2026-08-24 (Eve): Lizette Ruiz comes off Eveliz Wright's captainship — only
+# the captainship. She stays a B2B ICD of the org everywhere else (office
+# 22109, her rows in the board's own 'B2B' section and the 'Alphalete Org
+# Owners' distro are untouched), which is exactly what keying the pin by
+# captain buys. BOTH spellings are pinned because this name is split across
+# sources: the board and the Focus Report tab say "Lizette Ruiz", AppStream and
+# Tableau say "Lizette Ruiz-Conejo" (the churn tab fills under the Tableau
+# spelling, and drop_reps runs AFTER the alias rename in owners_metrics_churn).
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
     "Colten": ("Milan Godbolt",),
+    "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
 }
 
 
