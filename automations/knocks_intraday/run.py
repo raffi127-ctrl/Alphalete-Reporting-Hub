@@ -302,7 +302,15 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
                 Path(rec["png"]), comment=cap, today=day,
                 channel_id=rec["channel_id"],
                 file_name=f"{rec['label']} knocks {day} {slot.key}.png",
-                wait_visible=True)
+                wait_visible=True,
+                # EVERY slot posts to the CHANNEL, not into the day's Metrics
+                # thread (Megan 2026-08-25, of the 9 PM board and then of Cody's
+                # 2 PM / 5:15 PM: "should NOT go in a thread but just be posted
+                # to the channel so everyone can see it"). The whole point of
+                # the night board is that people read it without digging — Raf
+                # asked for it so "people can look at it at night for break
+                # downs". A thread reply is exactly the burial that defeats it.
+                top_level=True)
             posted += 1
             logfn(f"[knocks] ✓ posted {rec['key']} -> {rec['channel_name']}")
         except Exception as e:  # noqa: BLE001 — one channel ≠ the run

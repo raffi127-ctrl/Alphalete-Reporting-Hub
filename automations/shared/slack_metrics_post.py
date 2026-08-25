@@ -255,14 +255,19 @@ def _mirror_reply(client, channel_id: str, thread_ts: str, today: dt.date,
                   file_path=None, file_name: str | None = None,
                   comment: str | None = None,
                   react_emoji: str | None = None,
-                  wait_visible: bool = False) -> None:
+                  wait_visible: bool = False,
+                  top_level: bool = False) -> None:
     """Copy one thread reply (text OR file) into every mirror of `channel_id`,
     into the mirror's own twin of the thread. Appends per-channel results onto
     out['mirrors']. Best-effort by design: a broken mirror prints loudly but
     never fails the primary post."""
     for dst in mirror_channels(channel_id):
         try:
-            m_ts = _mirror_thread_ts(client, channel_id, thread_ts, dst, today)
+            # A top-level primary mirrors as a top-level message too — looking up
+            # (or creating) a twin THREAD for a post that isn't in one would file
+            # the mirror somewhere the original isn't.
+            m_ts = (None if top_level else
+                    _mirror_thread_ts(client, channel_id, thread_ts, dst, today))
             if file_path is not None:
                 resp = client.files_upload_v2(
                     channel=dst, thread_ts=m_ts, file=str(file_path),
@@ -588,6 +593,7 @@ def post_reply_with_image(
     thread_ts: str | None = None,
     channel_id: str | None = None,
     wait_visible: bool = False,
+    top_level: bool = False,
 ) -> dict:
     """Reply in today's Metrics thread with an image attachment + optional
     reaction emoji on the parent.
@@ -611,11 +617,17 @@ def post_reply_with_image(
             "comment": comment,
             "react_emoji": react_emoji,
             "mirrors_to": mirror_channels(channel_id),
+            "top_level": top_level,
         }
     client = _client()
     # thread_ts given => post into THAT thread (e.g. a named thread from
     # ensure_named_thread); omitted => today's 'Metrics for:' thread, unchanged.
-    thread_ts = thread_ts or find_metrics_thread_ts(client, today)
+    # top_level => no thread at all: a plain channel post. Megan 2026-08-25 on
+    # the knocks boards: "should NOT go in a thread but just be posted to the
+    # channel so everyone can see it" — said of the 9 PM board and then of
+    # Cody's 2 PM / 5:15 PM. Default False, so every other caller is unchanged.
+    thread_ts = None if top_level else (thread_ts
+                                        or find_metrics_thread_ts(client, today))
     upload_resp = client.files_upload_v2(
         channel=channel_id,
         thread_ts=thread_ts,
@@ -631,7 +643,7 @@ def post_reply_with_image(
     if wait_visible and out["ok"]:
         out["visible"] = wait_for_share(client, channel_id, thread_ts,
                                         out.get("file") or "", text=comment)
-    if react_emoji:
+    if react_emoji and thread_ts:   # a top-level post has no ts to react to
         try:
             r = client.reactions_add(
                 channel=channel_id, timestamp=thread_ts, name=react_emoji
@@ -644,7 +656,7 @@ def post_reply_with_image(
                   file_path=image_path,
                   file_name=file_name or f"{comment} {today.month}.{today.day}.png",
                   comment=comment, react_emoji=react_emoji,
-                  wait_visible=wait_visible)
+                  wait_visible=wait_visible, top_level=top_level)
     return out
 
 
