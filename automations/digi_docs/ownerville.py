@@ -129,18 +129,54 @@ def open_set_status(page, name: str, *, verbose: bool = True):
     return modal, matched
 
 
-def _row_state(modal, label: str) -> str:
-    """The state chip on one Set Status row: 'COMPLETED' / 'REQUIRED ACTION' /
-    'PENDING', or '' when the row or its chip isn't found."""
-    row = modal.locator("div,li,tr").filter(has_text=label).first
+_STATES = ("REQUIRED ACTION", "COMPLETED", "PENDING")
+
+
+def _status_rows(modal, label: str):
+    """Every element in the Set Status modal containing `label`, INNERMOST
+    first.
+
+    `filter(has_text=...)` returns DOM order, so ancestors come before
+    descendants and `.first` is the outermost match -- which, since the whole
+    modal contains the text, is the modal. That trap already cost this build
+    one round in _expand; both callers now share this one ordering so it cannot
+    be re-learned in a third place.
+    """
+    rows = modal.locator("div,li,tr").filter(has_text=label)
     try:
-        row.wait_for(state="visible", timeout=8000)
-    except Exception:
-        return ""
-    txt = (row.inner_text(timeout=4000) or "").upper()
-    for state in ("REQUIRED ACTION", "COMPLETED", "PENDING"):
-        if state in txt:
+        n = rows.count()
+    except Exception:                                       # noqa: BLE001
+        return []
+    return [rows.nth(i) for i in range(n - 1, -1, -1)]
+
+
+def _row_state(modal, label: str, *, verbose: bool = True) -> str:
+    """The state chip on ONE Set Status row: 'REQUIRED ACTION' / 'COMPLETED' /
+    'PENDING', or '' when it can't be read.
+
+    The row is identified by carrying EXACTLY ONE chip. Anything smaller than
+    the row (the label's own span) carries none; anything larger carries
+    several, because every other step has a chip too. Reading the outermost
+    match instead -- the whole modal -- returns whichever chip appears first in
+    it, which for a new rep is always REQUIRED ACTION whatever this row
+    actually says. That is the 2026-08-25 probe's silent bug: docs_still_owed
+    answered True for everyone, so reps who already HAD their documents were
+    walked all the way to the portal, where OwnerVille offered no bundle and
+    the run called it a refusal.
+    """
+    for row in _status_rows(modal, label):
+        try:
+            txt = (row.inner_text(timeout=3000) or "").upper()
+        except Exception:                                   # noqa: BLE001
+            continue
+        counts = {s: txt.count(s) for s in _STATES}
+        if sum(counts.values()) == 1:
+            state = next(s for s, c in counts.items() if c)
+            if verbose:
+                print(f"    {label}: {state}")
             return state
+    if verbose:
+        print(f"    {label}: no state chip found")
     return ""
 
 
@@ -177,28 +213,57 @@ def _expand(modal, label: str, page, *, reveals: str = "",
             verbose: bool = True) -> None:
     """Open one collapsible Set Status section and WAIT for its contents.
 
-    Two traps, both hit on the first Lucy 3 probe (2026-08-25):
+    Three traps, each one paid for by a probe run (2026-08-25):
 
     `filter(has_text=...).first` matches the OUTERMOST element containing the
     text -- and since the whole modal contains it, that is the modal. Clicking
-    that expands nothing, and the probe then reported the portal button simply
-    absent. `.last` is the innermost match, which is the row itself.
+    that expands nothing (run 3).
 
-    And the click has to be FOLLOWED by a wait. These sections render their
+    `.last` is the innermost match, which is usually the row -- but on
+    BACKGROUND CHECK it is a node inside the collapsed body, and the run died
+    on it with "element is not visible / retrying scroll into view action"
+    (run 5). So walk innermost outwards and take the first VISIBLE candidate
+    rather than trusting either end of the list.
+
+    And the click has to be FOLLOWED by a wait: these sections render their
     contents on expand, so looking immediately finds nothing even when the
-    click worked -- the same reveal-one-control-at-a-time shape as the document
-    form, in a different place.
+    click worked.
     """
-    rows = modal.locator("div,li,tr").filter(has_text=label)
-    target = rows.last if rows.count() else modal.get_by_text(label).first
-    target.scroll_into_view_if_needed(timeout=8000)
-    target.click(timeout=10000)
     marker = reveals or "Access Digital Doc Portal"
+    target = None
+    for row in _status_rows(modal, label):
+        try:
+            if row.is_visible():
+                target = row
+                break
+        except Exception:                                   # noqa: BLE001
+            continue
+    if target is None:
+        try:
+            target = modal.get_by_text(label, exact=False).first
+        except Exception:                                   # noqa: BLE001
+            target = None
+    if target is None:
+        raise Refused(f"{label}: no such section in the Set Status modal")
+
+    try:
+        target.scroll_into_view_if_needed(timeout=8000)
+    except Exception:                                       # noqa: BLE001
+        # Not fatal on its own -- the click below may still land, and a section
+        # already in view needs no scroll. Killing a 30-rep batch over it
+        # (run 5) is the wrong trade.
+        if verbose:
+            print(f"    ({label}: couldn't scroll into view — clicking anyway)")
+    try:
+        target.click(timeout=10000)
+    except Exception:                                       # noqa: BLE001
+        if verbose:
+            print(f"    ({label}: the row itself wasn't clickable)")
     try:
         modal.get_by_text(marker, exact=False).first.wait_for(
             state="visible", timeout=8000)
         return
-    except Exception:
+    except Exception:                                       # noqa: BLE001
         pass
     # Some rows only respond on the chevron, not the label. Try the last
     # clickable thing on the row before giving up.
@@ -208,7 +273,7 @@ def _expand(modal, label: str, page, *, reveals: str = "",
         target.locator("svg,i,button,span").last.click(timeout=6000)
         modal.get_by_text(marker, exact=False).first.wait_for(
             state="visible", timeout=8000)
-    except Exception:
+    except Exception:                                       # noqa: BLE001
         if verbose:
             print(f"    ({label}: still not expanded — the caller will say "
                   f"what it could not find)")
@@ -275,10 +340,12 @@ _DUMP_JS = """() => {
   const out = [];
   document.querySelectorAll('select').forEach((s) => {
     if (!vis(s)) return;
-    const opts = Array.from(s.options).slice(0, 5)
-                      .map((o) => cut(o.text, 24));
-    out.push('SEL ' + cut(s.name || s.id, 18) + ' n=' + s.options.length +
-             ' [' + opts.join(' / ') + ']');
+    const opts = Array.from(s.options).slice(0, 3)
+                      .map((o) => cut(o.text, 20));
+    const sel = (s.selectedIndex >= 0)
+                ? cut(s.options[s.selectedIndex].text, 28) : '(none)';
+    out.push('SEL ' + cut(s.name || s.id, 16) + ' n=' + s.options.length +
+             ' SELECTED=' + sel + ' [' + opts.join(' / ') + ']');
   });
   document.querySelectorAll('input').forEach((i) => {
     if (i.type === 'hidden') return;

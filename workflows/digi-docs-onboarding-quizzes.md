@@ -265,7 +265,10 @@ somebody.
 ## Where the truth lives
 
 Both columns read back from that same **Onboard → View Progress** table (p=201,
-needs the session's `rqst` token appended). Confirmed columns, left to right:
+needs the session's `rqst` token appended). The doc portal the rep's Set Status
+modal opens is **p=754** (employee select + the six bundle-type radios +
+Generate Bundle), and the per-document form it leads to is **p=755** — both
+carrying the same `rqst`. Confirmed columns, left to right:
 
 `Name · Contact · Login Created · Onboarding Documents · Background Check ·
 Drug Test · FTC DIRECTV Compliance Training · AT&T Protective Advantage Course ·
@@ -301,10 +304,21 @@ itself a step at a time, so the whole thing is NOT on screen at once:
 
 1. **Employee** — the new start.
 2. **Bundle Type** — **`Base (Door to Door/Business to Business)`** for
-   everyone right now (Megan 2026-08-25). Other options: Base (Default),
-   Base (Retail), Base (Wireless — MOD…), Commission Grid, Financing,
-   Administrative. Keep it a named constant; a wireless or retail office will
-   want a different one.
+   everyone right now (Megan 2026-08-25). Keep it a named constant; a wireless
+   or retail office will want a different one.
+
+   Read off the live page 2026-08-25 (probe run 5), the radios are these SIX,
+   not the list first transcribed from the Loom — there is no Base (Default),
+   no Base (Wireless), no Financing:
+
+   `Base (Door to Door/Business to Business)` · `Base (Retail)` ·
+   `Base (Retail - MCSL)` · `Commission Grid` · `Freestanding` ·
+   `Administrative`
+
+   They are `<input type=radio name=bundleType>`, and ours comes up **already
+   checked** — it is the first one. Submit is
+   `<input type=submit name=submitGetBunldes value="Generate Bundle">`
+   (OwnerVille's typo, not ours).
 3. Hit **`Generate Bundle`**. This does NOT generate anything yet — it reveals
    the next dropdown (Megan 2026-08-25).
 4. **Select Bundle*** — now visible. Choose **`Door to Door- General 1`**.
@@ -339,11 +353,19 @@ found, e.g.:
 Above them sit `Commissionable Product 1…25` / `Amount Due for Product 1…25`
 pairs, all reading **N/A**.
 
-**ANSWERED (Megan 2026-08-25): nothing is hand typed — they pre-fill.** In
-Megan's screenshot `Company Name` and `EMPLOYEE NAME` render as empty inputs
-with a red required asterisk, but the success banner afterwards says "click
-'View' to see the document with any form field values assigned to each
-document", which reads like something assigns them. It matters a lot:
+**CONFIRMED ON THE LIVE PAGE 2026-08-25 (probe run 5): they pre-fill.** Not a
+belief any more — the probe read the form back field by field and every one
+carried a value: `doc_699_2067_Emp` = the rep's name, `doc_699_1676_Com` =
+"Alphalete Marketing", `doc_699_1385_Own` = "Rafael Hidalgo", plus the rep's
+email and phone, the date, and 25 commissionable-product pairs already holding
+the real grid (`AT&T New Line Entry Level` / `$50`, `DTV Streaming` / `$85`,
+then `N/A` for the unused ones). Nothing was typed by the run.
+
+Original reasoning, kept because it is why the guard stays: in Megan's
+screenshot `Company Name` and `EMPLOYEE NAME` render as empty inputs with a red
+required asterisk, but the success banner afterwards says "click 'View' to see
+the document with any form field values assigned to each document", which reads
+like something assigns them. It matters a lot:
 
 - If they auto-fill, step 7 is just scroll-and-click.
 - If they do NOT, the run has to fill a variable number of fields whose count

@@ -131,6 +131,7 @@ def _phases(args) -> int:
             # when a rep isn't in the default 3-week window -- which is the
             # proven path and the one a just-added rep needs anyway.
             for c in send:
+                tab = None
                 try:
                     modal, matched = ov.open_set_status(page, c.name)
                     if not ov.docs_still_owed(modal):
@@ -141,12 +142,31 @@ def _phases(args) -> int:
                     if not dry and not ov.confirm_generated(tab, c.name):
                         refused.append(f"{c.name}: no success banner")
                         continue
-                    tab.close()
                     ticked = ov.tick_attestations(page, modal, dry_run=dry)
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
                     refused.append(str(e))
                     print(f"  ⛔ {e}")
+                except Exception as e:              # noqa: BLE001
+                    # ONE rep's page must not end the batch. Run 5 (2026-08-25)
+                    # died on rep 3 of 30 inside a scroll-into-view, taking the
+                    # other 27 with it -- and the phase split exists precisely
+                    # so a stall costs one person, not the cohort. Anything
+                    # unexpected is recorded against that rep and the run goes
+                    # on; the summary still exits non-zero.
+                    refused.append(f"{c.name}: {type(e).__name__}: "
+                                   f"{str(e).splitlines()[0][:120]}")
+                    print(f"  ⛔ {c.name}: {type(e).__name__} — "
+                          f"{str(e).splitlines()[0][:120]}")
+                finally:
+                    # Close the portal tab on EVERY path. It only ever closed
+                    # on the success path, so a batch of 30 left a tab open per
+                    # refusal.
+                    if tab is not None:
+                        try:
+                            tab.close()
+                        except Exception:           # noqa: BLE001
+                            pass
 
     # Write-back: tint the Digi Docs CELL for whoever actually got their
     # bundle. Never the name, never the checkbox.
