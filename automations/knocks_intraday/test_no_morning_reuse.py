@@ -352,10 +352,16 @@ class TheRoster(unittest.TestCase):
 
     def test_nine_pm_goes_to_every_office(self):
         """Raf 2026-08-25: the 9 PM board is for every office — Megan settled
-        it as each office's OWN 9 PM."""
+        it as each office's OWN 9 PM.
+
+        "Every office" is the office table MINUS anything blocked, PLUS Raf, who
+        is deliberately not in that table (his local office never migrated off
+        the older daily_metrics module, and adding him to OFFICES would enrol him
+        in every report built on it). Asserting the table alone is what let him
+        stay invisible here — Megan 2026-08-25: "Raf isn't on that roster?"."""
         from automations.office_metrics.offices import OFFICES
         self.assertEqual({o.key for o in roster.enrolled("eod")},
-                         set(OFFICES) - set(roster.BLOCKED))
+                         (set(OFFICES) - set(roster.BLOCKED)) | {"raf"})
 
     def test_an_unknown_slot_is_quiet_not_fatal(self):
         self.assertEqual(roster.enrolled("brunch"), [])

@@ -163,3 +163,44 @@ class RosterIsaiah(unittest.TestCase):
         self.assertEqual(shape, R.SHAPE_GAPS_ONLY)
         self.assertEqual(len(pngs), 1)          # merged, not a pair
         self.assertGreater(pngs[0].stat().st_size, 5000)
+
+
+class RosterRaf(unittest.TestCase):
+    """Megan 2026-08-25, on the roster looking short: "Raf gets metrics every
+    morning so I feel like we're missing something." He was never in
+    office_metrics.OFFICES — folded onto the shared metrics CARD in July but not
+    the office TABLE — so everything built on that table, this module included,
+    could not see him."""
+
+    def test_raf_is_in_the_eod_slot(self):
+        from automations.knocks_intraday import roster
+        self.assertIn("raf", {o.key for o in roster.enrolled("eod")})
+
+    def test_raf_is_not_in_the_afternoon_slots(self):
+        """2 PM and 5:15 PM stay Cody's alone."""
+        from automations.knocks_intraday import roster
+        for slot in ("first", "money"):
+            self.assertEqual([o.key for o in roster.enrolled(slot)], ["cody"], slot)
+
+    def test_raf_routes_to_the_master_pull(self):
+        """His knocks_office must match what is_master_office compares against,
+        or pull_offices_days tries to IMPERSONATE office 11280 — which is the
+        login itself — and fails with "name not found in ownerville", a string
+        the handler reads as an access gap."""
+        from automations.knocks_intraday import roster
+        from automations.rashad_metrics.knocks_pull import is_master_office
+        raf = [o for o in roster.enrolled("eod") if o.key == "raf"][0]
+        self.assertTrue(is_master_office(raf.knocks_office))
+
+    def test_raf_stays_out_of_the_shared_office_table(self):
+        """Adding him to office_metrics.OFFICES would enrol him in every report
+        built on it and double-post the metrics he already gets from
+        daily_metrics. He must exist ONLY in this roster."""
+        from automations.office_metrics.offices import OFFICES
+        self.assertNotIn("raf", OFFICES)
+
+    def test_raf_has_a_channel_and_a_timezone(self):
+        from automations.knocks_intraday import roster
+        raf = [o for o in roster.enrolled("eod") if o.key == "raf"][0]
+        self.assertTrue(raf.channel_id)
+        self.assertEqual(raf.timezone, "America/Chicago")

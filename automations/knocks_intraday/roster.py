@@ -57,6 +57,38 @@ INTRADAY_KEYS = ("cody",)
 # Gaps are all real. [[project_isaiah_legacy_wireless]]
 BLOCKED: dict = {}
 
+# RAF IS NOT IN office_metrics.OFFICES, and that is not an oversight to fix
+# there. His local office was folded onto the shared office-metrics CARD in July
+# 2026 but never into the office TABLE — he still runs the older
+# `automations.daily_metrics.run --owner "Rafael Hidalgo"` module. Adding him to
+# OFFICES would enrol him in every report built on that table (office_metrics'
+# own runner among them) and double-post metrics he already gets. So he lives
+# here, local to the knocks roster, and nowhere else.
+#
+# Megan 2026-08-25, on the count looking short: "Raf gets metrics every morning
+# so I feel like we're missing something."
+#
+# ov 'master': the rhidalgo login IS office 11280, so he cannot be impersonated —
+# `pull_offices_days` sees is_master_office() and routes to pull_master_days_on_page
+# instead. knocks_office must therefore match weekly_knock_dispositions.offices.RAF
+# ["name"] exactly, which is what is_master_office compares against.
+#
+# Channel: #alphalete-sales. His Total Knocks board has always gone there; it
+# went into that channel's Metrics THREAD, and the intraday boards post
+# top-level instead (Megan, same day: "just be posted to the channel so everyone
+# can see it"). Irving/Frisco TX -> Central.
+RAF_OFFICE = Office(
+    key="raf",
+    report_id="knocks_intraday_raf",   # knocks-only; his metrics card is elsewhere
+    label="Rafael Hidalgo",
+    owner="Rafael Hidalgo",
+    channel_id="C068PH3RFSM",          # #alphalete-sales
+    channel_name="#alphalete-sales",
+    sheet_id="",                       # this module writes no Sheet
+    knocks_office="Rafael Hidalgo",    # == RAF["name"] -> is_master_office True
+    timezone="America/Chicago",
+)
+
 
 def enrolled(slot_key: str) -> List[Office]:
     """Offices owed `slot_key`'s board, in registry order.
@@ -64,7 +96,10 @@ def enrolled(slot_key: str) -> List[Office]:
     An unknown slot key returns [] rather than raising — a typo in a caller
     should cost one quiet slot, not crash a nightly run for every office."""
     if slot_key == "eod":
-        keys = [k for k in OFFICES]
+        # Raf rides the 9 PM slot only, and is appended rather than merged into
+        # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
+        return ([OFFICES[k] for k in OFFICES if k not in BLOCKED]
+                + [RAF_OFFICE])
     elif slot_key in ("first", "money"):
         keys = list(INTRADAY_KEYS)
     else:
