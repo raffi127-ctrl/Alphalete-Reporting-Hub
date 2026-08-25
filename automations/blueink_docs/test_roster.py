@@ -166,3 +166,38 @@ def test_collapse_keeps_everyone_distinct():
     people = parse_tab(_tab([_row("A", "One", "a@x.com"),
                              _row("B", "Two", "b@x.com")]), "t")
     assert len(collapse_duplicates(people)) == 2
+
+
+def test_rows_below_a_chart_are_not_people():
+    # Megan 2026-08-24: only people IN a chart count. A chart ends at the blank
+    # row; anything typed underneath belongs to nobody.
+    values = _tab([_row("Ana", "Lopez", "ana@x.com")])
+    values.append(["", "", "", "Stray", "Person", "", "", "", "", "", "", "", "", ""])
+    people = parse_tab(values, "t")
+    assert [p.name for p in people] == ["Ana Lopez"]
+
+
+def test_a_second_chart_after_a_gap_still_counts():
+    # ...but a real second chart -- blank row, date, header, people -- does.
+    people = parse_tab(_tab([_row("Ana", "Lopez", "ana@x.com")],
+                            [_row("Ben", "Ruiz", "ben@x.com")]), "t")
+    assert [p.name for p in people] == ["Ana Lopez", "Ben Ruiz"]
+
+
+def test_second_monday_chart_without_a_header_still_reads():
+    # Monday's tab carries two charts. If the second one is pasted in without
+    # a header row, its people must still be read -- the DATE row is the
+    # marker that a chart started.
+    values = _tab([_row("Ana", "Lopez", "ana@x.com")])
+    values.append(["8/31/2026"] + [""] * 13)
+    values.append(_row("Ben", "Ruiz", "ben@x.com"))
+    people = parse_tab(values, "t")
+    assert [p.name for p in people] == ["Ana Lopez", "Ben Ruiz"]
+    assert [p.section for p in people] == [1, 2]
+
+
+def test_a_date_row_is_still_required_for_headerless_rows():
+    # No date row = not a chart. The 2026-08-24 stray rows must stay excluded.
+    values = _tab([_row("Ana", "Lopez", "ana@x.com")])
+    values.append(_row("Stray", "Person", "stray@x.com"))
+    assert [p.name for p in parse_tab(values, "t")] == ["Ana Lopez"]

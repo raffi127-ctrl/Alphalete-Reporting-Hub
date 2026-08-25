@@ -2,10 +2,12 @@
 
 Two things about these tabs that the parser has to survive:
 
-1. **A tab holds more than one section.** "D2D OBCL 8.24" opens with a date row,
+1. **A tab holds more than one CHART.** "D2D OBCL 8.24" opens with a date row,
    a header row, then ~68 people -- and then a blank row, ANOTHER date row,
-   ANOTHER header row, and the late adds. Reading only the first section
-   silently drops those people, so every section is parsed and its rows merged.
+   ANOTHER header row, and the late adds. Reading only the first silently
+   drops those people, so every chart is parsed and its rows merged. A chart
+   runs from its header row to the next BLANK row -- rows typed below a chart
+   are not in it and are not people.
 2. **Columns move.** Everything is located by its header label, per-section, so
    inserting a column upstream can't make us email the wrong field.
 """
@@ -136,11 +138,15 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
     out: List[NewStart] = []
     section = 0
     header: Optional[List[str]] = None
+    last_header: Optional[List[str]] = None
+    last_cols: dict = {}
     cols: dict = {}
+    pending_chart = False      # a date row opened one; numbered when it has people
 
     for i, row in enumerate(values):
         if _looks_like_header(row):
             section += 1
+            pending_chart = False      # this header IS the chart's start
             header = row
             cols = {
                 "first": _col(header, config.COL_FIRST),
@@ -159,13 +165,40 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
                 cols["first"] = next(
                     (j for j, c in enumerate(header)
                      if (c or "").strip().lower() == "name"), cols["first"])
+            # Kept so a later chart opened by a DATE row with no header of its
+            # own can inherit this layout.
+            last_header, last_cols = header, dict(cols)
             continue
-        if header is None or _is_date_row(row):
+        # A CHART ends at a blank row. Without this a section runs to the
+        # bottom of the tab, so anything typed below it -- scratch rows, a
+        # half-built block, a stray name -- reads as a person in that chart.
+        # That is what happened on 2026-08-24: 25 bare name rows under the
+        # chart came back as real people with no email. Megan's rule is that
+        # only people IN a chart count, and there may be several charts.
+        if not any((c or "").strip() for c in row):
+            header = None
+            continue
+        # A DATE row opens a chart. Monday's tab carries two, and if whoever
+        # built the second one didn't paste a header, its people would
+        # otherwise be dropped -- so the previous chart's column layout is
+        # reused until a real header replaces it. This can't resurrect the
+        # stray-rows problem above: those had no date row opening them.
+        if _is_date_row(row):
+            if header is None and last_header is not None:
+                # Numbered only if people actually follow -- a header row
+                # right after this would otherwise count the chart twice.
+                header, cols = last_header, dict(last_cols)
+                pending_chart = True
+            continue
+        if header is None:
             continue
         first = _cell(row, cols["first"])
         last = _cell(row, cols["last"])
         if not (first and last):
             continue                       # blank spacer / legend row
+        if pending_chart:
+            section += 1
+            pending_chart = False
         email = _cell(row, cols["email"])
         final_status = _cell(row, cols["final"])
         bg_status = _cell(row, cols["bg"])
