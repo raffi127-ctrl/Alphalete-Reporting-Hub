@@ -39,11 +39,12 @@
    }
   },
   "tableau:order_log": {
-   "label": "60-day Order Log",
-   "_note": "NOT a gate. Cutover happened 2026-07-23 and this was never wired, so vantura_churn's data_sources entry buys nothing - readiness fails open and the report runs on its not_before floor. Do NOT read a data_sources list as proof of a freshness gate; check the probe type. The work is mostly done already: tableau:att_orderlog (type att_orderlog) probes this same ATTTRACKER-B2B/ORDERLOG view for real. Wiring it here means pointing vantura_churn at that source id - blocked on the same live test, since its CDP pull shares debug port 9246 with vantura_churn's own cdp_pull and the collision has never been exercised.",
+   "label": "D2D Order Log (ATTTRACKER2_1-D2D) - real freshness gate",
+   "_note": "WIRED 2026-08-25, after a month as a not_configured stub that made 14 reports look gated when nothing was. What unblocked it was noticing the id covered TWO different realities: the twelve Lucy 1 consumers (daily_metrics, rashad/aya/cyrus/hammad/kash/salik/cody/haytham/isaiah/jamis/trang_metrics, rashad_orderlog) read ATTTRACKER2_1-D2D/ORDERLOG via the ordinary patchright path, while vantura_churn and b2b_metrics read Carlos's ATTTRACKER-B2B/ORDERLOG over CDP. One probe could never have served both; the B2B pair now point at tableau:att_orderlog instead. This entry keeps the D2D half and reuses the tracker_extract probe that ALREADY runs on Lucy 1 every morning for the country trackers - same workbook, same extract refresh, nothing new to build or verify. TRADE-OFF, on purpose: a report can now be HELD until the extract lands, where before it just ran on stale data. daily_metrics was deliberately moved to order 4.06 (~04:45) to stop it landing at 9-10am, so on a slow-extract day this can push it toward the 06:30 floor - which is the trade the daily_metrics notes ask for, since the hold only happens on the days the numbers would have been yesterday's. Back out by setting type back to not_configured.",
    "probe": {
-    "type": "not_configured",
-    "_todo": "still unprobed, and 14 OTHER reports (daily_metrics, the per-owner *_metrics, b2b_metrics) still list it - each is running ungated behind a data_sources line that looks like a gate"
+    "type": "tracker_extract",
+    "extract": "tableau:tracker_att",
+    "fallback_hhmm": "06:30"
    }
   },
   "tableau:att_orderlog": {
@@ -5675,7 +5676,7 @@
    "display_name": "B2B Metrics -> office channels",
    "source_type": "tableau",
    "data_sources": [
-    "tableau:order_log",
+    "tableau:att_orderlog",
     "tableau:churn"
    ],
    "command": [
