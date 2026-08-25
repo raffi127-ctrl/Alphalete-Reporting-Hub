@@ -85,6 +85,26 @@ class OfficesWeCannotPullStayOutOfTheEmail(unittest.TestCase):
         self.assertIn("no data available", html)
 
 
+class TheDailyBoardSaysDaily(unittest.TestCase):
+    """Eve 2026-08-25 asked for "DAILY" in front of the per-owner board's
+    title. It has to be a PARAMETER: the same renderer draws the metrics
+    threads, the intraday slots and the /knocks replies, and none of those
+    are the captainship email's daily board."""
+
+    def test_the_prefix_is_opt_in(self):
+        import inspect
+        from automations.total_knocks import render as R
+        sig = inspect.signature(R.render_total_knocks)
+        self.assertIn("title_prefix", sig.parameters)
+        self.assertEqual(sig.parameters["title_prefix"].default, "",
+                         "default must leave every other board unchanged")
+
+    def test_the_captainship_board_passes_it(self):
+        import inspect
+        src = inspect.getsource(KD.capture_sections)
+        self.assertIn('title_prefix="DAILY "', src)
+
+
 class TotalsLabelTellsTheTruth(unittest.TestCase):
     def test_partial_says_how_many(self):
         self.assertEqual(KD.totals_label(4, 8),

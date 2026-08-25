@@ -603,6 +603,14 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # DATE alone, so after a board's layout changes a same-day rebuild would
     # otherwise re-ship the morning's PNGs and look like the change never
     # landed (the "Talk To's per Rep" column, 2026-08-25).
+    #
+    # reuse also gates the PER-OWNER png reuse further down, which it did NOT
+    # until 2026-08-25: skipping only the manifest still walked into each
+    # owner's already-drawn board and shipped it, so --fresh-knocks re-pulled
+    # nothing it could find on disk and a layout change stayed invisible for
+    # the rest of the day — the exact symptom the flag exists to cure (the
+    # "DAILY TOTAL KNOCKS" title). Same-day only: the filenames carry the
+    # date, so tomorrow's run redraws regardless.
     cached = (_load_manifest(render_dir, captain.key, target, saturday, wanted)
               if reuse else None)
     if not reuse:
@@ -722,7 +730,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         # left their boards right here on disk.
                         done_png = _owner_png(daily_root, display,
                                               "total_knocks", target)
-                        if done_png.exists() and done_png.stat().st_size:
+                        if (reuse and done_png.exists()
+                                and done_png.stat().st_size):
                             out_daily.append((display, done_png))
                             prev = _read_rows(done_png)
                             if prev is not None:
@@ -749,7 +758,13 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             png = knocks_render.render_total_knocks(
                                 target, rows=rows,
                                 out_dir=daily_root / _slug(display),
-                                title_suffix=display)
+                                title_suffix=display,
+                                # "DAILY TOTAL KNOCKS — …" (Eve 2026-08-25).
+                                # Sun+Mon the weekly board sits right under
+                                # this one, and two boards headed the same way
+                                # is how someone reads a day's number as the
+                                # week's.
+                                title_prefix="DAILY ")
                             out_daily.append((display, png))
                             captured_daily.append((display, cfg, rows))
                             _write_rows(png, rows)
@@ -775,7 +790,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         done_png = _owner_png(weekly_root, display,
                                               "weekly_knock_dispositions",
                                               saturday)
-                        if done_png.exists() and done_png.stat().st_size:
+                        if (reuse and done_png.exists()
+                                and done_png.stat().st_size):
                             out_weekly.append((display, done_png))
                             logfn(f"    · weekly {display}: reusing "
                                   f"{done_png.name}")

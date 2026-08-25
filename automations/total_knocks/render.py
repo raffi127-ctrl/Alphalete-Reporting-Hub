@@ -483,6 +483,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         title_suffix: str = "",
                         end: "dt.date | None" = None,
                         date_text: str = "",
+                        title_prefix: str = "",
                         extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
@@ -501,6 +502,13 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     `end` (optional): the last day of a multi-day board, for the title and the
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
+
+    `title_prefix` (optional): words in front of "TOTAL KNOCKS" — e.g.
+    "DAILY " for the per-owner boards inside a Captainship Report (Eve
+    2026-08-25). It is a PARAMETER rather than a new title because this one
+    renderer draws the same board for the metrics threads, the intraday slots
+    and the on-demand /knocks replies; renaming it in place would relabel all
+    of them. Default "" keeps every existing board byte-identical.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -539,7 +547,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
     return _draw(disp, table,
-                 f"TOTAL KNOCKS — {_office}{_date_text(target, end, date_text)}",
+                 f"{title_prefix}TOTAL KNOCKS — {_office}"
+                 f"{_date_text(target, end, date_text)}",
                  THEME_AMBER,
                  out_dir / f"total_knocks_{_file_span(target, end)}.png",
                  name_col=0, wrap_headers=True,
