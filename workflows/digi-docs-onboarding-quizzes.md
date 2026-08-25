@@ -55,8 +55,25 @@ So the run is three passes:
 
 1. Read this week's OBCL tab (every chart) and apply the eligibility block-list.
 2. Add every eligible rep who isn't in OwnerVille yet. Ticks nothing.
-3. For each rep still showing `REQUIRED ACTION`, generate the bundle, then tick
-   **Digi Docs** and tint. Post the by-hand leftovers to #11280 at the end.
+3. For each rep still showing `REQUIRED ACTION`, generate the bundle, then tint
+   their **Digi Docs** cell. Post the by-hand leftovers to #11280 at the end.
+
+### What gets written back, exactly (Megan 2026-08-25)
+
+- **Tint the `Digi Docs` CELL light green.** That is the whole write.
+- **Do NOT tint the name.** Blue Ink tints the first name in column D; this one
+  does not. Only its own cell.
+- **Do NOT tick the checkbox — ever.** A person hand-marks it once the docs are
+  actually done. The tint is the automation saying *"I sent it"*; the tick is a
+  human saying *"this is complete"*, and those are different claims. The same
+  cell carrying both is Blue Ink's pattern, but there the code ticks the box off
+  a Blue Ink "signed" list it can actually verify. Here we have no such source,
+  so writing the tick would be the software asserting something nobody checked.
+
+That also gives a cheap second re-send guard: an already-tinted `Digi Docs` cell
+is our own record that this rep was sent, readable without an OwnerVille round
+trip. Belt and braces with the `REQUIRED ACTION` check, which remains the
+authoritative one.
 
 ## Step 1 — add the rep to OwnerVille
 

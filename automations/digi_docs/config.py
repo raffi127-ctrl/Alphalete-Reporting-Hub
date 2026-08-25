@@ -25,6 +25,19 @@ COL_QUIZZES = "Onboarding Quizzes"
 # other than the two above.
 LEDGER_TAB = "Digi Docs Log"
 
+# --- What we are allowed to write (Megan 2026-08-25) ----------------------
+# Tint the Digi Docs CELL light green and nothing else. NOT the name -- Blue
+# Ink tints the first name in column D, this report does not -- and NEVER the
+# checkbox: a person hand-marks that once the docs are actually done.
+#
+# The distinction is the point. The tint is this automation saying "I sent it";
+# the tick is a human saying "this is complete". Blue Ink can write both because
+# it reads a Blue Ink "signed" list to back the second one; we have no such
+# source, so a tick from us would assert something nobody verified.
+TINT_CELL_ONLY = True
+TINT_THE_NAME = False
+NEVER_WRITE_CHECKBOX = True
+
 # --- OwnerVille: the choices, all of them --------------------------------
 # Onboard -> View Progress. Same page + session headshots/ov_upload.py drives.
 VIEW_PROGRESS_P = 201
