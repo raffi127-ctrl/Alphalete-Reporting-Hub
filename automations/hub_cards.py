@@ -2107,7 +2107,20 @@ AUTOMATED_REPORTS = [
         # exactly or the pill sticks on the mid-colour. Listing both ids here is
         # also what keeps the second one from auto-registering a phantom card.
         # No approval_phase — the second pass is a machine, not a checkmark.
-        "phases": ["owner_chat_texts_trackers", "owner_chat_texts_board"],
+        # TWO PHASES, ONE CARD ID (Megan 2026-08-25: "this text did go out"
+        # while the card read "no run logged"). This was a `phases` chain —
+        # which resolves each phase id against the Activity log — but 1a5179a
+        # added _HUB_CARD mappings routing BOTH halves to this card id, so the
+        # phase ids stop appearing in the log entirely and the chain can never
+        # complete. The two mechanisms cancel out. Keep the mapping (it is what
+        # stops each half auto-registering a phantom library card) and count the
+        # halves the other supported way: phase_runs counts DISTINCT Report
+        # NAMES, and the halves already carry different ones ("… — Trackers
+        # (iMessage)" vs "… — WOW Board (iMessage)"), so the 7:37 failure and
+        # its 9:37 re-run still count ONCE — amber after trackers, green after
+        # the board. [[reference_phase_pill_id_match]]
+        "daily_runs": 2,
+        "phase_runs": True,
         "schedule": {
             "frequency": "daily",
             "time": "7:30 AM",
