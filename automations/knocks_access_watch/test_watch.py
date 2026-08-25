@@ -64,6 +64,25 @@ class Classify(unittest.TestCase):
         self.assertEqual(self._one("Wayne Rude")["status"], A.MISSING)
 
 
+class TheMasterNeedsNoGrant(unittest.TestCase):
+    """Raf's office IS the login (11280), so it never appears in its own
+    Office Access list. Read literally, the audit called the healthiest
+    captainship 12 of 13 and pointed at the one owner who can never be
+    missing (2026-08-25)."""
+
+    def test_master_is_reachable_even_when_unlisted(self):
+        rep = A.classify({"rafael": ("Raf's", ["Rafael Hidalgo"])}, [], ALIASES)
+        self.assertEqual(rep["rafael"]["owners"][0]["status"], A.MASTER)
+        self.assertEqual(A.counts(rep)["rafael"], (1, 1))
+
+    def test_master_is_not_listed_as_a_gap(self):
+        rep = A.classify({"rafael": ("Raf's", ["Rafael Hidalgo", "Coel Reif"])},
+                         ROWS, ALIASES)
+        line = R.summary_lines(rep)[0]
+        self.assertIn("2/2 reachable", line)
+        self.assertNotIn("waiting on", line)
+
+
 class Counting(unittest.TestCase):
     def test_counts_only_credit_granted(self):
         rmap = {"tony": ("Tony's", ["Coel Reif", "Jay Turnage",

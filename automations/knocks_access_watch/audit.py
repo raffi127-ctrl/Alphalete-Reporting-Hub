@@ -40,6 +40,7 @@ _TABLE = "table#promotingOffices"
 OK = "ok"              # listed and granted — the report can pull this office
 PENDING = "pending"    # listed, but the row's action still reads "request"
 MISSING = "missing"    # not on the list under any spelling we can search for
+MASTER = "master"      # the login's OWN office — reachable without a grant
 
 
 def rosters(grid=None) -> Dict[str, Tuple[Optional[str], List[str]]]:
@@ -150,6 +151,10 @@ def classify(rosters_map, office_rows, aliases=None) -> dict:
                 return cand, row
         return None, None
 
+    from automations.focus_office_att.aliases import _norm_name
+    from automations.weekly_knock_dispositions.offices import RAF as _RAF
+    master = _norm_name(_RAF["name"])
+
     report = {}
     for key, (title, names) in rosters_map.items():
         owners = []
@@ -158,6 +163,20 @@ def classify(rosters_map, office_rows, aliases=None) -> dict:
                 canonical = alias_to_canonical(display, aliases)
             except Exception:  # noqa: BLE001 — a broken alias sheet ≠ no audit
                 canonical = display
+            if _norm_name(canonical) == master:
+                # The MASTER office never appears in its own Office Access
+                # list: the login IS that office (11280), so the pull skips
+                # impersonation entirely (knock_dispo_images.owner_cfgs draws
+                # the same distinction, against the same RAF row, so the audit
+                # and the build can't disagree about who the master is).
+                # Without this, the watcher reported Raf as an access gap on
+                # his own captainship — 12 of 13 when the truth is 13 of 13 —
+                # and the one number that proves the audit is healthy would
+                # have read as the first thing to go fix (2026-08-25).
+                owners.append({"display": display, "canonical": canonical,
+                               "status": MASTER, "matched": canonical,
+                               "office": "", "company": "", "action": ""})
+                continue
             cand, row = find(display)
             if row is None:
                 surname = (display.split() or [""])[-1].lower()
@@ -191,7 +210,8 @@ def statuses(report) -> Dict[str, str]:
 def counts(report) -> Dict[str, Tuple[int, int]]:
     """{captain key: (reachable, roster size)} — what the report's summary
     boards will be able to cover."""
-    return {key: (sum(1 for o in block["owners"] if o["status"] == OK),
+    return {key: (sum(1 for o in block["owners"]
+                      if o["status"] in (OK, MASTER)),
                   len(block["owners"]))
             for key, block in report.items()}
 

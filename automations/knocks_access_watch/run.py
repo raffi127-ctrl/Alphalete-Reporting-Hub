@@ -61,7 +61,8 @@ PROFILE_DIR = (REPO_ROOT / "automations" / "uploaded"
 CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
 
 _LABEL = {A.OK: "granted", A.PENDING: "requested, not granted",
-          A.MISSING: "not on the list"}
+          A.MISSING: "not on the list",
+          A.MASTER: "the login's own office (no grant needed)"}
 
 
 # --------------------------------------------------------------------------
@@ -98,7 +99,8 @@ def diff(prev: Dict[str, str], now: Dict[str, str]) -> dict:
         if was is None:
             added.append((key, status))
         elif was != status:
-            (gained if status == A.OK else lost).append((key, was, status))
+            (gained if status in (A.OK, A.MASTER)
+             else lost).append((key, was, status))
     for key, was in sorted(prev.items()):
         if key not in now:
             dropped.append((key, was))
@@ -116,7 +118,8 @@ def summary_lines(report: dict) -> List[str]:
         if not block:
             continue
         ok, total = A.counts(report)[key]
-        gaps = [o for o in block["owners"] if o["status"] != A.OK]
+        gaps = [o for o in block["owners"]
+                if o["status"] not in (A.OK, A.MASTER)]
         line = f"{key}: {ok}/{total} reachable"
         if gaps:
             line += " — waiting on " + ", ".join(
