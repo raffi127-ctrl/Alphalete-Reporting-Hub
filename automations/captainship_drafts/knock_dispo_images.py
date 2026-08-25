@@ -559,6 +559,24 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         aliases_map = {}
     pairs = owner_cfgs(names, aliases_raw)
 
+    # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
+    # thread, and a second sync start in the same thread dies with "you are
+    # using Playwright Sync API inside the asyncio loop" — the exact failure
+    # that silently killed every §2 Tableau shot until _tableau_shots learned
+    # to close first. Same medicine here, best-effort: costs one browser
+    # relaunch for the next captain's §1, buys a session that can open at all.
+    #
+    # This has to come BEFORE the PSS crosstab, not just before the ownerville
+    # session: the crosstab download starts its own sync playwright too, so
+    # closing after it meant the download never got the chance — every weekly
+    # board came out with blank apps columns on 2026-08-24, the section's first
+    # day, and the error read like a Tableau problem.
+    try:
+        from automations.captainship_drafts import sheet_render
+        sheet_render.close_renderer()
+    except Exception:  # noqa: BLE001
+        pass
+
     # The org-wide rep-level PSS crosstab, ONCE for every owner (the download
     # helper dedupes same-day pulls when the cache env is set, but one call per
     # build is the contract either way). WEEKLY-ONLY — the daily board carries
@@ -574,18 +592,6 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
                   f"{str(e)[:160]}) — apps columns blank, weekly boards "
                   "flagged INCOMPLETE")
-
-    # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
-    # thread, and a second sync start in the same thread dies with "you are
-    # using Playwright Sync API inside the asyncio loop" — the exact failure
-    # that silently killed every §2 Tableau shot until _tableau_shots learned
-    # to close first. Same medicine here, best-effort: costs one browser
-    # relaunch for the next captain's §1, buys a session that can open at all.
-    try:
-        from automations.captainship_drafts import sheet_render
-        sheet_render.close_renderer()
-    except Exception:  # noqa: BLE001
-        pass
 
     from automations.weekly_knock_dispositions import board as B
     from automations.weekly_knock_dispositions import pull as P
