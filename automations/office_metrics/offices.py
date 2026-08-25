@@ -134,6 +134,11 @@ class Office:
     #   {"channel_id","channel_name","slugs":[metric-slug,…],"header_label":""}
     # slugs are ReportKind.key values, which equal the runner's metric slugs.
     channel_plans: tuple = ()
+    # IANA timezone of the office's own city — what "2pm local" means for that
+    # office. NEVER set by hand on a row: filled from OFFICE_TIMEZONES below, which
+    # is the one place to edit. See that dict for where the value comes from and
+    # why ownerville can't be asked for it.
+    timezone: str = ""
     # NDS owner: their metrics live in the NDS-SN (RES-ATT-OOF) workbook, not the
     # ATT-D2D one the standard boards pull. When True, the runner sources the NDS
     # equivalents (churn -> office_metrics.nds_churn, etc.). Default False = every
@@ -318,6 +323,51 @@ NDS_OFFICES: set = {"isaiah", "drew"}
 # the sheet and wouldn't otherwise carry this field). [[project_trang_fresh_success]]
 CROSS_WS_TOKEN_FILES: dict = {"trang": "slack-token-freshsuccess"}
 
+# Each office's OWN timezone, keyed by office key. Committed here (like
+# NDS_OFFICES / CROSS_WS_TOKEN_FILES) so it survives an onboard_apply
+# re-materialize, which regenerates onboarded_offices.json from the sheet and
+# would otherwise drop it.
+#
+# WHY THIS IS A TABLE AND NOT AN OWNERVILLE LOOKUP: ownerville has no per-office
+# timezone. Its session blob carries `timezoneFullName`, but that describes the
+# LOGGED-IN ACCOUNT, not the office being viewed — PROVEN 2026-08-25 by
+# impersonating 21 different offices (our 11 plus a sample including the
+# corporate parent account): every one returned "US/Central" while
+# `officeOwnerName` stayed "Rafael Hidalgo" the whole time. A 50-office
+# nationwide network is not 100% Central, and four of the offices below are not.
+#
+# WHERE THE VALUES COME FROM: ownerville Company Information (index.cfm?p=767)
+# under impersonation DOES carry the office's own street address, and it changes
+# per office. Harvested 2026-08-25 -> output/office_addresses.json (city/state/zip
+# per office, kept as the provenance record). The city determines the zone:
+#   Lubbock / Tyler / Fort Worth / Corpus Christi / Austin / San Antonio /
+#   Dallas TX -> America/Chicago   (no office is in the El Paso Mountain sliver)
+#   Indianapolis IN -> America/Indiana/Indianapolis (Eastern, observes DST)
+#   Southfield MI   -> America/Detroit      (Eastern)
+#   Wilkes-Barre PA -> America/New_York     (Eastern)
+# An office that MOVES needs this re-harvested — re-run
+# output/_harvest_office_addresses.py.
+OFFICE_TIMEZONES: dict = {
+    "rashad":  "America/Chicago",              # Lubbock, TX
+    "aya":     "America/Indiana/Indianapolis",  # Indianapolis, IN — EASTERN
+    "cyrus":   "America/Chicago",              # Tyler, TX
+    "hammad":  "America/Detroit",              # Southfield, MI — EASTERN
+    "kash":    "America/Chicago",              # Fort Worth, TX
+    "salik":   "America/Detroit",              # Southfield, MI — EASTERN
+    "cody":    "America/Chicago",              # Corpus Christi, TX
+    "haytham": "America/Chicago",              # Austin, TX
+    "trang":   "America/Chicago",              # San Antonio, TX
+    "isaiah":  "America/Chicago",              # Dallas, TX
+    "nii":     "America/New_York",             # Wilkes-Barre, PA — EASTERN
+}
+
+# The fallback for an office nobody has harvested yet. Most of the org is Texas,
+# so Central is the right guess — but a GUESS is not a fact: `unconfirmed_timezones()`
+# lists every office running on it, and any schedule that fires on office-local
+# time must say so out loud rather than silently assuming.
+DEFAULT_TIMEZONE = "America/Chicago"
+
+
 
 def _merge_onboarded() -> None:
     if not _ONBOARDED_FILE.exists():
@@ -398,7 +448,24 @@ def _merge_onboarded() -> None:
             continue
 
 
+def _apply_timezones() -> None:
+    """Stamp OFFICE_TIMEZONES onto every row — hardcoded and onboarded alike —
+    so consumers read `office.timezone` and never the dict."""
+    import dataclasses as _dc
+    for key, off in list(OFFICES.items()):
+        if not off.timezone:
+            OFFICES[key] = _dc.replace(
+                off, timezone=OFFICE_TIMEZONES.get(key, DEFAULT_TIMEZONE))
+
+
+def unconfirmed_timezones() -> list:
+    """Office keys running on DEFAULT_TIMEZONE because nobody harvested theirs.
+    A caller that schedules on office-local time should print this, not hide it."""
+    return sorted(k for k in OFFICES if k not in OFFICE_TIMEZONES)
+
+
 _merge_onboarded()
+_apply_timezones()
 
 ORDER = list(OFFICES)          # stable order for listing
 
