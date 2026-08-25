@@ -3278,6 +3278,41 @@
    ],
    "verify": null
   },
+  "knocks_access_watch": {
+   "order": 36.15,
+   "_order_note": "36.15 = immediately BEFORE captainship_knocks (36.2). The knock capture is what a newly-granted office actually changes, so reading the Office Access list right in front of it means the day's log says how many ICDs were reachable for THIS build, not for yesterday's. It is a ~1 minute read and it holds nothing up.",
+   "on_scheduler": true,
+   "display_name": "Captainship Knock Access (watch)",
+   "_note": "READ-ONLY WATCHER, NOT A REPORT (Eve 2026-08-25). Reads the ownerville Office Access list of the reporting account (rhidalgo) and the captainship rosters off the Org Sales Board, and says which ICDs the knock boards can reach. Posts to #claudecorrections-and-requests ONLY when that set CHANGES - an office granted (it is now in its captain's boards) or lost. Silent otherwise, on purpose: a watcher that announces 'still 19 of 35' every pass teaches everyone to skip it. WHY IT EXISTS: 16 of the 35 fiber-captainship ICDs had no Office Access on 2026-08-24, the reports shipped partial from 8/25 (grey 'no access' note per missing owner, '(N of M ICDs)' on the totals row), and the grants arrive one at a time from someone else's console with no notification. Nothing in the code needs updating when one lands - the boards are built from the Sales Board roster, so the office simply starts pulling - this is only how we FIND OUT. It takes the ownerville session (one per account), so it waits for the knock pulls to finish and skips the pass rather than interrupting one; exit is always 0, a skipped pass is not a failure. The intraday goteo runs off com.alphalete.knocks-access-watch (10:30/13:30/16:30/19:30) - see install_knocks_access_watch_agent. Retire both when every ICD is granted.",
+   "command": [
+    "automations.knocks_access_watch.run"
+   ],
+   "base_args": [
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [
+    "org_sales_board"
+   ],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "appstream",
+   "timeout_minutes": 45,
+   "verify": null,
+   "report_id": "captainship-knock-access"
+  },
   "captainship_knocks": {
    "order": 36.2,
    "_order_note": "36.2 = right before captainship_drafts (36.3), and AFTER every office Metrics report (rashad 27 through nii 36.1). Megan 2026-08-24: EVERY office's metrics run before the knocks capture. At its old 23.5 slot this ~2h pull sat between the captainship fills and the eleven per-office threads, so on a clean morning the 7am Metrics threads would not post until 08:00-09:00; it only looked fine on 8/24 because a hand-queued recruiting rerun displaced the capture to 09:14. The capture only needs the Org Sales Board roster, so it is free to run late; keeping it adjacent to the build still means a day where this step dies has the build's own fallback pull right behind it.",
@@ -4235,6 +4270,27 @@
    "verify": null,
    "timeout_minutes": 5,
    "machine": "Lucy 3"
+  },
+  "install_knocks_access_watch_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report - a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_access_watch_agent` (same pattern as install_knocks_intraday_agent). Bootstraps com.alphalete.knocks-access-watch on the mini from the committed plist: four quiet passes a day (10:30/13:30/16:30/19:30 machine-local) of the ownerville Office Access watch, so a grant that lands at noon is known the same afternoon instead of at tomorrow's 4am wave. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it.",
+   "display_name": "Install: Knock Access Watch LaunchAgent",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "knocks-access-watch"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
   },
   "install_knocks_intraday_agent": {
    "on_scheduler": true,

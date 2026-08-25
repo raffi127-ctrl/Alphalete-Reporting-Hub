@@ -121,11 +121,28 @@ _NO_OFFICE_MARKERS = ("not found in ownerville", "couldn't impersonate",
 
 def _owner_error_note(exc) -> str:
     """The errors[] note for a failed owner pull — an ACCESS GAP reads as
-    one, anything else keeps its exception text for debugging."""
+    one, anything else keeps its exception text for debugging.
+
+    The access-gap note carries NO_DATA_MARK, so it renders as the GREY
+    "no data available" box instead of the yellow pending one. That is the
+    whole reason these sections can ship while the Office Access requests are
+    still being granted (Eve 2026-08-25): the yellow box carries PENDING_MARK,
+    and run.py's send guard refuses to mail ANY report that still shows one —
+    so a single un-granted ICD used to hold its captain's entire email, and
+    with sixteen of them, five captains got no email at all.
+
+    Grey is the honest colour here, not a downgrade: the run did not fail and
+    re-running fixes nothing. Someone has to grant Office Access on the
+    reporting account. The owner still appears in the email under their own
+    sub-heading with the reason spelled out, which is the standing rule — an
+    office we cannot see must be VISIBLE, never silently dropped — and the
+    summary board's "(N of M ICDs)" label says how many are missing from the
+    totals."""
     text = f"{type(exc).__name__}: {str(exc)[:200]}"
     if any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS):
-        return ("no ownerville office for this name — access gap, not a run "
-                "failure: nothing can be pulled until the account exists")
+        return (NO_DATA_MARK + "no ownerville office access for this owner on "
+                "the reporting account — nothing can be pulled until access "
+                "is granted (not a failed run; re-running changes nothing)")
     return text
 
 
@@ -288,7 +305,33 @@ def daily_summary_row(label: str, rows: list) -> List[str]:
     ]
 
 
-def daily_summary_table(captured: list, chan_rows: Optional[list] = None
+def totals_label(n_covered: int, roster_n: Optional[int]) -> str:
+    """The captainship TOTALS row's name — "(N of M ICDs)" whenever the row
+    sums fewer offices than the captainship has.
+
+    Why the count rides the label instead of a footnote (Eve 2026-08-25): the
+    board is a PNG that gets forwarded on its own, and a totals row that says
+    plain "CAPTAINSHIP TOTALS" while sixteen offices are still waiting on
+    Office Access reads as the captainship's real number. It is not — it is
+    the number for the offices we can see. Anyone comparing two captainships,
+    or this week against last, has to be told that, on the image itself.
+
+    n_covered counts the offices the totals actually SPEAK FOR, which is
+    not the same as the offices that contributed rows: an ICD that answered
+    with a real zero — nobody knocked — is fully represented by the total and
+    must NOT read as missing, or every quiet Sunday would look like an access
+    problem. Only an office we could not reach at all comes off the count.
+
+    roster_n=None (or a complete pull) keeps the bare label, so Rafael's
+    boards — 13 of 13 accessible — look exactly as they always have. Pure."""
+    if roster_n and n_covered < roster_n:
+        return f"CAPTAINSHIP TOTALS ({n_covered} of {roster_n} ICDs)"
+    return "CAPTAINSHIP TOTALS"
+
+
+def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
+                        roster_n: Optional[int] = None,
+                        n_covered: Optional[int] = None
                         ) -> Tuple[List[List[str]], list]:
     """The daily summary board's rows: one row per ICD of THIS captainship in
     roster order, then the trailing highlight block — a teal CHAN PARK
@@ -322,13 +365,19 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None
         tail.append(daily_summary_row("CHAN PARK", chan_rows))
         bgs.append(COMPARE_ROW_BG)
     all_rows = [rec for _d, _c, r in captured for rec in r]
-    tail.append(daily_summary_row("CAPTAINSHIP TOTALS", all_rows))
+    # n_covered counts the ICDs that ANSWERED, zeros included; `captured`
+    # only holds the ones with rows, so defaulting to it would flag a quiet
+    # office as unreachable. See totals_label.
+    covered = len(captured) if n_covered is None else n_covered
+    tail.append(daily_summary_row(totals_label(covered, roster_n), all_rows))
     bgs.append(THEME_PLUM["header_bg"])
     return body + tail, bgs
 
 
 def render_daily_summary(captured: list, target: dt.date, out_dir,
-                         chan_rows: Optional[list] = None) -> Path:
+                         chan_rows: Optional[list] = None,
+                         roster_n: Optional[int] = None,
+                         n_covered: Optional[int] = None) -> Path:
     """Draw the daily summary board PNG — plum theme like the weekly
     captainship summary, so the two summary boards read as siblings above
     their amber/plum per-owner boards. The trailing block (teal Chan row +
@@ -337,7 +386,8 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     highlight_last_row must count the teal row too — not just the last row."""
     from automations.weekly_knock_dispositions.board import THEME_PLUM
     from automations.total_knocks import render as knocks_render
-    table, bgs = daily_summary_table(captured, chan_rows)
+    table, bgs = daily_summary_table(captured, chan_rows, roster_n,
+                                     n_covered)
     date_s = f"{target.strftime('%b')} {target.day}, {target.year}"
     return knocks_render._draw(
         list(DAILY_SUMMARY_HEADERS), table,
@@ -625,6 +675,14 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # `out` because a weekly label can carry an INCOMPLETE suffix.
     done_daily: set = set()
     done_weekly: set = set()
+    # Owners the totals SPEAK FOR: a board, a reused board, or a real zero.
+    # An office we could not reach (no Office Access yet, a dead session) is
+    # absent here, and that gap is what the summary's "(N of M ICDs)" label
+    # reports. Kept apart from done_* — that one means "answered per kind,
+    # don't sweep it as a session casualty", which a FAILED owner satisfies
+    # too.
+    answered_daily: set = set()
+    answered_weekly: set = set()
     # Everything each summary needs, kept as pulled.
     captured_daily: List[tuple] = []    # (display, cfg, rows)
     captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
@@ -659,6 +717,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             logfn(f"    · daily {display}: reusing "
                                   f"{done_png.name}")
                             done_daily.add(display)
+                            answered_daily.add(display)
                             if not want_weekly:
                                 continue
                             raise _ReusedDaily
@@ -670,6 +729,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             errors[f"daily_knocks:{display}"] = (
                                 NO_DATA_MARK + "no knocks recorded yesterday")
                             out_daily.append((display, None))
+                            answered_daily.add(display)
                         else:
                             png = knocks_render.render_total_knocks(
                                 target, rows=rows,
@@ -678,6 +738,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             out_daily.append((display, png))
                             captured_daily.append((display, cfg, rows))
                             _write_rows(png, rows)
+                            answered_daily.add(display)
                             logfn(f"    ✓ daily {display}: {len(rows)} "
                                   f"rep(s) → {png.name}")
                     except _ReusedDaily:
@@ -709,6 +770,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             else:
                                 weekly_partial = True
                             done_weekly.add(display)
+                            answered_weekly.add(display)
                             continue
                         # Shared week cache (shared/knock_week_cache.py): the
                         # completed Mon–Sat week is frozen, and Sunday's
@@ -744,6 +806,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                 + "no knocks or sales recorded this week")
                             out_weekly.append((display, None))
                             done_weekly.add(display)
+                            answered_weekly.add(display)
                             continue
                         gaps_only = B.is_gaps_only(ov_rows)
                         rows = B.compute_rows(ov_rows, office_apps, dispo_cols)
@@ -766,6 +829,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         _write_rows(png, {"ov_rows": ov_rows,
                                           "apps": office_apps,
                                           "dispo_cols": dispo_cols})
+                        answered_weekly.add(display)
                         logfn(f"    ✓ weekly {display}: {len(ov_rows)} "
                               f"rep(s) → {png.name}")
                     except Exception as e:  # noqa: BLE001 — one owner ≠ section
@@ -829,7 +893,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     merged_apps.update(a)
             sum_rows.append(totals_row(
                 all_rows, merged_apps if has_apps else None, common_cols,
-                label="CAPTAINSHIP TOTALS"))
+                label=totals_label(len(answered_weekly), len(pairs))))
             span = (f"{monday.strftime('%b')} {monday.day} – "
                     f"{saturday.strftime('%b')} {saturday.day}, "
                     f"{saturday.year}")
@@ -869,7 +933,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         try:
             png = render_daily_summary(captured_daily, target,
                                        daily_root / "summary",
-                                       chan_rows=chan_rows)
+                                       chan_rows=chan_rows,
+                                       roster_n=len(pairs),
+                                       n_covered=len(answered_daily))
             out_daily.insert(0, (summary_label + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if daily_partial else ""), png))
