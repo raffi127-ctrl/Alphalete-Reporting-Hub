@@ -1,20 +1,31 @@
-"""The new-start onboarding steps, in one place — one row per thing a NEW HIRE
-in Raf's office gets put through.
+"""The new-start onboarding family — one row per step a NEW HIRE goes through.
 
-Employee onboarding grew one automation at a time (BG Check Sync, then Blue Ink
-New Start Docs, then the Headshot Bot) and each arrived with its own Hub card.
-They were already the same job wearing three hats: the SAME weekly cohort on the
-SAME `D2D OBCL <m.d>` tab of the SAME workbook, each ticking its own column and
-reporting into the SAME Slack room. Megan 2026-08-25: separate runs, one thing —
-so they share ONE card, the way the twelve per-office metric runs share the D2D
-Office Daily Metrics card.
+A REGISTRY, not a card. Every step here has its OWN Hub card, on its own
+machine and its own cadence:
 
-This module is that card's registry. The Hub card is GENERATED from it, so the
-next onboarding automation (Digi Docs + Onboarding Quizzes — see
-workflows/digi-docs-onboarding-quizzes.md) is one Step(...) row, not a card to
-hand-write.
+    BG Check Sync    Lucy 1   11:30am + 4pm          -> bg-check-sync
+    Blue Ink Packet  Lucy 2   Mon 7:30am + 2h sweep  -> blueink-docs
+    Headshot Photo   Lucy 3   Mon 8:30am + 5min tick -> headshot-bot
+    Digi Docs        Lucy 3   weekly batch           -> (not built yet)
 
-Import-light on purpose (dataclasses + stdlib only).
+These were briefly merged onto one card on 2026-08-25 and split back the same
+day (Megan). The merge cited the D2D Office Daily Metrics card as precedent,
+which was a misread: that card merges twelve runs of the SAME module on the
+SAME machine in the SAME batch. A Hub card is the unit of "did THIS run on THIS
+box at THIS time" — its pill, its schedule, its due-today count and the profile
+it appears on are all keyed to exactly that. Across three machines and three
+cadences none of those can be right: one pill cannot show Blue Ink failing while
+Headshots succeeds, and one schedule string cannot be three cadences.
+
+So the rule this file encodes: **merge WITHIN a machine and cadence, never
+across.** Two jobs that share a box AND a clock can share a card; anything else
+gets its own.
+
+What the family still shares is real, and is what this registry is for: the
+same weekly cohort on the same `D2D OBCL <m.d>` tab of the same workbook (every
+chart on it — Monday's has two), the same eligibility block-list, the same
+Slack room, one column each, and all of it on Raf's logins. Report code reads
+these constants instead of each module carrying its own copy.
 """
 from __future__ import annotations
 
@@ -32,8 +43,11 @@ DATED_TAB_PREFIX = "D2D OBCL"
 # Where every step reports what still needs doing by hand.
 SLACK_CHANNEL = "#11280-alphalete-marketing-inc-rafael-hidalgo"
 
-# The one Hub card all of these report onto.
-CARD_ID = "new-start-onboarding"
+# NOTE: there is deliberately NO family-wide card id. Each Step carries its own
+# `card`, and runners pass THAT to hub_activity.log_completed — which keys on
+# the card id, so a runner logging its scheduler handle instead self-registers a
+# duplicate library card and splits its history in two. That is exactly what the
+# Monday headshot thread did until 2026-08-25.
 
 
 @dataclass(frozen=True)
@@ -58,9 +72,10 @@ class Step:
     when: str                   # human-readable schedule
     does: str                   # one line: what it actually does
     actions: tuple = ()
-    # report_ids this step publishes under. They all route to CARD_ID via
-    # hub_publish._HUB_CARD, and each keeps its OWN Report Name on the row so
-    # the card's run feed still says which step ran.
+    card: str = ""              # this step's Hub card id
+    # report_ids this step publishes under; hub_publish._HUB_CARD routes each
+    # to `card`. Several ids per card is normal — the Monday thread and the
+    # 5-minute tick are both the Headshot Bot.
     report_ids: tuple = ()
     notes: tuple = ()           # anything the card should say out loud
     live: bool = True
@@ -76,6 +91,7 @@ STEPS: list = [
         when="11:30 AM + 4 PM daily",
         does=("reads the Sterling / First Advantage emails and updates each "
               "new start's BG Status on both OBCL tabs"),
+        card="bg-check-sync",
         report_ids=("bg_check_sync",),
         actions=(
             Action("Sync BG Statuses", "🔁",
@@ -99,6 +115,7 @@ STEPS: list = [
         does=("sends each eligible new start their I-9 / W-4 / Direct Deposit "
               "packet through the Blue Ink web app, tints the name green, and "
               "ticks the box once they've SIGNED"),
+        card="blueink-docs",
         report_ids=("blueink_docs",),
         actions=(
             Action("Preview Packets", "👁",
@@ -132,6 +149,7 @@ STEPS: list = [
         does=("collects headshots in a Monday Slack thread, cuts each onto a "
               "white background, uploads it to the rep's OwnerVille profile, "
               "and ticks the column"),
+        card="headshot-bot",
         report_ids=("headshots", "headshots_monday"),
         actions=(
             Action("Check for New Photos", "👁",
@@ -175,13 +193,13 @@ def by_key(key: str) -> Step:
 
 
 def report_id_map() -> dict:
-    """{report_id: CARD_ID} — what hub_publish._HUB_CARD needs to route every
-    step's runs onto the one card."""
-    return {rid: CARD_ID for s in live_steps() for rid in s.report_ids}
+    """{report_id: card id} — what hub_publish._HUB_CARD needs so every run
+    lands on ITS OWN step's card."""
+    return {rid: s.card for s in live_steps() for rid in s.report_ids if s.card}
 
 
 def machines() -> list:
-    """Assignees for the card, in step order, de-duped."""
+    """Every machine the family touches, in step order, de-duped."""
     out: list = []
     for s in live_steps():
         if s.machine not in out:

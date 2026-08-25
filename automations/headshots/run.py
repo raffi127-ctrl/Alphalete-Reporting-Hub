@@ -357,7 +357,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
                 pass
             try:
                 from automations.day_orchestrator.hub_publish import publish_done
-                publish_done("headshots", "Headshot Photo", "success")
+                publish_done("headshots", "Headshot Bot", "success")
             except Exception:
                 pass
             act["posted"] = True

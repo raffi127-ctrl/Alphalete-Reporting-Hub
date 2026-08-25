@@ -101,18 +101,22 @@ _HUB_CARD = {
     # vantura_churn: without this entry its card stays grey and a missed/failed run
     # looks identical to a clean one.
     "att_churn": "att-churn",
-    # New-start onboarding — three scheduler handles, ONE card (Megan
-    # 2026-08-25). BG Check Sync, Blue Ink and the Headshot Bot were three
-    # cards for the same job on the same weekly OBCL tab, so their runs now all
-    # land on new-start-onboarding. Each keeps its own report_id, which is what
-    # keeps its own Report Name on the row: the card's run feed still says
-    # WHICH step ran, so one card can't hide a single failing step.
-    # headshots_monday is the Monday thread post (weekly_thread.py), which had
-    # self-registered a library card of its own.
-    "bg_check_sync": "new-start-onboarding",
-    "blueink_docs": "new-start-onboarding",
-    "headshots": "new-start-onboarding",
-    "headshots_monday": "new-start-onboarding",
+    # New-start onboarding: ONE CARD PER JOB, not one per family (Megan
+    # 2026-08-25). These were briefly merged onto a single card, which was the
+    # wrong read of the office-metrics precedent — that card merges twelve runs
+    # of the SAME module on the SAME machine in the SAME batch. These three run
+    # on three machines on three cadences, and a card is the Hub's unit of "did
+    # THIS run on THIS box at THIS time": one pill cannot show Blue Ink failing
+    # while Headshots succeeds, one schedule string cannot be three cadences,
+    # and the card lands on all three profiles at once. Split back.
+    "bg_check_sync": "bg-check-sync",
+    "blueink_docs": "blueink-docs",
+    "headshots": "headshot-bot",
+    # The Monday thread post (weekly_thread.py) had self-registered a library
+    # card of its own, so a manual `_now` run left the real card reading "no run
+    # logged" all day. It belongs on the Headshot Bot card — same job, same
+    # machine, same weekly cadence.
+    "headshots_monday": "headshot-bot",
     # DD / Organization Bulletin: standalone LaunchAgent on the mini
     # (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh, Thursday
     # 10:30-13:00) since 2026-07-30 — never in the 4am batch, so without this

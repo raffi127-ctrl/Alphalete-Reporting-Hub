@@ -111,13 +111,14 @@ def post_prompt(*, dry_run: bool = True, channel: str = CHANNEL_ID,
 # on-demand rerun id 'headshots_monday_now', which is a card of its OWN: the Hub
 # counts runs by card id, so a manual `_now` run left the scheduled card reading
 # "no run logged" all day even though the thread had posted (Megan, 2026-08-24).
-# The merged card (Megan 2026-08-25): the Monday thread, the 5-minute tick,
-# Blue Ink and BG Check are all one job on one card. hub_activity keys on the
-# CARD id, so logging the old "headshots_monday" would keep self-registering a
-# duplicate library card beside it. The NAME stays step-specific — that is what
-# the card's run feed shows, and it is how a failing step stays visible.
-from automations.shared.new_start_steps import CARD_ID as HUB_CARD_ID
-HUB_CARD_NAME = "Headshot Photo — Monday thread"
+# The Headshot Bot card. hub_activity keys on the CARD id, so logging the old
+# "headshots_monday" self-registered a duplicate library card beside the real
+# one — which is why a manual `_now` run left the scheduled card reading "no run
+# logged" all day even though the thread had posted. The NAME stays specific to
+# the pass, so the run feed still distinguishes the Monday post from the
+# 5-minute tick.
+HUB_CARD_ID = "headshot-bot"
+HUB_CARD_NAME = "Headshot Bot — Monday thread"
 
 
 def _log_hub_run(started_at, status):
