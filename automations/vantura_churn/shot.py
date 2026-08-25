@@ -68,6 +68,25 @@ def visible_range(ws, helper_first_col: str = None) -> str:
             f"{max(last_row, 20)}")
 
 
+def _tab_hidden(ws) -> bool:
+    """Is this worksheet hidden on the spreadsheet?"""
+    try:
+        meta = ws.spreadsheet.fetch_sheet_metadata()
+        for sh in meta.get("sheets", []):
+            p = sh.get("properties", {})
+            if p.get("sheetId") == ws.id:
+                return bool(p.get("hidden", False))
+    except Exception:  # noqa: BLE001 — never let a visibility read break a shot
+        pass
+    return False
+
+
+def _set_tab_hidden(ws, hidden: bool) -> None:
+    ws.spreadsheet.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": ws.id, "hidden": hidden},
+        "fields": "hidden"}}]})
+
+
 def render(ws, out_path: Path, rng: str | None = None) -> Path:
     """Render `rng` of `ws` to a trimmed PNG."""
     import fitz  # PyMuPDF
@@ -98,11 +117,29 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
             return r.content
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
-    dpi = 200
-    doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
-    if doc.page_count > 1:              # tall list — refit so it stays one page
-        doc = fitz.open(stream=_fetch("&portrait=true&scale=4"), filetype="pdf")
-        dpi = 320
+    # A HIDDEN tab exports as an empty page. Google does not say so — the
+    # endpoint answers HTTP 200 with a valid, blank 993-byte PDF, identical to
+    # what a scope problem produces. Measured on Carlos's board 2026-08-25:
+    # 'Sales Board' (visible) 95KB, 'Commission' (visible) 129KB, 'LUCY CHURN'
+    # and 'Lucy Wireless Churn' (both hidden) 993B with zero text. That is why
+    # customer_churn and activation_by_rep posted white rectangles all day.
+    #
+    # Carlos keeps every 'Lucy …' working tab hidden on purpose, so the fix is
+    # NOT to leave it visible: reveal it for the length of the export and put it
+    # back. try/finally, because a tab left visible by a crash is a change to
+    # someone else's board that nobody asked for.
+    was_hidden = _tab_hidden(ws)
+    if was_hidden:
+        _set_tab_hidden(ws, False)
+    try:
+        dpi = 200
+        doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
+        if doc.page_count > 1:          # tall list — refit so it stays one page
+            doc = fitz.open(stream=_fetch("&portrait=true&scale=4"), filetype="pdf")
+            dpi = 320
+    finally:
+        if was_hidden:
+            _set_tab_hidden(ws, True)
 
     def _trim(im):
         bg = Image.new("RGB", im.size, (255, 255, 255))
@@ -141,10 +178,13 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
             img, Image.new("RGB", img.size, (255, 255, 255))).getbbox() is None:
         raise RuntimeError(
             f"{ws.title}!{rng} exported as a blank page ({img.width}x"
-            f"{img.height}) — the Sheets PDF export returned nothing. This is "
-            "almost always credentials, not an empty sheet: the export endpoint "
-            "is a Drive endpoint and answers 200-with-an-empty-PDF when the "
-            "token lacks the scope. Check `lucy sheets_whoami` on the runner.")
+            f"{img.height}) — the Sheets PDF export returned nothing. Look at "
+            "the TAB first: a hidden tab exports empty with no error, which is "
+            "what broke this on 2026-08-25 (the unhide/re-hide above covers it "
+            "now, so reaching here means that failed). Second suspect is the "
+            "token — `lucy sheets_whoami` on the runner. The board being empty "
+            "is the LEAST likely cause; every caller shoots a range it has "
+            "already checked has data.")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
