@@ -107,6 +107,23 @@ from automations.shared.tableau_patchright import (
 HOLDER_PROFILE_DIR = PROFILE_DIR.parent / ".browser_profile_holder"
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _git_head() -> str:
+    """This repo's HEAD, or '' if it can't be read.
+
+    Best-effort by design: any failure answers '' and the caller treats that as
+    "no change", so a git hiccup can never restart or stall the holder."""
+    try:
+        import subprocess
+        r = subprocess.run(["git", "-C", str(_REPO_ROOT), "rev-parse", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:  # noqa: BLE001 — bookkeeping must never break the holder
+        return ""
+
+
 def _stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -350,8 +367,31 @@ def main() -> int:
         # detects instantly anyway), so it won't interrupt someone mid-login.
         NO_EXPORT_MAX_MIN = 25
         last_export_ok = time.time()   # the seed export above counts as the first
+        # SELF-RELOAD (Megan 2026-08-25). The holder runs for days, so it keeps
+        # whatever code it started with — a `git pull` changes the files on disk
+        # and nothing else. That is how BOTH of this week's holder fixes came to
+        # sit inert: a965a8a widened AppStream warming to all three Lucys on 8/24
+        # and 6665dff taught the holder to pick up a pushed token on 8/25, and
+        # neither did anything until someone remembered `lucy restart_holder`.
+        # A fix nobody notices is off is worse than no fix — it reads as "we tried
+        # that and it didn't help". mini_control's poller has re-execed on a HEAD
+        # change since 2026-07-05 for exactly this reason.
+        #
+        # It EXITS instead of os.execv-ing, which is where it differs from the
+        # poller: the poller owns no browser, while this process owns a live
+        # Chrome. Replacing the image out from under it would orphan or kill that
+        # Chrome mid-session. Exiting is the restart path this file already uses
+        # twice (dead browser, stale export) and launchd's KeepAlive relaunches
+        # in ~30s onto the persistent profile, re-seeding without a human.
+        head_at_start = _git_head()
         while True:
             try:
+                head_now = _git_head()
+                if head_at_start and head_now and head_now != head_at_start:
+                    print(f"[{_stamp()}] code changed ({head_at_start[:7]} → "
+                          f"{head_now[:7]}) — exiting (rc=1) so launchd relaunches "
+                          f"the holder on it.", flush=True)
+                    return 1
                 if not _browser_alive(ctx):
                     print(f"[{_stamp()}] browser is gone — exiting (rc=1) so launchd "
                           f"restarts the holder fresh on the persistent profile.",
