@@ -259,7 +259,7 @@ found, e.g.:
 Above them sit `Commissionable Product 1…25` / `Amount Due for Product 1…25`
 pairs, all reading **N/A**.
 
-**Open question — are the starred fields pre-filled or do we type them?** In
+**ANSWERED (Megan 2026-08-25): nothing is hand typed — they pre-fill.** In
 Megan's screenshot `Company Name` and `EMPLOYEE NAME` render as empty inputs
 with a red required asterisk, but the success banner afterwards says "click
 'View' to see the document with any form field values assigned to each
@@ -271,9 +271,12 @@ document", which reads like something assigns them. It matters a lot:
   validation or — far worse — generates contracts with a blank employee name
   on them.
 
-Whichever it is, the run should **verify the required fields are non-empty
-before clicking Generate Document**, and refuse that rep rather than submit a
-half-filled contract. This is the same instinct as asserting the bundle
+So step 7 is scroll-and-click. **The verify stays anyway**: check every
+required field is non-empty before clicking Generate Document, and refuse that
+rep rather than submit. Megan's answer was "I don't think anything is hand
+typed" — a belief about a form none of us has watched fill itself, and the cost
+of it being wrong is a contract mailed with a blank employee name on it. The
+guard turns that from a bet into a refusal, and costs one read. This is the same instinct as asserting the bundle
 dropdown holds one option: the failure to design out is a legally-meaningful
 document going to someone with the wrong or missing details.
 
