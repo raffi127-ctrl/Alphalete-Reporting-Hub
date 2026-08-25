@@ -278,9 +278,11 @@ def process(web, user_id: str, office: str, target: dt.date,
     cap = (f":door: *{title} — {canonical} — {pretty}*  "
            f"({reps} rep{'s' if reps != 1 else ''})")
     if gaps_only:
+        # No "Time Gaps below" — the TeleMapper board carries the gap columns
+        # itself, so there is no second image (render.needs_time_gaps).
         cap += ("\n_This office knocks without a Disposition page, so "
                 "Ownerville records knock activity — times and gaps — not "
-                "knock counts. Time Gaps below._")
+                "knock counts._")
     if board.is_range:
         # A range board is a FOLD, and a screenshot of it will outlive this
         # message — so what the numbers mean has to ride on the post itself.
@@ -296,7 +298,8 @@ def process(web, user_id: str, office: str, target: dt.date,
     elif board.source in ("cache", "build"):
         cap += "\n_From this morning's run — same numbers the report used._"
 
-    # NDS shapes come back as a PAIR (board + Time Gaps); house is one image.
+    # Most shapes are ONE image now; only the wireless board still comes back
+    # with a Time Gaps companion, so the second name/caption stays available.
     span = target.isoformat() if not board.is_range else f"{target} to {end}"
     names = [f"{canonical} knocks {span}.png",
              f"{canonical} time gaps {span}.png"]

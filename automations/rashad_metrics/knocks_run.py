@@ -191,7 +191,10 @@ def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
     # (Raf's Loom 2026-08-22) — no separate Time Gaps post. The NDS shapes
     # keep their Time Gaps post: their knocks board is the Time Tracker
     # mirror / wireless dispositions, approved as a pair.
-    if wireless or gaps_only:
+    # Only a shape whose board LACKS the gap columns still needs the extra
+    # post — see render.needs_time_gaps. The TeleMapper board carries them,
+    # so a gaps-only office posts ONE image, exactly like fiber does.
+    if _render.needs_time_gaps(shape):
         img_tg = _render.render_time_gaps(target, out_dir=OUT_DIR, rows=rows)
         posts.append((img_tg, POST_TIME_GAPS))
     print(f"[rashad_knocks] Rendered {shape} -> "

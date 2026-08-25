@@ -795,6 +795,24 @@ def knocks_shape(rows: "list[dict]") -> str:
     return SHAPE_WIRELESS if COL_TALK_TO_NI not in first else SHAPE_HOUSE
 
 
+_SHAPE_COLUMNS = {
+    SHAPE_HOUSE: COMBINED_KNOCKS_HEADERS,
+    SHAPE_WIRELESS: WIRELESS_KNOCKS_COLUMNS,
+    SHAPE_GAPS_ONLY: TELEMAPPER_KNOCKS_COLUMNS,
+}
+
+
+def needs_time_gaps(shape: str) -> bool:
+    """Does `shape`'s main board still need a separate Time Gaps image?
+
+    Only when that board does NOT already show Gaps + Total Gaps. Asked of the
+    column list rather than hardcoded per shape, so giving a board those
+    columns is all it takes to retire its duplicate post.
+    """
+    cols = _SHAPE_COLUMNS.get(shape) or ()
+    return not (COL_GAPS in cols and COL_TOTAL_GAPS in cols)
+
+
 def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          out_dir: Path = OUT_DIR_DEFAULT,
                          title_suffix: str = "",
@@ -803,10 +821,14 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                          extra_totals=None) -> "tuple[list[Path], str]":
     """Every board this row shape deserves, in post order: ([paths], shape).
 
-    House is ONE combined board — it already carries Gaps + Total Gaps (Raf's
-    Loom 2026-08-22), so a second Time Gaps image would repeat itself. The two
-    NDS shapes are a PAIR: their knocks slot is the wireless disposition board
-    or the TeleMapper mirror, and Time Gaps rides alongside it.
+    Time Gaps rides along ONLY when the main board doesn't already carry Gaps
+    + Total Gaps. That was Raf's rule for the fiber board (Loom 2026-08-22:
+    the combined board absorbed the gap columns, so the separate Time Gaps
+    post went away), and it is a property of the COLUMNS, not of the office —
+    so it holds wherever it's true. The TeleMapper board carries both, so a
+    gaps-only office gets ONE image too (Megan 2026-08-25: "his boards should
+    be merged, that should have been universal"). The wireless disposition
+    board genuinely lacks them, so that shape keeps its pair.
 
     `extra_totals` (a comparison office's TOTAL line) applies to the house
     board ONLY — the comparison office is fiber, so its totals have no column
@@ -832,6 +854,8 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
                                      title_suffix=title_suffix, end=end,
                                      date_text=date_text,
                                      extra_totals=extra_totals)], shape)
+    if not needs_time_gaps(shape):
+        return ([first], shape)
     gaps = render_time_gaps(target, rows=rows, out_dir=out_dir,
                             title_suffix=title_suffix, end=end,
                             date_text=date_text)
