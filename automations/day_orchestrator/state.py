@@ -94,6 +94,12 @@ class DayState:
     # retryable (STILL_TRYING), long before — and often instead of — a terminal
     # FAILED, so sharing that list would let whichever came first mute the other.
     timeout_alerts_sent: List[str] = field(default_factory=list)
+    # Declared dependencies this runner could NOT enforce today, keyed
+    # "<dependent>|<relation>|<dep>" -> the human sentence explaining why (see
+    # deps.py). Doubles as the once-per-day alert dedupe and as the source for
+    # the summary email's "dependencies not enforced" block — a dropped
+    # dependency has to survive into something a person reads, not just a log.
+    dep_notes: Dict[str, str] = field(default_factory=dict)
     reports: Dict[str, ReportState] = field(default_factory=dict)
 
     # ---- transitions ----
@@ -147,6 +153,7 @@ def load_or_create(date: str, report_ids_with_names: Dict[str, str]) -> DayState
                 failure_alerts_sent=list(raw.get("failure_alerts_sent", [])),
                 failure_alert_posts=dict(raw.get("failure_alert_posts", {})),
                 timeout_alerts_sent=list(raw.get("timeout_alerts_sent", [])),
+                dep_notes=dict(raw.get("dep_notes", {})),
                 reports=reports,
             )
             # Add any newly-scheduled reports not in the saved file.
@@ -175,6 +182,7 @@ def save(ds: DayState) -> None:
         "failure_alerts_sent": list(ds.failure_alerts_sent),
         "failure_alert_posts": dict(ds.failure_alert_posts),
         "timeout_alerts_sent": list(ds.timeout_alerts_sent),
+        "dep_notes": dict(ds.dep_notes),
         "reports": {rid: asdict(rs) for rid, rs in ds.reports.items()},
     }
     tmp = p.with_suffix(".json.tmp")

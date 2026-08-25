@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from automations.day_orchestrator import registry, state, readiness, reconcile, post_watch
+from automations.day_orchestrator import registry, state, readiness, reconcile, post_watch, deps
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = REPO_ROOT / "output" / "logs"
@@ -262,6 +262,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Reports honor --dry-run; emails send for real if --live-emails (so the
     # dry-run week's summaries actually reach Megan + Eve).
     email_dry = dry_run and not args.live_emails
+
+    # Validate the WHOLE depends_on/after graph before the batch starts, so a
+    # dependency that can never be honored is announced up front instead of
+    # being discovered — or not — at one report's gate hours later. Never
+    # aborts: one bad edge must not cost us the other ~19 reports.
+    _check_dep_config(cfg, dry_run=email_dry or args.probe_only or args.simulate)
 
     # Reports scheduled today (weekday match) for THIS runner (Lucy 1 / Lucy 2),
     # optionally narrowed by --only. The machine filter keeps a second runner
@@ -994,14 +1000,43 @@ def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
                        waiting_on=f"clock < {r.not_before}")
             return None
 
+    # Classify EVERY declared dependency first. A dep that isn't in today's
+    # state used to fail an `if d in ds.reports` test and vanish — the dependent
+    # ran out of order with nothing logged (a Lucy 3 report depending on a Lucy 1
+    # report was simply unordered, silently). Now each one lands in exactly one
+    # bucket and every bucket does something visible: wait, log why it isn't in
+    # play, or alert. See deps.py.
+    edges = deps.classify_all(cfg, r, seeded=set(ds.reports), date=target,
+                              machine=registry.this_machine())
+    for e in edges:
+        if e.expected and not recheck:
+            _log(f"  {r.report_id}: not waiting on {e.describe()}")
+    unenforceable = [e for e in edges if e.unenforceable]
+    if unenforceable and not recheck:
+        # not on the recheck sweep: the main pass already logged + alerted this
+        # one THIS cycle, and the sweep is silent by contract.
+        _alert_unenforceable_deps(cfg, ds, r, unenforceable, email_dry)
+
+    # A hard `depends_on` we cannot verify BLOCKS rather than running out of
+    # order: running anyway would publish output built on inputs that may not
+    # exist yet. It stays PENDING with the dep named, the noon backstop retires
+    # it MISSED_NOT_READY, and it lands in the summary + corrections sweep.
+    blocked = [e for e in unenforceable if e.blocks]
+    if blocked:
+        if not recheck:
+            ds.set(r.report_id, state.PENDING,
+                   reason="dependency this runner cannot enforce: "
+                          + "; ".join(e.describe() for e in blocked),
+                   waiting_on=", ".join(e.dep for e in blocked))
+        return None
+
     # Dependencies must have RAN — DONE or INCOMPLETE both count (INCOMPLETE =
     # it filled but with a note, e.g. the Sales Board's VA-compare differences;
     # the data is there). A dep that FAILED / never ran still blocks the
-    # dependent — so e.g. a failed board fill blocks the board email. (Only
-    # org_sales_board_email uses depends_on today.)
-    unmet = [d for d in r.depends_on
-             if d in ds.reports
-             and ds.reports[d].status not in (state.DONE, state.INCOMPLETE)]
+    # dependent — so e.g. a failed board fill blocks the board email.
+    unmet = [e.dep for e in edges
+             if e.relation == deps.DEPENDS_ON and e.enforceable
+             and ds.reports[e.dep].status not in (state.DONE, state.INCOMPLETE)]
     if unmet:
         if not recheck:
             ds.set(r.report_id, state.PENDING, reason=f"waiting on {', '.join(unmet)}",
@@ -1015,9 +1050,9 @@ def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
     # (daily_rep_breakdown after org_sales_board: board runs first, but a board
     # glitch must never skip the breakdown; the noon backstop makes every dep
     # terminal, so this can't wait forever). Megan 2026-07-13.
-    pending_after = [d for d in r.after
-                     if d in ds.reports
-                     and ds.reports[d].status not in state.TERMINAL]
+    pending_after = [e.dep for e in edges
+                     if e.relation == deps.AFTER and e.enforceable
+                     and ds.reports[e.dep].status not in state.TERMINAL]
     if pending_after:
         if not recheck:
             ds.set(r.report_id, state.PENDING, reason=f"after {', '.join(pending_after)}",
@@ -1286,6 +1321,86 @@ def _run_report(r, target, *, dry_run, simulate, args_override=None):
         return False, f"exit {rc} (see {logf.name})"
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:120]}"
+
+
+def _check_dep_config(cfg, *, dry_run) -> None:
+    """Whole-graph depends_on/after validation, once at startup.
+
+    Errors are dependencies that can NEVER be honored — a dep that doesn't
+    exist, one on another runner (day state is per machine, so we can't see it),
+    one the batch never runs, a self-reference, a cycle. Every finding is logged;
+    the errors for reports THIS runner owns also post to #claudecorrections as an
+    incident (same key each day, so a config problem that stays unfixed replies
+    in its own thread instead of re-posting). Never raises and never aborts the
+    batch — one bad edge must not cost the other reports."""
+    try:
+        findings = deps.validate(cfg)
+    except Exception as e:  # noqa: BLE001 — validation must never sink the day
+        _log(f"dependency validation skipped: {e}")
+        return
+    if not findings:
+        return
+    for f in findings:
+        _log(f"  dependency {f.severity.upper()}: {f.message}")
+    mine = [f for f in findings if f.severity == deps.ERROR
+            and f.dependent_machine == registry.this_machine()]
+    if not mine:
+        return
+    from automations.day_orchestrator import notify
+    try:
+        notify.post_alert(
+            "Schedule config — dependencies that can never be honored",
+            [f.message for f in mine]
+            + ["", "Fix schedule_config.json — until then the dependent reports "
+                   "BLOCK instead of running out of order."],
+            tag="dep-config", dry_run=dry_run, cfg=cfg,
+            incident="orchestrator-dep-config")
+    except Exception as e:  # noqa: BLE001
+        _log(f"dependency config alert failed: {e}")
+
+
+def _alert_unenforceable_deps(cfg, ds, r, edges, dry_run) -> None:
+    """Surface a declared dependency this runner cannot honor — the thing that
+    used to be dropped on the floor with no trace.
+
+    Logged every time it is hit, alerted (and recorded in ds.dep_notes, which
+    the summary email reads) ONCE per dependent+dep per day. Best-effort on the
+    post: an alert that fails still leaves the log line and the summary block."""
+    from automations.day_orchestrator import notify
+    fresh = []
+    for e in edges:
+        verdict = ("BLOCKING it" if e.blocks
+                   else "running it anyway — `after` is soft ordering")
+        _log(f"  {r.report_id}: DEPENDENCY NOT ENFORCED — {e.describe()}; {verdict}")
+        key = f"{e.dependent}|{e.relation}|{e.dep}"
+        if key in ds.dep_notes:
+            continue
+        ds.dep_notes[key] = f"{e.describe()}; {verdict}"
+        fresh.append(e)
+    if not fresh:
+        return
+    state.save(ds)
+    name = r.display_name or r.report_id
+    body = [f"{name} declares {len(fresh)} dependenc"
+            f"{'y' if len(fresh) == 1 else 'ies'} this runner "
+            f"({registry.this_machine()}) cannot enforce:"]
+    for e in fresh:
+        body.append(f"  • {e.describe()}")
+        body.append("    → " + ("BLOCKED — it will not run out of order; it "
+                                "retires MISSED_NOT_READY at the noon backstop."
+                                if e.blocks else
+                                "ran WITHOUT waiting — `after` is soft ordering, "
+                                "so the sequence is simply not guaranteed."))
+    body.append("")
+    body.append("Fix in automations/day_orchestrator/schedule_config.json: put "
+                "both reports on the same runner, or drop the dependency.")
+    try:
+        notify.post_alert(f"{name} — dependency the scheduler cannot enforce",
+                          body, tag="dep-unenforceable", dry_run=dry_run,
+                          cfg=cfg, incident=f"dep-unenforceable-{r.report_id}",
+                          label=name)
+    except Exception as e:  # noqa: BLE001 — never sink the batch over an alert
+        _log(f"  {r.report_id}: dependency alert failed: {e}")
 
 
 def _maybe_session_alert(cfg, ds, reason, channel, dry_run):

@@ -1100,7 +1100,28 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         html.append("<div style='font-size:13px;color:#777'>No action needed — these ran; "
                     "the note explains what was left out and why.</div>")
 
-    if not attention and not noted and not checkpoint:
+    # 1c) DEPENDENCIES NOT ENFORCED — a report declared depends_on/after pointing
+    # at something this runner cannot see (another machine's report, an
+    # off-scheduler report, a typo). These used to be dropped silently, so the
+    # ordering just quietly stopped happening. Config problem, not a run problem
+    # — it needs a schedule_config edit, so it can't hide in a log.
+    dep_notes = sorted((getattr(ds, "dep_notes", None) or {}).values())
+    if dep_notes:
+        text.append("")
+        text.append(f"🔗 DEPENDENCIES NOT ENFORCED ({len(dep_notes)}):")
+        html.append(f"<h3 style='color:#8a6d00'>🔗 Dependencies not enforced "
+                    f"({len(dep_notes)})</h3><ul style='font-size:14px;line-height:1.6'>")
+        for note in dep_notes:
+            text.append(f"  • {note}")
+            html.append(f"<li>{_esc(note)}</li>")
+        html.append("</ul>")
+        text.append("   (fix in automations/day_orchestrator/schedule_config.json — "
+                    "put both reports on the same runner, or drop the dependency.)")
+        html.append("<div style='font-size:13px;color:#777'>Fix in "
+                    "automations/day_orchestrator/schedule_config.json — put both "
+                    "reports on the same runner, or drop the dependency.</div>")
+
+    if not attention and not noted and not dep_notes and not checkpoint:
         text.append("")
         text.append("✅ Everything ran clean — nothing to do.")
         html.append("<h3 style='color:#1e7e34'>✅ Everything ran clean — nothing to do.</h3>")
