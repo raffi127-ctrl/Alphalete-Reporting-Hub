@@ -937,6 +937,11 @@ def main(argv=None) -> int:
                          "deploy/captainship_review.sh at 10:00 CT.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
+    ap.add_argument("--preview", action="store_true",
+                    help="build the PDF, upload it under a PREVIEW- name and "
+                         "print the link. Posts NOTHING and never touches the "
+                         "day's reviewed PDF — for looking at a change before "
+                         "it goes out.")
     ap.add_argument("--channel", default=None,
                     help="override the channel id (for a one-off test).")
     ap.add_argument("--date", default=None,
@@ -947,6 +952,25 @@ def main(argv=None) -> int:
 
     if args.pdf_only:
         build_pdf(today)
+        return 0
+
+    if args.preview:
+        # A LOOK, not a review. Two rules make it safe to run on a day whose
+        # real link is already out and already approved:
+        #   * its own Drive name (PREVIEW-…-HHMM), so the reviewed PDF behind
+        #     the link people already have is untouched — replacing that file
+        #     is what `--refresh` is for, and doing it by accident would swap
+        #     the document under an approval that already fired;
+        #   * it posts nothing, so no second link competes with the real one
+        #     (the standing rule: never two messages to choose between).
+        import shutil
+        pdf = build_pdf(today)
+        stamp = dt.datetime.now().strftime("%H%M")
+        shot = pdf.with_name(f"PREVIEW-{pdf.stem}-{stamp}.pdf")
+        shutil.copyfile(pdf, shot)
+        link = upload_pdf(shot, description="preview — not for approval")
+        print(f"\n  preview PDF: {link}")
+        print("  (nothing was posted; the day's reviewed PDF is untouched)")
         return 0
     # Before --post: the deadline agent passes only this flag, but keeping it
     # ahead of --post means a queued `--post --ensure-posted` can never turn
