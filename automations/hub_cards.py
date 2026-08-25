@@ -728,7 +728,7 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         # The card's link opens the DD log sheet (one tab per ICD).
         "sheet_url": "https://docs.google.com/spreadsheets/d/1RB07z5xmXBzFgKPRmbvqsvbFJ4yymrsk2z0tkMeCbpQ/edit",
-        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab.",
+        "description": "Type /dd in Slack → fill in ICD, leader & team → Jiraiya pulls their last 8 weeks of fiber, wireless, cancel & churn from Tableau and DMs back a rendered 3-chart image, logging it to the ICD's tab. The same bot also answers /knocks: pick an office and a day, get that day's knock board back in a DM.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Any leader types **/dd** in Slack → a popup opens (ICD / Leader "
@@ -741,13 +741,23 @@ AUTOMATED_REPORTS = [
             "**•** Names are matched loosely (short → Tableau names); any it can't "
             "match are flagged so you can fix the spelling.\n"
             "**•** Replies only to **you** in a DM — never posts in the channel.\n\n"
+            "ALSO: /knocks\n"
+            "**•** Type **/knocks** → pick **whose office** and **which day** "
+            "(defaults to yesterday) → the knock board comes back in a DM, the "
+            "same one the morning thread posts.\n"
+            "**•** Usually instant: it answers from what the morning run already "
+            "pulled. Only an older day needs a live Ownerville pull, and it waits "
+            "its turn behind the scheduled reports instead of taking their "
+            "session away.\n"
+            "**•** An office we have no Ownerville access to says so plainly — "
+            "that one is a permissions gap, not a spelling mistake.\n\n"
             "WHEN IT RUNS\n"
             "**Continuously, 24/7** on Lucy 1 (its own LaunchAgent, separate from "
             "the 4 AM orchestrator). A nightly **3 AM** pre-harvest caches the data "
             "so requests come back in seconds. A quiet card is the normal, healthy "
             "state."
         ),
-        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own Socket Mode service, independent of the 4 AM orchestrator. Triggered by /dd in Slack — nothing to run from here.",
+        "assignee_note": "Runs 24/7 on Lucy 1 (the mini) as its own Socket Mode service, independent of the 4 AM orchestrator. Triggered by /dd or /knocks in Slack — nothing to run from here.",
         # Continuous service: keep it out of the 4am batch + time/DUE pills.
         "self_scheduled": True,
         "hide_schedule": True,

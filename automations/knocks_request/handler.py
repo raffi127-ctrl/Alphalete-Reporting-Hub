@@ -1,0 +1,154 @@
+"""`/knocks` — the Slack half: a two-field popup, an image back in a DM.
+
+Rides the SAME always-on Jiraiya listener as `/dd` and the Promotion Check-In
+buttons (`due_diligence.bot`), so there is no second app, no second token and
+no second process to keep alive. `bot._handler` opens this modal on the slash
+command and hands the submission straight here.
+
+THE POPUP IS TWO FIELDS on purpose (the 7-year-old-simple rule): whose office,
+and which day — the day defaulting to yesterday, which is what "the board from
+this morning" means. No flags, no syntax, no way to type it wrong.
+
+WHAT COMES BACK is the same amber board the morning thread posts, in a DM. Most
+requests are answered from what the morning build already pulled, so they land
+in seconds and never touch ownerville; the rest say they are waiting and then
+arrive. Errors are answered in words the requester can act on — an office we
+have no ownerville access to says exactly that, because it is the one failure
+nobody can fix by retrying.
+
+Everything that decides WHAT to send lives in `service`; this file only turns
+it into Slack messages.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import threading
+import traceback
+
+from . import service
+
+CALLBACK = "knocks_form"
+COMMAND = "/knocks"
+
+# One request at a time inside the bot process: two live pulls would race for
+# the same ownerville session as surely as two reports would. Cache hits are
+# quick enough that queuing behind one is not worth a second lock.
+_PULL_LOCK = threading.Lock()
+
+
+def _pretty(d: dt.date) -> str:
+    """'August 23, 2026' with no leading zero — built by hand because %-d is
+    glibc/BSD only and Windows strftime rejects it (the cross-platform rule)."""
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def modal(today: dt.date | None = None) -> dict:
+    """The popup. `today` is injectable so the default date is testable."""
+    target = (today - dt.timedelta(days=1)) if today else service.default_target()
+    return {
+        "type": "modal", "callback_id": CALLBACK,
+        "title": {"type": "plain_text", "text": "Knocks"},
+        "submit": {"type": "plain_text", "text": "Get the board"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn",
+             "text": ":door: I'll send you that office's knock board for the "
+                     "day you pick — the same one that goes out every morning."}},
+            {"type": "input", "block_id": "office",
+             "label": {"type": "plain_text", "text": "Whose office?"},
+             "element": {"type": "plain_text_input", "action_id": "v",
+                         "placeholder": {"type": "plain_text",
+                                         "text": "Rafael Hidalgo"}}},
+            {"type": "input", "block_id": "day",
+             "label": {"type": "plain_text", "text": "Which day?"},
+             "element": {"type": "datepicker", "action_id": "v",
+                         "initial_date": target.isoformat()}},
+        ],
+    }
+
+
+def is_knocks_submission(payload: dict) -> bool:
+    return (payload.get("type") == "view_submission"
+            and payload.get("view", {}).get("callback_id") == CALLBACK)
+
+
+def handle_submission(web, payload: dict) -> None:
+    """Read the popup and start the work. Called from bot._handler AFTER the
+    3-second ack, on its own thread."""
+    vals = payload["view"]["state"]["values"]
+    office = (vals.get("office", {}).get("v", {}).get("value") or "").strip()
+    day_s = vals.get("day", {}).get("v", {}).get("selected_date") or ""
+    try:
+        target = dt.date.fromisoformat(day_s)
+    except ValueError:
+        target = service.default_target()
+    process(web, payload["user"]["id"], office, target)
+
+
+def process(web, user_id: str, office: str, target: dt.date) -> None:
+    """Fetch + send, reporting every outcome in the DM. Never raises: this runs
+    on the listener's thread pool and a crash here would be silence for the
+    requester and a stack trace nobody reads."""
+    try:
+        chan = web.conversations_open(users=user_id)["channel"]["id"]
+    except Exception:  # noqa: BLE001 — DMs by user id work in most workspaces
+        chan = user_id
+
+    def say(text: str) -> None:
+        try:
+            web.chat_postMessage(channel=chan, text=text)
+        except Exception:  # noqa: BLE001 — a lost progress line ≠ a lost board
+            pass
+
+    if not office:
+        say(":warning: I need whose office — run `/knocks` again and fill in "
+            "the name.")
+        return
+
+    canonical = service.resolve_office(office)
+    have, _src = service.cached_rows(canonical, target)
+    pretty = _pretty(target)
+    if have:
+        say(f":door: Getting *{canonical}*'s knocks for {pretty} — one second.")
+    else:
+        busy = service.ownerville_busy()
+        if busy:
+            say(f":door: *{canonical}* — {pretty}. The scheduled reports are "
+                "using Ownerville right now, so I'm queued behind them. I'll "
+                "send the board as soon as they're done — no need to ask again.")
+        else:
+            say(f":door: Pulling *{canonical}*'s knocks for {pretty} from "
+                "Ownerville — about a minute.")
+
+    try:
+        with _PULL_LOCK:
+            board = service.board_for(office, target, logfn=lambda m: None)
+    except Exception as e:  # noqa: BLE001 — every failure answers in words
+        traceback.print_exc()
+        if service.access_gap(e):
+            say(f":lock: I can't pull *{canonical}* — that office isn't on the "
+                "Ownerville account these reports run on, so there's nothing "
+                "to fetch until someone grants Office Access to it. (16 offices "
+                "are in this position; it's a permissions gap, not a typo.)")
+        else:
+            say(f":x: Couldn't get *{canonical}* for {pretty} — "
+                f"{type(e).__name__}: {str(e)[:200]}")
+        return
+
+    if board.png is None:
+        say(f":zero: *{canonical}* — {pretty}: {board.note}.")
+        return
+
+    reps = len(board.rows)
+    cap = (f":door: *Total Knocks — {canonical} — {pretty}*  "
+           f"({reps} rep{'s' if reps != 1 else ''})")
+    if board.source in ("cache", "build"):
+        cap += "\n_From this morning's run — same numbers the report used._"
+    try:
+        web.files_upload_v2(channel=chan, file=str(board.png),
+                            filename=f"{canonical} knocks {target}.png",
+                            initial_comment=cap)
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        say(f":x: The board rendered but Slack wouldn't take the image — "
+            f"{type(e).__name__}: {str(e)[:160]}")

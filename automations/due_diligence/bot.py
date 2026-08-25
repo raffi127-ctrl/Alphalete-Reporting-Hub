@@ -1,5 +1,10 @@
 """Jiraiya — Socket Mode app: `/dd` opens a fill-in popup, hit Summon Jiraiya.
 
+Also serves `/knocks` — one office's knock board on demand
+(automations/knocks_request) — and the Promotion Check-In buttons. One
+always-on listener, one app, one token: a new feature is a branch in _handler,
+never a second process to keep alive.
+
 An always-on listener (Socket Mode, no inbound HTTP needed). On `/dd` it opens a
 modal with ICD / Leader / Team fields; on submit it pulls the whole team from
 Tableau and logs the 3-table block to that ICD's tab, then DMs the requester the
@@ -153,6 +158,19 @@ def _handler(client, req):
         except Exception as e:                # noqa: BLE001
             print(f"[modal] FAILED {type(e).__name__}: {e}", flush=True)
         return
+    if req.type == "slash_commands" and req.payload.get("command") == "/knocks":
+        # A separate feature riding this same listener (like Promotion
+        # Check-In): one office's knock board, on demand. See
+        # automations/knocks_request.
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        try:
+            from automations.knocks_request import handler as knocks
+            r = client.web_client.views_open(trigger_id=req.payload["trigger_id"],
+                                             view=knocks.modal())
+            print(f"[knocks] modal opened ok={r.get('ok')}", flush=True)
+        except Exception as e:                # noqa: BLE001
+            print(f"[knocks] modal FAILED {type(e).__name__}: {e}", flush=True)
+        return
     if req.type == "events_api":
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         ev = req.payload.get("event", {})
@@ -175,6 +193,17 @@ def _handler(client, req):
                     target=_process,
                     args=(client.web_client, user, ctx["icd"], ctx["leader"], new_names, tts),
                     daemon=True).start()
+        return
+    # The /knocks popup came back — hand it to knocks_request and let it DM.
+    if req.type == "interactive" and req.payload.get("type") == "view_submission"             and req.payload.get("view", {}).get("callback_id") == "knocks_form":
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
+        try:
+            from automations.knocks_request import handler as knocks
+            threading.Thread(target=knocks.handle_submission,
+                             args=(client.web_client, req.payload),
+                             daemon=True).start()
+        except Exception as e:                # noqa: BLE001 — never crash the listener
+            print(f"[knocks] dispatch failed {type(e).__name__}: {e}", flush=True)
         return
     # Promotion Check-In "Remove a mistake" modal submit.
     if req.type == "interactive" and req.payload.get("type") == "view_submission" \
