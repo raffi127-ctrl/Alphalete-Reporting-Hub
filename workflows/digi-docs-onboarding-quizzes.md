@@ -19,6 +19,45 @@ always agree on who this week's cohort is.
 
 Workbook: https://docs.google.com/spreadsheets/d/1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit?gid=1430069873#gid=1430069873
 
+## Run it in phases, not one flow per rep
+
+Megan 2026-08-25: **add every new rep first, then send every bundle.** Not a
+full add-then-send cycle per person.
+
+That is the right shape for more than tidiness:
+
+- **The two phases live on different pages.** Add Sales Rep is a modal on
+  View Progress — you add N reps without ever leaving that page. The bundle
+  flow opens a NEW TAB and walks a six-step reveal form. Interleaving them
+  means navigating back, re-searching and re-opening the modal for every
+  single person, paying the expensive transition N times instead of once.
+- **The activation-date filter gets flipped once.** A just-added rep may not
+  appear under the default *Show Last 3 Weeks*. Phase 2 sets **Show All** one
+  time at the start rather than rediscovering that per rep.
+- **A clean failure boundary.** If phase 2 dies halfway — and the known
+  failure for both Blue Ink and OwnerVille is exactly this, a session going
+  stale mid-run — everyone still EXISTS in OwnerVille and nothing is
+  half-added. The roster is left consistent whatever happens next.
+- **Only phase 2 sends.** Phase 1 writes nothing to a rep and mails nobody, so
+  it is safe to run and re-run freely. That maps to `--add-only` / `--send-only`
+  flags, the same way `blueink_docs` splits `--send` from `--sync-completed`,
+  and it gives a scoped re-run when one phase needs repeating.
+
+**Which makes the re-send guard load-bearing, not optional.** A batched phase 2
+is a long run that WILL sometimes stop in the middle, so re-running it is the
+normal path, not the exception — and a re-run must skip whoever already has
+their documents. Until the "what does generating twice do" question is answered,
+the safe reading is: skip anyone whose **ONBOARDING DOCUMENTS** row is not
+`REQUIRED ACTION` / "Digital doc not yet generated." Blue Ink's rule, same
+reasoning — a hand-send must never be duplicated.
+
+So the run is three passes:
+
+1. Read this week's OBCL tab (every chart) and apply the eligibility block-list.
+2. Add every eligible rep who isn't in OwnerVille yet. Ticks nothing.
+3. For each rep still showing `REQUIRED ACTION`, generate the bundle, then tick
+   **Digi Docs** and tint. Post the by-hand leftovers to #11280 at the end.
+
 ## Step 1 — add the rep to OwnerVille
 
 **Onboard → View Progress → `+ Add Sales Rep`** (button above the table, left).
