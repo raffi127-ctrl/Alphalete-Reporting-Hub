@@ -149,9 +149,31 @@ class ReadinessCache:
 
     def report_ready(self, rpt: registry.Report) -> Readiness:
         """A report is ready when ALL its data sources are ready. AppStream/API
-        are immediately ready; upload is never gated here."""
+        are immediately ready UNLESS they declare sources; upload is never gated.
+
+        "No probe" used to mean the source_type, not the config: an appstream/api
+        report returned ready before its `data_sources` were even looked at. That
+        was true of every one of them — they all declared `[]` — right up until
+        2026-08-25, when owner_chat_texts_board and _trackers needed a gate (a
+        Sheet's fill state and a Slack thread; neither is a Tableau extract and
+        neither report is a Tableau report). Wiring one would have been silently
+        INERT, which is the worst shape a gate can have. So the rule is now what
+        it always read as: a declared source is a source that gets probed.
+        Nothing else changed — those two are the only api/appstream reports in
+        the config that declare any, and an empty list still short-circuits.
+
+        Note this path does NOT require a warm ownerville session the way the
+        tableau branch below does: an api report's sources aren't behind it.
+        """
         if rpt.source_type in ("appstream", "api"):
-            return Readiness(True, f"{rpt.source_type} — immediately ready (no probe)")
+            if not rpt.data_sources:
+                return Readiness(True, f"{rpt.source_type} — immediately ready (no probe)")
+            for sid in rpt.data_sources:
+                r = self.source_ready(sid)
+                if not r.ready:
+                    return Readiness(False, f"{sid}: {r.reason}",
+                                     nothing_to_do=r.nothing_to_do)
+            return Readiness(True, f"{rpt.source_type} — all sources ready")
         if rpt.source_type == "upload":
             return Readiness(True, "upload — manual (not gated)")
         if rpt.source_type == "email":
@@ -293,6 +315,9 @@ class ReadinessCache:
 
         if ptype == "org_board_posted":
             return self._probe_org_board_posted(source_id, probe)
+
+        if ptype == "owner_tracker_thread":
+            return self._probe_owner_tracker_thread(source_id, probe)
 
         if ptype == "dd_week":
             return self._probe_dd_week(source_id, probe)
@@ -439,6 +464,64 @@ class ReadinessCache:
             kw["send_anyway_after"] = probe["send_anyway_after"]
         ok, why = data_gate.gate(yday=yday, **kw)
         return Readiness(ok, why)
+
+    def _probe_owner_tracker_thread(self, source_id: str, probe: dict) -> Readiness:
+        """Ready once every routed tracker PNG is in TODAY's #alphalete-sales
+        thread — or once `send_anyway_after` passes, when the report sends one
+        partial PDF naming the gaps (owner_chat_texts.config.PDF_PARTIAL_AFTER,
+        09:00) rather than holding the post hostage to one broken tracker.
+
+        WHY THIS EXISTS. owner_chat_texts_trackers announced its wait the only
+        way it could — `run.main` returns non-zero while the PDF is still
+        WAITING — and run.py reads any non-zero but HOLD_EXIT_CODE as a crash,
+        so a perfectly normal 07:30 pass ahead of a late Lucy 3 capture goes
+        FAILED, burns a retry, turns the pill red and posts an incident to
+        #claudecorrections. Its twin owner_chat_texts_board did exactly that on
+        2026-08-25 (a BOX data-gate HOLD, see org_sales_board.data_gate
+        LAGGING_SECTIONS), which is what sent us looking.
+
+        Gating in READINESS instead keeps a late tracker STILL_TRYING —
+        re-probed every pass and on the service tick, no burnt retries, no red
+        pill, no alert — the same move Eve made for the org board email on
+        2026-07-29. The report's own in-module wait is untouched and still
+        correct: this only stops the orchestrator from calling it a crash.
+
+        FAILS OPEN. A Slack hiccup must not be the thing that costs the owners
+        their trackers: on any error we run and let the report self-guard (it
+        re-reads the same thread and simply waits again if it really isn't
+        there). Read-only — one thread read, no downloads.
+        """
+        after = probe.get("send_anyway_after") or "09:00"
+        try:
+            from automations.owner_chat_texts import slack_fetch
+            present, missing = slack_fetch.thread_status(self.target_date)
+        except Exception as e:  # noqa: BLE001
+            # The "no thread yet" case is a legitimate NOT-READY, not an error:
+            # the Lucy 3 morning post simply hasn't happened. Everything else
+            # fails open.
+            if type(e).__name__ == "TrackerFetchError":
+                if self._past(after):
+                    return Readiness(True, f"past {after} — running anyway; "
+                                           f"no tracker thread yet ({str(e)[:80]})")
+                return Readiness(False, f"no tracker thread yet (waiting until {after})")
+            return Readiness(
+                True, f"tracker-thread probe error ({type(e).__name__}) — "
+                      "running; the report re-reads the thread and self-guards")
+        total = len(present) + len(missing)
+        if not missing:
+            return Readiness(True, f"all {total} trackers posted")
+        short = f"{len(present)}/{total} posted; waiting on {', '.join(missing[:4])}"
+        if self._past(after):
+            return Readiness(True, f"past {after} — sending a partial PDF. {short}")
+        return Readiness(False, f"{short} (holding until they land, or {after})")
+
+    def _past(self, hhmm: str) -> bool:
+        """Is the local clock past HH:MM today? (The runners are on Central.)"""
+        try:
+            h, m = (int(x) for x in hhmm.split(":"))
+        except Exception:  # noqa: BLE001 — a bad config hour must not gate forever
+            return True
+        return dt.datetime.now().time() >= dt.time(h, m)
 
     def _probe_org_board_posted(self, source_id: str, probe: dict) -> Readiness:
         """Ready once the board has actually been POSTED to

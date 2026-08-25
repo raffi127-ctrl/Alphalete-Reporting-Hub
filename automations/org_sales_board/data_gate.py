@@ -46,7 +46,23 @@ from typing import List, Optional, Tuple
 # Frontier has historically lagged too.
 # "frontier" dropped 2026-08-19 with the campaign: the section no longer
 # exists on the board, so the exemption had nothing left to exempt.
-LAGGING_SECTIONS = ("retail je",)
+#
+# "box" ADDED 2026-08-25. BOX has been day-behind BY DESIGN since 2026-08-12,
+# when Eve dropped 'tableau:box_daily' from the board's data_sources ("que se
+# postee a las 7:15 aunque Box esté siempre un día atrasado"): the board now
+# fills at 06:35 with whatever Box has — normally the day before — and the
+# 14:30 com.alphalete.board-catchup re-pulls it. section_pull.BOX_SPEC carries
+# `day_behind=True` for exactly this. The exemption here was never added, so
+# every morning the gate read BOX's structurally-blank yesterday column as a
+# gap and HELD, e.g. 2026-08-25 07:45: "8/24 INCOMPLETE — 165/172 rep cells;
+# BOX row 153: 4/4 blank" with all 24 other sections at 100%. That cost
+# owner_chat_texts_board its 07:45 send every day (it exits non-zero on a
+# HOLD, so the channel got a FAILED incident) and delayed the org board email
+# to the 11:30 fail-open.
+#
+# KEEP IN SYNC with section_pull.SPECS: any spec flagged `day_behind` belongs
+# here, and test_data_gate_lagging.py fails the build if one is missing.
+LAGGING_SECTIONS = ("retail je", "box")
 
 # Local clock (the runners are on Central) past which an incomplete board stops
 # holding the email — the send goes out with what's on the board. MUST stay before
@@ -140,6 +156,15 @@ def gate(g=None, yday: Optional[dt.date] = None, *, now: Optional[dt.datetime] =
     except Exception as e:  # noqa: BLE001 — a Sheets hiccup must not block forever
         return True, (f"board read failed ({type(e).__name__}) — not holding; "
                       "the fill-manifest guard still applies")
+    return _decide(secs, yday, now=now, send_anyway_after=send_anyway_after)
+
+
+def _decide(secs: List[dict], yday: dt.date, *, now: dt.datetime,
+            send_anyway_after: str = SEND_ANYWAY_AFTER) -> Tuple[bool, str]:
+    """The send-or-hold rule itself, over coverage() rows. Split out from gate()
+    so the rule can be tested against a hand-built board without a Sheets read
+    (test_data_gate_lagging.py) — the 2026-08-25 BOX hold was a bug in THIS
+    function's inputs, and it had no test because the only way in was live."""
     if not secs:
         return True, "no daily sections found — not holding (nothing to measure)"
 

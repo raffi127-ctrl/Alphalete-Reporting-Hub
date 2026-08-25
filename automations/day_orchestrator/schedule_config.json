@@ -100,10 +100,18 @@
   },
   "sheet:org_board_yesterday": {
    "label": "Org Sales Board copy tab — yesterday's column actually filled",
-   "_note": "NOT a Tableau extract: the readiness gate for org_sales_board_email reads the board itself (Eve 2026-07-29). readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(): ready when YESTERDAY's day column on 'Alphalete ORG Sales Board' is filled for every rep in every daily section, except sections that legitimately publish a day behind (Retail JE, Frontier — data_gate.LAGGING_SECTIONS). Measured 2026-07-29: a normal morning is 194/199 rep cells with Retail JE the only gap. Read-only, one get_all_values per pass, and it fails OPEN on a Sheets error so a read hiccup can never swallow the day's email.",
+   "_note": "NOT a Tableau extract: the readiness gate reads the board itself (Eve 2026-07-29). readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(): ready when YESTERDAY's day column on 'Alphalete ORG Sales Board' is filled for every rep in every daily section, except sections that legitimately publish a day behind (data_gate.LAGGING_SECTIONS). THAT LIST IS 'Retail JE' + 'BOX' AS OF 2026-08-25 — the old wording here said 'Retail JE, Frontier' and both halves of it were wrong: Frontier was dropped 2026-08-19 with the campaign, and BOX went day-behind on 2026-08-12 without ever being added, which held this gate on a structurally blank column every single morning until 2026-08-25 (see owner_chat_texts_board's note). Keep it in step with section_pull's day_behind specs; test_data_gate_lagging.py enforces that. Measured 2026-07-29: a normal morning is 194/199 rep cells with Retail JE the only gap. USED BY: owner_chat_texts_board (since 2026-08-25). NOT by org_sales_board_email any more — that moved to 'slack:org_board_posted' on 2026-08-04. Read-only, one get_all_values per pass, and it fails OPEN on a Sheets error so a read hiccup can never swallow the day's send.",
    "probe": {
     "type": "org_board_filled",
     "send_anyway_after": "11:30"
+   }
+  },
+  "slack:owner_tracker_pngs": {
+   "label": "Country tracker PNGs — already posted in today's #alphalete-sales thread",
+   "_note": "NOT a Tableau extract (2026-08-25): the readiness gate for owner_chat_texts_trackers reads the SLACK THREAD the report forwards from. readiness._probe_owner_tracker_thread -> owner_chat_texts.slack_fetch.thread_status(): ready once every routed tracker is in today's thread, or once send_anyway_after (09:00, = config.PDF_PARTIAL_AFTER) passes and the report sends one partial PDF naming the gaps. The trackers are captured and posted on LUCY 3; this report runs on Lucy 1 and only forwards them, so a late Lucy 3 capture is a normal wait, not a fault of this report. Before this gate that wait was announced by exiting 1, which the orchestrator reads as a crash: red pill, burnt retry, incident in #claudecorrections. It reuses slack_fetch's own thread finder and reply matcher — one answer to 'which reply is which tracker' — and downloads nothing. Fails OPEN on any Slack error (the report re-reads the same thread and self-guards), so a hiccup can never cost the owners their trackers.",
+   "probe": {
+    "type": "owner_tracker_thread",
+    "send_anyway_after": "09:00"
    }
   },
   "slack:org_board_posted": {
@@ -245,7 +253,9 @@
    "machine": "Lucy 1",
    "display_name": "Owner Chat Texts — Trackers (iMessage)",
    "source_type": "api",
-   "data_sources": [],
+   "data_sources": [
+    "slack:owner_tracker_pngs"
+   ],
    "command": [
     "automations.owner_chat_texts.run"
    ],
@@ -266,7 +276,7 @@
     ],
     "not_before": "07:30"
    },
-   "_note": "LIVE SEND (Megan 2026-08-23: 'trackers daily at 7:30am'). Forwards the tracker PNGs already posted in #alphalete-sales to the Alphalete Owners iMessage chat. Exits 1 while any routed tracker is still missing from the thread, so the orchestrator keeps retrying and the stragglers text as they land — per-day .sent markers make every retry duplicate-proof.",
+   "_note": "LIVE SEND (Megan 2026-08-23: 'trackers daily at 7:30am'). Forwards the tracker PNGs already posted in #alphalete-sales to the Alphalete Owners iMessage chat. WAITS IN READINESS, NOT IN AN EXIT CODE (2026-08-25): data_sources 'slack:owner_tracker_pngs' -> readiness._probe_owner_tracker_thread, ready once every routed tracker is in today's thread or once 09:00 passes (the partial-PDF backstop, config.PDF_PARTIAL_AFTER). The module still exits 1 while the PDF is WAITING and that is still correct for a manual run, but the orchestrator reads any non-zero but 75 as a crash — so before this gate a 07:30 pass ahead of a late Lucy 3 capture went FAILED, burned a retry, turned the pill red and posted an incident. Its twin owner_chat_texts_board did exactly that on 2026-08-25 and that is what surfaced this one. Gated in readiness it stays STILL_TRYING instead: re-probed each pass and on the service tick, no burnt retries, no alert, and the stragglers text as they land — per-day .sent markers make every retry duplicate-proof.",
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
@@ -279,7 +289,9 @@
    "machine": "Lucy 1",
    "display_name": "Owner Chat Texts — WOW Board (iMessage)",
    "source_type": "api",
-   "data_sources": [],
+   "data_sources": [
+    "sheet:org_board_yesterday"
+   ],
    "command": [
     "automations.owner_chat_texts.run"
    ],
@@ -300,7 +312,7 @@
     ],
     "not_before": "07:45"
    },
-   "_note": "LIVE SEND (Megan 2026-08-23: 'sales boards at 7:45am to each chat'). Re-sorts the All Units board most-to-least, renders the WOW delta chart, texts it to BOTH owner chats. Exits 1 while the board's data gate holds (short of yesterday), so the orchestrator retries until the fill completes.",
+   "_note": "LIVE SEND (Megan 2026-08-23: 'sales boards at 7:45am to each chat'). Re-sorts the All Units board most-to-least, renders the WOW delta chart, texts it to BOTH owner chats. WAITS IN READINESS, NOT IN AN EXIT CODE (2026-08-25): data_sources 'sheet:org_board_yesterday' -> readiness._probe_org_board_filled -> org_sales_board.data_gate.gate(), the SAME gate the module re-checks internally, opening at 11:30. The module still exits 1 on a HOLD and that is still correct for a manual run, but the orchestrator reads any non-zero but 75 as a crash. THE 2026-08-25 FAILURE: BOX has been day-behind by design since 2026-08-12 (section_pull.BOX_SPEC.day_behind, the 14:30 board-catchup fills it) but was never added to data_gate.LAGGING_SECTIONS, so every morning the gate scored BOX's structurally-blank yesterday column as a real gap — 07:45 that day read '8/24 INCOMPLETE — 165/172 rep cells; BOX row 153: 4/4 blank' with all 24 other sections at 100% — held, exited 1, and posted a FAILED incident to #claudecorrections. Two fixes, both needed: 'box' is now in LAGGING_SECTIONS (so the gate passes at 07:45 and the board texts on time), and this gate now lives in readiness (so any FUTURE legitimate hold — a genuinely late fill — reads STILL_TRYING, no burnt retries, no red pill, no alert, instead of paging the channel).",
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
