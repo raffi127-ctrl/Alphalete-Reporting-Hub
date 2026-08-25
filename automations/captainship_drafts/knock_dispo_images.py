@@ -87,9 +87,16 @@ CAMPAIGN_ID = "3"
 # 2026-08-23: "a daily overall and then each ICD broken out below it").
 # Display labels only — the data keys stay total_knocks.pull's canonical
 # SHEET_COLUMNS names.
+#
+# "Talk To's per Rep" (Raf, 2026-08-25) sits right after the Total Talk To it
+# divides: the ICD rows aggregate different-sized rosters, so the raw total
+# says more about headcount than about the day. Per-rep is the comparable
+# number — and it is only meaningful HERE, on the summary; the per-owner
+# boards below already have one row per rep.
 DAILY_SUMMARY_HEADERS = [
     "ICD", "Total Leads Knocked", "Total Knocks", "Total Talk To",
-    "Avg First Knock", "Avg Last Knock", "Gaps", "Total Gaps",
+    "Talk To's per Rep", "Avg First Knock", "Avg Last Knock", "Gaps",
+    "Total Gaps",
 ]
 
 # Chan Park's yesterday rows, cached PER PROCESS keyed by the target date's
@@ -250,6 +257,7 @@ def _daily_rows_for_owner(page, cfg: dict, aliases_raw, target: dt.date
 def daily_summary_row(label: str, rows: list) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
     records keyed by total_knocks.pull SHEET_COLUMNS): the count columns SUM;
+    Talk To's per Rep divides that row's talk-tos by its rep count;
     First/Last Knock are the AVERAGE of the reps' times (the wkd board's
     _avg_knock — reps with a parsable time only); Gaps sums the gap counts;
     Total Gaps sums the minutes and formats 'Xh Ym' like the daily board
@@ -262,11 +270,17 @@ def daily_summary_row(label: str, rows: list) -> List[str]:
         v = rec.get(col)
         return v if isinstance(v, int) else knocks._to_int(str(v or ""))
 
+    talk_to = sum(_i(r, knocks.COL_TOTAL_TALK_TO) for r in rows)
     return [
         label,
         str(sum(_i(r, knocks.COL_TOTAL_LEADS_KNOCKED) for r in rows)),
         str(sum(_i(r, knocks.COL_TOTAL_KNOCKS) for r in rows)),
-        str(sum(_i(r, knocks.COL_TOTAL_TALK_TO) for r in rows)),
+        str(talk_to),
+        # Per rep = per rep who WORKED that day, i.e. the rows on this board:
+        # ownerville's Disposition-by-Rep table only lists reps with activity,
+        # so an ICD is not diluted by someone who was off. No rows at all =>
+        # the ICD didn't knock; "0" keeps the column numeric.
+        (f"{talk_to / len(rows):.1f}" if rows else "0"),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
@@ -475,6 +489,7 @@ def _load_manifest(render_dir, captain_key: str, target: dt.date,
 
 def capture_sections(captain, today: dt.date, render_dir, *,
                      want_daily: bool = True, want_weekly: bool = True,
+                     reuse: bool = True,
                      logfn=print, errors: Optional[dict] = None) -> dict:
     """Both knock sections' images for `captain`, sharing ONE roster lookup
     and ONE ownerville session (run.py passes want_* from sections_on(today),
@@ -528,7 +543,14 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # all) and the errors map come back exactly as the pull left them, so a
     # reused build renders the same notes as the original — never a blank
     # board wearing a fresh face.
-    cached = _load_manifest(render_dir, captain.key, target, saturday, wanted)
+    # reuse=False (run.py --fresh-knocks) skips it: the manifest keys on the
+    # DATE alone, so after a board's layout changes a same-day rebuild would
+    # otherwise re-ship the morning's PNGs and look like the change never
+    # landed (the "Talk To's per Rep" column, 2026-08-25).
+    cached = (_load_manifest(render_dir, captain.key, target, saturday, wanted)
+              if reuse else None)
+    if not reuse:
+        logfn("    (--fresh-knocks) re-pulling; today's capture not reused")
     if cached is not None:
         for kind in wanted:
             out[kind] = cached["items"][kind]

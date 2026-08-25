@@ -279,7 +279,7 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
 
 def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
                  *, skip_sheets: bool = False, skip_tableau: bool = False,
-                 logfn=print):
+                 fresh_knocks: bool = False, logfn=print):
     """Capture all of a captain's section images into a bundle, or None if the
     captain yielded no images. Email assembly happens later (in main), AFTER
     cross-captain size normalization, so same-flavor sections share one size."""
@@ -325,6 +325,7 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
                 captain, today, render_dir,
                 want_daily="daily_knocks" in kinds_today,
                 want_weekly="knock_dispo" in kinds_today,
+                reuse=not fresh_knocks,
                 logfn=logfn, errors=errors)
             daily_knocks = kd["daily_knocks"]
             knock_dispo = kd["knock_dispo"]
@@ -475,6 +476,12 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-sheets", action="store_true",
                     help="Skip Sales Board screenshots (no browser/sheet "
                          "writes); those sections show a 'pending' note.")
+    ap.add_argument("--fresh-knocks", action="store_true",
+                    help="Re-pull the knock boards instead of reusing today's "
+                         "capture. The reuse manifest keys on the DATE, so a "
+                         "rebuild after a board's layout changed would ship "
+                         "the morning's PNGs unchanged — this is the switch "
+                         "that makes a same-day rebuild show the new board.")
     ap.add_argument("--skip-tableau", action="store_true",
                     help="Skip the §2 Tableau shots (no Tableau session); those "
                          "sections show a 'pending' note.")
@@ -560,7 +567,8 @@ def main(argv=None) -> int:
         try:
             bundle = _capture_one(captain, today, render_dir,
                                   skip_sheets=args.skip_sheets,
-                                  skip_tableau=args.skip_tableau)
+                                  skip_tableau=args.skip_tableau,
+                                  fresh_knocks=args.fresh_knocks)
         except Exception as e:
             failures += 1
             print(f"  ✗ {captain.key}: capture failed: {e}")
