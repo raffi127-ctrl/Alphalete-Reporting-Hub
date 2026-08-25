@@ -251,7 +251,16 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
             key = next((k for k, token in CAPTAIN_TOKEN.items()
                         if _is_units_header(text, c, token)), None)
             if key:
-                sub = cell(r + 1, 2) or "UNITS"
+                # The sub-label ("NEW INTERNET UNITS" / "ALL UNITS") sits one
+                # row under the header — and on the live board it is in col A,
+                # not col B (checked 2026-08-25: every one of the 19 blocks has
+                # a BLANK B there). Reading only col B made every label fall
+                # back to "UNITS", which _units_label prints as "All Units", so
+                # Rafael and the five fiber captains got two charts captioned
+                # "All Units — <day>" and the New Internet one was mislabeled
+                # (Eve, 2026-08-25). Same col B -> col A fallback the header
+                # lookup above already does.
+                sub = cell(r + 1, 2) or cell(r + 1, 1) or "UNITS"
                 units_hits.append((r, key, sub))
                 break
 
