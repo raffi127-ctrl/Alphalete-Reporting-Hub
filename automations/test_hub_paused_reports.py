@@ -117,6 +117,46 @@ class TheColourIsReservedForOff(unittest.TestCase):
         self.assertIn("if sched and not _hide_sched and not _paused:", src)
 
 
+class AFindingsRunCountsAsDone(unittest.TestCase):
+    """An AUDIT records findings as a soft-incomplete (ok=False -> `partial`) on
+    purpose, so it never logs "success". Counting only successes left the Vantura
+    Board Audit permanently "due": it ran clean at 04:01 on 2026-08-25 and filed
+    its 3 findings, and Lucy 2's card still said one report was due all day. The
+    findings are a human's follow-up, not a re-run — the audit carries no
+    retry_args and never edits the board."""
+
+    def test_the_audit_is_done_once_it_has_run_partial(self):
+        import datetime as _dt
+        va = next((c for c in dashboard.AUTOMATED_REPORTS
+                   if c.get("id") == "vantura_board_audit"), None)
+        self.assertIsNotNone(va, "vantura_board_audit card missing")
+        self.assertTrue(dashboard._counts_as_done_today(va, _dt.date.today()))
+
+    def test_the_partial_exemption_is_scoped_to_findings_reports(self):
+        """A normal report that came back partial genuinely still needs someone.
+        Runs are stubbed so this tests the RULE, not whatever ran today."""
+        from unittest import mock
+        run = {"report_id": "", "status": "partial",
+               "_dt": dt.datetime.combine(TODAY, dt.time(4, 1))}
+
+        def _with(rid):
+            run["report_id"] = rid
+            with mock.patch.object(dashboard, "_all_runs_merged",
+                                   return_value=[dict(run)]), \
+                    mock.patch.object(dashboard, "_was_run_successfully_today",
+                                      return_value=False):
+                return dashboard._counts_as_done_today({"id": rid}, TODAY)
+
+        self.assertTrue(_with("vantura_board_audit"), "an audit's findings = done")
+        self.assertFalse(_with("org-sales-board"), "an ordinary partial is NOT done")
+
+    def test_both_counts_use_the_helper(self):
+        import inspect
+        src = inspect.getsource(dashboard)
+        self.assertEqual(src.count("_counts_as_done_today(r, today)"), 2,
+                         "the day ratio and the per-person count must both use it")
+
+
 class ItStaysOffTheTriageList(unittest.TestCase):
 
     def test_needs_attention_skips_paused(self):

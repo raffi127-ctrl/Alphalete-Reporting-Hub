@@ -2191,6 +2191,29 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
     return False
 
 
+def _counts_as_done_today(report: dict, today: dt.date | None = None) -> bool:
+    """Has this report DONE its work for today, for the purpose of "still due"?
+
+    Normally that means a successful run. An AUDIT is the exception: it records
+    findings as a soft-incomplete (ok=False → `partial`) precisely so it is not
+    treated as a hard failure, so it never logs "success" and would sit in the
+    "N reports due today" count forever — the Vantura Board Audit ran clean at
+    04:01 on 2026-08-25, filed its 3 findings, and Lucy 2's card still said one
+    report was due. A findings run IS the job done; the findings themselves are a
+    human's follow-up, not a re-run (the audit carries no retry_args and never
+    edits the board). Same list the triage view uses — see FINDINGS_REPORTS."""
+    today = today or dt.date.today()
+    rid = report.get("id") or ""
+    if _was_run_successfully_today(rid, today):
+        return True
+    if rid in FINDINGS_REPORTS:
+        for r in _all_runs_merged(2):
+            if (r.get("report_id") == rid and r["_dt"].date() == today
+                    and (r.get("status") or "").lower() == "partial"):
+                return True
+    return False
+
+
 def _success_count_today(report_id: str, today: dt.date | None = None) -> int:
     """How many successful runs of this report were logged today, by anyone.
     Lets a daily_runs card's header pill count the same way the calendar tile
@@ -3352,11 +3375,21 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                             else _cal_counts.get((_r["id"], _day), 0))
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
+                    # PAUSED beats every computed status (Megan 2026-08-25). The
+                    # week strip runs its OWN status ladder — the card pill fix
+                    # never touched it, so a stood-down report kept rendering as a
+                    # plain white upcoming tile with "· 07:30 CST" next to it, i.e.
+                    # exactly the "it's about to run" reading the pause exists to
+                    # remove. Past days keep their real history; only today and
+                    # forward are re-labelled, because the report genuinely DID run
+                    # on those earlier days.
+                    if _day >= today and _paused_reason(_r):
+                        _stat = "paused"
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
                              "miss": "– ", "running": "🔄 ", "scanned": "🔍 ",
                              "progress": "🟡 ", "phase1": "🟡 ",
                              "phase2": "🟠 ", "phase3": "🔵 ",
-                             "review": "🟣 "}.get(_stat, "")
+                             "review": "🟣 ", "paused": "⏸ "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Multi-run card mid-day: show how many passes have landed
                     # (e.g. "(1/3 done)") so the amber pill says WHY it isn't
@@ -3377,7 +3410,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
                     # in the morning sweep, no individual time).
-                    if _r.get("self_scheduled"):
+                    if _r.get("self_scheduled") and _stat != "paused":
                         _sched = _r.get("schedule") or {}
                         # A report that runs across a WINDOW (Resume Pushing:
                         # every 10 min, 8am-10pm) has no single run time, so a
@@ -7678,7 +7711,7 @@ if st.session_state.view == "home":
     _due_today = [r for r in AUTOMATED_REPORTS
                   if _is_due_today(r, today) and not r.get("hide_schedule")
                   and not _paused_reason(r)]
-    _ran_today = sum(1 for r in _due_today if _was_run_successfully_today(r["id"], today))
+    _ran_today = sum(1 for r in _due_today if _counts_as_done_today(r, today))
     _due_n = len(_due_today)
     st.markdown(f"""
     <div class="hero" style="display:flex; align-items:center; justify-content:space-between">
@@ -7828,7 +7861,7 @@ if st.session_state.view == "home":
                         if _is_due_today(r, today)
                         and not r.get("hide_schedule")
                         and not _paused_reason(r)   # stood down ≠ needs running
-                        and not _was_run_successfully_today(r["id"], today)
+                        and not _counts_as_done_today(r, today)
                     )
                 with st.container(border=True):
                     st.markdown(
@@ -8273,6 +8306,8 @@ else:  # st.session_state.view == "user"
             "[class*='__calstat_testing']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#FCE7F3!important;color:#9D174D!important;border-color:#F472B6!important;opacity:1!important;animation:none!important}"
             "[class*='__calstat_review']:not([class*='__calstat_ok']):not([class*='__calstat_fail']) button{background:#EDE9FE!important;color:#5B21B6!important;border-color:#A78BFA!important;opacity:1!important;animation:none!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
+            # Slate grey, matching .pill-paused — the one colour that means OFF.
+            "[class*='__calstat_paused'] button{background:#EEF0F2!important;color:#5A6572!important;border-color:#9AA3AD!important;opacity:1!important;animation:none!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             # 'scanned' — the report RAN its readiness scan and found nothing to do
             # (SCI: no new tracker email). A healthy, successful outcome, so it gets
