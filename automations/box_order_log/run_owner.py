@@ -405,13 +405,22 @@ def main(argv: Optional[list] = None) -> int:
         cfg.display, today.strftime("%m-%d-%Y"))
     out_png = OUTPUT_DIR / "BOX Payout {} {}.png".format(
         cfg.display, today.strftime("%m-%d-%Y"))
+    # Every office that gets the Box report gets the same three artifacts
+    # (Megan 2026-08-25) — an owner reading their email and a rep reading
+    # Carlos's thread should be looking at the same report.
+    out_pending = OUTPUT_DIR / "BOX Pending Orders {} {}.png".format(
+        cfg.display, today.strftime("%m-%d-%Y"))
     try:
         xlsx.build(sales, out_xlsx, today=today)
         tables = payout.build_week_tables(sales, today)
         png.render(tables, out_png,
                    subtitle="Accepted & Cancelled are for that week — pay "
                             "follows the week after. Still Open = deals not "
-                            "yet accepted, any week.")
+                            "yet accepted, any week; Submitted to Supplier "
+                            "is the slice of those already with the supplier.")
+        from . import pending as pending_mod, pending_png
+        work = pending_mod.build(sales, today=today)
+        pending_png.render(work, out_pending)
     except Exception as exc:
         print("✗ build failed: {}".format(exc), file=sys.stderr)
         traceback.print_exc()
@@ -419,6 +428,8 @@ def main(argv: Optional[list] = None) -> int:
     if verbose:
         print("  Workbook: {}".format(out_xlsx))
         print("  Payout image: {}".format(out_png))
+        print("  Pending image: {}  ({} open)".format(out_pending,
+                                                      work["count"]))
 
     # ---- 4b. fill the owner's metrics-sheet BOX Order Log tab -----------
     # Same formula template as Carlos's board, so box_order_log.sheet.push
@@ -454,7 +465,8 @@ def main(argv: Optional[list] = None) -> int:
     recipients = [args.test_to] if args.test_to else list(cfg.email_to)
     try:
         box_email.send(subject, out_xlsx, out_png, recipients,
-                       greeting_name=first_name, dry_run=not send_for_real)
+                       greeting_name=first_name, pending_path=out_pending,
+                       dry_run=not send_for_real)
     except Exception as exc:
         print("✗ email failed: {}".format(exc), file=sys.stderr)
         traceback.print_exc()

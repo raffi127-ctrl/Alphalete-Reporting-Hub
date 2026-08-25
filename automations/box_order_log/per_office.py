@@ -46,12 +46,18 @@ def box_offices() -> List[Dict[str, str]]:
         rows = json.loads(bo._ONBOARDED_FILE.read_text())
     except Exception:                                # noqa: BLE001
         return out
-    # The Box thread's three boards are separately enrollable since 2026-08-20
+    # The Box thread's boards are separately enrollable since 2026-08-20
     # (owner-key -> run.py --sections name). Enrolling ANY of them puts the
     # office on the Box run; the run posts only the enrolled boards.
     BOX_SECTION_KEYS = {"b2b_order_log_box": "order_log",
                         "b2b_box_accepted": "accepted",
                         "b2b_box_tier_bonus": "tier_bonus"}
+    # Pending Orders is NOT enrollable and is deliberately absent above: it
+    # goes to everyone who gets the Box report at all (Megan 2026-08-25, "this
+    # should be universal formatting to everyone who gets this report"). Put it
+    # on the form and offices drift into two different-looking reports, which
+    # is the thing that ask was closing off.
+    ALWAYS = ["pending"]
     for r in rows:
         plans = r.get("channel_plans") or []
         enrolled = set(r.get("enrolled_reports") or [])
@@ -70,7 +76,7 @@ def box_offices() -> List[Dict[str, str]]:
                     "owner_office": (r.get("owner_office") or "").strip(),
                     "channel_id": cid, "channel_name": cname,
                     "sections": [s for k, s in BOX_SECTION_KEYS.items()
-                                 if k in box_keys]})
+                                 if k in box_keys] + ALWAYS})
     return out
 
 
@@ -214,7 +220,8 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
                "--channel", o["channel_id"],
                "--channel-name", o["channel_name"] or o["channel_id"],
                "--sections", ",".join(o.get("sections") or
-                                      ["order_log", "accepted", "tier_bonus"]),
+                                      ["order_log", "accepted", "pending",
+                                       "tier_bonus"]),
                "--weeks", str(weeks), "--xlsx"]
         if post:
             cmd.append("--post")

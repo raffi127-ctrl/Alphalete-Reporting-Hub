@@ -341,65 +341,13 @@ def build(sales: Sequence, out_path: Path, *,
     # ---- pending orders --------------------------------------------------
     # Every deal still in flight — not yet accepted, not dead — in one tab, so
     # Carlos has a single worklist to chase (his ask, 2026-07-22: "a tab with
-    # all of the pending orders like ATT has"). "Pending" is exactly the
-    # payout image's "Still Open": status is neither Accepted by Supplier nor a
-    # terminal cancel/reject/drop.
-    from . import payout as _payout
-    pend = [s for s in ordered
-            if s.status not in _payout.POSTED_STATUSES
-            and s.status not in _payout.CANCEL_STATUSES]
-
-    def _next_step(s) -> str:
-        """Plain, action-focused — what has to happen next, no color-speak."""
-        submitted = any(h.startswith(clean.SUBMITTED) for h in s.history)
-        if s.status == "Ready For Booking":
-            return "Send the bill copy / ETF document"
-        if s.status == "Incomplete":
-            return "Fix the missing contract data"
-        if s.status == clean.SUBMITTED:
-            return "Waiting on the supplier — nothing for us to do"
-        if s.status == "Verification":
-            return ("Waiting on the supplier" if submitted
-                    else "Submit a bill or ETF document")
-        return clean.STATUS_MEANING.get(s.status, "")
-
-    P_COLS = ("Rep Name", "Sale Date", "Days Waiting", "Business Name",
-              "Contract ID", "Status", "Next step")
-
-    # Two sections, each grouped by rep (Carlos, 2026-08-18: "all the yellow
-    # ones in their own section... the first section can be all the orders that
-    # aren't in yellow, organized by sales rep").
-    #
-    # "Yellow" is whatever color_for() actually paints yellow, NOT a status
-    # name: Submitted to Supplier, Ready For Booking (yellow since 2026-08-20),
-    # and a Verification sale whose HISTORY shows it was already submitted (an
-    # un-submitted Verification is orange, so it stays in the first section).
-    # Reading the paint is the point — recolor a status in clean.py and it
-    # moves sections on its own, with no second rule to keep in sync.
-    not_yellow, yellow = [], []
-    for s in pend:
-        if clean.color_for(s.status, s.history) == clean.YELLOW:
-            yellow.append(s)
-        else:
-            not_yellow.append(s)
-
-    def _by_rep(rows):
-        """[(rep, sales)] — reps A-Z, oldest deal first inside each rep.
-
-        Oldest first because this is a chase list: within a rep's block the
-        stalest deal is the one that most needs a call.
-        """
-        groups: Dict[str, List] = {}
-        for s in rows:
-            rep = _fmt(s.fields.get("Rep Name")) or "(no rep)"
-            groups.setdefault(rep, []).append(s)
-        for rep in groups:
-            groups[rep].sort(key=lambda s: (s.sale_date or dt.date.max,
-                                            _fmt(s.fields.get("Business Name"))))
-        return [(rep, groups[rep]) for rep in sorted(groups)]
-
-    def _plural(n):
-        return "" if n == 1 else "s"
+    # all of the pending orders like ATT has"). The model (what's pending, the
+    # yellow split, the next step, the per-rep grouping) lives in pending.py
+    # because the same worklist also ships as a standalone Slack image; this
+    # tab is just one rendering of it.
+    from . import pending as _pending
+    work = _pending.build(ordered, today=today)
+    P_COLS = _pending.COLUMNS
 
     def _rep_band(sh, row, text):
         cell = sh.cell(row=row, column=1, value=text)
@@ -410,10 +358,7 @@ def build(sales: Sequence, out_path: Path, *,
                        end_column=len(P_COLS))
 
     def _pending_row(sh, row, s):
-        waited = (today - s.sale_date).days if s.sale_date else ""
-        vals = [_fmt(s.fields.get("Rep Name")), s.sale_date or "", waited,
-                _fmt(s.fields.get("Business Name")),
-                _fmt(s.fields.get("Contract ID")), s.status, _next_step(s)]
+        vals = _pending.row_values(s, today)
         fill_hex = clean.color_for(s.status, s.history)
         fill = PatternFill("solid", fgColor=fill_hex) if fill_hex else None
         for c, v in enumerate(vals, start=1):
@@ -426,17 +371,18 @@ def build(sales: Sequence, out_path: Path, *,
             if c == 2:
                 cell.number_format = "mm/dd/yyyy"
 
-    def _pending_section(sh, row, title, rows, empty_note):
-        _banner(sh, row, title, len(P_COLS))
+    def _pending_section(sh, row, section):
+        _banner(sh, row, section["title"], len(P_COLS))
         row += 1
         _write_header(sh, row, P_COLS)
         row += 1
-        if not rows:
-            sh.cell(row=row, column=1, value=empty_note).font = _font(italic=True)
+        if not section["rows"]:
+            sh.cell(row=row, column=1,
+                    value=section["empty_note"]).font = _font(italic=True)
             return row + 2
-        for rep, rep_rows in _by_rep(rows):
+        for rep, rep_rows in section["reps"]:
             _rep_band(sh, row, "{}  •  {} order{}".format(
-                rep, len(rep_rows), _plural(len(rep_rows))))
+                rep, len(rep_rows), _pending.plural(len(rep_rows))))
             row += 1
             for s in rep_rows:
                 _pending_row(sh, row, s)
@@ -445,33 +391,15 @@ def build(sales: Sequence, out_path: Path, *,
         return row + 1
 
     psh = wb.create_sheet(_safe_title("Pending Orders", used))
-    psh.cell(row=1, column=1, value="Pending orders — not yet accepted").font = \
-        _font(bold=True)
-    psh.cell(row=2, column=1,
-             value="Every deal still in flight (cancelled and rejected are "
-                   "excluded). {} as of {}. Two sections, each by sales rep: "
-                   "what we still have to work first, then the yellow ones "
-                   "sitting with the supplier.".format(
-                       "{} pending".format(len(pend)) if pend else "none pending",
-                       today.strftime("%m/%d/%Y"))).font = _font(italic=True)
-    if not pend:
+    psh.cell(row=1, column=1, value=_pending.TITLE).font = _font(bold=True)
+    psh.cell(row=2, column=1, value=work["subtitle"]).font = _font(italic=True)
+    if not work["count"]:
         psh.cell(row=4, column=1, value="Nothing pending — every deal is "
                  "accepted or closed.").font = _font(italic=True)
     else:
-        # Banners name the COLOR, not who has the ball. They used to say
-        # "ours to work" / "waiting on the supplier", which stopped being true
-        # on 2026-08-20 when Ready For Booking turned yellow: that one still
-        # needs a document from us but now sits in the yellow half. The
-        # per-row "Next step" column carries the meaning instead.
-        r = _pending_section(
-            psh, 4,
-            "NOT YELLOW  •  {} order{}".format(len(not_yellow),
-                                                _plural(len(not_yellow))),
-            not_yellow, "Nothing here — every open deal is yellow.")
-        _pending_section(
-            psh, r,
-            "YELLOW  •  {} order{}".format(len(yellow), _plural(len(yellow))),
-            yellow, "Nothing here — no yellow deal is open.")
+        r = 4
+        for section in work["sections"]:
+            r = _pending_section(psh, r, section)
     widths = [22, 12, 13, 30, 12, 22, 40]
     for c, w in enumerate(widths, start=1):
         psh.column_dimensions[get_column_letter(c)].width = w

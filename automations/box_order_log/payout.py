@@ -35,6 +35,14 @@ from typing import Dict, List, Optional, Sequence
 POSTED_STATUSES = ("Accepted by Supplier",)
 # Statuses that mean "this one died".
 CANCEL_STATUSES = ("Cancelled by Broker", "Rejected", "Dropped")
+# Broken out of PENDING as its own column (Carlos, 2026-08-25): "any of them
+# that are labeled Submitted to Supplier go on there, and then, as long as it's
+# not cancelled by broker, it would go under pending". So this is a SUBSET of
+# `pending`, not a fourth bucket — a submitted deal is counted in both columns,
+# on purpose. Read literally off the current status, which is what "labeled"
+# means; the workbook's yellow SECTION is deliberately wider (it also holds
+# Ready For Booking and an already-submitted Verification).
+SUBMITTED_STATUSES = ("Submitted to Supplier",)
 
 
 def week_bounds(today: dt.date):
@@ -64,13 +72,14 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
     """Roll the collapsed sales into the two weekly payout tables.
 
     Returns {"last": {"label", "rows"}, "this": {"label", "rows"}} where each
-    row is {"rep", "posted", "pending", "total", "canceled"}, sorted by total
-    descending with the rep name as tiebreak.
+    row is {"rep", "posted", "submitted", "pending", "total", "canceled"},
+    sorted by total descending with the rep name as tiebreak.
 
     NOTE ON SCOPE — this bit confused Carlos on 2026-07-18 and the labels now
     say it outright. `posted` and `canceled` are WEEK figures. `pending` is
     NOT: it's every deal of that rep's still waiting on acceptance, whatever
-    week it was sold, and it is identical in both tables. A deal that hasn't
+    week it was sold, and it is identical in both tables. `submitted` is the
+    same shape — an all-time slice of `pending`, identical in both tables. A deal that hasn't
     been accepted has no payout week yet, so pinning it to one would invent
     information. That's why there is no longer a "Total" column — summing a
     week figure with an all-time one produced a number that meant nothing.
@@ -84,7 +93,7 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
         if not rep:
             continue
         agg = reps.setdefault(rep, {
-            "pending": 0, "posted_last": 0, "posted_this": 0,
+            "pending": 0, "submitted": 0, "posted_last": 0, "posted_this": 0,
             "canceled_last": 0, "canceled_this": 0,
         })
         # Accepted Date for a paid sale; for a dead one fall back to the sale
@@ -104,6 +113,8 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
                 agg["canceled_this"] += 1
         elif s.status:
             agg["pending"] += 1
+            if s.status in SUBMITTED_STATUSES:
+                agg["submitted"] += 1
 
     def make_rows(posted_key: str, canceled_key: str) -> List[Dict]:
         rows = []
@@ -111,6 +122,7 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
             posted = a[posted_key]
             pending = a["pending"]
             rows.append({"rep": rep, "posted": posted, "pending": pending,
+                         "submitted": a["submitted"],
                          "total": posted + pending,
                          "canceled": a[canceled_key]})
         # Rank by what actually pays that week. The old key was posted+pending,

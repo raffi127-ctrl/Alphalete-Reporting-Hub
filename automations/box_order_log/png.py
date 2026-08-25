@@ -30,9 +30,15 @@ NUM_W = 74 * SCALE
 # NOT "Paid" — Carlos, 2026-07-18: "I read 'paid' and I would think I've
 # already gotten paid on it, but I'm not getting paid on it until next week."
 # Acceptance is the event; the money follows later.
+# "Submitted to Supplier" is a SLICE of "Still Open", not a bucket beside it
+# (Carlos, 2026-08-25): a submitted deal is counted in both columns, so the two
+# totals are not meant to add up to anything. It sits next to Accepted so the
+# supplier's two states read side by side. Like Still Open it's an all-time
+# figure, identical in both tables.
 COLS: List[Tuple[str, str, str]] = [
     ("Rep Name", "rep", "left"),
     ("Accepted by Supplier", "posted", "center"),
+    ("Submitted to Supplier", "submitted", "center"),
     ("Cancelled", "canceled", "center"),
     ("Still Open", "pending", "center"),
 ]

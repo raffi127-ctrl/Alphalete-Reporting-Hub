@@ -9,10 +9,11 @@ the reporting account's App Password, reusing the exact SMTP plumbing the
 Scheduled-6-days-out report already uses (FROM_ADDR / SMTP_HOST / SMTP_PORT /
 app_password) so the credential lives in one place.
 
-Attaches the two daily artifacts, same as Carlos's Slack thread but scoped to
-the one owner:
+Attaches the same daily artifacts as Carlos's Slack thread, scoped to the one
+owner:
   * the per-rep workbook  (the owner's office: overall log + one tab per rep)
   * the payout image      (accepted by supplier, last week & this week)
+  * the pending image     (every order still open, by rep, with the next step)
 
 DRY-RUN writes the .eml to output/logs and sends nothing. Python 3.9 lives on
 Lucy 2, so annotations stay deferred and there's no runtime `X | Y`.
@@ -48,7 +49,8 @@ def _attach(msg: EmailMessage, path: Path) -> None:
 
 
 def build_message(subject: str, xlsx_path: Path, png_path: Path,
-                  to_addrs: List[str], greeting_name: str = "") -> EmailMessage:
+                  to_addrs: List[str], greeting_name: str = "",
+                  pending_path: Optional[Path] = None) -> EmailMessage:
     """Build the email: short plain-text note + the workbook and payout image
     attached. Kept plain-text on purpose — it's a data hand-off; the numbers
     live in the attachments."""
@@ -59,14 +61,20 @@ def build_message(subject: str, xlsx_path: Path, png_path: Path,
     msg["Subject"] = subject
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to_addrs)
+    # The bullets name exactly what's attached, so a missing pending image
+    # can't leave the note promising something that isn't there.
+    bullets = ["  • Overall log + a tab per rep",
+               "  • Accepted by supplier — last week & this week"]
+    if pending_path and Path(pending_path).exists():
+        bullets.append("  • Pending orders — everything still open, by rep")
     msg.set_content(
         "{}\n\n"
         "Here's your BOX Order Log for today:\n\n"
-        "  • Overall log + a tab per rep\n"
-        "  • Accepted by supplier — last week & this week\n\n\n"
-        "— Lucy at Alphalete Reporting \U0001F43E\n".format(hi)
+        "{}\n\n\n"
+        "— Lucy at Alphalete Reporting \U0001F43E\n".format(hi,
+                                                          "\n".join(bullets))
     )
-    for p in (xlsx_path, png_path):
+    for p in (xlsx_path, png_path, pending_path):
         if p and Path(p).exists():
             _attach(msg, Path(p))
     return msg
@@ -74,6 +82,7 @@ def build_message(subject: str, xlsx_path: Path, png_path: Path,
 
 def send(subject: str, xlsx_path: Path, png_path: Path,
          to_addrs: List[str], *, greeting_name: str = "",
+         pending_path: Optional[Path] = None,
          dry_run: bool = False, logfn=print) -> dict:
     """Email one owner their BOX Order Log.
 
@@ -89,7 +98,8 @@ def send(subject: str, xlsx_path: Path, png_path: Path,
         logfn("  (no email recipients — skipping)")
         return {"skipped": True, "reason": "no recipients"}
 
-    msg = build_message(subject, xlsx_path, png_path, to_addrs, greeting_name)
+    msg = build_message(subject, xlsx_path, png_path, to_addrs, greeting_name,
+                        pending_path=pending_path)
 
     if dry_run:
         _EML_DIR.mkdir(parents=True, exist_ok=True)

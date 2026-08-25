@@ -65,6 +65,10 @@ WORKBOOK_LINE = "\U0001F4E6 Overall log + a tab per rep"
 # rest. (The OWNER EMAIL keeps its own longer wording — that copy is separately
 # Megan-approved and doesn't read from here.)
 PAYOUT_LINE = "\U0001F4B5 Accepted by supplier"
+# Fourth attachment (Carlos 2026-08-25): the workbook's Pending Orders tab as
+# its own image — "can this be a separate screenshot that gets sent, we can
+# call it pending orders". Same worklist, no xlsx to open.
+PENDING_LINE = "\U0001F5C2\uFE0F Pending orders"
 # Third attachment (Carlos 2026-08-15): the Box Tier Bonus - Rep Level board.
 # The line itself lives in tier_bonus.py, next to the capture it describes.
 
@@ -112,7 +116,8 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
 
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  payout_path: Path, tier_path: Optional[Path],
-                 tier_line: str, sections=None) -> str:
+                 tier_line: str, sections=None,
+                 pending_path: Optional[Path] = None) -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
     One call per destination: Slack threads don't span channels, so Carlos's two
@@ -121,13 +126,14 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
     enrolled boards; None = everything (the standalone run).
     """
     sections = sections if sections is not None else {"order_log", "accepted",
-                                                      "tier_bonus"}
+                                                      "pending", "tier_bonus"}
     ts = client.chat_postMessage(channel=channel, text=text)["ts"]
     # Workbook first — the overall log plus a tab per rep plus the payout grid.
     # Then the payout image, which Slack renders inline so the numbers are
     # readable without opening anything. Same pairing as the Fiber post. Last
-    # the tier board, so the thread reads log -> pay -> where each rep sits on
-    # the ladder; it goes in only when we have it, matching the header.
+    # the pending worklist and the tier board, so the thread reads log -> pay
+    # -> what's still open -> where each rep sits on the ladder; each goes in
+    # only when we have it, matching the header.
     if "order_log" in sections:
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(xlsx_path),
@@ -139,6 +145,12 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             channel=channel, thread_ts=ts, file=str(payout_path),
             filename=payout_path.name, title=payout_path.stem,
             initial_comment=PAYOUT_LINE,
+        )
+    if pending_path and "pending" in sections:
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(pending_path),
+            filename=pending_path.name, title=pending_path.stem,
+            initial_comment=PENDING_LINE,
         )
     if tier_path and "tier_bonus" in sections:
         client.files_upload_v2(
@@ -250,12 +262,14 @@ def main(argv: Optional[list] = None) -> int:
                              tier_bonus.DEFAULT_OWNER))
     ap.add_argument("--no-tier", action="store_true",
                     help="leave the Box Tier Bonus board out of the thread")
-    ap.add_argument("--sections", default="order_log,accepted,tier_bonus",
+    ap.add_argument("--sections",
+                    default="order_log,accepted,pending,tier_bonus",
                     help="which thread sections to post, csv of: order_log "
                          "(the workbook), accepted (the payout board), "
+                         "pending (the pending-orders worklist image), "
                          "tier_bonus. Per-office enrollment subsets from the "
                          "onboarding form pass this; default = the full "
-                         "thread (Carlos's standalone run unchanged).")
+                         "thread.")
     args = ap.parse_args(argv)
     sections = {s.strip() for s in args.sections.split(",") if s.strip()}
 
@@ -406,6 +420,8 @@ def main(argv: Optional[list] = None) -> int:
     out_xlsx = OUTPUT_DIR / "BOX Order Log {}.xlsx".format(
         today.strftime("%m-%d-%Y"))
     out_png = OUTPUT_DIR / "BOX Payout {}.png".format(today.strftime("%m-%d-%Y"))
+    out_pending = OUTPUT_DIR / "BOX Pending Orders {}.png".format(
+        today.strftime("%m-%d-%Y"))
     if args.xlsx or args.post:
         from . import xlsx
         try:
@@ -427,15 +443,27 @@ def main(argv: Optional[list] = None) -> int:
         png.render(tables, out_png,
                    subtitle="Accepted & Cancelled are for that week — pay "
                             "follows the week after. Still Open = deals not "
-                            "yet accepted, any week.")
+                            "yet accepted, any week; Submitted to Supplier "
+                            "is the slice of those already with the supplier.")
+        # The Pending Orders tab, drawn as its own image. Built off the FULL
+        # pull like the workbook it mirrors, not the six-week window: a deal
+        # that has sat unaccepted for two months is exactly the one Carlos
+        # needs to see on the worklist.
+        from . import pending as pending_mod, pending_png
+        work = pending_mod.build(sales, today=today)
+        pending_png.render(work, out_pending)
+
         if verbose:
             print("  Payout image: {}".format(out_png))
+            print("  Pending image: {}  ({} open)".format(
+                out_pending, work["count"]))
             for key in ("last", "this"):
                 t = tables[key]
                 paid = sum(r["posted"] for r in t["rows"])
                 pend = sum(r["pending"] for r in t["rows"])
-                print("    {:<5} {}  paid={} pending={}".format(
-                    key.upper(), t["label"], paid, pend))
+                subm = sum(r["submitted"] for r in t["rows"])
+                print("    {:<5} {}  paid={} submitted={} pending={}".format(
+                    key.upper(), t["label"], paid, subm, pend))
 
     # ---- 6. optional PDF -------------------------------------------------
     out_pdf = Path(args.out) if args.out else (
@@ -456,6 +484,8 @@ def main(argv: Optional[list] = None) -> int:
         attach_lines.append(WORKBOOK_LINE)
     if "accepted" in sections:
         attach_lines.append(PAYOUT_LINE)
+    if "pending" in sections:
+        attach_lines.append(PENDING_LINE)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
     header = "*BOX Order Log — {}*\n{}".format(
@@ -557,7 +587,8 @@ def main(argv: Optional[list] = None) -> int:
             # channel that fails is recorded and the rest still go out.
             try:
                 _post_thread(client, target, text, out_xlsx, out_png, tier_png,
-                             tier_bonus.TIER_LINE, sections=sections)
+                             tier_bonus.TIER_LINE, sections=sections,
+                             pending_path=out_pending)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
                     name, type(exc).__name__,
