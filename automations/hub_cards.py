@@ -545,9 +545,21 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "knocks_intraday",
         "self_scheduled": True,
         # Three slots, each in the OFFICE's own clock — so there is no single
-        # wall-clock time to show. daily_runs must match the slots the day
-        # actually fires or the phase pill never completes.
-        "daily_runs": 3,
+        # wall-clock time to show. daily_runs must match the PUBLISHING TICKS a
+        # day actually fires, not the number of slots: the wrapper publishes once
+        # per tick that did work (WORKED=1), and a tick serves every office whose
+        # own clock is due right now. The org spans TWO zones, so the 9 PM slot is
+        # two ticks, not one:
+        #   2:00 PM Central  — Cody only (Corpus Christi)
+        #   5:15 PM Central  — Cody only
+        #   9:00 PM Eastern  = 20:00 Central — aya, hammad, salik, nii
+        #   9:00 PM Central  = 21:00 Central — the seven Texas offices
+        # = 4 publishing ticks on a normal Mon-Sat day. Counting slots (3) greens
+        # the pill one tick early, before the Central offices have posted.
+        # If every office ever lands in one zone this drops back to 3; if a third
+        # zone is onboarded it becomes 5. Sunday fires nothing (WORKING_WEEKDAYS
+        # is Mon-Sat), and a day with no due work publishes nothing at all.
+        "daily_runs": 4,
         "schedule": {
             "frequency": "daily",
             "time": "9:00 PM",
