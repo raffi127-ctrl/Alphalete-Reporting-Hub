@@ -1318,6 +1318,30 @@ AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
                          if r.get("id") not in _static_ids
                          and r.get("id") not in _shared_ids)
 
+# Card ids whose PARTIAL means "it ran fine and found something for a human to
+# look at", not "it broke" (Megan 2026-08-25).
+#
+# An AUDIT reports what it finds. vantura_board_audit says so in as many words —
+# "FINDINGS ARE THE JOB, NOT A FAILURE" (automations/vantura_board_audit/run.py):
+# it exits 0 and writes its findings to a run-manifest as ok=False specifically so
+# the orchestrator records a SOFT INCOMPLETE instead of a hard FAILED "that fires
+# the immediate 'needs attention' page", and it carries no retry_args because a
+# human fixes the board — there is nothing to re-run. That soft incomplete reaches
+# the Hub as `partial`, and Needs-attention flagged every `partial` with a red ❌ —
+# which is exactly the page the audit was written to avoid. So the audit sat on
+# the triage list every morning it did its job, next to reports that were actually
+# broken, and the findings were already filed on the board's 'Report an Issue' tab.
+#
+# This ONLY silences the triage line. The card still shows partial, the run feed
+# still shows partial, and a FAILED run from one of these is still flagged — a
+# genuine crash (scrape/auth/IO) exits non-zero and never lands here.
+#
+# Keyed by CARD id. vantura_board_audit is a self-registered library card, so its
+# id keeps the underscores of its report_id rather than the hyphens a hand-written
+# card would use; both spellings are listed so a later rename can't quietly
+# re-break it.
+FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit"}
+
 
 def _load_library_overrides() -> dict[str, list[str]]:
     """Manual library assignments saved from the Library UI."""
@@ -1502,15 +1526,37 @@ def _git_health() -> dict:
     when = _git("log", "-1", "--format=%cr")
     if remote and local != remote:
         behind = _git("rev-list", "--count", "HEAD..origin/main")
+        ahead = _git("rev-list", "--count", "origin/main..HEAD")
         if behind and behind != "0":
             _how = ("click Update & restart below"
                     if os.environ.get("HUB_SUPERVISED") == "1"
                     else "fully quit + relaunch to update")
+            # Diverged (behind AND ahead) still leads with BEHIND: there is
+            # something to pull, and that is the half that changes what runs.
+            _also = f" · {ahead} local commit(s) not pushed" if ahead not in ("", "0") else ""
             return {"icon": "⚠️", "label": f"{behind} update(s) behind",
-                    "detail": f"on '{branch}' @ {head} — {_how}",
+                    "detail": f"on '{branch}' @ {head} — {_how}{_also}",
                     "ok": False}
-        return {"icon": "⚠️", "label": "not on latest main",
-                "detail": f"on '{branch}' @ {head}", "ok": False}
+        if ahead and ahead != "0":
+            # AHEAD ONLY — nothing to pull. This machine has latest main PLUS
+            # commits that haven't been pushed yet, which is what this repo looks
+            # like for the seconds-to-minutes between a local commit and its
+            # push, and several Claude sessions commit here every morning.
+            # It used to fall through to "not on latest main", whose remedy is
+            # "fully quit + relaunch to update" — and a relaunch PULLS, so it
+            # could never clear a state that has nothing to pull. Megan sat in
+            # that loop on 2026-08-25: quit, relaunch, same warning, while the
+            # repo was in fact exactly level with origin/main. Say what is true
+            # (you ARE on the latest code) and don't send anyone to a fix that
+            # cannot work.
+            return {"icon": "✅", "label": "On latest",
+                    "detail": f"{head} · {ahead} local commit(s) not pushed",
+                    "ok": True}
+        # Different SHAs but neither ahead nor behind — origin/main unreadable or
+        # a detached/renamed branch. Genuinely unknown, so don't prescribe a fix.
+        return {"icon": "⚠️", "label": "can't compare to main",
+                "detail": f"on '{branch}' @ {head} — check `git status`",
+                "ok": False}
     return {"icon": "✅", "label": "On latest",
             "detail": f"{head} · updated {when}", "ok": True}
 
@@ -7635,6 +7681,8 @@ if st.session_state.view == "home":
         _stt = (_statuses.get((r["id"], today)) or "").lower()
         if _stt in ("success", "running"):
             continue
+        if _stt == "partial" and r["id"] in FINDINGS_REPORTS:
+            continue    # it did its job and found something — see FINDINGS_REPORTS
         if _stt in ("failed", "partial"):
             _attention.append((r, f"❌ {_stt} today"))
             continue
