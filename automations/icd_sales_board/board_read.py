@@ -99,12 +99,31 @@ class BoardWeek:
         return [d.day for d in self.days]
 
 
+# Product labels that identify the header row. Any THREE of them is enough,
+# which is what makes the lookup survive a single label being edited or blanked.
+_HEADER_MARKERS = {"int", "int up", "dtv", "nl", "en", "cx", "apps",
+                   "total apps"}
+
+
 def header_row(g) -> int:
+    """The row carrying the product columns.
+
+    'Total Apps' was the anchor until somebody blanked that one cell on Raf's
+    board (2026-08-21) — the column still held its numbers, but the label was
+    gone and every read of the board failed. Anchoring on ANY THREE product
+    labels means one edited cell can no longer take the whole thing down."""
+    best = None
     for r in range(1, min(len(g), 40) + 1):
         row = [(c or "").strip().lower() for c in g[r - 1]]
         if HEADER_CELL in row:
             return r
-    raise ValueError("no header row carrying 'Total Apps'")
+        if best is None and len(_HEADER_MARKERS & set(row)) >= 3:
+            best = r
+    if best is not None:
+        return best
+    raise ValueError(
+        "no header row found — expected 'Total Apps' or at least three of "
+        f"{sorted(_HEADER_MARKERS)} in the first 40 rows")
 
 
 def totals_row(g, start: int) -> int:
@@ -126,7 +145,23 @@ def parse_week(g, tab: str) -> BoardWeek:
     # repeated measure name: last week's block leads with 'APPS' where this
     # week's leads with 'Total Apps', so a repeat-check sails straight past the
     # boundary and reports last week's total as this week's.
-    start = next(i for i, c in enumerate(hdr) if c.lower() == HEADER_CELL)
+    # Start of this week's block: the 'Total Apps' cell when it's there, else
+    # where the RUNNING WEEK TOTALS banner begins. The banner is the sturdier
+    # anchor — the label under it was blanked on Raf's board 2026-08-21 while
+    # the column kept its numbers.
+    start = next((i for i, c in enumerate(hdr) if c.lower() == HEADER_CELL),
+                 None)
+    if start is None:
+        for r in range(1, hr):
+            for i, c in enumerate(g[r - 1]):
+                if "running week" in (c or "").strip().lower():
+                    start = i
+                    break
+            if start is not None:
+                break
+    if start is None:
+        raise ValueError("can't locate this week's measure block")
+
     stop = len(hdr)
     for r in range(1, hr):
         for i, c in enumerate(g[r - 1]):
@@ -135,6 +170,10 @@ def parse_week(g, tab: str) -> BoardWeek:
     measures, seen = [], set()
     for i in range(start, stop):
         name = hdr[i]
+        if not name and i == start:
+            # the block's first column with its label rubbed out — it is the
+            # week total, so name it rather than losing the whole block
+            name = "Total Apps"
         if not name:
             break
         if name.lower() in seen:          # belt and braces

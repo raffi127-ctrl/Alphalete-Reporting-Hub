@@ -16,6 +16,7 @@ deleting a colleague's work to satisfy our own view of the world.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Dict, List
 
 import gspread
@@ -71,43 +72,84 @@ def _is_done(text: str, today=None) -> bool:
     return False
 
 
-def find_completed(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
-    """{normalised name: 'Complete'} for everyone whose packet is signed.
+_COMPLETE_RE = re.compile(
+    r"Complete(\d{1,2}/\d{1,2}/\d{2,4})\s+(.+?)"
+    r"(?=Complete\d|Sent\d|Draft\d|Started\d|Declined\d|Expired\d|$)")
 
-    Skips anyone already ticked -- no point paying for a search to confirm what
-    the sheet already says.
+# How many times to scroll the Completed pane. Each pass loads ~40 more rows;
+# the default view holds 40 and reaches back ~4 days, 8 passes reached 3 weeks.
+_SCROLL_PASSES = 8
+
+_SCROLL_JS = """() => {
+    const els = [...document.querySelectorAll('div')]
+      .filter(e => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200);
+    const last = els[els.length - 1];      // Draft | Sent | Completed
+    if (last) last.scrollTop = last.scrollHeight;
+}"""
+
+
+def scan_completed(page, today: dt.date = None) -> Dict[str, str]:
+    """{normalised name: date} for every packet signed inside the window.
+
+    ONE page read for the whole roster, rather than a search each. A search is
+    ~10 seconds, so per-person cost 50+ people nearly ten minutes -- fine once
+    on a Monday, hopeless for a sweep meant to run through the day. The
+    Completed column already lists exactly what we need; it just has to be
+    scrolled, since it loads 40 rows at a time.
     """
+    today = today or dt.date.today()
+    for _ in range(_SCROLL_PASSES):
+        page.evaluate(_SCROLL_JS)
+        page.wait_for_timeout(2200)
+    text = " ".join((page.inner_text("body") or "").split())
+
     out: Dict[str, str] = {}
+    for datestr, name in _COMPLETE_RE.findall(text):
+        if not _within(datestr, today):
+            continue
+        name = name.strip()
+        # Rows carry the signer's INITIALS after the name ("Cale Mckenna CM");
+        # and an envelope nobody renamed reads "Raf Documents", which is a
+        # label, not a person -- it can't match a roster name, so it falls out.
+        name = re.sub(r"\s+[A-Z]{1,3}$", "", name).strip()
+        if name:
+            out.setdefault(_norm_name(name), datestr)
+    return out
+
+
+def _norm_name(s: str) -> str:
+    from automations.blueink_docs.roster import _norm
+    parts = [p for p in re.split(r"\s+", (s or "").strip()) if p]
+    if len(parts) < 2:
+        return ""
+    return _norm(parts[-1]) + "|" + _norm(" ".join(parts[:-1]))
+
+
+def find_completed(people: List[NewStart], headless: bool = True) -> Dict[str, str]:
+    """{person key: date signed} for everyone whose packet is now signed.
+
+    Skips anyone already ticked -- no point looking up what the sheet says.
+    """
     todo = [p for p in people
             if p.blueink_col and (p.blueink_val or "").strip().lower() not in TRUTHY]
     if not todo:
-        return out
-    with S._sync_api()() as p:
-        browser, ctx = S.open_context(p, headless=headless)
+        return {}
+    with S._sync_api()() as pw:
+        browser, ctx = S.open_context(pw, headless=headless)
         page = ctx.new_page()
         try:
             page.goto(recent_ui.DASHBOARD, wait_until="domcontentloaded",
                       timeout=recent_ui.NAV_TIMEOUT)
-            page.wait_for_timeout(6000)
+            page.wait_for_timeout(12000)
             if "/login" in page.url:
                 raise RuntimeError(
                     "The Blue Ink session on this machine has expired. At the "
                     "keyboard here run: python -m "
                     "automations.blueink_docs.session --login")
-            for person in todo:
-                # Email first; then the name, because the address on the sheet
-                # is not always the one the packet went to (Ignacio Lara,
-                # 2026-08-24) and we'd otherwise never see his signature.
-                done = False
-                if (person.email or "").strip():
-                    done = _is_done(recent_ui._search(page, person.email.strip()))
-                if not done and (person.name or "").strip():
-                    done = _is_done(recent_ui._search(page, person.name.strip()))
-                if done:
-                    out[person.key] = "Complete"
+            signed = scan_completed(page)
         finally:
             browser.close()
-    return out
+    return {p.key: signed[p.key] for p in todo if p.key in signed}
 
 
 def tick(worksheet, people: List[NewStart], done_keys: Dict[str, str]) -> int:

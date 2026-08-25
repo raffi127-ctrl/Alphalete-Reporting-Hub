@@ -475,9 +475,11 @@ class ApplicantStream:
             return False
 
     def scrape_calendar_bob_dates(self) -> dict[str, str]:
-        """From the currently-shown calendar day, return {full_name: bob_date_str}
-        for every applicant whose row shows 'Brought on Board (<date>)'."""
-        pairs = self.page.evaluate(
+        """From the currently-shown calendar day, return {full_name_lower: bob_date}
+        for every applicant whose row shows 'Brought on Board (<date>)'. BEST-EFFORT:
+        returns {} if the calendar couldn't be driven/read (patchright / no data)."""
+        try:
+            pairs = self.page.evaluate(
             """() => {
                 const out = [];
                 document.querySelectorAll('tr').forEach(tr => {
@@ -492,7 +494,9 @@ class ApplicantStream:
                 });
                 return out;
             }"""
-        )
+            )
+        except Exception:  # noqa: BLE001 — calendar read is a nice-to-have
+            return {}
         return {name.strip().lower(): date for name, date in pairs}
 
 

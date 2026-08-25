@@ -75,14 +75,20 @@ def _log_run(started_at) -> None:
     it by the old mini-4am baseline, and the morning of 2026-08-21 opened a
     "didn't run today" incident for an agent that was installed and healthy.
     A quiet run logging `success` is exactly what tells the watcher it's alive.
-    Skipped under the orchestrator (HUB_REPORT_ID set): the pill row is its job."""
+    Skipped under the orchestrator (HUB_REPORT_ID set): the pill row is its job.
+
+    Logs to the merged "Office Onboarding" CARD id, not this module's scheduler
+    handle (Megan 2026-08-25: onboarding is one card). hub_activity keys on the
+    CARD id and self-registers a library card for an id it doesn't know, so
+    logging `enrollment_pending_check` now would rebuild the very duplicate the
+    merge removed."""
     import os
     if os.environ.get("HUB_REPORT_ID"):
         return
     try:
         from automations.shared import hub_activity
-        hub_activity.log_completed("enrollment_pending_check",
-                                   "Pending enrollments check",
+        from automations.shared import onboarding_surfaces as _os
+        hub_activity.log_completed(_os.CARD_ID, "Office Onboarding",
                                    status="success", started_at=started_at)
     except Exception as e:  # noqa: BLE001 — reporting never sinks the check
         print("[pending_alert] activity log skipped ({}: {})".format(

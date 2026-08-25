@@ -1164,9 +1164,17 @@ def trend(week, tabs=(), team: str = ALL_TEAMS,
                   if k not in ("Week",) and k not in VITAL_METRICS]
     options = unit_names + [m for m in VITAL_METRICS if m in series[-1]]
     default = [unit_names[0]] if unit_names else options[:1]
-    picked = st.multiselect("Metrics", options,
-                            default=st.session_state.get("trend_m", default),
-                            key="trend_m")
+
+    # The office and team views offer DIFFERENT metric names — the office reads
+    # the board's own measures ("Total Apps"), a team reads its Teams block
+    # ("Total Units"). Streamlit keeps the previous selection under the widget
+    # key and raises if any of it isn't in the new options, so switching to a
+    # team crashed on the metric carried over from the office. Keep whatever
+    # still exists, fall back to the default, and drop the rest.
+    kept = [m for m in st.session_state.get("trend_m", []) if m in options]
+    if kept != st.session_state.get("trend_m"):
+        st.session_state["trend_m"] = kept or default
+    picked = st.multiselect("Metrics", options, key="trend_m")
     color_multiselect_pills(picked)
     if not picked:
         st.caption("Pick at least one metric.")

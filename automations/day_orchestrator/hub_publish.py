@@ -101,6 +101,16 @@ _HUB_CARD = {
     # vantura_churn: without this entry its card stays grey and a missed/failed run
     # looks identical to a clean one.
     "att_churn": "att-churn",
+    # Onboarding — three scheduler handles, ONE card (Megan 2026-08-25). The
+    # hourly pending check, the one-click apply and the auto-commit pass are
+    # separate runs of the same job, so they all report onto the merged
+    # office-onboarding card. Without these, a `lucy rerun` of any of them
+    # (which sets HUB_REPORT_ID, so the runner's own log_completed stands down
+    # and the orchestrator publishes instead) would register its report_id as
+    # its own library card and the merged card would say "no run logged".
+    "enrollment_pending_check": "office-onboarding",
+    "apply_enrollments": "office-onboarding",
+    "tracker_auto_commit": "office-onboarding",
     # DD / Organization Bulletin: standalone LaunchAgent on the mini
     # (com.alphalete.dd-bulletin-thu, deploy/dd_bulletin_thu.sh, Thursday
     # 10:30-13:00) since 2026-07-30 — never in the 4am batch, so without this

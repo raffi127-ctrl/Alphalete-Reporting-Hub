@@ -1484,11 +1484,28 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
     # Per-office Sara Plus. Reuses opt_retail's parser rather than a second
-    # copy — it is the same worksheet, same columns, same forward-fill quirk
-    # (Tableau blanks the owner cell on continuation rows).
+    # copy — same worksheet, same columns.
+    #
+    # MUST be parse_sara_view_data, NOT parse_sara_plus_office_totals. Those
+    # are two different parsers for two different export shapes of the same
+    # table, and opt_retail calls the View Data one for exactly this pull:
+    #   - Crosstab export  → WIDE: one column per measure (Next Up, Extra, …)
+    #                        → parse_sara_plus_office_totals
+    #   - View Data scrape → LONG: Owner & Office | Rep | rep.Rep Number |
+    #                        Measure Names | Measure Values, one row per
+    #                        (rep, measure) → parse_sara_view_data
+    # The download above is scrape_view_data_patchright, so the file is always
+    # LONG. Pointed at the wide parser it finds 'Owner & Office' + 'Rep',
+    # finds NO metric columns (they live in Measure Names as row values), and
+    # returns {} — no exception, no bad row, just every NDS tab silently
+    # losing Next Up % and Extra/Premium %. That is what shipped blank on
+    # 2026-08-24 while Retail — same dashboard, same scrape, correct parser —
+    # filled fine. If this ever returns 0 owners again, check the logged
+    # column list first: 'Measure Names' present means the file is fine and
+    # the parser is wrong.
     try:
         from automations.alphalete_org_report.opt_retail import (
-            parse_sara_plus_office_totals as _parse_sara_office)
+            parse_sara_view_data as _parse_sara_office)
         sara_office = _parse_sara_office(
             OUTPUT_DIR / NDS_SARA_PLUS_OFFICE_FILENAME)
     except Exception as e:  # noqa: BLE001 — a bad parse must not kill the fill
@@ -1497,14 +1514,19 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         sara_office = {}
     logfn(f"OPT NDS: per-office Sara Plus: {len(sara_office)} owner(s)")
     if not sara_office:
-        # SAY WHAT WE ACTUALLY GOT. parse_sara_plus_office_totals returns {}
-        # when the export has no 'Owner & Office' + 'Rep' columns — i.e. the
-        # View Data scrape landed on a different worksheet of this
-        # multi-worksheet dashboard (most likely the single-row totals table).
-        # Without the header there is no way to tell that apart from "the view
-        # is empty", and two dry-runs were spent guessing. Never truncate it:
-        # the column list IS the diagnosis. Same lesson as opt_b2b's
-        # _download_by_substring logging the full worksheet list.
+        # SAY WHAT WE ACTUALLY GOT — the column list IS the diagnosis, and it
+        # separates the two very different reasons this comes back empty:
+        #   - columns include 'Measure Names' → the scrape is FINE, the file is
+        #     the expected long View Data export; an empty parse then means the
+        #     PARSER is wrong (see the import note above — this exact mix-up
+        #     blanked every NDS tab on 2026-08-24).
+        #   - no 'Owner & Office' / 'Rep' at all → the scrape really did land on
+        #     another worksheet of this multi-worksheet dashboard (most likely
+        #     the single-row totals table).
+        # Without the header there is no way to tell those apart, or to tell
+        # either from "the view is empty", and two dry-runs were spent guessing.
+        # Never truncate it. Same lesson as opt_b2b's _download_by_substring
+        # logging the full worksheet list.
         try:
             _rows = _read_tab_csv(OUTPUT_DIR / NDS_SARA_PLUS_OFFICE_FILENAME)
             logfn(f"OPT NDS:   {NDS_SARA_PLUS_OFFICE_FILENAME}: "

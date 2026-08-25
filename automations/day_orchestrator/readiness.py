@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as dt
+import json
 import os
 import tempfile
 from dataclasses import dataclass
@@ -70,6 +71,51 @@ def session_status(stale_after_minutes: int = 20) -> Tuple[bool, float, str]:
             f"ownerville session stale ({age_min:.0f}m since last export; "
             f"holder may be down) — re-seed the mini")
     return True, age_min, "warm"
+
+
+# ---------------- Box extract high-water mark (across days) ----------------
+
+def _box_history_file() -> Path:
+    from automations.day_orchestrator.state import STATE_DIR
+    return STATE_DIR / "box_daily_maxdate.json"
+
+
+def _box_roll_history(today: dt.date, maxd: dt.date) -> Optional[dt.date]:
+    """Record how far the Box extract reaches on `today`, and return the highest
+    max-date seen on any day BEFORE today (None on the first ever probe).
+
+    `_probe_box_daily` needs "did the extract move since yesterday?", so the
+    prior-day high-water mark has to survive every pass of the same morning —
+    hence the split: `prior` is frozen on the first probe of a new day, `max`
+    accumulates within the day. Best-effort: a missing/corrupt/unwritable file
+    just yields None, which falls back to the old hold-until-the-floor
+    behaviour. Per-machine state, which is fine while tableau_screenshots_box
+    lives on one machine (Lucy 3 since 2026-08-22); a machine move starts the
+    history over and costs one day of the old behaviour."""
+    path = _box_history_file()
+    try:
+        data = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — no history yet is the normal first run
+        data = {}
+    prior_s = data.get("prior")
+    seen_s = data.get("max")
+    if data.get("date") != today.isoformat():
+        # First probe of a new day — yesterday's accumulated max becomes `prior`.
+        prior_s = seen_s
+        seen_s = None
+    best = maxd.isoformat()
+    if seen_s and seen_s > best:
+        best = seen_s
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"date": today.isoformat(), "prior": prior_s, "max": best}, indent=2))
+    except Exception:  # noqa: BLE001 — history is an optimisation, never fatal
+        pass
+    try:
+        return dt.date.fromisoformat(prior_s) if prior_s else None
+    except Exception:  # noqa: BLE001 — a garbled value is no history
+        return None
 
 
 # ---------------- per-source probe cache (monotonic) ----------------
@@ -748,9 +794,27 @@ class ReadinessCache:
             return Readiness(False, f"Box crosstab thin ({len(owners)} owners "
                                     f"< {min_rows}) — extract not refreshed")
         maxd = max(d for o in owners for d in parsed[o][spec.metric])
+        prior = _box_roll_history(self.target_date, maxd)
         if maxd >= target:
             return Readiness(True, f"Box fresh through {maxd.isoformat()} "
                                    f"(need ≥ {target.isoformat()})")
+        # `target` has no Box rows and never will — a NO-SALES day, not a stale
+        # extract. The two look identical in a single pull (the crosstab is
+        # week-pinned, so a quiet Sunday and an unrefreshed Sunday are both just
+        # "no rows past Saturday"), so the tie-break is yesterday's high-water
+        # mark: if today's pull reaches FURTHER than anything we saw before
+        # today, the extract has demonstrably refreshed and is simply empty on
+        # the target day. Megan 2026-08-24: Monday 8/24 held to the 08:00 floor
+        # for 3.5h across 12 passes on "Box only through 08-22, need 08-23" —
+        # BOX Sunday 8/23 was a real 0 (ORG Sales Board row 10, every other
+        # product had Sunday sales). Roughly half of recent Mondays hit this.
+        # Do NOT "fix" it by skipping Sundays in target_day(): Box DOES sell some
+        # Sundays (8/16 cleared this gate at ~07:09), and accepting Saturday
+        # blind would re-create the exact staleness Carlos reported 2026-07-16.
+        if prior is not None and maxd > prior:
+            return Readiness(True, f"Box refreshed today (reached "
+                                   f"{maxd.isoformat()}, was {prior.isoformat()}) "
+                                   f"— {target.isoformat()} has no Box rows")
         return Readiness(False, f"Box only through {maxd.isoformat()}, need "
                                 f"{target.isoformat()} — extract not refreshed")
 

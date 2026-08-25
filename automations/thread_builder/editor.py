@@ -81,6 +81,8 @@ def _now_iso() -> str:
 
 # --- the editor -------------------------------------------------------------
 def render_editor(backend, *, by: str = "") -> None:
+    """Admin editor: campaign + office pickers, then the section editor for the
+    chosen office."""
     st.caption("Choose which sections post in an office's daily thread — and drag "
                "to set the order they post in.")
 
@@ -94,7 +96,18 @@ def render_editor(backend, *, by: str = "") -> None:
     disp = dict(offs)
     office_key = st.selectbox("Office", options=[k for k, _ in offs],
                               format_func=lambda k: disp[k])
+    _edit_office(backend, campaign, office_key, disp[office_key], by=by)
 
+
+def render_owner_editor(backend, campaign: str, office_key: str,
+                        office_label: str, *, by: str = "") -> None:
+    """Owner-scoped editor: no campaign/office pickers — locked to ONE office (the
+    owner resolved via their code). Same include/reorder surface + save behaviour."""
+    _edit_office(backend, campaign, office_key, office_label, by=by)
+
+
+def _edit_office(backend, campaign: str, office_key: str, disp_label: str,
+                 *, by: str = "") -> None:
     has_plan = backend.has_plan(campaign, office_key)
     st.markdown("**Status:** " + ("✏️ custom plan saved" if has_plan
                                   else "🟢 using the default order"))
@@ -133,14 +146,14 @@ def render_editor(backend, *, by: str = "") -> None:
                                        else "."))
             else:
                 backend.save(campaign, office_key, new_included, by=by)
-                st.success("Saved a custom plan for {}.".format(disp[office_key]))
+                st.success("Saved a custom plan for {}.".format(disp_label))
             _go_live_note(backend)
             st.rerun()
     with c2:
         if st.button("↩️ Reset to default", use_container_width=True,
                      disabled=not has_plan):
             backend.clear(campaign, office_key)
-            st.success("Reset {} to the default order.".format(disp[office_key]))
+            st.success("Reset {} to the default order.".format(disp_label))
             st.rerun()
 
 

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.blueink-completed-sweep</string>
+
+    <!-- Ticks the "Blue Ink" checkbox for anyone whose packet has been SIGNED.
+         SENDS NOTHING — --sync-completed only reads Blue Ink's Completed list
+         and writes checkboxes, so a bad fire costs a tick, never a packet.
+         Install: lucy rerun install_blueink_sweep_agent --machine "Lucy 2" -->
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         target machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/blueink_completed_sweep.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 2 hours, 8am-8pm machine-local (Lucy 2 is Central), all 7 days.
+         People sign at odd hours and over weekends; the Monday send alone
+         would leave the boxes stale for a week. Seven fires a day is enough to
+         keep the sheet honest without hammering the app. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <!-- :15 past on purpose: keeps this clear of the 7:30 Monday send and of
+         the other jobs that fire on the hour. -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-completed.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/blueink-completed.launchd.err.log</string>
+</dict>
+</plist>

@@ -180,6 +180,29 @@
   }
  },
  "reports": {
+  "install_blueink_sweep_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"` can install the com.alphalete.blueink-completed-sweep LaunchAgent (every 2h, 08:15-20:15 machine-local, deploy/blueink_completed_sweep.sh). That sweep SENDS NOTHING -- it only reads Blue Ink's Completed list and ticks the 'Blue Ink' checkbox for packets that have been SIGNED, because people sign through the week and the Monday send alone would leave the boxes stale for seven days. Safe to install before the send agent is trusted: the worst it can do is tick a box.",
+   "display_name": "Install Blue Ink completed-sweep agent (2-hourly)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "blueink-completed-sweep"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "08:15"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "blueink_docs": {
    "on_scheduler": false,
    "machine": "Lucy 2",
