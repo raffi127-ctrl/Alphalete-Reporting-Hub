@@ -19,6 +19,26 @@ from automations.blueink_docs.config import (      # noqa: F401
 
 # --- Columns on the OBCL tabs ----------------------------------------------
 COL_DIGI_DOCS = "Digi Docs"
+# Read to spot a day-1 no-show: blank Location AND blank Final Status,
+# once the chart's date has passed, means nobody ever saw them.
+COL_LOCATION = "Location"
+
+# --- Day-1 no-show rule: IMPLEMENTED BUT OFF ------------------------------
+# Megan 2026-08-25: "if they haven't been marked as showed up or a location
+# entered by the date on the chart that means they no showed to day 1."
+#
+# Coded in roster._showed_up, and deliberately DISABLED, because reading "the
+# date on the chart" as the tab date (D2D OBCL 8.24) gives an answer that is
+# plainly wrong: on 8/25 it flags 38 of 71 people as no-shows, including
+# Angelica Pedroza -- the rep in Megan's own 8/24 Loom, being onboarded on
+# camera. The send list drops to 1 of 71.
+#
+# The likely reason is that 8.24 is the week the tab covers, not the day these
+# people start, and those cells fill in as the week runs. Which date actually
+# decides is the open question; until it is answered this stays False, since a
+# rule this aggressive failing silently means a week where almost nobody gets
+# their documents and nothing looks broken.
+NO_SHOW_RULE_ENABLED = False
 COL_QUIZZES = "Onboarding Quizzes"   # reference only -- never written
 
 # Our own log tab, created on first send. We never write into OBCL columns
