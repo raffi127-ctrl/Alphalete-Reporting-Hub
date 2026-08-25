@@ -98,12 +98,16 @@ MACHINE = "Lucy 3"
 # machines -- Blue Ink is Lucy 2, this is Lucy 3 -- so the two do not contend;
 # they just cover the same cohort on the same morning, which is the point.
 #
-# The neighbour that matters is on THIS box: the headshots Monday thread posts
-# at 8:30 and its tick runs every 5 minutes all week. A 7:45 start gives the
-# batch about 45 minutes clear. Separate browser profiles mean they cannot block
-# each other outright, but a long week will overlap, so if this ever runs past
-# 8:30 the answer is to move the thread rather than let two jobs drive the same
-# OwnerVille pages for the same reps at once.
+# Runway on this box is wider than it looks. The headshots Monday 8:30 job only
+# POSTS THE THREAD -- a Slack message, no OwnerVille -- and no photos arrive to
+# process until after noon (Megan 2026-08-25). So the 8:30 clock on the calendar
+# is not an OwnerVille collision at all: from 7:45 there is nothing else driving
+# OwnerVille on Lucy 3 until the afternoon.
+#
+# The 5-minute headshots tick DOES drive OwnerVille, but only once there are
+# photos in the thread. A batch would have to run past noon to meet it, which
+# would itself be the thing worth looking at. Separate browser profiles mean
+# they cannot block each other outright either way.
 RUN_WEEKDAY = 0          # Monday
 RUN_TIME = "07:45"
 
