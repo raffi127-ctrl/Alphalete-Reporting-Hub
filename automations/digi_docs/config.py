@@ -38,6 +38,36 @@ TINT_CELL_ONLY = True
 TINT_THE_NAME = False
 NEVER_WRITE_CHECKBOX = True
 
+# --- Machine: LUCY 3 -----------------------------------------------------
+# Both phases run on ONE machine, and it has to be one: they share a single
+# OwnerVille session. Phase 2 flips the activation-date filter to Show All and
+# then works on the reps phase 1 just added -- split across boxes that is two
+# sessions and no shared state.
+#
+# Lucy 3 because that is where OwnerVille already lives: headshots/ov_upload.py
+# drives the very same Onboard -> View Progress page for the very same weekly
+# cohort from there, so the session plumbing, the login and the Turnstile
+# workaround are all in place. It is also the lightest machine (17 scheduler
+# handles against Lucy 1's 59 and Lucy 2's 56).
+#
+# The other two new-start steps stay where THEIR logins are, which is why the
+# merged Hub card spans three machines: BG Check Sync on Lucy 1 (reads the
+# Sterling / First Advantage mailbox), Blue Ink on Lucy 2 (needs its Blue Ink
+# browser session). Wrong box = wrong identity = wrong data.
+MACHINE = "Lucy 3"
+
+# OWN browser profile, never the shared one. headshots learned this the hard
+# way (profile-lock wedge, 2026-08-19) and keeps its own so it cannot collide
+# with the tracker screenshots on this same machine. We need the same: the
+# headshots tick runs EVERY 5 MINUTES all week on Lucy 3, and a batched send is
+# a long run -- sharing a profile would put the two of them in each other's way
+# most of the time. Separate profiles don't block each other.
+BROWSER_PROFILE_DIRNAME = ".browser_profile_digi_docs"
+
+# ...and even with separate profiles, don't schedule the send batch on top of
+# the Monday 8:30am headshots thread post. Same site, same reps, same morning.
+AVOID_OVERLAP_WITH = ("headshots_monday", "headshots_tick")
+
 # --- OwnerVille: the choices, all of them --------------------------------
 # Onboard -> View Progress. Same page + session headshots/ov_upload.py drives.
 VIEW_PROGRESS_P = 201

@@ -19,6 +19,45 @@ always agree on who this week's cohort is.
 
 Workbook: https://docs.google.com/spreadsheets/d/1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit?gid=1430069873#gid=1430069873
 
+## Which machine — Lucy 3
+
+**Both phases on one machine, necessarily.** They share a single OwnerVille
+session: phase 2 flips the activation-date filter to Show All and then works on
+the reps phase 1 just added. Split across boxes that is two sessions and no
+shared state.
+
+**Lucy 3**, because OwnerVille already lives there — `headshots/ov_upload.py`
+drives the same Onboard → View Progress page for the same weekly cohort from
+that machine, so the session, the login and the Turnstile workaround are
+already solved. It is also the lightest box: 17 scheduler handles against Lucy
+1's 59 and Lucy 2's 56.
+
+Two things that follow:
+
+- **Its own browser profile** (`.browser_profile_digi_docs`), never a shared
+  one. headshots keeps its own for exactly this reason (profile-lock wedge,
+  2026-08-19), and the headshots tick runs **every five minutes all week** on
+  Lucy 3 — a batched send is a long run, so sharing a profile would put the two
+  in each other's way most of the time.
+- **Don't schedule the batch over the Monday 8:30am headshot thread.** Separate
+  profiles stop them blocking each other, not from hammering the same site with
+  the same reps on the same morning.
+
+### Why the merged card still spans three machines
+
+Each new-start step sits where its own LOGIN is, and that is not negotiable:
+
+| Step | Machine | Because |
+|---|---|---|
+| BG Check Sync | Lucy 1 | reads the Sterling / First Advantage mailbox |
+| Blue Ink | Lucy 2 | needs its Blue Ink browser session |
+| Headshot Photo | Lucy 3 | needs an OwnerVille session |
+| **Digi Docs** | **Lucy 3** | needs an OwnerVille session |
+
+Wrong box means the wrong identity and therefore the wrong data. This is also
+why the Hub card has no `daily_runs` count — three clocks on three machines,
+so no fixed N is honest.
+
 ## Run it in phases, not one flow per rep
 
 Megan 2026-08-25: **add every new rep first, then send every bundle.** Not a
