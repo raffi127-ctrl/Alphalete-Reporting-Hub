@@ -174,8 +174,19 @@ class Check:
         8/2, the T marks start 7/27).
 
     Nothing is filed and nothing is dated from a Check — it is posted in the
-    week's thread as a 'check this' line and printed in the run log. Guessing
-    would put a real person on the tracker under a day nobody agrees on.
+    week's thread as its own 'check this' message and printed in the run log.
+    Guessing would put a real person on the tracker under a day nobody agrees on.
+
+    `proposed` is what a ✅ on that message means (Eve, 2026-08-24). The two
+    kinds of Check need different answers, and the message has to say which:
+
+      * MIXED DAY — nothing was filed, so `proposed` is the exact Termination a
+        ✅ files: name, date and day count spelled out in the message BEFORE the
+        reaction, so the tick confirms a specific row rather than a vague "yes".
+      * DATE DISAGREEMENT — the row is already on the tracker under the date
+        column's day (see scan_grid: the check is raised and the row is filed
+        anyway). `proposed` is None: there is nothing left to file and a ✅ only
+        says "I looked". Filing off this one would duplicate a real person.
     """
     name: str
     tab: str
@@ -183,6 +194,7 @@ class Check:
     reason: str
     marked_date: dt.date | None      # what the T marks say
     board_date: dt.date | None       # what the 'Termination Date' column says
+    proposed: "Termination | None" = None   # the row a ✅ files; None = already filed
 
     @property
     def key(self) -> tuple[str, str]:
@@ -545,6 +557,25 @@ def _marked_days(grid: list, row: int, lay: Layout) -> str:
     return "; ".join(bits)
 
 
+def _roster_t_row(grid: list, lay, r: int, name: str, marked: dt.date,
+                  tab: str) -> Termination:
+    """The termination a bare 'T' states, on the roster.
+
+    With no Termination Date the '# Days Worked' cell is still counting from
+    TODAY() and can't be read, so the day count is derived the way that column's
+    own formula would: termination minus start, blank when there is no start.
+
+    Split out because a flagged (mixed-day) row needs the very same row built
+    without filing it — it becomes Check.proposed, the row a ✅ releases.
+    """
+    start = to_date(_cell(grid, r, lay.start_col))
+    n = (marked - start).days if start else None
+    return Termination(
+        name=name, term_date=marked,
+        days_worked=n if n is not None and 0 <= n <= 20000 else None,
+        source="roster T", tab=tab, row=r)
+
+
 def scan_grid(grid: list, tab: str,
               monday: dt.date) -> tuple[list[Termination], list[Check]]:
     """One week tab → the terminations it states, plus the rows it contradicts
@@ -596,18 +627,11 @@ def scan_grid(grid: list, tab: str,
                 name=name, tab=tab, row=r,
                 reason=(f"marked T on {_fmt(marked)} but the same day still "
                         f"reads {shown} — not filed, tell me which it is."),
-                marked_date=marked, board_date=None))
+                marked_date=marked, board_date=None,
+                proposed=_roster_t_row(grid, lay, r, name, marked, tab)))
             continue
 
-        # No Termination Date, so '# Days Worked' is still counting from TODAY()
-        # and can't be read. Derive it the way the column's own formula would:
-        # termination minus start, and blank when there is no start date.
-        start = to_date(_cell(grid, r, lay.start_col))
-        n = (marked - start).days if start else None
-        out.append(Termination(
-            name=name, term_date=marked,
-            days_worked=n if n is not None and 0 <= n <= 20000 else None,
-            source="roster T", tab=tab, row=r))
+        out.append(_roster_t_row(grid, lay, r, name, marked, tab))
 
     # 2) the New Starts/Raf box — the FIRST weekday marked terminated. Its day
     #    columns get the same whole-block treatment as the roster's, so a mark

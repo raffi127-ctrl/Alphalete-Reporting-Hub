@@ -45,6 +45,37 @@ are different ON PURPOSE: the duplicate check reads '•' lines to learn who has
 already been posted, so a flagged person must not register as posted. When Eve
 resolves the flag and the row becomes a real termination, it still gets its own
 '•' line that day.
+
+ONE MESSAGE PER FLAGGED ROW, AND ✅ RELEASES IT (Eve, 2026-08-24). The reps the
+board is CLEAR about still travel together — one '•' message per day, as they
+always have. Only the doubtful ones are split one per message, because the
+reaction is per-PERSON: a ✅ on a message naming three people can't say which one
+Eve meant, and this reaction files a real human onto the tracker.
+
+A FLAG FOLLOWS ITS OWN DAY, and doesn't restate it. The flag messages used to be
+posted after every day in the run, so on a catch-up run Wednesday's flag landed
+under Sunday's list. They now go out immediately after the '•' message for the
+day the board marked them, which is what makes them readable without a date
+header of their own: they are the last messages of that day (Eve, 2026-08-24). A
+row the board gives no usable day at all goes last in the week.
+
+The message states the exact row the ✅ will file — name, date, day count —
+before the tick, so the tick confirms something specific instead of "yes,
+something". The next run reads the reaction, files that row and posts it as a
+normal '•' line. A flag whose row was ALREADY filed (the date-disagreement kind,
+board.Check.proposed is None) says so and the ✅ just closes it — filing off that
+one would duplicate somebody.
+
+Only APPROVERS' reactions count, matching the captainship gate: any other
+account ticking it leaves the row unfiled. The reaction is read from the message
+that conversations_replies already returns — reactions.get needs a scope this
+token doesn't have.
+
+Confirming is recorded by EDITING the flag message (chat_update), not by
+replying to it: the ✅ is already the confirmation, so a reply would just be a
+second message saying what the tick says (feedback: the ✅ needs no reply). The
+edit keeps the '⚠ <name> —' first line intact, because that line is what stops
+the flag being posted a second time.
 """
 from __future__ import annotations
 
@@ -75,6 +106,19 @@ TODO = "☐"
 # (after the emoji comes off) to find the message to EDIT, so it must not
 # collide with a day's heading.
 PENDING_TITLE = "Still to deactivate"
+
+# Who can release a flagged row with a ✅. Same person and same shape as the
+# captainship gate (captainship_drafts/review_gate.APPROVERS) — this is the ONLY
+# list, so removing someone here also stops the flag from @-tagging them.
+# A tick from anyone else is ignored: this files a real person onto the tracker.
+APPROVERS = {"U088E2KJEV8": "Evelyn"}
+# Any of Slack's checkmarks — nobody should have to remember which green tick is
+# "the" one, and picking the wrong one must not silently mean "not confirmed".
+APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
+                 "ballot_box_with_check", "check"}
+# Written into a flag message once it has been acted on, and tested for before
+# acting: without it every later run would append the same line again.
+FILED_MARK = "✅ Confirmed"
 
 
 def week_title(day: dt.date) -> str:
@@ -122,16 +166,42 @@ def render_reply(rows: list[Termination], day: dt.date) -> str:
     return "\n".join(lines)
 
 
-def render_checks(checks: list[Check]) -> str:
-    """The 'I can't tell, you look' reply. One line per row, each one saying
-    what the board says and what it says instead, because the answer is always
-    a person reading the tab."""
-    lines = [f"*Needs a look — the board says two different things* "
-             f"({len(checks)})"]
-    for c in checks:
-        lines.append(f"{FLAG} {c.name} — {c.reason} "
-                     f"_({c.tab}, row {c.row})_")
-    return "\n".join(lines)
+def _mentions() -> str:
+    """The approvers as real Slack mentions. A plain name is only text — it
+    lights nothing up, and this channel carries four other reports."""
+    return " ".join(f"<@{uid}>" for uid in APPROVERS)
+
+
+def _flag_name(line: str) -> str:
+    """The folded name out of a '⚠ <name> — <reason>' line. One helper so the
+    already-posted check and the ✅ reader can never disagree about which text
+    is the name — they read the same lines."""
+    return norm_name(line.lstrip(FLAG).split("—")[0])
+
+
+def render_check(c: Check) -> str:
+    """One flagged row, as its own message. Says what the board says, what it
+    says instead, and — crucially — exactly what a ✅ will do, because the tick
+    is a person confirming a specific row, not a vague agreement."""
+    head = f"{FLAG} {c.name} — {c.reason} _({c.tab}, row {c.row})_"
+    if c.proposed is None:
+        # The date-disagreement kind: scan_grid already filed it under the date
+        # column's day. Nothing to release, so the ✅ only closes the question.
+        return (f"{head}\nAlready on the tracker — this is a heads-up, not a "
+                f"hold. React :white_check_mark: once you've looked, or fix the "
+                f"board and the next run picks the change up. {_mentions()}")
+    p = c.proposed
+    days = ("day count unknown" if p.days_worked is None
+            else f"{p.days_worked} day{'' if p.days_worked == 1 else 's'} worked")
+    return (f"{head}\n*Not filed.* React :white_check_mark: to confirm the "
+            f"termination and the next run files it as "
+            f"*{p.term_date.month}/{p.term_date.day}* ({days}). "
+            f"Leave it alone and nothing happens. {_mentions()}")
+
+
+def render_checks(checks: list[Check]) -> list[str]:
+    """The flag messages for a set of rows — one message each, board order."""
+    return [render_check(c) for c in checks]
 
 
 def find_thread_ts(client, title: str, channel: str = CHANNEL) -> str | None:
@@ -175,7 +245,16 @@ def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
     """Folded names already raised as a '⚠' in this week's thread. Read
     separately from already_posted so a flag never counts as 'this person's
     termination has been posted' — the day it stops being ambiguous it still
-    needs its own '•' line."""
+    needs its own '•' line.
+
+    ONLY THE FIRST LINE COUNTS, which is also the migration off the old grouped
+    'Needs a look' reply (Eve, 2026-08-24). A name that exists only inside one of
+    those old messages reads as un-flagged and gets re-posted once, in the
+    per-person format — and that is the point: a ✅ can only be read off a
+    message whose ⚠ names exactly one person, so without the re-post the flags
+    already sitting in this week's threads could never be confirmed. New-format
+    messages match on their own first line, so nothing is posted twice.
+    """
     try:
         resp = client.conversations_replies(channel=channel, ts=thread_ts,
                                             limit=200)
@@ -185,11 +264,102 @@ def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
         return set()
     out = set()
     for msg in resp.get("messages", []):
-        for line in (msg.get("text") or "").splitlines():
-            line = line.strip()
-            if line.startswith(FLAG):
-                out.add(norm_name(line.lstrip(FLAG).split("—")[0]))
+        lines = (msg.get("text") or "").strip().splitlines()
+        if lines and lines[0].strip().startswith(FLAG):
+            out.add(_flag_name(lines[0].strip()))
     return out
+
+
+def _approver_of(msg: dict) -> tuple[str, str] | None:
+    """(user id, name) of the first APPROVER who ticked this message, or None.
+    Reactions ride along on the message conversations_replies returns."""
+    for rx in msg.get("reactions", []) or []:
+        if rx.get("name") not in APPROVE_EMOJI:
+            continue
+        for uid in rx.get("users", []) or []:
+            if uid in APPROVERS:
+                return uid, APPROVERS[uid]
+    return None
+
+
+def confirmations(checks: list[Check], day: dt.date, *, channel: str = CHANNEL,
+                  logfn=print) -> dict:
+    """Read-only: which flagged rows has an approver ✅'d?
+
+    Returns {folded name: {'check', 'msg', 'by', 'sunday'}}. Only rows still
+    being flagged this run can come back — the board is re-read every time, so a
+    tick on a row the board no longer contradicts is simply not acted on.
+
+    Never raises: a Slack outage must not stop the day's terminations being
+    filed, it only means the confirmed ones wait for the next run."""
+    if not checks:
+        return {}
+    want = {norm_name(c.name): c for c in checks}
+    out: dict = {}
+    try:
+        client = smp._client()
+        for sunday in sorted(checks_by_week(checks, day)):
+            thread_ts = find_thread_ts(client, week_title(sunday), channel)
+            if not thread_ts:
+                continue
+            resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                                limit=200)
+            for msg in resp.get("messages", []):
+                first = (msg.get("text") or "").strip().splitlines()
+                if not first or not first[0].strip().startswith(FLAG):
+                    continue
+                who = _approver_of(msg)
+                if not who:
+                    continue
+                c = want.get(_flag_name(first[0].strip()))
+                if c is not None:
+                    out[norm_name(c.name)] = {"check": c, "msg": msg,
+                                              "by": who[1], "sunday": sunday}
+    except Exception as e:                                      # noqa: BLE001
+        logfn(f"  ⚠ couldn't read the ✅ confirmations ({type(e).__name__}: "
+              f"{str(e)[:100]}) — flagged rows stay unfiled this run")
+        return {}
+    return out
+
+
+def mark_confirmed(confirmed: dict, *, channel: str = CHANNEL,
+                   dry_run: bool = True, logfn=print) -> int:
+    """Record on each ✅'d flag message what was done with it, by EDITING the
+    message. The ⚠ first line is left exactly as it was — that line is what
+    already_flagged() reads to keep the flag from being posted again.
+
+    Skips a message that already carries the mark, so re-runs don't stack the
+    same line over and over."""
+    if not confirmed:
+        return 0
+    if dry_run:
+        for info in confirmed.values():
+            logfn(f"    DRY-RUN — would mark {info['check'].name} confirmed "
+                  f"by {info['by']}")
+        return 0
+    client = smp._client()
+    n = 0
+    for info in confirmed.values():
+        msg, c = info["msg"], info["check"]
+        text = msg.get("text") or ""
+        if FILED_MARK in text:
+            continue
+        if c.proposed is None:
+            note = f"\n{FILED_MARK} by {info['by']} — nothing to file, it was already on the tracker."
+        else:
+            note = (f"\n{FILED_MARK} by {info['by']} — filed as terminated "
+                    f"{c.proposed.term_date.month}/{c.proposed.term_date.day}.")
+        try:
+            client.chat_update(channel=channel, ts=msg["ts"], text=text + note)
+            n += 1
+        except Exception as e:                                  # noqa: BLE001
+            # The row is already filed; failing to annotate the message is
+            # cosmetic and must not fail the run.
+            logfn(f"  ⚠ couldn't mark {c.name}'s flag as confirmed "
+                  f"({type(e).__name__}: {str(e)[:80]})")
+    if n:
+        logfn(f"  marked {n} confirmed flag(s) in the thread")
+    return n
 
 
 def pending_days(rows: list[Termination], day: dt.date) -> list[dt.date]:
@@ -289,6 +459,25 @@ def post_pending(client, thread_ts: str, sunday: dt.date, pending: list,
     return resp.get("ts")
 
 
+def checks_by_day(checks: list[Check]) -> tuple[dict, list[Check]]:
+    """Flagged rows bucketed by the day they belong under, plus the ones no day
+    can be read for at all.
+
+    The day is what the board MARKED (`marked_date`), falling back to the date
+    column — the same anchor checks_by_week uses to pick the thread, one level
+    finer. A flag has no date header of its own, so the bucket is the only thing
+    putting it under the right day's list."""
+    by_day: dict = {}
+    undated: list[Check] = []
+    for c in checks:
+        day = c.marked_date or c.board_date
+        if day is None:
+            undated.append(c)
+        else:
+            by_day.setdefault(day, []).append(c)
+    return by_day, undated
+
+
 def checks_by_week(checks: list[Check],
                    day: dt.date) -> dict[dt.date, list[Check]]:
     """Flagged rows grouped into the thread they belong in — the week of the
@@ -333,11 +522,16 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
         logfn(f"  DRY-RUN — would post to {channel}:")
         for sunday, days in weeks:
             logfn(f"    thread {week_title(sunday)!r}:")
-            for d in days:
-                for line in render_reply(for_day(rows, d), d).splitlines():
-                    logfn(f"       {line}")
-            if flagged.get(sunday):
-                for line in render_checks(flagged[sunday]).splitlines():
+            by_day, undated = checks_by_day(flagged.get(sunday, []))
+            for d in sorted(set(days) | set(by_day)):
+                if d in days:
+                    for line in render_reply(for_day(rows, d), d).splitlines():
+                        logfn(f"       {line}")
+                for c in by_day.get(d, []):
+                    for line in render_check(c).splitlines():
+                        logfn(f"       {line}")
+            for c in undated:
+                for line in render_check(c).splitlines():
                     logfn(f"       {line}")
             if pending_lookup is not None:
                 for line in render_pending(pending_lookup(sunday),
@@ -374,23 +568,32 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             seen = already_posted(client, thread_ts, channel)
             flags_seen = already_flagged(client, thread_ts, channel)
 
-        posted = []
-        for d in days:
-            todays = [t for t in for_day(rows, d)
-                      if norm_name(t.name) not in seen]
-            if not todays:
-                continue
-            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                    text=render_reply(todays, d))
-            seen.update(norm_name(t.name) for t in todays)
-            posted.append((d, len(todays)))
-            logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
-
         new_flags = [c for c in flagged.get(sunday, [])
                      if norm_name(c.name) not in flags_seen]
-        if new_flags:
+        by_day, undated = checks_by_day(new_flags)
+
+        posted = []
+        # One pass over every day this week has something to say about — the
+        # day's list first, then that day's doubtful rows, so a flag reads as
+        # the tail of the day it belongs to instead of needing its own date.
+        for d in sorted(set(days) | set(by_day)):
+            todays = ([t for t in for_day(rows, d) if norm_name(t.name) not in seen]
+                      if d in days else [])
+            if todays:
+                client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                        text=render_reply(todays, d))
+                seen.update(norm_name(t.name) for t in todays)
+                posted.append((d, len(todays)))
+                logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
+            for c in by_day.get(d, []):
+                # One message each: the ✅ that releases a row has to name
+                # exactly one person, or nobody can tell which it confirmed.
+                client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                        text=render_check(c))
+        for c in undated:
             client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                    text=render_checks(new_flags))
+                                    text=render_check(c))
+        if new_flags:
             logfn(f"  {wtitle}: flagged {len(new_flags)} row(s) for a look")
         if not posted and not new_flags:
             logfn(f"  {wtitle}: every termination is already in the thread — "

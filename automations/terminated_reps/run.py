@@ -17,6 +17,14 @@ Runs once a day. Three steps, in order:
      BOARD, not step 2's result, so a rep Eve already filed by hand still
      shows up in the day's post.
 
+A row the board contradicts itself about is NOT filed by step 2. It goes into
+the thread as its own ⚠ message naming the exact row a ✅ would file, and step 1
+of the NEXT run reads that reaction back: ticked → the row joins the day's
+terminations and is filed and posted normally; untouched → nothing happens, for
+as long as it takes. That read happens before the tracker write on purpose, so a
+tick left overnight is acted on the next morning without anyone re-running
+anything. See slack_post.confirmations.
+
 Dated in CENTRAL time, not the machine clock: this is a Texas office and the
 mini and Eve's box are in different zones, so a late-evening UTC run would
 otherwise file a Wednesday termination under Thursday.
@@ -116,6 +124,29 @@ def main(argv=None) -> int:
         for c in checks:
             print(f"     {c.name} — {c.reason} ({c.tab} row {c.row})")
 
+    # Flagged rows an approver has already ✅'d in the thread. The board can't
+    # settle these — that is what made them a Check — so the reaction is the
+    # only thing that can, and it is read BEFORE the write so a tick left
+    # overnight is filed by the next morning's run with no re-run.
+    # Skipped when this run isn't allowed to touch Slack at all: --no-post, and
+    # a --sandbox run without --post, whose thread isn't the real one.
+    confirmed: dict = {}
+    if not args.no_post and not (args.sandbox and not args.post):
+        confirmed = slack_post.confirmations(checks, today, channel=args.channel)
+        for info in confirmed.values():
+            c = info["check"]
+            print(f"  ✅ {c.name} confirmed by {info['by']} — "
+                  + ("already on the tracker, nothing to file"
+                     if c.proposed is None else
+                     f"filing under {c.proposed.term_date.isoformat()}"))
+        released = [i["check"].proposed for i in confirmed.values()
+                    if i["check"].proposed is not None]
+        if released:
+            # Through dedupe(), not a bare append: a confirmed row can also have
+            # arrived from the New Starts box the same day, and the roster's
+            # version carries the real day count.
+            rows = board.dedupe(list(rows) + released)
+
     # Nobody is terminated tomorrow. A row can date into the future when the
     # board is marked for a day the offset then pushes past today (Karla Lopez,
     # marked 2026-08-07, computed 08-08) — filing it would put a future date on
@@ -174,6 +205,16 @@ def main(argv=None) -> int:
         print(f"❌ tracker step done, but the Slack post failed: "
               f"{type(e).__name__}: {e}")
         return 1
+
+    # Record on each ✅'d flag what was done with it, by editing that message.
+    # Last, and never fatal: the rows are filed and posted by now, and a failed
+    # annotation is cosmetic.
+    try:
+        slack_post.mark_confirmed(confirmed, channel=args.channel,
+                                  dry_run=post_dry)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't annotate the confirmed flags: "
+              f"{type(e).__name__}: {e}")
 
     print(f"  {result.tab_url}")
     return 0
