@@ -88,6 +88,20 @@ NEVER_WRITE_CHECKBOX = True
 # demand instead. This report follows headshots and does the same.
 MACHINE = "Lucy 3"
 
+# --- When it runs ---------------------------------------------------------
+# Monday 7:45am, alongside Blue Ink's 7:30 (Megan 2026-08-25). Different
+# machines -- Blue Ink is Lucy 2, this is Lucy 3 -- so the two do not contend;
+# they just cover the same cohort on the same morning, which is the point.
+#
+# The neighbour that matters is on THIS box: the headshots Monday thread posts
+# at 8:30 and its tick runs every 5 minutes all week. A 7:45 start gives the
+# batch about 45 minutes clear. Separate browser profiles mean they cannot block
+# each other outright, but a long week will overlap, so if this ever runs past
+# 8:30 the answer is to move the thread rather than let two jobs drive the same
+# OwnerVille pages for the same reps at once.
+RUN_WEEKDAY = 0          # Monday
+RUN_TIME = "07:45"
+
 # OWN browser profile, never the shared one. headshots learned this the hard
 # way (profile-lock wedge, 2026-08-19) and keeps its own so it cannot collide
 # with the tracker screenshots on this same machine. We need the same: the

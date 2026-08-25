@@ -17,8 +17,11 @@ HEADER = ["#", "2ND Round Interviewer", "Trainer", "Name", "Last Name",
           "Blue Ink", "Headshot Photo", "Friday Confirmation"]
 
 
-def _row(n, first, last, *, final="", bg="Passed", friday="Confirmed: OTP",
-         digi="FALSE"):
+# Default to somebody who SHOWED UP. Every fixture that isn't specifically
+# testing the no-show rule needs a showed-up signal, or the rule correctly
+# drops it and the test ends up asserting about an empty list.
+def _row(n, first, last, *, final="Showed Up To CR", bg="Passed",
+         friday="Confirmed: OTP", digi="FALSE"):
     r = [""] * len(HEADER)
     r[0], r[3], r[4] = str(n), first, last
     r[6] = f"{first.lower()}@example.com"
@@ -101,8 +104,8 @@ class TheDayOneNoShowRule(unittest.TestCase):
     def _cands(self, today):
         values = [["WEEK OF 8.24"], HEADER,
                   _row(1, "Ignacio", "Lara", final="Showed Up To CR"),
-                  _row(2, "Angelica", "Pedroza"),          # no status, no loc
-                  _row(3, "Carol", "Pena")]
+                  _row(2, "Angelica", "Pedroza", final=""),   # no status, no loc
+                  _row(3, "Carol", "Pena", final="")]
         values[4][8] = "Dallas"                            # location only
         return roster.candidates(values, "D2D OBCL 8.24", today=today)
 

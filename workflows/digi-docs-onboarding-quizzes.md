@@ -19,6 +19,17 @@ always agree on who this week's cohort is.
 
 Workbook: https://docs.google.com/spreadsheets/d/1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit?gid=1430069873#gid=1430069873
 
+## When it runs — Monday 7:45am
+
+Alongside Blue Ink's 7:30 (Megan 2026-08-25). Different machines, so no
+contention: Blue Ink is Lucy 2, this is Lucy 3. Same cohort, same morning.
+
+The neighbour that matters is on Lucy 3: the headshots Monday thread posts at
+8:30 and its tick runs every 5 minutes all week. 7:45 leaves the batch about 45
+minutes clear. Separate browser profiles stop them blocking each other outright,
+but if the batch ever runs past 8:30, move the thread rather than have two jobs
+driving the same OwnerVille pages for the same reps at once.
+
 ## Which machine — Lucy 3
 
 **Both phases on one machine, necessarily.** They share a single OwnerVille
