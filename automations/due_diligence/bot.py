@@ -181,6 +181,22 @@ def _handler(client, req):
                 and not ev.get("bot_id") and not ev.get("subtype")):
             user = ev.get("user")
             text = (ev.get("text") or "").strip()
+            # A DM that LEADS with "knocks …" is a knock-board request, and it
+            # is checked BEFORE the /dd context below: this inbox doubles as
+            # /dd's corrected-name channel, and whoever has an open DD request
+            # would otherwise have their knock request read as a rep name.
+            # This is also the whole point of the plain-DM path — it works
+            # without the /knocks slash command being registered in the app.
+            try:
+                from automations.knocks_request import handler as knocks
+                if knocks.parse_dm(text) is not None:
+                    threading.Thread(target=knocks.handle_dm,
+                                     args=(client.web_client, user, text),
+                                     daemon=True).start()
+                    return
+            except Exception as e:            # noqa: BLE001 — never crash the listener
+                print(f"[knocks] dm dispatch failed {type(e).__name__}: {e}",
+                      flush=True)
             ctx = _load_ctx().get(user or "")
             print(f"[event] ctx_found={bool(ctx)} is_ack={text.lower() in _ACKS}", flush=True)
             # Only re-pull when the user has a recent request AND the reply looks
@@ -195,7 +211,9 @@ def _handler(client, req):
                     daemon=True).start()
         return
     # The /knocks popup came back — hand it to knocks_request and let it DM.
-    if req.type == "interactive" and req.payload.get("type") == "view_submission"             and req.payload.get("view", {}).get("callback_id") == "knocks_form":
+    if (req.type == "interactive"
+            and req.payload.get("type") == "view_submission"
+            and req.payload.get("view", {}).get("callback_id") == "knocks_form"):
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         try:
             from automations.knocks_request import handler as knocks

@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime as dt
 import threading
 import traceback
+from typing import Optional, Tuple
 
 from . import service
 
@@ -65,6 +66,60 @@ def modal(today: dt.date | None = None) -> dict:
                          "initial_date": target.isoformat()}},
         ],
     }
+
+
+# Words that open a plain-DM request, so nobody needs the slash command at all
+# (a slash command has to be registered in the Slack app by its owner; a DM does
+# not — the listener already receives message.im for the /dd name corrections).
+_DM_TRIGGERS = ("knocks", "knock")
+# Day words people actually type. Anything else is treated as part of the name.
+_DAY_WORDS = {"today": 0, "yesterday": 1}
+
+
+def parse_dm(text: str) -> Optional[Tuple[str, dt.date]]:
+    """(office, day) for a DM like `knocks Chan Park` / `knocks chan park
+    2026-08-21` / `knocks Chan Park yesterday`, else None.
+
+    None means "not a knocks request" and the DM keeps its old meaning — that
+    matters, because the same inbox is how `/dd` takes a corrected rep name.
+    Deliberately narrow: the message must LEAD with knock(s)."""
+    words = (text or "").strip().split()
+    if not words or words[0].lower().strip(":,") not in _DM_TRIGGERS:
+        return None
+    rest = words[1:]
+    target = service.default_target()
+    if rest:
+        tail = rest[-1].lower().strip(".,")
+        if tail in _DAY_WORDS:
+            target = service.central_today() - dt.timedelta(days=_DAY_WORDS[tail])
+            rest = rest[:-1]
+        else:
+            try:
+                target = dt.date.fromisoformat(rest[-1].strip(".,"))
+                rest = rest[:-1]
+            except ValueError:
+                pass
+    return " ".join(rest).strip(), target
+
+
+def handle_dm(web, user_id: str, text: str) -> None:
+    """A plain DM that starts with 'knocks'. Callers check parse_dm first; this
+    also answers the bare word with the one line of help it needs."""
+    parsed = parse_dm(text)
+    if parsed is None:
+        return
+    office, target = parsed
+    if not office:
+        try:
+            chan = web.conversations_open(users=user_id)["channel"]["id"]
+            web.chat_postMessage(channel=chan, text=(
+                ":door: Tell me whose office — e.g. `knocks Chan Park`, or "
+                "`knocks Chan Park 2026-08-21` for a specific day. (Yesterday "
+                "is the default.)"))
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    process(web, user_id, office, target)
 
 
 def is_knocks_submission(payload: dict) -> bool:
