@@ -34,6 +34,8 @@ import datetime as dt
 import re
 import sys
 
+from automations.shared import obcl_charts
+
 # Same workbook the Blue Ink report and bg_check_sync write to.
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 DATED_TAB_PREFIX = "D2D OBCL"
@@ -107,18 +109,31 @@ def _norm(s: str) -> str:
 
 
 def sections(values: list[list[str]]) -> list[dict]:
-    """Every section on the tab: its header row and label->column map.
+    """Every CHART on the tab: its header row, its people, its label->column map.
 
-    A header row is any row carrying both the first- and last-name labels —
-    which is how the late-adds section below the blank row gets picked up."""
+    Delegates to automations.shared.obcl_charts, which both this and the Blue
+    Ink report use. It had its own copy of this until 2026-08-24 and was
+    missing two rules the Blue Ink reader had already learned the hard way:
+    a chart ENDS at a blank row (else 25 stray name rows below the chart read
+    as people), and a chart opened by a DATE row with no header of its own
+    still counts (else Monday's pasted-in second chart vanishes).
+
+    Keys are kept as they were -- header_row / end_row, both 1-indexed, with
+    end_row EXCLUSIVE as find_person's range() expects.
+    """
+    charts = obcl_charts.find_charts(values, first_label=COL_FIRST,
+                                     last_label=COL_LAST)
     out = []
-    for i, row in enumerate(values):
-        cells = [_norm(c) for c in row]
-        if COL_FIRST in cells and COL_LAST in cells:
-            cols = {c: j + 1 for j, c in enumerate(cells) if c}
-            out.append({"header_row": i + 1, "cols": cols})
-    for a, b in zip(out, out[1:] + [None]):
-        a["end_row"] = (b["header_row"] - 1) if b else len(values)
+    for c in charts:
+        out.append({
+            # A chart with no header of its own has header_row None; report the
+            # row before its first person so range(header_row, end_row) still
+            # walks exactly its people.
+            "header_row": (c["header_row"] if c["header_row"]
+                           else c["start_row"] - 1),
+            "end_row": c["end_row"],       # exclusive for range(), see below
+            "cols": c["cols"],
+        })
     return out
 
 

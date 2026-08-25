@@ -4702,7 +4702,8 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the newest dated **`D2D OBCL <m.d>`** tab \u2014 every "
-            "stacked section on it \u2014 and sends each eligible new start "
+            "**chart** on it, and Monday's has two \u2014 and sends each "
+            "eligible new start "
             "their packet through the Blue Ink **web app**, then tints their "
             "first name light green in column D and logs the send to the "
             "**Blue Ink Log** tab.\n\n"
@@ -4727,7 +4728,22 @@ AUTOMATED_REPORTS = [
             "human re-seeds with `session.py --login` at that machine.\n"
             "**\u2022** A **wrong email on the sheet** doesn't cause a bad "
             "send; the name check holds that person back and names them in "
-            "Slack instead."),
+            "Slack instead.\n\n"
+            "THE \u201cBLUE INK\u201d COLUMN\n"
+            "That one cell carries two different facts:\n"
+            "**\u2022** **Light green background** \u2014 we sent it.\n"
+            "**\u2022** **Checkbox ticked** \u2014 they have SIGNED it. A "
+            "separate pass re-reads Blue Ink's Completed list (last 7 days) "
+            "and ticks whoever has finished since. It only ever ticks ON, so a "
+            "box someone checked by hand is never cleared.\n"
+            "**\u2022** If the column is missing the run says so in Slack and "
+            "**still sends** \u2014 paperwork beats a marking.\n\n"
+            "AFTER IT RUNS\n"
+            "Posts **Blueink Status Update** to "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo**: how many went "
+            "out, and a bullet per person who still needs doing by hand, "
+            "tagging Tiff, Aimee and Alisson. The correct skips aren't listed "
+            "\u2014 they'd bury the names that need acting on."),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
                       "?gid=1430069873#gid=1430069873"),
@@ -4765,6 +4781,13 @@ AUTOMATED_REPORTS = [
                 "help": "Send this week's packets for real, then post the summary to Slack. Cannot be undone.",
                 "module": "automations.blueink_docs.run",
                 "args_fn": lambda: ["--send", "--slack"],
+            },
+            {
+                "label": "Refresh Signed",
+                "icon": "\u2705",
+                "help": "Sends nothing. Just ticks the Blue Ink checkbox for anyone whose packet has been signed since the last run.",
+                "module": "automations.blueink_docs.run",
+                "args_fn": lambda: ["--sync-completed"],
             },
         ],
     },
