@@ -254,6 +254,20 @@ _HUB_CARD = {
     # differ by an underscore vs a hyphen, which is exactly the mismatch that
     # leaves a pill stuck). [[reference_phase_pill_id_match]]
     "blueink_docs": "blueink-docs",
+    # ONE CARD, TWO PASSES (Megan 2026-08-25). The 'Owner Chat Texts → iMessage
+    # owner chats' card covers both morning passes — 7:30 trackers PDF, 7:45 WOW
+    # board — but each pass runs under its OWN report_id, and neither slug-matches
+    # the card id. So the resolver registered them as two separate library cards
+    # and the real card never received a single row: it read "scheduled 7:30 AM,
+    # no run logged" on the Hub's Needs-attention list EVERY morning, including
+    # 8/25, when both passes had in fact delivered (trackers 07:35 success, board
+    # 09:38 success after its data-gate hold cleared). A card that can only ever
+    # say "no run logged" trains you to ignore that line, which is the one line
+    # that has to mean something. Both ids point at the one card; the later pass
+    # closes it, same as any other multi-pass card.
+    "owner_chat_texts_trackers": "owner-chat-texts",
+    "owner_chat_texts_board": "owner-chat-texts",
+    "owner_chat_texts": "owner-chat-texts",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
