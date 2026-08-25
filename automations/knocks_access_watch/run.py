@@ -96,22 +96,42 @@ def save_state(report: dict, when: dt.datetime, offices=None) -> None:
         json.dumps(payload, indent=1), encoding="utf-8")
 
 
+# The only statuses that mean "the report can pull this office today".
+_REACHABLE = (A.OK, A.MASTER)
+
+
 def diff(prev: Dict[str, str], now: Dict[str, str]) -> dict:
-    """What moved. `gained` is the news everyone is waiting for; `lost` is the
-    alarm; `added`/`dropped` are roster churn, reported separately so an owner
-    who simply left a captainship never reads as revoked access."""
-    gained, lost, added, dropped = [], [], [], []
+    """What moved.
+
+    `gained` = became reachable — the news everyone is waiting for.
+    `lost`   = WAS reachable and no longer is — the alarm.
+    `moved`  = changed between two un-reachable states (not listed -> request
+               sent, or the other way). Worth printing, never worth an alarm.
+    `added` / `dropped` = roster churn, kept separate so an owner who simply
+               left a captainship never reads as revoked access.
+
+    The moved/lost split is not a nicety: adding the ICD Aliases row for
+    "Floyd Rude" moved Wayne Rude from not-listed to request-sent, and a
+    two-way rule would have fired ":rotating_light: Office Access LOST" over an
+    improvement (2026-08-25). An alarm has to be true every time or it stops
+    being read."""
+    gained, lost, moved, added, dropped = [], [], [], [], []
     for key, status in sorted(now.items()):
         was = prev.get(key)
         if was is None:
             added.append((key, status))
         elif was != status:
-            (gained if status in (A.OK, A.MASTER)
-             else lost).append((key, was, status))
+            if status in _REACHABLE and was not in _REACHABLE:
+                gained.append((key, was, status))
+            elif was in _REACHABLE and status not in _REACHABLE:
+                lost.append((key, was, status))
+            else:
+                moved.append((key, was, status))
     for key, was in sorted(prev.items()):
         if key not in now:
             dropped.append((key, was))
-    return {"gained": gained, "lost": lost, "added": added, "dropped": dropped}
+    return {"gained": gained, "lost": lost, "moved": moved,
+            "added": added, "dropped": dropped}
 
 
 # --------------------------------------------------------------------------
@@ -289,6 +309,12 @@ def main(argv=None) -> int:
         print("\n  ACCESS LOST since the last check:")
         for key, _w, status in d["lost"]:
             print(f"    - {key}  (now: {_LABEL.get(status, status)})")
+    if d.get("moved"):
+        print("
+  moved, but still not reachable:")
+        for key, was, status in d["moved"]:
+            print(f"    ~ {key}: {_LABEL.get(was, was)} -> "
+                  f"{_LABEL.get(status, status)}")
     if d["added"]:
         print(f"\n  {len(d['added'])} owner(s) new to a roster (not an access "
               "change):")

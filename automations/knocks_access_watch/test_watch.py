@@ -109,6 +109,21 @@ class Diff(unittest.TestCase):
         d = R.diff({"tony/Coel Reif": A.OK}, {"tony/Coel Reif": A.MISSING})
         self.assertEqual([k for k, _w, _s in d["lost"]], ["tony/Coel Reif"])
 
+    def test_not_listed_to_requested_is_not_an_alarm(self):
+        """Adding the "Floyd Rude" alias moved Wayne from not-listed to
+        request-sent. That is progress; a two-way rule called it a LOSS."""
+        d = R.diff({"wayne/Wayne Rude": A.MISSING},
+                   {"wayne/Wayne Rude": A.PENDING})
+        self.assertFalse(d["lost"])
+        self.assertFalse(d["gained"])
+        self.assertEqual(d["moved"], [("wayne/Wayne Rude", A.MISSING,
+                                       A.PENDING)])
+        self.assertIsNone(R.change_text(d, {}))
+
+    def test_losing_a_granted_office_still_alarms(self):
+        d = R.diff({"chan/Coel Reif": A.OK}, {"chan/Coel Reif": A.PENDING})
+        self.assertEqual([k for k, _w, _s in d["lost"]], ["chan/Coel Reif"])
+
     def test_no_movement_says_nothing(self):
         same = {"tony/Coel Reif": A.OK, "tony/Jay Turnage": A.MISSING}
         d = R.diff(same, dict(same))
