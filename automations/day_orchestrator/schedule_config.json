@@ -3216,11 +3216,11 @@
    "verify": null
   },
   "captainship_knocks": {
-   "order": 23.5,
-   "_order_note": "23.5 = right before captainship_drafts (24), after the captainship metrics block. The capture only needs the Org Sales Board roster, but keeping it adjacent to the build means a day where this step dies still has the build's own fallback pull right behind it.",
+   "order": 36.2,
+   "_order_note": "36.2 = right before captainship_drafts (36.3), and AFTER every office Metrics report (rashad 27 through nii 36.1). Megan 2026-08-24: EVERY office's metrics run before the knocks capture. At its old 23.5 slot this ~2h pull sat between the captainship fills and the eleven per-office threads, so on a clean morning the 7am Metrics threads would not post until 08:00-09:00; it only looked fine on 8/24 because a hand-queued recruiting rerun displaced the capture to 09:14. The capture only needs the Org Sales Board roster, so it is free to run late; keeping it adjacent to the build still means a day where this step dies has the build's own fallback pull right behind it.",
    "on_scheduler": true,
    "display_name": "Captainship Knock Boards (capture)",
-   "_note": "THE EXPENSIVE HALF OF captainship_drafts, SPLIT OUT (Eve 2026-08-24). One ownerville session impersonates every ICD of the six fiber captainships in single file - ~2h measured 8/24 - and impersonation is per-account server state, so it cannot be parallelised. CAPTURES ONLY: no Sheet write, no mail, no Slack. captainship_drafts then finds these images through knock_dispo_images' per-captain manifest and opens no session at all, which is what turns a rebuild - or the 07:15 review-link agent building the previews itself - back into a minutes-long job instead of a two-hour one that also blocks every other job on the mini. If this step fails nothing breaks: the build pulls whatever the manifest doesn't cover, exactly as it did before the split.",
+   "_note": "THE EXPENSIVE HALF OF captainship_drafts, SPLIT OUT (Eve 2026-08-24). One ownerville session impersonates every ICD of the six fiber captainships in single file - ~2h measured 8/24 - and that LOOP cannot be parallelised WITHIN a session, because each impersonation replaces the last. Corrected 2026-08-24 (Megan): this is NOT an account-wide limit. Impersonation is scoped to the ColdFusion SESSION - _exit_impersonation returns 'the server's session' to master mode, and _find_owner_and_impersonate gets a fresh per-session rqst - and each Lucy logs into ownerville itself (mini_control._CRED_FILES pushes ownerville-creds.json, never the storage_state cookies). So two machines CAN impersonate on Raf's account at the same time, which is what makes moving this capture to Lucy 3 safe. CAPTURES ONLY: no Sheet write, no mail, no Slack. captainship_drafts then finds these images through knock_dispo_images' per-captain manifest and opens no session at all, which is what turns a rebuild - or the 07:15 review-link agent building the previews itself - back into a minutes-long job instead of a two-hour one that also blocks every other job on the mini. If this step fails nothing breaks: the build pulls whatever the manifest doesn't cover, exactly as it did before the split.",
    "source_type": "appstream",
    "data_sources": [],
    "command": [
@@ -3241,9 +3241,11 @@
    },
    "priority": "P2",
    "freshness_target": null,
-   "depends_on": [
+   "depends_on": [],
+   "after": [
     "org_sales_board"
    ],
+   "_after_note": "SOFT, not depends_on (Megan 2026-08-24: every office's metrics run BEFORE the knocks capture). registry.run_order pulls any report with depends_on to sit IMMEDIATELY AFTER the last of its deps, which overrides the explicit order slot - with depends_on org_sales_board this ~2h capture was yanked from slot 36.2 to right behind the board at slot 15, ahead of all eleven per-office Metrics reports, and the 7am threads would have posted 08:00-09:00. `after` gives the same 'board first' guarantee without the pull, so the slot holds. Behaviour change to know about: `after` is satisfied by ANY terminal state, so on a morning the board fill FAILS the capture now still runs (reading the previous roster) where depends_on would have blocked it.",
    "timeout_minutes": 210,
    "verify": null,
    "report_id": "captainship-knocks"
@@ -3251,7 +3253,7 @@
   "captainship_drafts": {
    "timeout_minutes": 210,
    "_timeout_note": "90 -> 210 (2026-08-23 night): the six fiber-side drafts now carry the Daily Knocks section (per-owner ownerville pulls) every day, and Sun+Mon ALSO the weekly knock_dispo section (6 day-pulls per owner). The 2-captain both-sections validation ran ~34m with sheets+tableau SKIPPED - six captains with everything real needs the headroom; 210 still fails a genuine hang before the review window closes.",
-   "order": 24,
+   "order": 36.3,
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days",
    "on_scheduler": true,
    "_note": "BACK ON THE CLOCK AND REVIEW-GATED (Eve 2026-07-30). This job BUILDS ONLY: base_args --dry-run writes output/captainship_draft_*.eml/.html and mails nothing. The review post is the next entry, captainship_drafts_review (review_gate --post, order 21), and the reports go out only when an approver puts a checkmark on that post - picked up within 15 min by the com.alphalete.captainship-review LaunchAgent (deploy/captainship_review.sh, 9am-8pm), which mails the EXACT .eml files that were reviewed. Same review habit as the Org Sales Board email, deliberately. WHY IT CAN RUN UNATTENDED NOW: it was manual-only from 2026-07-28 because both halves needed Eve's laptop - the send used the gmail.compose token that only exists there, and section 1 was a screenshot taken through a Chrome profile signed into Google, which expires every few weeks and needs 2FA at the machine itself. 2026-07-30 removed both: the send moved to SMTP (captainship_drafts/mailer.py) with the app password the mini already uses for the board email, and section 1 moved to the login-free API render (captainship_drafts/sheet_render.py), with the old screenshot kept as a fallback for a machine that IS signed in. Builds the 12 Captainship Reports (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. THIS JOB NEVER SENDS: base_args is --dry-run, so it only writes output/captainship_draft_*.eml/.html for review, and the send (--send-reviewed, fired by the review agent) mails those exact files - so a bad number on the Sales Board can still be caught before anything leaves. It also no longer creates a Gmail draft (changed 2026-07-27): a human opening an API-built draft in the Gmail compose window makes Gmail strip the inline images out of the sent mail, so leaving drafts around was itself the hazard. Hub card step 2 ('Send the reviewed reports') still works and is now the manual override for a day the checkmark never comes. Remaining prereq: the Tableau §2 shots (Team Stats Breakout for B2B/NDS) need a Tableau session on the runner - the mini refreshes one every morning. SECTIONS (Eve 2026-07-29): the FIBER drafts went from 4 sections to 10 — the Tableau Cancel-Rates shot was replaced by the two cancel-rate boxes we fill daily, Wireless churn joined, and four new metric boxes close it (ABP %, activation 0-30 / 30-60, 6+ days out). That is why depends_on now also lists captainship_cancel_rate, captainship_activation_rate and captainship_abp_6days: those three runs fill the boxes this reads, and a draft built ahead of them would show 'pending' notes instead of numbers. RAFAEL followed on 2026-07-30 (Eve): his draft went from 4 sections to 9 in her exact order — Product Summary, the two cancel-rate boxes, NI churn, Wireless churn, then ABP %, activation 0-30 / 30-60 and 6+ days out. All six of those boxes are filled by captainship_raf_metrics on his own workbook, ABP included — it comes from his 'Captainship - ABP' tab, NOT from 'Local Office - New Internet ABP%' in the same workbook. His Tableau Cancel-Rates §2 shot is gone with the change, so only B2B/NDS still need a Tableau session for their second section. B2B / NDS are otherwise unchanged.",
@@ -3278,6 +3280,10 @@
    },
    "priority": "P2",
    "freshness_target": null,
+   "after": [
+    "captainship_knocks"
+   ],
+   "_after_note": "The build reads the capture's per-captain manifest, so it must never run ahead of it. This is SOFT on purpose: its own depends_on (board + churn + fills) still pulls it to a slot ahead of the metrics, and this gate simply skips it there each pass until the capture is terminal - it then runs on the next pass, within 12 min. Soft rather than depends_on so a FAILED capture doesn't strand the drafts: they fall back to pulling the knock sections themselves, exactly as before the split.",
    "depends_on": [
     "org_sales_board",
     "captainship_churn",
