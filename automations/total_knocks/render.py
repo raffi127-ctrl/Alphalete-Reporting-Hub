@@ -85,10 +85,31 @@ COMBINED_KNOCKS_DISPLAY = {
 # show the office average. The column name and the formula live in
 # `total_knocks.aggregate` (imported above) so a multi-day fold, which has to
 # average the per-day figure rather than re-derive it, shares both.
-COMBINED_KNOCKS_HEADERS = (
-    COMBINED_KNOCKS_COLUMNS[:COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1]
-    + [COL_HRS_KNOCKING]
-    + COMBINED_KNOCKS_COLUMNS[COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS) + 1:])
+# "Talk To's per Rep" (Raf 2026-08-25) sits right after the Total Talk To it
+# divides. On THIS board it is filled on the summary rows only — the office
+# TOTAL and any comparison office's line — because those are the rows that
+# aggregate a roster; every other row is already one rep, where the per-rep
+# number and Total Talk To are the same figure. It is the comparable one: Raf's
+# office and Chan's carry different headcounts, so a raw total says as much
+# about roster size as about the day. Same column, same name and same 1-decimal
+# format as the DAILY KNOCKS SUMMARY board (captainship_drafts), because the
+# two land in front of the same reader.
+COL_TALK_TO_PER_REP = "Talk To's per Rep"
+
+
+def _with_derived(cols: list) -> list:
+    """The board's OUTPUT columns: the scraped ones plus the two we compute —
+    Talk To's per Rep after Total Talk to, Avg. Hrs Knocking after Total Gaps."""
+    out = list(cols)
+    out.insert(out.index(COL_TOTAL_TALK_TO) + 1, COL_TALK_TO_PER_REP)
+    out.insert(out.index(COL_TOTAL_GAPS) + 1, COL_HRS_KNOCKING)
+    return out
+
+
+COMBINED_KNOCKS_HEADERS = _with_derived(COMBINED_KNOCKS_COLUMNS)
+# The cells this board computes rather than reads — blank on a rep row unless
+# stated otherwise, so `_combined_sub` never looks for them in the scrape.
+DERIVED_COLUMNS = (COL_TALK_TO_PER_REP, COL_HRS_KNOCKING)
 # Time Gaps shows just these, in this order.
 TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
                      COL_GAPS, COL_TOTAL_GAPS]
@@ -591,10 +612,8 @@ def _combined_sub(header: list[str], rows: list[list[str]],
     if missing:
         raise RuntimeError(f"{where or 'data'} missing column(s) for Total "
                            f"Knocks: {missing}. Header: {header}")
-    fk = COMBINED_KNOCKS_COLUMNS.index(COL_FIRST_KNOCK)
-    lk = COMBINED_KNOCKS_COLUMNS.index(COL_LAST_KNOCK)
-    tg = COMBINED_KNOCKS_COLUMNS.index(COL_TOTAL_GAPS)
-    hrs_at = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
+    src = {c: i for i, c in enumerate(COMBINED_KNOCKS_COLUMNS)}
+    fk, lk, tg = src[COL_FIRST_KNOCK], src[COL_LAST_KNOCK], src[COL_TOTAL_GAPS]
     # Hrs Knocking is (last − first) − total gaps… UNLESS the caller already
     # computed it. A multi-day fold must AVERAGE the per-day figure; re-deriving
     # it from folded cells would subtract a week of gaps from one day's span and
@@ -607,16 +626,20 @@ def _combined_sub(header: list[str], rows: list[list[str]],
 
     sub = []
     for r in rows:
-        cells = [_cell(r, i) for i in sel]
+        base = [_cell(r, i) for i in sel]
         if pre is None:
-            hrs = hours_between(cells[fk], cells[lk], cells[tg])
+            hrs = hours_between(base[fk], base[lk], base[tg])
             hrs = "" if hrs is None else str(hrs)
         else:
             hrs = str(_cell(r, pre))
-        # Insert BEFORE the sort — building the row whole keeps the derived
-        # cell tied to its own rep no matter how the table is ordered.
-        cells.insert(hrs_at, hrs)
-        sub.append(cells)
+        # Talk To's per Rep is blank here on purpose: this row IS one rep, so
+        # the number would only repeat Total Talk to. `_combined_totals` fills
+        # it on the rows that actually aggregate a roster.
+        derived = {COL_HRS_KNOCKING: hrs, COL_TALK_TO_PER_REP: ""}
+        # Built whole, BEFORE the sort — assembling by header name keeps every
+        # derived cell tied to its own rep no matter how the table is ordered.
+        sub.append([derived[c] if c in derived else base[src[c]]
+                    for c in COMBINED_KNOCKS_HEADERS])
     rep_pos = COMBINED_KNOCKS_HEADERS.index(COL_REP)
     sub.sort(key=lambda r: str(r[rep_pos]).strip().lower())
     return sub
@@ -625,7 +648,8 @@ def _combined_sub(header: list[str], rows: list[list[str]],
 def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
     """One office's TOTAL line for the combined board: counts sum, the knock
     times average (reps with a parsable time only), Total Gaps sums, Hrs
-    Knocking averages. Gap/hour cells stay raw minutes for the caller."""
+    Knocking averages, and Talk To's per Rep divides. Gap/hour cells stay raw
+    minutes for the caller."""
     def _int0(v) -> int:
         v = str(v).strip()
         return int(v) if v.isdigit() else 0
@@ -639,6 +663,7 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
         h, mm = divmod(m, 60)
         return f"{h % 12 or 12}:{mm:02d} {'AM' if h < 12 else 'PM'}"
 
+    tt_at = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_TALK_TO)
     totals: list[str] = []
     for ci, c in enumerate(COMBINED_KNOCKS_HEADERS):
         if c == COL_REP:
@@ -648,6 +673,12 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
         elif c == COL_HRS_KNOCKING:
             vals = [_int0(r[ci]) for r in sub if str(r[ci]).strip() != ""]
             totals.append(str(round(sum(vals) / len(vals))) if vals else "")
+        elif c == COL_TALK_TO_PER_REP:
+            # Per rep who WORKED — ownerville's Disposition by Rep only lists
+            # reps with activity, so an office isn't diluted by someone who was
+            # off. Same denominator the DAILY KNOCKS SUMMARY board uses.
+            talk = sum(_int0(r[tt_at]) for r in sub)
+            totals.append(f"{talk / len(sub):.1f}" if sub else "0")
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
     return totals
