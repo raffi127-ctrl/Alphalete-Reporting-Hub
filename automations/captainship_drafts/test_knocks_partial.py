@@ -99,6 +99,32 @@ class TheDailyBoardSaysDaily(unittest.TestCase):
         self.assertEqual(sig.parameters["title_prefix"].default, "",
                          "default must leave every other board unchanged")
 
+    def test_the_blank_per_rep_column_is_off_this_board(self):
+        """It only ever has a number on the TOTAL row, and the ICD-level
+        figure is on the summary above — on the per-owner board it is a blank
+        stripe (Eve 2026-08-25). Hidden by PARAMETER: Raf asked for the column,
+        and the same renderer draws his metrics-thread boards."""
+        import inspect
+        from automations.total_knocks import render as R
+        sig = inspect.signature(R.render_total_knocks)
+        self.assertEqual(sig.parameters["hide_columns"].default, ())
+        self.assertIn(R.COL_TALK_TO_PER_REP, R.COMBINED_KNOCKS_HEADERS,
+                      "the column must stay on every OTHER board")
+        src = inspect.getsource(KD.capture_sections)
+        self.assertIn("hide_columns=(", src)
+
+    def test_hiding_a_column_keeps_rows_aligned(self):
+        """The header and every row must lose the SAME position — a mismatch
+        would silently slide numbers under the wrong heading."""
+        from automations.total_knocks import render as R
+        hdr = list(R.COMBINED_KNOCKS_HEADERS)
+        keep = [i for i, c in enumerate(hdr)
+                if c not in (R.COL_TALK_TO_PER_REP,)]
+        row = [f"v{i}" for i in range(len(hdr))]
+        self.assertEqual(len([hdr[i] for i in keep]),
+                         len([row[i] for i in keep]))
+        self.assertNotIn(R.COL_TALK_TO_PER_REP, [hdr[i] for i in keep])
+
     def test_the_captainship_board_passes_it(self):
         import inspect
         src = inspect.getsource(KD.capture_sections)

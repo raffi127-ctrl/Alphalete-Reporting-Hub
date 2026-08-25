@@ -764,7 +764,14 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                 # this one, and two boards headed the same way
                                 # is how someone reads a day's number as the
                                 # week's.
-                                title_prefix="DAILY ")
+                                title_prefix="DAILY ",
+                                # Talk To's per Rep only carries a number on
+                                # the TOTAL row (a rep row is one rep), so on
+                                # this board it is a blank stripe. The same
+                                # figure per ICD is on the DAILY KNOCKS
+                                # SUMMARY right above (Eve 2026-08-25).
+                                hide_columns=(
+                                    knocks_render.COL_TALK_TO_PER_REP,))
                             out_daily.append((display, png))
                             captured_daily.append((display, cfg, rows))
                             _write_rows(png, rows)

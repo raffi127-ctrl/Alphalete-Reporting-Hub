@@ -484,6 +484,7 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         end: "dt.date | None" = None,
                         date_text: str = "",
                         title_prefix: str = "",
+                        hide_columns: "tuple[str, ...]" = (),
                         extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
@@ -502,6 +503,17 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     `end` (optional): the last day of a multi-day board, for the title and the
     filename. The ROWS must already be folded (total_knocks.aggregate) — this
     only labels them. None / same-as-target renders exactly as it always did.
+
+    `hide_columns` (optional): columns to leave OFF this board. For a derived
+    column that only carries a number on the TOTAL row — Talk To's per Rep is
+    one: a rep row IS one rep, so per-rep there would just repeat Total Talk to
+    — the cost of keeping it is a blank stripe down the whole board. Eve
+    2026-08-25 asked for it off the Captainship Report's per-owner boards,
+    where the same figure per ICD already sits on the DAILY KNOCKS SUMMARY
+    right above. A PARAMETER, not a header edit, for the same reason as
+    title_prefix: this renderer also draws the metrics threads, the intraday
+    slots and /knocks, and Raf asked for that column — dropping it from the
+    header would take it off his boards too. Default () = unchanged.
 
     `title_prefix` (optional): words in front of "TOTAL KNOCKS" — e.g.
     "DAILY " for the per-owner boards inside a Captainship Report (Eve
@@ -546,6 +558,13 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
     disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
+    if hide_columns:
+        # Drop by NAME, then take the same positions out of every row — the
+        # totals and comparison rows included, so nothing shifts under a header.
+        keep = [i for i, c in enumerate(COMBINED_KNOCKS_HEADERS)
+                if c not in hide_columns]
+        disp = [disp[i] for i in keep]
+        table = [[r[i] for i in keep] for r in table]
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
