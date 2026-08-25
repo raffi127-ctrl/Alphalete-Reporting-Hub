@@ -34,7 +34,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from automations.knocks_intraday import roster, run as intraday
+from automations.knocks_intraday import roster, schedule, run as intraday
 from automations.knocks_request import service
 
 TODAY = dt.date(2026, 8, 25)
@@ -49,6 +49,18 @@ def rows_for(rep="Ana Diaz", knocks=10) -> list:
         "Talk To - Not Interested": 1, "Presentation – Not Interested": 1,
         "Come Back": 1, "Sale": 1, "Inaccessible": 0, "Do Not Knock": 0,
     }]
+
+
+# The API is slot-aware now: build/post take a Slot and per-office local dates
+# (Megan 2026-08-25, office-local times). These are the fixtures for that.
+EOD = schedule.SLOTS_BY_KEY["eod"]
+FIRST = schedule.SLOTS_BY_KEY["first"]
+
+
+def cody_jobs(day=None):
+    """[(office, its own local date)] — what build() now takes."""
+    from automations.office_metrics.offices import OFFICES
+    return [(OFFICES["cody"], day or TODAY)]
 
 
 class NoMorningReuse(unittest.TestCase):
@@ -83,7 +95,7 @@ class NoMorningReuse(unittest.TestCase):
         ours landing there would be read tomorrow as a finished pull."""
         from automations.knocks_request.service import _build_render_dir
         build_tree = _build_render_dir().resolve()
-        intraday.build(TODAY, only="cody", logfn=lambda m: None)
+        intraday.build(EOD, cody_jobs(), logfn=lambda m: None)
         self.assertTrue(self.wrote, "the renderer was never called")
         for path in self.wrote:
             self.assertNotIn(build_tree, path.resolve().parents,
@@ -91,7 +103,7 @@ class NoMorningReuse(unittest.TestCase):
             self.assertNotIn("daily_knocks", path.name)
 
     def test_it_writes_under_its_own_output_dir(self):
-        intraday.build(TODAY, only="cody", logfn=lambda m: None)
+        intraday.build(EOD, cody_jobs(), logfn=lambda m: None)
         for path in self.wrote:
             self.assertIn(intraday.OUT_DIR.resolve(), path.resolve().parents)
 
@@ -99,8 +111,8 @@ class NoMorningReuse(unittest.TestCase):
         """save_rows is the only writer of the /knocks cache. This module must
         not call it — not even for a finished day passed via --date."""
         with mock.patch.object(service, "save_rows") as never:
-            intraday.build(TODAY, only="cody", logfn=lambda m: None)
-            intraday.build(dt.date(2026, 8, 20), only="cody",
+            intraday.build(EOD, cody_jobs(), logfn=lambda m: None)
+            intraday.build(EOD, cody_jobs(dt.date(2026, 8, 20)),
                            logfn=lambda m: None)
         never.assert_not_called()
 
@@ -118,6 +130,7 @@ class NeverPostsBlank(unittest.TestCase):
 
     def _results(self, **over):
         rec = {"office": "Cody Cannon", "key": "cody", "label": "Cody Cannon",
+               "day": TODAY, "abbr": "CST",
                "channel_id": "C1", "channel_name": "#aeon-sales",
                "token_file": "", "png": None, "rows": [], "error": None}
         rec.update(over)
@@ -126,7 +139,7 @@ class NeverPostsBlank(unittest.TestCase):
     def test_no_rows_means_no_post(self):
         with mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image") as never:
-            code = intraday.post(self._results(), TODAY, dry_run=False,
+            code = intraday.post(self._results(), EOD, dry_run=False,
                                  logfn=lambda m: None)
         never.assert_not_called()
         self.assertEqual(code, 0)     # a quiet office is not a failed run
@@ -134,7 +147,7 @@ class NeverPostsBlank(unittest.TestCase):
     def test_a_failed_office_does_not_post_either(self):
         with mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image") as never:
-            intraday.post(self._results(error=RuntimeError("boom")), TODAY,
+            intraday.post(self._results(error=RuntimeError("boom")), EOD,
                           dry_run=False, logfn=lambda m: None)
         never.assert_not_called()
 
@@ -143,7 +156,7 @@ class NeverPostsBlank(unittest.TestCase):
                         ".post_reply_with_image") as never:
             intraday.post(self._results(png=Path("/tmp/x.png"),
                                         rows=rows_for()),
-                          TODAY, dry_run=True, logfn=lambda m: None)
+                          EOD, dry_run=True, logfn=lambda m: None)
         never.assert_not_called()
 
     def test_one_channel_failing_does_not_stop_the_others(self):
@@ -160,7 +173,7 @@ class NeverPostsBlank(unittest.TestCase):
 
         with mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image", flaky):
-            code = intraday.post(recs, TODAY, dry_run=False,
+            code = intraday.post(recs, EOD, dry_run=False,
                                  logfn=lambda m: None)
         self.assertEqual(len(calls), 2)      # the second office still went
         self.assertEqual(code, 1)            # and the run reports the failure
@@ -174,6 +187,7 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
     def _rec(self, **over):
         rec = {"office": "Trang Le Nguyen Canavan", "key": "trang",
                "label": "trang canavan", "channel_id": "C9",
+               "day": TODAY, "abbr": "CST",
                "channel_name": "#freshsuccess-all-leaders", "header_label": "",
                "token_file": "fs-bot-token.txt", "png": Path("/tmp/t.png"),
                "rows": rows_for(), "error": None}
@@ -185,7 +199,7 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
                                lambda r: Path("/nope/absent-token.txt")), \
              mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image") as never:
-            code = intraday.post([self._rec()], TODAY, dry_run=False,
+            code = intraday.post([self._rec()], EOD, dry_run=False,
                                  logfn=lambda m: None)
         never.assert_not_called()
         self.assertEqual(code, 0)     # structural skip, not a red run
@@ -206,7 +220,7 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
         with mock.patch.object(intraday, "token_path", lambda r: tok), \
              mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image", capture):
-            intraday.post([self._rec()], TODAY, dry_run=False,
+            intraday.post([self._rec()], EOD, dry_run=False,
                           logfn=lambda m: None)
         self.assertEqual(seen["token"], "xoxb-fresh-success")
         # Lucy's token is back the moment that office is done, or the NEXT
@@ -225,7 +239,7 @@ class CrossWorkspacePostsWithItsOwnToken(unittest.TestCase):
 
         with mock.patch("automations.shared.slack_metrics_post"
                         ".post_reply_with_image", capture):
-            intraday.post([self._rec(token_file="", key="cody")], TODAY,
+            intraday.post([self._rec(token_file="", key="cody")], EOD,
                           dry_run=False, logfn=lambda m: None)
         self.assertEqual(seen["token"], "xoxp-lucy")
 
@@ -235,14 +249,37 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
     board still carries the time it was taken — just the stamp, though."""
 
     def test_todays_board_carries_the_time_it_was_taken(self):
-        with mock.patch.object(intraday, "central_today", lambda: TODAY):
-            cap = intraday._caption("Cody Cannon", TODAY, True)
+        cap = intraday._caption("Cody Cannon", TODAY, EOD, "CST")
         self.assertIn("As of 9:00 PM CST", cap)
+
+    def test_each_slot_stamps_its_own_time(self):
+        """Three boards a day land in the same channel; the stamp is what tells
+        a 2 PM board from a 9 PM one."""
+        first = intraday._caption("Cody Cannon", TODAY, FIRST, "CST")
+        money = intraday._caption("Cody Cannon", TODAY,
+                                  schedule.SLOTS_BY_KEY["money"], "CST")
+        self.assertIn("As of 2:00 PM CST", first)
+        self.assertIn("First Knocks", first)
+        self.assertIn("As of 5:15 PM CST", money)
+        self.assertIn("Money Lap", money)
+
+    def test_an_eastern_office_is_stamped_in_its_own_zone(self):
+        """A Michigan office reading '9:00 PM CST' would be looking at a board
+        stamped an hour off its own evening."""
+        cap = intraday._caption("Hammad Haque", TODAY, EOD, "EST")
+        self.assertIn("As of 9:00 PM EST", cap)
+        self.assertNotIn("CST", cap)
+
+    def test_the_zone_abbreviation_follows_the_office(self):
+        from automations.office_metrics.offices import OFFICES
+        self.assertEqual(intraday.zone_abbr(OFFICES["cody"]), "CST")
+        self.assertEqual(intraday.zone_abbr(OFFICES["hammad"]), "EST")
+        self.assertEqual(intraday.zone_abbr(OFFICES["aya"]), "EST")
 
     def test_the_header_carries_the_first_name_and_a_short_date(self):
         # The full ICD name says what the channel already says (Megan
         # 2026-08-25); the date is 8/25, not 'August 25, 2026'.
-        cap = intraday._caption("Cody Cannon", TODAY, True)
+        cap = intraday._caption("Cody Cannon", TODAY, EOD, "CST")
         self.assertIn("Cody — 8/25", cap)
         self.assertNotIn("Cannon", cap)
         self.assertNotIn("August", cap)
@@ -250,8 +287,8 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
     def test_a_shared_channel_still_tells_the_two_offices_apart(self):
         """Hammad and Salik both post into #elite-prime-sales. With no name at
         all their boards would be indistinguishable sitting side by side."""
-        a = intraday._caption("Hammad Haque", TODAY, True)
-        b = intraday._caption("Salik Mallick", TODAY, True)
+        a = intraday._caption("Hammad Haque", TODAY, EOD, "EST")
+        b = intraday._caption("Salik Mallick", TODAY, EOD, "EST")
         self.assertIn("Hammad", a)
         self.assertIn("Salik", b)
         self.assertNotEqual(a, b)
@@ -262,7 +299,7 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
         self.assertEqual(intraday.first_name("  "), "")
         # An office with no name resolvable still gets a clean header.
         self.assertIn("Total Knocks — End of Day — 8/25",
-                      intraday._caption("", TODAY, True))
+                      intraday._caption("", TODAY, EOD, "CST"))
 
     def test_the_short_date_has_no_leading_zeros(self):
         self.assertEqual(intraday._date_text(dt.date(2026, 8, 5)), "8/5")
@@ -271,39 +308,60 @@ class TheCaptionSaysItIsPartial(unittest.TestCase):
     def test_it_does_not_explain_the_morning_re_pull(self):
         # Megan 2026-08-25: the stamp stays, the explanation goes — how the
         # morning re-pulls is plumbing, not nightly reading for the channel.
-        cap = intraday._caption("Cody Cannon", TODAY, True)
+        cap = intraday._caption("Cody Cannon", TODAY, EOD, "CST")
         for phrase in ("re-pulls", "read higher", "still knock", "tomorrow"):
             self.assertNotIn(phrase, cap)
         # Abbreviation, not the word.
         self.assertNotIn("Central", cap)
 
-    def test_a_finished_day_carries_no_partial_note(self):
-        cap = intraday._caption("Cody Cannon", dt.date(2026, 8, 20), False)
-        self.assertNotIn("As of", cap)
+    def test_a_backfilled_day_still_says_when_it_was_taken(self):
+        """The stamp used to mean 'this day is not finished'; with three slots
+        it also means WHICH board this is, so it rides every one — including a
+        --date backfill of a day that is over."""
+        cap = intraday._caption("Cody Cannon", dt.date(2026, 8, 20), EOD, "CST")
+        self.assertIn("As of 9:00 PM CST", cap)
+        self.assertIn("8/20", cap)
 
 
 class TheRoster(unittest.TestCase):
 
-    def test_exclusions_are_explained_not_silent(self):
+    def test_blocks_are_explained_not_silent(self):
         # An office left out has to say why, in the run log, every night.
-        for key in roster.EXCLUDED:
-            self.assertTrue(roster.EXCLUDED[key].strip(),
-                            f"{key} is excluded with no reason given")
-        self.assertTrue(any("isaiah" in l for l in roster.excluded_lines()))
+        for key in roster.BLOCKED:
+            self.assertTrue(roster.BLOCKED[key].strip(),
+                            f"{key} is blocked with no reason given")
+        self.assertTrue(any("isaiah" in l for l in roster.blocked_lines()))
 
-    def test_excluded_offices_are_not_enrolled(self):
-        keys = {o.key for o in roster.enrolled()}
-        self.assertFalse(keys & set(roster.EXCLUDED))
+    def test_blocked_offices_are_in_no_slot(self):
+        for slot_key in ("first", "money", "eod"):
+            keys = {o.key for o in roster.enrolled(slot_key)}
+            self.assertFalse(keys & set(roster.BLOCKED), slot_key)
 
-    def test_enrolment_comes_from_the_metrics_registry(self):
+    def test_the_afternoon_slots_are_codys_alone(self):
+        """Megan 2026-08-25: 'we only want to run this for Cody's channel' —
+        the 2 PM and 5:15 PM boards go nowhere else."""
+        for slot_key in ("first", "money"):
+            self.assertEqual([o.key for o in roster.enrolled(slot_key)],
+                             ["cody"], slot_key)
+
+    def test_nine_pm_goes_to_every_office(self):
+        """Raf 2026-08-25: the 9 PM board is for every office — Megan settled
+        it as each office's OWN 9 PM."""
         from automations.office_metrics.offices import OFFICES
-        self.assertEqual({o.key for o in roster.enrolled()},
-                         set(OFFICES) - set(roster.EXCLUDED))
+        self.assertEqual({o.key for o in roster.enrolled("eod")},
+                         set(OFFICES) - set(roster.BLOCKED))
+
+    def test_an_unknown_slot_is_quiet_not_fatal(self):
+        self.assertEqual(roster.enrolled("brunch"), [])
+
+    def test_the_roster_names_only_real_offices(self):
+        self.assertEqual(roster.unknown_keys(), [])
 
     def test_every_enrolled_office_has_somewhere_to_post(self):
-        for o in roster.enrolled():
+        for o in roster.everyone():
             self.assertTrue(o.channel_id, f"{o.key} has no channel_id")
             self.assertTrue(o.knocks_office, f"{o.key} has no knocks_office")
+            self.assertTrue(o.timezone, f"{o.key} has no timezone")
 
 
 if __name__ == "__main__":

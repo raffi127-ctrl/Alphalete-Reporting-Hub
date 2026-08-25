@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.knocks-intraday</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP. Every TEAM machine (Lucy 1/2/3) clones the
+         repo to ~/recruiting-report, so installing this on Lucy 3 means
+         rewriting the three paths below to /Users/<user>/recruiting-report
+         first — a plist pointing at a directory that isn't there fails
+         silently and the card just never goes green. -->
+    <key>ProgramArguments</key>
+    <array><string>/bin/bash</string><string>/Users/megan/1st Claude Folder/deploy/knocks_intraday.sh</string><string>--tick</string><string>--send</string></array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- EVERY 5 MINUTES. The slot times are NOT here — they live in
+         knocks_intraday/schedule.py, in each office's own timezone, and this
+         job just asks "is anything due?" That indirection is the whole point:
+         2 PM Central and 2 PM Eastern are two different instants, and one
+         calendar-based plist cannot express both.
+
+         5 minutes, not 15: the 5:15 PM slot sits on a :15 boundary and a
+         coarser tick can straddle it. schedule.GRACE_MIN (15) must stay >=
+         this interval or a slot can fall between two passes and never fire.
+
+         This also sidesteps the launchd zone-caching drift that has bitten
+         this fleet (jobs firing +2h): an interval job has no calendar to
+         cache, and the office-local arithmetic happens in Python against
+         real tz data. VERIFY WITH A REAL FIRE. See [[project_mini_launchd_drift]]. -->
+    <key>StartInterval</key><integer>300</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.knocks-intraday.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.knocks-intraday.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
