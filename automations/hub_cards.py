@@ -531,7 +531,11 @@ AUTOMATED_REPORTS = [
     # says "no run logged" forever — see day_orchestrator.test_hub_card_ids.
     {
         "id": "knocks-intraday",
-        "name": "Intraday Knocks 🚪",
+        "name": "Intraday Knock Updates 🚪",
+        # Renders under the "Other Offices" divider on the schedule, below the
+        # main-office run (Megan 2026-08-25). Every board it posts belongs to a
+        # single office's own channel, which is exactly what that section is for.
+        "category": "🏢 Other Offices",
         "creator": "Raf & Claude",
         "emoji": "🚪",
         # The knocks amber, same as the board it posts.
