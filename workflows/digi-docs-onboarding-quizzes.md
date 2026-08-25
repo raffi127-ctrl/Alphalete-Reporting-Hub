@@ -116,6 +116,60 @@ DataTable — and `_photo_pill` already exists as a warning about how easily
 those pills mislead (both states render the same inner_text, which once made
 every rep look like they needed a photo).
 
+## Step 8 — back on Set Status, tick the attestations and save
+
+Return to the rep's **Edit → "<Name> - Set Status"** modal and, in order:
+
+1. Expand **BACKGROUND CHECK** → tick the single box:
+   *"Elite or Elite Extra Background Check Required"*.
+2. Expand **DRUG TEST** → tick **two** boxes:
+   - *"Alphalete Marketing, INC. acknowledges that the campaign requires a
+     passing 4 panel drug screen within the first 30 days of participating in
+     the campaign. Alphalete Marketing, INC. confirms that it will comply with
+     the requirement."*
+   - *"Alphalete Marketing, INC. has reviewed the drug screen and confirmed that
+     it passes Alphalete Marketing, INC.'s drug screening requirements."*
+3. Expand **SERVICE** → select the radio **`RES-ATT`** (the other option is
+   `RES-ATT-OOF`). Constant, not a literal — OOF is presumably out-of-footprint
+   and another office or campaign will want it.
+4. **Save Changes**, bottom right.
+
+### ⚠️ These are attestations, not status flags
+
+Read what the second drug-test box actually says: *Alphalete Marketing, INC. has
+reviewed the drug screen and confirmed that it passes.* That is the company
+asserting, to AT&T, that a review happened. The first box is a forward-looking
+commitment to comply; the second is a claim about a completed act.
+
+For a brand-new rep the DRUG TEST row reads `REQUIRED ACTION` and the screen has
+not come back yet — so a batch that ticks box 2 unconditionally has the software
+attesting to a review nobody performed, for every new start, every week.
+
+**This is Megan's documented process and the automation will follow it** — it is
+her call to make, not the tool's, and the same click happens by hand today. But
+it is worth stating plainly once, because it is the one action in this whole
+flow that carries weight outside our own systems: the rest write to our sheet or
+mail someone their own paperwork. Two things follow from that:
+
+- The run should record, per rep, that it ticked these — the ledger is what
+  makes an attestation auditable rather than invisible.
+- If the drug screen result is ever available to us (BG Status already is, via
+  `bg_check_sync`), gating box 2 on it costs nothing and makes the statement
+  true by construction. Worth revisiting; not a blocker.
+
+### The full Set Status row list
+
+`LOGIN CREATED · ONBOARDING DOCUMENTS · BACKGROUND CHECK · DRUG TEST ·
+FTC DIRECTV COMPLIANCE TRAINING · AT&T PROTECTIVE ADVANTAGE COURSE ·
+AT&T BROADBAND FACTS · AT&T PROTECTING CPNI · AT&T COMPLIANCE – 2023 ·
+2024 CONSENT DECREE MANUAL CPNI/SPI · UPLOAD DOCUMENTS · AT&T UID REQUEST ·
+SERVICE · SUPPLEMENT · OWNER SUBMIT · BADGE · SARA PLUS`
+
+The six training rows stay `PENDING` through all of the above — **the rep
+completes those themselves.** So the Onboarding Quizzes tick is a read-only
+poll of work we do not perform, which is why it belongs on a recurring pass
+(like Blue Ink's signed-sweep) rather than in the send batch.
+
 ## Where the truth lives
 
 Both columns read back from that same **Onboard → View Progress** table (p=201,
