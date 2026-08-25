@@ -127,6 +127,24 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
         for p in pages:
             img.paste(p, (0, y))
             y += p.height
+    # An ALL-WHITE result is never a real answer, and this path had no way of
+    # saying so. The Sheets PDF export does not fail loudly when it can't read
+    # the sheet: with an insufficient token it answers HTTP 200 with a valid,
+    # EMPTY 993-byte PDF, so `_fetch` raises nothing, `_trim` finds no bbox and
+    # hands the untrimmed blank page straight through, and the caller posts a
+    # white rectangle to Slack looking exactly like a good capture (2026-08-25:
+    # customer_churn and activation_by_rep both reached Carlos's B2B thread
+    # empty). Every caller here shoots a range that is known to have data —
+    # churn_tab_image even asserts it first — so blank means the EXPORT failed,
+    # not the board.
+    if ImageChops.difference(
+            img, Image.new("RGB", img.size, (255, 255, 255))).getbbox() is None:
+        raise RuntimeError(
+            f"{ws.title}!{rng} exported as a blank page ({img.width}x"
+            f"{img.height}) — the Sheets PDF export returned nothing. This is "
+            "almost always credentials, not an empty sheet: the export endpoint "
+            "is a Drive endpoint and answers 200-with-an-empty-PDF when the "
+            "token lacks the scope. Check `lucy sheets_whoami` on the runner.")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
