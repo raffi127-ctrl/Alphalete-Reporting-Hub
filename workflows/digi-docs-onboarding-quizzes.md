@@ -130,11 +130,21 @@ itself a step at a time, so the whole thing is NOT on screen at once:
    than one, the campaign or the plan changed and the run should refuse and
    say so rather than pick the first row — the whole point of pinning the
    bundle is that nobody gets mailed the wrong contract.
-5. **`Get Documents for Selected Bundle`**.
-6. **Select Associated Commission Bundle(s)*** — checkboxes:
-   ☑ **AT&T Door to Door with Drug Free Workplace Policy**,
-   ☐ Energy D2D- Commission Grid. ("Select all Commission bundles that apply."
-   A note beside it points at **Download** for pulling a Commission Grid.)
+5. **Select Associated Commission Bundle(s)*** — these appear only ONCE the
+   bundle is chosen (Megan 2026-08-25). Tick
+   ☑ **AT&T Door to Door with Drug Free Workplace Policy**.
+   Leave ☐ Energy D2D- Commission Grid unticked. (The note beside them reads
+   "Select all Commission Grids that apply. If you are missing a Commission
+   Grid, go to 'Download' to download it.")
+6. **`Get Documents for Selected Bundle`** — this is the actual submit.
+
+**The form reveals itself one control at a time.** Employee + bundle type →
+`Generate Bundle` reveals the bundle dropdown → choosing the bundle reveals the
+commission checkboxes → `Get Documents for Selected Bundle` submits. Nothing
+below the current step exists in the DOM yet, so every step has to WAIT for its
+control to appear rather than assume a static form. Getting this order wrong is
+the single easiest way to build something that clicks a button that isn't there
+and reports success.
 
 Result banner: **"Successfully Added Document(s) for <Name>"**, listing the
 bundle it created:
