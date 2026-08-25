@@ -55,13 +55,39 @@ class Classify(unittest.TestCase):
         would miss it, so the watch must not announce it as access."""
         got = self._one("Andre Burton", aliases={})
         self.assertEqual(got["status"], A.MISSING)
-        self.assertIn("Andre Burton Jr", got["near"])
+        self.assertIn("Andre Burton Jr (#22041, granted)", got["near"])
+
+    def test_a_near_miss_says_whether_that_office_is_granted(self):
+        """An alias only helps if the office behind the near-miss is actually
+        granted — otherwise you paper a permission over with a spelling."""
+        got = self._one("Wayne Turnage", aliases={})
+        self.assertEqual(got["status"], A.MISSING)
+        self.assertIn("Jay Turnage (#21959, Request Access)", got["near"])
 
     def test_still_a_request_is_pending(self):
         self.assertEqual(self._one("Jay Turnage")["status"], A.PENDING)
 
     def test_absent_is_missing(self):
         self.assertEqual(self._one("Wayne Rude")["status"], A.MISSING)
+
+
+class TheMasterNeedsNoGrant(unittest.TestCase):
+    """Raf's office IS the login (11280), so it never appears in its own
+    Office Access list. Read literally, the audit called the healthiest
+    captainship 12 of 13 and pointed at the one owner who can never be
+    missing (2026-08-25)."""
+
+    def test_master_is_reachable_even_when_unlisted(self):
+        rep = A.classify({"rafael": ("Raf's", ["Rafael Hidalgo"])}, [], ALIASES)
+        self.assertEqual(rep["rafael"]["owners"][0]["status"], A.MASTER)
+        self.assertEqual(A.counts(rep)["rafael"], (1, 1))
+
+    def test_master_is_not_listed_as_a_gap(self):
+        rep = A.classify({"rafael": ("Raf's", ["Rafael Hidalgo", "Coel Reif"])},
+                         ROWS, ALIASES)
+        line = R.summary_lines(rep)[0]
+        self.assertIn("2/2 reachable", line)
+        self.assertNotIn("waiting on", line)
 
 
 class Counting(unittest.TestCase):
@@ -82,6 +108,21 @@ class Diff(unittest.TestCase):
     def test_a_revocation_is_news(self):
         d = R.diff({"tony/Coel Reif": A.OK}, {"tony/Coel Reif": A.MISSING})
         self.assertEqual([k for k, _w, _s in d["lost"]], ["tony/Coel Reif"])
+
+    def test_not_listed_to_requested_is_not_an_alarm(self):
+        """Adding the "Floyd Rude" alias moved Wayne from not-listed to
+        request-sent. That is progress; a two-way rule called it a LOSS."""
+        d = R.diff({"wayne/Wayne Rude": A.MISSING},
+                   {"wayne/Wayne Rude": A.PENDING})
+        self.assertFalse(d["lost"])
+        self.assertFalse(d["gained"])
+        self.assertEqual(d["moved"], [("wayne/Wayne Rude", A.MISSING,
+                                       A.PENDING)])
+        self.assertIsNone(R.change_text(d, {}))
+
+    def test_losing_a_granted_office_still_alarms(self):
+        d = R.diff({"chan/Coel Reif": A.OK}, {"chan/Coel Reif": A.PENDING})
+        self.assertEqual([k for k, _w, _s in d["lost"]], ["chan/Coel Reif"])
 
     def test_no_movement_says_nothing(self):
         same = {"tony/Coel Reif": A.OK, "tony/Jay Turnage": A.MISSING}

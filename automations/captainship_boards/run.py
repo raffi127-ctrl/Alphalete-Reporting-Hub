@@ -694,6 +694,23 @@ def main(argv=None) -> int:
             failures.append(f"recruiting: {type(e).__name__}: {e}")
             log(f"  !! recruiting FAILED: {type(e).__name__}: {e}")
 
+    # Advance the org book's mirror-view week pickers (Carlos, 8/25): the
+    # Sales Board / Roll Call view tabs migrated into the Alphalete
+    # Recruiting Dashboard hold their own week label, and a stale (or
+    # number-coerced "8.3") label makes the fresh week look empty. Stamp the
+    # current label as TEXT every morning; best-effort — never fail the run.
+    if args.write:
+        try:
+            org = open_sheet(C.ORG_TRACKER_ID)
+            we_now = C.week_label(monday)
+            values_batch_update(org, [
+                {"range": "'Sales Board'!B3", "values": [[we_now]]},
+                {"range": "'Roll Call'!H2", "values": [[we_now]]},
+            ])
+            log(f"org view pickers -> {we_now}")
+        except Exception as e:  # noqa: BLE001
+            log(f"  (org view picker stamp skipped: {type(e).__name__}: {e})")
+
     if failures:
         log(f"finished with {len(failures)} FAILURE(S): {failures}")
         return 1

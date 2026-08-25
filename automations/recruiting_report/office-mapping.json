@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 55,
+  "confirmed_count": 56,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -409,6 +409,13 @@
       "confidence": 1.0,
       "promoted_from_sales_only": true,
       "was_sales_only_reason": "Pesta\u00f1a renombrada 'Helen Assefaw' -> 'Helen Assefaw (Vz)' el 2026-08-17. VERIZON WIRELESS RESIDENCIAL (Edge Concepts, Falls Church VA, ownerville 13382), confirmado por su capit\u00e1n Starr Rodenhurst. Sin oficina en AppStream (chequeado en vivo contra las 237) y en NINGUNA vista Tableau del ATT program \u2014 no es permisos: esas vistas son D2D/B2B y ella es residencial, as\u00ed que opt_phase no puede llenarle nada NUNCA. La llena `automations.helen_residential.run` (lunes) desde tres mails semanales a alphaletereporting. Sigue ac\u00e1 para que la pesta\u00f1a quede categorizada (si no, run.py la pinta de azul) y para que `promote_when_visible` la promueva sola el d\u00eda que le den AppStream."
+    },
+    {
+      "sheet_tab": "Tom Campion",
+      "office_id": "23046",
+      "as_owner": "Thomas Campion",
+      "as_company": "Next Wave Promotions, Inc.",
+      "confidence": 1.0
     }
   ],
   "needs_review": [],

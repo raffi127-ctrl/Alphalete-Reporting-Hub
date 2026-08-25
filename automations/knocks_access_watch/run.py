@@ -61,7 +61,8 @@ PROFILE_DIR = (REPO_ROOT / "automations" / "uploaded"
 CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
 
 _LABEL = {A.OK: "granted", A.PENDING: "requested, not granted",
-          A.MISSING: "not on the list"}
+          A.MISSING: "not on the list",
+          A.MASTER: "the login's own office (no grant needed)"}
 
 
 # --------------------------------------------------------------------------
@@ -75,11 +76,18 @@ def load_state() -> dict:
         return {}
 
 
-def save_state(report: dict, when: dt.datetime) -> None:
+def save_state(report: dict, when: dt.datetime, offices=None) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     payload = {"checked_at": when.isoformat(timespec="seconds"),
                "statuses": A.statuses(report),
                "counts": {k: list(v) for k, v in A.counts(report).items()},
+               # The RAW Office Access rows, so --find can answer "is this
+               # office listed, and under what name / with what action?"
+               # without opening a session. That question comes up every time
+               # a near-miss hint fires, and taking the ownerville session to
+               # re-read a table we already read is the one cost worth
+               # avoiding here.
+               "offices": offices or [],
                "report": report}
     STATE_PATH.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     # A dated copy too: the snapshots are how we'll answer "when did Wayne's
@@ -88,21 +96,42 @@ def save_state(report: dict, when: dt.datetime) -> None:
         json.dumps(payload, indent=1), encoding="utf-8")
 
 
+# The only statuses that mean "the report can pull this office today".
+_REACHABLE = (A.OK, A.MASTER)
+
+
 def diff(prev: Dict[str, str], now: Dict[str, str]) -> dict:
-    """What moved. `gained` is the news everyone is waiting for; `lost` is the
-    alarm; `added`/`dropped` are roster churn, reported separately so an owner
-    who simply left a captainship never reads as revoked access."""
-    gained, lost, added, dropped = [], [], [], []
+    """What moved.
+
+    `gained` = became reachable — the news everyone is waiting for.
+    `lost`   = WAS reachable and no longer is — the alarm.
+    `moved`  = changed between two un-reachable states (not listed -> request
+               sent, or the other way). Worth printing, never worth an alarm.
+    `added` / `dropped` = roster churn, kept separate so an owner who simply
+               left a captainship never reads as revoked access.
+
+    The moved/lost split is not a nicety: adding the ICD Aliases row for
+    "Floyd Rude" moved Wayne Rude from not-listed to request-sent, and a
+    two-way rule would have fired ":rotating_light: Office Access LOST" over an
+    improvement (2026-08-25). An alarm has to be true every time or it stops
+    being read."""
+    gained, lost, moved, added, dropped = [], [], [], [], []
     for key, status in sorted(now.items()):
         was = prev.get(key)
         if was is None:
             added.append((key, status))
         elif was != status:
-            (gained if status == A.OK else lost).append((key, was, status))
+            if status in _REACHABLE and was not in _REACHABLE:
+                gained.append((key, was, status))
+            elif was in _REACHABLE and status not in _REACHABLE:
+                lost.append((key, was, status))
+            else:
+                moved.append((key, was, status))
     for key, was in sorted(prev.items()):
         if key not in now:
             dropped.append((key, was))
-    return {"gained": gained, "lost": lost, "added": added, "dropped": dropped}
+    return {"gained": gained, "lost": lost, "moved": moved,
+            "added": added, "dropped": dropped}
 
 
 # --------------------------------------------------------------------------
@@ -116,7 +145,8 @@ def summary_lines(report: dict) -> List[str]:
         if not block:
             continue
         ok, total = A.counts(report)[key]
-        gaps = [o for o in block["owners"] if o["status"] != A.OK]
+        gaps = [o for o in block["owners"]
+                if o["status"] not in (A.OK, A.MASTER)]
         line = f"{key}: {ok}/{total} reachable"
         if gaps:
             line += " — waiting on " + ", ".join(
@@ -196,7 +226,33 @@ def main(argv=None) -> int:
                          "run on a laptop only — never on the mini.")
     ap.add_argument("--show", action="store_true",
                     help="Print the last snapshot and exit. Opens nothing.")
+    ap.add_argument("--find", metavar="TEXT",
+                    help="Search the LAST SNAPSHOT's Office Access rows for "
+                         "TEXT (owner, company or office number) and print the "
+                         "whole row, action column included. Opens nothing.")
     args = ap.parse_args(argv)
+
+    if args.find:
+        # Answers "is this office on the list at all, and under what name?" —
+        # the question a near-miss hint raises and the summary can't settle.
+        # Whole row on purpose: the action column is what separates a GRANTED
+        # office from one whose request is still sitting there (Wayne Rude's
+        # two offices, 2026-08-25).
+        state = load_state()
+        rows = state.get("offices")
+        if not rows:
+            # Older snapshots kept only the classified report. Say so instead
+            # of printing nothing and looking like "no match".
+            print("this snapshot has no raw Office Access rows — run the watch "
+                  "once more, then --find again")
+            return 0
+        needle = args.find.lower().strip()
+        hits = [r for r in rows if any(needle in (c or "").lower() for c in r)]
+        print(f"{len(hits)} row(s) matching {args.find!r} "
+              f"(snapshot {state.get('checked_at')}):")
+        for r in hits:
+            print("  " + " | ".join((c or "").strip() for c in r))
+        return 0
 
     if args.show:
         state = load_state()
@@ -229,6 +285,22 @@ def main(argv=None) -> int:
     for line in summary_lines(report):
         print("  " + line)
 
+    # The actionable half of a "not on the list": ownerville rows carrying this
+    # owner's surname. An office granted under a DIFFERENT spelling reads as no
+    # access at all, and that is the one case the ICD Aliases sheet fixes — but
+    # you cannot tell it from a missing grant unless the near-misses are
+    # printed. Wayne Rude is the case: ownerville has him as "Floyd Rude"
+    # (2026-08-25), so his granted office looked like an ungranted one.
+    hints = [(f"{key}/{o['display']}", o["near"])
+             for key, block in report.items() for o in block["owners"]
+             if o["status"] == A.MISSING and o.get("near")]
+    if hints:
+        print("\n  NOT LISTED, but ownerville has a similar name — check "
+              "whether this is an ICD Aliases row rather than a missing "
+              "grant:")
+        for who, near in hints:
+            print(f"    ? {who} -> ownerville: {', '.join(near)}")
+
     if d["gained"]:
         print("\n  NEW ACCESS since the last check:")
         for key, was, _s in d["gained"]:
@@ -237,6 +309,11 @@ def main(argv=None) -> int:
         print("\n  ACCESS LOST since the last check:")
         for key, _w, status in d["lost"]:
             print(f"    - {key}  (now: {_LABEL.get(status, status)})")
+    if d.get("moved"):
+        print("\n  moved, but still not reachable:")
+        for key, was, status in d["moved"]:
+            print(f"    ~ {key}: {_LABEL.get(was, was)} -> "
+                  f"{_LABEL.get(status, status)}")
     if d["added"]:
         print(f"\n  {len(d['added'])} owner(s) new to a roster (not an access "
               "change):")
@@ -247,7 +324,7 @@ def main(argv=None) -> int:
     if not prev:
         print("\n  (first run — recorded as the baseline, nothing announced)")
 
-    save_state(report, now)
+    save_state(report, now, data["offices"])
 
     if args.post and prev:
         text = change_text(d, report)
