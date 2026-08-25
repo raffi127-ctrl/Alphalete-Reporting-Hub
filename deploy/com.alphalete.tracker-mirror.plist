@@ -11,12 +11,12 @@
          staging on its own, this only ferries values across. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>35</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
     </array>
     <key>StandardOutPath</key><string>/tmp/com.alphalete.tracker-mirror.out</string>
     <key>StandardErrorPath</key><string>/tmp/com.alphalete.tracker-mirror.err</string>

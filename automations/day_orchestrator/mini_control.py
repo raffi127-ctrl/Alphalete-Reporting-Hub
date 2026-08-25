@@ -5112,7 +5112,7 @@ def _action_appstream_clear_session(args: str) -> tuple[bool, str]:
 
 
 def _action_install_tracker_mirror(args: str) -> tuple[bool, str]:
-    """Install the tracker-mirror agent on THIS machine (Lucy 2): ferries each
+    """Install the tracker-mirror agent on THIS machine (Lucy 1): ferries each
     manager's ad tracker values from the org tracker's authorized IMPORTRANGE
     staging tabs into Alphalete Recruiting Dashboard, every 2h through the workday.
     Idempotent; `update` must have landed the plist first."""
