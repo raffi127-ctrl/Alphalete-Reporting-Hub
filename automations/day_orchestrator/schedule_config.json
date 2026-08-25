@@ -4291,7 +4291,7 @@
    "on_scheduler": false,
    "machine": "Lucy 1",
    "_machine_note": "Moved to Lucy 1 2026-08-23 (Megan) — born on Megan's laptop during the 8/22 workbook move (the building session ran there), so it only ran while her Mac was awake. Lucy 1 because the job is Sheets-API-only (no browser) AND needs the raffi127@ Sheets identity: it reads the OLD org tracker's still-authorized MIRROR tabs and writes the Recruiting Dashboard manager tabs. Lucy 3 is alphaletereporting@ (would 403, same trap as the 8/23 brand-audit incident) and Lucy 2 is Carlos's identity. Auth is funnel_board.auth (applicant service account first, personal token fallback).",
-   "_note": "STOOD DOWN 2026-08-24 (Carlos, 5d4042b): the manager tabs are on live IMPORTRANGE again, so a ferry pass would overwrite those formulas with frozen values. The stand-down is the file automations/tracker_mirror/DISABLED \u2014 while it exists both run.py and deploy/tracker_mirror.sh refuse to run AND publish nothing to the Hub, so the card stays grey instead of falsely green. Delete it only if the live imports are torn back out. || Copies the 21 managers' ad-tracker values from the old org tracker (whose IMPORTRANGE grants survived the 8/22 tab move) into the manager tabs of the Alphalete Recruiting Dashboard. Runs every 2h 7:30 AM–5:30 PM via the standalone com.alphalete.tracker-mirror LaunchAgent (installed with install_tracker_mirror_agent). Never blanks on failure: an empty/#REF mirror keeps the previous values and is reported. Retire the whole job when all 21 managers re-Allow their IMPORTRANGEs in the new workbook. `lucy rerun tracker_mirror --dry-run` reads without writing.",
+   "_note": "STOOD DOWN 2026-08-24 (Carlos, 5d4042b): the manager tabs are on live IMPORTRANGE again, so a ferry pass would overwrite those formulas with frozen values. The stand-down is the file automations/tracker_mirror/DISABLED — while it exists both run.py and deploy/tracker_mirror.sh refuse to run AND publish nothing to the Hub, so the card stays grey instead of falsely green. Delete it only if the live imports are torn back out. || Copies the 21 managers' ad-tracker values from the old org tracker (whose IMPORTRANGE grants survived the 8/22 tab move) into the manager tabs of the Alphalete Recruiting Dashboard. Runs every 2h 7:30 AM–5:30 PM via the standalone com.alphalete.tracker-mirror LaunchAgent (installed with install_tracker_mirror_agent). Never blanks on failure: an empty/#REF mirror keeps the previous values and is reported. Retire the whole job when all 21 managers re-Allow their IMPORTRANGEs in the new workbook. `lucy rerun tracker_mirror --dry-run` reads without writing.",
    "runs_at": "7:30 AM CST (every 2h to 5:30 PM)",
    "display_name": "Tracker Mirror",
    "source_type": "api",
@@ -4313,7 +4313,7 @@
   },
   "disable_knocks_access_watch_agent": {
    "on_scheduler": true,
-   "_note": "Unload com.alphalete.knocks-access-watch and move its plist to .plist.disabled \u2014 el inverso documentado de install_knocks_access_watch_agent. Corrido 2026-08-25 cuando Eve dio de baja el chequeo de accesos. Base_args propios porque los args extra caen DESPUES de base_args, asi que pedir prestada otra entrada disable_* retira el agente equivocado. on_scheduler:true SOLO para que registry.load_config la conserve (rerun la busca ahi); cadence.weekdays [] es lo que hace que el orquestador de las 4am no la corra nunca.",
+   "_note": "Unload com.alphalete.knocks-access-watch and move its plist to .plist.disabled — el inverso documentado de install_knocks_access_watch_agent. Corrido 2026-08-25 cuando Eve dio de baja el chequeo de accesos. Base_args propios porque los args extra caen DESPUES de base_args, asi que pedir prestada otra entrada disable_* retira el agente equivocado. on_scheduler:true SOLO para que registry.load_config la conserve (rerun la busca ahi); cadence.weekdays [] es lo que hace que el orquestador de las 4am no la corra nunca.",
    "display_name": "Disable Knock Access Watch agent",
    "source_type": "local",
    "data_sources": [],
@@ -4377,7 +4377,7 @@
   },
   "install_knocks_intraday_agent": {
    "on_scheduler": true,
-   "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_intraday_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-intraday on LUCY 3 from the committed plist. It TICKS every 5 minutes (StartInterval 300) and posts whatever is due; the slot times are NOT in the plist, they live in knocks_intraday/schedule.py in each office's OWN timezone \u2014 2:00 PM + 5:15 PM for Cody's channel only, 9:00 PM for every enrolled office, Mon-Sat. One calendar fire cannot serve two zones: four offices are Eastern (aya, hammad, salik, nii), so a single 21:00 Central fire reached them at 10 PM local. REPLACES install_knocks_9pm_agent (fb1e606, installed 2026-08-25): before installing this, UNLOAD the old label com.alphalete.knocks-9pm on Lucy 3 \u2014 leaving it loaded means both agents fire and every office gets its board twice. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
+   "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_intraday_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-intraday on LUCY 3 from the committed plist. It TICKS every 5 minutes (StartInterval 300) and posts whatever is due; the slot times are NOT in the plist, they live in knocks_intraday/schedule.py in each office's OWN timezone — 2:00 PM + 5:15 PM for Cody's channel only, 9:00 PM for every enrolled office, Mon-Sat. One calendar fire cannot serve two zones: four offices are Eastern (aya, hammad, salik, nii), so a single 21:00 Central fire reached them at 10 PM local. REPLACES install_knocks_9pm_agent (fb1e606, installed 2026-08-25): before installing this, UNLOAD the old label com.alphalete.knocks-9pm on Lucy 3 — leaving it loaded means both agents fire and every office gets its board twice. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",
    "display_name": "Install: Intraday Knocks LaunchAgent (Lucy 3)",
    "command": [
     "automations.day_orchestrator.install_agent"
@@ -4399,7 +4399,7 @@
   "knocks_intraday": {
    "hand_run_only": true,
    "on_scheduler": true,
-   "_note": "Manual recovery handle for the Intraday Knock Updates boards \u2014 `lucy rerun knocks_intraday --machine \"Lucy 3\"`. NOT a scheduled report: the boards fire from com.alphalete.knocks-intraday (StartInterval 300), which asks knocks_intraday/schedule.py whether any office is due in its OWN timezone. This entry exists because the Hub card knocks-intraday carries run_rerun_id 'knocks_intraday' and there was no such id \u2014 so the card's Run-now button AND `lucy rerun` both failed with an unknown id, which is exactly the recovery path you reach for when a batch dies past its 15-minute grace window (Megan 2026-08-25). base_args --slot eod --send re-runs the 9 PM board for every office owed one; markers mean an office that already posted is skipped, so a re-run cannot double-post. For the afternoon slots pass --slot first / --slot money, and add --office <key> to scope it to one. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
+   "_note": "Manual recovery handle for the Intraday Knock Updates boards — `lucy rerun knocks_intraday --machine \"Lucy 3\"`. NOT a scheduled report: the boards fire from com.alphalete.knocks-intraday (StartInterval 300), which asks knocks_intraday/schedule.py whether any office is due in its OWN timezone. This entry exists because the Hub card knocks-intraday carries run_rerun_id 'knocks_intraday' and there was no such id — so the card's Run-now button AND `lucy rerun` both failed with an unknown id, which is exactly the recovery path you reach for when a batch dies past its 15-minute grace window (Megan 2026-08-25). base_args --slot eod --send re-runs the 9 PM board for every office owed one; markers mean an office that already posted is skipped, so a re-run cannot double-post. For the afternoon slots pass --slot first / --slot money, and add --office <key> to scope it to one. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
    "display_name": "Intraday Knock Updates — re-run a slot",
    "machine": "Lucy 3",
    "command": [
@@ -7925,6 +7925,28 @@
    "timeout_minutes": 45,
    "verify": null,
    "machine": "Lucy 2"
+  },
+  "digi_docs_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY probe for the Digi Docs build (Megan 2026-08-25): `lucy --machine 'Lucy 3' rerun digi_docs_probe` walks the OwnerVille click-path for this week's cohort WITHOUT --live, so it stops at the per-document form after verifying the required fields and submits nothing. This is how the selectors get verified -- they were transcribed from a Loom and have never met a live page. weekdays [] so the batch never auto-runs it.",
+   "machine": "Lucy 3",
+   "display_name": "Digi Docs probe (dry run)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.digi_docs.run"
+   ],
+   "base_args": [
+    "--send-only"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
   }
  },
  "read_only_standalone": {
