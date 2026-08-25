@@ -1342,6 +1342,39 @@ AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
 # re-break it.
 FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit"}
 
+# STOOD-DOWN reports: card id -> why, in one line. These are switched off on
+# purpose, so the Hub must stop counting them as due, stop advertising their
+# schedule, and never put them on the morning triage list (Megan 2026-08-25).
+#
+# It lives here rather than as a card field because a self-registered LIBRARY
+# card is a row in a Sheet, not a dict in hub_cards.py — tracker_mirror is one,
+# so there is nowhere on the card to put the flag. A hand-written card can
+# instead just set `"paused": "reason"` on itself; _paused_reason reads both.
+#
+# The stand-down that prompted this: tracker_mirror. Carlos switched it off on
+# 2026-08-24 (5d4042b) because the manager tabs went back on live IMPORTRANGE, so
+# a ferry pass would overwrite those formulas with frozen values. It is enforced
+# by a DISABLED file on Lucy 1 that makes both run.py and deploy/tracker_mirror.sh
+# refuse to run — but that file is on the RUNNER, invisible to a Hub on anyone's
+# laptop, so the card went on showing "07:30 CST" and reading as overdue for a job
+# that must not run. Running it would have been the wrong thing to do.
+PAUSED_REPORTS = {
+    "tracker_mirror": ("Stood down 2026-08-24 (Carlos, 5d4042b) — the manager "
+                       "tabs are on live IMPORTRANGE again, so a ferry pass "
+                       "would overwrite those formulas with frozen values."),
+}
+
+
+def _paused_reason(report: dict) -> str:
+    """Why this report is stood down, or '' if it is live.
+
+    Reads the card's own `paused` field first (hand-written cards) and falls
+    back to PAUSED_REPORTS (library cards, which have nowhere to carry it)."""
+    own = report.get("paused")
+    if own:
+        return own if isinstance(own, str) else "Paused."
+    return PAUSED_REPORTS.get(report.get("id") or "", "")
+
 
 def _load_library_overrides() -> dict[str, list[str]]:
     """Manual library assignments saved from the Library UI."""
@@ -1752,6 +1785,13 @@ def _next_due(report: dict, today: dt.date):
 
 def _was_due_on(report: dict, day: dt.date) -> bool:
     """Was this report scheduled to run on `day`?"""
+    # A stood-down report is never due (Megan 2026-08-25). This is the one place
+    # every "due" question funnels through — the DUE TODAY pill, the "N reports
+    # due today" counts on the Pack cards, the calendar tiles and the
+    # Needs-attention list — so pausing it here switches all of them off at once
+    # rather than leaving one surface still nagging.
+    if _paused_reason(report):
+        return False
     sched = report.get("schedule")
     if not sched:
         return False
@@ -3635,7 +3675,20 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             _appr_ready = 0 < _n_ok < _t_ok
         # "DONE TODAY" on a report that is built but NOT yet approved is the
         # exact confusion this card set out to kill — hold it until the ✅.
-        if ran_today and not _hide_sched and not (_appr and not _appr_done):
+        # PAUSED wins over every schedule pill (Megan 2026-08-25). A stood-down
+        # report is not due, not late and not failing — showing it "DUE TODAY" in
+        # red is how tracker_mirror ended up on the morning triage list looking
+        # overdue when running it would have been the WRONG thing to do (Carlos
+        # stood it down 8/24 in 5d4042b: the manager tabs are back on live
+        # IMPORTRANGE, so a ferry pass would overwrite those formulas with frozen
+        # values). The reason rides on the pill's tooltip so the card says WHY it
+        # is off without opening it.
+        _paused = _paused_reason(report)
+        if _paused:
+            _why = (_paused if isinstance(_paused, str) else "").replace('"', "'")
+            pills += (f"<span class='pill pill-paused' title=\"{_why}\">"
+                      f"⏸ PAUSED</span>")
+        elif ran_today and not _hide_sched and not (_appr and not _appr_done):
             pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
         elif is_due and not _hide_sched:
             pills += "<span class='pill pill-due'>DUE TODAY</span>"
@@ -3657,7 +3710,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 pills += "<span class='pill pill-warn'>⚠️ LAST RUN PARTIAL</span>"
         elif _card_oc["status"] == "failed":
             pills += "<span class='pill pill-warn'>❌ LAST RUN FAILED</span>"
-        if sched and not _hide_sched:
+        # The schedule-time pill is a PROMISE ("07:30 CST"). A paused report is
+        # not keeping it, so it must not make it — that pill is what put
+        # tracker_mirror in front of Megan looking overdue.
+        if sched and not _hide_sched and not _paused:
             pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
         if pills:
             st.markdown(pills, unsafe_allow_html=True)
@@ -6835,6 +6891,13 @@ st.markdown("""
     .pill-approved { background: #E6F7EC; color: #1F7A3D; border: 2px solid #1F7A3D; }
     .pill-info{ background: #E8F0FE; color: #1A4FB0; }
     .pill-warn{ background: #FFF3D6; color: #8B6914; border: 2px solid #C9A227; }
+    /* PAUSED = deliberately stood down. Slate grey, and grey is used for NOTHING
+       else on this page on purpose (Megan 2026-08-25): red/amber/green/blue/purple
+       all mean "something is happening or should have". A report that has been
+       switched off is not late, not failing and not due — it is inactive, and it
+       needs a colour that reads as OFF at a glance instead of competing with the
+       ones that need you. */
+    .pill-paused{ background: #EEF0F2; color: #5A6572; border: 2px solid #9AA3AD; }
 
     /* Red STOP REPORT button (uses :has() to target the stButton right after our anchor div) */
     div[data-testid="stVerticalBlock"]:has(> div > div > .stop-btn-anchor) .stButton > button,
@@ -7678,6 +7741,8 @@ if st.session_state.view == "home":
     for r in (AUTOMATED_REPORTS if _statuses else []):
         if not _is_due_today(r, today) or r.get("hide_schedule"):
             continue
+        if _paused_reason(r):
+            continue    # stood down on purpose — never "needs attention"
         _stt = (_statuses.get((r["id"], today)) or "").lower()
         if _stt in ("success", "running"):
             continue
