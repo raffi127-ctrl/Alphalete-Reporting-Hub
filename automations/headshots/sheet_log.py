@@ -122,6 +122,11 @@ def sections(values: list[list[str]]) -> list[dict]:
     return out
 
 
+def _name_key_of(s: str) -> str:
+    from automations.headshots.ov_upload import _name_key
+    return _name_key(s or "")
+
+
 def find_person(values: list[list[str]], name: str, *, verbose: bool = True):
     """(row, headshot_col, matched_name) for `name`, or (None, None, reason).
 
@@ -148,11 +153,17 @@ def find_person(values: list[list[str]], name: str, *, verbose: bool = True):
     cands.sort(reverse=True)
     best, row, c_head, got = cands[0]
     runner = cands[1][0] if len(cands) > 1 else 0.0
+    runner_name = cands[1][3] if len(cands) > 1 else ""
     if best < _MIN_SCORE:
         return None, None, f"no row matches (closest {got!r} at {best:.2f})"
-    if best - runner < _MIN_MARGIN:
+    # Two rows carrying the SAME name is a duplicate (a person listed in two
+    # sections of the tab), not an ambiguity — mark the topmost and move on.
+    # Only DIFFERENT near-twin names are a real "don't guess" (Ana Gonzalez
+    # vs Ana Griffin).
+    same = _name_key_of(got) == _name_key_of(runner_name)
+    if not same and best - runner < _MIN_MARGIN:
         return None, None, (f"ambiguous — {got!r} ({best:.2f}) vs "
-                            f"{cands[1][3]!r} ({runner:.2f})")
+                            f"{runner_name!r} ({runner:.2f})")
     if not c_head:
         return None, None, f"no {COL_HEADSHOT!r} column in {got!r}'s section"
     if verbose and best < 1.0:
