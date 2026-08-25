@@ -310,6 +310,75 @@ def _oneshot_utility_ids(cfg) -> set:
     return ids
 
 
+def _handrun_only_ids(cfg) -> set:
+    """Registry ids DECLARED hand-run-only (`hand_run_only: true`): a handle that
+    exists purely so a person can re-run one step of a bigger report by hand, via
+    `lucy rerun <id>`. Nothing on any clock ever fires them, so "didn't run today"
+    is meaningless for them — but the baseline is derived from the Activity log
+    alone, and a sub-step someone re-ran on two same-weekdays looks exactly like a
+    weekly report. That's how `alphalete_org_b2b` posted "didn't run today on
+    Lucy 2 · usually starts ~16:00" on 2026-08-24, off two Monday hand-reruns
+    (8/10, 8/17), when nothing was ever going to run it (Megan 2026-08-25).
+
+    WHY A DECLARATION AND NOT A GUESS (measured 2026-08-25, do not re-derive):
+
+      * The Activity log's User column cannot tell the two apart. `lucy rerun`
+        publishes through hub_publish.publish_running, which stamps "Mini (auto)"
+        — the SAME marker a 4am scheduled run gets. Of 876 Activity rows provably
+        produced by a human-queued rerun, 867 read "Mini (auto)".
+      * Subtracting hand-queued reruns (Mini Control queue) blinds real reports:
+        day-level matching dropped att-churn and owner-showdown on 6 of 21 days,
+        office-metrics and org-sales-board-slack on 5. The two logs' clocks also
+        disagree by ~2h across machines, so a time window can't be trusted either.
+      * `on_scheduler:true + cadence.weekdays []` matches 67 entries including
+        office-metrics, lucy-weather-forecast, texas_de_brazil and
+        owners-metrics-churn — all real, all running daily from their own
+        LaunchAgents. It is rejected approach #2 in a different shape.
+      * Inferring "no LaunchAgent runs this module" from deploy/*.sh gets
+        texas_de_brazil wrong: its launcher invokes `$MODULE` through a shell
+        variable, so a static parser cannot see it — and it fails SILENTLY, in
+        the direction that stops watching a live report.
+
+    So the schedule_config declares it, the same way `standalone_weekdays` and
+    `standalone_monthdays` pin the two other schedules the watcher can't read.
+
+    DELIBERATELY NARROW, two ways:
+
+      * The flag is honoured ONLY when `cadence.weekdays` is empty. A stray
+        `hand_run_only` on something the orchestrator really does fire is
+        ignored, so the flag can never silence a scheduled report.
+      * The caller applies this to the "didn't run" check ONLY. A hand-run that
+        FAILS, runs PARTIAL or hangs still alerts exactly as it does today —
+        being un-scheduled is not being un-watched.
+
+    NOT every sub-step handle qualifies. `alphalete_org_je` looks identical to
+    its _b2b / _box / _retail siblings in the config, but
+    com.alphalete.je-opt-monday-catchup.plist really does run it every Monday —
+    so it must NOT carry the flag. Check for a plist in deploy/ before adding one.
+    Matched by the same id/card-alias fan-out as _orchestrator_ids, since
+    Activity rows are written under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    ids = set()
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        if not rep_raw.get("hand_run_only"):
+            continue
+        wdays = ((rep_raw.get("cadence") or {}).get("weekdays"))
+        if not (isinstance(wdays, list) and not wdays):
+            continue   # the orchestrator CAN fire it → the flag doesn't apply
+        ids.add(rid)
+        for cand in (_HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                ids.add(cand)
+    return ids
+
+
 def _offday_standalone_ids(cfg, target_date) -> set:
     """Registry ids of STANDALONE (LaunchAgent) reports that are NOT supposed to run
     on `target_date`, per an explicit `standalone_weekdays` list (Python weekday():
@@ -608,6 +677,10 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     # folded into `skip`: it must suppress the "didn't run" guess only, never a
     # real FAILED / INCOMPLETE / STUCK on an off-day hand-rerun.
     offday = _offday_standalone_ids(cfg, target_date)
+    # Same treatment, same reason, for handles nothing on a clock ever fires:
+    # exempt from the "didn't run" GUESS only, still fully watched for a failed /
+    # partial / stuck hand-run. See _handrun_only_ids.
+    offday = offday | _handrun_only_ids(cfg)
     already = _load_alerted(day)
     ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()

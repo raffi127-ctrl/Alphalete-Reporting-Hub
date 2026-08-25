@@ -9,7 +9,8 @@ tests pin both it and the weekend false-positives it must NOT create.
 import datetime as dt
 import unittest
 
-from automations.machine_digest.run import _historical_expected, _offday_standalone_ids
+from automations.machine_digest.run import (_historical_expected, _handrun_only_ids,
+                                            _offday_standalone_ids)
 
 
 def _rows(card, days, hour=7, name=None, machine="Lucys-MacBook-Neo.local"):
@@ -211,6 +212,58 @@ class OneshotUtilityIds(unittest.TestCase):
             "box_order_log": {"command": ["automations.box_order_log.run"]},
         })
         self.assertEqual(ids, set())
+
+
+class HandRunOnlyIds(unittest.TestCase):
+    """Regression cover for 2026-08-24: `alphalete_org_b2b` — a sub-step handle
+    that exists only for `lucy rerun`, cadence.weekdays [] so the orchestrator
+    never fires it — posted "didn't run today on Lucy 2 · usually starts ~16:00"
+    off two Monday hand-reruns (8/10, 8/17). Nothing was ever going to run it."""
+
+    def _ids(self, reports):
+        return _handrun_only_ids(_Cfg(reports))
+
+    def test_declared_substep_is_exempt(self):
+        ids = self._ids({"alphalete_org_b2b": {
+            "hand_run_only": True, "cadence": {"weekdays": []}}})
+        self.assertIn("alphalete_org_b2b", ids)
+
+    def test_undeclared_substep_keeps_the_historical_guess(self):
+        """alphalete_org_je has the same config shape but a real Monday catch-up
+        agent (com.alphalete.je-opt-monday-catchup.plist), so it must NOT be
+        exempted just for looking like its siblings."""
+        ids = self._ids({"alphalete_org_je": {"cadence": {"weekdays": []}}})
+        self.assertEqual(ids, set())
+
+    def test_flag_is_ignored_when_the_orchestrator_can_fire_it(self):
+        """The narrow half of the rule: a stray hand_run_only on something with a
+        real cadence must never silence it."""
+        ids = self._ids({"daily_focus": {
+            "hand_run_only": True, "cadence": {"weekdays": [0, 1, 2, 3, 4]}}})
+        self.assertEqual(ids, set())
+
+    def test_missing_cadence_is_not_exempt(self):
+        """No cadence key at all is not the same as a declared-empty one — an
+        on_scheduler:false LaunchAgent report looks like this, and its schedule
+        lives in a plist we can't read. Bias to under-exempting."""
+        self.assertEqual(self._ids({"stf_field_check": {"hand_run_only": True}}), set())
+
+    def test_real_reports_are_never_exempt(self):
+        ids = self._ids({
+            "stf_field_check": {"cadence": {"weekdays": []}},
+            "org_board_slack": {"cadence": {"weekdays": []}},
+            "daily_focus": {"cadence": {"weekdays": [0, 1, 2, 3, 4]}},
+        })
+        self.assertEqual(ids, set())
+
+    def test_live_config_flags_exactly_the_three_substeps(self):
+        """Pins the live schedule_config: _b2b/_box/_retail carry the flag, _je
+        does not (it has a real Monday agent)."""
+        from automations.day_orchestrator import registry as _reg
+        ids = _handrun_only_ids(_reg.load_config())
+        for rid in ("alphalete_org_b2b", "alphalete_org_box", "alphalete_org_retail"):
+            self.assertIn(rid, ids)
+        self.assertNotIn("alphalete_org_je", ids)
 
 
 if __name__ == "__main__":
