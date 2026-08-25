@@ -32,6 +32,12 @@ COL_PHONE = "Phone"
 COL_FINAL_STATUS = "Final Status"
 COL_BG_STATUS = "BG Status"          # real header is "BG Status : Last Checked"
 COL_FRIDAY = "Friday Confirmation"
+# Megan added this column 2026-08-24 (col N at the time, between "Onboarding
+# Quizzes" and "Headshot Photo" -- found by LABEL, so it can move). Two states
+# live in it: a light-green background the moment we send, and the checkbox
+# ticked once Blue Ink shows the packet SIGNED. Note the space: the header
+# reads "Blue Ink", not "Blueink".
+COL_BLUEINK = "Blue Ink"
 COL_TRAINER = "Trainer"
 
 # --- Who does NOT get Blue Ink ---------------------------------------------
@@ -64,6 +70,14 @@ FINAL_STATUS_BLOCK_MARKERS = (
 # person forever. That warning is the safety net the blank-only rule used to be.
 FINAL_STATUS_KNOWN_OK = (
     "showed up to cr",
+    # All seen on 8/24 as the day progressed. Every one of these means the
+    # person is still with us -- they mark PROGRESS, not an exit -- so they
+    # must not block, and naming them here keeps the unrecognised-value warning
+    # for values that are genuinely new.
+    "activations email sent",
+    "owner submitted",
+    "needs blueink",
+    "started",
 )
 
 # BG Status values that disqualify. These are two of the ten options in the

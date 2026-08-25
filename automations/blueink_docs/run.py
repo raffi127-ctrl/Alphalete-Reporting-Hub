@@ -26,14 +26,15 @@ import argparse
 import sys
 from typing import List
 
-from automations.blueink_docs import (blueink, config, ledger, mark, recent,
-                                      slack_post,
+from automations.blueink_docs import (blueink, completed, config, ledger,
+                                      mark, recent, slack_post,
                                       recent_ui)
 from automations.blueink_docs import session as bi_session
 from automations.blueink_docs import ui_send
 from automations.blueink_docs.roster import (NewStart, current_tab,
                                              final_status_is_unrecognised,
-                                             parse_tab, unparsed_email_rows)
+                                             collapse_duplicates, parse_tab,
+                                             unparsed_email_rows)
 from automations.recruiting_report import fill
 
 
@@ -253,6 +254,13 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     return failures
 
 
+def _sync_completed(worksheet, people: List[NewStart],
+                    headless: bool = True) -> int:
+    """Tick the Blue Ink checkbox for anyone Blue Ink shows as signed."""
+    done = completed.find_completed(people, headless=headless)
+    return completed.tick(worksheet, people, done) if done else 0
+
+
 def _highlight_only(workbook, worksheet, people: List[NewStart]) -> int:
     """Back-fill the green on everyone the log says already has their docs --
     for when a batch sent fine but the tint didn't land."""
@@ -363,6 +371,9 @@ def _main(argv=None) -> int:
                          "machine and exit -- how the web-app duplicate "
                          "check gets mapped. Reads nothing else, sends "
                          "nothing, needs no API key.")
+    ap.add_argument("--sync-completed", action="store_true",
+                    help="send nothing; just tick the Blue Ink checkbox for "
+                         "anyone whose packet is now signed")
     ap.add_argument("--highlight-only", action="store_true",
                     help="send nothing; just light-green the first name of "
                          "everyone the log already shows as sent")
@@ -386,12 +397,23 @@ def _main(argv=None) -> int:
     ws = current_tab(workbook, args.tab)
     raw_values = ws.get_all_values()
     people = parse_tab(raw_values, ws.title)
+    before = len(people)
+    people = collapse_duplicates(people)
+    if before != len(people):
+        print(f"({before - len(people)} duplicate row(s) on this tab collapsed "
+              f"to the person's most complete entry.)")
     if args.only:
         want = args.only.strip().lower()
         people = [p for p in people if want in p.name.lower()]
         if not people:
             print(f"Nobody matching {args.only!r} on {ws.title!r}.")
             return 1
+
+    if args.sync_completed:
+        n = _sync_completed(ws, people, headless=not args.headed)
+        print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
+              f"on {ws.title!r}.")
+        return 0
 
     if args.highlight_only:
         return _highlight_only(workbook, ws, people)
@@ -497,8 +519,31 @@ def _main(argv=None) -> int:
             if why.startswith("same name"):
                 problems.append((pp.name, why))
 
+        # The Blue Ink column is where the green tint and the signed checkbox
+        # go. Missing means those marks can't be written -- worth saying out
+        # loud, but never a reason to withhold somebody's paperwork.
+        warnings = []
+        if any(not pp.blueink_col for pp in to_send):
+            warnings.append(
+                "No *%s* column on `%s`, so sent packets could not be marked "
+                "green or checked off. The sends themselves went out fine."
+                % (config.COL_BLUEINK, ws.title))
+
+        # Tick anyone whose packet Blue Ink now shows as SIGNED. Advisory: a
+        # failure here leaves the sheet a little stale, nothing worse.
         try:
-            slack_post.post(sent_count, problems, dry_run=not args.slack)
+            ticked = _sync_completed(ws, people)
+            if ticked:
+                print(f"Checked off {ticked} completed packet(s) in "
+                      f"{config.COL_BLUEINK!r}.")
+        except Exception as exc:
+            print(f"Couldn't refresh completed packets: {exc}")
+            warnings.append("Couldn't refresh the signed/completed checkboxes: "
+                            "%s" % str(exc)[:120])
+
+        try:
+            slack_post.post(sent_count, problems, warnings=warnings,
+                            dry_run=not args.slack)
         except Exception as exc:
             print(f"\nThe Slack summary failed ({exc}). The sends themselves "
                   "are fine and logged -- this is only the notification.")

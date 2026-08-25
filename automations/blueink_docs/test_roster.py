@@ -3,7 +3,7 @@ person: dropping a section, and mis-reading a status column.
 
     python -m pytest automations/blueink_docs/test_roster.py -q
 """
-from automations.blueink_docs.roster import (NewStart,
+from automations.blueink_docs.roster import (NewStart, collapse_duplicates,
                                              final_status_is_unrecognised,
                                              normalize_phone, parse_tab,
                                              _tab_date)
@@ -146,3 +146,23 @@ def test_tab_date_parsing():
     assert _tab_date("D2D OBCL 8.24").day == 24
     assert _tab_date("D2D OBCL 12.8.25").year == 2025
     assert _tab_date("D2D OBCL") is None
+
+
+def test_duplicate_rows_collapse_to_the_complete_one():
+    # The tab repeated 25 names as bare stubs on 2026-08-24. Without this the
+    # stub reports as "no usable email" and fills the Slack summary with false
+    # alarms.
+    full = _row("Cale", "Mckenna", "cale@x.com", final="Showed Up To CR")
+    stub = ["", "", "", "Cale", "Mckenna", "", "", "", "", "", "", "", "", ""]
+    people = parse_tab(_tab([full, stub]), "t")
+    assert len(people) == 2                      # both parsed...
+    kept = collapse_duplicates(people)
+    assert len(kept) == 1                        # ...one survives
+    assert kept[0].email == "cale@x.com"
+    assert kept[0].eligible
+
+
+def test_collapse_keeps_everyone_distinct():
+    people = parse_tab(_tab([_row("A", "One", "a@x.com"),
+                             _row("B", "Two", "b@x.com")]), "t")
+    assert len(collapse_duplicates(people)) == 2

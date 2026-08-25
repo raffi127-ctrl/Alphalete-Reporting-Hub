@@ -48,12 +48,13 @@ def _mentions() -> str:
     return " ".join("<@%s>" % uid for uid in TAG_USER_IDS)
 
 
-def build_thread(sent: int, problems: List[Tuple[str, str]]) -> str:
+def build_thread(sent: int, problems: List[Tuple[str, str]],
+                 warnings: List[str] = None) -> str:
     """The reply body. `problems` is [(person name, why)]."""
     lines = ["*%d* new start%s sent" % (sent, "" if sent == 1 else "s")]
     if not problems:
         lines.append("*0* failed to send")
-        return "\n".join(lines)
+        return "\n".join(lines + _warn_lines(warnings))
 
     lines.append("*%d* failed to send" % len(problems))
     lines.append("")
@@ -65,13 +66,20 @@ def build_thread(sent: int, problems: List[Tuple[str, str]]) -> str:
     tags = _mentions()
     if tags:
         lines += ["", "%s — these need to be sent manually." % tags]
-    return "\n".join(lines)
+    return "\n".join(lines + _warn_lines(warnings))
+
+
+def _warn_lines(warnings) -> list:
+    """Things that didn't stop the send but somebody should know about."""
+    if not warnings:
+        return []
+    return ["", *[":warning: " + w for w in warnings]]
 
 
 def post(sent: int, problems: List[Tuple[str, str]], *,
-         dry_run: bool = True) -> None:
+         warnings: List[str] = None, dry_run: bool = True) -> None:
     """Header to the channel, detail in its thread."""
-    body = build_thread(sent, problems)
+    body = build_thread(sent, problems, warnings)
     if dry_run:
         print("\n--- Slack (dry run, NOT posted) -> %s ---" % CHANNEL)
         print(HEADER)

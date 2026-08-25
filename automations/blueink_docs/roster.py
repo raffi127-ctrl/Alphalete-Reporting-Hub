@@ -37,6 +37,8 @@ class NewStart:
     row: int                      # 1-indexed, for citing the exact cell
     section: int                  # 1-indexed section within the tab
     first_col: int = 0            # 1-indexed column the first name sits in
+    blueink_col: int = 0          # 1-indexed "Blue Ink" column
+    blueink_val: str = ""         # what's in it now ("TRUE"/"FALSE"/"")
     skip_reason: str = ""         # "" means eligible
 
     @property
@@ -148,6 +150,7 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
                 "final": _col(header, config.COL_FINAL_STATUS),
                 "bg": _col(header, config.COL_BG_STATUS),
                 "friday": _col(header, config.COL_FRIDAY),
+                "blueink": _col(header, config.COL_BLUEINK),
                 "trainer": _col(header, config.COL_TRAINER),
             }
             # "Name" also matches "Last Name"; if they landed on the same
@@ -174,6 +177,9 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
             trainer=_cell(row, cols["trainer"]),
             tab=tab_name, row=i + 1, section=section,
             first_col=(cols["first"] or 0) + 1,
+            blueink_col=((cols["blueink"] + 1) if cols["blueink"] is not None
+                         else 0),
+            blueink_val=_cell(row, cols["blueink"]),
             skip_reason=_skip_reason(final_status, bg_status, friday, email)))
     return out
 
@@ -257,3 +263,30 @@ def unparsed_email_rows(values: List[List[str]],
                 out.append((i, cell, label[:60]))
                 break
     return out
+
+
+def collapse_duplicates(people: List[NewStart]) -> List[NewStart]:
+    """One entry per person, keeping their most complete row.
+
+    The tab lists the same person more than once: on 2026-08-24 rows 81-105
+    repeated 25 names already listed above, with no email and no statuses --
+    a partial block someone was part-way through building. Left alone those
+    stubs report as "no usable email" and would fill the Slack summary with 25
+    false alarms every run.
+
+    Preference order: a row with a usable email beats one without; then a row
+    carrying a Final Status; then the one nearer the top. Ordering is otherwise
+    preserved so the printed list still reads down the tab.
+    """
+    def rank(p: NewStart) -> tuple:
+        return (0 if _EMAIL_RE.match((p.email or "").strip()) else 1,
+                0 if (p.final_status or "").strip() else 1,
+                p.row)
+
+    best: dict = {}
+    for person in people:
+        keep = best.get(person.key)
+        if keep is None or rank(person) < rank(keep):
+            best[person.key] = person
+    kept = set(id(v) for v in best.values())
+    return [p for p in people if id(p) in kept]

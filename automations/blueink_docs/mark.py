@@ -1,4 +1,9 @@
-"""Tint a sent person's first name light green on the OBCL tab.
+"""Tint a sent person's "Blue Ink" cell light green on the OBCL tab.
+
+Megan moved this off the first name on 2026-08-24, when she added a dedicated
+"Blue Ink" column: green there means "we sent it", and the checkbox in the same
+cell gets ticked separately once Blue Ink shows the packet signed. So the one
+cell carries both halves of the story -- sent, and done.
 
 This is the one place we write into the recruiting team's own tab, and it only
 ever sets a BACKGROUND COLOR -- the cell's text is never touched, so a name we
@@ -19,10 +24,15 @@ LIGHT_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 
 
 def highlight(worksheet, people: List[NewStart]) -> int:
-    """Light-green the first-name cell of everyone in `people`. Returns the
+    """Light-green the "Blue Ink" cell of everyone in `people`. Returns the
     number of cells tinted. Best-effort: a formatting failure must never make a
     send that already went out look like it didn't."""
-    cells = [p for p in people if p.row and p.first_col]
+    cells = [p for p in people if p.row and p.blueink_col]
+    missing = [p for p in people if p.row and not p.blueink_col]
+    if missing:
+        print("     (no %r column on this tab -- %d send(s) not tinted)"
+              % (__import__("automations.blueink_docs.config",
+                            fromlist=["config"]).COL_BLUEINK, len(missing)))
     if not cells:
         return 0
     sheet_id = worksheet.id
@@ -31,7 +41,8 @@ def highlight(worksheet, people: List[NewStart]) -> int:
             "range": {
                 "sheetId": sheet_id,
                 "startRowIndex": p.row - 1, "endRowIndex": p.row,
-                "startColumnIndex": p.first_col - 1, "endColumnIndex": p.first_col,
+                "startColumnIndex": p.blueink_col - 1,
+                "endColumnIndex": p.blueink_col,
             },
             "cell": {"userEnteredFormat": {"backgroundColor": LIGHT_GREEN}},
             "fields": "userEnteredFormat.backgroundColor",
