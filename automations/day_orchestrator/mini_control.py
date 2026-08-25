@@ -1660,17 +1660,36 @@ def _action_sheets_whoami(args: str) -> tuple[bool, str]:
         ("orgboard", "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"),
         ("fibercap", "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8"),
     ]
+    opened, denied = [], []
     for name, key in boards:
         try:
-            out.append(f"  {name:7} OPEN OK — {gc.open_by_key(key).title!r}")
+            gc.open_by_key(key)
+            opened.append(name)
         except Exception as e:  # noqa: BLE001
             cause = getattr(e, "__cause__", None)
             resp = getattr(cause, "response", None)
             code = getattr(resp, "status_code", None)
-            body = (getattr(resp, "text", "") or "")[:300].replace("\n", " ")
-            out.append(f"  {name:7} {type(e).__name__} http={code} {body}")
+            body = (getattr(resp, "text", "") or "")[:160].replace("\n", " ")
+            denied.append(f"  {name:8} {type(e).__name__} http={code} {body}")
+
+    # DENIALS FIRST, AND THEY ARE THE EXIT CODE (2026-08-25). Two things were
+    # wrong here. The Mini Control Result cell truncates at 480 chars (_set), and
+    # this probe printed one verbose line per board — so with six boards the tail
+    # was cut off mid-word, and a 403 on the LAST board was simply invisible.
+    # Worse, it returned True unconditionally, so the row rendered "✓ done"
+    # whatever the boards said. An access probe whose answer can be silently
+    # truncated away, and which reports success either way, is one you cannot use
+    # to clear a machine move — which is exactly what it was being used for.
+    # Denials now go at the TOP in full, the boards that opened collapse to one
+    # line, and a denial fails the row.
+    if denied:
+        out.append(f"DENIED {len(denied)} of {len(boards)} — this identity is "
+                   f"not on {'them' if len(denied) > 1 else 'it'}:")
+        out.extend(denied)
+    out.append("open OK ({}/{}): {}".format(
+        len(opened), len(boards), ", ".join(opened) or "none"))
     out.append("READ-ONLY probe — nothing was written or posted.")
-    return True, "\n".join(out)
+    return not denied, "\n".join(out)
 
 
 def _action_slack_whoami(args: str) -> tuple[bool, str]:
