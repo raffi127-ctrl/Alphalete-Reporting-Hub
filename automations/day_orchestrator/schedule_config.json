@@ -4257,6 +4257,31 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "knocks_intraday": {
+   "hand_run_only": true,
+   "on_scheduler": true,
+   "_note": "Manual recovery handle for the Intraday Knock Updates boards \u2014 `lucy rerun knocks_intraday --machine \"Lucy 3\"`. NOT a scheduled report: the boards fire from com.alphalete.knocks-intraday (StartInterval 300), which asks knocks_intraday/schedule.py whether any office is due in its OWN timezone. This entry exists because the Hub card knocks-intraday carries run_rerun_id 'knocks_intraday' and there was no such id \u2014 so the card's Run-now button AND `lucy rerun` both failed with an unknown id, which is exactly the recovery path you reach for when a batch dies past its 15-minute grace window (Megan 2026-08-25). base_args --slot eod --send re-runs the 9 PM board for every office owed one; markers mean an office that already posted is skipped, so a re-run cannot double-post. For the afternoon slots pass --slot first / --slot money, and add --office <key> to scope it to one. cadence.weekdays [] so the 4am orchestrator never fires it; hand_run_only so the didn't-run watcher does not invent a schedule from it.",
+   "display_name": "Intraday Knock Updates — re-run a slot",
+   "machine": "Lucy 3",
+   "command": [
+    "automations.knocks_intraday.run"
+   ],
+   "base_args": [
+    "--slot",
+    "eod",
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 30,
+   "verify": null
+  },
   "install_tracker_mirror_agent": {
    "on_scheduler": true,
    "_note": "NOT a report — installs the tracker-mirror LaunchAgent on THIS machine, run via `lucy rerun install_tracker_mirror_agent` (same pattern as install_brand_audit_agent). Bootstraps com.alphalete.tracker-mirror from the committed plist (every-2h 7:30–17:30 schedule). Covered by the nightly schedule guard once loaded. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs.",

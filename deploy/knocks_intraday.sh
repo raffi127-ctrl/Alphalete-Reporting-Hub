@@ -34,14 +34,40 @@ rc=$?; echo "[$(date)] knocks-intraday END rc=$rc" >> "$LOG"
 # Did this pass actually do anything? The run prints a "<slot>: posted=" line
 # only when a slot fired. A quiet tick leaves the card exactly as it was.
 WORKED=0
-grep -q "posted=" "$LOG" 2>/dev/null && \
-  tail -40 "$LOG" | grep -q "posted=" && WORKED=1
+SLOT=""
+# The run prints "[knocks] <slot>: posted=N skipped=N failed=N" once per slot
+# that fired, and nothing of the sort on a quiet tick. Take the LAST such line
+# in this pass's tail: that is the slot this tick actually worked.
+SLOT_LINE=$(tail -40 "$LOG" 2>/dev/null | grep -oE '\[knocks\] (first|money|eod): (DRY-RUN )?posted=' | tail -1)
+if [ -n "$SLOT_LINE" ]; then
+    WORKED=1
+    SLOT=$(printf '%s' "$SLOT_LINE" | sed -E 's/^\[knocks\] ([a-z]+):.*$/\1/')
+fi
+
+# EACH SLOT IS ITS OWN PHASE ON THE HUB CARD (Megan 2026-08-25: "this should
+# also be a phase card - changing color on each pass"). The card counts DISTINCT
+# REPORT NAMES (phase_runs), so the name has to say WHICH slot this was — the
+# old single 'Intraday Knocks' made all four ticks one name and the pill could
+# never pass 1/3.
+#
+# THREE phases, not four: the 9 PM slot fires as TWO ticks, 21:00 Eastern
+# (=20:00 Central) then 21:00 Central, and those are the same phase reaching two
+# timezones — not two phases. Naming them alike is what makes the pill immune to
+# that split, and to a re-run of any one slot: a repeated phase counts once.
+case "$SLOT" in
+    first) PHASE="Intraday Knocks — First Knocks (2 PM)" ;;
+    money) PHASE="Intraday Knocks — Money Lap (5:15 PM)" ;;
+    eod)   PHASE="Intraday Knocks — End of Day (9 PM)" ;;
+    *)     PHASE="Intraday Knocks" ;;
+esac
 
 if [ "$PUBLISH" -eq 1 ] && [ "$WORKED" -eq 1 ]; then
     "$VENV_PY" -c "
+import sys
 from automations.day_orchestrator import hub_publish
-rid = hub_publish.publish_running('knocks_intraday', 'Intraday Knocks')
-hub_publish.publish_done('knocks_intraday', 'Intraday Knocks', status=('success' if $rc == 0 else 'failed'), run_id=rid or None)
-" >> "$LOG" 2>&1
+phase = sys.argv[1]
+rid = hub_publish.publish_running('knocks_intraday', phase)
+hub_publish.publish_done('knocks_intraday', phase, status=('success' if $rc == 0 else 'failed'), run_id=rid or None)
+" "$PHASE" >> "$LOG" 2>&1
 fi
 exit $rc

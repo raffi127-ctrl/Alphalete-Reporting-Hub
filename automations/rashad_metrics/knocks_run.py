@@ -25,9 +25,9 @@ CLI:
               METRICS_CHANNEL_ID set by the parent runner)
   date        optional YYYY-MM-DD positional (default: yesterday, Central)
 
-No-data days post an explicit 'No data available' one-liner per metric (same
-as Raf's), so the absence is visible and the parent reactions still mark both
-metrics done.
+No-data days post ONE explicit 'No data available' one-liner (same as Raf's), so
+the absence is visible. It was one per metric until 2026-08-25, when the
+combined board absorbed the gap columns and a data day stopped sending a pair.
 
 Standalone preview (no Sheet, no Slack):
     python -m automations.rashad_metrics.knocks_run --dry-run

@@ -551,22 +551,21 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 3",
         "run_rerun_id": "knocks_intraday",
         "self_scheduled": True,
-        # Three slots, each in the OFFICE's own clock — so there is no single
-        # wall-clock time to show. daily_runs must match the PUBLISHING TICKS a
-        # day actually fires, not the number of slots: the wrapper publishes once
-        # per tick that did work (WORKED=1), and a tick serves every office whose
-        # own clock is due right now. The org spans TWO zones, so the 9 PM slot is
-        # two ticks, not one:
-        #   2:00 PM Central  — Cody only (Corpus Christi)
-        #   5:15 PM Central  — Cody only
-        #   9:00 PM Eastern  = 20:00 Central — aya, hammad, salik, nii
-        #   9:00 PM Central  = 21:00 Central — the seven Texas offices
-        # = 4 publishing ticks on a normal Mon-Sat day. Counting slots (3) greens
-        # the pill one tick early, before the Central offices have posted.
-        # If every office ever lands in one zone this drops back to 3; if a third
-        # zone is onboarded it becomes 5. Sunday fires nothing (WORKING_WEEKDAYS
-        # is Mon-Sat), and a day with no due work publishes nothing at all.
-        "daily_runs": 4,
+        # A PHASE CARD: each slot is its own phase, and the pill advances as
+        # each one lands (Megan 2026-08-25: "this should also be a phase card -
+        # changing color on each pass"). phase_runs counts DISTINCT Report
+        # NAMES, and deploy/knocks_intraday.sh names every publish after the
+        # slot that fired ("… — First Knocks (2 PM)" / "— Money Lap (5:15 PM)" /
+        # "— End of Day (9 PM)").
+        #
+        # THREE, NOT FOUR. The 9 PM slot fires as TWO ticks — 21:00 Eastern
+        # (=20:00 Central) for aya/hammad/salik/nii, then 21:00 Central for the
+        # rest — but that is ONE phase reaching two timezones. Both ticks publish
+        # the same name, so they count once. That is also what makes the count
+        # immune to a re-run of any single slot, and to the org ever collapsing
+        # into one timezone (a plain pass-counter would have needed 4, then 3).
+        "daily_runs": 3,
+        "phase_runs": True,
         "schedule": {
             "frequency": "daily",
             "time": "9:00 PM",

@@ -132,12 +132,17 @@ class RashadsBoard(unittest.TestCase):
     def test_a_failed_pull_posts_nothing_at_all(self):
         self.assertEqual(self._run(FAILED)[1], [])
 
-    def test_a_verified_empty_day_posts_both_no_data_lines(self):
-        """This board posts two metrics (Total Knocks + Time Gaps), so a quiet
-        day owes the thread one line each."""
+    def test_a_verified_empty_day_posts_one_no_data_line(self):
+        """ONE line, not one per metric. This asserted two until 2026-08-25,
+        from when every office posted a Total Knocks image AND a Time Gaps
+        image. The combined board absorbed the gap columns (1714f12), so a data
+        day sends one board — and two no-data lines then said the same thing
+        twice and implied a second board that was never coming. The code moved
+        with that (knocks_run: "ONE 'No data available' line, not one per
+        board"); this test did not, and sat red on main."""
         code, posts = self._run([])
         self.assertEqual(code, 0)
-        self.assertEqual(len(posts), 2)
+        self.assertEqual(len(posts), 1)
         for text in posts:
             self.assertIn("No data available", text)
 
@@ -153,7 +158,7 @@ class RashadsBoard(unittest.TestCase):
                            "post_reply_text_only", posted):
             code = knocks_run.run(DAY, office_name="Rashad Wright")
         self.assertEqual(code, 0)          # our own pull was fine (verified empty)
-        self.assertEqual(len(posted.calls), 2)
+        self.assertEqual(len(posted.calls), 1)   # one no-data line — see above
 
     def test_this_offices_failure_inside_a_shared_session_still_fails(self):
         """The mirror of the above: when the FIRST entry (this office) carries
