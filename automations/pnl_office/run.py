@@ -1,15 +1,23 @@
 """PNL for the Office — weekly Slack post (Item 3 of the VA-Slack replacements).
 
-Screenshots the 4-row office P&L summary (Total Loss - Reps / Total Loss - Other
-/ Total Profit / Gross Profit) for a given week-ending from the `Raf PNL 2026`
-tab, as an exact-sheet PNG, and posts it to Slack as Lucy.
+Screenshots the office P&L summary (Total Loss - Reps / Total Profit / Gross
+Profit) for a given week-ending from the `Raf PNL 2026` tab, as an exact-sheet
+PNG, and posts it to Slack as Lucy.
 
 Source: 'All in One Local Office - Raf' workbook -> tab 'Raf PNL 2026'.
   - Row 1 has WE headers every 3 cols: "WE 7/12" at the group's first column;
     the group is Brought In | Got Paid | Profit/Loss.
   - The office summary sits in the group's 2nd col (labels) + 3rd col (values):
-    e.g. WE 7/12 header CJ1 -> labels CK317:CK320, values CL317:CL320.
-  Columns/rows are found by DATE header + row LABEL, never hardcoded.
+    e.g. WE 8/16 header CY1 -> labels CZ356:CZ365, values DA356:DA365.
+  Columns/rows are found by DATE header + row LABEL, never hardcoded. The tab's
+  gid is looked up by title too — it changed once already and the hardcoded one
+  made the PDF export 400.
+  - The cost breakdown between "Total Loss - Reps" and "Total Profit" (Admin
+    Support / Chef / Food Cost / ... / Total Investments) is a COLLAPSED row
+    group in the Sheet. Google's PDF export honors that, so the exported range
+    renders only the 3 visible rows — the same block Raf sees on screen. If
+    someone expands the group, the PNG grows those rows back; that's the Sheet
+    talking, not a bug here.
 
 Schedule: LIVE — Fridays 10:00am CST on the mini, retrying q25m until
 the target week's column is filled.
@@ -40,7 +48,6 @@ from automations.shared import sheets_export as _sx
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 TAB = "Raf PNL 2026"
-GID = 1537448816
 HEADER_ROW = 1
 TOP_LABEL = "Total Loss - Reps"     # first row of the office summary block
 BOT_LABEL = "Gross Profit"          # last row of the office summary block
@@ -62,6 +69,28 @@ def _token() -> str:
     creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
     creds.refresh(_GARequest())
     return creds.token
+
+
+def _sheet_meta(token: str):
+    """(gid, {hidden 1-based rows}) for TAB, straight from the Sheets API.
+
+    The gid is NOT hardcoded: the tab was re-created at least once and the old
+    gid made `export?format=pdf` answer 400. Hidden rows come from the same call
+    so the console preview + the filled-gate see exactly what the PNG shows.
+    """
+    url = (f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
+           f"?includeGridData=true&ranges={requests.utils.quote(TAB)}!A1:A600"
+           f"&fields=sheets(properties(sheetId,title),data(rowMetadata(hiddenByUser,hiddenByFilter)))")
+    r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+    r.raise_for_status()
+    for sh in r.json().get("sheets", []):
+        if sh["properties"]["title"] != TAB:
+            continue
+        meta = (sh.get("data") or [{}])[0].get("rowMetadata") or []
+        hidden = {i for i, m in enumerate(meta, start=1)
+                  if m.get("hiddenByUser") or m.get("hiddenByFilter")}
+        return sh["properties"]["sheetId"], hidden
+    raise SystemExit(f"tab {TAB!r} not found in the workbook")
 
 
 def _cell(vals, r, c) -> str:
@@ -122,17 +151,18 @@ def _money(s: str) -> float:
         return 0.0
 
 
-def is_filled(vals, value_col: int, top: int, bot: int) -> bool:
-    """Filled = at least one of the 4 summary values is non-zero (a fresh week
-    reads blank / $0.00 until the VA enters it)."""
-    return any(_money(_cell(vals, r, value_col)) != 0.0 for r in range(top, bot + 1))
+def is_filled(vals, value_col: int, rows) -> bool:
+    """Filled = at least one of the summary values on screen is non-zero (a fresh
+    week reads blank / $0.00 until the VA enters it). Only the VISIBLE rows count
+    — the collapsed cost breakdown can carry leftovers from a formula."""
+    return any(_money(_cell(vals, r, value_col)) != 0.0 for r in rows)
 
 
-def export_png(rng: str, out_path: Path, token: str) -> Path:
+def export_png(rng: str, out_path: Path, token: str, gid: int) -> Path:
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
     base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
-            f"&gid={GID}&range={rng}&gridlines=false&sheetnames=false"
+            f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
             f"&printtitle=false&pagenumbers=false&fzr=false"
             f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
 
@@ -208,7 +238,7 @@ def post_to_slack(png: Path, caption: str, filename: str, dry_run: bool) -> list
     return results
 
 
-def build(today: dt.date, override: str | None):
+def build(today: dt.date, override: str | None, token: str):
     ws = open_by_key(SHEET_ID).worksheet(TAB)
     vals = ws.get_all_values()
     cols = we_columns(vals, today.year)
@@ -216,11 +246,14 @@ def build(today: dt.date, override: str | None):
         raise SystemExit("no WE headers found in row 1")
     header_col, we_date, we_label = pick_target(cols, today, override)
     rng, label_col, value_col, top, bot = summary_range(vals, header_col)
-    filled = is_filled(vals, value_col, top, bot)
-    preview = [(_cell(vals, r, label_col), _cell(vals, r, value_col)) for r in range(top, bot + 1)]
+    gid, hidden = _sheet_meta(token)
+    # What the PNG will actually show: the block minus the collapsed rows.
+    shown = [r for r in range(top, bot + 1) if r not in hidden]
+    filled = is_filled(vals, value_col, shown)
+    preview = [(_cell(vals, r, label_col), _cell(vals, r, value_col)) for r in shown]
     return {
-        "we_label": we_label, "we_date": we_date, "range": rng,
-        "filled": filled, "preview": preview,
+        "we_label": we_label, "we_date": we_date, "range": rng, "gid": gid,
+        "filled": filled, "preview": preview, "hidden_in_block": sorted(hidden & set(range(top, bot + 1))),
     }
 
 
@@ -233,15 +266,18 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    info = build(today, args.we)
+    token = _token()
+    info = build(today, args.we, token)
     tag = info["we_label"].replace("WE ", "").replace("/", ".")
     caption = f"PNL for the Office WE {tag}"
-    print(f"target: {info['we_label']}  (range {info['range']})  filled={info['filled']}")
+    print(f"target: {info['we_label']}  (range {info['range']}, gid {info['gid']})  filled={info['filled']}")
     for lbl, val in info["preview"]:
         print(f"    {lbl:20} {val}")
+    if info["hidden_in_block"]:
+        print(f"    (collapsed in the Sheet, not in the PNG: rows {info['hidden_in_block']})")
 
     out = args.out or (OUT_DIR / f"{caption}.png")
-    export_png(info["range"], out, _token())
+    export_png(info["range"], out, token, info["gid"])
     print(f"wrote {out}")
 
     # Gate: never post an unfilled week — the scheduler re-fires every 25 min.
