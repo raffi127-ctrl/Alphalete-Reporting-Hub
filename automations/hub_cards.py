@@ -520,12 +520,15 @@ AUTOMATED_REPORTS = [
     # forced BRIGHT YELLOW (temp) via the calstat CSS override below (search
     # 'owner-showdown__calstat'); it still turns GREEN when the day's run
     # succeeds. Fills the KTS tab; Sunday digest emails Raf only.
-    # 9 PM knock board — its own LaunchAgent (com.alphalete.knocks-9pm) at
-    # 21:00, NOT the 4am batch, so self_scheduled puts it under ⏰ TIME SET
-    # REPORTS with its real time on the pill (Megan 2026-08-25).
+    # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
+    # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
+    # ⏰ TIME SET REPORTS with its real times on the pill (Megan 2026-08-25).
+    # CARD ID MUST SLUG-MATCH the wrapper's report_id (`knocks_intraday`), or
+    # the resolver files its runs under a library card of its own and this card
+    # says "no run logged" forever — see day_orchestrator.test_hub_card_ids.
     {
-        "id": "knocks-9pm",
-        "name": "Knocks 9 PM 🚪",
+        "id": "knocks-intraday",
+        "name": "Intraday Knocks 🚪",
         "creator": "Raf & Claude",
         "emoji": "🚪",
         # The knocks amber, same as the board it posts.
@@ -539,52 +542,69 @@ AUTOMATED_REPORTS = [
         # (superseded 2026-08-24: ownerville sessions parallelise).
         "assignees": ["Lucy 3"],
         "run_machine": "Lucy 3",
-        "run_rerun_id": "knocks_9pm",
+        "run_rerun_id": "knocks_intraday",
         "self_scheduled": True,
+        # Three slots, each in the OFFICE's own clock — so there is no single
+        # wall-clock time to show. daily_runs must match the slots the day
+        # actually fires or the phase pill never completes.
+        "daily_runs": 3,
         "schedule": {
             "frequency": "daily",
             "time": "9:00 PM",
-            "time_label": "9 PM CST",
+            "time_label": "2 PM · 5:15 PM · 9 PM office-local",
             "estimated_minutes": 12,
         },
         "description": (
-            "Every D2D-metrics office's knock board for the CURRENT day, "
-            "posted to its own channel at 9 PM CST — the day's full breakdown "
-            "to read at night. The morning board still re-pulls the same day "
-            "from scratch, because reps keep knocking after 9."
+            "Knock boards for the CURRENT day, posted to each office's own "
+            "channel at its OWN local 2 PM, 5:15 PM and 9 PM. Every office "
+            "gets the 9 PM board; the two afternoon slots are Cody's only. "
+            "The morning board still re-pulls the same day from scratch, "
+            "because reps keep knocking after 9."
         ),
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** At **9 PM Central** pulls each enrolled office's **current "
-            "day** from Ownerville (Disposition by Rep + Time Tracker) and "
-            "posts the same amber **Total Knocks** board the morning thread "
-            "uses — one image per office, in that office's own channel.\n"
-            "**•** **One clock for everyone** — 9 PM Central, not each "
-            "office's local 9 PM. Local times would need a timezone per "
-            "office, which nothing in the Hub stores yet.\n"
-            "**•** Header is the owner's **first name + date** (8/25) — the "
-            "channel already says whose office it is.\n"
+            "**•** Ticks every 5 minutes and asks which offices are owed a "
+            "board **right now in their own timezone** — most ticks do nothing "
+            "at all and open no browser.\n"
+            "**•** A due office gets its **current day** pulled from "
+            "Ownerville and posted as the same amber **Total Knocks** board "
+            "the morning thread uses, in that office's own channel.\n\n"
+            "THE THREE SLOTS (office-local, Mon–Sat)\n"
+            "**•** **2:00 PM — First Knocks** and **5:15 PM — Money Lap**: "
+            "**Cody's office only** (he asked for these two).\n"
+            "**•** **9:00 PM — End of Day**: **every enrolled office**, each "
+            "at its own 9 PM. Four offices are Eastern, so the 9 PM run rolls "
+            "across the timezones over about an hour rather than firing once.\n"
+            "**•** A slot missed by more than 15 minutes is **skipped, not "
+            "posted late** — a 2 PM board landing at 6 PM is worse than none.\n\n"
+            "WHAT KEEPS IT HONEST\n"
             "**•** **Tonight's pull is never reused tomorrow.** It writes only "
             "to `output/knocks_intraday/`, never the caches the morning board "
             "reads, so the morning re-collects the day and picks up every "
             "knock that landed after 9.\n"
+            "**•** Each board is stamped in the office's **own** abbreviation "
+            "(CST / EST) — a Michigan board reading 9 PM CST would be an hour "
+            "off its own evening.\n"
             "**•** **Never posts blank** — an office with no rows is skipped "
             "and named in the log, never posted as an empty board.\n"
-            "**•** One office failing (or one channel refusing an image) does "
+            "**•** One office failing, or one channel refusing an image, does "
             "not stop the others.\n\n"
             "WHO GETS IT\n"
-            "**•** Everyone enrolled in **D2D metrics** — the same roster the "
-            "metrics threads use, so enrolling an office enrolls it here too.\n"
+            "**•** Everyone enrolled in **D2D metrics**, so enrolling an "
+            "office enrols it here too.\n"
             "**•** **Isaiah is excluded** (wireless-only: his gaps-only rows "
-            "still render as 'no rows'). The reason prints in the log every "
-            "night so the exclusion can't quietly outlive the bug.\n"
+            "still render as 'no rows'). The reason prints in the log nightly "
+            "so the exclusion can't quietly outlive the bug.\n"
+            "**•** **Hammad and Salik post two separate boards** into the "
+            "channel they share — deliberate: each owner is measured on his "
+            "own reps, so the totals on each are per owner.\n"
             "**•** **Trang** posts with her own FRESH SUCCESS workspace token; "
-            "if that token file isn't on the machine she's skipped rather than "
+            "if that file isn't on the machine she's skipped rather than "
             "posted with Lucy's."
         ),
         "post_run": {
-            "message_success": "✅ Knocks 9 PM — every enrolled office posted.",
-            "message_failed": "❌ Knocks 9 PM failed — see the log above.",
+            "message_success": "✅ Intraday Knocks — every due office posted.",
+            "message_failed": "❌ Intraday Knocks failed — see the log above.",
         },
     },
     {
