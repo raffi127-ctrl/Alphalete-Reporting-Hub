@@ -214,6 +214,57 @@ def _expand(modal, label: str, page, *, reveals: str = "",
                   f"what it could not find)")
 
 
+def _choose_bundle_type(tab, label: str, *, verbose: bool = True) -> None:
+    """Select the Bundle Type radio.
+
+    Prefer the INPUT associated with the label over the label's text: clicking
+    text can land on a node that isn't wired to the control, leaving the radio
+    unset — and then `Generate Bundle` reveals nothing and step 2 gets blamed
+    for step 1's failure.
+    """
+    for attempt in (
+            lambda: tab.get_by_role("radio", name=label, exact=False),
+            lambda: tab.locator("label", has_text=label).locator(
+                "input[type='radio']"),
+            lambda: tab.locator("label", has_text=label),
+            lambda: tab.get_by_text(label, exact=False)):
+        try:
+            loc = attempt().first
+            loc.wait_for(state="visible", timeout=6000)
+            loc.click(timeout=6000)
+            return
+        except Exception:
+            continue
+    raise Refused(f"couldn't select bundle type {label!r}")
+
+
+def _bundle_dropdown(tab, *, timeout: int = 20000):
+    """The Select Bundle control, whatever shape it renders as, or None.
+
+    Tried in order: the placeholder text from Megan's screenshot, a visible
+    <select>, an ARIA combobox. Logging what IS present on failure is the point
+    — a bare 'waiting for -Select a Bundle-' says nothing about why.
+    """
+    shapes = ("text=-Select a Bundle-", "select:visible", "[role='combobox']")
+    per = max(3000, timeout // len(shapes))
+    for sel in shapes:
+        try:
+            loc = tab.locator(sel).first
+            loc.wait_for(state="visible", timeout=per)
+            return loc
+        except Exception:
+            continue
+    try:
+        print("    (no bundle dropdown. Visible controls: "
+              + ", ".join(
+                  t.strip()[:40] for t in
+                  tab.locator("select:visible, [role='combobox'], "
+                              "button:visible").all_inner_texts()[:8]) + ")")
+    except Exception:
+        pass
+    return None
+
+
 def _pick_typeahead(tab, wanted: str, *, expect_single: bool) -> None:
     """Select Bundle. A typeahead, not a <select> — select_option never touches
     it, so: click it open, type, then click the option.
@@ -274,14 +325,19 @@ def generate_bundle(tab, name: str, *, dry_run: bool = True,
 
     Only that last click sends anything, and it cannot be undone.
     """
-    # 1. Bundle Type. Same for every new start right now; a wireless or retail
-    #    office will want a different one, which is why it is a constant.
-    tab.get_by_text(config.BUNDLE_TYPE, exact=False).first.click(timeout=20000)
+    # 1. Bundle Type. It is a RADIO, so click the input rather than the text —
+    #    a text click lands on the label's text node and can leave the radio
+    #    unset, which then makes step 2 look like the broken one.
+    _choose_bundle_type(tab, config.BUNDLE_TYPE, verbose=verbose)
 
     # 2. Reveals the bundle dropdown — it does NOT generate anything.
     _click_any(tab, "Generate Bundle", page=tab)
-    tab.locator("text=-Select a Bundle-").first.wait_for(
-        state="visible", timeout=20000)
+    if not _bundle_dropdown(tab, timeout=20000):
+        raise Refused(
+            f"{name}: 'Generate Bundle' revealed no bundle dropdown. Either the "
+            f"bundle type {config.BUNDLE_TYPE!r} never got selected, or the "
+            "dropdown renders differently than expected — the run log above "
+            "lists what IS on the page.")
 
     # 3. Reveals the commission checkboxes.
     _pick_typeahead(tab, config.BUNDLE,
