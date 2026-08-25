@@ -3279,6 +3279,7 @@
    "verify": null
   },
   "knocks_access_watch": {
+   "_disabled_note": "APAGADO 2026-08-25 por pedido de Eve: \"cancela el chequeo para ver nuevas oficinas\". El watcher hizo su trabajo (clasifico los 13 huecos: 12 pedidos sin otorgar + Christian Esposito que no existe) y a partir de aca lo unico que falta es que alguien apruebe las requests, cosa que no depende de nosotros. Los reportes NO dependen de esto: cuando una oficina se otorga, la impersonacion deja de fallar y ese ICD entra solo al correo de su capitan en el build siguiente. Se deja la entrada, no se borra, porque `lucy rerun knocks_access_watch` y `--find <owner|empresa|numero>` siguen sirviendo a mano. Para volver a prenderlo: cadence.weekdays [0..6] + `lucy rerun install_knocks_access_watch_agent`.",
    "order": 36.15,
    "_order_note": "36.15 = immediately BEFORE captainship_knocks (36.2). The knock capture is what a newly-granted office actually changes, so reading the Office Access list right in front of it means the day's log says how many ICDs were reachable for THIS build, not for yesterday's. It is a ~1 minute read and it holds nothing up.",
    "on_scheduler": true,
@@ -3291,15 +3292,7 @@
     "--post"
    ],
    "cadence": {
-    "weekdays": [
-     0,
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ]
+    "weekdays": []
    },
    "data_sources": [],
    "depends_on": [],
@@ -4248,6 +4241,27 @@
     "type": "not_configured"
    },
    "timeout_minutes": 15
+  },
+  "disable_knocks_access_watch_agent": {
+   "on_scheduler": true,
+   "_note": "Unload com.alphalete.knocks-access-watch and move its plist to .plist.disabled \u2014 el inverso documentado de install_knocks_access_watch_agent. Corrido 2026-08-25 cuando Eve dio de baja el chequeo de accesos. Base_args propios porque los args extra caen DESPUES de base_args, asi que pedir prestada otra entrada disable_* retira el agente equivocado. on_scheduler:true SOLO para que registry.load_config la conserve (rerun la busca ahi); cadence.weekdays [] es lo que hace que el orquestador de las 4am no la corra nunca.",
+   "display_name": "Disable Knock Access Watch agent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "knocks-access-watch"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 5,
+   "verify": null
   },
   "disable_knocks_9pm_agent": {
    "on_scheduler": true,
