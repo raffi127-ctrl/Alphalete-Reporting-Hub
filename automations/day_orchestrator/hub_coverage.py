@@ -332,7 +332,9 @@ def ensure_library_card(report_id: str, report_name: str, *,
                         emoji: Optional[str] = None,
                         description: Optional[str] = None,
                         schedule_ov: Optional[dict] = None,
-                        machine_ov: Optional[str] = None) -> Tuple[bool, str]:
+                        machine_ov: Optional[str] = None,
+                        breakdown: Optional[str] = None,
+                        args_ov: Optional[List[str]] = None) -> Tuple[bool, str]:
     """Create a Report Library card for a report that has none. Idempotent —
     keyed by the underscore report_id, so a second call updates in place, never
     dupes. Auto-created cards carry a delegating launcher script (so they render
@@ -369,6 +371,11 @@ def ensure_library_card(report_id: str, report_name: str, *,
         name = name or report_id.replace("_", " ").title()
     if machine_ov:
         machine = machine_ov
+    if args_ov is not None:
+        # A standalone launchd job has no schedule_config row to read base_args
+        # from, so the caller hands them over — that's what turns the card's Run
+        # button from the "no manual module was found" stub into the real pull.
+        base_args = list(args_ov)
     script = _launcher_script(cid, real_module, base_args)
     schedule = schedule_ov or _schedule_meta(weekdays, est)
     # Section placement on the schedule page: a card with its OWN fixed clock time
@@ -393,6 +400,13 @@ def ensure_library_card(report_id: str, report_name: str, *,
         "schedule": schedule,         # calendar days + time chip
         "self_scheduled": is_timed,   # ⏰ Time Set (fixed clock) vs ☀️ Morning Batch
     }
+    # The detail page's "How <report> works" panel reads `breakdown`; without one
+    # it says "No write-up for this report yet", which is what every auto-carded
+    # job used to show (Megan 2026-08-26: "there's nothing on the hub card for
+    # what it does"). Typing it into the Sheet by hand does not stick — every
+    # sync rewrites the row — so curated copy lives in code, in _AGENT_CARD_COPY.
+    if breakdown:
+        meta["breakdown"] = breakdown.strip()
     if dry_run:
         return True, "DRY-RUN: would create library card %r (%s)" % (cid, name)
     try:
@@ -654,6 +668,17 @@ def sync_agents(dry_run: bool = True) -> List[str]:
     return msgs
 
 
+def _clock12(hour: int, minute: int) -> str:
+    """14:30 -> '2:30 PM' — the format every hand-built card uses, and the one
+    the tile renders as "· 2:30 PM CST". The chip prints schedule['time'] RAW,
+    so a 24-hour string went out as "Board Catchup · 14:30 CST" — correct, and
+    the only card on the Hub that talks like that (Megan 2026-08-26).
+    Hand-built, not strftime: '%-I' is a glibc extension that raises on Windows,
+    and these cards render on the team's Windows boxes too."""
+    ampm = "AM" if hour < 12 else "PM"
+    return "%d:%02d %s" % (hour % 12 or 12, minute, ampm)
+
+
 def _plist_schedule(plist_path: Path) -> Optional[dict]:
     """Parse a plist's StartCalendarInterval into a card schedule (fixed clock →
     a card that lands in ⏰ Time Set). None for interval/continuous jobs (no
@@ -672,7 +697,7 @@ def _plist_schedule(plist_path: Path) -> Optional[dict]:
     wds = sorted({_pywd(e["Weekday"]) for e in cal if "Weekday" in e})
     doms = sorted({int(e["Day"]) for e in cal if "Day" in e})
     e0 = min(cal, key=lambda e: (e.get("Hour", 0), e.get("Minute", 0)))
-    t = "%02d:%02d" % (e0.get("Hour", 0), e0.get("Minute", 0))
+    t = _clock12(e0.get("Hour", 0), e0.get("Minute", 0))
     if doms:
         # Day-of-month job (e.g. dd-gross-revenue, 1st + 15th at noon). Before
         # this branch existed the card was saved as DAILY, so 🚨 Needs attention
@@ -682,6 +707,83 @@ def _plist_schedule(plist_path: Path) -> Optional[dict]:
     if wds and len(wds) < 7:
         sc["weekdays"] = wds
     return sc
+
+
+def _auto_library_ids() -> set:
+    """Library-Sheet card ids that THIS module created (Created By 'Auto …').
+    Rewriting one of those is safe; rewriting a card a person built is not."""
+    try:
+        recs = _library_ws().get_all_records()
+    except Exception:
+        return set()
+    return {str(r.get("ID", "")).strip() for r in recs
+            if str(r.get("Created By", "")).startswith("Auto")}
+
+
+# CURATED COPY for standalone launchd jobs that only ever get an auto-card.
+# sync_launchd_system REWRITES these rows every time it runs, so anything typed
+# into the library Sheet by hand is erased on the next pass — the name, the
+# write-up and the Run-button wiring have to live in code to survive. Keyed by
+# the plist label (com.alphalete.<key>.plist). Every field is optional.
+#   name / emoji  -> the tile
+#   description   -> the one-liner under the title
+#   breakdown     -> the "How <report> works" panel (ALL-CAPS section headers)
+#   module + args -> what ▶ Run Report actually runs (else it's a print stub)
+#   minutes       -> the "~N min" chip
+_AGENT_CARD_COPY: Dict[str, dict] = {
+    "board-catchup": {
+        "name": "Org Sales Board — Afternoon Catch-Up",
+        "emoji": "🔁",
+        "description": (
+            "Re-pulls the Org Sales Board sections whose sources publish a day "
+            "behind, so yesterday's numbers land the same day instead of "
+            "waiting for tomorrow's 4am fill. Data only — it posts nothing."),
+        "module": "automations.org_sales_board.run",
+        # The Tue–Sun shape: the four late-posting sections, no captainships, no
+        # manifest (a top-up must never give the DAY's verdict and flip the
+        # board's card orange — see the long note in deploy/board_catchup.sh).
+        # Safe to press any day: idempotent, label-anchored, never writes 0/blank.
+        "args": ["--step", "daily", "--skip-compare", "--no-manifest",
+                 "--sections", "Retail NL,Retail Internet,Retail JE,BOX"],
+        "minutes": 10,
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Re-pulls four sections of the Alphalete Org Sales Board — Retail "
+            "NL, Retail Internet (SARA), Retail JE (Just Energy) and BOX — for "
+            "the current reporting week, then lets the board's own formulas "
+            "recalculate the totals and leaderboards.\n\n"
+            "WHY IT EXISTS\n"
+            "Those four sources publish about a DAY BEHIND: at the 4am fill "
+            "yesterday isn't in them yet, so the pull leaves the cell blank "
+            "(it never writes a fake 0). Just Energy lands ~1:53pm and "
+            "SARA/Retail ~2pm, so this run picks them up the same afternoon "
+            "instead of the board carrying yesterday's gap all day.\n\n"
+            "WHEN IT RUNS\n"
+            "Every day at 2:30pm CST on the mini (Lucy 1), on its own timer — "
+            "not part of the 4am flow. MONDAY is the big one: it runs a FULL "
+            "fill with captainships and re-fills the All Campaigns board, "
+            "because Monday is the last pass before Tuesday's rollover freezes "
+            "the closed week. If Monday's run fails it posts to "
+            "#claudecorrections-and-requests; Tue–Sun a miss just costs a day "
+            "and the next morning's fill re-pulls it anyway.\n\n"
+            "IT POSTS NOTHING\n"
+            "No Slack post, no review link, no re-cut PDF, no email — since "
+            "2026-08-17 this is a pure data refresh. The approvers get one "
+            "link a day at 7:00am and nothing moves under them after they've "
+            "read it.\n\n"
+            "WHAT ▶ RUN REPORT DOES\n"
+            "The same four-section top-up the 2:30pm job does Tue–Sun (no "
+            "captainships, no manifest, no posting). Safe to press any time — "
+            "it's idempotent and it never overwrites a filled cell with a "
+            "blank. It does NOT reproduce Monday's full fill; for that, re-run "
+            "the Org Sales Board card itself.\n\n"
+            "WHERE IT LIVES\n"
+            "deploy/board_catchup.sh, scheduled by "
+            "com.alphalete.board-catchup.plist (the time knob is that plist's "
+            "Hour/Minute). Logs: output/logs/board-catchup-<date>-<time>.log — "
+            "NOT the orchestrator's org_sales_board log."),
+    },
+}
 
 
 def sync_launchd_system(dry_run: bool = True) -> List[str]:
@@ -698,13 +800,24 @@ def sync_launchd_system(dry_run: bool = True) -> List[str]:
     for plist in sorted(DEPLOY_DIR.glob("com.alphalete.*.plist")):
         name = plist.name[len("com.alphalete."):-len(".plist")]
         rid, _why = _agent_report_id(name)
-        # covered by a real report card (hardcoded / curated / slug / library)?
-        if rid and resolve_card(rid, create=False, _existing=existing):
-            continue
         cid = name.replace("-", "_")
+        # CURATED COPY IS CODE-OWNED — checked BEFORE every skip below, including
+        # the "already covered" one. board_catchup.sh now publishes to its own
+        # card, so _agent_report_id resolves it and this loop would walk straight
+        # past the row it is supposed to keep in sync.
+        _curated_copy = name in _AGENT_CARD_COPY and cid in _auto_library_ids()
+        # covered by a real report card (hardcoded / curated / slug / library)?
+        if not _curated_copy and rid and resolve_card(
+                rid, create=False, _existing=existing):
+            continue
+        # Curated rows are REFRESHED, not skipped (see above). This branch used
+        # to be create-only: it walked past every card that already existed, so
+        # editing _AGENT_CARD_COPY (or the time format) changed nothing on the
+        # Hub until someone deleted the row by hand. Only auto-registered
+        # library rows qualify — a human-curated card is never rewritten here.
         # would this dupe an existing card, a hardcoded slug, or a curated target?
-        if (cid in existing or slug(cid) in existing or cid in curated
-                or cid in CURATED_ALIAS):
+        if not _curated_copy and (cid in existing or slug(cid) in existing
+                                  or cid in curated or cid in CURATED_ALIAS):
             continue
         # DECLARED NOT-A-REPORT — honour it here too, or deleting the row does
         # not stick. _NOT_A_REPORT promises "a plain row-delete STICKS", and for
@@ -729,11 +842,19 @@ def sync_launchd_system(dry_run: bool = True) -> List[str]:
             continue
         sched = _plist_schedule(plist)
         cat, emoji = "🗂 Auto-registered", "🗂"
+        copy = _AGENT_CARD_COPY.get(name, {})
+        if sched and copy.get("minutes"):
+            sched = dict(sched, estimated_minutes=copy["minutes"])
         ok, msg = ensure_library_card(
-            cid, name.replace("-", " ").title(), category=cat, emoji=emoji,
+            cid, copy.get("name") or name.replace("-", " ").title(),
+            category=cat, emoji=copy.get("emoji") or emoji,
             schedule_ov=sched,
-            description="Scheduled launchd job (%s). Auto-carded so no automation "
+            description=copy.get("description") or
+                        "Scheduled launchd job (%s). Auto-carded so no automation "
                         "runs invisibly." % name,
+            breakdown=copy.get("breakdown"),
+            module=copy.get("module"),
+            args_ov=copy.get("args"),
             dry_run=dry_run)
         msgs.append(("  ✓ " if ok else "  ✗ ") + name + ": " + msg)
     return msgs

@@ -107,6 +107,34 @@ except Exception as e:
 }
 if [ "$#" -eq 0 ]; then CATCHUP_DRY=0; else CATCHUP_DRY=1; fi
 
+# TELL THE HUB THIS RAN. The card ('board_catchup', ⏰ Time Set 2:30 PM) is
+# auto-registered off this plist, but nothing here ever published to it — so a
+# perfect run and a silent miss looked identical, and Needs-attention read
+# "scheduled, no run logged" every single day (the standing rule: a LaunchAgent
+# report publishes to the Hub). This is the card's OWN row, separate from the
+# org-sales-board manifest the Monday branch writes — Tue-Sun deliberately runs
+# --no-manifest so a top-up never gives the board's verdict.
+# Best-effort, never fails the run; skipped entirely on a --dry-run rehearsal.
+CATCHUP_CARD="board_catchup"
+CATCHUP_NAME="Org Sales Board — Afternoon Catch-Up"
+catchup_publish () {
+  [ "$CATCHUP_DRY" = "0" ] || return 0
+  "$VENV_PY" -c "
+from automations.day_orchestrator import hub_publish
+import sys
+if sys.argv[1] == 'running':
+    hub_publish.publish_running(sys.argv[2], sys.argv[3])
+else:
+    # alert_on_fail=False ON PURPOSE: this job's alerting policy is MONDAY-ONLY
+    # (catchup_alert above) — Tue-Sun a missed top-up costs one day and the next
+    # morning's fill re-pulls it. The card still goes red, which is the honest
+    # picture; the channel just doesn't get paged for it.
+    hub_publish.publish_done(sys.argv[2], sys.argv[3], sys.argv[1],
+                             alert_on_fail=False)
+" "$1" "$CATCHUP_CARD" "$CATCHUP_NAME" >> "$LOG_FILE" 2>&1 || true
+}
+catchup_publish running
+
 # Fill ONLY the late-posting sections on the copy tab (comma-separated; run.py
 # splits on ','). No --with-captainships. Any extra arg (e.g. --dry-run) wins.
 if [ "$(date +%u)" = "1" ]; then
@@ -212,6 +240,7 @@ else
 fi
 
 echo "[$(date)] Board catch-up finished exit=$ST" >> "$LOG_FILE"
+if [ "$ST" -eq 0 ]; then catchup_publish success; else catchup_publish failed; fi
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Board catch-up failed (exit $ST) — check the log; a source view may have rolled or the login expired\" with title \"Board catch-up\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
