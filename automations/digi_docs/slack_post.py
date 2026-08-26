@@ -102,6 +102,43 @@ def clear_reported() -> None:
         pass
 
 
+def _alerted_today_path() -> str:
+    import datetime as _dt
+    return f"output/logs/.digi-docs-alerted-{_dt.date.today().isoformat()}.json"
+
+
+def _already_alerted(line: str) -> bool:
+    """Have we already said this today?
+
+    THE SEND PASS IS A TICK NOW. It fires every five minutes all Monday, and a
+    failure that persists -- a rep OwnerVille cannot find, a blank Start Time --
+    is still true on the next tick and the next. Without this, one such person
+    would ping Alisson, Tiff and Aimee roughly 150 times before lunch, and the
+    third time is already the point where people mute the channel.
+
+    Keyed on the whole line, so the SAME problem stays quiet while a new one
+    still gets through immediately.
+    """
+    import json
+    import os
+    path = _alerted_today_path()
+    try:
+        with open(path) as fh:
+            seen = set(json.load(fh))
+    except Exception:                                       # noqa: BLE001
+        seen = set()
+    if line in seen:
+        return True
+    seen.add(line)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(sorted(seen), fh)
+    except Exception:                                       # noqa: BLE001
+        pass       # a dedupe we cannot persist must not stop the alert
+    return False
+
+
 def alert_failure(line: str, *, dry_run: bool = True) -> bool:
     """One failure, posted the MOMENT it happens (Megan 2026-08-26: "if
     anything fails it needs to alert right away").
@@ -115,6 +152,9 @@ def alert_failure(line: str, *, dry_run: bool = True) -> bool:
     repeating them — the same failure twice in one channel is how a channel
     stops being read.
     """
+    if not dry_run and _already_alerted(line):
+        print(f"  (already alerted today, not repeating: {line[:60]})")
+        return False
     body = f"*Digi Docs — could not send* {_tags()}\n• {line}"
     if dry_run:
         print(f"\n--- Slack ALERT (dry run, NOT posted) -> {CHANNEL} ---")
