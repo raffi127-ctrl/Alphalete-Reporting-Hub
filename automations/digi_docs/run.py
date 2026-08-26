@@ -188,8 +188,7 @@ def _phases(args) -> int:
     # never silently dropped either -- they go in refused, so the channel names
     # them and a person can put a time in the cell.
     for c in no_time:
-        refused.append(f"{c.name}: no readable Start Time "
-                       f"({c.start_time!r}) — nobody knows when this is due")
+        refused.append(f"{c.name}: no readable Start Time ({c.start_time!r})")
     # `fatal` is what makes the WORST case the loudest one. Everything below
     # already survives one rep failing, but a session that won't open, or a
     # browser that dies mid-batch, threw straight past the Slack post — so the
