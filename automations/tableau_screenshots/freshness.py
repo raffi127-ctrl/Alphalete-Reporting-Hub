@@ -310,7 +310,15 @@ def parse_last_update(text: str, field: str) -> Optional[dt.date]:
 # Two observations of the same day's total, this far apart, both equal = the day
 # has stopped loading. Shorter and a slow trickle reads as "settled" between two
 # samples; much longer and nothing posts before mid-morning.
-STABILITY_GAP_MIN = 20
+#
+# 10, not 20 (Megan 2026-08-26). The cost of this gap is paid EVERY day, not just
+# a bad one: the trackers run first in the orchestrator's order, so the first
+# sample is the run's own, and the boards cannot post until a second one lands.
+# 20 pushed a normal 4:11 thread to ~4:30. The failure this gate exists to catch
+# was not a marginal one — NDS was still growing HOURS later (744 at 04:11,
+# 1,075 at 10:30) — so 10 minutes discriminates just as well at half the delay.
+# Raise it again only if something is seen trickling in under 10-minute steps.
+STABILITY_GAP_MIN = 10
 
 # Per-day totals seen so far today: {"date": iso, "obs": {extract: [[ts, total]]}}
 STABILITY_FILE = OUT_DIR / "_stability.json"

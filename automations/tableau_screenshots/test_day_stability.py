@@ -176,6 +176,24 @@ class StableTotalVerdictTest(unittest.TestCase):
         self.assertIn("first sample", why)
 
 
+class StabilityGapTest(unittest.TestCase):
+    """The gap is paid EVERY morning, not just a bad one.
+
+    The trackers run first in the orchestrator's order, so the first sample is
+    the run's own and no board can post until a second one lands. At 20 minutes
+    a perfectly normal 4:11 thread slipped to ~4:30 daily. Megan chose 10: the
+    failure this gate catches was NDS still growing hours later (744 -> 1,075),
+    which 10 minutes separates just as cleanly at half the cost."""
+
+    def test_the_gap_is_short_enough_not_to_tax_a_good_morning(self):
+        self.assertLessEqual(fr.STABILITY_GAP_MIN, 15,
+                             "a longer gap delays every normal day's boards")
+
+    def test_the_gap_is_long_enough_to_mean_something(self):
+        """Two readings seconds apart prove nothing about a load in progress."""
+        self.assertGreaterEqual(fr.STABILITY_GAP_MIN, 5)
+
+
 class WiredUpTest(unittest.TestCase):
 
     def test_the_three_growing_families_use_stability(self):
