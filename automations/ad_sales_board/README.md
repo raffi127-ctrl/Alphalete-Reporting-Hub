@@ -12,10 +12,13 @@ names, Account/City and the week's name list ride alongside.
   mirror: row 1 dark control strip (**B1 manager**, **D1 Org/Captainship**),
   row 2 navy AD SALES BOARD banner, row 3 blue WE strip (**B3 week picker**
   in the cream cell + computed week label), row 4 navy bordered header
-  `# | AD | Pull | Names | Wed..Tue | Account | City | Names (week)` with real
-  dates, rows 5+ the bordered grid spilled by one FILTER at B5. TOTAL row
-  grey; amber row = names that matched no ad. Day headers compute their dates
-  from the picked week via the data tab's AB1 helper.
+  `# | AD | Pull | Names | Wed..Tue | Account | City` with real dates, rows 5+
+  the bordered grid spilled by one FILTER at B5 — everything centered, banner
+  merged across the board. The week name LIST is deliberately not shown
+  (Carlos 2026-08-26: "i dont need all the names on the right") — it stays on
+  the data tab, col J. TOTAL row grey; amber row = names that matched no ad.
+  Day headers compute their dates from the picked week via the data tab's AB1
+  helper.
 * Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
   A..R: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
   # Names, Names, Week Start (ISO — the freeze/sort key), then L..R = names
