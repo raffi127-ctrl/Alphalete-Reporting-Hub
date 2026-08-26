@@ -57,7 +57,8 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
                    ok: Optional[bool] = None, succeeded: List[str] = (),
                    run_ts: Optional[_dt.datetime] = None,
                    alert: bool = True,
-                   alert_after: Optional[str] = None) -> Path:
+                   alert_after: Optional[str] = None,
+                   dry_run: bool = False) -> Path:
     """Record this run's outcome for `report_id`:
       - `failed` + `retry_args`: the parts that failed and the CLI args that
         re-run ONLY those (powers the Hub's 'Retry failed only' button).
@@ -123,17 +124,23 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
             # them to: _KINDS falls back to 'section' for anything it doesn't
             # recognise, so every existing caller reads exactly as before.
             _sda.alert(report_id=report_id, failed=failed,
-                       remediation=remediation, note=note, kind=kind)
+                       remediation=remediation, note=note, kind=kind,
+                       dry_run=dry_run)
         except Exception:  # noqa: BLE001 — the alarm must never break the writer
             pass
     # The mirror image: a run with nothing failed CLOSES whatever alert thread
     # this report left open, with a "resolved" note in that same thread (Eve
     # 2026-08-14). Costs a local index read when there's nothing open, which is
     # the normal case. Seed writes (alert=False) and tests (run_ts) stay silent.
+    #
+    # dry_run stays silent too (Megan 2026-08-26). This function had no dry_run
+    # at all, so a REHEARSAL that wrote a manifest posted a live "RESOLVED — it
+    # just ran clean" into a real incident thread and closed a ticket nobody had
+    # fixed. A dry run may write its manifest; it may not speak in the channel.
     elif not failed and run_ts is None and alert and ok is not False:
         try:
             from automations.shared import section_drop_alert as _sda
-            _sda.resolved(report_id)
+            _sda.resolved(report_id, dry_run=dry_run)
         except Exception:  # noqa: BLE001
             pass
     return p

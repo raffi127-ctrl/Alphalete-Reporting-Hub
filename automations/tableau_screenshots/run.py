@@ -995,14 +995,15 @@ def main(argv=None) -> int:
         run_manifest.write_manifest(
             report_id, ok=False, failed=[], kind="tracker", retry_args=[],
             note="nothing sent — %d board(s) still behind: %s"
-                 % (len(still_behind), ", ".join(still_behind)))
+                 % (len(still_behind), ", ".join(still_behind)),
+            dry_run=args.dry_run)
         return 0
 
     if not captures:
         run_manifest.write_manifest(
             report_id, ok=False, failed=failed, kind="tracker",
             retry_args=["--only", ",".join(failed)] if failed else [],
-            note="no trackers captured")
+            note="no trackers captured", dry_run=args.dry_run)
         print("\n❌ Captured nothing. See errors above.", flush=True)
         return 1
 
@@ -1024,7 +1025,8 @@ def main(argv=None) -> int:
                   f"nothing posted to the channels.", flush=True)
         run_manifest.write_manifest(
             report_id, ok=bool(not failed), failed=failed, kind="tracker",
-            note="preview-dm run" + (f"; {len(failed)} failed" if failed else ""))
+            note="preview-dm run" + (f"; {len(failed)} failed" if failed else ""),
+            dry_run=args.dry_run)
         return 1 if failed else 0
 
     # Post into each org's own dated thread — ONE capture feeds them all. An org
@@ -1048,7 +1050,8 @@ def main(argv=None) -> int:
         run_manifest.write_manifest(
             report_id, ok=bool(not failed), failed=failed, kind="tracker",
             note="dry run" + (f"; {len(held)} board(s) held for a stale extract: "
-                              f"{', '.join(held)}" if held else ""))
+                              f"{', '.join(held)}" if held else ""),
+            dry_run=True)
         return 1 if failed else 0
 
     posted_ok, posted_bad, status_rows = [], [], []
@@ -1292,7 +1295,7 @@ def main(argv=None) -> int:
         # RECEIVED the boards, and one that was owed nothing didn't.
         succeeded=[sp.ORG_LABEL[o] for o in posted_ok if o not in noop_orgs],
         retry_args=retry_args,
-        note=note)
+        note=note, dry_run=args.dry_run)
 
     # Carlos 2026-08-09: mirror the B2B AT&T / B2B Box boards to their iMessage
     # groups, right after they land in Slack. Off unless --text-trackers is passed.
