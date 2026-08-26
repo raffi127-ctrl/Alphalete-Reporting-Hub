@@ -331,7 +331,7 @@ def probe(*, headless: bool = True, log=print) -> Dict:
             # because "the hub 404s" and "this account has no reporting module"
             # look identical from the hub's side and need opposite fixes.
             links = page.evaluate(
-                """() => Array.from(document.querySelectorAll('a[href]'))
+                r"""() => Array.from(document.querySelectorAll('a[href]'))
                        .map(a => ((a.textContent || '').trim().replace(/\s+/g, ' ')
                                   + ' -> ' + a.getAttribute('href')))
                        .filter(t => /\.aspx/i.test(t))""")
