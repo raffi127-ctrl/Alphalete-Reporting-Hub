@@ -30,6 +30,27 @@
 # those, not here. The 30-minute lead is config.SEND_LEAD_MINUTES.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+
+# THE DAY GATE COMES FIRST, before anything starts an interpreter.
+#
+# The send tick fires every 5 minutes so that "30 minutes before" is accurate
+# to within five, and it only means anything on start day in office hours.
+# Gating LATER in the script still works, but the venv probe below runs
+# `python -c "import patchright"` up to three times and proc_guard starts
+# another — so a gate placed after them spends four interpreter starts every
+# five minutes, all week, on the same machine the headshots tick already runs
+# on. Roughly two thousand of those a week to discover it is Tuesday.
+#
+# `date +%u`: 1 = Monday. Pure shell, no Python, no Sheet read.
+for _a in "$@"; do
+    if [ "$_a" = "--send-tick" ]; then
+        _DOW="$(date +%u)"
+        _HR="$(date +%H)"
+        if [ "$_DOW" != "1" ] || [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
+            exit 0
+        fi
+    fi
+done
 mkdir -p output/logs
 LOG_DIR="output/logs"
 
@@ -80,17 +101,6 @@ for _a in "$@"; do
 done
 MODE="$PHASE $LIVE"
 
-# The send tick fires every 5 minutes so that "30 minutes before" is accurate to
-# within five. That only makes sense on start day, and only in office hours —
-# without this gate it would read the Sheet ~2000 times a week to discover
-# there is nobody due. Bail before Python, not after.
-if [ "$PHASE" = "--send-only --due-now" ]; then
-    _DOW="$(date +%u)"   # 1 = Monday
-    _HR="$(date +%H)"
-    if [ "$_DOW" != "1" ] || [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
-        exit 0
-    fi
-fi
 
 LOG_FILE="$LOG_DIR/digi-docs-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Digi Docs starting (mode: $MODE, extra args: ${FWD[*]:-none})" > "$LOG_FILE"
