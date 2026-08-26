@@ -149,6 +149,43 @@ def week_title(day: dt.date) -> str:
     return f"{TITLE_PREFIX} {s.month}.{s.day}"
 
 
+# SLACK GIVES THE TEXT BACK IN A DIFFERENT ALPHABET THAN WE SENT IT. A message
+# posted with '⚠ Kaleb — …' comes back from conversations_replies as
+# ':warning: Kaleb — …': Slack rewrites a unicode emoji into its shortcode when
+# it stores the message. Every test this module makes against a message's OWN
+# text — is this a flag line, whose name is it, has it been marked already —
+# compared the shortcode form against the character form and therefore matched
+# NOTHING (found 2026-08-26: Kaleb Muvunyi's flag had been re-posted four times
+# because already_flagged never recognised the three already there, and the ✅ /
+# 🔵 on it could never be read back at all).
+#
+# So: everything read OUT of Slack goes through _plain() first, and only the
+# emoji this module itself writes are listed — a general emoji table would be a
+# second thing to keep in sync with Slack.
+SHORTCODES = {
+    ":warning:": "⚠",
+    ":white_check_mark:": "✅",
+    ":large_blue_circle:": "🔵",
+    ":heavy_check_mark:": "✅",
+    ":ballot_box_with_check:": "✅",
+}
+
+
+def _plain(text: str) -> str:
+    """A message's text with the shortcodes Slack substituted turned back into
+    the characters we wrote, so the constants above can be matched literally."""
+    out = text or ""
+    for code, char in SHORTCODES.items():
+        out = out.replace(code, char)
+    return out
+
+
+def _is_flag(line: str) -> bool:
+    """Is this the first line of a flag message? One helper, so the poster, the
+    duplicate check and the reaction reader can never disagree."""
+    return _plain(line).strip().startswith(FLAG)
+
+
 def _first_line(text: str) -> str:
     """The message's title line, with Slack's bold markers AND any leading
     emoji stripped.
@@ -201,7 +238,7 @@ def _flag_name(line: str) -> str:
     """The folded name out of a '⚠ <name> — <reason>' line. One helper so the
     already-posted check and the ✅ reader can never disagree about which text
     is the name — they read the same lines."""
-    return norm_name(line.lstrip(FLAG).split("—")[0])
+    return norm_name(_plain(line).lstrip(FLAG).split("—")[0])
 
 
 def render_check(c: Check) -> str:
@@ -266,7 +303,7 @@ def already_posted(client, thread_ts: str, channel: str = CHANNEL) -> set:
     for msg in resp.get("messages", []):
         for line in (msg.get("text") or "").splitlines():
             line = line.strip()
-            if line.startswith(BULLET):
+            if _plain(line).startswith(BULLET):
                 out.add(norm_name(line.lstrip(BULLET).split("—")[0]))
     return out
 
@@ -295,7 +332,7 @@ def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
     out = set()
     for msg in resp.get("messages", []):
         lines = (msg.get("text") or "").strip().splitlines()
-        if lines and lines[0].strip().startswith(FLAG):
+        if lines and _is_flag(lines[0]):
             out.add(_flag_name(lines[0].strip()))
     return out
 
@@ -360,7 +397,7 @@ def confirmations(checks: list[Check], day: dt.date, *, channel: str = CHANNEL,
                                                 limit=200)
             for msg in resp.get("messages", []):
                 first = (msg.get("text") or "").strip().splitlines()
-                if not first or not first[0].strip().startswith(FLAG):
+                if not first or not _is_flag(first[0]):
                     continue
                 who = _approver_of(msg)
                 if not who:
@@ -400,7 +437,7 @@ def mark_confirmed(confirmed: dict, *, channel: str = CHANNEL,
         ffp = info.get("kind") == "ffp"
         mark = FFP_MARK if ffp else FILED_MARK
         text = msg.get("text") or ""
-        if FILED_MARK in text or FFP_MARK in text:
+        if FILED_MARK in _plain(text) or FFP_MARK in _plain(text):
             continue
         if c.proposed is None:
             note = (f"\n{mark} by {info['by']} — already on the tracker"
