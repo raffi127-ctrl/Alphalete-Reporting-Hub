@@ -134,8 +134,11 @@ def _phases(args) -> int:
                 tab = None
                 try:
                     modal, matched = ov.open_set_status(page, c.name)
-                    if not ov.docs_still_owed(modal):
-                        print(f"  · {c.name}: already has documents")
+                    state = ov.docs_row_state(modal)
+                    if state != ov.config.DOCS_NEEDED_STATE:
+                        print(f"  · {c.name}: skipped — Onboarding Documents "
+                              f"is {state or 'unreadable'}, not "
+                              f"{ov.config.DOCS_NEEDED_STATE}")
                         continue
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)

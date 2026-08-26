@@ -190,7 +190,18 @@ def docs_still_owed(modal) -> bool:
     only generate for reps we believe still need it, a "won't allow" means our
     picture is wrong and is worth saying out loud.
     """
-    return _row_state(modal, config.DOCS_ROW) == config.DOCS_NEEDED_STATE
+    return docs_row_state(modal) == config.DOCS_NEEDED_STATE
+
+
+def docs_row_state(modal) -> str:
+    """The ONBOARDING DOCUMENTS chip, for a caller that wants to SAY it.
+
+    Probe 6 (2026-08-25) read 23 of 29 reps as PENDING and 6 as REQUIRED
+    ACTION, and the skip line called all 23 "already has documents". PENDING
+    and COMPLETED are not the same claim -- one is a bundle out and unsigned,
+    the other is done -- and the Monday reader of that log should not have to
+    know which one the code meant."""
+    return _row_state(modal, config.DOCS_ROW)
 
 
 def open_docs_portal(page, modal):
