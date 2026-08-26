@@ -168,7 +168,7 @@ class WhatGetsGraded(unittest.TestCase):
 
     def test_a_genuinely_open_post_is_graded(self):
         gradeable, fixed, stale, _ = self._scan([
-            self._post("failure-a", DAY.isoformat(), ["pending"])])
+            self._post("failure-a", DAY.isoformat())])
         self.assertEqual([g["key"] for g in gradeable], ["failure-a"])
         self.assertEqual((fixed, stale), ([], []))
 
@@ -178,6 +178,21 @@ class WhatGetsGraded(unittest.TestCase):
             "text": "*x* — y\n\n_incident · failure-a · resolved 2026-08-26_",
             "reactions": []}])
         self.assertEqual((gradeable, fixed, stale, gated), ([], [], [], []))
+
+    def test_a_pending_someone_else_set_is_left_alone(self):
+        """:pending: means a PERSON is on it — the one signal that stops two
+        people starting the same ticket. Red is the vaguer claim; it loses."""
+        gradeable, _, _, gated = self._scan([
+            self._post("failure-a", DAY.isoformat(), ["pending"])])
+        self.assertEqual(gradeable, [])
+        self.assertEqual(gated, ["failure-a"])
+
+    def test_a_pending_triage_itself_assigned_is_still_ours(self):
+        gradeable, _, _, gated = self._scan(
+            [self._post("failure-a", DAY.isoformat(), ["pending"])],
+            prior={"failure-a": {"bucket": tri.LUCY}})
+        self.assertEqual([g["key"] for g in gradeable], ["failure-a"])
+        self.assertEqual(gated, [])
 
     def test_approval_gate_purple_is_left_alone(self):
         """The gate's purple already points at a person and says which action
@@ -194,6 +209,36 @@ class WhatGetsGraded(unittest.TestCase):
             prior={"failure-a": {"bucket": tri.WAITING}})
         self.assertEqual([g["key"] for g in gradeable], ["failure-a"])
         self.assertEqual(gated, [])
+
+
+class NoticesNotWork(unittest.TestCase):
+    """A `drop-tableau-stale-` key is an upstream feed running behind, not a
+    broken report. Its own alert says there is nothing on our side to change, so
+    a red circle on it sends two people to open a thread that tells them to go
+    away — the precise way a red circle stops being believed."""
+
+    KEY = "drop-tableau-stale-atttracker2-1-d2d-fiberleadperformance"
+
+    def test_never_red_however_old(self):
+        v = _classify(key=self.KEY, tail="", opened="2026-08-01", hour=15)
+        self.assertEqual(v.bucket, tri.WAITING)
+
+    def test_beats_the_age_rule(self):
+        """The age rule is checked first for everything else — this must jump it,
+        because these stay open for days by their nature."""
+        v = _classify(key=self.KEY, opened="2026-08-25")
+        self.assertNotEqual(v.bucket, tri.NEEDS_YOU)
+
+    def test_line_does_not_promise_a_rerun(self):
+        v = _classify(key=self.KEY, opened="2026-08-25")
+        line = tri.line_for(v)
+        self.assertIn("Nothing to do", line)
+        self.assertNotIn("re-runs it", line)
+        self.assertNotIn("Needs one of you", line)
+
+    def test_an_ordinary_drop_key_is_unaffected(self):
+        v = _classify(key="drop-daily_metrics", opened="2026-08-25")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
 
 if __name__ == "__main__":

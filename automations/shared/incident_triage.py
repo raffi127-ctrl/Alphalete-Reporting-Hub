@@ -162,6 +162,23 @@ _WAITING_ON: Sequence[Tuple[str, str]] = (
     ("held", "It ran, but held back one part it wasn't sure about."),
 )
 
+# INCIDENTS THAT ARE NOTICES, NOT WORK (Megan 2026-08-26). A `drop-tableau-stale-`
+# key is not a broken report — it is an upstream Tableau feed serving older data
+# than it should. Its own alert says so in as many words: "the report that pulled
+# it ran and sent normally: nothing dropped, nothing to re-run … If the view looks
+# right, the feed behind it is genuinely behind and there is nothing on our side
+# to change. Do not re-run … that id is the SOURCE, not a report."
+#
+# It nonetheless sat open for days (nothing on our side can close it), so the age
+# rule below would have painted it red — telling two people that a working report
+# needs a code fix, and sending them to open a thread whose own text says there
+# is nothing to do. That is the precise way a red circle stops being believed, so
+# this check runs BEFORE the age rule rather than after it.
+_NO_ACTION_PREFIXES = ("drop-tableau-stale-",)
+_NO_ACTION_LINE = ("*Nothing to do.* An upstream Tableau feed is serving older "
+                   "data than it should. The report that pulled it ran and sent "
+                   "normally. It clears when the feed catches up.")
+
 # After this hour a "waiting on the source" is no longer waiting, it is a
 # no-show — the orchestrator has stopped retrying and it is a person's problem.
 BACKSTOP_HOUR = 12
@@ -227,10 +244,14 @@ def _match(tail: str, table: Sequence[Tuple[str, str]]) -> Optional[str]:
 class Verdict:
     """What one incident is, in the two words the channel needs."""
 
-    __slots__ = ("key", "bucket", "reason", "ts")
+    __slots__ = ("key", "bucket", "reason", "ts", "line")
 
-    def __init__(self, key: str, bucket: str, reason: str, ts: str = ""):
+    def __init__(self, key: str, bucket: str, reason: str, ts: str = "",
+                 line: str = ""):
         self.key, self.bucket, self.reason, self.ts = key, bucket, reason, ts
+        # An explicit line, for the cases where the bucket's stock wording would
+        # promise something untrue (see _NO_ACTION_PREFIXES).
+        self.line = line
 
     def __repr__(self) -> str:  # pragma: no cover — debugging only
         return f"<{self.key} {self.bucket}: {self.reason}>"
@@ -251,6 +272,13 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     now_hour = now_hour if now_hour is not None else dt.datetime.now().hour
     rid = report_id(key)
     tail = _log_tail(rid, day)
+
+    # 0) Notices, not work. Must precede the age rule — these stay open for days
+    #    by their nature, and nothing on our side can close them.
+    if key.startswith(_NO_ACTION_PREFIXES):
+        return Verdict(key, WAITING,
+                       "An upstream Tableau feed is running behind.",
+                       line=_NO_ACTION_LINE)
 
     # 1) Open since a previous day. A full morning of retries already lost.
     age = inc._days_open(opened, day) if opened else 0
@@ -306,6 +334,8 @@ def line_for(v: Verdict) -> str:
     action is not in here — including how the triage decided, which is what a
     module like this is most tempted to explain.
     """
+    if v.line:
+        return v.line
     if v.bucket == NEEDS_YOU:
         return ("*Needs one of you.* {} Re-running will not fix it."
                 .format(v.reason))
@@ -365,17 +395,30 @@ def _open_incidents(client, channel: str, day: dt.date,
         if inc._days_open(mark.group("date"), day) > STALE_LIMIT_DAYS:
             stale.append(key)
             continue
-        # A PURPLE THIS MODULE DIDN'T PUT THERE IS THE APPROVAL GATE'S (found in
-        # the dry run, 2026-08-26). notify.py sets :large_purple_circle: on an
-        # approval-gated phase that is waiting on a human checkmark — the same
-        # purple the Hub's approval pill shows. That already points at a person
-        # and already says WHICH action they owe: tick the approval. Re-badging
-        # it red would say "this needs a code fix" about a report that is working
-        # perfectly and waiting on Megan. Different circle, different job — leave
-        # it. `prior` is the triage state, so a purple triage itself assigned is
-        # still ours to update.
-        if (inc.WAITING_REACTION in reactions
-                and (prior.get(key) or {}).get("bucket") != WAITING):
+        # A MARK THIS MODULE DIDN'T PUT THERE BELONGS TO SOMEBODY ELSE, AND IT
+        # OUTRANKS US (2026-08-26, both halves found by running this for real).
+        #
+        #   :large_purple_circle: — notify.py sets it on an approval-gated phase
+        #     waiting on a human checkmark, the same purple the Hub's approval
+        #     pill shows. It already points at a person AND says which action
+        #     they owe: tick the approval. Red would say "needs a code fix"
+        #     about a report that is working perfectly and waiting on Megan.
+        #
+        #   :pending: — mark_working sets it: a PERSON is on this one right now.
+        #     Eve was mid-fix on captainship_drafts_review when this pass would
+        #     have stripped her mark and painted it red. That is strictly worse
+        #     than doing nothing: ":pending: means somebody is on it" is the one
+        #     thing stopping two people starting the same ticket (Eve
+        #     2026-08-17), and "needs a person" is the vaguer claim of the two.
+        #     Somebody already IS that person.
+        #
+        # `prior` is this module's own state, so a mark TRIAGE assigned is still
+        # triage's to update — only another owner's mark is untouchable.
+        _mine = (prior.get(key) or {}).get("bucket")
+        _theirs = [(r, b) for r, b in ((inc.WAITING_REACTION, WAITING),
+                                       (inc.WORKING_REACTION, LUCY))
+                   if r in reactions and _mine != b]
+        if _theirs:
             gated.append(key)
             continue
         ent = (inc._load_index() or {}).get(key) or {}
@@ -449,8 +492,9 @@ def run(*, day: Optional[dt.date] = None, channel: str = inc.CHANNEL,
               "{})".format(len(stale), STALE_LIMIT_DAYS,
                            ", ".join(sorted(set(stale)))))
     if gated:
-        print("  ({} waiting on an approval checkmark — the gate's purple, "
-              "left alone: {})".format(len(gated), ", ".join(sorted(set(gated)))))
+        print("  ({} already carry someone else's mark (a person on it, or an "
+              "approval gate) — left alone: {})".format(
+                  len(gated), ", ".join(sorted(set(gated)))))
 
     for item in found:
         key = item["key"]
