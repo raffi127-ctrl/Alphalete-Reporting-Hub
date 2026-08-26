@@ -180,6 +180,28 @@
   }
  },
  "reports": {
+  "install_incident_triage_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_incident_triage_agent` can install the com.alphalete.incident-triage LaunchAgent (8:15am daily, deploy/incident_triage.sh) on the mini. That pass SORTS the open incidents in #claudecorrections-and-requests and reacts: red circle = needs Megan or Eve personally, :pending: = Lucy is still retrying it, purple = waiting on a source. It NEVER re-runs a report and NEVER edits code, so the worst a bad fire can do is put one wrong emoji on a post. Mini only: Slack lets you remove your OWN reaction and nobody else's, so a circle added under a person's token could never be taken off again (same rule as incident_working). 8:15 is after the flow's main passes and the 7:30 checkpoint email, and well before the noon backstop -- triaging mid-flow would grade reports the orchestrator is still actively retrying.",
+   "display_name": "Install corrections-triage agent (8:15am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "incident-triage"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "08:15"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_blueink_sweep_agent": {
    "on_scheduler": false,
    "machine": "Lucy 2",

@@ -183,6 +183,12 @@ WORKING_REACTION = "pending"
 # Set by the caller via open_or_followup(reaction=…); resolve() clears it along
 # with :pending:, so a closed post only ever wears the ✅.
 WAITING_REACTION = "large_purple_circle"
+# NEEDS A PERSON — red, in a list that already speaks in colored circles (Megan
+# 2026-08-26: "put some type of emoji on the ones that Eve and I need to look at
+# personally so we know which ones to go to first"). Purple means waiting on a
+# human checkmark, so red means waiting on a human FIX. Set by incident_triage,
+# which is the only thing that decides it; resolve() clears it with the others.
+NEEDS_HUMAN_REACTION = "red_circle"
 
 # EVERY message and edit in this channel goes out as Lucy (Eve 2026-08-17: "todos
 # los cambios y mensajes tienen que salir al canal desde Lucy"). It is not only
@@ -437,10 +443,11 @@ def _react_done(client, channel: str, ts: str) -> None:
     where the two people working these tickets decide what is still open — Eve
     2026-08-17: "que se reaccione al thread original con un checkmark". The
     :pending: has to come OFF at the same moment, or a fixed problem still reads
-    as work in progress."""
+    as work in progress — and so must the purple and red circles incident_triage
+    puts on OPEN posts, for the same reason."""
     _react(client, channel, ts, DONE_REACTION)
-    _react(client, channel, ts, WORKING_REACTION, remove=True)
-    _react(client, channel, ts, WAITING_REACTION, remove=True)
+    for r in (WORKING_REACTION, WAITING_REACTION, NEEDS_HUMAN_REACTION):
+        _react(client, channel, ts, r, remove=True)
 
 
 def _parent_still_open(client, channel: str, ts: str) -> Optional[bool]:
@@ -780,9 +787,11 @@ def _roll_over(client, channel: str, inc: dict, key: str, age: int,
         # channel, while a repeated one is the noise being complained about.
         print("[incident] {}: thread {} has already been rolled over or "
               "resolved — not repeating the line".format(key, inc["ts"]))
-    # Superseded, not fixed: no ✅. But it is no longer being worked either.
-    _react(client, channel, inc["ts"], WORKING_REACTION, remove=True)
-    _react(client, channel, inc["ts"], WAITING_REACTION, remove=True)
+    # Superseded, not fixed: no ✅. But it is no longer being worked either, and
+    # a triage circle on a rolled-over post is unreachable forever (find() only
+    # returns `open` ones), so all three come off here.
+    for _r in (WORKING_REACTION, WAITING_REACTION, NEEDS_HUMAN_REACTION):
+        _react(client, channel, inc["ts"], _r, remove=True)
     was = _MARK_RE.sub("", inc.get("text") or "").rstrip()
     if was:
         try:
@@ -817,19 +826,26 @@ def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str) -> dict:
 
 def _today_line(st: dict, day: dt.date) -> str:
     """Render the one status line. Short on purpose — it is the only thing this
-    module adds to a thread for the rest of the day."""
+    module adds to a thread for the rest of the day.
+
+    NO EMOJI, NO FOOTER (Megan 2026-08-26: "stop with all the fluff and
+    confusion"). This line used to open with :repeat: / :link: and close with
+    "_One line per day, kept up to date — no new message per run._" — a sentence
+    explaining the mechanism, repeated on every status line in the channel.
+    Nobody reading it needs to be told how the line is maintained; they need to
+    know it failed again and when. The emoji went for the standing reason (they
+    compete with the ✅ / :pending: reactions people triage by)."""
     parts = []
     n = int(st.get("repeats") or 0)
     if n:
-        parts.append(":repeat: *Failed again today* — {} more run(s), last "
-                     "{}.".format(n, st.get("at") or ""))
+        parts.append("*Failed again today* — {} more {}, last {}.".format(
+            n, "run" if n == 1 else "runs", st.get("at") or ""))
     also = st.get("also") or []
     if also:
-        parts.append(":link: *Also failed today:* {}".format(", ".join(also)))
+        parts.append("*Also failed today:* {}".format(", ".join(also)))
     if not parts:
-        parts.append(":repeat: *Still failing today* — last {}.".format(
+        parts.append("*Still failing today* — last {}.".format(
             st.get("at") or ""))
-    parts.append("_One line per day, kept up to date — no new message per run._")
     return "\n".join(parts)
 
 
@@ -1411,8 +1427,7 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
         ok = _react(client, channel, inc["ts"], WORKING_REACTION)
         if note:
             try:
-                _send(client, channel, [":hourglass_flowing_sand: {}".format(note)],
-                      thread_ts=inc["ts"])
+                _send(client, channel, [note], thread_ts=inc["ts"])
             except Exception:  # noqa: BLE001 — the reaction is the point
                 pass
         print("[incident] {}: marked as being worked on ({})".format(

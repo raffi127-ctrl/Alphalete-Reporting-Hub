@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.incident-triage</string>
+
+    <!-- Sorts the OPEN incidents in #claudecorrections-and-requests into
+         "needs a person" (red circle), "Lucy is retrying it" (pending) and
+         "waiting on a source" (purple), so the channel list answers "which of
+         these is mine?" without opening anything.
+
+         SAFE: the only things it writes are reactions on incident posts and one
+         line in a thread when an incident changes state. It never re-runs a
+         report, never edits code, never posts anywhere else. A bad fire costs
+         one wrong emoji.
+
+         NOTE for anyone editing this comment: no double hyphen is allowed
+         inside an XML comment. plutil accepts one and launchd runs the job, but
+         Python's plistlib refuses the whole file, which drops the job out of
+         schedule_guard and schedule_audit and spawns a phantom Hub card. That
+         cost six plists on 2026-08-26. Write flag names without their dashes.
+
+         Install: lucy rerun install_incident_triage_agent -->
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         target machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/incident_triage.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 8:15am machine local, all 7 days. After the 4am flow's main passes and
+         the 7:30 checkpoint email, and well before the noon backstop: triaging
+         mid flow would grade reports the orchestrator is still retrying. Seven
+         days because the flow runs seven days. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/incident-triage.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/incident-triage.launchd.err.log</string>
+</dict>
+</plist>

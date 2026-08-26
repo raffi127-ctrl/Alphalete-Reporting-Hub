@@ -56,7 +56,12 @@ from automations.shared import incident_thread as inc
 CHANNEL = inc.CHANNEL
 # The marks that mean "in progress". The white check is NOT here: a resolved post
 # is supposed to wear it, and this module's whole job is to leave exactly that.
-IN_PROGRESS = (inc.WORKING_REACTION, inc.WAITING_REACTION)
+# The red circle IS here: incident_triage only ever grades OPEN posts, so a red
+# circle surviving onto a resolved one is precisely the frozen mark this module
+# exists to clear — and a stale "needs a person" is the most expensive of the
+# three to leave standing, since it sends someone to open a fixed thread.
+IN_PROGRESS = (inc.WORKING_REACTION, inc.WAITING_REACTION,
+               inc.NEEDS_HUMAN_REACTION)
 # How far back to look. A week covers "we were away Friday to Monday" without
 # paging through history that nobody is scrolling any more.
 DEFAULT_DAYS = 7
