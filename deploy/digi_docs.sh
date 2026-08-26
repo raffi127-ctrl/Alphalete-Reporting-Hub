@@ -118,6 +118,18 @@ ST=$?
 
 echo "[$(date)] Digi Docs finished exit=$ST" >> "$LOG_FILE"
 
+# LAST RESORT ALERT. run.py reports its own failures the moment they happen and
+# writes .digi-docs-reported when it does, so this only fires for a run that
+# died WITHOUT saying anything — killed at a timeout, OOM, the machine going
+# down mid-batch. Those are exactly the failures nothing inside Python can
+# catch, and the ones most likely to mean nobody got their documents.
+if [ -n "$LIVE" ] && [ "$ST" -ne 0 ] && [ ! -f "$LOG_DIR/.digi-docs-reported" ]; then
+    "$VENV_PY" -c "
+from automations.digi_docs import slack_post
+slack_post.alert_failure('the run was killed before it could report — exit $ST, see $LOG_FILE', dry_run=False)
+" >> "$LOG_FILE" 2>&1 || true
+fi
+
 # Publish either way so a blocked run is visible on the Hub instead of leaving
 # the card grey. [[feedback_launchd_reports_must_publish]]
 if [ -n "$LIVE" ]; then

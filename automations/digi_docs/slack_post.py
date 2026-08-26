@@ -47,8 +47,8 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
                  f">> BG & drug test checked"]
     if refused:
         lines.append("")
-        lines.append(f"*Needs doing by hand ({len(refused)}):* {_tags()}")
-        lines += [f"• {r}" for r in refused]
+        lines.append(f"*Needs doing by hand ({len(refused)})* — each one was "
+                     f"posted above as it happened.")
     elif fatal:
         # A run that stopped early has no per-person list, but somebody still
         # has to pick it up -- that is the whole point of tagging.
@@ -68,6 +68,61 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
     from automations.shared import slack_metrics_post as smp
     parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
     smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    _mark_reported()
+    return True
+
+
+# Written the moment ANY alert goes out, and read by deploy/digi_docs.sh. It is
+# how the wrapper knows a failure has already been reported, so its own
+# last-resort alert only fires for a run that died without saying anything --
+# killed at a timeout, OOM, the machine going down mid-batch. Without it the
+# wrapper would either double-post every ordinary refusal or stay silent for
+# exactly the failures nothing else can catch.
+REPORTED_MARKER = "output/logs/.digi-docs-reported"
+
+
+def _mark_reported() -> None:
+    import os
+    try:
+        os.makedirs(os.path.dirname(REPORTED_MARKER), exist_ok=True)
+        with open(REPORTED_MARKER, "w") as fh:
+            fh.write("1")
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
+def clear_reported() -> None:
+    """Called at the START of a run, so the marker only ever describes THIS
+    run rather than the last one that failed."""
+    import os
+    try:
+        os.remove(REPORTED_MARKER)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
+def alert_failure(line: str, *, dry_run: bool = True) -> bool:
+    """One failure, posted the MOMENT it happens (Megan 2026-08-26: "if
+    anything fails it needs to alert right away").
+
+    Waiting for the end of the run was fine when this was one 7:45 batch. It
+    is not now: a send goes 30 minutes before that person starts, so a failure
+    sitting in a summary until the pass finishes eats the window somebody has
+    to fix it in.
+
+    The end-of-run summary still goes out, but it COUNTS these rather than
+    repeating them — the same failure twice in one channel is how a channel
+    stops being read.
+    """
+    body = f"*Digi Docs — could not send* {_tags()}\n• {line}"
+    if dry_run:
+        print(f"\n--- Slack ALERT (dry run, NOT posted) -> {CHANNEL} ---")
+        print(body)
+        return False
+    from automations.shared import slack_metrics_post as smp
+    parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
+    smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
+    _mark_reported()
     return True
 
 

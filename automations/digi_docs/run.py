@@ -129,6 +129,23 @@ def _flag_terminated(people) -> None:
         pass
 
 
+def _refuse(refused, line, dry):
+    """Record a failure AND alert on it immediately.
+
+    Megan 2026-08-26: "if anything fails it needs to alert right away." Holding
+    these until the end of the pass was fine when this was one 7:45 batch; it
+    is not now that a send goes 30 minutes before that person starts, because
+    the delay eats the window somebody has to fix it in.
+    """
+    refused.append(line)
+    print(f"  ⛔ {line}")
+    try:
+        from automations.digi_docs import slack_post
+        slack_post.alert_failure(line, dry_run=dry)
+    except Exception:                                       # noqa: BLE001
+        pass   # an alert that fails must never take the run down with it
+
+
 def _phases(args) -> int:
     """Add every rep, then send every bundle — batched, never a full cycle per
     person. The two phases live on different pages, so interleaving pays the
@@ -154,6 +171,9 @@ def _phases(args) -> int:
         print(f"--only {send[0].name}")
     _flag_terminated(send)
     dry = not args.live
+    if not dry:
+        from automations.digi_docs import slack_post as _sp
+        _sp.clear_reported()
 
     # The ADD pass always takes everyone: somebody starting at 1pm still has to
     # exist in OwnerVille by the time their 12:30 send comes round, and adding
@@ -188,7 +208,8 @@ def _phases(args) -> int:
     # never silently dropped either -- they go in refused, so the channel names
     # them and a person can put a time in the cell.
     for c in no_time:
-        refused.append(f"{c.name}: no readable Start Time ({c.start_time!r})")
+        _refuse(refused, f"{c.name}: no readable Start Time "
+                         f"({c.start_time!r})", dry)
     # `fatal` is what makes the WORST case the loudest one. Everything below
     # already survives one rep failing, but a session that won't open, or a
     # browser that dies mid-batch, threw straight past the Slack post — so the
@@ -227,8 +248,7 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     if outcome in ("added", "dry"):
                         added.append(c.name)
                 except ov.Refused as e:
-                    refused.append(str(e))
-                    print(f"  ⛔ {e}")
+                    _refuse(refused, str(e), dry)
 
         if do_send:
             print("\nPHASE: send bundles")
@@ -251,13 +271,12 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)
                     if not dry and not ov.confirm_generated(tab, c.name):
-                        refused.append(f"{c.name}: no success banner")
+                        _refuse(refused, f"{c.name}: no success banner", dry)
                         continue
                     ticked = ov.tick_attestations(page, modal, dry_run=dry)
                     done.append((c.name, matched, ticked))
                 except ov.Refused as e:
-                    refused.append(str(e))
-                    print(f"  ⛔ {e}")
+                    _refuse(refused, str(e), dry)
                 except Exception as e:              # noqa: BLE001
                     # ONE rep's page must not end the batch. Run 5 (2026-08-25)
                     # died on rep 3 of 30 inside a scroll-into-view, taking the
@@ -265,10 +284,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     # so a stall costs one person, not the cohort. Anything
                     # unexpected is recorded against that rep and the run goes
                     # on; the summary still exits non-zero.
-                    refused.append(f"{c.name}: {type(e).__name__}: "
-                                   f"{str(e).splitlines()[0][:120]}")
-                    print(f"  ⛔ {c.name}: {type(e).__name__} — "
-                          f"{str(e).splitlines()[0][:120]}")
+                    _refuse(refused, f"{c.name}: {type(e).__name__}: "
+                                     f"{str(e).splitlines()[0][:120]}", dry)
                 finally:
                     # Close the portal tab on EVERY path. It only ever closed
                     # on the success path, so a batch of 30 left a tab open per

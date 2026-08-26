@@ -10,8 +10,14 @@ happen as far as the office is concerned.
   2. A week where nobody needed documents still posted "*0* new starts sent
      digi docs", which is the blank board that trains people to stop reading.
 
-Nothing here touches OwnerVille, the Sheet or Slack: the modules those live in
-are replaced before `_phases` imports them.
+Nothing here touches OwnerVille, the Sheet or Slack — and getting that right
+took a correction worth recording. Patching `sys.modules` alone is NOT enough:
+`from automations.digi_docs import slack_post` reads the ATTRIBUTE on the
+package, which is already bound to the real module the moment any other test
+imports it. On 2026-08-26 that let this suite make a real chat.postMessage
+call; it only failed because the stub's thread_ts was invalid. So the package
+attribute is patched too, and `_no_slack` asserts the real sender is never
+reached.
 """
 from __future__ import annotations
 
@@ -73,6 +79,7 @@ class _Recorder:
 
     def __init__(self):
         self.calls = []
+        self.alerts = []
 
     def post(self, sent, refused, attested, *, fatal="", dry_run=True):
         self.calls.append({"sent": sent, "refused": list(refused),
@@ -81,18 +88,24 @@ class _Recorder:
 
 
 def _run(ov, recorder, args=None):
+    import automations.digi_docs as pkg
     from automations.digi_docs import run as R
 
     mark = types.ModuleType("automations.digi_docs.mark")
     mark.tint = lambda ws, cands, dry_run=True: 0
     slack = types.ModuleType("automations.digi_docs.slack_post")
     slack.post = recorder.post
+    slack.clear_reported = lambda: None
+    slack.alert_failure = lambda line, dry_run=True: recorder.alerts.append(line)
 
     ws = types.SimpleNamespace(title="D2D OBCL 8.24", id=0)
     with mock.patch.dict(sys.modules, {
             "automations.digi_docs.ownerville": ov,
             "automations.digi_docs.mark": mark,
             "automations.digi_docs.slack_post": slack}), \
+        mock.patch.object(pkg, "ownerville", ov, create=True), \
+        mock.patch.object(pkg, "mark", mark, create=True), \
+        mock.patch.object(pkg, "slack_post", slack, create=True), \
         mock.patch.object(R, "_open_tab", lambda tab="": (ws, [])), \
         mock.patch.object(R, "_flag_terminated", lambda people: None), \
         mock.patch.object(R.roster, "candidates", lambda v, t: [_Cand()]), \
@@ -100,7 +113,27 @@ def _run(ov, recorder, args=None):
         return R._phases(args or _Args())
 
 
-class FatalStillAlerts(unittest.TestCase):
+class _NoNetwork(unittest.TestCase):
+    """Belt and braces: if a stub ever slips, fail the test instead of
+    reaching Slack. slack_metrics_post is the only thing that actually
+    sends."""
+
+    def setUp(self):
+        def _boom(*a, **k):
+            raise AssertionError(
+                "a test reached the REAL Slack sender — stub it")
+        self._patches = [
+            mock.patch("automations.shared.slack_metrics_post."
+                       "post_reply_text_only", _boom),
+            mock.patch("automations.shared.slack_metrics_post."
+                       "ensure_named_thread", _boom),
+        ]
+        for pt in self._patches:
+            pt.start()
+            self.addCleanup(pt.stop)
+
+
+class FatalStillAlerts(_NoNetwork):
     def test_session_failure_reaches_slack(self):
         """A run that dies before it starts must still say so in the channel."""
         ov = _fake_ov(session_raises=RuntimeError("browser profile locked"))
@@ -121,7 +154,7 @@ class FatalStillAlerts(unittest.TestCase):
         self.assertTrue(rec.calls[0]["fatal"].startswith("TimeoutError:"))
 
 
-class QuietWeekSaysNothing(unittest.TestCase):
+class QuietWeekSaysNothing(_NoNetwork):
     def test_no_fatal_no_sends_no_refusals(self):
         """Everyone already had their documents. That is not news."""
         from automations.digi_docs import slack_post
@@ -144,7 +177,7 @@ class QuietWeekSaysNothing(unittest.TestCase):
                                              dry_run=True))
 
 
-class AddPhaseNeverPosts(unittest.TestCase):
+class AddPhaseNeverPosts(_NoNetwork):
     def test_add_only_is_not_a_send(self):
         """--add-only mails nobody, so it must not announce a send."""
         class AddArgs(_Args):
@@ -234,7 +267,7 @@ class DueNowWindow(unittest.TestCase):
         self.assertEqual((len(due), len(not_yet), len(no_time)), (0, 0, 1))
 
 
-class TagsOnlyWhenSomeoneMustAct(unittest.TestCase):
+class TagsOnlyWhenSomeoneMustAct(_NoNetwork):
     """Alisson / Tiff / Aimee get @-tagged so a failure gets picked up fast
     (Megan 2026-08-26). The risk is the opposite one: tag them on every clean
     Monday and the mention stops meaning anything by the third week."""
@@ -251,11 +284,24 @@ class TagsOnlyWhenSomeoneMustAct(unittest.TestCase):
     def test_clean_run_tags_nobody(self):
         self.assertNotIn("<@", self._body(6, [], []))
 
-    def test_a_refusal_tags_all_three(self):
-        from automations.digi_docs import config
-        body = self._body(5, ["Jose Laureano: not found in OwnerVille"], [])
+    def test_a_refusal_tags_all_three_on_the_immediate_alert(self):
+        """The tags belong on the message that fires the moment it fails —
+        that is the one somebody has to act on. The end-of-run summary counts
+        them instead, so nobody is pinged twice for one problem."""
+        import io
+        import contextlib
+        from automations.digi_docs import config, slack_post
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            slack_post.alert_failure("Jose Laureano: not found in OwnerVille",
+                                     dry_run=True)
+        body = buf.getvalue()
         for name, uid in config.ESCALATE_ON_FAILURE:
             self.assertIn(f"<@{uid}>", body, f"{name} was not tagged")
+
+    def test_the_summary_does_not_ping_them_again(self):
+        body = self._body(5, ["Jose Laureano: not found in OwnerVille"], [])
+        self.assertNotIn("<@", body)
 
     def test_a_stopped_run_tags_all_three(self):
         from automations.digi_docs import config
@@ -268,6 +314,63 @@ class TagsOnlyWhenSomeoneMustAct(unittest.TestCase):
         from automations.digi_docs import config
         for name, uid in config.ESCALATE_ON_FAILURE:
             self.assertTrue(uid.startswith("U"), f"{name}: {uid!r} isn't a user id")
+
+
+class FailuresAlertImmediately(_NoNetwork):
+    """Megan 2026-08-26: "if anything fails it needs to alert right away."
+
+    A send goes 30 minutes before that person starts, so a failure sitting in
+    an end-of-run summary eats the window somebody has to fix it in."""
+
+    def test_a_refusal_alerts_before_the_run_ends(self):
+        from automations.digi_docs import run as R
+        posted = []
+        slack = types.ModuleType("automations.digi_docs.slack_post")
+        slack.alert_failure = lambda line, dry_run=True: posted.append(line)
+        refused = []
+        with mock.patch.dict(sys.modules,
+                             {"automations.digi_docs.slack_post": slack}):
+            R._refuse(refused, "Jose Laureano: not found", dry=False)
+        self.assertEqual(posted, ["Jose Laureano: not found"])
+        self.assertEqual(refused, ["Jose Laureano: not found"])
+
+    def test_an_alert_that_fails_does_not_take_the_run_down(self):
+        from automations.digi_docs import run as R
+
+        def boom(*a, **k):
+            raise RuntimeError("slack is down")
+
+        slack = types.ModuleType("automations.digi_docs.slack_post")
+        slack.alert_failure = boom
+        refused = []
+        with mock.patch.dict(sys.modules,
+                             {"automations.digi_docs.slack_post": slack}):
+            R._refuse(refused, "Dana Reyes: no readable Start Time", dry=False)
+        self.assertEqual(len(refused), 1, "the failure must still be recorded")
+
+    def test_summary_counts_rather_than_repeats(self):
+        import io
+        import contextlib
+        from automations.digi_docs import slack_post
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            slack_post.post(5, ["Jose Laureano: not found in OwnerVille"], [],
+                            dry_run=True)
+        body = buf.getvalue()
+        self.assertIn("Needs doing by hand (1)", body)
+        self.assertNotIn("• Jose Laureano", body,
+                         "the same failure twice is how a channel stops "
+                         "being read")
+
+    def test_the_marker_only_describes_this_run(self):
+        import os
+        from automations.digi_docs import slack_post
+        slack_post._mark_reported()
+        self.assertTrue(os.path.exists(slack_post.REPORTED_MARKER))
+        slack_post.clear_reported()
+        self.assertFalse(os.path.exists(slack_post.REPORTED_MARKER),
+                         "a stale marker would silence the wrapper's "
+                         "last-resort alert on the NEXT run")
 
 
 if __name__ == "__main__":
