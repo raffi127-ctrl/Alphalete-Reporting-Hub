@@ -41,9 +41,11 @@ CAPTION = {"red": 0.8, "green": 0.8, "blue": 0.8}
 BORDER = {"red": 0.7176471, "green": 0.7176471, "blue": 0.7176471}
 
 D = sheet.DATA_TAB
-# Spill: AD, Pull, # Names, the 7 day counts, Account, City, week names list.
+# Spill: AD, Pull, # Names, the 7 day counts, Account, City. The full name
+# list stays on the data tab (col J) but is deliberately NOT shown — Carlos
+# 2026-08-26: "i dont need all the names on the right."
 B5 = ("=IFNA(FILTER({'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,"
-      "'%(d)s'!$L$2:$R,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,'%(d)s'!$J$2:$J},"
+      "'%(d)s'!$L$2:$R,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F},"
       "('%(d)s'!$A$2:$A=$B$1)*('%(d)s'!$B$2:$B=$B$3)))" % {"d": D})
 A5 = ('=ARRAYFORMULA(IF(($B$5:$B$600="")+($B$5:$B$600="TOTAL"),"",'
       'ROW($B$5:$B$600)-4))')
@@ -64,8 +66,8 @@ def day_header(i):
 
 
 CAPTION_TEXT = ("names per ad per DAY · Pull = processed emails that week · "
-                "names = sent to call list (org offices only; Saturdays missing "
-                "upstream) · amber row = names matching no ad")
+                "names = sent to call list (org offices; Saturdays missing "
+                "upstream)")
 
 
 def _grid(sess):
@@ -151,7 +153,8 @@ def main(argv=None):
     n_cf = tabs[sheet.VIEW_TAB].get("n_cf", 0)
     wipe = [{"updateCells": {"range": {"sheetId": view_id},
                              "fields": "userEnteredValue,userEnteredFormat,"
-                                       "dataValidation"}}]
+                                       "dataValidation"}},
+            {"unmergeCells": {"range": {"sheetId": view_id}}}]
     wipe += [{"deleteConditionalFormatRule": {"sheetId": view_id, "index": 0}}
              for _ in range(n_cf)]
     try:
@@ -163,8 +166,8 @@ def main(argv=None):
     # which 400s while the freshly-created tab is still 8 columns wide.
     _batch(sess, [{"updateSheetProperties": {"properties": {
         "sheetId": view_id,
-        "gridProperties": {"rowCount": 1000, "columnCount": 16,
-                           "frozenRowCount": 4, "frozenColumnCount": 2}},
+        "gridProperties": {"rowCount": 1000, "columnCount": 14,
+                           "frozenRowCount": 4, "frozenColumnCount": 0}},
         "fields": "gridProperties(rowCount,columnCount,frozenRowCount,"
                   "frozenColumnCount)"}}])
 
@@ -180,8 +183,7 @@ def main(argv=None):
     sheet.put_values(sess, sheet.view_range("A4"),
                      [["#", "AD", "Pull", "Names"]])
     _uf(sess, sheet.view_range("E4"), [[day_header(i) for i in range(7)]])
-    sheet.put_values(sess, sheet.view_range("L4"),
-                     [["Account", "City", "Names (week)"]])
+    sheet.put_values(sess, sheet.view_range("L4"), [["Account", "City"]])
     _uf(sess, sheet.view_range("A5"), [[A5]])
     _uf(sess, sheet.view_range("B5"), [[B5]])
 
@@ -207,10 +209,12 @@ def main(argv=None):
     arial = lambda **kw: dict({"fontFamily": "Arial"}, **kw)
     reqs = [
         # row 1 — dark control strip
-        fmt(0, 0, 1, 16, {"userEnteredFormat": {
+        fmt(0, 0, 1, 14, {"userEnteredFormat": {
                 "backgroundColor": STRIP, "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
                 "textFormat": arial(bold=True, foregroundColor=WHITE)}},
-            "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"),
+            "userEnteredFormat(backgroundColor,horizontalAlignment,"
+            "verticalAlignment,textFormat)"),
         fmt(0, 1, 1, 2, {"userEnteredFormat": {
                 "backgroundColor": WHITE,
                 "textFormat": arial(bold=True, foregroundColor=NAVY)}},
@@ -219,22 +223,30 @@ def main(argv=None):
                 "backgroundColor": WHITE,
                 "textFormat": arial(bold=True, foregroundColor=NAVY)}},
             "userEnteredFormat(backgroundColor,textFormat)"),
-        fmt(0, 4, 1, 16, {"userEnteredFormat": {
-                "backgroundColor": STRIP, "horizontalAlignment": "LEFT",
+        fmt(0, 4, 1, 14, {"userEnteredFormat": {
+                "backgroundColor": STRIP, "horizontalAlignment": "CENTER",
                 "textFormat": arial(bold=False, fontSize=9,
                                     foregroundColor=CAPTION)}},
             "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"),
-        # row 2 — navy banner
-        fmt(1, 0, 2, 16, {"userEnteredFormat": {
-                "backgroundColor": NAVY, "horizontalAlignment": "LEFT",
+        # row 2 — navy banner, merged and centered across the board
+        {"mergeCells": {"range": {"sheetId": view_id, "startRowIndex": 1,
+                                  "endRowIndex": 2, "startColumnIndex": 0,
+                                  "endColumnIndex": 14},
+                        "mergeType": "MERGE_ALL"}},
+        fmt(1, 0, 2, 14, {"userEnteredFormat": {
+                "backgroundColor": NAVY, "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
                 "textFormat": arial(bold=True, fontSize=14,
                                     foregroundColor=WHITE)}},
-            "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"),
+            "userEnteredFormat(backgroundColor,horizontalAlignment,"
+            "verticalAlignment,textFormat)"),
         # row 3 — WE strip
-        fmt(2, 0, 3, 16, {"userEnteredFormat": {
+        fmt(2, 0, 3, 14, {"userEnteredFormat": {
                 "backgroundColor": BLUE, "horizontalAlignment": "LEFT",
+                "verticalAlignment": "MIDDLE",
                 "textFormat": arial(bold=True, foregroundColor=WHITE)}},
-            "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"),
+            "userEnteredFormat(backgroundColor,horizontalAlignment,"
+            "verticalAlignment,textFormat)"),
         fmt(2, 0, 3, 1, {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
             "userEnteredFormat.horizontalAlignment"),
         fmt(2, 1, 3, 2, {"userEnteredFormat": {
@@ -245,35 +257,30 @@ def main(argv=None):
             "userEnteredFormat(backgroundColor,horizontalAlignment,textFormat,"
             "numberFormat)"),
         # row 4 — header
-        fmt(3, 0, 4, 14, {"userEnteredFormat": {
+        fmt(3, 0, 4, 13, {"userEnteredFormat": {
                 "backgroundColor": NAVY, "horizontalAlignment": "CENTER",
                 "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
                 "textFormat": arial(bold=True, fontSize=10,
                                     foregroundColor=WHITE)}},
             "userEnteredFormat(backgroundColor,horizontalAlignment,"
             "verticalAlignment,wrapStrategy,textFormat)"),
-        # grid body
+        # grid body — EVERYTHING centered (Carlos: "center everything")
+        fmt(4, 0, 320, 13, {"userEnteredFormat": {
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+                "wrapStrategy": "CLIP", "textFormat": arial()}},
+            "userEnteredFormat(horizontalAlignment,verticalAlignment,"
+            "wrapStrategy,textFormat)"),
         fmt(4, 0, 320, 1, {"userEnteredFormat": {
-                "horizontalAlignment": "CENTER",
                 "textFormat": arial(foregroundColor={"red": 0.45, "green": 0.45,
                                                      "blue": 0.45})}},
-            "userEnteredFormat(horizontalAlignment,textFormat)"),
+            "userEnteredFormat.textFormat"),
         fmt(4, 2, 320, 11, {"userEnteredFormat": {
-                "horizontalAlignment": "CENTER",
                 "numberFormat": {"type": "NUMBER", "pattern": "0"}}},
-            "userEnteredFormat(horizontalAlignment,numberFormat)"),
-        fmt(4, 1, 320, 2, {"userEnteredFormat": {"wrapStrategy": "CLIP"}},
-            "userEnteredFormat.wrapStrategy"),
-        fmt(4, 11, 320, 13, {"userEnteredFormat": {"wrapStrategy": "CLIP"}},
-            "userEnteredFormat.wrapStrategy"),
-        fmt(4, 13, 320, 14, {"userEnteredFormat": {
-                "wrapStrategy": "WRAP",
-                "textFormat": arial(fontSize=9)}},
-            "userEnteredFormat(wrapStrategy,textFormat)"),
+            "userEnteredFormat.numberFormat"),
         # borders over the whole board grid
         {"updateBorders": {
             "range": {"sheetId": view_id, "startRowIndex": 3, "endRowIndex": 320,
-                      "startColumnIndex": 0, "endColumnIndex": 14},
+                      "startColumnIndex": 0, "endColumnIndex": 13},
             "top": {"style": "SOLID", "color": BORDER},
             "bottom": {"style": "SOLID", "color": BORDER},
             "left": {"style": "SOLID", "color": BORDER},
@@ -281,9 +288,22 @@ def main(argv=None):
             "innerHorizontal": {"style": "SOLID", "color": BORDER},
             "innerVertical": {"style": "SOLID", "color": BORDER}}},
         # column widths
-        width(0, 1, 34), width(1, 2, 300), width(2, 3, 62), width(3, 4, 62),
-        width(4, 11, 86), width(11, 12, 150), width(12, 13, 120),
-        width(13, 14, 480), width(14, 16, 40),
+        width(0, 1, 34), width(1, 2, 290), width(2, 3, 64), width(3, 4, 64),
+        width(4, 11, 86), width(11, 12, 170), width(12, 13, 130),
+        width(13, 14, 40),
+        # breathing room: taller header + airier data rows
+        {"updateDimensionProperties": {
+            "range": {"sheetId": view_id, "dimension": "ROWS",
+                      "startIndex": 3, "endIndex": 4},
+            "properties": {"pixelSize": 40}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": view_id, "dimension": "ROWS",
+                      "startIndex": 4, "endIndex": 320},
+            "properties": {"pixelSize": 26}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": view_id, "dimension": "ROWS",
+                      "startIndex": 1, "endIndex": 2},
+            "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
         # dropdowns: manager B1, group D1, week B3
         dv(0, 1, {"condition": {"type": "ONE_OF_RANGE", "values": [
                     {"userEnteredValue": "='%s'!$AA$2:$AA$40" % D}]},
@@ -298,7 +318,7 @@ def main(argv=None):
         # TOTAL row grey/bold; unmatched-names row amber
         {"addConditionalFormatRule": {"index": 0, "rule": {
             "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 320,
-                        "startColumnIndex": 0, "endColumnIndex": 14}],
+                        "startColumnIndex": 0, "endColumnIndex": 13}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA",
                               "values": [{"userEnteredValue": '=$B5="TOTAL"'}]},
@@ -306,7 +326,7 @@ def main(argv=None):
                            "textFormat": {"bold": True}}}}}},
         {"addConditionalFormatRule": {"index": 1, "rule": {
             "ranges": [{"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 320,
-                        "startColumnIndex": 0, "endColumnIndex": 14}],
+                        "startColumnIndex": 0, "endColumnIndex": 13}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA",
                               "values": [{"userEnteredValue": '=LEFT($B5,1)="—"'}]},
