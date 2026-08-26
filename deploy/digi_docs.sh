@@ -31,22 +31,33 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# THE DAY GATE COMES FIRST, before anything starts an interpreter.
+# THE HOURS GATE COMES FIRST, before anything starts an interpreter.
 #
 # The send tick fires every 5 minutes so that "30 minutes before" is accurate
-# to within five, and it only means anything on start day in office hours.
-# Gating LATER in the script still works, but the venv probe below runs
-# `python -c "import patchright"` up to three times and proc_guard starts
-# another — so a gate placed after them spends four interpreter starts every
-# five minutes, all week, on the same machine the headshots tick already runs
-# on. Roughly two thousand of those a week to discover it is Tuesday.
+# to within five. Gating LATER in the script still works, but the venv probe
+# below runs `python -c "import patchright"` up to three times and proc_guard
+# starts another — so a gate placed after them spends four interpreter starts
+# every five minutes, all day, on the same machine the headshots tick already
+# runs on.
 #
-# `date +%u`: 1 = Monday. Pure shell, no Python, no Sheet read.
+# It gates on the CLOCK only, not the weekday. It used to also require Monday,
+# which was wrong: this report fires on the date written above a chart, and
+# those being Mondays is a coincidence of how the sheet is filled in (Megan
+# 2026-08-26). Whether today is a chart date needs the sheet, so run.py decides
+# that — one cheap read, and it stops before opening a browser.
 for _a in "$@"; do
     if [ "$_a" = "--send-tick" ]; then
-        _DOW="$(date +%u)"
         _HR="$(date +%H)"
-        if [ "$_DOW" != "1" ] || [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
+        if [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
+            exit 0
+        fi
+        # QUIET DAY BACKOFF. A previous tick already read the sheet and found
+        # no chart dated for today. Asking again five minutes later gets the
+        # same answer, so skip until that note is 30 minutes old — a quiet day
+        # goes from 168 sheet reads to 28. `find -mmin` keeps it in shell, so a
+        # skipped tick costs nothing at all.
+        _QUIET="output/logs/.digi-docs-quiet-$(date +%Y-%m-%d)"
+        if [ -n "$(find "$_QUIET" -mmin -30 2>/dev/null)" ]; then
             exit 0
         fi
     fi
@@ -88,12 +99,12 @@ fi
 
 # Mode comes from the plist. --dry-run anywhere wins and is NOT forwarded
 # (run.py has no such flag — dry is simply the absence of --live).
-PHASE="--add-only"
+PHASE="--add-only --today"
 LIVE="--live"
 FWD=()
 for _a in "$@"; do
     case "$_a" in
-        --add)       PHASE="--add-only" ;;
+        --add)       PHASE="--add-only --today" ;;
         --send-tick) PHASE="--send-only --due-now" ;;
         --dry-run)   LIVE="" ;;
         *)           FWD+=("$_a") ;;
@@ -109,7 +120,12 @@ echo "[$(date)] Digi Docs starting (mode: $MODE, extra args: ${FWD[*]:-none})" >
 # pass publish under the SAME report id, so the card's daily_runs:2 pill shows
 # 1/2 after the morning add and greens once the day's sends are done. A second
 # report id here would auto-register a phantom library card.
-if [ -n "$LIVE" ]; then
+# The ADD pass publishes a running row up front: it happens once a day and
+# takes minutes, so the yellow pill is worth having. The SEND TICK does not —
+# it fires every five minutes and mostly finds nobody due, and a row per firing
+# would bury the card under ~168 of them. It publishes AFTER the run instead,
+# and only if the run actually did something.
+if [ -n "$LIVE" ] && [ "$PHASE" = "--add-only --today" ]; then
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('digi_docs','Digi Docs')" >> "$LOG_FILE" 2>&1 || true
 fi
 
@@ -132,7 +148,7 @@ fi
 
 # Publish either way so a blocked run is visible on the Hub instead of leaving
 # the card grey. [[feedback_launchd_reports_must_publish]]
-if [ -n "$LIVE" ]; then
+if [ -n "$LIVE" ] && { [ "$PHASE" = "--add-only --today" ] || [ -f "$LOG_DIR/.digi-docs-did-work" ]; }; then
     if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('digi_docs','Digi Docs','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 fi

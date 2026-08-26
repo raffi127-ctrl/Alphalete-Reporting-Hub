@@ -92,6 +92,10 @@ def main(argv=None) -> int:
                          "generate against.")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
+    ap.add_argument("--today", action="store_true",
+                    help="only the people whose CHART is dated for today. What "
+                         "both scheduled passes use — the report fires on the "
+                         "date written above a chart, not on a fixed weekday.")
     ap.add_argument("--due-now", action="store_true",
                     help="send only the people whose start time is within the "
                          "next %d minutes. What the day's tick passes; without "
@@ -127,6 +131,85 @@ def _flag_terminated(people) -> None:
             print(f"\n{flag}")
     except Exception:                                       # noqa: BLE001
         pass
+
+
+def _not_live_yet() -> str:
+    """The reason this may not send yet, or "" once the date has passed.
+
+    Downgrades a --live run to a dry one rather than failing it: the run still
+    reads the tab, still says exactly who it WOULD have sent to, and still
+    exits 0. A hard failure here would light the Hub card red every day until
+    Monday and teach everyone to ignore it.
+    """
+    import datetime as _dt
+    on = getattr(config, "GO_LIVE_ON", "")
+    if not on:
+        return ""
+    try:
+        go = _dt.date.fromisoformat(on)
+    except ValueError:
+        return ""
+    today = _dt.date.today()
+    if today >= go:
+        return ""
+    days = (go - today).days
+    return (f"Digi Docs is not live until {go:%A %-d %B} "
+            f"({days} day{'' if days == 1 else 's'} away) — "
+            f"config.GO_LIVE_ON")
+
+
+def did_work_marker_path() -> str:
+    """Touched when a run actually DID something. The wrapper reads it to
+    decide whether this firing is worth a row on the Hub."""
+    return "output/logs/.digi-docs-did-work"
+
+
+def _mark_did_work(did: bool) -> None:
+    """The send pass is a tick: on a start day it fires every five minutes from
+    6am to 8pm, and the great majority of those find nobody due yet. Publishing
+    a Hub row for each would put ~168 rows against this one card in a day and
+    green its two-pass pill within the first ten minutes, which makes the card
+    say nothing at all. So the wrapper only publishes when this marker says the
+    run added somebody, sent somebody, or has something to report."""
+    import os
+    path = did_work_marker_path()
+    try:
+        if did:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write("1")
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
+def quiet_marker_path() -> str:
+    """The file the wrapper checks before starting Python at all."""
+    import datetime as _dt
+    return f"output/logs/.digi-docs-quiet-{_dt.date.today().isoformat()}"
+
+
+def _mark_quiet_day(quiet: bool) -> None:
+    """Leave (or clear) the note that says there was no work a moment ago.
+
+    Touched fresh each time so the wrapper's age check restarts: the marker
+    means "no chart was dated today as of this timestamp", never "no work
+    today". A chart added at 10am has to be found, and the alternative — a
+    latch set at 6am — means nobody gets their documents and the first anyone
+    hears of it is the next morning.
+    """
+    import os
+    path = quiet_marker_path()
+    try:
+        if quiet:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write("no chart dated today\n")
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:                                       # noqa: BLE001
+        pass    # a missing marker only costs the next tick a sheet read
 
 
 def _refuse(refused, line, dry):
@@ -172,12 +255,33 @@ def _phases(args) -> int:
     _flag_terminated(send)
     dry = not args.live
     if not dry:
+        blocked = _not_live_yet()
+        if blocked:
+            print(f"\n⛔ {blocked}")
+            print("   Running as a DRY RUN instead — nothing will be sent.")
+            dry = True
+    if not dry:
         from automations.digi_docs import slack_post as _sp
         _sp.clear_reported()
+        _mark_did_work(False)
 
-    # The ADD pass always takes everyone: somebody starting at 1pm still has to
-    # exist in OwnerVille by the time their 12:30 send comes round, and adding
-    # them early costs nothing because it mails nobody.
+    # WHICH DAY IS THIS CHART FOR? Not "is it Monday" — that was only ever true
+    # by coincidence, because the charts happen to be dated for Mondays (Megan
+    # 2026-08-26). A chart dated for a Wednesday sends on that Wednesday with
+    # nothing rescheduled. A chart with no readable date sends nobody.
+    if args.today or args.due_now:
+        before = len(send)
+        send = roster.starting_today(send)
+        print(f"charts dated today: {len(send)} of {before} on the tab")
+        if not send:
+            print("no chart is dated for today — nothing to do")
+            _mark_quiet_day(True)
+            return 0
+        _mark_quiet_day(False)
+
+    # The ADD pass takes everyone starting today, due or not: somebody starting
+    # at 1pm still has to exist in OwnerVille by the time their 12:30 send comes
+    # round, and adding them early costs nothing because it mails nobody.
     add_list = list(send)
     no_time = []
     if args.due_now and do_send:
@@ -326,6 +430,8 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     `done`. Adding reps is not a send and must not announce itself as one.
     """
     dry = tinted_dry
+    if not dry:
+        _mark_did_work(bool(added or done or refused or fatal))
     tinted = 0
     if do_send:
         from automations.digi_docs import mark, slack_post

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """OAT Processing — automate the "One App at a time" leftovers queue.
 
-Runs on Lucy 2 (Carlos's account / office 11580). Rides the SAME holder-warmed
+Runs on Lucy 2, in Carlos's OFFICE (11580) — reached by switching offices inside
+the shared 'Raf – Captain' AppStream login, not by logging in as Carlos (his
+CarlosNLR account was retired 2026-08-21). Rides the SAME holder-warmed
 patchright session resume_pushing uses (`appstream_direct_session` — seeded from
 the exported ownerville session, so NO service-account key and NO Cloudflare
 login form), switches to office 11580 via `fetch_office._switch_office`, then
@@ -1104,6 +1106,54 @@ def _fill_phone_field(page, phone: str) -> bool:
 
 _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
 _NOPHONE_SKIPS = 0        # count of resume re-reads SKIPPED this walk (cache hits)
+_NOPHONE_BLOCKED = None   # lazily-loaded {key: {"n": attempts, "last": iso}} retry state
+
+# A resume read that ended BLOCKED (page never rendered) is marked with this prefix
+# in lookup_resume_phone's detail string, so flag_no_phone can tell it apart from a
+# resume that genuinely carries no number. Blocked reads get retried later in the
+# day; empty resumes are settled and never re-read (Megan's 2026-08-06 rule).
+_BLOCKED_PREFIX = "blocked: "
+
+# Cloudflare / sign-in-wall markers. If the resume tab still shows one of these when
+# the poll runs out, we never saw the resume at all.
+_BLOCK_SIGNS = (
+    "just a moment", "verify you are human", "checking your browser",
+    "attention required", "access denied", "enable javascript",
+)
+_SIGNIN_SIGNS = (
+    "sign in to your account", "employer sign in", "sign in with google",
+    "create your account", "log in to indeed", "sign in to indeed",
+)
+
+# Retry budget for a blocked read: try at most this many times per applicant per day,
+# each at least _BLOCKED_RETRY_AFTER_MIN apart. The cool-off is the point — Megan's
+# 8/6 complaint was the walk reopening the same resumes every 5 minutes, and a bare
+# retry would bring that straight back. After the last attempt the applicant is
+# promoted to the settled cache and left to the twice-daily manual to-do post.
+_BLOCKED_MAX_ATTEMPTS = 3
+_BLOCKED_RETRY_AFTER_MIN = 45
+
+
+def _blocked_reason(title: str, body: str) -> str:
+    """Why this resume tab never rendered — '' when it rendered fine (so an empty
+    resume stays an empty resume). Takes the LAST title/body seen by the poll."""
+    t = (title or "").lower()
+    b = (body or "").lower()
+    for sign in _BLOCK_SIGNS:
+        if sign in t or sign in b:
+            return "cloudflare challenge never cleared"
+    for sign in _SIGNIN_SIGNS:
+        if sign in b:
+            return "indeed sign-in wall"
+    if len(b.strip()) < 200:
+        # A real resume is never this short. An empty/near-empty body means the page
+        # didn't render — usually the employer portal bouncing us.
+        return "resume page never rendered (empty body)"
+    return ""
+
+
+def _is_blocked_detail(detail: str) -> bool:
+    return str(detail or "").startswith(_BLOCKED_PREFIX)
 
 
 def _write_walk_diag(start, end, cache_size, skips, counts) -> None:
@@ -1176,31 +1226,119 @@ def _mark_nophone_checked(key: str) -> None:
             _log(f"[oat] WARN could not persist no-number cache: {_e}")
 
 
+# --- blocked-read retry state -------------------------------------------------
+# Separate from the settled no-number cache ABOVE on purpose. That cache means "we
+# read this resume and it has no number" — permanent for the day. This one means
+# "we never got to see this resume", which is a temporary condition (Cloudflare, a
+# sign-in wall) and deserves another look before we hand the applicant to a human.
+
+def _nophone_blocked_path():
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2]
+    (root / "output").mkdir(parents=True, exist_ok=True)
+    return root / "output" / f"oat-nophone-blocked-{dt.date.today().isoformat()}.json"
+
+
+def _load_nophone_blocked() -> dict:
+    """{key: {"n": attempts_so_far, "last": iso-timestamp}} for today."""
+    global _NOPHONE_BLOCKED
+    if _NOPHONE_BLOCKED is None:
+        import json as _json
+        try:
+            with open(_nophone_blocked_path()) as _fh:
+                loaded = _json.load(_fh)
+            _NOPHONE_BLOCKED = loaded if isinstance(loaded, dict) else {}
+        except Exception:  # noqa: BLE001
+            _NOPHONE_BLOCKED = {}
+        if _NOPHONE_BLOCKED:
+            _log(f"[oat] blocked-read retry state: {len(_NOPHONE_BLOCKED)} app(s) "
+                 f"waiting on another try today")
+    return _NOPHONE_BLOCKED
+
+
+def _save_nophone_blocked() -> None:
+    import json as _json
+    try:
+        with open(_nophone_blocked_path(), "w") as _fh:
+            _json.dump(_load_nophone_blocked(), _fh, indent=0, sort_keys=True)
+    except Exception as _e:  # noqa: BLE001
+        _log(f"[oat] WARN could not persist blocked-read state: {_e}")
+
+
+def _blocked_due(key: str) -> bool:
+    """Is this blocked applicant ready for another try? True when we've never tried,
+    when the cool-off has elapsed and attempts remain — False while it's cooling off
+    (that's what keeps the walk from reopening the same resume every 5 minutes)."""
+    rec = _load_nophone_blocked().get(key)
+    if not rec:
+        return True
+    if int(rec.get("n", 0)) >= _BLOCKED_MAX_ATTEMPTS:
+        return False
+    try:
+        last = dt.datetime.fromisoformat(str(rec.get("last")))
+    except Exception:  # noqa: BLE001
+        return True
+    elapsed_min = (dt.datetime.now() - last).total_seconds() / 60.0
+    return elapsed_min >= _BLOCKED_RETRY_AFTER_MIN
+
+
+def _mark_nophone_blocked(key: str, reason: str) -> int:
+    """Record one blocked attempt; returns the attempt count. On the last allowed
+    attempt the applicant is promoted into the settled cache so later walks stop
+    trying and the manual to-do post picks them up."""
+    if not key:
+        return 0
+    state = _load_nophone_blocked()
+    rec = state.get(key) or {"n": 0}
+    rec["n"] = int(rec.get("n", 0)) + 1
+    rec["last"] = dt.datetime.now().isoformat(timespec="seconds")
+    rec["why"] = str(reason)[:80]
+    state[key] = rec
+    _save_nophone_blocked()
+    if rec["n"] >= _BLOCKED_MAX_ATTEMPTS:
+        _mark_nophone_checked(key)
+    return rec["n"]
+
+
+def _blocked_pending_count() -> int:
+    """Applicants still owed a retry today (for the walk-diag proof row)."""
+    return sum(1 for r in _load_nophone_blocked().values()
+               if int((r or {}).get("n", 0)) < _BLOCKED_MAX_ATTEMPTS)
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """No phone on file → first try to pull the real number off the applicant's
     Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
     and Send to AI (turns a dead-end into a real send). Only when the resume has no
     phone either do we flag as 'need to get number from Indeed'.
 
-    Reads each applicant's resume AT MOST ONCE per day: once we've confirmed a resume
-    has no number, we remember it and SKIP re-reading it on later walks (just flag it
-    fast), so the walk doesn't keep reopening the same dead-end resumes."""
+    Reads each applicant's resume AT MOST ONCE per day ONCE WE'VE ACTUALLY SEEN IT:
+    a resume we read that carries no number is settled, and later walks skip it (just
+    flag it fast) instead of reopening the same dead end.
+
+    A read that was BLOCKED (Cloudflare never cleared, Indeed sign-in wall, the tab
+    never opened) is NOT settled — we never saw the resume. Those get up to
+    _BLOCKED_MAX_ATTEMPTS tries a day, _BLOCKED_RETRY_AFTER_MIN apart, then go to the
+    manual to-do list. Before this split, a blocked read was filed as "no number" and
+    the applicant was written off for the day: on 2026-08-25 that was 90 of 161
+    flagged reads — the queue sat at 35 all day and only 9 applicants were sent."""
     key = _nophone_key(a)
     already_checked = key in _load_nophone_checked()
-    if already_checked:
+    cooling_off = (not already_checked) and (not _blocked_due(key))
+    if already_checked or cooling_off:
         global _NOPHONE_SKIPS
         _NOPHONE_SKIPS += 1
-        _log(f"    already checked today (no resume number) — skip re-read: "
+        _why = ("no resume number" if already_checked
+                else f"blocked, retrying in <{_BLOCKED_RETRY_AFTER_MIN}min")
+        _log(f"    already checked today ({_why}) — skip re-read: "
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
-            and not already_checked):
-        # A blocked/errored read counts as "no number today" — otherwise an
-        # exception would skip the remember-step below and we'd reopen this same
-        # resume on every future walk (Megan 2026-08-06).
+            and not already_checked and not cooling_off):
         try:
             phone, detail = lookup_resume_phone(page)
         except Exception as e:  # noqa: BLE001
-            phone, detail = None, f"read error: {type(e).__name__}"
+            # Never saw the resume -> blocked (retryable), not a confirmed empty one.
+            phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
         if phone and _fill_phone_field(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
                  f"{a.first_name} {a.last_name}")
@@ -1228,9 +1366,27 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
             except Exception as e:  # noqa: BLE001
                 _log(f"    [phones] diag err: {type(e).__name__}")
             return do_send_ai(page, a, live)
-        _log(f"    no resume phone ({detail}) → flag + remember (won't re-read "
-             f"today): {a.first_name} {a.last_name}")
-        _mark_nophone_checked(key)
+        if _is_blocked_detail(detail):
+            n = _mark_nophone_blocked(key, detail[len(_BLOCKED_PREFIX):])
+            if n >= _BLOCKED_MAX_ATTEMPTS:
+                _log(f"    resume read BLOCKED ({detail}) — attempt "
+                     f"{n}/{_BLOCKED_MAX_ATTEMPTS}, giving up for today → flag: "
+                     f"{a.first_name} {a.last_name}")
+            else:
+                _log(f"    resume read BLOCKED ({detail}) — attempt "
+                     f"{n}/{_BLOCKED_MAX_ATTEMPTS}, retrying in "
+                     f"{_BLOCKED_RETRY_AFTER_MIN}min: "
+                     f"{a.first_name} {a.last_name}")
+        elif "no view-resume link" in str(detail):
+            # No resume attached to the record at all. Nothing to open, so the check
+            # costs nothing — don't burn a cache slot on it, just re-check next walk
+            # (a resume can get attached later in the day).
+            _log(f"    no resume on file ({detail}) → flag: "
+                 f"{a.first_name} {a.last_name}")
+        else:
+            _log(f"    no resume phone ({detail}) → flag + remember (won't re-read "
+                 f"today): {a.first_name} {a.last_name}")
+            _mark_nophone_checked(key)
     _NO_PHONE_ROWS.append([
         dt.date.today().isoformat(), a.first_name, a.last_name,
         a.email, a.job_board, a.position,
@@ -1444,7 +1600,9 @@ def lookup_resume_phone(page):
             except Exception:  # noqa: BLE001
                 pass
         if newpg is None:
-            return None, "could not open resume tab"
+            # Neither the click nor the cold load produced a tab — the resume was
+            # never seen, so this is retryable, not a confirmed empty resume.
+            return None, f"{_BLOCKED_PREFIX}could not open resume tab"
         # Cloudflare's challenge JS only runs in a FOREGROUND tab (browsers throttle
         # background tabs), so bring the resume tab to front. OAT tab restored below.
         try:
@@ -1459,6 +1617,7 @@ def lookup_resume_phone(page):
         # Fail fast: when the page DOES load (Cloudflare lenient) the phone renders
         # in a few seconds; when CF is blocking it never clears (verified 60s), so a
         # long wait just wastes ~1min/applicant. ~12s covers the good case.
+        title, body = "", ""
         for _i in range(12):
             try:
                 title = (newpg.title() or "").lower()
@@ -1473,9 +1632,21 @@ def lookup_resume_phone(page):
                     if 10 <= len(digits) <= 11:     # a real US number
                         return m.group(0).strip(), f"from resume ({newpg.url[:50]})"
             newpg.wait_for_timeout(1000)
+        # The poll ran out. Two VERY different endings look identical from here, and
+        # calling both "no phone" is what burned 90 applicants on 2026-08-25:
+        #   (a) the resume really rendered and has no number  -> settled, don't re-read
+        #   (b) the page never rendered — Cloudflare's 'Just a moment…' never cleared,
+        #       or we got the 'Indeed for Employers' sign-in wall -> BLOCKED, transient
+        # Say which, so the caller can retry (b) later instead of writing the applicant
+        # off for the whole day. See _BLOCKED_PREFIX.
+        reason = _blocked_reason(title, body)
+        if reason:
+            return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
         return None, f"no phone on resume (title={newpg.title()[:40]!r})"
     except Exception as e:  # noqa: BLE001
-        return None, f"resume open err: {type(e).__name__}"
+        # An exception means we never got a clean look at the resume — transient by
+        # definition, so it's blocked (retryable), not a confirmed empty resume.
+        return None, f"{_BLOCKED_PREFIX}resume open err: {type(e).__name__}"
     finally:
         if newpg:
             try:
@@ -1816,7 +1987,14 @@ def run_walk(page, live: bool = False, limit: int = None,
     walked_all = processed < limit
     _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all)
     # Queue-independent proof of the walk (readable from the Sheet directly).
-    _write_walk_diag(_start_total, _end_total, len(_load_nophone_checked()),
+    # The cache column also carries how many applicants are still owed a blocked-read
+    # retry, so a Cloudflare day is visible from the Sheet alone (a big "+N blocked"
+    # is the signature of 2026-08-25, where blocked reads were silently filed as
+    # "no number" and 90 applicants were written off).
+    _pending = _blocked_pending_count()
+    _cache_col = len(_load_nophone_checked())
+    _write_walk_diag(_start_total, _end_total,
+                     f"{_cache_col} (+{_pending} blocked)" if _pending else _cache_col,
                      _NOPHONE_SKIPS, counts)
     return 0
 

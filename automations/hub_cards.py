@@ -3613,6 +3613,96 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "alphalete-sales-board",
+        "name": "Alphalete Sales Board (SaraPlus sweep)",
+        "creator": "Claude",
+        "emoji": "\U0001F4C8",
+        "color": "#1D4ED8",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Every 5 minutes of the selling day, reads SaraPlus for today's "
+            "sales and fills the day's Int / Int Up / DTV / NL on the current "
+            "'Sales Board WE m.d' tab \u2014 then texts the leaderboard and "
+            "posts the hype in #alphalete-sales when something new lands."
+        ),
+        "breakdown": (
+            "WHERE THE NUMBERS COME FROM \u2014 three SaraPlus passes\n"
+            "**\u2022** ui.saraplus.com \u2192 **ReportingHub** \u2192 Order "
+            "Dashboard, dated to the ONE day, read three times because no "
+            "single Service filter carries everything: **AT&T** gives Internet "
+            "/ Upgrades / AIA / Wireless Lines, **All** is the only view with "
+            "**DTV**, and **AT&T Internet** gives **Records** (credit checks).\n"
+            "**\u2022** The board's four columns are worked out from those: "
+            "**Int** = Internet \u2212 Upgrades \u2212 AIA, **Int Up** = "
+            "Upgrades + AIA, **DTV**, **NL** = Wireless Lines. SaraPlus's "
+            "Internet total already contains the upgrades, so adding instead "
+            "of subtracting would count each upgrade twice.\n\n"
+            "WHAT IT WILL NOT TOUCH\n"
+            "**Apps** (a formula) and **Roll Call**, any day that carries a "
+            "roll-call letter (X / T / RT / STF \u2026), any day but **today**, "
+            "and it never blanks a cell that holds a number \u2014 a short "
+            "SaraPlus export is not evidence a sale didn't happen.\n\n"
+            "WHO HEARS ABOUT IT\n"
+            "**\u2022** **Alphalete Owners** chat \u2014 the full leaderboard "
+            "on every sweep that found a new sale.\n"
+            "**\u2022** **Alphalete lvl 1's** chat \u2014 the same "
+            "leaderboard once a day, Mon\u2013Fri 8:00pm / Sat 4:00pm.\n"
+            "**\u2022** **#alphalete-sales** \u2014 a hype line per sale, and "
+            "a heads-up when a rep's credit checks move (early news, never "
+            "written to the board).\n\n"
+            "NEW MEANS AN INCREASE\n"
+            "SaraPlus is cumulative within a day, so a sale is a count going "
+            "UP against the previous sweep. A number that drops is treated as "
+            "no news \u2014 not as a reset \u2014 so a hiccup can't "
+            "re-announce the whole day.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Not on load \u2014 Lucy 1 is the busiest box \u2014 but because "
+            "the two iMessage groups only exist in its Messages. The load is "
+            "fenced instead: its own Chrome profile, headless, nothing before "
+            "7:00am, and a pid lock so a slow sweep is skipped rather than "
+            "stacked. The Hub pill is painted by the first good sweep of the "
+            "day, not by all 150."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "alphalete_sales_board",
+        "schedule": {
+            "frequency": "daily",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Sweep done \u2014 today's block is up to date on the sales board.",
+            "message_failed": "\u274C Sweep failed. `lucy logtail alphalete-sales-board` on Lucy 1 to see why.",
+        },
+        "actions": [
+            {
+                "label": "Preview (no writes)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Reads SaraPlus and prints the cells that WOULD change and the messages that WOULD go out. Writes nothing, texts nobody.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--force"],
+            },
+            {
+                "label": "Sweep now (write the board)",
+                "icon": "\u25B6",
+                "help": "Runs one sweep for real: fills today's Int / Int Up / DTV / NL. Sends no texts and no Slack.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--apply", "--force"],
+            },
+            {
+                "label": "Sweep now + notify",
+                "icon": "\U0001F4E3",
+                "help": "One full sweep: writes the board AND sends the leaderboard text plus the Slack hype for anything new since the last sweep.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--apply", "--send", "--force"],
+            },
+        ],
+    },
+    {
         "id": "terminated-reps",
         "name": "Terminated Reps",
         "creator": "Eve & Claude",
@@ -5203,17 +5293,27 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "**Every 5 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2**.\n\n"
             "HOW IT RUNS\n"
-            "Drives a **real Google Chrome** on a copy of Carlos's everyday "
-            "profile, on one warm office-11580 session (a session-holder keeps it "
-            "logged in). Sends, removes and re-texts are **irreversible**. The "
-            "batch resume-extract half is **on hold** — Indeed blocks the "
-            "automated resume pulls, so those numbers go on the twice-daily to-do "
-            "list for a human instead."
+            "Drives a **real Google Chrome** on a copy of **Lucy 2's** everyday "
+            "browser profile. It signs in with the **shared 'Raf – Captain' "
+            "ApplicantStream login** (the same master session the rest of the "
+            "fleet uses — *not* a personal login of Carlos's) and then **switches "
+            "into office 11580**, so everything it does happens inside Carlos's "
+            "office and only there. A session-holder keeps that login warm.\n"
+            "Sends, removes and re-texts are **irreversible**. The batch "
+            "resume-extract half is **on hold** — Indeed blocks the automated "
+            "resume pulls, so those numbers go on the twice-daily to-do list for "
+            "a human instead.\n"
+            "When a resume **can't be opened** (Cloudflare, or Indeed's sign-in "
+            "wall) that's now told apart from a resume that genuinely has no "
+            "number: the blocked ones get **retried up to 3 times a day, 45 "
+            "minutes apart**, and only then go on the manual list."
         ),
         # No Google Sheet — ApplicantStream action bot only.
         "assignees": ["Lucy 2"],
-        # Needs Carlos's AppStream session (Lucy 2 only) — a Hub "play" from any
-        # machine routes to Lucy 2 via mini-control (run_rerun_id = schedule id).
+        # Needs Lucy 2's warm AppStream session (the shared 'Raf – Captain' login,
+        # switched into office 11580 — NOT a personal Carlos login; his CarlosNLR
+        # account was retired 2026-08-21). A Hub "play" from any machine routes to
+        # Lucy 2 via mini-control (run_rerun_id = schedule id).
         "run_machine": "Lucy 2",
         "run_rerun_id": "applicant_push",
         "hide_schedule": True,
@@ -5229,15 +5329,19 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Applicant Push complete — batch resumes sent to the AI call list and the leftovers queue worked.",
+            "message_success": "✅ Applicant Push complete — the leftovers queue was worked (sent to the AI call list, removed, re-texted).",
             "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or Cloudflare on office 11580), then run again.",
         },
         "actions": [
             {
                 "label": "Run",
                 "icon": "▶",
+                # This button passes NO args, and applicant_push.run defaults to
+                # dry-run — so it's a safe PREVIEW, not a live pass. The live pass is
+                # the q5min agent (its wrapper injects --live --oat-only). Said plainly
+                # here because the help used to promise real sends and deliver none.
                 "primary": True,
-                "help": "Runs a full pass now: batch extract + send to the AI call list, then the OAT leftovers cleanup. IRREVERSIBLE (real sends / removes / re-texts).",
+                "help": "Preview pass — walks Carlos's queue and prints what it WOULD do. Nothing is sent, removed or re-texted; the live pass is the every-5-minutes agent.",
                 "module": "automations.applicant_push.run",
                 "args_fn": lambda: [],
             },

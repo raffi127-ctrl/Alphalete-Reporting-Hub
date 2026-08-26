@@ -2882,6 +2882,14 @@ _CRED_FILES = {
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127",
     "ownerville-creds":
         lambda: REPO_ROOT / "ownerville-creds.json",
+    # SaraPlus portal login for the Alphalete Sales Board sweep
+    # (alphalete_sales_board.config.creds). Its own account, not one of the
+    # per-machine Google/ownerville identities -- so the ONLY thing that keeps
+    # the sweep off another runner is the iMessage groups, and this key is what
+    # moves the login to whichever box ends up holding it. Gitignored (the repo
+    # is PUBLIC), so `lucy update` will never carry it.
+    "saraplus-creds":
+        lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json",
     # Blue Ink private API key + envelope template id. The SEND itself goes
     # through the web app, but the pre-send dedupe (blueink_docs.recent) reads
     # Blue Ink's own bundle history over the API and needs this key. Lucy 2 --
@@ -4348,6 +4356,7 @@ def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
                        timeout_s=300, log_name="bg-check-sync-run.log")
     lines = [ln for ln in (out or "").splitlines()
              if ("| roster" in ln or "[writes]" in ln or "[slack" in ln
+                 or "[name-gate]" in ln
                  or "POST new" in ln or "EDIT existing" in ln or "fuzzy-match" in ln
                  or ln.strip() == "=== done ===")]
     return ok, (" · ".join(lines)[:400] or (out or "")[-300:])

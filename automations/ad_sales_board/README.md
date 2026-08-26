@@ -1,23 +1,33 @@
-# Ad Sales Board — the Source Report, week by week (pull + names)
+# Ad Sales Board — day-by-day names per ad, dressed as a sales board
 
 One tab on the **Alphalete Recruiting Dashboard**
-(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`) where you pick a **Manager**
-and an **ad-week** and see, per real ad: the **Pull** (processed emails /
-applicants) and the **Names** that came in. Built for the Wednesday-morning
-look-back Carlos asked for (2026-08-26): "what happened last week, ad by ad,
-and who did we get."
+(`111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA`) that LOOKS like the AT&T
+sales boards (Carlos's spec, 2026-08-26: "it needs to look like a sales
+board... day by day i want to see how many names each ad is getting"): ads
+down the side, the ad-week's seven days across, and each cell = how many
+NAMES that ad produced that day. Weekly Pull (processed emails), the total
+names, Account/City and the week's name list ride alongside.
 
-* Visible tab **Ad Sales Board** — pickers C1 (Org/Captainship), C2 (week),
-  C3 (manager); one FILTER spill at A6; TOTAL is the last row of a block.
+* Visible tab **Ad Sales Board** — layout lifted from the live Sales Board
+  mirror: row 1 dark control strip (**B1 manager**, **D1 Org/Captainship**),
+  row 2 navy AD SALES BOARD banner, row 3 blue WE strip (**B3 week picker**
+  in the cream cell + computed week label), row 4 navy bordered header
+  `# | AD | Pull | Names | Wed..Tue | Account | City | Names (week)` with real
+  dates, rows 5+ the bordered grid spilled by one FILTER at B5. TOTAL row
+  grey; amber row = names that matched no ad. Day headers compute their dates
+  from the picked week via the data tab's AB1 helper.
 * Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
-  A..K: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
-  # Names, Names, Week Start (ISO — the freeze/sort key).
+  A..R: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
+  # Names, Names, Week Start (ISO — the freeze/sort key), then L..R = names
+  per day (Wed..Tue). TOTAL rows carry the label in the Ad Title column (the
+  board's first visible column). Blank counts mean "no name feed" (the
+  captainship-only offices); zeros mean "an ad that produced nobody".
 
 ## The week
 
 **Wednesday → Tuesday** (`weeks.py`). On Wednesday morning the just-finished
 week is complete — not three days stale like a Sun–Sat week would be — and the
-job flips the C2 picker to it. The week LABEL ("Aug 19 – 25, 2026") is the join
+job flips the B3 picker to it. The week LABEL ("Aug 19 – 25, 2026") is the join
 key across runs; never change its format without rewriting the data tab.
 
 ## Where the numbers come from

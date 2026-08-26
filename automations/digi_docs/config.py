@@ -79,6 +79,43 @@ ASSUME_PM_BEFORE_HOUR = 7
 # most free.
 ADD_PASS_TIME = "08:00"
 
+# --- NOT LIVE BEFORE THIS DATE (Megan 2026-08-26) -------------------------
+# "we can't take this live until next mon." So: no --live pass of either phase
+# does anything before Monday 2026-08-31, whatever is installed and whatever a
+# chart is dated for.
+#
+# A date in code rather than uninstalling the agents, because the two failure
+# modes are not symmetric. An uninstalled agent needs somebody to remember to
+# put it back on Monday morning, and if they don't, nobody gets their documents
+# and there is no signal at all. This guard clears itself, and until it does it
+# says so on every run.
+#
+# It gates the ADD pass too. That pass mails nobody, so it is not dangerous —
+# but "not live until Monday" is a plain instruction and reading it as "except
+# the half I judged safe" is how software surprises people.
+#
+# TO GO LIVE: delete this line, or set it to a past date.
+GO_LIVE_ON = "2026-08-31"
+
+# --- Quiet days: back off instead of asking 168 times ---------------------
+# The send tick fires every 5 minutes from 6am to 8pm. On a day no chart is
+# dated for, that is 168 firings that each start Python, authenticate and read
+# the whole tab to conclude there is nothing to do — about eight minutes of CPU
+# and several hundred Sheets calls for no answer that ever changes (Megan
+# 2026-08-26: "if no one is scheduled then we don't need to send the tick every
+# 5 min that day unless it doesn't cost us anything").
+#
+# So a tick that finds no chart dated today leaves a marker, and the wrapper
+# skips in pure shell until it is this old. 30 minutes takes a quiet day from
+# 168 reads to 28, and still notices a chart somebody adds mid-morning well
+# before its own send time comes round.
+#
+# NOT longer than this, and not a whole-day latch: the marker says "there was
+# no work half an hour ago", which is a fact that expires. A latch would mean
+# a chart added at 10am is never seen, and the first anyone knows is that
+# nobody got their documents.
+QUIET_RECHECK_MINUTES = 30
+
 # Our own log tab, created on first send. We never write into OBCL columns
 # other than the two above.
 LEDGER_TAB = "Digi Docs Log"
