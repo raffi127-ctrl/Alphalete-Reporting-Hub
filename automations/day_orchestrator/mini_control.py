@@ -266,6 +266,18 @@ def _machine_profile(explicit: str | None = None) -> str:
     return DEFAULT_MACHINE
 
 
+def _this_box() -> str:
+    """This machine's TRUE name — the .machine-profile marker when present, else
+    the hostname. Unlike _machine_profile() it never falls back to 'Lucy 1', so
+    it is the right thing to compare a push TARGET against. See the note in
+    _action_push_cred_file."""
+    try:
+        from automations.shared import hub_identity
+        return hub_identity.machine_name()
+    except Exception:  # noqa: BLE001
+        return _machine_profile()
+
+
 def _control_tab_for(machine: str) -> str:
     """Lucy 1 keeps the original 'Mini Control' tab (backward-compatible); every
     other machine gets its own 'Mini Control - <machine>' tab."""
@@ -2834,7 +2846,7 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
     if not target:
         return False, ("push_slack_tokens needs the target machine name as "
                        "Args, e.g. 'Lucy 3'")
-    if target.lower() == _machine_profile().strip().lower():
+    if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
     base = Path.home() / ".config" / "recruiting-report"
     pushed, skipped = [], []
@@ -2937,7 +2949,17 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
     key, target = parts[0], parts[1].strip().strip("'\"").strip()
     if key not in _CRED_FILES:
         return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
-    if target.lower() == _machine_profile().strip().lower():
+    # Compare against this box's TRUE identity, not _machine_profile(), which
+    # falls back to DEFAULT_MACHINE ("Lucy 1") when there is no .machine-profile
+    # marker. Megan's laptop has no marker, so every `push_cred_file … "Lucy 1"`
+    # typed there refused itself as a self-push — twice on 2026-08-26, once
+    # silently. hub_identity.machine_name() falls back to the HOSTNAME for
+    # exactly this reason ("so a non-runner machine isn't mislabeled 'Lucy 1'"),
+    # so a real runner still refuses to push to itself while the laptop can push
+    # to any of them. The marker itself must stay absent on the laptop: routing
+    # (_control_tab_for) reads the same fallback, and a marker there would send
+    # every bare `lucy rerun` to a tab no poller reads.
+    if target.lower() == _this_box().strip().lower():
         return False, "target is THIS machine — nothing to push"
     path = _CRED_FILES[key]()
     try:
