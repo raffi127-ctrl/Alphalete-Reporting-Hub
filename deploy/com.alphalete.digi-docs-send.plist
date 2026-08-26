@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.digi-docs-send</string>
+
+    <!-- THE PASS THAT MAILS PEOPLE. Each new start gets their bundle 30 minutes
+         before their own start time (Raf, 2026-08-26), read from the Start Time
+         column, so this has to be a tick rather than one fixed hour.
+
+         Every 5 minutes, which is what makes "30 minutes before" accurate to
+         within five. The wrapper exits immediately unless it is Monday inside
+         office hours, and run.py opens no browser at all when nobody is due, so
+         the overwhelming majority of these firings cost nothing.
+
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together inside
+         an XML comment. It ends the comment early and makes the plist
+         unparseable to plistlib even though plutil still accepts it, which
+         shows up as a Hub card that cries wolf forever. -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/digi_docs.sh</string>
+        <string>--send-tick</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs-send.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs-send.launchd.err.log</string>
+</dict>
+</plist>

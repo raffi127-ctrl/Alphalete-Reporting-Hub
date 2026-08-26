@@ -38,6 +38,7 @@ class _Args:
     both = False
     tab = ""
     only = ""
+    due_now = False
 
 
 def _fake_ov(*, session_raises=None):
@@ -156,6 +157,81 @@ class AddPhaseNeverPosts(unittest.TestCase):
         self.assertEqual(rec.calls, [],
                          "the add phase posted to Slack off an empty result")
 
+
+
+class StartTimeReading(unittest.TestCase):
+    """The column is PLAIN TEXT with no meridiem — checked against the live
+    8.24 tab, where even the unformatted read returns the string '1:00'. So
+    these cases are the whole basis on which a contract lands at the right
+    hour."""
+
+    def _t(self, text):
+        from automations.digi_docs import roster
+        return roster.parse_start_time(text)
+
+    def test_the_tab_as_it_actually_reads(self):
+        import datetime as dt
+        # Exactly the values sitting on D2D OBCL 8.24 today.
+        self.assertEqual(self._t("1:00"), dt.time(13, 0))
+        self.assertEqual(self._t("12:30"), dt.time(12, 30))
+        self.assertEqual(self._t("1:30"), dt.time(13, 30))
+
+    def test_a_morning_start_stays_morning(self):
+        import datetime as dt
+        self.assertEqual(self._t("8:00"), dt.time(8, 0))
+        self.assertEqual(self._t("11:45"), dt.time(11, 45))
+
+    def test_explicit_beats_the_rule(self):
+        import datetime as dt
+        self.assertEqual(self._t("9:30 am"), dt.time(9, 30))
+        self.assertEqual(self._t("1:00 PM"), dt.time(13, 0))
+        self.assertEqual(self._t("13:00"), dt.time(13, 0))
+        self.assertEqual(self._t("12:00 am"), dt.time(0, 0))
+
+    def test_unreadable_is_none_not_a_guess(self):
+        for bad in ("", "   ", "noon", "TBD", "1:99", "25:00", "-"):
+            self.assertIsNone(self._t(bad), f"{bad!r} should refuse, not guess")
+
+
+class DueNowWindow(unittest.TestCase):
+    def _cand(self, start):
+        from automations.digi_docs import roster
+        c = roster.Candidate(person=types.SimpleNamespace(
+            name="Dana Reyes", row=7, skip_reason="", eligible=True))
+        c.start_time = start
+        return c
+
+    def test_sends_thirty_minutes_before(self):
+        import datetime as dt
+        from automations.digi_docs import roster
+        self.assertEqual(roster.send_due_at(self._cand("1:00")), dt.time(12, 30))
+        self.assertEqual(roster.send_due_at(self._cand("12:30")), dt.time(12, 0))
+
+    def test_not_yet_at_noon_due_by_half_past(self):
+        import datetime as dt
+        from automations.digi_docs import roster
+        one_oclock = [self._cand("1:00")]
+        due, not_yet, _ = roster.due_now(
+            one_oclock, now=dt.datetime(2026, 8, 31, 12, 15))
+        self.assertEqual((len(due), len(not_yet)), (0, 1))
+        due, not_yet, _ = roster.due_now(
+            one_oclock, now=dt.datetime(2026, 8, 31, 12, 30))
+        self.assertEqual((len(due), len(not_yet)), (1, 0))
+
+    def test_a_missed_slot_still_sends(self):
+        """The machine being busy at 12:30 must not mean they never get sent."""
+        import datetime as dt
+        from automations.digi_docs import roster
+        due, _, _ = roster.due_now([self._cand("1:00")],
+                                   now=dt.datetime(2026, 8, 31, 14, 5))
+        self.assertEqual(len(due), 1)
+
+    def test_no_readable_time_is_held_back(self):
+        import datetime as dt
+        from automations.digi_docs import roster
+        due, not_yet, no_time = roster.due_now(
+            [self._cand("")], now=dt.datetime(2026, 8, 31, 23, 0))
+        self.assertEqual((len(due), len(not_yet), len(no_time)), (0, 0, 1))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

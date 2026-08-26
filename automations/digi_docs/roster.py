@@ -26,6 +26,7 @@ class Candidate:
     digi_col: int = 0               # 1-indexed "Digi Docs" column, 0 if absent
     digi_val: str = ""              # what the cell holds now
     location: str = ""              # the chart's "Location" cell
+    start_time: str = ""            # the chart's "Start Time" cell, verbatim
     # INFORMATIONAL ONLY -- never gates a send. True once the chart's date has
     # passed with no status and no location against their name.
     no_show: bool = False
@@ -113,10 +114,99 @@ def candidates(values: List[List[str]], tab_name: str,
             loc = _bir._col(header, config.COL_LOCATION)
             if loc is not None:
                 c.location = _bir._cell(row, loc)
+            st = _bir._col(header, config.COL_START_TIME)
+            if st is not None:
+                c.start_time = _bir._cell(row, st)
         if day_one_passed and not _showed_up(p.final_status, c.location):
             c.no_show = True
         out.append(c)
     return out
+
+
+_MERIDIEM = ("am", "pm")
+
+
+def parse_start_time(text: str):
+    """'1:00' -> datetime.time(13, 0). Returns None when it can't be read.
+
+    The column is plain text — verified against the live 8.24 tab, where the
+    UNFORMATTED read still comes back as the string '1:00'. There is no real
+    Sheets time value underneath to recover the meridiem from, so it is read
+    the way a person reads it (see config.ASSUME_PM_BEFORE_HOUR).
+
+    None is a REFUSAL, not a default. A time we cannot read means we do not
+    know when this person's documents are due, and guessing puts a contract in
+    front of somebody at the wrong hour — or fires the whole day at once.
+    """
+    import datetime as _dt
+    s = (text or "").strip().lower().replace(".", "")
+    if not s:
+        return None
+    meridiem = ""
+    for m in _MERIDIEM:
+        if s.endswith(m):
+            meridiem, s = m, s[: -len(m)].strip()
+            break
+    if not s:
+        return None
+    try:
+        if ":" in s:
+            hh, mm = s.split(":", 1)
+            hour, minute = int(hh), int(mm[:2])
+        else:
+            hour, minute = int(s), 0
+    except (ValueError, TypeError):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+
+    if meridiem == "pm":
+        hour = hour if hour == 12 else hour + 12
+    elif meridiem == "am":
+        hour = 0 if hour == 12 else hour
+    elif hour < config.ASSUME_PM_BEFORE_HOUR:
+        # No meridiem and an early hour. 12:xx is already afternoon on a
+        # 12-hour clock; 1-6 becomes 13-18.
+        hour = hour if hour == 12 else hour + 12
+    if hour > 23:
+        return None
+    return _dt.time(hour, minute)
+
+
+def send_due_at(c: "Candidate"):
+    """When THIS person's bundle should go: their start time, less the lead.
+
+    None when their start time can't be read — the caller reports them rather
+    than sending at a guessed hour.
+    """
+    import datetime as _dt
+    t = parse_start_time(c.start_time)
+    if t is None:
+        return None
+    anchor = _dt.datetime(2000, 1, 1, t.hour, t.minute)
+    return (anchor - _dt.timedelta(minutes=config.SEND_LEAD_MINUTES)).time()
+
+
+def due_now(cands: List["Candidate"], now=None):
+    """(due, not_yet, no_time) — split by whether it is time to send yet.
+
+    `due` is everyone whose send moment has ARRIVED, not just landed on: a tick
+    that only fired on the exact minute would drop anyone whose slot was missed
+    because the machine was busy, and they would never be sent at all.
+    """
+    import datetime as _dt
+    now = now or _dt.datetime.now()
+    now_t = now.time()
+    due, not_yet, no_time = [], [], []
+    for c in cands:
+        at = send_due_at(c)
+        if at is None:
+            no_time.append(c)
+        elif now_t >= at:
+            due.append(c)
+        else:
+            not_yet.append(c)
+    return due, not_yet, no_time
 
 
 # What a ticked "Digi Docs" checkbox means: a PERSON marked it, by hand, once

@@ -45,6 +45,40 @@ COL_LOCATION = "Location"
 DETECT_NO_SHOWS = True
 COL_QUIZZES = "Onboarding Quizzes"   # reference only -- never written
 
+# --- Start Time: when each person's bundle actually goes (Raf, 2026-08-26) ---
+# Not one 7:45am batch any more. Each rep gets their documents SEND_LEAD_MINUTES
+# before THEIR start time, read from this column.
+COL_START_TIME = "Start Time"
+SEND_LEAD_MINUTES = 30
+
+# All times on this tab are CENTRAL (Megan 2026-08-26). Lucy 3 is Central too,
+# so the tick compares against machine-local time — but naming it here means a
+# machine move is a one-line fix instead of a silent hour's drift.
+OFFICE_TZ = "America/Chicago"
+
+# THE ONE THING THIS COLUMN DOES NOT SAY: AM or PM.
+#
+# Checked against the live 8.24 tab (2026-08-26): the cells are PLAIN TEXT, not
+# real Sheets time values. The unformatted read comes back as the string
+# '1:00', so there is no underlying 13:00 to recover — a 12-hour clock with the
+# meridiem left off is genuinely all the sheet contains.
+#
+# So it is read the way a person reads it. Nobody starts a shift at 1am:
+#     12:xx        -> PM   (12:30 is half twelve, not half midnight)
+#     1:00 - 6:59  -> PM   (the afternoon starts on this tab: 1:00, 1:30)
+#     7:00 - 11:59 -> AM   (a morning start is written 8:00, and means 8am)
+# An explicit "1:00 PM" or a 24-hour "13:00" always wins over the rule.
+#
+# Anything this cannot read is NOT sent on a guess -- it is reported as needing
+# a time, because the cost of guessing wrong is a contract landing at the wrong
+# hour or, worse, the whole day's sends firing at once first thing.
+ASSUME_PM_BEFORE_HOUR = 7
+
+# The add pass has no such timing: it just has to be done before the earliest
+# send. Megan 2026-08-26: anywhere in the 8-10am window, whenever Lucy 3 is
+# most free.
+ADD_PASS_TIME = "08:00"
+
 # Our own log tab, created on first send. We never write into OBCL columns
 # other than the two above.
 LEDGER_TAB = "Digi Docs Log"

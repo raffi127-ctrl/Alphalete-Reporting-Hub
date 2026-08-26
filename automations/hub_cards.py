@@ -4707,13 +4707,16 @@ AUTOMATED_REPORTS = [
             "Digi Docs on the OBCL tab."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Every **Monday 7:45am** on Lucy 3, in two passes over the newest "
-            "dated **`D2D OBCL <m.d>`** tab (every **chart** on it — "
-            "Monday's has two):\n"
-            "**1. Add.** Anyone eligible who isn't in **OwnerVille** yet is "
-            "added (Onboard → View Progress → + Add Sales Rep). "
-            "This pass mails nobody and ticks nothing.\n"
-            "**2. Send.** For each rep still showing **Onboarding Documents = "
+            "Two passes on Monday over the newest dated **`D2D OBCL <m.d>`** "
+            "tab (every **chart** on it — Monday's has two):\n"
+            "**1. Add — 8:00am.** Anyone eligible who isn't in **OwnerVille** "
+            "yet is added (Onboard → View Progress → + Add Sales Rep). "
+            "This pass mails nobody and ticks nothing, which is why it can run "
+            "early.\n"
+            "**2. Send — 30 minutes before each person's own start time.** "
+            "Read from the **Start Time** column, so somebody starting at 1:00 "
+            "gets their bundle at 12:30. A tick checks every 5 minutes through "
+            "the morning. For each rep still showing **Onboarding Documents = "
             "REQUIRED ACTION**, it opens their Digital Doc Portal, picks the "
             "**Base (Door to Door/Business to Business)** bundle type and the "
             "**Door to Door- General 1** bundle, ticks the AT&T Door to Door "
@@ -4755,15 +4758,20 @@ AUTOMATED_REPORTS = [
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
                       "?gid=1430069873#gid=1430069873"),
         "assignees": ["Lucy 3"],
-        # Its own launchd timer (com.alphalete.digi-docs-monday), so it
-        # self-reports rather than sitting in the due-today tallies — same
-        # shape as blueink-docs, headshot-bot and bg-check-sync.
+        # Its own launchd timers, so it self-reports rather than sitting in the
+        # due-today tallies — same shape as blueink-docs and headshot-bot.
         "self_scheduled": True,
+        # ONE card, two passes (Megan 2026-08-26). The 8am add and the day's
+        # sends BOTH publish success under this same card id, so 1 success = 1/2
+        # (the adds are in, the sends are still coming) and 2 = green. Modelled
+        # as daily_runs, NOT `phases`: a chain of two different ids
+        # auto-registers a phantom library card for the second one.
+        "daily_runs": 2,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],
-            "time": "7:45 AM",
-            "time_label": "Raf's Office · Mon 7:45am",
+            "time": "8:00 AM",
+            "time_label": "Raf's Office · Mon 8am, then 30 min before each start",
             "estimated_minutes": 25,
         },
         "checklist": [],

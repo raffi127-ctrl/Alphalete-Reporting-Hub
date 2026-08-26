@@ -3,12 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.alphalete.digi-docs-monday</string>
+    <string>com.alphalete.digi-docs-add</string>
 
     <!-- Install on LUCY 3 with:
-             lucy rerun install_digi_docs_monday_agent (add machine "Lucy 3")
-         The wrapper passes the live flag, so the moment this is loaded it
-         mails real people and there is no unsend.
+             lucy rerun install_digi_docs_add_agent (add machine "Lucy 3")
+         This pass adds people to OwnerVille and mails nobody.
 
          NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
          inside an XML comment. It ends the comment early and makes the plist
@@ -21,7 +20,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/megan/1st Claude Folder/deploy/digi_docs_monday.sh</string>
+        <string>/Users/megan/1st Claude Folder/deploy/digi_docs.sh</string>
+        <string>--add</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -33,23 +33,25 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 7:45am machine LOCAL time (Lucy 3 is Central). Weekday 1 is
-         Monday in launchd. That IS start day, and the dated tab is named for
-         it (D2D OBCL 8.24 is Monday 8/24), so the newest tab is always the
-         week being sent. Blue Ink runs 7:30 on Lucy 2 for the same cohort. -->
+    <!-- Monday 8:00am machine LOCAL time (Lucy 3 is Central). Weekday 1 is
+         Monday in launchd. THE ADD PASS ONLY: it mails nobody, so the hour
+         just has to sit in the quiet 8 to 10 window and finish before the
+         earliest send. The sends themselves are the separate
+         com.alphalete.digi-docs-send job, 30 minutes before each person's own
+         start time. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
         <integer>1</integer>
         <key>Hour</key>
-        <integer>7</integer>
+        <integer>8</integer>
         <key>Minute</key>
-        <integer>45</integer>
+        <integer>0</integer>
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs.launchd.out.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs-add.launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs.launchd.err.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs-add.launchd.err.log</string>
 </dict>
 </plist>

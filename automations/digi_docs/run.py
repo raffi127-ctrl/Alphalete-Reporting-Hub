@@ -92,6 +92,11 @@ def main(argv=None) -> int:
                          "generate against.")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
+    ap.add_argument("--due-now", action="store_true",
+                    help="send only the people whose start time is within the "
+                         "next %d minutes. What the day's tick passes; without "
+                         "it --send-only still means the whole cohort at once."
+                         % config.SEND_LEAD_MINUTES)
     ap.add_argument("--only", default="",
                     help="work ONE person by name, not the whole cohort. For "
                          "verifying a phase against the live site without "
@@ -149,10 +154,42 @@ def _phases(args) -> int:
         print(f"--only {send[0].name}")
     _flag_terminated(send)
     dry = not args.live
+
+    # The ADD pass always takes everyone: somebody starting at 1pm still has to
+    # exist in OwnerVille by the time their 12:30 send comes round, and adding
+    # them early costs nothing because it mails nobody.
+    add_list = list(send)
+    no_time = []
+    if args.due_now and do_send:
+        send, not_yet, no_time = roster.due_now(send)
+        print(f"due now: {len(send)} · not yet: {len(not_yet)} · "
+              f"no readable start time: {len(no_time)}")
+        for c in not_yet:
+            at = roster.send_due_at(c)
+            # %-I is Mac-only; this has to run on Windows too.
+            when = f"{(at.hour % 12) or 12}:{at.minute:02d}" if at else "?"
+            print(f"  · {c.name}: starts {c.start_time}, sends at {when}")
+
     print(f"\n{ws.title}: {len(send)} to work "
           f"({'DRY RUN' if dry else 'LIVE'})\n")
 
+    # NOTHING DUE -> DON'T OPEN A BROWSER. The send tick fires through the
+    # whole day, and most of those firings have nobody due yet. Opening
+    # OwnerVille to discover that would be a session churned every few minutes
+    # on the same machine the headshots tick is already driving — the exact
+    # collision separate profiles only half-protect against. The Sheet read
+    # above is enough to know there is no work.
+    if args.due_now and do_send and not send and not do_add:
+        print("nobody is due yet — not opening OwnerVille")
+        return 0
+
     added, done, refused = [], [], []
+    # Somebody whose start time we cannot read is NEVER sent on a guess, and
+    # never silently dropped either -- they go in refused, so the channel names
+    # them and a person can put a time in the cell.
+    for c in no_time:
+        refused.append(f"{c.name}: no readable Start Time "
+                       f"({c.start_time!r}) — nobody knows when this is due")
     # `fatal` is what makes the WORST case the loudest one. Everything below
     # already survives one rep failing, but a session that won't open, or a
     # browser that dies mid-batch, threw straight past the Slack post — so the
@@ -162,7 +199,7 @@ def _phases(args) -> int:
     fatal = ""
     try:
         _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
-              do_send=do_send, send=send, dry=dry,
+              do_send=do_send, send=send, add_list=add_list, dry=dry,
               added=added, done=done, refused=refused)
     except Exception as e:                          # noqa: BLE001
         fatal = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
@@ -172,13 +209,20 @@ def _phases(args) -> int:
                        do_send=do_send, fatal=fatal)
 
 
-def _work(ov, *, page_ctx, do_add, do_send, send, dry, added, done, refused):
+def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
+          added, done, refused):
     """The two phases. Split out only so the caller can wrap the whole thing
-    in one try/except without burying the loops inside it."""
+    in one try/except without burying the loops inside it.
+
+    `add_list` is the whole cohort and `send` is only who is DUE — they are
+    different lists now that each person's bundle goes 30 minutes before
+    their own start time. Adding early is free (it mails nobody) and adding
+    late is not: somebody starting at 1pm has to exist in OwnerVille before
+    their 12:30 send comes round."""
     with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
-            for c in send:
+            for c in add_list:
                 try:
                     outcome = ov.add_sales_rep(page, c.name, dry_run=dry)
                     if outcome in ("added", "dry"):
