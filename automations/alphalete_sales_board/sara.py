@@ -327,6 +327,22 @@ def probe(*, headless: bool = True, log=print) -> Dict:
             log("LOGIN OK -> %s" % base)
             log("after login: %s" % page_state(page))
 
+            # What can this login actually REACH? Dumped from the landing page,
+            # because "the hub 404s" and "this account has no reporting module"
+            # look identical from the hub's side and need opposite fixes.
+            links = page.evaluate(
+                """() => Array.from(document.querySelectorAll('a[href]'))
+                       .map(a => ((a.textContent || '').trim().replace(/\s+/g, ' ')
+                                  + ' -> ' + a.getAttribute('href')))
+                       .filter(t => /\.aspx/i.test(t))""")
+            out["links"] = links
+            log("--- %d .aspx links on the landing page ---" % len(links))
+            for t in links[:40]:
+                log("   " + t[:150])
+            reporting = [t for t in links if "report" in t.lower()]
+            log("links mentioning 'report': %s"
+                % (", ".join(reporting[:10]) if reporting else "NONE"))
+
             page.goto(base + HUB_PATH, wait_until="networkidle")
             page.wait_for_timeout(3000)
             out["hub_state"] = page_state(page)
