@@ -597,6 +597,7 @@ def main(argv=None) -> int:
     #                last stop, and a late board beats a missing one.
     #   --only       bypassed entirely: naming a board means you want that board.
     held: dict = {}
+    still_behind: dict = {}
     if args.retitle_only or args.inspect or args.no_freshness_gate:
         pass
     elif args.late_only or args.notice:
@@ -608,16 +609,42 @@ def main(argv=None) -> int:
                     if args.notice else "catch-up also carries")
             print(f"  ↺ {what} {len(held)} board(s) this morning "
                   f"held for stale data: {', '.join(held)}", flush=True)
+            if args.late_only:
+                # Re-measure ONLY what this morning held — usually nothing, so
+                # this costs a pull on the rare day it matters. The catch-up
+                # still POSTS them either way (it is the last stop; a late board
+                # beats a missing one), but a board that is STILL behind must not
+                # land with the "Tableau is behind" line wiped off the header.
+                # Otherwise the morning gate just delays the problem: on
+                # 2026-08-26 quantum_fiber was a full day behind at 08:30, so a
+                # 7am catch-up would have posted a 0-sales board looking normal.
+                try:
+                    still_behind, _v = _fr.stale_boards(list(held), today,
+                                                        verbose=True)
+                except Exception as e:            # noqa: BLE001 — never sink the catch-up
+                    print(f"  (re-check skipped: {type(e).__name__}) — keeping "
+                          f"this morning's note", flush=True)
+                    still_behind = dict(held)
+                for bid in still_behind:
+                    title = (pages_mod.by_id(bid) or {}).get("title") or bid
+                    print(f"  ⚠ {title} is STILL behind — posting it (last stop) "
+                          f"with the header note kept", flush=True)
     elif not args.only:
         held = _hold_stale_boards(today, dry_run=args.dry_run)
 
-    # The thread's own heads-up line, when the gate is HOLDING boards this run:
-    # every channel's header says Tableau is behind and that the updated boards
-    # land here on their own (Megan 2026-08-26). Only while they're held — the
-    # ~7am catch-up posts them with note="", which is what clears the line from
-    # the header again, so a complete thread never keeps advertising a delay.
-    auto_note = "" if (args.late_only or args.notice) else \
-        (sp.STALE_NOTICE if held else "")
+    # The thread's own heads-up line: every channel's header says Tableau is
+    # behind and that the updated boards land here on their own (Megan
+    # 2026-08-26). It is tied to the DATA being behind, not to the boards being
+    # absent — the ~7am catch-up posts a still-behind board (last stop) and KEEPS
+    # the line, because a 0-sales board landing with a clean header is the exact
+    # thing this whole gate exists to stop. The line clears the moment the data
+    # is actually current, which for the catch-up means still_behind is empty.
+    if args.notice:
+        auto_note = ""                       # the notice supplies its own text
+    elif args.late_only:
+        auto_note = sp.STALE_NOTICE if still_behind else ""
+    else:
+        auto_note = sp.STALE_NOTICE if held else ""
 
     selected = _select(args.only, late_only=args.late_only,
                        include_late=args.include_late)

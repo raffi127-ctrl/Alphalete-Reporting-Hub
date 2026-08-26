@@ -112,13 +112,34 @@ EXTRACTS = {
         "boards": ["b2b_att_country", "b2b_att_country_cru",
                    "b2b_d2d_consolidated", "order_tiered_bonus"],
     },
+    # The one board that DOESN'T need a sale-date proxy: this workbook publishes
+    # its own refresh status on a "Last Update" sheet, e.g.
+    #   Last SFDC Object Update: 8/25/2026 | Latest Activities Data Update: 8/24/2026
+    # That is the workbook telling us, in words, which day its data actually
+    # reaches — no owner floor, no max-date inference, no guessing which
+    # worksheet stands in for the picture. On 2026-08-26 it read 8/24 while we
+    # photographed it as Tuesday's board and sent it to 15 channels; Tuesday
+    # rendered as 0 sales (-100% vs both baselines) because Tuesday genuinely
+    # wasn't loaded. Nothing read that sheet, so nothing objected.
+    "tableau:tracker_quantum": {
+        "label": "RES-LumenSalesTrackervMZ extract (ATT Quantum Fiber tracker)",
+        "last_update": {
+            "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                         "RES-LumenSalesTrackervMZ/LumenSalesTracker?:iid=2"),
+            "sheet": "Last Update",
+            # Gate on the ACTIVITIES date, not the SFDC one. The board's numbers
+            # are activities; on 8/26 SFDC read 8/25 while activities read 8/24,
+            # so gating on SFDC would have passed the exact morning that failed.
+            "field": "Latest Activities Data Update",
+        },
+        "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
+        "boards": ["quantum_fiber"],
+    },
 }
 
 # Boards with no freshness gate, and why — surfaced by the CLI and the run summary
 # so "ungated" is never mistaken for "checked and fine".
 UNGATED = {
-    "quantum_fiber": "RES-LumenSalesTrackervMZ has no verified crosstab worksheet "
-                     "yet (run --discover quantum_fiber to wire it)",
     "b2b_box": "already gated by tableau:box_daily on the ~7am catch-up",
     "vzftr": "email-sourced .xlsx — gated by run.py's _gate_email_sources",
 }
@@ -141,6 +162,8 @@ def extracts_for_boards(board_ids) -> List[str]:
 
 
 def _resolve_spec(extract_id: str):
+    """The ScrapeSpec a crosstab-probed extract reuses. Not every extract has one
+    — a `last_update` extract reads the workbook's own published date instead."""
     mod_name, attr = EXTRACTS[extract_id]["spec"]
     import importlib
     return getattr(importlib.import_module(mod_name), attr)
@@ -181,6 +204,80 @@ def _record_ready(today: dt.date, extract_id: str, reason: str) -> None:
 
 # ---------------- the probe ----------------
 
+_LAST_UPDATE_RE_TMPL = r"{}\s*:\s*(\d{{1,2}}/\d{{1,2}}/\d{{4}})"
+
+
+def _read_crosstab_text(path: Path) -> str:
+    """A Tableau crosstab as text, whatever encoding it came down in.
+
+    These exports are UTF-16 with a BOM ('L\x00a\x00s\x00t\x00...'), which
+    read as mojibake through utf-8. Decode by BOM, fall back to utf-8."""
+    raw = Path(path).read_bytes()
+    for enc in ("utf-16", "utf-8-sig", "latin-1"):
+        try:
+            text = raw.decode(enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+        if "\x00" not in text:
+            return text
+    return raw.decode("utf-8", errors="replace")
+
+
+def parse_last_update(text: str, field: str) -> Optional[dt.date]:
+    """The date `field` reports in a "Last Update" sheet, or None.
+
+    The sheet is one line naming several dates, e.g.
+      Last SFDC Object Update: 8/25/2026 | Latest Activities Data Update: 8/24/2026
+    Which field matters is per-workbook (see the EXTRACTS entry) — they do NOT
+    move together, and on 2026-08-26 the difference between them was exactly the
+    difference between "gate passes" and "gate catches it"."""
+    import re
+    m = re.search(_LAST_UPDATE_RE_TMPL.format(re.escape(field)), text or "",
+                  re.IGNORECASE)
+    if not m:
+        return None
+    try:
+        mth, day, yr = (int(x) for x in m.group(1).split("/"))
+        return dt.date(yr, mth, day)
+    except (ValueError, TypeError):
+        return None
+
+
+def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,
+                       page=None, log=lambda m: None) -> Tuple[bool, str]:
+    """(fresh, reason) for a workbook that PUBLISHES its own refresh date.
+
+    Strictly better than the sale-date proxy the other extracts use: it asks the
+    workbook which day its data reaches instead of inferring it from whether any
+    row happens to carry yesterday's date. A workbook that says 8/24 on the 26th
+    is behind, full stop — no owner floor, no partial-day ambiguity.
+
+    Unreadable/unparseable is NOT stale (same rule as everywhere here): a probe
+    that can't read must never hold a board that may be perfectly fine."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    conf = cfg["last_update"]
+    field = conf.get("field", "Latest Activities Data Update")
+    out = OUT_DIR / "_freshness" / ("%s.csv" % extract_id.replace(":", "_"))
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        path = download_crosstab_patchright(
+            conf["view_url"], conf["sheet"], out, verbose=False, page=page)
+    except Exception as e:                  # noqa: BLE001 — not pullable yet
+        line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+        return True, "last-update sheet not pullable (%s) — not held" % line
+    text = _read_crosstab_text(Path(path))
+    got = parse_last_update(text, field)
+    if got is None:
+        return True, ("%r not found on the %r sheet — not held (the sheet's "
+                      "wording may have changed)" % (field, conf["sheet"]))
+    log("%s reports %s = %s" % (conf["sheet"], field, got.isoformat()))
+    if got >= target:
+        return True, "%s reaches %s (need >= %s)" % (field, got.isoformat(),
+                                                     target.isoformat())
+    return False, ("%s only reaches %s, need %s — extract not refreshed"
+                   % (field, got.isoformat(), target.isoformat()))
+
+
 def check_extract(extract_id: str, today: Optional[dt.date] = None, *,
                   page=None, verbose: bool = True,
                   use_cache: bool = True) -> Tuple[bool, str]:
@@ -206,13 +303,22 @@ def check_extract(extract_id: str, today: Optional[dt.date] = None, *,
     if target is None:
         return True, "no completed reporting day to gate on"
 
+    log = (lambda m: print("   %s" % m, flush=True)) if verbose else (lambda m: None)
+
+    # A workbook that publishes its own refresh date is asked directly; only the
+    # rest need a sale-date proxy off a stand-in worksheet.
+    if cfg.get("last_update"):
+        ok, why = _check_last_update(extract_id, cfg, target, page=page, log=log)
+        if ok and "not held" not in why:
+            _record_ready(today, extract_id, why)
+        return ok, why
+
     try:
         from automations.org_sales_board import section_pull as _sp
     except Exception as e:                  # noqa: BLE001 — code problem, not data
         return False, "cannot import section_pull (%s)" % (e,)
 
     spec = _resolve_spec(extract_id)
-    log = (lambda m: print("   %s" % m, flush=True)) if verbose else (lambda m: None)
     try:
         path = _sp.pull_section_byday(spec, OUT_DIR / "_freshness", page,
                                       logfn=log, today=today)
