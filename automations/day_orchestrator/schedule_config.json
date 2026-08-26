@@ -8179,6 +8179,48 @@
    "depends_on": [],
    "timeout_minutes": 30,
    "verify": null
+  },
+  "ad_sales_board": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Manual trigger for the daily 7:50am launchd agent (com.alphalete.ad-sales-board on Lucy 2): `lucy rerun ad_sales_board --machine lucy2` re-pulls the current + previous ad-week (Wed-Tue) for all 28 offices; `--weeks N` backfills. Writes the hidden 'Ad Sales Data' tab + W/X lists on the Recruiting Dashboard and, on Wednesdays, flips the visible tab's C2 week picker. Names join from the old tracker's Call List tab. Activity rows log under card id ad-sales-board (run.py CARD_ID). Added 2026-08-26.",
+   "display_name": "Ad Sales Board (weekly Source Report)",
+   "source_type": "appstream",
+   "data_sources": [],
+   "command": [
+    "automations.ad_sales_board.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 90,
+   "verify": null,
+   "machine": "Lucy 2"
+  },
+  "install_ad_sales_board_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_ad_sales_board_agent --machine \"Lucy 2\"` can install/refresh the STANDALONE com.alphalete.ad-sales-board LaunchAgent on Lucy 2 (daily 07:50 machine-local, deploy/ad_sales_board.sh — deliberately after applicant_tracker's 6:45 morning import so yesterday's call-list names are in). install_agent is read-only w.r.t. any Sheet data; it only loads the plist.",
+   "display_name": "Install Ad Sales Board agent (daily 7:50am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "ad-sales-board"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 10,
+   "verify": null
   }
  },
  "read_only_standalone": {
