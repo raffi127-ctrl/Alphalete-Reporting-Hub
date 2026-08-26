@@ -87,6 +87,10 @@ def main(argv=None) -> int:
                     help="phase 3 only: generate bundles + tint the cell")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
+    ap.add_argument("--only", default="",
+                    help="work ONE person by name, not the whole cohort. For "
+                         "verifying a phase against the live site without "
+                         "putting 30 people through an unproven click-path.")
     args = ap.parse_args(argv)
 
     if not args.add_only and not args.send_only:
@@ -105,6 +109,16 @@ def _phases(args) -> int:
     ws, values = _open_tab(args.tab)
     cands = roster.candidates(values, ws.title)
     send = roster.to_send(cands)
+    if args.only:
+        want = args.only.strip().lower()
+        send = [c for c in send if want in c.name.lower()]
+        if len(send) != 1:
+            print(f"⛔ --only {args.only!r} matched {len(send)} people "
+                  f"({[c.name for c in send][:4]}) — expected exactly one. "
+                  "Refusing: a scoped run that silently widens is the whole "
+                  "thing --only exists to prevent.")
+            return 1
+        print(f"--only {send[0].name}")
     dry = not args.live
     print(f"\n{ws.title}: {len(send)} to work "
           f"({'DRY RUN' if dry else 'LIVE'})\n")
@@ -173,11 +187,21 @@ def _phases(args) -> int:
 
     # Write-back: tint the Digi Docs CELL for whoever actually got their
     # bundle. Never the name, never the checkbox.
-    from automations.digi_docs import mark, slack_post
-    sent_names = {n for n, _m, _t in done}
-    tinted = mark.tint(ws, [c for c in send if c.name in sent_names],
-                       dry_run=dry)
-    slack_post.post(len(done), refused, done, dry_run=dry)
+    #
+    # SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only
+    # --live` -- a phase that deliberately mails nobody and ticks nothing --
+    # would still have posted "*0* new starts sent digi docs" into #11280 off
+    # an empty `done`. Adding reps is not a send and must not announce itself
+    # as one.
+    tinted = 0
+    if args.send_only:
+        from automations.digi_docs import mark, slack_post
+        sent_names = {n for n, _m, _t in done}
+        tinted = mark.tint(ws, [c for c in send if c.name in sent_names],
+                           dry_run=dry)
+        slack_post.post(len(done), refused, done, dry_run=dry)
+    else:
+        print("\n(add phase — no tint, no Slack: nothing was sent)")
 
     print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
           f"refused {len(refused)}")

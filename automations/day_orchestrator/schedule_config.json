@@ -7926,6 +7926,28 @@
    "verify": null,
    "machine": "Lucy 2"
   },
+  "digi_docs_add_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Phase-2 twin of digi_docs_probe (Megan 2026-08-25). base_args is --add-only and NOTHING else, deliberately: mini_control appends rerun args AFTER base_args, so an entry carrying --send-only could be turned into a live SEND by appending --live. This one cannot -- run.py only enters the send phase on --send-only, and only the send phase tints or posts to Slack. Verifying the Add Sales Rep modal needs a real write, so this is the one entry meant to be run with --live, ALWAYS scoped: `lucy --machine 'Lucy 3' rerun digi_docs_add_probe --live --only \"Jose Laureano\"`. Adding a rep mails nobody. weekdays [] so the batch never auto-runs it.",
+   "machine": "Lucy 3",
+   "display_name": "Digi Docs — add phase probe",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.digi_docs.run"
+   ],
+   "base_args": [
+    "--add-only"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null
+  },
   "digi_docs_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "READ-ONLY probe for the Digi Docs build (Megan 2026-08-25): `lucy --machine 'Lucy 3' rerun digi_docs_probe` walks the OwnerVille click-path for this week's cohort WITHOUT --live, so it stops at the per-document form after verifying the required fields and submits nothing. This is how the selectors get verified -- they were transcribed from a Loom and have never met a live page. weekdays [] so the batch never auto-runs it.",
