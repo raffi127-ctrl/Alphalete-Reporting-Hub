@@ -7926,6 +7926,33 @@
    "verify": null,
    "machine": "Lucy 2"
   },
+  "digi_docs": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "NOT ARMED. The real Monday 7:45am Digi Docs run, built and ready but deliberately switched off pending Megan's go-ahead (2026-08-26) -- this is the step that mails ~30 people a nine-document contract bundle, and that is not a thing to turn on as a side effect of finishing the build. To arm it: set on_scheduler true and weekdays [0]. Everything else here is already correct and both phases are verified against the live site. Until then it can be run by hand, scoped, exactly like the two probes.",
+   "machine": "Lucy 3",
+   "display_name": "Digi Docs",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.digi_docs.run"
+   ],
+   "base_args": [
+    "--both",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [],
+    "_armed_weekdays": [0],
+    "_time": "07:45",
+    "_time_note": "Monday 7:45am, alongside Blue Ink's 7:30 on Lucy 2 -- same cohort, same morning, different machines so they do not contend. The 8:30 headshots job only POSTS a Slack thread, so it is not an OwnerVille collision."
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 45,
+   "_timeout_note": "Probe 6 took 11 minutes with 23 of 30 skipped as already-sent. A fresh Monday cohort where everyone needs a bundle is nearer 25, plus the add phase -- so 45, not the probe's 30.",
+   "verify": null
+  },
   "digi_docs_add_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "Phase-2 twin of digi_docs_probe (Megan 2026-08-25). base_args is --add-only and NOTHING else, deliberately: mini_control appends rerun args AFTER base_args, so an entry carrying --send-only could be turned into a live SEND by appending --live. This one cannot -- run.py only enters the send phase on --send-only, and only the send phase tints or posts to Slack. Verifying the Add Sales Rep modal needs a real write, so this is the one entry meant to be run with --live, ALWAYS scoped: `lucy --machine 'Lucy 3' rerun digi_docs_add_probe --live --only \"Jose Laureano\"`. Adding a rep mails nobody. weekdays [] so the batch never auto-runs it.",

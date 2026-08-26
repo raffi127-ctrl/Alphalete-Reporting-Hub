@@ -85,6 +85,11 @@ def main(argv=None) -> int:
                     help="phase 2 only: add missing reps to OwnerVille")
     ap.add_argument("--send-only", action="store_true",
                     help="phase 3 only: generate bundles + tint the cell")
+    ap.add_argument("--both", action="store_true",
+                    help="phase 2 then phase 3 — what the Monday run does. "
+                         "Add everyone missing FIRST, then send, because a "
+                         "rep who isn't in OwnerVille yet has nothing to "
+                         "generate against.")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
     ap.add_argument("--only", default="",
@@ -93,7 +98,7 @@ def main(argv=None) -> int:
                          "putting 30 people through an unproven click-path.")
     args = ap.parse_args(argv)
 
-    if not args.add_only and not args.send_only:
+    if not (args.add_only or args.send_only or args.both):
         return preview(args.tab)
     return _phases(args)
 
@@ -106,6 +111,8 @@ def _phases(args) -> int:
     EXISTS in OwnerVille rather than the roster being half-added."""
     from automations.digi_docs import ownerville as ov
 
+    do_add = args.add_only or args.both
+    do_send = args.send_only or args.both
     ws, values = _open_tab(args.tab)
     cands = roster.candidates(values, ws.title)
     send = roster.to_send(cands)
@@ -125,7 +132,7 @@ def _phases(args) -> int:
 
     added, done, refused = [], [], []
     with ov.session(headless=not dry) as page:
-        if args.add_only or not args.send_only:
+        if do_add:
             print("PHASE: add reps")
             for c in send:
                 try:
@@ -136,7 +143,7 @@ def _phases(args) -> int:
                     refused.append(str(e))
                     print(f"  ⛔ {e}")
 
-        if args.send_only:
+        if do_send:
             print("\nPHASE: send bundles")
             # NO top-level Show All flip. The first probe on Lucy 3 died here
             # (2026-08-25): the filter lives on View Progress, and at this point
@@ -194,7 +201,7 @@ def _phases(args) -> int:
     # an empty `done`. Adding reps is not a send and must not announce itself
     # as one.
     tinted = 0
-    if args.send_only:
+    if do_send:
         from automations.digi_docs import mark, slack_post
         sent_names = {n for n, _m, _t in done}
         tinted = mark.tint(ws, [c for c in send if c.name in sent_names],
