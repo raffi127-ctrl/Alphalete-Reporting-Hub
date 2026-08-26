@@ -29,6 +29,7 @@ class Candidate:
     start_time: str = ""            # the chart's "Start Time" cell, verbatim
     start_col: int = 0              # 1-indexed Start Time column, 0 if the
                                     # chart has no such header at all
+    chart_date: object = None       # the date row that opened THEIR chart
     # INFORMATIONAL ONLY -- never gates a send. True once the chart's date has
     # passed with no status and no location against their name.
     no_show: bool = False
@@ -103,9 +104,18 @@ def candidates(values: List[List[str]], tab_name: str,
     day_one_passed = bool(config.DETECT_NO_SHOWS
                           and chart_date and today > chart_date)
 
+    # Each person's date comes from the chart they sit in, NOT from the tab
+    # title. A tab holds several charts and they can carry different dates —
+    # Monday's second chart is the late adds — and this report fires on the day
+    # a chart is dated for.
+    from automations.shared import obcl_charts as _oc
+    charts = _oc.find_charts(values)
+
     out: List[Candidate] = []
     for p in _bir.collapse_duplicates(_bir.parse_tab(values, tab_name)):
         c = Candidate(person=p)
+        ch = _oc.chart_for_row(charts, p.row)
+        c.chart_date = _oc.chart_date(ch, tab_name) if ch else None
         header = _header_above(values, p.row)
         row = values[p.row - 1] if p.row - 1 <= len(values) else []
         if header:
@@ -188,6 +198,23 @@ def send_due_at(c: "Candidate"):
         return None
     anchor = _dt.datetime(2000, 1, 1, t.hour, t.minute)
     return (anchor - _dt.timedelta(minutes=config.SEND_LEAD_MINUTES)).time()
+
+
+def starting_today(cands: List["Candidate"], today=None) -> List["Candidate"]:
+    """Only the people whose CHART is dated for today.
+
+    "It runs on Mondays" was only ever true by coincidence — the charts happen
+    to be dated for Mondays (Megan 2026-08-26). What the report actually keys
+    on is the date written above somebody's chart, so a Wednesday chart sends
+    on Wednesday without anything being rescheduled.
+
+    A chart with no readable date sends NOBODY. That is deliberate: an
+    undated chart could be any day, and sending a contract on the wrong one is
+    worse than not sending it, which somebody notices.
+    """
+    import datetime as _dt
+    today = today or _dt.date.today()
+    return [c for c in cands if c.chart_date == today]
 
 
 def due_now(cands: List["Candidate"], now=None):

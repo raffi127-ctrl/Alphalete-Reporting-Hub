@@ -33,16 +33,18 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 8:00am machine LOCAL time (Lucy 3 is Central). Weekday 1 is
-         Monday in launchd. THE ADD PASS ONLY: it mails nobody, so the hour
-         just has to sit in the quiet 8 to 10 window and finish before the
-         earliest send. The sends themselves are the separate
-         com.alphalete.digi-docs-send job, 30 minutes before each person's own
-         start time. -->
+    <!-- 8:00am EVERY DAY, machine LOCAL time (Lucy 3 is Central). No Weekday
+         key on purpose: this report fires on the date written above a chart,
+         and those dates being Mondays is a coincidence of how the sheet gets
+         filled in, not the rule (Megan 2026-08-26). A chart dated for a
+         Wednesday has to be added on that Wednesday.
+
+         Firing daily is cheap because the run stops on the sheet read when no
+         chart is dated for today, long before it opens a browser. THE ADD PASS
+         MAILS NOBODY; the sends are the separate com.alphalete.digi-docs-send
+         job, 30 minutes before each person's own start time. -->
     <key>StartCalendarInterval</key>
     <dict>
-        <key>Weekday</key>
-        <integer>1</integer>
         <key>Hour</key>
         <integer>8</integer>
         <key>Minute</key>

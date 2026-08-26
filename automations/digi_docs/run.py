@@ -92,6 +92,10 @@ def main(argv=None) -> int:
                          "generate against.")
     ap.add_argument("--tab", default="",
                     help="a specific D2D OBCL tab (default: the newest)")
+    ap.add_argument("--today", action="store_true",
+                    help="only the people whose CHART is dated for today. What "
+                         "both scheduled passes use — the report fires on the "
+                         "date written above a chart, not on a fixed weekday.")
     ap.add_argument("--due-now", action="store_true",
                     help="send only the people whose start time is within the "
                          "next %d minutes. What the day's tick passes; without "
@@ -175,9 +179,21 @@ def _phases(args) -> int:
         from automations.digi_docs import slack_post as _sp
         _sp.clear_reported()
 
-    # The ADD pass always takes everyone: somebody starting at 1pm still has to
-    # exist in OwnerVille by the time their 12:30 send comes round, and adding
-    # them early costs nothing because it mails nobody.
+    # WHICH DAY IS THIS CHART FOR? Not "is it Monday" — that was only ever true
+    # by coincidence, because the charts happen to be dated for Mondays (Megan
+    # 2026-08-26). A chart dated for a Wednesday sends on that Wednesday with
+    # nothing rescheduled. A chart with no readable date sends nobody.
+    if args.today or args.due_now:
+        before = len(send)
+        send = roster.starting_today(send)
+        print(f"charts dated today: {len(send)} of {before} on the tab")
+        if not send:
+            print("no chart is dated for today — nothing to do")
+            return 0
+
+    # The ADD pass takes everyone starting today, due or not: somebody starting
+    # at 1pm still has to exist in OwnerVille by the time their 12:30 send comes
+    # round, and adding them early costs nothing because it mails nobody.
     add_list = list(send)
     no_time = []
     if args.due_now and do_send:

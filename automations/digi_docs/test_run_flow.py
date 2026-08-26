@@ -45,6 +45,7 @@ class _Args:
     tab = ""
     only = ""
     due_now = False
+    today = False
 
 
 def _fake_ov(*, session_raises=None):
@@ -377,6 +378,69 @@ class FailuresAlertImmediately(_NoNetwork):
         self.assertFalse(os.path.exists(slack_post.REPORTED_MARKER),
                          "a stale marker would silence the wrapper's "
                          "last-resort alert on the NEXT run")
+
+
+class FiresOnTheChartDate(_NoNetwork):
+    """Megan 2026-08-26: "we need to have it run on any date listed on one of
+    the new start charts. Right now it just happens to be mondays."
+
+    The charts on Raf's tab are dated for Mondays, so a weekday-pinned schedule
+    looked right for as long as that held. It is the DATE ROW above a chart
+    that decides."""
+
+    def _cands(self, *dates):
+        import datetime as dt
+        from automations.digi_docs import roster
+        out = []
+        for i, d in enumerate(dates):
+            c = roster.Candidate(person=types.SimpleNamespace(
+                name=f"Person {i}", row=i + 3, skip_reason="", eligible=True))
+            c.chart_date = d
+            out.append(c)
+        return out
+
+    def test_only_todays_chart(self):
+        import datetime as dt
+        from automations.digi_docs import roster
+        mon, wed = dt.date(2026, 8, 31), dt.date(2026, 9, 2)
+        cands = self._cands(mon, wed, wed)
+        self.assertEqual(len(roster.starting_today(cands, today=wed)), 2)
+        self.assertEqual(len(roster.starting_today(cands, today=mon)), 1)
+
+    def test_a_wednesday_chart_sends_on_wednesday(self):
+        import datetime as dt
+        from automations.digi_docs import roster
+        wed = dt.date(2026, 9, 2)
+        self.assertEqual(wed.weekday(), 2, "sanity: that is a Wednesday")
+        self.assertEqual(len(roster.starting_today(self._cands(wed),
+                                                   today=wed)), 1)
+
+    def test_an_undated_chart_sends_nobody(self):
+        """Could be any day. Sending on the wrong one is worse than not
+        sending, which somebody notices."""
+        import datetime as dt
+        from automations.digi_docs import roster
+        self.assertEqual(
+            roster.starting_today(self._cands(None),
+                                  today=dt.date(2026, 8, 31)), [])
+
+    def test_the_date_comes_from_the_chart_not_the_tab_title(self):
+        """A tab holds several charts and they can carry different dates —
+        Monday's second chart is the late adds."""
+        import datetime as dt
+        from automations.digi_docs import roster
+        from automations.shared import obcl_charts as oc
+        values = [
+            ["8/31/2026", "", "", ""],
+            ["#", "Name", "Last Name", "Start Time"],
+            ["1", "Ana", "Diaz", "1:00"],
+            ["", "", "", ""],
+            ["9/2/2026", "", "", ""],
+            ["2", "Ben", "Cole", "1:00"],
+        ]
+        charts = oc.find_charts(values)
+        got = [oc.chart_date(c, "D2D OBCL 8.31") for c in charts]
+        self.assertEqual(got, [dt.date(2026, 8, 31), dt.date(2026, 9, 2)])
 
 
 if __name__ == "__main__":

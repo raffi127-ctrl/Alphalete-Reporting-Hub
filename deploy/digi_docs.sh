@@ -31,22 +31,24 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# THE DAY GATE COMES FIRST, before anything starts an interpreter.
+# THE HOURS GATE COMES FIRST, before anything starts an interpreter.
 #
 # The send tick fires every 5 minutes so that "30 minutes before" is accurate
-# to within five, and it only means anything on start day in office hours.
-# Gating LATER in the script still works, but the venv probe below runs
-# `python -c "import patchright"` up to three times and proc_guard starts
-# another — so a gate placed after them spends four interpreter starts every
-# five minutes, all week, on the same machine the headshots tick already runs
-# on. Roughly two thousand of those a week to discover it is Tuesday.
+# to within five. Gating LATER in the script still works, but the venv probe
+# below runs `python -c "import patchright"` up to three times and proc_guard
+# starts another — so a gate placed after them spends four interpreter starts
+# every five minutes, all day, on the same machine the headshots tick already
+# runs on.
 #
-# `date +%u`: 1 = Monday. Pure shell, no Python, no Sheet read.
+# It gates on the CLOCK only, not the weekday. It used to also require Monday,
+# which was wrong: this report fires on the date written above a chart, and
+# those being Mondays is a coincidence of how the sheet is filled in (Megan
+# 2026-08-26). Whether today is a chart date needs the sheet, so run.py decides
+# that — one cheap read, and it stops before opening a browser.
 for _a in "$@"; do
     if [ "$_a" = "--send-tick" ]; then
-        _DOW="$(date +%u)"
         _HR="$(date +%H)"
-        if [ "$_DOW" != "1" ] || [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
+        if [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
             exit 0
         fi
     fi
@@ -88,12 +90,12 @@ fi
 
 # Mode comes from the plist. --dry-run anywhere wins and is NOT forwarded
 # (run.py has no such flag — dry is simply the absence of --live).
-PHASE="--add-only"
+PHASE="--add-only --today"
 LIVE="--live"
 FWD=()
 for _a in "$@"; do
     case "$_a" in
-        --add)       PHASE="--add-only" ;;
+        --add)       PHASE="--add-only --today" ;;
         --send-tick) PHASE="--send-only --due-now" ;;
         --dry-run)   LIVE="" ;;
         *)           FWD+=("$_a") ;;
