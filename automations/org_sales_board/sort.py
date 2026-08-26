@@ -88,7 +88,34 @@ def plan_leaderboard_sorts(grid: List[List[str]],
     Col C differs by block: the CAMPAIGN leaderboards use a name-keyed =SUMIF
     (leave it — it recomputes for the new name), but the CAPTAINSHIP leaderboards
     store a STATIC value in C (it must MOVE with the ICD). We detect which via
-    the formula grid and move B (+C if static) + D..last accordingly."""
+    the formula grid and move B (+C if static) + D..last accordingly.
+
+    NOT THE DELTA BOXES, and this is the whole reason this function reads them
+    at all. A block is recognised by SHAPE — a title in col A with col B empty,
+    directly above a row ranked "1" — and on 2026-08-25 `delta_ranks` gave every
+    delta box exactly that shape: it wrote the title into col A, cleared col B,
+    and numbered the rep rows 1..N. From the next fill on, the twelve fiber delta
+    boxes matched here and the sort rewrote `D..Z` of each one AS VALUES. That is
+    not a sort bug in the ordering — the order was right — it is that moving a
+    row here means writing its cells back as literals, and in a delta box those
+    cells are live: the per-day 'This week' =SUMIFs, the Delta %, the '=G+J'
+    total. They kept showing the number they froze on and stopped moving, which
+    is invisible: every total still balanced. It took a week and a human eye.
+
+    Shape alone cannot tell the two apart now, so this asks the board what a
+    block IS instead of what it looks like: `find_delta_tables` locates the delta
+    boxes by their 'Total this week' header and triplet columns, and any block
+    overlapping one is left alone. Delta boxes are sorted by `sort_board`-style
+    native sortRange calls elsewhere, which MOVE cells and keep formulas — the
+    thing this function cannot do."""
+    from automations.org_sales_board.rollover import find_delta_tables
+    delta_rows = set()
+    for _t in find_delta_tables(grid):
+        rows_ = _t["data_rows"]
+        if rows_:
+            # the header and the totals row beneath are part of the box too
+            delta_rows.update(range(_t["header_row"], rows_[-1] + 2))
+
     updates: List[dict] = []
     i = 0
     while i < len(grid):
@@ -104,6 +131,11 @@ def plan_leaderboard_sorts(grid: List[List[str]],
             while r <= len(grid) and _cell(grid, r - 1, 0).strip().isdigit():
                 r += 1
             last = r - 1
+            if delta_rows & set(range(first, last + 1)):
+                # a delta box wearing a leaderboard's shape — never write here
+                i = last
+                i += 1
+                continue
             lastcol = max(_row_last_col(grid, rr) for rr in range(first, last + 1))
             if lastcol >= 4:
                 block = [(grid[rr - 1] + [""] * lastcol)[:lastcol]
