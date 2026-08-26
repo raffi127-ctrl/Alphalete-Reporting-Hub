@@ -7929,7 +7929,7 @@
   },
   "digi_docs": {
    "on_scheduler": false,
-   "_off_scheduler_note": "NOT ARMED. The real Monday 7:45am Digi Docs run, built and ready but deliberately switched off pending Megan's go-ahead (2026-08-26) -- this is the step that mails ~30 people a nine-document contract bundle, and that is not a thing to turn on as a side effect of finishing the build. To arm it: set on_scheduler true and weekdays [0]. Everything else here is already correct and both phases are verified against the live site. Until then it can be run by hand, scoped, exactly like the two probes.",
+   "_note": "ARMED 2026-08-26 (Megan). Monday 7:45am on LUCY 3 via launchd com.alphalete.digi-docs-monday -> deploy/digi_docs_monday.sh. on_scheduler false and weekdays [] to match blueink_docs (Mon 7:30, Lucy 2) and the headshots jobs (Mon 8:30, Lucy 3): a self-scheduled launchd report is NOT the 4am orchestrator's to run, and `lucy rerun` finds it here regardless — the two digi docs probes are off-scheduler and rerun fine. Setting on_scheduler true instead makes it show up as a phantom '[on-demand]' row in hub_coverage that none of its siblings have. The Hub card carries self_scheduled true, which is what keeps it out of the due-today tallies. The nightly orchestrator-schedule-guard re-bootstraps every timed job, so launchd cannot hold a stale fire time. Install once per machine: `lucy rerun install_digi_docs_monday_agent --machine \"Lucy 3\"`. base_args --both --live runs phase 2 (add) then phase 3 (send); generating a bundle IS the send and cannot be undone.",
    "machine": "Lucy 3",
    "display_name": "Digi Docs",
    "source_type": "browser",
@@ -7953,6 +7953,28 @@
    "timeout_minutes": 45,
    "_timeout_note": "Probe 6 took 11 minutes with 23 of 30 skipped as already-sent. A fresh Monday cohort where everyone needs a bundle is nearer 25, plus the add phase -- so 45, not the probe's 30.",
    "verify": null
+  },
+  "install_digi_docs_monday_agent": {
+   "on_scheduler": false,
+   "_note": "One-shot installer for com.alphalete.digi-docs-monday on LUCY 3 (Monday 7:45am Central; deploy/digi_docs_monday.sh -> python -m automations.digi_docs.run --both --live). Idempotent, and no committed plist has RunAtLoad, so installing it does not fire a run immediately. `lucy update --machine \"Lucy 3\"` then `lucy rerun install_digi_docs_monday_agent --machine \"Lucy 3\"`.",
+   "display_name": "Install Digi Docs agent (Mon 7:45am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "digi-docs-monday"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
   },
   "digi_docs_add_probe": {
    "on_scheduler": false,

@@ -103,6 +103,27 @@ def main(argv=None) -> int:
     return _phases(args)
 
 
+def _flag_terminated(people) -> None:
+    """Advisory only — surface anyone on the shared terminated list BEFORE we
+    mail them a contract, and never let the check itself take a run down.
+
+    Same call and same shape as blueink_docs, which sends the other packet to
+    this same cohort. The eligibility block-list already drops anyone with a
+    Final Status, so this is the second net: it catches somebody terminated
+    centrally whose OBCL row nobody has updated yet.
+    """
+    if not people:
+        return
+    try:
+        from automations.shared import terminated_icds as ti
+        _, flag = ti.alert_terminated([p.name for p in people],
+                                      report_label="Digi Docs")
+        if flag:
+            print(f"\n{flag}")
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 def _phases(args) -> int:
     """Add every rep, then send every bundle — batched, never a full cycle per
     person. The two phases live on different pages, so interleaving pays the
@@ -126,6 +147,7 @@ def _phases(args) -> int:
                   "thing --only exists to prevent.")
             return 1
         print(f"--only {send[0].name}")
+    _flag_terminated(send)
     dry = not args.live
     print(f"\n{ws.title}: {len(send)} to work "
           f"({'DRY RUN' if dry else 'LIVE'})\n")

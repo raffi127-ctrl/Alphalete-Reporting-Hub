@@ -6,7 +6,7 @@ machine and its own cadence:
     BG Check Sync    Lucy 1   11:30am + 4pm          -> bg-check-sync
     Blue Ink Packet  Lucy 2   Mon 7:30am + 2h sweep  -> blueink-docs
     Headshot Photo   Lucy 3   Mon 8:30am + 5min tick -> headshot-bot
-    Digi Docs        Lucy 3   weekly batch           -> (not built yet)
+    Digi Docs        Lucy 3   Mon 7:45am             -> digi-docs
 
 These were briefly merged onto one card on 2026-08-25 and split back the same
 day (Megan). The merge cited the D2D Office Daily Metrics card as precedent,
@@ -172,12 +172,47 @@ STEPS: list = [
                "Also watches LAST week's thread, so weekend stragglers still "
                "get handled."),
     ),
+    Step(
+        key="digi_docs",
+        label="Digi Docs",
+        emoji="🗂️",
+        column="Digi Docs",
+        machine="Lucy 3",
+        when="Mon 7:45 AM",
+        does=("adds each new start to OwnerVille, then generates their "
+              "document bundle — which is what mails it — ticks the BG and "
+              "drug-test attestations, and tints the Digi Docs cell"),
+        card="digi-docs",
+        report_ids=("digi_docs",),
+        actions=(
+            Action("Preview Bundles", "👁",
+                   "Show who WOULD be sent to this week, and who wouldn't and "
+                   "why. Sends nothing.",
+                   "automations.digi_docs.run", primary=True),
+            Action("Send Bundles Now", "▶",
+                   "Add anyone missing to OwnerVille, then generate and mail "
+                   "this week's document bundles. Cannot be undone.",
+                   "automations.digi_docs.run", ("--both", "--live")),
+            Action("Add To OwnerVille Only", "➕",
+                   "Mails nobody. Adds this week's new starts to OwnerVille "
+                   "so they exist before the bundles go out.",
+                   "automations.digi_docs.run", ("--add-only", "--live")),
+        ),
+        notes=("Generating the bundle IS the send — OwnerVille mails the "
+               "nine documents itself. There is no separate send step and no "
+               "unsend.",
+               "Tints the Digi Docs cell, never the name and never the "
+               "checkbox: the tint says WE SENT IT, the tick is a person "
+               "saying it's complete.",
+               "Skips anyone whose Onboarding Documents row isn't REQUIRED "
+               "ACTION, so a re-run after a mid-batch stall is quiet and "
+               "safe.",
+               "Onboarding Quizzes is NOT automated — those six courses are "
+               "the rep's own coursework and stay a human column."),
+    ),
     # ---- NEXT STEP GOES HERE ----------------------------------------------
-    # Digi Docs + Onboarding Quizzes (Megan 2026-08-25). The click-path is
-    # captured in workflows/digi-docs-onboarding-quizzes.md, read off her Loom;
-    # three questions there need answering before it can be wired. Add it as
-    # one Step(...) row and it picks up its section on the Hub card and its
-    # buttons automatically — nothing else to edit.
+    # Add it as one Step(...) row and it picks up its section on the Hub card
+    # and its buttons automatically — nothing else to edit.
 ]
 
 

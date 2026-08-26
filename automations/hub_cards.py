@@ -4693,6 +4693,110 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "digi-docs",
+        "name": "Digi Docs",
+        "creator": "Megan",
+        "emoji": "\U0001F5C2️",
+        "color": "#7C3AED",
+        # \U0001F3AF Recruiting, next to blueink-docs and headshot-bot: same
+        # workbook, same weekly new-start cohort, same Slack room.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Adds each week's new starts to OwnerVille, then generates their "
+            "document bundle — which is what mails it — and tints "
+            "Digi Docs on the OBCL tab."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every **Monday 7:45am** on Lucy 3, in two passes over the newest "
+            "dated **`D2D OBCL <m.d>`** tab (every **chart** on it — "
+            "Monday's has two):\n"
+            "**1. Add.** Anyone eligible who isn't in **OwnerVille** yet is "
+            "added (Onboard → View Progress → + Add Sales Rep). "
+            "This pass mails nobody and ticks nothing.\n"
+            "**2. Send.** For each rep still showing **Onboarding Documents = "
+            "REQUIRED ACTION**, it opens their Digital Doc Portal, picks the "
+            "**Base (Door to Door/Business to Business)** bundle type and the "
+            "**Door to Door- General 1** bundle, ticks the AT&T Door to Door "
+            "commission grid, and hits Generate Document. **That is the "
+            "send** — OwnerVille mails the nine-document packet itself. "
+            "It then ticks the background-check and drug-test attestations, "
+            "sets Service to RES-ATT, saves, and tints the **Digi Docs** cell "
+            "light green.\n\n"
+            "WHY TWO PASSES AND NOT ONE PER PERSON\n"
+            "The two live on different pages, so doing a full cycle per "
+            "person pays the expensive transition once per rep instead of "
+            "once. It also means that if the send pass stalls halfway, "
+            "everyone still EXISTS in OwnerVille rather than the roster being "
+            "half-added.\n\n"
+            "WHAT IT WILL NOT DO\n"
+            "**•** Tick the **Digi Docs checkbox** — ever. The tint "
+            "is this automation saying *I sent it*; the tick is a person "
+            "saying *this is complete*, and those are different claims.\n"
+            "**•** Tint the name. Blue Ink does; this one marks only its "
+            "own cell.\n"
+            "**•** Send twice. Anyone not showing REQUIRED ACTION is "
+            "skipped, so a re-run after a stall is quiet.\n"
+            "**•** Send a half-filled contract. Every required field is "
+            "read back before submitting; a blank one refuses that rep "
+            "instead.\n"
+            "**•** Pick a bundle from a list that grew. The Select "
+            "Bundle dropdown must hold exactly one option, or the run refuses "
+            "rather than guess which contract someone gets.\n\n"
+            "ONBOARDING QUIZZES IS NOT AUTOMATED\n"
+            "The six training and compliance courses are the rep's own "
+            "coursework. Nothing here watches or ticks them — that "
+            "column stays a human one.\n\n"
+            "WHEN SOMETHING DOESN'T FIT\n"
+            "Whoever still needs doing by hand is posted to "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo** at the end of "
+            "the run, with the reason. The most common one is a rep "
+            "OwnerVille can't find under any campaign."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1430069873#gid=1430069873"),
+        "assignees": ["Lucy 3"],
+        # Its own launchd timer (com.alphalete.digi-docs-monday), so it
+        # self-reports rather than sitting in the due-today tallies — same
+        # shape as blueink-docs, headshot-bot and bg-check-sync.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],
+            "time": "7:45 AM",
+            "time_label": "Raf's Office · Mon 7:45am",
+            "estimated_minutes": 25,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Digi Docs sent — bundles generated in OwnerVille, attestations ticked, and the Digi Docs cells tinted.",
+            "message_failed": "❌ Run failed. Most often the OwnerVille session on Lucy 3 has gone stale — anyone already sent keeps their bundle; re-run once the session is warm and it skips them.",
+        },
+        "actions": [
+            {
+                "label": "Preview Bundles",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Show who WOULD be sent to this week, and who wouldn't and why. Sends nothing.",
+                "module": "automations.digi_docs.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Send Bundles Now",
+                "icon": "▶",
+                "help": "Add anyone missing to OwnerVille, then generate and mail this week's document bundles. Cannot be undone.",
+                "module": "automations.digi_docs.run",
+                "args_fn": lambda: ["--both", "--live"],
+            },
+            {
+                "label": "Add To OwnerVille Only",
+                "icon": "➕",
+                "help": "Mails nobody. Adds this week's new starts to OwnerVille so they exist before the bundles go out.",
+                "module": "automations.digi_docs.run",
+                "args_fn": lambda: ["--add-only", "--live"],
+            },
+        ],
+    },
+    {
         "id": "blueink-docs",
         "name": "Blue Ink New Start Docs",
         "creator": "Megan",

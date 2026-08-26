@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.digi-docs-monday</string>
+
+    <!-- Install on LUCY 3 with:
+             lucy rerun install_digi_docs_monday_agent (add machine "Lucy 3")
+         The wrapper passes the live flag, so the moment this is loaded it
+         mails real people and there is no unsend.
+
+         NOTE ON COMMENTS IN THIS FILE: never write two hyphens together
+         inside an XML comment. It ends the comment early and makes the plist
+         unparseable to plistlib even though plutil still accepts it, which
+         shows up as a Hub card that cries wolf forever. The sibling
+         blueink-docs-monday.plist has exactly that defect today. -->
+
+    <!-- Path is the laptop placeholder; on Lucy 3, install_agent.py rewrites
+         it to that machine's repo path. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/digi_docs_monday.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 7:45am machine LOCAL time (Lucy 3 is Central). Weekday 1 is
+         Monday in launchd. That IS start day, and the dated tab is named for
+         it (D2D OBCL 8.24 is Monday 8/24), so the newest tab is always the
+         week being sent. Blue Ink runs 7:30 on Lucy 2 for the same cohort. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>45</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/digi-docs.launchd.err.log</string>
+</dict>
+</plist>
