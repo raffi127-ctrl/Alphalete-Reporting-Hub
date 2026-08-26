@@ -73,34 +73,53 @@ def ads_for_week(html):
 
 
 def rows_for(manager, label, week_start, ads, name_rows):
-    """The data-tab rows for one (manager, week): one row per ad (Pull + its
-    names), an unmatched-names row when the join couldn't place someone, and a
-    TOTAL row last. Names never total into one cell — the TOTAL's # Names is
-    the count, which includes the unmatched."""
+    """The data-tab rows for one (manager, week): one row per ad (Pull, its
+    names, and columns L..R = names per DAY, Wednesday..Tuesday), an
+    unmatched-names row when the join couldn't place someone, and a TOTAL row
+    last (its label sits in the Ad Title column — that is the board's first
+    visible column). A manager with NO name feed at all (the captainship-only
+    offices) gets blank name/day cells, not zeros — blank means "no feed",
+    zero means "an ad that produced nobody"."""
     iso = week_start.isoformat()
-    names_for, unmatched = names.attach(ads, name_rows, manager in CITY_AGNOSTIC)
+    names_for, days_for, unmatched, unmatched_days = names.attach(
+        ads, name_rows, manager in CITY_AGNOSTIC, week_start)
+    fed = bool(name_rows)
+
+    def day_cells(counts):
+        if not fed:
+            return [""] * 7
+        # blank for a zero day — the sales boards leave no-sale days empty
+        return [c if c else "" for c in counts]
+
     out = []
     tot = parse.blank()
     for g in ads:
         for f in parse.FIELDS:
             tot[f] += g["rec"][f]
+    tot_days = [0] * 7
     for g in ads:
         got = names_for.get(id(g), [])
+        days = days_for.get(id(g), [0] * 7)
+        tot_days = [a + b for a, b in zip(tot_days, days)]
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
                     g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
-                    len(got), ", ".join(got), iso])
+                    len(got) if fed else "", ", ".join(got), iso]
+                   + day_cells(days))
     if unmatched:
-        out.append([manager, label, "—", "", "(names with no matching ad row)",
-                    "", "", "", len(unmatched), ", ".join(unmatched), iso])
-    out.append([manager, label, "TOTAL", "", "", "", tot["apps"], tot["scl"],
-                sum(len(v) for v in names_for.values()) + len(unmatched), "", iso])
+        tot_days = [a + b for a, b in zip(tot_days, unmatched_days)]
+        out.append([manager, label, "—", "", "— names with no matching ad —",
+                    "", "", "", len(unmatched), ", ".join(unmatched), iso]
+                   + day_cells(unmatched_days))
+    n_names = sum(len(v) for v in names_for.values()) + len(unmatched)
+    out.append([manager, label, "", "", "TOTAL", "", tot["apps"], tot["scl"],
+                n_names if fed else "", "", iso] + day_cells(tot_days))
     return out
 
 
 def _advance_week_picker(sess, label):
-    """Point the visible tab's C2 at `label`. RAW write, so the cell keeps its
-    plain-text format and the label lands verbatim."""
-    sheet.put_values(sess, sheet.view_range("C2"), [[label]])
+    """Point the visible tab's week picker (B3, the cream WE cell) at `label`.
+    RAW write, so the cell keeps its plain-text format and lands verbatim."""
+    sheet.put_values(sess, sheet.view_range("B3"), [[label]])
     print("[ad_sales_board] week picker -> %s" % label, flush=True)
 
 
@@ -194,7 +213,7 @@ def main(argv=None):
         return 1
 
     # Freeze rule: rewrite only the (manager, week) pairs this run pulled.
-    existing = sheet.get_values(sess, sheet.data_range("A2:K20000"))
+    existing = sheet.get_values(sess, sheet.data_range("A2:R20000"))
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
@@ -225,7 +244,7 @@ def main(argv=None):
               % (len(new), len(managers), len(week_labels),
                  ", ".join(week_labels[:6])), flush=True)
     else:
-        sheet.clear(sess, sheet.data_range("A2:K20000"))
+        sheet.clear(sess, sheet.data_range("A2:R20000"))
         sheet.put_values(sess, sheet.data_range("A2"), new)
         sheet.put_values(sess, sheet.data_range("W2"),
                          [[managers[i] if i < len(managers) else "",
@@ -270,13 +289,14 @@ def _desc_iso(iso):
 
 
 def _numeric_cols(rows):
-    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8) on recycled
-    rows, same reason as the monthly job's _numeric: sheet-recycled values come
-    back as strings and text numbers kill numeric formats and future CF."""
+    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8) and the day
+    counts (L..R = idx 11..17) on recycled rows, same reason as the monthly
+    job's _numeric: sheet-recycled values come back as strings and text numbers
+    kill numeric formats and future CF."""
     out = []
     for r in rows:
         rr = list(r)
-        for i in (6, 7, 8):
+        for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17):
             if i < len(rr) and isinstance(rr[i], str) and rr[i].strip():
                 try:
                     rr[i] = int(float(rr[i]))

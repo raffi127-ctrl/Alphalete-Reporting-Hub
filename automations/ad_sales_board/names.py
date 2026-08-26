@@ -111,7 +111,7 @@ def load_call_list(sess, api, verbose=True):
 
 
 def in_window(call_rows, manager, start, end):
-    """Deduped (first, last, ad) for one manager inside one ad-week."""
+    """Deduped (first, last, ad, date) for one manager inside one ad-week."""
     seen, out = set(), []
     for mgr, d, first, last, email, ad in call_rows:
         if mgr != manager or not (start <= d <= end):
@@ -120,7 +120,7 @@ def in_window(call_rows, manager, start, end):
         if k in seen:
             continue
         seen.add(k)
-        out.append((first, last, ad))
+        out.append((first, last, ad, d))
     return out
 
 
@@ -131,8 +131,8 @@ def _ad_key(ad_string):
     return parse.base_role(title).lower(), city.lower()
 
 
-def attach(ads, name_rows, city_agnostic):
-    """Hang each name on the merged ad row it answered.
+def attach(ads, name_rows, city_agnostic, week_start):
+    """Hang each name on the merged ad row it answered, day-bucketed.
 
     Match by (base role, city) first; a name whose city doesn't pin a row (the
     ", N locations" postings arrive city-less) falls back to base role alone,
@@ -140,12 +140,17 @@ def attach(ads, name_rows, city_agnostic):
     City-agnostic managers (Carlos, Jamis — their rows merge cities already)
     match on base role directly. Anything still unmatched is returned rather
     than dropped: a name must never silently disappear from the board.
+
+    Returns (names_for, days_for, unmatched_names, unmatched_days): names_for
+    maps id(ad row) -> list of "First Last"; days_for maps the same key to a
+    7-slot count list, day 0 = week_start (Wednesday) — the board's day cells.
     """
     by_base = {}
     for g in ads:
         by_base.setdefault(g["base"].lower(), []).append(g)
-    names_for, unmatched = {}, []
-    for first, last, ad in name_rows:
+    names_for, days_for = {}, {}
+    unmatched, unmatched_days = [], [0] * 7
+    for first, last, ad, d in name_rows:
         base, city = _ad_key(ad)
         cands = by_base.get(base, [])
         target = None
@@ -156,8 +161,13 @@ def attach(ads, name_rows, city_agnostic):
                 exact = [g for g in cands if g["city"].lower() == city]
                 target = (exact[0] if len(exact) == 1
                           else max(cands, key=lambda g: g["rec"]["apps"]))
+        slot = (d - week_start).days
         if target is None:
             unmatched.append("%s %s" % (first, last))
+            if 0 <= slot < 7:
+                unmatched_days[slot] += 1
         else:
             names_for.setdefault(id(target), []).append("%s %s" % (first, last))
-    return names_for, unmatched
+            if 0 <= slot < 7:
+                days_for.setdefault(id(target), [0] * 7)[slot] += 1
+    return names_for, days_for, unmatched, unmatched_days
