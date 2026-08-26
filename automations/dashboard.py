@@ -1346,7 +1346,25 @@ AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
 # id keeps the underscores of its report_id rather than the hyphens a hand-written
 # card would use; both spellings are listed so a later rename can't quietly
 # re-break it.
-FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit"}
+#
+# THE SOURCE OF TRUTH IS day_orchestrator.notify._FINDING_KINDS — the manifest
+# `kind`s whose INCOMPLETE is a finding, not a broken fill. Slack derives this at
+# run time (it reads the manifest the run just wrote, on the machine that wrote
+# it); the Hub CANNOT, because manifests are local files under output/manifests/
+# on the runner and Megan's laptop never sees the mini's. So this set is a hand-
+# kept MIRROR of "which reports emit one of those kinds", and it has to be
+# extended whenever a report starts writing one. Keep it in sync with
+# _finding_kind_reports() in test_hub_status_signals.py, which greps the writers.
+#
+# captainship-cancel-rate added 2026-08-26 (Megan). It writes kind='unfilled_icd'
+# (automations/captainship_cancel_rate/run.py) when every tab filled but an owner
+# had no sales in the window — no rate to compute, so a blank is the CORRECT
+# answer. Slack got this right months ago: it posted a
+# `:white_check_mark: ... ran fine, 1 ICD didn't fill` finding and resolved it at
+# 05:54. The Hub, reading only the `partial`, kept it on the triage list with a
+# red ❌ for the rest of the day. Same drift the audit had, one report over.
+FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit",
+                    "captainship-cancel-rate", "captainship_cancel_rate"}
 
 # STOOD-DOWN reports: card id -> why, in one line. These are switched off on
 # purpose, so the Hub must stop counting them as due, stop advertising their

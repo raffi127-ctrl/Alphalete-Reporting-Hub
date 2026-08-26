@@ -151,6 +151,49 @@ class AnAuditsFindingsAreNotAFailure(unittest.TestCase):
             with self.subTest(report=rid):
                 self.assertNotIn(rid, dashboard.FINDINGS_REPORTS)
 
+    def test_the_cancel_rate_is_listed_under_both_spellings(self):
+        """captainship_cancel_rate writes kind='unfilled_icd' — "ran fine, N ICDs
+        didn't fill". Slack has treated that as a finding since 2026-08-15 and
+        resolves it; the Hub kept it on triage with a red ❌ all day."""
+        self.assertIn("captainship-cancel-rate", dashboard.FINDINGS_REPORTS)
+        self.assertIn("captainship_cancel_rate", dashboard.FINDINGS_REPORTS)
+
+    def test_every_report_that_writes_a_finding_kind_is_mirrored(self):
+        """THE DRIFT GUARD. Slack derives "this partial is a finding" from the
+        manifest `kind` the run just wrote; the Hub cannot (manifests are local
+        files on the runner) so FINDINGS_REPORTS is a hand-kept mirror — and a
+        hand-kept mirror silently rots. captainship_cancel_rate started writing
+        'unfilled_icd' and nobody added it here, so it sat on the triage list
+        every morning it did its job.
+
+        This greps the writers instead of trusting the list: any module calling
+        write_manifest(kind=<one of notify._FINDING_KINDS>) must appear in
+        FINDINGS_REPORTS. org_sales_board is exempt — it routes its 'finding'
+        through section_drop_alert as a report-only side check that never gates
+        the fill, so the board's own run status is not the finding."""
+        import re
+        from pathlib import Path
+        from automations.day_orchestrator.notify import _FINDING_KINDS
+
+        repo = Path(dashboard.__file__).resolve().parents[1]
+        pat = re.compile(r"""kind\s*=\s*["'](%s)["']"""
+                         % "|".join(map(re.escape, _FINDING_KINDS)))
+        EXEMPT = {"org_sales_board"}     # side-channel alert, not the run verdict
+
+        offenders = []
+        for py in sorted((repo / "automations").rglob("*/run.py")):
+            if not pat.search(py.read_text(encoding="utf-8", errors="replace")):
+                continue
+            pkg = py.parent.name
+            if pkg in EXEMPT:
+                continue
+            if not ({pkg, pkg.replace("_", "-")} & dashboard.FINDINGS_REPORTS):
+                offenders.append(pkg)
+        self.assertEqual(offenders, [],
+                         "these write a finding-kind manifest but are missing "
+                         "from dashboard.FINDINGS_REPORTS, so their partial "
+                         "still pages Megan every morning: %s" % offenders)
+
 
 if __name__ == "__main__":
     unittest.main()

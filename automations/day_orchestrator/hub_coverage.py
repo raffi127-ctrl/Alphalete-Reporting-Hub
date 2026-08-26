@@ -111,6 +111,15 @@ _NOT_A_REPORT = frozenset({
     # they are not. Nothing to run from the Hub; they run via `lucy rerun <id>`.
     "session_proof_fiber", "session_proof_captainship", "session_proof_probes",
     "tableau_ledger_summary",
+    # Blue Ink's 2-hourly completed-sweep (Megan 2026-08-26). It ticks the "Blue
+    # Ink" checkbox for packets people have SIGNED; deploy/blueink_completed_sweep.sh
+    # says in as many words that it is "Deliberately NOT published to the Hub"
+    # (seven fires a day would bury Monday's send, the run that matters) and it
+    # always exits 0. A card for a job that can never publish a run is a card
+    # that says "no run logged" every day forever, which is what it did. It
+    # belongs to the Blue Ink New Start Docs card, and that is where the plist
+    # now resolves.
+    "blueink_completed_sweep",
     # The Org Sales Board's 06:52/06:58 BOX top-off (Eve 2026-08-25). It is a
     # one-section re-pull of the SAME board, run by com.alphalete.org-board-box-repull
     # so the 07:05 post carries yesterday's real Box; it is a sub-step of
@@ -491,14 +500,51 @@ _PUBLISH_ID_RE = re.compile(
 _WRAPPER_MODULE_RE = re.compile(r"-m\s+(automations\.[a-zA-Z0-9_.]+)")
 
 
+_XML_COMMENT = re.compile(rb"<!--.*?-->", re.S)
+
+
+def _load_plist(plist_path: Path) -> Optional[dict]:
+    """Parse a deploy plist, TOLERATING the `--` our comments are full of.
+
+    launchd (CFPropertyList) happily loads `<!-- pass --dry-run -->`; `plutil
+    -lint` calls it OK. Python's plistlib runs on expat, where a double hyphen
+    inside a comment is a hard XML syntax error — so plistlib.loads() raised on
+    six of our plists and every caller that read them fell back to "I know
+    nothing about this agent" (Megan 2026-08-26).
+
+    That is how the phantom Hub cards were born. _agent_report_id could not read
+    ProgramArguments, so it never found the wrapper, never resolved the agent to
+    its real report, and returned 'no-wrapper' — which sent the agent to
+    sync_launchd_system's generic branch, where it was carded as a standalone
+    job in its own right. The card then advertised the plist's schedule (that
+    reader already had this comment-stripping fallback, so IT worked) for a job
+    that publishes nothing, so Needs-attention read "scheduled 08:15, no run
+    logged" every single day while the agent was running perfectly.
+
+    Stripping comments before the retry costs nothing — no plist we own carries
+    data in a comment — and it makes every reader agree with launchd.
+    """
+    try:
+        raw = plist_path.read_bytes()
+    except Exception:
+        return None
+    import plistlib
+    for candidate in (raw, _XML_COMMENT.sub(b"", raw)):
+        try:
+            d = plistlib.loads(candidate)
+        except Exception:
+            continue
+        return d if isinstance(d, dict) else None
+    return None
+
+
 def _wrapper_for_plist(plist_path: Path) -> Optional[Path]:
     """The deploy/*.sh a plist runs (mapped into our repo, ignoring the committed
     laptop path placeholder)."""
-    try:
-        import plistlib
-        args = plistlib.loads(plist_path.read_bytes()).get("ProgramArguments", [])
-    except Exception:
+    d = _load_plist(plist_path)
+    if d is None:
         return None
+    args = d.get("ProgramArguments", [])
     for a in args:
         if isinstance(a, str) and a.endswith(".sh"):
             cand = DEPLOY_DIR / Path(a).name
@@ -582,22 +628,13 @@ def sync_agents(dry_run: bool = True) -> List[str]:
     return msgs
 
 
-_XML_COMMENT = re.compile(rb"<!--.*?-->", re.S)
-
-
 def _plist_schedule(plist_path: Path) -> Optional[dict]:
     """Parse a plist's StartCalendarInterval into a card schedule (fixed clock →
     a card that lands in ⏰ Time Set). None for interval/continuous jobs (no
     calendar) → on-demand. launchd Weekday: 0/7=Sun, 1=Mon…6=Sat → Python Mon=0.
     launchd Day = day-of-month → a monthly schedule (days_of_month list)."""
-    try:
-        import plistlib
-        raw = plist_path.read_bytes()
-        try:
-            d = plistlib.loads(raw)
-        except Exception:
-            d = plistlib.loads(_XML_COMMENT.sub(b"", raw))
-    except Exception:
+    d = _load_plist(plist_path)
+    if d is None:
         return None
     cal = d.get("StartCalendarInterval")
     if not cal:
@@ -642,6 +679,20 @@ def sync_launchd_system(dry_run: bool = True) -> List[str]:
         # would this dupe an existing card, a hardcoded slug, or a curated target?
         if (cid in existing or slug(cid) in existing or cid in curated
                 or cid in CURATED_ALIAS):
+            continue
+        # DECLARED NOT-A-REPORT — honour it here too, or deleting the row does
+        # not stick. _NOT_A_REPORT promises "a plain row-delete STICKS", and for
+        # a report reached through the SCHEDULER that was true (resolve_card
+        # calls is_internal). This branch never asked: it keyed only on
+        # _INFRA_AGENTS, which is the AGENT name, so org_board_box_repull was
+        # listed as not-a-report on 2026-08-25 and its row would simply have
+        # been recreated on the next sync — as leaders_call_mon,
+        # new_start_followup_sat and dd_bulletin_thu, all listed in that same
+        # set, demonstrably were. Check both spellings: this branch derives the
+        # card id from the plist label (org-board-box-repull), while
+        # _NOT_A_REPORT is keyed on the report_id (org_board_box_repull), and a
+        # job can be declared under either. (Megan 2026-08-26)
+        if is_internal(cid) or is_internal(name):
             continue
         # Pure-infra plumbing + cutover-retire duplicates (in _INFRA_AGENTS) are
         # NOT reports — Megan doesn't want them on the Hub, and the _INFRA_AGENTS
