@@ -22,6 +22,13 @@ from automations.recruiting_report import opt_phase
 DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
              "Saturday"]          # Mon–Sat: the board's window — Sunday out.
 
+
+def day_name(day: dt.date) -> str:
+    """The crosstab column header for ONE date — '%A' is the same weekday
+    spelling Tableau writes ('Wednesday'), and it is locale-independent here
+    because the crosstab is English either way."""
+    return day.strftime("%A")
+
 OUT_DIR = Path("output") / "weekly_knock_dispositions"
 
 
@@ -47,13 +54,24 @@ def _read_tsv(path: Path) -> list[list[str]]:
 
 
 def rep_apps_for_owner(path: Path, owner: str,
-                       aliases_map: dict[str, list[str]]) -> dict[str, int]:
-    """{rep name: Mon–Sat apps, all product types} for `owner`'s office.
+                       aliases_map: dict[str, list[str]],
+                       days: "list[str] | None" = None) -> dict[str, int]:
+    """{rep name: apps, all product types} for `owner`'s office.
 
     The owner match runs through the canonical ICD alias list (same
     candidates find_owner builds), so 'Rafael Hidalgo' finds a crosstab
     that says 'Raf Hidalgo'. Reps with zero sales simply aren't in the
-    crosstab — absent means 0, not missing data."""
+    crosstab — absent means 0, not missing data.
+
+    `days` (optional) narrows the window to those weekday columns. Default
+    (None) = DAY_ORDER, the weekly board's Mon–Sat. The Captainship Report's
+    DAILY knocks board passes a single day (day_name(target)) and reads the
+    same crosstab the weekly section already downloads — the daily target
+    always falls inside that same Mon–Sun week (both derive from
+    yesterday), so one download still serves the whole build. A day the
+    crosstab doesn't carry raises rather than quietly summing nothing: a
+    silent 0 apps column is indistinguishable from a real quiet day.
+    """
     rows = _read_tsv(path)
     if not rows:
         raise RuntimeError(f"PSS crosstab {path} is empty.")
@@ -65,11 +83,12 @@ def rep_apps_for_owner(path: Path, owner: str,
         raise RuntimeError(
             f"PSS crosstab {path} missing 'Owner Name'/'Rep' — header was: "
             f"{headers}")
-    day_cols = {d: headers.index(d) for d in DAY_ORDER if d in headers}
+    wanted = list(days or DAY_ORDER)
+    day_cols = {d: headers.index(d) for d in wanted if d in headers}
     if not day_cols:
         raise RuntimeError(
-            f"PSS crosstab {path} has no weekday columns — header was: "
-            f"{headers}")
+            f"PSS crosstab {path} has no {'/'.join(wanted)} column(s) — "
+            f"header was: {headers}")
 
     cands = {opt_phase._norm(owner)}
     for canon, al in aliases_map.items():

@@ -156,6 +156,97 @@ class TotalsLabelTellsTheTruth(unittest.TestCase):
         self.assertEqual(table[-1][0], "CAPTAINSHIP TOTALS (1 of 2 ICDs)")
 
 
+class TotalAppsColumn(unittest.TestCase):
+    """Pedido de Rafael (2026-08-26): la columna Total Apps en los boards
+    DIARIOS de knocks — la misma cuenta de apps que ya lleva el board semanal
+    (PRODUCT SALES SUMMARY, todos los productos), pero del dia."""
+
+    def _rows(self):
+        from automations.total_knocks import pull as K
+        def rec(rep, knocks, talk):
+            r = {c: "" for c in K.SHEET_COLUMNS}
+            r.update({K.COL_REP: rep, K.COL_TOTAL_KNOCKS: knocks,
+                      K.COL_TOTAL_TALK_TO: talk,
+                      K.COL_FIRST_KNOCK: "10:00 AM",
+                      K.COL_LAST_KNOCK: "7:00 PM"})
+            return r
+        return [rec("Alan Diaz", 38, 9), rec("bree kim", 51, 14)]
+
+    def test_a_rep_who_sold_without_knocking_still_appears(self):
+        """Si no, la columna no suma al total de la oficina y el numero deja
+        de ser creible — misma regla que el board semanal."""
+        rows, apps, total = KD.daily_apps_for_board(
+            self._rows(), {"Alan Diaz": 3, "BREE KIM": 5, "Zed Moore": 2})
+        self.assertEqual(total, 10)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(apps["Zed Moore"], 2)
+        self.assertEqual(apps["bree kim"], 5)      # match por nombre normalizado
+
+    def test_no_crosstab_means_no_column_not_a_zero(self):
+        rows, apps, total = KD.daily_apps_for_board(self._rows(), None)
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(apps)
+        self.assertIsNone(total)
+
+    def test_the_sales_only_rep_does_not_dilute_talk_tos_per_rep(self):
+        """El board de la oficina y el resumen violeta dividen por los que
+        golpearon; una fila que solo vendio no es alguien que trabajo la
+        puerta, y los dos numeros tienen que coincidir."""
+        from automations.total_knocks import render as R
+        rows, apps, _t = KD.daily_apps_for_board(
+            self._rows(), {"Alan Diaz": 3, "Zed Moore": 2})
+        header, table = R._table_from_rows(rows)
+        sub = R._combined_sub(header, table)
+        totals = R._combined_totals("TOTAL", sub)
+        per_rep = totals[R.COMBINED_KNOCKS_HEADERS.index(
+            R.COL_TALK_TO_PER_REP)]
+        self.assertEqual(per_rep, "11.5")          # 23 / 2, no 23 / 3
+        summary = KD.daily_summary_row("ICD", self._rows(), 5)
+        self.assertEqual(summary[KD.DAILY_SUMMARY_HEADERS.index(
+            "Talk To's per Rep")], "11.5")
+        self.assertEqual(summary[KD.DAILY_SUMMARY_HEADERS.index(
+            "Total Apps")], "5")
+
+    def test_the_column_is_off_unless_the_caller_asks(self):
+        """El mismo renderer dibuja los hilos de metricas, los slots
+        intraday y /knocks: ninguno pidio la columna."""
+        import inspect
+        from automations.total_knocks import render as R
+        self.assertIsNone(
+            inspect.signature(R.render_total_knocks).parameters["apps"].default)
+        self.assertNotIn(R.COL_TOTAL_APPS, R.COMBINED_KNOCKS_HEADERS)
+
+    def test_totals_row_sums_the_icd_rows_above_it(self):
+        table, _bgs = KD.daily_summary_table(
+            [("A", {"name": "A"}, self._rows(), 4),
+             ("B", {"name": "B"}, self._rows(), 6)], chan_rows=None)
+        at = KD.DAILY_SUMMARY_HEADERS.index("Total Apps")
+        self.assertEqual([r[at] for r in table], ["4", "6", "10"])
+
+    def test_an_icd_with_no_apps_pulled_is_blank_never_zero(self):
+        table, _bgs = KD.daily_summary_table(
+            [("A", {"name": "A"}, self._rows(), None)], chan_rows=None)
+        at = KD.DAILY_SUMMARY_HEADERS.index("Total Apps")
+        self.assertEqual([r[at] for r in table], ["", ""])
+
+    def test_an_old_capture_reused_from_disk_keeps_working(self):
+        """Un sidecar escrito antes de esta columna es una LISTA de filas."""
+        table, _bgs = KD.daily_summary_table(
+            [("A", {"name": "A"}, self._rows())], chan_rows=None)
+        self.assertEqual(table[0][KD.DAILY_SUMMARY_HEADERS.index("Total Apps")],
+                         "")
+
+    def test_the_daily_pull_reads_one_weekday_of_the_weekly_crosstab(self):
+        from automations.weekly_knock_dispositions import apps as A
+        self.assertEqual(A.day_name(dt.date(2026, 8, 25)), "Tuesday")
+        # el dia del board siempre cae en la semana que el build ya baja
+        for d in range(1, 15):
+            today = dt.date(2026, 8, 12) + dt.timedelta(days=d)
+            _mon, _sat, we_sunday = KD.week_window(today)
+            from automations.shared.report_week import week_ending
+            self.assertEqual(week_ending(KD.daily_target(today)), we_sunday)
+
+
 class FiberCarriesBothSections(unittest.TestCase):
     def test_kinds_and_intro_stay_index_aligned(self):
         for flavor in ("fiber", "rafael"):

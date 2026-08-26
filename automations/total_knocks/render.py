@@ -95,6 +95,17 @@ COMBINED_KNOCKS_DISPLAY = {
 # format as the DAILY KNOCKS SUMMARY board (captainship_drafts), because the
 # two land in front of the same reader.
 COL_TALK_TO_PER_REP = "Talk To's per Rep"
+# "Total Apps" (Raf, 2026-08-26) — the rep's apps for the board's day, the
+# SAME high-level count his weekly dispositions board carries (every product
+# type, from the Tableau PRODUCT SALES SUMMARY), so the daily and the weekly
+# board can be read against each other without asking which products count.
+# It is NOT a knock disposition: ownerville's "Sale" column counts a sale
+# logged on a door, the app count comes from the sales system. Only the
+# Captainship Report's daily boards ask for it, so it rides an OPTIONAL
+# `apps` argument rather than the headers — same reason as title_prefix and
+# hide_columns: this renderer also draws Raf's metrics threads, the intraday
+# slots and /knocks, and none of those asked for the column.
+COL_TOTAL_APPS = "Total Apps"
 
 
 def _with_derived(cols: list) -> list:
@@ -485,7 +496,8 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         date_text: str = "",
                         title_prefix: str = "",
                         hide_columns: "tuple[str, ...]" = (),
-                        extra_totals: "list[tuple[str, list[dict]]] | None" = None) -> Path:
+                        extra_totals: "list[tuple] | None" = None,
+                        apps: "dict[str, int] | None" = None) -> Path:
     """THE fiber knocks board — combined per Raf's Loom (2026-08-22): every
     disposition count PLUS Gaps + Total Gaps (in front of Last Knock), no ID
     column, alphabetical by rep, wrapped headers so the boxes hug the numbers.
@@ -521,6 +533,19 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     renderer draws the same board for the metrics threads, the intraday slots
     and the on-demand /knocks replies; renaming it in place would relabel all
     of them. Default "" keeps every existing board byte-identical.
+
+    `apps` (optional): {rep name: apps that day} — adds the "Total Apps"
+    column right after Talk To's per Rep (Raf 2026-08-26), so the funnel reads
+    knocks -> talk-tos -> apps. The caller does the NAME MATCHING (the apps
+    come from Tableau, the rows from ownerville, and the two spell reps
+    differently): keys must be the rep names as they appear in `rows`, which
+    is what weekly_knock_dispositions.board.match_apps returns. A rep absent
+    from the dict shows 0; the TOTAL and any comparison office's line sum the
+    column exactly as drawn, so a rep who sold without knocking has to be in
+    `rows` too — otherwise the total silently disagrees with the column above
+    it. An extra_totals entry may carry that office's own apps dict as a third
+    element. Default None leaves the column OFF entirely, so every other board
+    this renderer draws stays byte-identical.
     """
     if rows is not None:
         header, rows = _table_from_rows(rows)
@@ -535,12 +560,18 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     # totals above ours daily") — each is (office name, records keyed by
     # SHEET_COLUMNS); only their TOTAL line shows, not their reps.
     extra_rows: list[list[str]] = []
-    for name, recs in (extra_totals or []):
+    extra_apps: list = []
+    for item in (extra_totals or []):
+        # (name, rows) or (name, rows, apps) — the third element is that
+        # office's own {rep: apps}; only its SUM shows, as its reps never do.
+        name, recs = item[0], item[1]
+        x_apps = item[2] if len(item) > 2 else None
         x_header, x_rows = _table_from_rows(recs)
         if not x_rows:
             continue
         x_sub = _combined_sub(x_header, x_rows, where=f"extra office {name!r}")
         extra_rows.append(_combined_totals(f"{name.upper()} TOTAL", x_sub))
+        extra_apps.append(sum(x_apps.values()) if x_apps else None)
 
     hrs_pos = COMBINED_KNOCKS_HEADERS.index(COL_HRS_KNOCKING)
     tg_pos = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_GAPS)
@@ -557,14 +588,22 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
     _colors = ([THEME_TEAL["title_bg"]] * len(extra_rows)
                + [THEME_AMBER["total_bg"]])
     _office = f"{title_suffix.upper()} — " if title_suffix else ""
-    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in COMBINED_KNOCKS_HEADERS]
+    cols = list(COMBINED_KNOCKS_HEADERS)
+    disp = [COMBINED_KNOCKS_DISPLAY.get(c, c) for c in cols]
     if hide_columns:
         # Drop by NAME, then take the same positions out of every row — the
         # totals and comparison rows included, so nothing shifts under a header.
-        keep = [i for i, c in enumerate(COMBINED_KNOCKS_HEADERS)
+        keep = [i for i, c in enumerate(cols)
                 if c not in hide_columns]
+        cols = [cols[i] for i in keep]
         disp = [disp[i] for i in keep]
         table = [[r[i] for i in keep] for r in table]
+    if apps is not None:
+        # AFTER the hide pass, and by NAME on what survived it, so the column
+        # lands next to the talk-to block on a board that hid Talk To's per Rep
+        # just as it does on one that kept it.
+        _insert_apps_column(cols, disp, table, apps,
+                            n_extra=len(extra_rows), extra_apps=extra_apps)
     return _draw(disp, table,
                  f"{title_prefix}TOTAL KNOCKS — {_office}"
                  f"{_date_text(target, end, date_text)}",
@@ -573,6 +612,51 @@ def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                  name_col=0, wrap_headers=True,
                  highlight_first_row=1 + len(extra_rows),
                  top_row_colors=_colors)
+
+
+def _apps_key(name: str) -> str:
+    """Rep-name key for the apps lookup — collapsed whitespace, case-folded.
+    The caller already matched Tableau's spelling to ownerville's; this only
+    keeps a stray double space or a capital from losing a matched rep."""
+    return " ".join(str(name or "").split()).lower()
+
+
+def _insert_apps_column(cols: list, disp: list, table: list,
+                        apps: dict, *, n_extra: int, extra_apps: list) -> None:
+    """Put "Total Apps" into `cols`/`disp`/`table` IN PLACE, right after Talk
+    To's per Rep (or after Total Talk to when that column was hidden).
+
+    `table` is laid out extra-office TOTAL rows, then this office's TOTAL,
+    then the rep rows — the order render_total_knocks builds. Rep rows read
+    `apps`; the TOTAL row sums THE COLUMN as drawn (never the dict), so the
+    number under the header is always the sum of the numbers above it; an
+    extra office shows its own total, or blank when the caller didn't pass
+    one — blank being the honest cell for "not pulled", where 0 would read as
+    an office that sold nothing."""
+    if COL_TALK_TO_PER_REP in cols:
+        at = cols.index(COL_TALK_TO_PER_REP) + 1
+    elif COL_TOTAL_TALK_TO in cols:
+        at = cols.index(COL_TOTAL_TALK_TO) + 1
+    else:                                   # no talk-to block at all
+        at = len(cols)
+    rep_at = cols.index(COL_REP)
+    by_key = {_apps_key(k): v for k, v in apps.items()}
+    values: list = []
+    for i, row in enumerate(table):
+        if i < n_extra:
+            x = extra_apps[i] if i < len(extra_apps) else None
+            values.append("" if x is None else str(x))
+        elif i == n_extra:
+            values.append(None)             # this office's TOTAL — filled below
+        else:
+            values.append(str(by_key.get(_apps_key(row[rep_at]), 0)))
+    if n_extra < len(values):
+        reps = values[n_extra + 1:]
+        values[n_extra] = str(sum(int(v) for v in reps if str(v).isdigit()))
+    cols.insert(at, COL_TOTAL_APPS)
+    disp.insert(at, COL_TOTAL_APPS)
+    for row, v in zip(table, values):
+        row.insert(at, v)
 
 
 def _gap_min(v: str) -> int:
@@ -686,6 +770,16 @@ def _combined_sub(header: list[str], rows: list[list[str]],
     return sub
 
 
+def _knockers(sub: list[list[str]]) -> list[list[str]]:
+    """The rows that actually knocked — a row with no knock count and no first
+    knock is a sales-only rep carried in for the Total Apps column, not someone
+    who worked a door."""
+    tk = COMBINED_KNOCKS_HEADERS.index(COL_TOTAL_KNOCKS)
+    fk = COMBINED_KNOCKS_HEADERS.index(COL_FIRST_KNOCK)
+    return [r for r in sub
+            if str(r[tk]).strip() not in ("", "0") or str(r[fk]).strip()]
+
+
 def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
     """One office's TOTAL line for the combined board: counts sum, the knock
     times average (reps with a parsable time only), Total Gaps sums, Hrs
@@ -715,11 +809,15 @@ def _combined_totals(label: str, sub: list[list[str]]) -> list[str]:
             vals = [_int0(r[ci]) for r in sub if str(r[ci]).strip() != ""]
             totals.append(str(round(sum(vals) / len(vals))) if vals else "")
         elif c == COL_TALK_TO_PER_REP:
-            # Per rep who WORKED — ownerville's Disposition by Rep only lists
+            # Per rep who KNOCKED — ownerville's Disposition by Rep only lists
             # reps with activity, so an office isn't diluted by someone who was
-            # off. Same denominator the DAILY KNOCKS SUMMARY board uses.
+            # off. Same denominator the DAILY KNOCKS SUMMARY board uses, which
+            # is why the sales-only rows a `apps` caller adds (a rep who sold
+            # without knocking) are left OUT of it: counting them would make
+            # this board and the summary above it disagree on the same office.
             talk = sum(_int0(r[tt_at]) for r in sub)
-            totals.append(f"{talk / len(sub):.1f}" if sub else "0")
+            n = len(_knockers(sub))
+            totals.append(f"{talk / n:.1f}" if n else "0")
         else:
             totals.append(str(sum(_int0(r[ci]) for r in sub)))
     return totals

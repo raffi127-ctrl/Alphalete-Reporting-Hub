@@ -93,10 +93,17 @@ CAMPAIGN_ID = "3"
 # says more about headcount than about the day. Per-rep is the comparable
 # number — and it is only meaningful HERE, on the summary; the per-owner
 # boards below already have one row per rep.
+# "Total Apps" (Raf, 2026-08-26) closes the funnel the row already opens —
+# leads knocked, knocks, talk-tos, then what came out of them. It is the ICD's
+# apps for THAT DAY from the Tableau PRODUCT SALES SUMMARY (every product
+# type), the same count and the same source as the weekly board's Total Apps
+# and as the per-owner board right below this one, so the two never invite the
+# question of which products are in. Blank — never 0 — when the crosstab
+# didn't come down: a zero here reads as an ICD that sold nothing.
 DAILY_SUMMARY_HEADERS = [
     "ICD", "Total Leads Knocked", "Total Knocks", "Total Talk To",
-    "Talk To's per Rep", "Avg First Knock", "Avg Last Knock", "Gaps",
-    "Total Gaps",
+    "Talk To's per Rep", "Total Apps", "Avg First Knock", "Avg Last Knock",
+    "Gaps", "Total Gaps",
 ]
 
 # Chan Park's yesterday rows, cached PER PROCESS keyed by the target date's
@@ -277,14 +284,48 @@ def _daily_rows_for_owner(page, cfg: dict, aliases_raw, target: dt.date
     return rows
 
 
-def daily_summary_row(label: str, rows: list) -> List[str]:
+def daily_apps_for_board(rows: list, office_apps: "dict | None"):
+    """(rows to RENDER, {ov rep name: apps}, office total) for one office's
+    daily board — Raf's "Total Apps" column, 2026-08-26.
+
+    The two sides spell reps differently (ownerville vs Tableau), so the
+    match runs through the weekly board's `match_apps` — the same matcher,
+    so a rep who lines up on the weekly board lines up here. A rep who SOLD
+    but has no knock row is appended as a row of their own with the knock
+    cells blank, exactly as the weekly board does: the column has to add up
+    to the office total, and an app that belongs to nobody visible is how a
+    reader stops trusting the number.
+
+    office_apps=None (crosstab never came down) returns the rows untouched
+    and None, which leaves the column off that board entirely. Pure —
+    offline-testable."""
+    from automations.total_knocks import pull as knocks
+    from automations.weekly_knock_dispositions import board as B
+    if office_apps is None:
+        return rows, None, None
+    ov_names = [str(r.get(knocks.COL_REP, "") or "") for r in rows]
+    matched, consumed = B.match_apps(ov_names, office_apps)
+    out_rows = list(rows)
+    for rep, n in sorted(office_apps.items()):
+        if B._norm_name(rep) in consumed or not n:
+            continue
+        name = B._display_name(rep)
+        out_rows.append({knocks.COL_REP: name})
+        matched[name] = n
+    return out_rows, matched, sum(matched.values())
+
+
+def daily_summary_row(label: str, rows: list,
+                      apps: Optional[int] = None) -> List[str]:
     """One daily-summary board row aggregating `rows` (one owner's reps,
     records keyed by total_knocks.pull SHEET_COLUMNS): the count columns SUM;
     Talk To's per Rep divides that row's talk-tos by its rep count;
     First/Last Knock are the AVERAGE of the reps' times (the wkd board's
     _avg_knock — reps with a parsable time only); Gaps sums the gap counts;
     Total Gaps sums the minutes and formats 'Xh Ym' like the daily board
-    (total_knocks.render._fmt_hm). Pure — offline-testable."""
+    (total_knocks.render._fmt_hm); `apps` is that row's app count, passed in
+    because it comes from Tableau, not from these ownerville rows — None
+    leaves the cell blank. Pure — offline-testable."""
     from automations.weekly_knock_dispositions.board import _avg_knock
     from automations.total_knocks import pull as knocks
     from automations.total_knocks.render import _fmt_hm
@@ -304,6 +345,8 @@ def daily_summary_row(label: str, rows: list) -> List[str]:
         # so an ICD is not diluted by someone who was off. No rows at all =>
         # the ICD didn't knock; "0" keeps the column numeric.
         (f"{talk_to / len(rows):.1f}" if rows else "0"),
+        # None = the PSS crosstab never came down for this ICD; blank says so.
+        ("" if apps is None else str(apps)),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
@@ -337,7 +380,8 @@ def totals_label(n_covered: int, roster_n: Optional[int]) -> str:
 
 def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
                         roster_n: Optional[int] = None,
-                        n_covered: Optional[int] = None
+                        n_covered: Optional[int] = None,
+                        chan_apps: Optional[int] = None
                         ) -> Tuple[List[List[str]], list]:
     """The daily summary board's rows: one row per ICD of THIS captainship in
     roster order, then the trailing highlight block — a teal CHAN PARK
@@ -346,7 +390,10 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     everywhere) and the plum CAPTAINSHIP TOTALS row.
 
     `captured` is [(display, cfg, rows), …] per owner that produced daily
-    rows. `chan_rows` is Chan Park's rep rows — when None, they're looked up
+    rows — or [(display, cfg, rows, apps), …], where apps is that ICD's app
+    count for the day (None when the PSS crosstab failed). A 3-tuple still
+    works and renders the Total Apps column blank, which is what an older
+    on-disk capture reused from a build before this column existed is. `chan_rows` is Chan Park's rep rows — when None, they're looked up
     IN `captured` (his own / Raf's captainship, where he is an owner); a
     captain whose roster doesn't carry him passes the extra data-only pull
     in. Either way the teal row just re-aggregates his reps, and TOTALS sums
@@ -360,22 +407,33 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
         COMPARE_ROW_BG, THEME_PLUM)
     from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
     from automations.focus_office_att.aliases import _norm_name
-    body = [daily_summary_row(d, r) for d, _c, r in captured]
+    def _apps_of(item) -> Optional[int]:
+        return item[3] if len(item) > 3 else None
+
+    body = [daily_summary_row(it[0], it[2], _apps_of(it)) for it in captured]
     if chan_rows is None:
         chan_norm = _norm_name(_CHAN["name"])
-        chan_rows = next((r for _d, c, r in captured
-                          if _norm_name(c.get("name", "")) == chan_norm), None)
+        chan_rows = next((it[2] for it in captured
+                          if _norm_name(it[1].get("name", "")) == chan_norm),
+                         None)
     tail: List[List[str]] = []
     bgs: list = []
     if chan_rows:
-        tail.append(daily_summary_row("CHAN PARK", chan_rows))
+        tail.append(daily_summary_row("CHAN PARK", chan_rows, chan_apps))
         bgs.append(COMPARE_ROW_BG)
-    all_rows = [rec for _d, _c, r in captured for rec in r]
+    all_rows = [rec for it in captured for rec in it[2]]
+    # TOTALS' apps = the sum of the ICD rows above it, so the column always
+    # adds up on the image. All-blank (nothing pulled) stays blank rather
+    # than becoming a 0 the captainship didn't earn.
+    each = [_apps_of(it) for it in captured]
+    tot_apps = (sum(a for a in each if a is not None)
+                if any(a is not None for a in each) else None)
     # n_covered counts the ICDs that ANSWERED, zeros included; `captured`
     # only holds the ones with rows, so defaulting to it would flag a quiet
     # office as unreachable. See totals_label.
     covered = len(captured) if n_covered is None else n_covered
-    tail.append(daily_summary_row(totals_label(covered, roster_n), all_rows))
+    tail.append(daily_summary_row(totals_label(covered, roster_n), all_rows,
+                                  tot_apps))
     bgs.append(THEME_PLUM["header_bg"])
     return body + tail, bgs
 
@@ -383,7 +441,8 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
 def render_daily_summary(captured: list, target: dt.date, out_dir,
                          chan_rows: Optional[list] = None,
                          roster_n: Optional[int] = None,
-                         n_covered: Optional[int] = None) -> Path:
+                         n_covered: Optional[int] = None,
+                         chan_apps: Optional[int] = None) -> Path:
     """Draw the daily summary board PNG — plum theme like the weekly
     captainship summary, so the two summary boards read as siblings above
     their amber/plum per-owner boards. The trailing block (teal Chan row +
@@ -393,7 +452,7 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     from automations.weekly_knock_dispositions.board import THEME_PLUM
     from automations.total_knocks import render as knocks_render
     table, bgs = daily_summary_table(captured, chan_rows, roster_n,
-                                     n_covered)
+                                     n_covered, chan_apps)
     date_s = f"{target.strftime('%b')} {target.day}, {target.year}"
     return knocks_render._draw(
         list(DAILY_SUMMARY_HEADERS), table,
@@ -403,7 +462,7 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
         highlight_last_row=len(bgs), total_row_bgs=bgs)
 
 
-def compare_totals_for(display: str, chan_rows) -> list:
+def compare_totals_for(display: str, chan_rows, chan_apps=None) -> list:
     """The `extra_totals` a per-owner daily board carries — the teal CHAN PARK
     TOTAL line above the office's own (Raf 2026-08-23, "add Chan's totals above
     ours daily"; Eve 2026-08-25 asked for it on EVERY owner's board in the
@@ -420,7 +479,14 @@ def compare_totals_for(display: str, chan_rows) -> list:
         return []
     if _norm_name(display) == _norm_name(_CHAN["name"]):
         return []
-    return [(_CHAN["name"], chan_rows)]
+    # Third element = Chan's own {rep: apps}; render_total_knocks shows only
+    # its SUM, on his comparison line. Left OFF when his apps weren't pulled,
+    # so the entry keeps the plain (name, rows) shape every other board that
+    # never asked for apps passes — and his cell stays blank rather than
+    # showing a 0 he didn't earn.
+    if chan_apps is None:
+        return [(_CHAN["name"], chan_rows)]
+    return [(_CHAN["name"], chan_rows, chan_apps)]
 
 
 def _chan_daily_rows(page, captured_daily: list, aliases_raw,
@@ -671,21 +737,29 @@ def capture_sections(captain, today: dt.date, render_dir, *,
 
     # The org-wide rep-level PSS crosstab, ONCE for every owner (the download
     # helper dedupes same-day pulls when the cache env is set, but one call per
-    # build is the contract either way). WEEKLY-ONLY — the daily board carries
-    # no apps columns. Failure = apps columns blank on every weekly board,
-    # each flagged INCOMPLETE in its sub-heading — fill-but-flag, never a
-    # dead section.
+    # build is the contract either way). BOTH sections read it since Raf's
+    # "Total Apps" ask (2026-08-26): the weekly board sums Mon–Sat, the daily
+    # board reads the single weekday column for `target`. One download covers
+    # both because they are the same Mon–Sun week by construction — week_window
+    # and daily_target both hang off yesterday, so week_ending(target) IS
+    # we_sunday. Failure = apps columns blank / absent, boards flagged
+    # INCOMPLETE in their sub-heading — fill-but-flag, never a dead section.
+    from automations.weekly_knock_dispositions import apps as A
     pss_path = None
-    if want_weekly:
-        from automations.weekly_knock_dispositions import apps as A
-        try:
-            pss_path = A.download(we_sunday)
-        except Exception as e:  # noqa: BLE001
-            logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
-                  f"{str(e)[:160]}) — apps columns blank, weekly boards "
-                  "flagged INCOMPLETE")
+    try:
+        pss_path = A.download(we_sunday)
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ PSS crosstab failed ({type(e).__name__}: "
+              f"{str(e)[:160]}) — apps columns blank, boards flagged "
+              "INCOMPLETE")
+    # The daily board wants ONE weekday column out of that crosstab. Read it
+    # once per office below; a crosstab that doesn't carry the day at all
+    # (a period-boundary week, a view that stops at Saturday) is logged ONCE
+    # and turns the column off rather than repeating itself per owner.
+    daily_day = A.day_name(target)
+    daily_apps_off = False
 
-    from automations.weekly_knock_dispositions import board as B
+    from automations.weekly_knock_dispositions import board as B  # noqa: F401
     from automations.weekly_knock_dispositions import pull as P
     from automations.total_knocks import render as knocks_render
     from automations.shared import knock_week_cache as KWC
@@ -727,15 +801,39 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     gapped_daily: List[str] = []
     gapped_weekly: List[str] = []
     # Everything each summary needs, kept as pulled.
-    captured_daily: List[tuple] = []    # (display, cfg, rows)
+    captured_daily: List[tuple] = []    # (display, cfg, rows, apps|None)
     captured_weekly: List[tuple] = []   # (display, ov_rows, apps, dispo_cols)
     chan_rows: Optional[list] = None
+    chan_apps_by_rep: Optional[dict] = None   # Chan's {rep: apps} for the day
+    chan_apps: Optional[int] = None           # …and its total, for the summary
     # Set when a board was reused from disk WITHOUT its rows sidecar (drawn
     # before the sidecar existed). That owner's own board is intact; only the
     # captainship SUMMARY loses their line, and it says so rather than showing
     # a total that silently misses an office.
     daily_partial = False
     weekly_partial = False
+    def _day_apps(pss_owner: str):
+        """That office's {rep: apps} for `target`, or None when unavailable.
+        A missing weekday column is a crosstab-wide fact, so it turns the
+        column off for the whole build after ONE log line; a per-owner failure
+        (owner absent from the crosstab is NOT one — that's an empty dict)
+        only costs that owner's column."""
+        nonlocal daily_apps_off
+        if pss_path is None or daily_apps_off:
+            return None
+        try:
+            return A.rep_apps_for_owner(pss_path, pss_owner, aliases_map,
+                                        days=[daily_day])
+        except Exception as e:  # noqa: BLE001
+            if "column" in str(e).lower():
+                daily_apps_off = True
+                logfn(f"  ⚠ PSS crosstab has no {daily_day} column — daily "
+                      "boards ship without Total Apps, flagged INCOMPLETE")
+            else:
+                logfn(f"    ⚠ apps for {pss_owner}: {type(e).__name__}: "
+                      f"{str(e)[:120]}")
+            return None
+
     daily_root = Path(render_dir) / f"daily_knocks_{captain.key}"
     weekly_root = Path(render_dir) / f"knock_dispo_{captain.key}"
     try:
@@ -749,6 +847,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             if want_daily:
                 chan_rows = _chan_daily_rows(page, [], aliases_raw, target,
                                              logfn=logfn)
+                if chan_rows:
+                    from automations.weekly_knock_dispositions.offices import (
+                        CHAN as _CHAN)
+                    _c_rows, chan_apps_by_rep, chan_apps = daily_apps_for_board(
+                        chan_rows, _day_apps(_CHAN["name"]))
             for display, cfg in pairs:
                 if want_daily:
                     try:
@@ -764,7 +867,16 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             out_daily.append((display, done_png))
                             prev = _read_rows(done_png)
                             if prev is not None:
-                                captured_daily.append((display, cfg, prev))
+                                # A sidecar written before the Total Apps
+                                # column was a plain list of rows; that ICD's
+                                # apps cell simply stays blank rather than
+                                # forcing a re-pull.
+                                p_rows, p_apps = ((prev, None)
+                                                  if isinstance(prev, list)
+                                                  else (prev.get("rows") or [],
+                                                        prev.get("apps")))
+                                captured_daily.append((display, cfg, p_rows,
+                                                       p_apps))
                             else:
                                 daily_partial = True
                             logfn(f"    · daily {display}: reusing "
@@ -784,8 +896,11 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             out_daily.append((display, None))
                             answered_daily.add(display)
                         else:
+                            board_rows, apps_by_rep, apps_n = (
+                                daily_apps_for_board(rows,
+                                                     _day_apps(cfg["pss_owner"])))
                             png = knocks_render.render_total_knocks(
-                                target, rows=rows,
+                                target, rows=board_rows,
                                 out_dir=daily_root / _slug(display),
                                 title_suffix=display,
                                 # "DAILY TOTAL KNOCKS — …" (Eve 2026-08-25).
@@ -794,11 +909,22 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                 # is how someone reads a day's number as the
                                 # week's.
                                 title_prefix="DAILY ",
-                                extra_totals=compare_totals_for(display,
-                                                                chan_rows))
-                            out_daily.append((display, png))
-                            captured_daily.append((display, cfg, rows))
-                            _write_rows(png, rows)
+                                extra_totals=compare_totals_for(
+                                    display, chan_rows, chan_apps_by_rep),
+                                apps=apps_by_rep)
+                            # INCOMPLETE rides the sub-heading label, same as
+                            # the weekly board's: the board is real, one
+                            # column of it is missing, and the reader has to
+                            # be told which.
+                            out_daily.append((display if apps_by_rep is not None
+                                              else f"{display} — ⚠ INCOMPLETE: "
+                                                   "apps unavailable", png))
+                            # captured_daily keeps the OWNERVILLE rows, not the
+                            # rendered ones: the summary divides talk-tos by
+                            # rep count, and a sales-only rep who never knocked
+                            # must not dilute that denominator.
+                            captured_daily.append((display, cfg, rows, apps_n))
+                            _write_rows(png, {"rows": rows, "apps": apps_n})
                             answered_daily.add(display)
                             logfn(f"    ✓ daily {display}: {len(rows)} "
                                   f"rep(s) → {png.name}")
@@ -997,7 +1123,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                        daily_root / "summary",
                                        chan_rows=chan_rows,
                                        roster_n=len(pairs),
-                                       n_covered=len(answered_daily))
+                                       n_covered=len(answered_daily),
+                                       chan_apps=chan_apps)
             out_daily.insert(0, (summary_label + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if daily_partial else ""), png))
