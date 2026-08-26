@@ -317,10 +317,23 @@ class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
         # Metrics view on both reports the same morning.
         self.assertTrue(C.is_inactive("Jeremiah Minor"))
 
-    def test_melik_is_not_a_known_winddown(self):
-        self.assertFalse(C.is_inactive("Melik El Jaiez"),
-                         "Melik is NOT on the wind-down list — his blank is a "
-                         "real finding a human still has to look at")
+        # 2026-08-26: both came off their captainship under the two-week zero
+        # rule (captain_gate.EXCLUDE) and then off the Metrics view — Melik
+        # pinned out 8/19, Sassenberg 8/25.
+        self.assertTrue(C.is_inactive("Melik El Jaiez"))
+        self.assertTrue(C.is_inactive("William Sassenberg"))
+
+    def test_an_owner_still_on_the_team_is_not_a_winddown(self):
+        """The list is per-name and only ever grows by a decision. An owner
+        who is still on his captain's Tableau team stays OUT of it, so a
+        genuine drop (a broken filter, a rename past the alias) is still the
+        finding this guard exists for. Kobe Cireus is the case that proves it:
+        he sells wireless only, so his New Internet numbers look odd — but he
+        is on the team and filling, and silencing him would hide a real drop
+        the day it happens."""
+        self.assertFalse(C.is_inactive("Kobe Cireus"))
+        self.assertFalse(C.is_inactive("Tony Chavez"))
+        self.assertFalse(C.is_inactive(""))
 
 
 if __name__ == "__main__":

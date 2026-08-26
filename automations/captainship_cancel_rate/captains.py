@@ -94,6 +94,28 @@ INACTIVE_ICDS: dict[str, str] = {
     # distro_remove) is still pending Eve's call.
     "jeremiah minor": "winding down — off the Metrics view since 2026-08-20 "
                       "(pending Eve's call on the full two-week-zero removal)",
+    # Tony's Team. Pinned out of the captainship 2026-08-19 (two-week zero
+    # rule, new_owners/captain_gate.EXCLUDE["Tony"]). His 0-30 had already been
+    # reading "No Data" every day since ~8/16 — present in the view, 0 cancels
+    # of 0 sales — and on 2026-08-26 the 30-60 went with it: he is off the
+    # Captain's Bonus Teams filter entirely now. Confirmed the same morning on
+    # the sibling Activation Rate - Tony tab (same pull, same view): both boxes
+    # blank for him too, while every other owner on the tab filled. Rows stay
+    # for the history.
+    "melik el jaiez": "off the captainship 2026-08-19 (two-week zero rule); "
+                      "out of the Metrics view since 2026-08-26 (Eve)",
+    # Starr's Team. Same thing one week later: OUT 2026-08-25 under the
+    # two-week zero rule — 0 in both of Starr's boxes for WE 08.16 and
+    # WE 08.23, taken off Starr's captainship distro
+    # (captainship_drafts/config.py) and pinned in
+    # captain_gate.EXCLUDE["Starr"]. Unlike the wind-downs above there was no
+    # run of 0.00% first: he filled real numbers in all four boxes through
+    # 8/25 (22.20% / 25.80%) and vanished on 8/26, which is what the removal
+    # looks like from this report's side — the roster change IS the cause, so
+    # there is no filter or alias to chase.
+    "william sassenberg": "off the captainship 2026-08-25 (two-week zero "
+                          "rule); out of the Metrics view since 2026-08-26 "
+                          "(Eve)",
 }
 
 
