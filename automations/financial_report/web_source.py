@@ -272,6 +272,11 @@ API = "https://api.doubleentry.com"
 _OWNERS_EP = f"{API}/client/org-summary/search/promoting-owner"
 _SUMMARY_EP = f"{API}/client/org-summary"
 
+# How many consecutive 4-week anchors may come back empty before a history
+# walk gives up. Two, not one: a single quiet month (an office between
+# campaigns) shouldn't be read as 'this office didn't exist yet'.
+_HISTORY_MISS_LIMIT = 2
+
 
 def _api_token(page, *, verbose: bool = True) -> str:
     """The Bearer token the app sends to api.doubleentry.com.
@@ -403,3 +408,82 @@ def check_login(*, headless: bool = True) -> tuple[bool, str]:
             return True, f"signed in, org summary reachable ({url})"
     except Exception as e:  # noqa: BLE001 — the message IS the result
         return False, f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
+
+
+def fetch_office_history(owner_key: str, *, weeks_back: int = 52,
+                         verbose: bool = True):
+    """Every week Double Entry still holds for ONE owner — the backfill twin of
+    `fetch_offices`.
+
+    `fetch_offices` answers "what did everyone do in the last four weeks"; this
+    answers "what does Double Entry have on this one owner, all the way back",
+    which is what a newly-appearing office needs so its tab gets its history and
+    not just the current column. `owner_key` is a `parse.norm_name` key
+    ('andre burton'), matched against the (OWNER-STATE) in the company name.
+
+    Returns (offices, weeks) — `offices` in the same shape as one owner's entry
+    in `fetch_offices`' by_owner, with `metrics` spanning every week found, and
+    `weeks` sorted oldest-first. ([], []) when the owner isn't on the account.
+
+    Cost control, since each anchor is an API round trip: the owner's
+    `promoting_owner_id` is learned ONCE (one sweep of the owner list on the
+    first anchor) and reused for every older anchor, so the walk is one call per
+    four weeks rather than one per owner per anchor. It stops after
+    `_HISTORY_MISS_LIMIT` consecutive anchors with nothing — an office that
+    opened in June has no May, and walking a year of empties helps no one.
+    """
+    from automations.financial_report.parse import (_num, _owner_from_office,
+                                                    _state_from_office, norm_name)
+    offices: dict = {}
+    weeks: set = set()
+    anchor = _default_week_end()
+    walked = 0
+    misses = 0
+    with session(verbose=verbose) as page:
+        token = _api_token(page, verbose=verbose)
+        owners = _get(page, f"{_OWNERS_EP}?per_page=200&page=1", token)["items"]
+        owner_id = None
+        while walked < weeks_back and misses < _HISTORY_MISS_LIMIT:
+            date = anchor.isoformat()
+            # Which promoting owner carries this office? Unknown on the first
+            # anchor (sweep), known and reused after.
+            probe = [o for o in owners if o["id"] == owner_id] if owner_id else owners
+            hit_this_anchor = False
+            for o in probe:
+                try:
+                    data = _get(page, f"{_SUMMARY_EP}?date={date}"
+                                      f"&promoting_owner_id={o['id']}"
+                                      f"&color_scheme=light", token)
+                except Exception:  # noqa: BLE001 — one owner failing isn't fatal
+                    continue
+                ends = [dt.date.fromisoformat(r["end"]) for r in data["ranges"]]
+                for comp in data.get("companies", []):
+                    name = (comp.get("name") or "").strip()
+                    if norm_name(_owner_from_office(name)) != owner_key:
+                        continue
+                    owner_id = o["id"]
+                    hit_this_anchor = True
+                    off = offices.setdefault(name, {
+                        "office": name, "owner": _owner_from_office(name),
+                        "state": _state_from_office(name), "metrics": {}})
+                    for cat in comp.get("categories", []):
+                        label = (cat.get("label") or "").strip().upper()
+                        vals = cat.get("transactions") or []
+                        bucket = off["metrics"].setdefault(label, {})
+                        for i in range(min(len(ends), len(vals))):
+                            if vals[i] in (None, ""):
+                                continue
+                            bucket[ends[i]] = _num(vals[i])
+                            weeks.add(ends[i])
+                if owner_id and o["id"] == owner_id:
+                    break          # found the carrier — no need to sweep further
+            misses = 0 if hit_this_anchor else misses + 1
+            if verbose:
+                print(f"-> doubleentry history: week ending {date} — "
+                      f"{'data' if hit_this_anchor else 'nothing'}", flush=True)
+            anchor -= dt.timedelta(days=28)   # each anchor answers with 4 weeks
+            walked += 4
+    if verbose:
+        print(f"-> doubleentry history: {owner_key} — {len(offices)} office(s), "
+              f"{len(weeks)} week(s)", flush=True)
+    return list(offices.values()), sorted(weeks)

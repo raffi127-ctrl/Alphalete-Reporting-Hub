@@ -274,6 +274,18 @@ def run_financial_report(parsed, dry_run: bool = False,
         total_filled += filled
     # A tab matched in another sheet this week isn't dark.
     went_dark -= matched_titles
+    # ICDs we are WAITING on — the ones who have never had a financial source.
+    # Free: it reads the parse this run already did, no extra login. Reported
+    # either way, because "still nothing for him" is the finding when the whole
+    # point is to notice the week that changes. [[source_watch]]
+    watch: list = []
+    try:
+        from . import source_watch as _sw
+        watch = _sw.record(_sw.check(by_owner, bridge), persist=not dry_run)
+        for line in _sw.log_lines(watch):
+            logfn(line)
+    except Exception as e:  # noqa: BLE001 — a watch must never sink the fill
+        logfn(f"financial watch: skipped ({type(e).__name__}: {str(e)[:100]})")
     if went_dark:
         logfn("")
         logfn(f"===== ⚠ {len(went_dark)} ICD(s) WENT DARK — had financials last "
@@ -291,7 +303,8 @@ def run_financial_report(parsed, dry_run: bool = False,
               "template is new — Claude needs to add a parser for that "
               "layout. Send the file to Claude.)")
     return {"filled": total_filled, "matched": total_matched,
-            "problems": problems, "went_dark": sorted(went_dark)}
+            "problems": problems, "went_dark": sorted(went_dark),
+            "watch": watch}
 
 
 def main() -> int:
@@ -311,6 +324,9 @@ def main() -> int:
                          "(doubleentry.com org summary). Combine with --email "
                          "to cover the owners Double Entry doesn't expose — "
                          "the web numbers win where both have an office.")
+    ap.add_argument("--no-catch-up", action="store_true",
+                    help="Don't backfill a watched ICD's missed weeks the "
+                         "first week his financials appear (see source_watch).")
     ap.add_argument("--date", help="Week ending to pull from Double Entry "
                                    "(YYYY-MM-DD). Default: the most recent "
                                    "closed week, Central time.")
@@ -394,6 +410,30 @@ def main() -> int:
               f"dry_run={args.dry_run}")
         result = run_financial_report(parsed, dry_run=args.dry_run,
                                       only_sheet=args.only_sheet)
+        # A watched ICD's financials landing is a one-time event: DM it, and
+        # backfill the weeks he already missed so his tab shows a history
+        # rather than a single column. Both are best-effort and neither can
+        # fail the run — the ordinary fill has already happened by here.
+        _watch = result.get("watch") or []
+        try:
+            from . import source_watch as _sw
+            _sw.announce(_watch, dry_run=args.dry_run)
+            # A watched ICD whose data still isn't in either parse: check the
+            # mailbox itself for mail about him from a sender the ingest
+            # doesn't read — the one arrival path no parse can see.
+            if any(not r["found"] for r in _watch):
+                _fresh = _sw.new_mentions(_sw.inbox_mentions(),
+                                          persist=not args.dry_run)
+                for _m in _fresh:
+                    print(_sw.mention_alert_text(_m))
+                _sw.announce_mentions(_fresh, dry_run=args.dry_run)
+            if not args.no_catch_up:
+                for _r in _watch:
+                    if _r.get("newly_arrived"):
+                        _sw.catch_up(_r["tab"], dry_run=args.dry_run)
+        except Exception as e:  # noqa: BLE001
+            print(f"financial watch: follow-up skipped "
+                  f"({type(e).__name__}: {str(e)[:120]})")
         if live:
             try:
                 from automations.shared import run_manifest as _rm
@@ -447,6 +487,16 @@ def main() -> int:
                     if _dark:
                         _note += (f" · ⚠ {len(_dark)} ICD(s) went DARK (had data "
                                   f"last week, none this week): " + ", ".join(_dark))
+                    # Finally the ICDs we're WAITING on — carried every week,
+                    # arrived or not, so a source that never shows up stays
+                    # visible instead of quietly aging out.
+                    try:
+                        from . import source_watch as _sw
+                        _frag = _sw.note_fragment(_watch)
+                        if _frag:
+                            _note += " · " + _frag
+                    except Exception:  # noqa: BLE001 — note is best-effort
+                        pass
                     _rm.write_manifest(
                         MANIFEST_ID, failed=[], retry_args=[], kind="section",
                         note=_note)
