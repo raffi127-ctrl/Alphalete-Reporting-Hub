@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.alphalete-sales-board</string>
+
+    <!-- Path is the laptop's; on Lucy 1, regenerate with the install path via
+         `lucy rerun install_alphalete_sales_board_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/alphalete_sales_board_5min.sh</string>
+        <string>--apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 5 minutes. The wrapper exits immediately outside Mon-Sat 7am-9:30pm,
+         so the off-hours ticks cost nothing. StartInterval, not
+         StartCalendarInterval: 180 calendar entries would be unreadable, and a
+         missed tick matters less than a tick that fires at the wrong hour after
+         a TZ cache drift. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/alphalete-sales-board.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/alphalete-sales-board.launchd.err.log</string>
+</dict>
+</plist>
