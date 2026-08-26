@@ -36,20 +36,32 @@ from .run import OUTPUT_DIR, TARGETS
 # caption we send, and _MARK is how a second run recognises its own reply and
 # declines to double-post.
 _MARK = "re-posted"
-_LEAD = ("\U0001F4E6 Re-posted — use this one, not the workbook above.")
+_LEAD = "\U0001F4E6 Re-posted — use this one, not the workbook above."
+_LEAD_PENDING = ("\U0001F5C2\uFE0F Pending orders, re-posted — use this one, "
+                 "not the image above.")
 DEFAULT_NOTE = (
     "Pending orders is now two sections, each grouped by sales rep: the ones "
     "that aren't yellow first, then the yellow ones. Ready For Booking now "
     "shows yellow.")
 
 
-def caption_for(note: str = "") -> str:
-    return _LEAD + "\n" + (note.strip() or DEFAULT_NOTE)
+def caption_for(note: str = "", pending: bool = False) -> str:
+    """LEAD + one line on what changed. The lead names the right artifact —
+    telling people not to use "the workbook above" under an IMAGE sends them
+    looking for the wrong attachment."""
+    lead = _LEAD_PENDING if pending else _LEAD
+    return lead + "\n" + (note.strip() or DEFAULT_NOTE)
 
 
 def workbook_for(day: dt.date) -> Path:
     """The daily workbook run.py writes for `day`."""
     return OUTPUT_DIR / "BOX Order Log {}.xlsx".format(day.strftime("%m-%d-%Y"))
+
+
+def pending_image_for(day: dt.date) -> Path:
+    """The daily Pending Orders image run.py writes for `day` (run.out_pending)."""
+    return OUTPUT_DIR / "BOX Pending Orders {}.png".format(
+        day.strftime("%m-%d-%Y"))
 
 
 def already_reposted(client, channel: str, ts: str) -> bool:
@@ -83,15 +95,22 @@ def main(argv: Optional[list] = None) -> int:
                     help="workbook to post (default: today's in output/)")
     ap.add_argument("--date", metavar="YYYY-MM-DD",
                     help="the thread's date (default: today)")
+    ap.add_argument("--pending", action="store_true",
+                    help="re-post the Pending Orders IMAGE instead of the "
+                         "workbook (backfill_pending can't: it dedupes on the "
+                         "caption and the thread already has one)")
     ap.add_argument("--note", metavar="TEXT", default="",
                     help="one line saying what changed (default: the "
                          "pending-tab layout note)")
     args = ap.parse_args(argv)
 
     day = (dt.date.fromisoformat(args.date) if args.date else dt.date.today())
-    book = Path(args.file) if args.file else workbook_for(day)
+    if args.file:
+        book = Path(args.file)
+    else:
+        book = pending_image_for(day) if args.pending else workbook_for(day)
     if not book.exists():
-        print("✗ no workbook at {} — build it first with `lucy rerun "
+        print("✗ nothing at {} — build it first with `lucy rerun "
               "box_order_log` (that runs --sheet --xlsx, no post).".format(book),
               file=sys.stderr)
         return 1
@@ -99,13 +118,14 @@ def main(argv: Optional[list] = None) -> int:
     # Guard against posting the pre-change layout: the workbook has to be
     # newer than the code that changed it, or there's nothing to re-post.
     stamp = dt.datetime.fromtimestamp(book.stat().st_mtime)
-    print("Workbook: {}\n  built {}".format(book, stamp.strftime("%Y-%m-%d %H:%M")))
+    print("{}: {}\n  built {}".format("Image" if args.pending else "Workbook",
+                                      book, stamp.strftime("%Y-%m-%d %H:%M")))
     if stamp.date() != day:
         print("  ⚠ that file was built on {}, not {} — re-run "
               "`lucy rerun box_order_log` first if you want the day's own "
               "numbers.".format(stamp.date(), day))
 
-    caption = caption_for(args.note)
+    caption = caption_for(args.note, pending=args.pending)
 
     from automations.shared import slack_metrics_post as smp
 
