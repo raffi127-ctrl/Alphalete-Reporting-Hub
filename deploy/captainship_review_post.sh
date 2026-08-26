@@ -25,17 +25,26 @@
 #   com.alphalete.captainship-review polls every 15 min from 07:00, so a
 #   checkmark at ~07:20 is twelve sent reports by ~07:35.
 #
-# --ensure-posted, NOT --post. It is idempotent by design: a post for today —
-# approved or not — means the day is asked, so it returns without touching
-# Slack. That is what makes the later slots safe (they cannot re-post the link
-# under the approvers) AND what makes them useful: a day whose morning chain
-# never produced previews gets them BUILT here and posted, which is the same
-# path the 10:00 backstop in deploy/captainship_review.sh takes. It alerts to
+# BLOCKS (Eve, 2026-08-26). One run of this agent puts up the whole day, but in
+# pieces: it opens the 'Captainship Reports' thread and posts one link per BLOCK
+# inside it — Fiber 1 (Rafael), Fiber 2 (Wayne, Starr), Fiber 3 (Tony, Chan,
+# Sahil), B2B, NDS — printing and uploading each block before starting the next,
+# so the first link is up in a fraction of the time twelve reports took to
+# print. Each link is approved and sent on its own. THE CLOCK IS UNCHANGED:
+# still 07:15, still 07:45 / 08:15 / 09:15 as the safety net.
+#
+# --ensure-posted, NOT --post. It is idempotent PER BLOCK by design: a block
+# already posted for today — approved or not — is skipped, so it returns
+# without touching Slack for that one. That is what makes the later slots safe
+# (they cannot re-post a link under the approvers) AND what makes them useful: a
+# block whose morning chain never produced previews gets them BUILT here and
+# posted, which is the same path the 10:00 backstop in
+# deploy/captainship_review.sh takes. It alerts to
 # the corrections channel itself when the build or the post fails, so this
 # wrapper stays thin.
 #
-# SENDS NOTHING. It posts a link; com.alphalete.captainship-review mails the
-# twelve reports within 15 min of a checkmark, and only then.
+# SENDS NOTHING. It posts the links; com.alphalete.captainship-review mails a
+# block within 15 min of a checkmark ON THAT BLOCK, and only then.
 #
 # TIME KNOB: com.alphalete.captainship-review-post.plist (StartCalendarInterval
 # Hour/Minute, machine LOCAL time — the mini is Central). A plist edit needs
