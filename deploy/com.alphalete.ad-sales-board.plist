@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.ad-sales-board</string>
+
+    <!-- Ad Sales Board: the Source Report week by week (pull + names).
+         Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path:
+         python -m automations.day_orchestrator.install_agent ad-sales-board -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/ad_sales_board.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 7:50am daily, machine-local (Lucy 2 is Central). Deliberately AFTER
+         applicant_tracker's 6:45 morning import (yesterday's call-list names)
+         and clear of the 4am AppStream cluster. TIME KNOB lives here. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>50</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.ad-sales-board.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.ad-sales-board.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
