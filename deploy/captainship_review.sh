@@ -1,13 +1,28 @@
 #!/bin/bash
 # Captainship Reports — the approval half of the review gate, on the mini.
 #
-# The 4am orchestrator builds the 12 previews (captainship_drafts --dry-run,
-# moved to the front of the Tableau wave 2026-08-19 so they are on disk by
+# The 4am orchestrator builds the previews (captainship_drafts --dry-run, moved
+# to the front of the Tableau wave 2026-08-19 so they are on disk by
 # ~06:10-06:30) and com.alphalete.captainship-review-post posts them for review
-# as ONE PDF at 07:15 (deploy/captainship_review_post.sh -> review_gate
-# --ensure-posted). THIS agent is the other half: every 15 minutes it asks
-# Slack whether Evelyn put a checkmark on that post, and mails the
-# reviewed .eml files the moment she has. Until then it does nothing.
+# at 07:15 — one PDF per BLOCK, each link a reply in the day's 'Captainship
+# Reports' thread (deploy/captainship_review_post.sh -> review_gate
+# --ensure-posted). THIS agent is the other half: every 15 minutes it asks Slack
+# which blocks Evelyn has put a checkmark on, and mails those blocks' .eml files
+# the moment she has. Until then it does nothing.
+#
+# BLOCKS (Eve, 2026-08-26). The day is no longer one link and one checkmark:
+# review_gate opens ONE 'Captainship Reports' thread and posts one link per
+# BLOCK inside it (Fiber 1: Rafael / Fiber 2: Wayne, Starr / Fiber 3: Tony,
+# Chan, Sahil / B2B / NDS — config.BLOCKS). Every tick still runs the same
+# `review_gate --check --send`; what changed is that it now walks the blocks and
+# mails each one that carries its own checkmark, with its own CAPTAINSHIP-SENT
+# lock in the thread. So a tanda approved at 07:20 goes out at 07:20 while the
+# rest are still being looked at. NOTHING HERE CHANGED TIME: same 15-minute
+# cadence, same 07:00-20:00 window, same 10:00 deadline.
+#
+# EXIT 1 STILL MEANS "someone is still waiting" — it is now "at least one block
+# is unapproved" rather than "the day is unapproved", which is what keeps the
+# reminder below firing until the last block is decided.
 #
 # WHY A SEPARATE AGENT and not another orchestrator report: a report runs ONCE a
 # day and goes terminal. Waiting for a human is not a run — it's a watch, and it
@@ -79,7 +94,10 @@ LOG_FILE="$LOG_DIR/captainship-review-$(date +%Y-%m-%d).log"
 # PAST THE WINDOW: stop asking, but do not just disappear. A day nobody reacted
 # to used to end in silence — no approval, no send, no message — which looks
 # exactly like a day that went fine. Say it in the thread instead, once, and
-# then go quiet until tomorrow's post.
+# then go quiet until tomorrow's post. Per BLOCK since 2026-08-26: it names the
+# blocks that were never approved (and the ones that never made it up for review
+# at all) and says nothing about the ones that went out, because a day where
+# Fiber shipped and NDS did not is a real outcome now.
 if [ "$HOUR" -ge "$END_HOUR" ]; then
     echo "[$(date)] past ${END_HOUR}:00 — closing the day" >> "$LOG_FILE"
     "$VENV_PY" -u -m automations.captainship_drafts.review_gate --close-day >> "$LOG_FILE" 2>&1
@@ -118,9 +136,11 @@ fi
 # the skip only meant Monday was the one day with no deadline behind it: if the
 # morning chain and the 07:15-09:15 slots all failed, nobody was asked at all.
 #
-# SAFE ON EVERY TICK: --ensure-posted is a no-op when the day is already up for
-# review (approved or not), so this cannot post twice, and it mails nobody --
-# the twelve reports still go out only on a checkmark.
+# SAFE ON EVERY TICK: --ensure-posted is a no-op PER BLOCK -- a block already
+# up for review (approved or not) is skipped, so this cannot post twice, and it
+# mails nobody: the reports still go out only on a checkmark. A block whose
+# previews are missing is built and posted before the next block starts, so a
+# half-broken morning still gets the blocks that CAN be built up for review.
 DEADLINE_HHMM=1000
 NOW_HHMM=$(date +%H%M)
 if [ "${NOW_HHMM#0}" -ge "$DEADLINE_HHMM" ]; then

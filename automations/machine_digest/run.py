@@ -689,6 +689,130 @@ def _close_silent_job_incidents(cfg, job_ids, dry_run: bool, ts: str) -> int:
     return closed
 
 
+# Wording the RETRACTION check keys on. A didn't-run alert says one of these in
+# its parent line; a failure alert never does. See _retract_false_alarms for why
+# prose is the honest discriminator here.
+_DIDNT_RUN_WORDING = ("didn't run today", "did not run today",
+                      "didn\u2019t run today")
+
+
+def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
+    """Take back a "didn't run today" this watcher should never have posted.
+
+    WHY (Megan 2026-08-26). The watcher infers a report's cadence from its own
+    Activity history, so ONE hand-run teaches it a schedule that does not exist —
+    `alphalete_org_b2b` ran by hand once on 8/17 at 16:00 and it began posting
+    "didn't run today on Lucy 2 · usually starts ~16:00" every day after. The
+    cure for that is a DECLARATION (`hand_run_only`, `standalone_weekdays`,
+    `standalone_monthdays`), and adding one does stop the next alert — but
+    nothing ever went back for the one already on the board. Worse, this class
+    can't self-close: _close_recovered_incidents closes a thread when the report
+    RUNS CLEAN, and a hand-run-only handle may simply never run again. So
+    b2b's thread sat open from 8/24 to 8/26 describing a problem that had never
+    existed and could not resolve itself. Megan: "teach the watcher to retract
+    its own false alarms."
+
+    A retraction is only ever safe when we can prove BOTH halves:
+
+      1) The report is now DECLARED exempt from the didn't-run check — either
+         structurally (nothing on a clock runs it at all) or for the specific day
+         the alert was raised. Today's off-day list can't answer for an alert
+         raised last Thursday, so the off-day case is asked against the incident's
+         OWN opened date and skipped when we can't date it.
+      2) The open thread is actually a DIDN'T-RUN alert. This is the sharp edge:
+         `standalone-<id>` is the key for every standalone alert kind — ERROR,
+         INCOMPLETE and STUCK share it with MISSED (notify.send_standalone_alert
+         builds it from the id alone). Retracting on the exemption by itself would
+         close a REAL failure thread for a hand-run-only report, which is the
+         worst thing this module could do: the failure is still true, and being
+         un-scheduled was never a reason to stop watching for it. So the parent's
+         own wording decides, and anything we can't read is left alone.
+
+    Never touches `failure-` or `drop-` keys, and never retracts a NO_NEW note
+    (`nonew-`) — that one is a real observation about a real source.
+    """
+    from automations.day_orchestrator import notify
+    try:
+        from automations.shared import incident_thread as inc
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception as e:  # noqa: BLE001 — retracting is a nicety, never fatal
+        print(f"[{ts}] watch: incident index unreadable: {e}", flush=True)
+        return 0
+    if not open_keys:
+        return 0
+
+    try:
+        structural = _handrun_only_ids(cfg) | _oneshot_utility_ids(cfg)
+    except Exception:  # noqa: BLE001
+        structural = set()
+    idx = {}
+    try:
+        idx = inc._load_index() or {}
+    except Exception:  # noqa: BLE001
+        pass
+
+    retracted = 0
+    for key in sorted(open_keys):
+        if not key.startswith("standalone-"):
+            continue
+        rid = key[len("standalone-"):]
+
+        why = ""
+        if rid in structural:
+            why = ("Nothing on a clock runs this one — it only runs when "
+                   "somebody starts it by hand.")
+        else:
+            # Off-day, asked against the day the alert was RAISED.
+            opened = (idx.get(key) or {}).get("opened") if isinstance(
+                idx.get(key), dict) else None
+            if not opened:
+                continue
+            try:
+                opened_date = dt.date.fromisoformat(opened)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                if rid not in _offday_standalone_ids(cfg, opened_date):
+                    continue
+            except Exception:  # noqa: BLE001
+                continue
+            why = ("It isn't scheduled to run on a {}."
+                   .format(opened_date.strftime("%A")))
+
+        # Half 2: prove it is a didn't-run thread and not a real failure.
+        try:
+            client = inc._client()
+            parent = inc._find_any_state(key, channel=ch, client=client)
+            text = (parent or {}).get("text") or ""
+        except Exception as e:  # noqa: BLE001
+            print(f"[{ts}] watch: can't read {key} to retract it ({e})",
+                  flush=True)
+            continue
+        if not text:
+            continue
+        low = text.lower()
+        if not any(w in low for w in _DIDNT_RUN_WORDING):
+            # A real failure on a hand-run report. Being un-scheduled is not
+            # being un-watched — leave it exactly where it is.
+            continue
+
+        lines = [
+            "*Retracted — this alert was wrong.* {} So \"didn't run today\" "
+            "was never true.".format(why),
+            "Nothing was broken and nothing needs re-running. It is declared "
+            "now, so it won't be asked again.",
+        ]
+        try:
+            if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                retracted += 1
+                print(f"[{ts}] watch: retracted false alarm {key} — {why}",
+                      flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[{ts}] watch: retraction failed for {key}: {e}", flush=True)
+    return retracted
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -853,6 +977,8 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    channel never leaves a fixed problem sitting there looking open (Eve
     #    2026-08-14). Free when nothing is open: open_keys reads a local index.
     _close_recovered_incidents(cfg, reports, dry_run, ts)
+    # A false alarm has no clean run coming to close it — see _retract_false_alarms.
+    _retract_false_alarms(cfg, target_date, dry_run, ts)
     # A silent job has no Activity row for the step above to read as "clean", so
     # it closes its own thread the moment its heartbeat is current again.
     if _healthy_jobs:

@@ -2552,10 +2552,12 @@ AUTOMATED_REPORTS = [
         # ("Captainship Report Drafts (12)" + the auto-registered "Captainship
         # Reports (a revisión)" library card, now hidden via the skip-set in
         # _read_shared_library).
-        "description": "One card, two phases. **Build (4am):** renders the 12 Captainship Report emails (Rafael + 5 fiber + 3 B2B + 3 NDS) as previews — nothing sends. **Review (Slack):** the previews post as one PDF in #revision-emails; a ✅ from Evelyn mails the exact files reviewed. Pill ramps as it goes: orange after the build, 🟣 **purple while it waits for the ✅**, green the moment it's approved.",
+        "description": "One card, two phases. **Build (4am):** renders the Captainship Report emails (Rafael + 5 fiber + 4 B2B + 3 NDS) as previews, in blocks — nothing sends. **Review (Slack):** each BLOCK posts its own PDF link inside the day's *Captainship Reports* thread in #revision-emails; a ✅ on a block mails that block's exact reviewed files, so a tanda goes out without waiting for the rest. Pill ramps as it goes: orange after the build, 🟣 **purple while it waits for the ✅s**, green once every block is approved.",
         "breakdown": (
             "PHASE 1 — BUILD (4am flow)\n"
-            "**•** Builds all 12 previews to output/ — Product Summary + "
+            "**•** Builds every preview to output/, block by block (Fiber 1: "
+            "Rafael → Fiber 2: Wayne, Starr → Fiber 3: Tony, Chan, Sahil → "
+            "B2B → NDS) — Product Summary + "
             "Captainship Units, the churn buckets, and each captain's metric "
             "boxes (cancel rate, activation rate, ABP %, 6+ days out). Fiber "
             "adds the Fiber Activations PNG; B2B/NDS add the Team Stats "
@@ -2568,15 +2570,18 @@ AUTOMATED_REPORTS = [
             "**•** Churn / Fiber Activations → **TODAY**.\n"
             "Don't pass a back-dated `--date` — it walks every section back a "
             "day.\n\n"
-            "PHASE 2 — REVIEW + SEND (Slack)\n"
-            "**•** The 12 previews print to one PDF; **Lucy posts the link in "
-            "#revision-emails**.\n"
-            "**•** A **✅ from Evelyn** sends the exact files reviewed "
-            "(mini's watcher, within 15 min) — what goes out can't differ from "
-            "what was approved.\n"
-            "**•** Pill: **orange** after the build, 🟣 **purple** once it's "
-            "posted and waiting on the ✅, **green** only when an approver "
-            "ticks it. A day nobody approves never goes green.\n"
+            "PHASE 2 — REVIEW + SEND (Slack), ONE BLOCK AT A TIME\n"
+            "**•** Each block prints to its OWN PDF; **Lucy opens the day's "
+            "*Captainship Reports* thread in #revision-emails and posts one "
+            "link per block inside it** — a block is up for review as soon as "
+            "it is built, not when the last one is.\n"
+            "**•** A **✅ on a block** sends THAT block's exact files "
+            "(mini's watcher, within 15 min) — what goes out can't differ "
+            "from what was approved, and the other blocks keep waiting on "
+            "their own ✅.\n"
+            "**•** Pill: **orange** after the build, 🟣 **purple** once the "
+            "links are posted and waiting, **green** only when EVERY block "
+            "has been ticked. A day nobody approves never goes green.\n"
             "**•** **Send now — override** is the fallback if no ✅ comes.\n\n"
             "WHEN IT RUNS\n"
             "Tue–Sun, after the Sales Board fill, both churn runs, and the "
@@ -2618,15 +2623,15 @@ AUTOMATED_REPORTS = [
                      "time": "4 AM flow (when data's ready)", "estimated_minutes": 12},
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Built — the 12 previews are in output/ as .html. Open them, check the numbers, then press 'Post to Slack for approval' (or let the 4am flow post it).",
+            "message_success": "✅ Built — the previews are in output/ as .html, grouped by block. Open them, check the numbers, then press 'Post to Slack for approval' (or let the 4am flow post them). Each block gets its own link and its own ✅.",
             "message_failed": "❌ Run failed. If §1 is blank the Sales Board render is signed out — run `sheets_login --machine \"Lucy 3\"` (the runner moved off the mini on 2026-08-25).",
         },
         "actions": [
             {
-                "label": "1. Build + review the 12",
+                "label": "1. Build + review them all",
                 "icon": "👁",
                 "primary": True,
-                "help": "Builds all 12 reports and writes them to output/ as .html you can open in a browser. Sends nothing and posts nothing. Check the numbers here first.",
+                "help": "Builds every report, block by block (Fiber 1 → Fiber 2 → Fiber 3 → B2B → NDS), and writes them to output/ as .html you can open in a browser. Sends nothing and posts nothing. Check the numbers here first.",
                 "module": "automations.captainship_drafts.run",
                 "args_fn": lambda: ["--dry-run"],
             },
@@ -2634,7 +2639,7 @@ AUTOMATED_REPORTS = [
                 "label": "2. Post to Slack for approval",
                 "icon": "📮",
                 "primary": False,
-                "help": "Prints the 12 previews to one PDF, drops it in Drive, and posts the link in #revision-emails. A ✅ from Evelyn is what mails the reports. Posts as Lucy from LUCY 3 (the runner since 2026-08-25) — the card routes there for you; don't run it from a laptop or it posts under your own account.",
+                "help": "Prints ONE PDF PER BLOCK, drops each in Drive, and posts its link inside the day's Captainship Reports thread in #revision-emails. A ✅ on a block is what mails that block; a block already posted is left alone. Posts as Lucy from LUCY 3 (the runner since 2026-08-25) — the card routes there for you; don't run it from a laptop or it posts under your own account.",
                 "module": "automations.captainship_drafts.review_gate",
                 "args_fn": lambda: ["--post"],
             },
@@ -2642,7 +2647,7 @@ AUTOMATED_REPORTS = [
                 "label": "Send now — override",
                 "icon": "📧",
                 "primary": False,
-                "help": "Skips the Slack ✅ and mails the EXACT files you just reviewed to the 12 captain lists (145 people) right now. Rebuilds nothing. The fallback for a day the checkmark never comes — only press it once the numbers look right.",
+                "help": "Skips the Slack ✅ and mails the EXACT files you just reviewed to every captain list (145 people) right now — every block at once. Rebuilds nothing. The fallback for a day the checkmarks never come — only press it once the numbers look right.",
                 "module": "automations.captainship_drafts.run",
                 "args_fn": lambda: ["--send-reviewed"],
             },

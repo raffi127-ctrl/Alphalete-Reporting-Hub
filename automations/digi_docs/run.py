@@ -193,6 +193,32 @@ def _phases(args) -> int:
     print(f"\n{ws.title}: {len(send)} to work "
           f"({'DRY RUN' if dry else 'LIVE'})\n")
 
+    added, done, refused = [], [], []
+    # Somebody whose start time we cannot read is NEVER sent on a guess, and
+    # never silently dropped either -- they go in refused, so the channel names
+    # them and a person can put a time in the cell.
+    #
+    # THIS HAS TO COME BEFORE THE EARLY RETURN BELOW. It did not, and the first
+    # --due-now probe (2026-08-26) showed why: when nobody else was due the run
+    # returned before recording these, so a person with a blank Start Time was
+    # dropped in silence on every tick — the exact failure this report spent the
+    # afternoon eliminating everywhere else.
+    # A MISSING COLUMN IS ONE PROBLEM, NOT THIRTY. On 2026-08-26 the header on
+    # Raf's tab was renamed from "Start Time" to "Trainer" while the 1:00 values
+    # stayed underneath, and every person on it came back "no readable Start
+    # Time ('')" — thirty identical lines that read like thirty blank cells
+    # somebody had to chase, when the fix was one header. Say which it is.
+    no_col = [c for c in no_time if not c.start_col]
+    blank = [c for c in no_time if c.start_col]
+    if no_col:
+        _refuse(refused,
+                f"the {config.COL_START_TIME!r} column is not on this tab — "
+                f"{len(no_col)} people cannot be scheduled until it is back",
+                dry)
+    for c in blank:
+        _refuse(refused, f"{c.name}: no readable Start Time "
+                         f"({c.start_time!r})", dry)
+
     # NOTHING DUE -> DON'T OPEN A BROWSER. The send tick fires through the
     # whole day, and most of those firings have nobody due yet. Opening
     # OwnerVille to discover that would be a session churned every few minutes
@@ -201,15 +227,8 @@ def _phases(args) -> int:
     # above is enough to know there is no work.
     if args.due_now and do_send and not send and not do_add:
         print("nobody is due yet — not opening OwnerVille")
-        return 0
-
-    added, done, refused = [], [], []
-    # Somebody whose start time we cannot read is NEVER sent on a guess, and
-    # never silently dropped either -- they go in refused, so the channel names
-    # them and a person can put a time in the cell.
-    for c in no_time:
-        _refuse(refused, f"{c.name}: no readable Start Time "
-                         f"({c.start_time!r})", dry)
+        return _write_back(args, ws, send, added, done, refused,
+                           tinted_dry=dry, do_send=do_send, fatal="")
     # `fatal` is what makes the WORST case the loudest one. Everything below
     # already survives one rep failing, but a session that won't open, or a
     # browser that dies mid-batch, threw straight past the Slack post — so the

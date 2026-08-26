@@ -6,9 +6,17 @@ churn images, assembles each draft, and creates it in Gmail.
 
   python -m automations.captainship_drafts.run --only wayne --dry-run
   python -m automations.captainship_drafts.run --dry-run     # all 12, no send
+  python -m ...run --dry-run --block fiber-2                 # one block only
   python -m automations.captainship_drafts.run --only wayne  # live: create draft
   python -m ...run --only wayne --send                       # live: SEND it
   python -m ...run --only wayne --dry-run --skip-sheets      # churn-only preview
+
+BLOCKS (Eve, 2026-08-26). The drafts build in BLOCK order — Fiber 1 (Rafael),
+Fiber 2 (Wayne, Starr), Fiber 3 (Tony, Chan, Sahil), B2B, NDS — and each block
+is reviewed and sent on its own: review_gate posts one link per block inside the
+day's 'Captainship Reports' thread, and each link's own checkmark mails only
+that block. Nobody waits for the last draft to be assembled before the first
+tanda can go out. config.BLOCKS is the single place that order lives.
 
 !! DO NOT OPEN THESE DRAFTS IN GMAIL TO SEND THEM. !!
 Proven 2026-07-27, after Eve got a whole batch of mangled reports: opening an
@@ -202,29 +210,58 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
     # with a blank Product Summary that nobody had approved. Refusing here is
     # the only place that can catch it, because it is the only place that sees
     # both the local files and the reviewed stamp.
+    #
+    # PER BLOCK since 2026-08-26: the reviewed artefact is no longer one PDF of
+    # twelve, it is one PDF per block (config.BLOCKS), each with its own link,
+    # its own checkmark and its own fingerprint in Drive. So the comparison is
+    # per block too — a fiber-2 rebuild must not invalidate the nds approval
+    # that was given an hour earlier off a PDF nothing touched.
+    #
+    # A PARTIAL SEND STILL GETS THE FULL CHECK. When only some of a block's
+    # captains are going out — the partial-send path, or a hand-run `--only
+    # wayne` — the fingerprint compared is still the BLOCK's whole .eml set, not
+    # just the ones being mailed. Weakening it to the selected files would mean
+    # the held captain's draft could be rebuilt underneath an approval and
+    # nothing would notice; upstream held the same line for a partial day
+    # against the whole day's set, and the block is now what that day was.
     if not allow_unreviewed:
-        try:
-            from automations.captainship_drafts import review_gate
-            want = review_gate.reviewed_digest(today)
-            have = review_gate.eml_digest(today)
-        except Exception as e:      # noqa: BLE001 — a check that cannot run
-            want = have = None      # must not become a reason not to send
-            logfn(f"  ⚠ could not verify the previews against the reviewed PDF "
-                  f"({type(e).__name__}: {e}) — sending unverified")
-        if want and have and want != have:
-            logfn(f"  ✗ REFUSING TO SEND: these previews are not the ones that "
-                  f"were reviewed (reviewed {want}, on this machine {have}).\n"
-                  f"    The PDF the approvers ticked was built from a DIFFERENT "
-                  f"set of .eml files — most likely on the other machine.\n"
-                  f"    Rebuild here (`run.py --dry-run`), re-run "
-                  f"`review_gate.py --refresh`, and get a fresh checkmark. "
-                  f"--allow-unreviewed overrides this.")
-            return len(selected)
-        if want and have:
-            logfn(f"  ✓ previews match the reviewed PDF ({have})")
-        elif not want:
-            logfn("  ⚠ the reviewed PDF carries no fingerprint (built before "
-                  "this check existed) — sending unverified")
+        picked = {c.key for c in selected}
+        for blk in config.BLOCKS:
+            members = set(blk.captains)
+            if not (members & picked):
+                continue
+            try:
+                from automations.captainship_drafts import review_gate
+                want = review_gate.reviewed_digest(today, blk)
+                have = review_gate.eml_digest(today, blk)
+            except Exception as e:  # noqa: BLE001 — a check that cannot run
+                want = have = None  # must not become a reason not to send
+                logfn(f"  ⚠ {blk.key}: could not verify the previews against "
+                      f"the reviewed PDF ({type(e).__name__}: {e}) — sending "
+                      f"unverified")
+            if want and have and want != have:
+                logfn(f"  ✗ REFUSING TO SEND {blk.key} ({blk.who}): these "
+                      f"previews are not the ones that were reviewed (reviewed "
+                      f"{want}, on this machine {have}).\n"
+                      f"    The PDF the approvers ticked was built from a "
+                      f"DIFFERENT set of .eml files — most likely on the other "
+                      f"machine.\n"
+                      f"    Rebuild here (`run.py --dry-run --block "
+                      f"{blk.key}`), re-run `review_gate.py --refresh --block "
+                      f"{blk.key}`, and get a fresh checkmark. "
+                      f"--allow-unreviewed overrides this.")
+                # Drop the whole block from this send; the others still go.
+                # Only what was actually going out counts as a failure — a
+                # partial send that loses its block did not fail the captains
+                # it was never mailing.
+                failures += len(members & picked)
+                selected = [c for c in selected if c.key not in members]
+                continue
+            if want and have:
+                logfn(f"  ✓ {blk.key}: previews match the reviewed PDF ({have})")
+            elif not want:
+                logfn(f"  ⚠ {blk.key}: the reviewed PDF carries no fingerprint "
+                      f"(built before this check existed) — sending unverified")
 
     # One SMTP login for the whole set (see mailer.py for why SMTP and not the
     # Gmail API). Opened lazily, so a run where every preview is missing never
@@ -424,6 +461,13 @@ def _normalize_sizes(built, *, logfn=print) -> None:
     flavor, so every fiber Product Summary is one width, etc. Those vary in
     pixel width because sheet column widths differ per captain.
 
+    Matching only reaches as far as ONE RUN, which since the block split
+    (2026-08-26) can be a single block. The 4am build still does all 13 in one
+    process, so the normal day is unchanged; a block rebuilt on its own matches
+    within itself. Widening it would mean keeping every captain's PNGs around
+    between runs to pad against, and a few pixels of right-hand white is not
+    worth a cross-run cache.
+
     The churn images and metric boxes are deliberately left out — see the note
     below. Runs across all captains of a flavor present in THIS run (a
     single-captain run has nothing to match)."""
@@ -470,6 +514,12 @@ def main(argv=None) -> int:
                     help="Comma-separated captain keys "
                          f"({', '.join(c.key for c in config.CAPTAINS)}). "
                          "Default: all 12.")
+    ap.add_argument("--block", default=None,
+                    help="Comma-separated BLOCK keys "
+                         f"({', '.join(b.key for b in config.BLOCKS)}) — the "
+                         "unit a review link and a checkmark cover. Combines "
+                         "with --only (intersection). Default: every block, "
+                         "built in block order.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Write each draft to output/*.eml for preview; "
                          "do NOT create the Gmail draft.")
@@ -522,12 +572,27 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     keys = ({k.strip() for k in args.only.split(",")} if args.only
             else {c.key for c in config.CAPTAINS})
-    selected = [c for c in config.CAPTAINS if c.key in keys]
     unknown = keys - {c.key for c in config.CAPTAINS}
     if unknown:
         print(f"Unknown captain key(s): {sorted(unknown)}. "
               f"Valid: {[c.key for c in config.CAPTAINS]}")
         return 1
+    if args.block:
+        bkeys = [b.strip() for b in args.block.split(",") if b.strip()]
+        unknown_b = [b for b in bkeys if b not in config.BLOCK_BY_KEY]
+        if unknown_b:
+            print(f"Unknown block key(s): {unknown_b}. "
+                  f"Valid: {[b.key for b in config.BLOCKS]}")
+            return 1
+        keys &= {k for b in bkeys for k in config.BLOCK_BY_KEY[b].captains}
+        if not keys:
+            print("--block and --only don't overlap — nothing selected.")
+            return 1
+    # BLOCK ORDER, not roster order (Eve 2026-08-26): Fiber 1 → Fiber 2 →
+    # Fiber 3 → B2B → NDS. This is the order the drafts BUILD in, which is what
+    # makes "approve a block while the rest are still assembling" work — the
+    # first link can only go up early if the first block is what finishes first.
+    selected = [c for c in config.captains_in_order() if c.key in keys]
 
     if args.distro_check:
         print("=== Captainship recipients — contact group vs config.py ===")
@@ -540,7 +605,11 @@ def main(argv=None) -> int:
             "DRY-RUN (preview .eml)" if args.dry_run else
             "LIVE SEND" if args.send else "LIVE (create drafts)")
     print(f"=== Captainship Drafts — {today.isoformat()} ({mode}) ===")
-    print(f"Captains: {[c.key for c in selected]}")
+    picked = {c.key for c in selected}
+    for blk in config.BLOCKS:
+        mine = [k for k in blk.captains if k in picked]
+        if mine:
+            print(f"  block {blk.key} ({blk.label}): {mine}")
 
     if args.send_reviewed:
         # Nothing to capture — this path only mails what's already on disk.

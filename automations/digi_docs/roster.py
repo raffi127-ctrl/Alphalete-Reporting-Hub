@@ -27,6 +27,8 @@ class Candidate:
     digi_val: str = ""              # what the cell holds now
     location: str = ""              # the chart's "Location" cell
     start_time: str = ""            # the chart's "Start Time" cell, verbatim
+    start_col: int = 0              # 1-indexed Start Time column, 0 if the
+                                    # chart has no such header at all
     # INFORMATIONAL ONLY -- never gates a send. True once the chart's date has
     # passed with no status and no location against their name.
     no_show: bool = False
@@ -116,6 +118,7 @@ def candidates(values: List[List[str]], tab_name: str,
                 c.location = _bir._cell(row, loc)
             st = _bir._col(header, config.COL_START_TIME)
             if st is not None:
+                c.start_col = st + 1
                 c.start_time = _bir._cell(row, st)
         if day_one_passed and not _showed_up(p.final_status, c.location):
             c.no_show = True

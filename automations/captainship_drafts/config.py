@@ -677,3 +677,75 @@ CAPTAINS: List[Captain] = [
 ]
 
 BY_KEY = {c.key: c for c in CAPTAINS}
+
+
+# ---------------------------------------------------------------------------
+# BLOCKS — the unit of review (Eve, 2026-08-26)
+# ---------------------------------------------------------------------------
+# The 12 drafts used to be ONE artefact: one PDF, one link, one checkmark, and
+# nothing could be approved until the last of the twelve had finished building
+# and printing. Eve's ask: split the build into blocks so a block finishes,
+# posts its own link inside the same 'Captainship Reports' thread, and can be
+# approved and sent while the rest are still being assembled.
+#
+# ORDER IS THE SCHEDULE. This list is the order the drafts are built in AND the
+# order their links go into the thread: Fiber first (Rafael, then Wayne+Starr,
+# then Tony+Chan+Sahil), then B2B, then NDS. Reordering this list reorders both
+# — there is no second place that says what comes first.
+#
+# Rafael sits under Fiber even though his FLAVOR is "rafael": the flavor is
+# about which sections his email renders (his own Sheet, 9 sections), the block
+# is about who gets reviewed together. Eve grouped him with Fiber.
+@dataclass(frozen=True)
+class Block:
+    key: str                   # slug for --block, filenames and Slack markers
+    label: str                 # what the Slack post calls it, e.g. "Fiber 1"
+    captains: Tuple[str, ...]  # captain keys, in send order
+
+    @property
+    def members(self) -> List[Captain]:
+        return [BY_KEY[k] for k in self.captains if k in BY_KEY]
+
+    @property
+    def who(self) -> str:
+        """"Wayne, Starr" — the names for the Slack post and the log line."""
+        return ", ".join(c.display_name for c in self.members)
+
+
+_BLOCKS: List[Block] = [
+    Block("fiber-1", "Fiber 1", ("rafael",)),
+    Block("fiber-2", "Fiber 2", ("wayne", "starr")),
+    Block("fiber-3", "Fiber 3", ("tony", "chan", "sahil")),
+    Block("b2b", "B2B", ("carlos", "eveliz", "luis", "atef")),
+    Block("nds", "NDS", ("khalil", "colten", "jairo")),
+]
+
+# A captain added to CAPTAINS and forgotten here must NOT silently stop being
+# built, reviewed and mailed — that is a report that quietly disappears, which
+# is the one failure nobody notices. Anyone unclaimed lands in a trailing block
+# of their own so they still get a link and a checkmark; the label says loudly
+# that they need a home in _BLOCKS above.
+_UNBLOCKED = tuple(c.key for c in CAPTAINS
+                   if not any(c.key in b.captains for b in _BLOCKS))
+BLOCKS: List[Block] = _BLOCKS + (
+    [Block("unassigned", "Unassigned (add them to config.BLOCKS)", _UNBLOCKED)]
+    if _UNBLOCKED else [])
+
+BLOCK_BY_KEY = {b.key: b for b in BLOCKS}
+
+
+def block_of(captain_key: str) -> Block:
+    """The block a captain belongs to. KeyError if the key isn't a captain."""
+    for b in BLOCKS:
+        if captain_key in b.captains:
+            return b
+    raise KeyError(f"{captain_key!r} is not in any block (and not a captain?)")
+
+
+def captains_in_order() -> List[Captain]:
+    """All 12 captains in BLOCK order — the order they build and mail in.
+
+    Use this instead of CAPTAINS anywhere order is visible (the build loop, the
+    review PDF, the send list). CAPTAINS keeps its own roster order because
+    that is how the recipient lists read in a diff."""
+    return [c for b in BLOCKS for c in b.members]

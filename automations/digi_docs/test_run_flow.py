@@ -162,11 +162,17 @@ class QuietWeekSaysNothing(_NoNetwork):
         # The real function, so the guard itself is what's under test.
         self.assertFalse(slack_post.post(0, [], [], dry_run=True))
 
-    def test_a_refusal_alone_is_still_worth_posting(self):
+    def test_failures_alone_get_no_summary(self):
+        """They were each posted by name as they happened, so a "*0* sent"
+        line under them adds nothing."""
+        import io
+        import contextlib
         from automations.digi_docs import slack_post
-        self.assertFalse(  # dry_run returns False, but it PRINTED a body
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
             slack_post.post(0, ["Jose Laureano: not in OwnerVille"], [],
-                            dry_run=True))
+                            dry_run=True)
+        self.assertNotIn("new starts sent", buf.getvalue())
 
     def test_fatal_posts_even_with_zero_counts(self):
         from automations.digi_docs import slack_post
@@ -348,7 +354,9 @@ class FailuresAlertImmediately(_NoNetwork):
             R._refuse(refused, "Dana Reyes: no readable Start Time", dry=False)
         self.assertEqual(len(refused), 1, "the failure must still be recorded")
 
-    def test_summary_counts_rather_than_repeats(self):
+    def test_the_summary_never_mentions_them_again(self):
+        """Each failure was posted by name above. Repeating it — even as a
+        count — is a line that tells the reader nothing new."""
         import io
         import contextlib
         from automations.digi_docs import slack_post
@@ -357,10 +365,8 @@ class FailuresAlertImmediately(_NoNetwork):
             slack_post.post(5, ["Jose Laureano: not found in OwnerVille"], [],
                             dry_run=True)
         body = buf.getvalue()
-        self.assertIn("Needs doing by hand (1)", body)
-        self.assertNotIn("• Jose Laureano", body,
-                         "the same failure twice is how a channel stops "
-                         "being read")
+        self.assertNotIn("Needs doing by hand", body)
+        self.assertNotIn("Jose Laureano", body)
 
     def test_the_marker_only_describes_this_run(self):
         import os
