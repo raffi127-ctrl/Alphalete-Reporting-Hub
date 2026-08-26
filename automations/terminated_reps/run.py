@@ -25,6 +25,12 @@ as long as it takes. That read happens before the tracker write on purpose, so a
 tick left overnight is acted on the next morning without anyone re-running
 anything. See slack_post.confirmations.
 
+A :large_blue_circle: on that same message means FFP instead — PARTIALLY
+terminated (Eve, 2026-08-26). The row is filed identically; what changes is that
+'FFP' goes in the tracker's Notes column and the rep keeps their OwnerVille and
+Slack accounts (they only come off some channels), which is also what keeps them
+off the week's 'Still to deactivate' checklist.
+
 Dated in CENTRAL time, not the machine clock: this is a Texas office and the
 mini and Eve's box are in different zones, so a late-evening UTC run would
 otherwise file a Wednesday termination under Thursday.
@@ -50,6 +56,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+from dataclasses import replace
 
 from automations.terminated_reps import board, slack_post, tracker
 
@@ -134,17 +141,38 @@ def main(argv=None) -> int:
     # overnight is filed by the next morning's run with no re-run.
     # Skipped when this run isn't allowed to touch Slack at all: --no-post, and
     # a --sandbox run without --post, whose thread isn't the real one.
+    #
+    # A 🔵 instead of a ✅ means FFP — partially terminated: same row, same date,
+    # but the rep is still in the business, so nobody touches their OwnerVille
+    # or Slack and the tracker's Notes column says so. See slack_post.FFP_NOTE.
     confirmed: dict = {}
+    ffp_marks: list = []
     if not args.no_post and not (args.sandbox and not args.post):
         confirmed = slack_post.confirmations(checks, today, channel=args.channel)
+        released = []
         for info in confirmed.values():
-            c = info["check"]
-            print(f"  ✅ {c.name} confirmed by {info['by']} — "
-                  + ("already on the tracker, nothing to file"
+            c, ffp = info["check"], info.get("kind") == "ffp"
+            tick = "🔵 FFP" if ffp else "✅"
+            print(f"  {tick} {c.name} confirmed by {info['by']} — "
+                  + ("already on the tracker"
                      if c.proposed is None else
-                     f"filing under {c.proposed.term_date.isoformat()}"))
-        released = [i["check"].proposed for i in confirmed.values()
-                    if i["check"].proposed is not None]
+                     f"filing under {c.proposed.term_date.isoformat()}")
+                  + (f", Notes → {slack_post.FFP_NOTE}" if ffp else ""))
+            if c.proposed is not None:
+                released.append(c.proposed if not ffp else
+                                replace(c.proposed,
+                                        note=slack_post.FFP_NOTE))
+            if ffp:
+                # The date the row is (or is about to be) filed under: the
+                # proposed one, or for the already-filed kind, the date column's
+                # day — that is what scan_grid filed it as.
+                day = (c.proposed.term_date if c.proposed is not None
+                       else c.board_date or c.marked_date)
+                if day is not None:
+                    ffp_marks.append((c.name, day))
+                else:
+                    print(f"  ⚠ {c.name} is marked FFP but no date can be read "
+                          f"for the row — Notes not written")
         if released:
             # Through dedupe(), not a bare append: a confirmed row can also have
             # arrived from the New Starts box the same day, and the roster's
@@ -183,6 +211,23 @@ def main(argv=None) -> int:
     except Exception as e:                                      # noqa: BLE001
         print(f"❌ couldn't write {tracker.TAB!r}: {type(e).__name__}: {e}")
         return 1
+
+    # FFP marks the append couldn't carry. A row it wrote this run already has
+    # its note; these are the rest — the ones filed on an earlier run (the
+    # dedupe skips them) and the date-disagreement flags, which scan_grid files
+    # immediately, before anyone can react to them. Never fatal: the row is on
+    # the tracker either way, and a missing Notes cell is fixed by one edit.
+    if ffp_marks:
+        wrote = {(board.norm_name(t.name), t.term_date) for t in result.added}
+        for name, day in ffp_marks:
+            if (board.norm_name(name), day) in wrote:
+                continue
+            try:
+                tracker.set_note(name, day, slack_post.FFP_NOTE,
+                                 sheet_id=sheet_id, tab=tab, dry_run=dry)
+            except Exception as e:                              # noqa: BLE001
+                print(f"  ⚠ couldn't mark {name} as {slack_post.FFP_NOTE} on "
+                      f"the tracker ({type(e).__name__}: {e})")
 
     # 3 — post the day in #revision-emails. It reports what the BOARD says was
     # terminated today, not what this run happened to file: Eve enters rows by

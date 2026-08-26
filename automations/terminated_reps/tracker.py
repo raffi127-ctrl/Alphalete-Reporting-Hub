@@ -17,7 +17,15 @@ TWO THINGS ABOUT THIS TAB SHAPE THE WRITE:
 2. Ownerville and Slack Deact ARE NOT OURS TO SET. They record that a human
    went and deactivated the accounts; a bot ticking them would assert work
    nobody did. We write A:D (+ H when the seeded Year is missing) and never
-   touch E, F or G. [[don't touch user data without confirming]]
+   touch E or F. [[don't touch user data without confirming]]
+
+   G (Notes) IS ours, but only when there is something to say. The one thing
+   that says it today is FFP — Eve marking a row 'partially terminated' with a
+   🔵 on its flag message (slack_post.FFP_NOTE): the rep stopped selling out of
+   this office but is still in the business, so nobody deactivates their
+   OwnerVille or Slack, they only come off some channels. A Termination with no
+   `note` leaves G exactly as it was, and `set_note` refuses to overwrite text
+   somebody else put there.
 
 Dedupe is on (folded name, termination date), not name alone: the same person
 can legitimately hold two rows — Myra Singleton is in there twice, terminated
@@ -43,6 +51,7 @@ HEADERS = ["Rep Name", "Lead Rep", "# Days Worked", "Termination Date WE",
            "Ownerville", "Slack Deact", "Notes", "Year"]
 
 COL_NAME, COL_LEAD, COL_DAYS, COL_DATE = 1, 2, 3, 4
+COL_NOTES = 7
 COL_YEAR = 8
 
 
@@ -176,9 +185,69 @@ def append(rows: list[Termination], *, sheet_id: str = TRACKER_SHEET_ID,
     if skipped:
         logfn(f"  ({len(skipped)} already filed — skipped)")
 
+    # G, one CELL at a time and only for the rows that carry a note. Never as a
+    # G{start}:G{end} block: that would blank the Notes of every noteless row in
+    # between, and Notes is a column people type in.
+    noted = [(start + i, t) for i, t in enumerate(added) if t.note]
+    for r, t in noted:
+        logfn(f"     note → G{r}: {t.note} ({t.name})")
+
     if not dry_run:
         # USER_ENTERED so the date lands as a real date, matching the serials
         # already in column D.
         ws.update(body, f"A{start}:D{end}", value_input_option="USER_ENTERED")
         ws.update(years, f"H{start}:H{end}", value_input_option="USER_ENTERED")
+        for r, t in noted:
+            ws.update([[t.note]], f"G{r}", value_input_option="USER_ENTERED")
     return AppendResult(added, skipped, start, url, dry_run)
+
+
+def set_note(name: str, day: dt.date, note: str, *,
+             sheet_id: str = TRACKER_SHEET_ID, tab: str = TAB,
+             dry_run: bool = True, logfn=print) -> int | None:
+    """Put `note` in the Notes cell of a row that is ALREADY on the tab.
+
+    The append path can't cover every case: a row flagged for a date the board
+    disagrees about is filed on the spot, and a row confirmed a second time is
+    skipped by the dedupe — in both, the ✅/🔵 arrives after the row exists. This
+    is how the mark still lands on it.
+
+    Matched on (folded name, termination date) with the same ±1 day tolerance
+    the dedupe uses, and the LAST such row wins, because that is the most recent
+    of a rehired rep's rows.
+
+    NEVER OVERWRITES. A cell that already holds different text is left alone and
+    reported — Notes is a human column, and a bot replacing what someone wrote
+    there is exactly the loss this repo has already had once. Returns the row
+    written, or None when there was nothing to do.
+    """
+    _sh, ws = _open(sheet_id, tab)
+    grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
+    _check_headers(grid)
+
+    hit = None
+    for i, r in enumerate(grid[1:], start=2):
+        rname = str(r[COL_NAME - 1] or "").strip() if len(r) >= COL_NAME else ""
+        if not rname or norm_name(rname) != norm_name(name):
+            continue
+        d = to_date(r[COL_DATE - 1]) if len(r) >= COL_DATE else None
+        if d and abs((d - day).days) <= SAME_TERMINATION_DAYS:
+            hit = i
+    if hit is None:
+        logfn(f"  ⚠ no row for {name} around {day.isoformat()} — {note!r} "
+              f"not written")
+        return None
+
+    row = grid[hit - 1]
+    have = str(row[COL_NOTES - 1] or "").strip() if len(row) >= COL_NOTES else ""
+    if have.lower() == note.strip().lower():
+        return hit
+    if have:
+        logfn(f"  ⚠ {name}: Notes already reads {have!r} — leaving it, "
+              f"{note!r} not written (row {hit})")
+        return None
+    logfn(f"  {'DRY-RUN — would write' if dry_run else 'writing'} "
+          f"{note!r} into G{hit} ({name})")
+    if not dry_run:
+        ws.update([[note]], f"G{hit}", value_input_option="USER_ENTERED")
+    return hit

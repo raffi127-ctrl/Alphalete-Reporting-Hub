@@ -33,7 +33,7 @@ import datetime as dt
 from dataclasses import dataclass
 
 from automations.terminated_reps.board import norm_name, to_date, week_sunday
-from automations.terminated_reps.tracker import (COL_DATE, COL_NAME,
+from automations.terminated_reps.tracker import (COL_DATE, COL_NAME, COL_NOTES,
                                                  TAB, TRACKER_SHEET_ID, _open)
 
 # Columns E and F of 'Terminated Reps'. Named here rather than imported from
@@ -41,6 +41,14 @@ from automations.terminated_reps.tracker import (COL_DATE, COL_NAME,
 # these two are the ones it must never write.
 COL_OWNERVILLE = 5
 COL_SLACK = 6
+
+# The word in Notes that means "don't deactivate this one" (Eve, 2026-08-26).
+# An FFP rep is only PARTIALLY terminated: off our sales floor, still in the
+# business, so their OwnerVille and Slack stay and they only come off some
+# channels. Their E/F will therefore never be ticked — so without this they
+# would sit on the 'Still to deactivate' list for good, and a list that always
+# has the same two names on it stops being read. [[slack_post.FFP_NOTE]]
+FFP_NOTE = "ffp"
 
 
 @dataclass(frozen=True)
@@ -51,9 +59,12 @@ class Pending:
     row: int                 # 1-indexed row on 'Terminated Reps'
     ownerville: bool         # True = still to do
     slack: bool              # True = still to do
+    ffp: bool = False        # Notes says FFP — nothing to deactivate
 
     @property
     def what(self) -> str:
+        if self.ffp:
+            return "channels only — keeps OwnerVille + Slack"
         return " + ".join(
             n for n, need in (("OwnerVille", self.ownerville),
                               ("Slack", self.slack)) if need)
@@ -94,6 +105,12 @@ def pending_from_grid(grid: list, sunday: dt.date) -> list[Pending]:
             continue
         ov = _ticked(r[COL_OWNERVILLE - 1]) if len(r) >= COL_OWNERVILLE else False
         sl = _ticked(r[COL_SLACK - 1]) if len(r) >= COL_SLACK else False
+        note = str(r[COL_NOTES - 1] or "").strip() if len(r) >= COL_NOTES else ""
+        # 'FFP', 'FFP - moved to X', 'ffp': the word anywhere in the cell is the
+        # mark. Checked as a word, not a substring, so a note that merely
+        # contains those letters inside another word doesn't silence a real
+        # deactivation.
+        ffp = FFP_NOTE in note.lower().replace("-", " ").replace("/", " ").split()
         if ov and sl:
             continue
         # The same person can hold two legitimate rows a few days apart
@@ -105,5 +122,5 @@ def pending_from_grid(grid: list, sunday: dt.date) -> list[Pending]:
             continue
         seen.add(key)
         out.append(Pending(name=name, term_date=day, row=i,
-                           ownerville=not ov, slack=not sl))
+                           ownerville=not ov, slack=not sl, ffp=ffp))
     return sorted(out, key=lambda p: (p.term_date, p.name.lower()))

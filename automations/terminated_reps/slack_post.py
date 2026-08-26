@@ -66,6 +66,15 @@ normal '•' line. A flag whose row was ALREADY filed (the date-disagreement kin
 board.Check.proposed is None) says so and the ✅ just closes it — filing off that
 one would duplicate somebody.
 
+🔵 IS THE SAME RELEASE, WITH A DIFFERENT ANSWER (Eve, 2026-08-26). A flag can
+come back two ways. ✅ says "yes, terminated" and files the row. A blue circle
+says FFP — partially terminated: the rep stopped selling out of this office but
+is still in the business, so we do NOT pull their OwnerVille or their Slack,
+they only come off some channels. The row is filed identically (same date, same
+day count); what changes is the word FFP in the tracker's Notes column, and that
+word is what keeps them off the week's 'Still to deactivate' list. Both
+reactions on one message reads as FFP — see _approver_of.
+
 Only APPROVERS' reactions count, matching the captainship gate: any other
 account ticking it leaves the row unfiled. The reaction is read from the message
 that conversations_replies already returns — reactions.get needs a scope this
@@ -116,9 +125,21 @@ APPROVERS = {"U088E2KJEV8": "Evelyn"}
 # "the" one, and picking the wrong one must not silently mean "not confirmed".
 APPROVE_EMOJI = {"white_check_mark", "heavy_check_mark",
                  "ballot_box_with_check", "check"}
+
+# THE BLUE CIRCLE = FFP, a PARTIAL termination (Eve, 2026-08-26). Same row, same
+# date, same day count — the difference is what happens to the person's
+# accounts. FFP means they've stopped selling out of this office but are still
+# in the business, so they keep OwnerVille and Slack and only come off some
+# channels. So a 🔵 files the row exactly like a ✅ does and writes FFP into the
+# tracker's Notes column, and that word is what keeps them off the week's
+# 'Still to deactivate' list (deactivate.pending_from_grid).
+FFP_EMOJI = {"large_blue_circle", "blue_circle"}
+FFP_NOTE = "FFP"
+
 # Written into a flag message once it has been acted on, and tested for before
 # acting: without it every later run would append the same line again.
 FILED_MARK = "✅ Confirmed"
+FFP_MARK = "🔵 FFP"
 
 
 def week_title(day: dt.date) -> str:
@@ -162,7 +183,11 @@ def render_reply(rows: list[Termination], day: dt.date) -> str:
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
                 else f"{t.days_worked} day{'' if t.days_worked == 1 else 's'} worked")
-        lines.append(f"{BULLET} {t.name} — {days} · {t.source}")
+        # The note (today: FFP) rides on the line, because the day's list is
+        # where anyone reads what happened — a partial termination that looked
+        # identical to a full one here would be read as "deactivate him".
+        tail = f" · *{t.note}*" if t.note else ""
+        lines.append(f"{BULLET} {t.name} — {days} · {t.source}{tail}")
     return "\n".join(lines)
 
 
@@ -186,16 +211,21 @@ def render_check(c: Check) -> str:
     head = f"{FLAG} {c.name} — {c.reason} _({c.tab}, row {c.row})_"
     if c.proposed is None:
         # The date-disagreement kind: scan_grid already filed it under the date
-        # column's day. Nothing to release, so the ✅ only closes the question.
+        # column's day. Nothing to release, so the ✅ only closes the question —
+        # and the 🔵 only adds FFP to the row that is already there.
         return (f"{head}\nAlready on the tracker — this is a heads-up, not a "
-                f"hold. React :white_check_mark: once you've looked, or fix the "
-                f"board and the next run picks the change up. {_mentions()}")
+                f"hold. React :white_check_mark: once you've looked, or "
+                f":large_blue_circle: if it's *FFP* and the next run writes "
+                f"that in Notes. Fix the board instead and the next run picks "
+                f"the change up. {_mentions()}")
     p = c.proposed
     days = ("day count unknown" if p.days_worked is None
             else f"{p.days_worked} day{'' if p.days_worked == 1 else 's'} worked")
     return (f"{head}\n*Not filed.* React :white_check_mark: to confirm the "
             f"termination and the next run files it as "
             f"*{p.term_date.month}/{p.term_date.day}* ({days}). "
+            f"Or :large_blue_circle: for *FFP* — same row, Notes says FFP, and "
+            f"they keep OwnerVille and Slack (channels only). "
             f"Leave it alone and nothing happens. {_mentions()}")
 
 
@@ -270,11 +300,12 @@ def already_flagged(client, thread_ts: str, channel: str = CHANNEL) -> set:
     return out
 
 
-def _approver_of(msg: dict) -> tuple[str, str] | None:
-    """(user id, name) of the first APPROVER who ticked this message, or None.
-    Reactions ride along on the message conversations_replies returns."""
+def _reactor(msg: dict, names: set) -> tuple[str, str] | None:
+    """(user id, name) of the first APPROVER who put one of `names` on this
+    message, or None. Reactions ride along on the message
+    conversations_replies returns."""
     for rx in msg.get("reactions", []) or []:
-        if rx.get("name") not in APPROVE_EMOJI:
+        if rx.get("name") not in names:
             continue
         for uid in rx.get("users", []) or []:
             if uid in APPROVERS:
@@ -282,11 +313,34 @@ def _approver_of(msg: dict) -> tuple[str, str] | None:
     return None
 
 
+def _approver_of(msg: dict) -> tuple[str, str, str] | None:
+    """(user id, name, kind) of the approver who released this flag, or None.
+
+    `kind` is 'terminated' for a ✅ and 'ffp' for a 🔵 — same row filed either
+    way, different Notes and a different answer to "do we deactivate them".
+
+    BOTH REACTIONS ON ONE MESSAGE READS AS FFP. It shouldn't happen, but if it
+    does the two are not equal risks: FFP files the row AND leaves the accounts
+    alone, so acting on it can be walked back by clearing one cell, while acting
+    on the ✅ would put someone still working in the business on the
+    deactivation list. The narrower claim wins.
+    """
+    ffp = _reactor(msg, FFP_EMOJI)
+    if ffp:
+        return ffp[0], ffp[1], "ffp"
+    ok = _reactor(msg, APPROVE_EMOJI)
+    if ok:
+        return ok[0], ok[1], "terminated"
+    return None
+
+
 def confirmations(checks: list[Check], day: dt.date, *, channel: str = CHANNEL,
                   logfn=print) -> dict:
-    """Read-only: which flagged rows has an approver ✅'d?
+    """Read-only: which flagged rows has an approver ✅'d or 🔵'd?
 
-    Returns {folded name: {'check', 'msg', 'by', 'sunday'}}. Only rows still
+    Returns {folded name: {'check', 'msg', 'by', 'kind', 'sunday'}}, where
+    `kind` is 'terminated' (✅) or 'ffp' (🔵 — filed the same, Notes = FFP,
+    accounts untouched). Only rows still
     being flagged this run can come back — the board is re-read every time, so a
     tick on a row the board no longer contradicts is simply not acted on.
 
@@ -314,7 +368,8 @@ def confirmations(checks: list[Check], day: dt.date, *, channel: str = CHANNEL,
                 c = want.get(_flag_name(first[0].strip()))
                 if c is not None:
                     out[norm_name(c.name)] = {"check": c, "msg": msg,
-                                              "by": who[1], "sunday": sunday}
+                                              "by": who[1], "kind": who[2],
+                                              "sunday": sunday}
     except Exception as e:                                      # noqa: BLE001
         logfn(f"  ⚠ couldn't read the ✅ confirmations ({type(e).__name__}: "
               f"{str(e)[:100]}) — flagged rows stay unfiled this run")
@@ -334,21 +389,28 @@ def mark_confirmed(confirmed: dict, *, channel: str = CHANNEL,
         return 0
     if dry_run:
         for info in confirmed.values():
-            logfn(f"    DRY-RUN — would mark {info['check'].name} confirmed "
+            logfn(f"    DRY-RUN — would mark {info['check'].name} "
+                  f"{'FFP' if info.get('kind') == 'ffp' else 'confirmed'} "
                   f"by {info['by']}")
         return 0
     client = smp._client()
     n = 0
     for info in confirmed.values():
         msg, c = info["msg"], info["check"]
+        ffp = info.get("kind") == "ffp"
+        mark = FFP_MARK if ffp else FILED_MARK
         text = msg.get("text") or ""
-        if FILED_MARK in text:
+        if FILED_MARK in text or FFP_MARK in text:
             continue
         if c.proposed is None:
-            note = f"\n{FILED_MARK} by {info['by']} — nothing to file, it was already on the tracker."
+            note = (f"\n{mark} by {info['by']} — already on the tracker"
+                    + (f", Notes set to {FFP_NOTE}." if ffp
+                       else ", nothing to file."))
         else:
-            note = (f"\n{FILED_MARK} by {info['by']} — filed as terminated "
-                    f"{c.proposed.term_date.month}/{c.proposed.term_date.day}.")
+            note = (f"\n{mark} by {info['by']} — filed as "
+                    + ("FFP " if ffp else "terminated ")
+                    + f"{c.proposed.term_date.month}/{c.proposed.term_date.day}"
+                    + (" · keeps OwnerVille + Slack." if ffp else "."))
         try:
             client.chat_update(channel=channel, ts=msg["ts"], text=text + note)
             n += 1
@@ -408,14 +470,31 @@ def render_pending(pending: list, sunday: dt.date) -> str:
     because they are two different jobs and one is often done without the
     other."""
     head = f"*{PENDING_TITLE}* — week ending {sunday.month}/{sunday.day}"
-    if not pending:
-        return f"{head}\nAll clear — every termination this week is ticked off."
-    lines = [f"{head} ({len(pending)})"]
-    for p in pending:
+    # FFP rows are NOT on the to-do list — nothing gets deactivated for them
+    # (see deactivate.FFP_NOTE), and their two checkboxes will stay empty
+    # forever, so a checklist that counted them would never reach zero. They are
+    # named underneath instead, so the week still shows who they were.
+    todo = [p for p in pending if not getattr(p, "ffp", False)]
+    ffp = [p for p in pending if getattr(p, "ffp", False)]
+
+    def _ffp_line() -> str:
+        who = ", ".join(p.name for p in ffp)
+        return (f"_{FFP_NOTE}, no deactivation ({len(ffp)}): {who} — off some "
+                f"channels, OwnerVille and Slack stay._")
+
+    if not todo:
+        lines = [f"{head}\nAll clear — every termination this week is ticked off."]
+        if ffp:
+            lines.append(_ffp_line())
+        return "\n".join(lines)
+    lines = [f"{head} ({len(todo)})"]
+    for p in todo:
         lines.append(f"{TODO} {p.name} — terminated {p.term_date.month}/"
                      f"{p.term_date.day} · {p.what}")
     lines.append("_Tick Ownerville / Slack Deact on the tracker as you go — "
                  "this list reads those two columns._")
+    if ffp:
+        lines.append(_ffp_line())
     return "\n".join(lines)
 
 

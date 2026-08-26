@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 from automations.recruiting_report.fill import open_by_key
@@ -143,6 +143,12 @@ class Termination:
     source: str                  # 'roster' | 'roster T' | 'new starts'
     tab: str
     row: int                     # 1-indexed row on the tab, for the audit trail
+    # What goes in the tracker's 'Notes' column (G). The board never states
+    # one — it is set from OUTSIDE the scan, by a 🔵 reaction on the row's flag
+    # message meaning FFP (see slack_post.FFP_NOTE): still in the business, no
+    # longer selling out of this office. Blank for an ordinary termination, and
+    # blank leaves G untouched.
+    note: str = ""
 
     @property
     def key(self) -> tuple[str, dt.date]:
@@ -659,12 +665,22 @@ def dedupe(rows: Iterable[Termination]) -> list[Termination]:
     """Collapse a rep who shows up in BOTH blocks on the same date (a new start
     who has already been promoted onto the roster). The roster wins — it carries
     the real start date, so its day count spans their whole tenure, not just
-    this week."""
+    this week.
+
+    The NOTE survives whichever row wins. It doesn't come from the board at
+    all — it comes from a 🔵 on that person's flag message — so letting the
+    higher-ranked source overwrite it with a blank would silently drop the FFP
+    mark the moment the same person also showed up in the other block.
+    """
     best: dict[tuple, Termination] = {}
     for t in rows:
         prior = best.get(t.key)
         if prior is None or SOURCE_RANK.get(t.source, 9) < SOURCE_RANK.get(prior.source, 9):
+            if prior is not None and prior.note and not t.note:
+                t = replace(t, note=prior.note)
             best[t.key] = t
+        elif t.note and not prior.note:
+            best[t.key] = replace(prior, note=t.note)
     return sorted(best.values(), key=lambda t: (t.term_date, t.row))
 
 
