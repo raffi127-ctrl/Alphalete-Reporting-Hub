@@ -24,6 +24,8 @@ OWNERS = {
     "Atef Choudhury":  ("ATEF CHOUDHURY",  "1PZwxUYDodOJ6LkxGrgB5ytDi0Fbd4h-mZJdM5q4ADnU"),
     "Joey Ramirez":    ("JOEY RAMIREZ",    "1n2d5vDiwwj6d3bFBIe5OcuEWEEc1OFn2Hp28wuaSFOY"),
     "Vincent Smith":   ("VINCENT SMITH",   "1LOi7JPQ8j0qlbe3PvgZumaHuWCd2HKLNYDRGZOBxrnE"),
+    # Added 2026-08-26 (Carlos). Tableau owner line: "SABRINA ALICEA [alisei, inc.]".
+    "Sabrina Alicea":  ("SABRINA ALICEA",  "1oVqhWqb7_TW_B9aH0peIsmp2NHMtKdXKjpOE3-7PNnQ"),
 }
 MASTER_ID = "14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8"   # Captainship Dashboard
 ORG_TRACKER_ID = "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA"  # Alphalete Recruiting Dashboard (Daily Log lives here; READ-ONLY)

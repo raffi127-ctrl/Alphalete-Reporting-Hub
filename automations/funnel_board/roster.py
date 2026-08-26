@@ -87,6 +87,11 @@ CAPTAINSHIP = [
     ("Joshua Murphy",    "21770", "Joshua Murphy"),
     ("Joey Ramirez",     "23206", "Joey Ramirez"),
     ("Dhyey Patel",      "22767", "Dhyey Patel"),
+    # Added 2026-08-26 (Carlos). Tableau owner string: "SABRINA ALICEA
+    # [alisei, inc.]". AppStream office unknown at add time — empty id lets
+    # the hourly funnel discover it from the office switcher the day it
+    # appears (the Jeff/Vincent/Dhyey path).
+    ("Sabrina Alicea",   "",      "Sabrina Alicea"),
 ]
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
