@@ -2219,9 +2219,14 @@ def _action_logtail(args: str) -> tuple[bool, str]:
 # lxml is pandas.read_html's parser — indeed_source_report failed per-office on
 # Lucy 2 without it (2026-08-21: every office FAIL "Missing optional dependency
 # 'lxml'"), and any other report that parses an HTML table needs it too.
+# pypdf merges the per-page PDFs both review gates print (captainship drafts,
+# override bulletin). Missing on the mini 2026-08-26: the 12 previews built, the
+# PDF raised ModuleNotFoundError, and nothing reached #revision-emails all
+# morning. The gates now self-install it (automations/shared/pkg.py); this is the
+# lever for fixing a box BEFORE its next scheduled tick.
 PIP_ALLOWLIST = {"reportlab", "playwright", "gspread", "pillow_heif", "lxml",
                  # headshot bot (2026-08-23): background removal
-                 "rembg", "onnxruntime"}
+                 "rembg", "onnxruntime", "pypdf"}
 
 
 def _action_pip_install(args: str) -> tuple[bool, str]:

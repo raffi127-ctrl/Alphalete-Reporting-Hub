@@ -133,7 +133,10 @@ def build_pdf(html_paths=None, verbose: bool = True) -> Path:
     than from the PNGs so the text stays selectable and the file stays ~2.5 MB
     instead of ~60."""
     from patchright.sync_api import sync_playwright
-    from pypdf import PdfWriter
+    # ensure() and not a bare import — same missing-package break the
+    # captainship gate hit on 2026-08-26 (see automations/shared/pkg.py).
+    from automations.shared.pkg import ensure
+    PdfWriter = ensure("pypdf").PdfWriter
 
     paths = [Path(p) for p in (html_paths or (DB.OUT_DIR / "dd-bulletin-1.html",
                                               DB.OUT_DIR / "dd-bulletin-2.html"))]

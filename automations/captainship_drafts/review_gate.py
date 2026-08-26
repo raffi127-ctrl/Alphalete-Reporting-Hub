@@ -147,7 +147,12 @@ def build_pdf(today: dt.date, verbose: bool = True) -> Path:
     reviewers scroll through the whole set behind a single link instead of
     downloading twelve attachments. The previews carry their images inline as
     data URIs, so this prints without touching the network."""
-    from pypdf import PdfWriter
+    # ensure() and not a bare import: this is the leg that broke on
+    # 2026-08-26 — the mini's venv had no pypdf, so the previews built and
+    # the review post never happened. A missing package is the one failure a
+    # 15-minute retry agent can never ride out on its own.
+    from automations.shared.pkg import ensure
+    PdfWriter = ensure("pypdf").PdfWriter
     from patchright.sync_api import sync_playwright
 
     pages = preview_htmls(today)
