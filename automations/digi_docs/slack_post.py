@@ -25,8 +25,13 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
     # board that trains people to stop reading the channel. A run that stopped
     # early is never quiet, so `fatal` counts as something to say even when the
     # counts are zero.
-    if not (sent or refused or fatal):
-        print("\n(nothing sent and nothing left by hand — no Slack post)")
+    #
+    # `refused` deliberately does NOT count. Every failure has already been
+    # posted above, by name, the moment it happened — so a pass that sent
+    # nobody and only failed has said everything it has to say, and a summary
+    # under it would just be a "*0* sent" line nobody needs.
+    if not (sent or fatal):
+        print("\n(nothing sent — no Slack summary; any failures were posted as they happened)")
         return False
 
     # One line, not three. Everything the run did to a person happens together
@@ -45,11 +50,7 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
     else:
         lines = [f"*{sent}* new start{'' if sent == 1 else 's'} sent digi docs "
                  f">> BG & drug test checked"]
-    if refused:
-        lines.append("")
-        lines.append(f"*Needs doing by hand ({len(refused)})* — each one was "
-                     f"posted above as it happened.")
-    elif fatal:
+    if fatal:
         # A run that stopped early has no per-person list, but somebody still
         # has to pick it up -- that is the whole point of tagging.
         lines.append("")
