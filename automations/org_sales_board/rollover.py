@@ -398,6 +398,41 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     summary["delta_tables"] = len(tables)
     logfn(f"  3/4 {len(tables)} delta tables frozen (this week -> last week)")
 
+    # 3b. THE SHAPE INVARIANT, checked at the one moment that can break it.
+    # A delta box has exactly one kind of flat cell: the per-day 'Last week'
+    # columns, which THIS STEP just pasted as values — the week that closed is
+    # history now, so it stops being computed on purpose. Everything else in
+    # the box is live: the per-day 'This week' =SUMIFs and the Delta % beside
+    # them. So "the only flat numbers are Last week" is the shape a correct
+    # roll leaves behind (Eve 2026-08-26), and this is where to assert it: the
+    # freeze is the only routine step that writes values into these boxes, so a
+    # freeze that lands one column off would clobber the live side and leave a
+    # box that still adds up and never moves again. That is exactly what went
+    # unseen for a week. Report-only — a roll that already happened is not
+    # undone by failing here; the daily fill re-checks and alerts.
+    try:
+        shape = check_delta_live_formulas(ws.get_all_values(), ws=ws)
+    except Exception as e:                       # noqa: BLE001
+        logfn(f"  3b/4 shape check skipped ({type(e).__name__}: {str(e)[:70]})")
+        shape = []
+    summary["delta_shape_frozen"] = len(shape)
+    if shape:
+        boxes = sorted({b for b, _a1, _r, _v in shape})
+        # On a dry run the freeze above wrote nothing, so this is the board's
+        # CURRENT shape, not something the roll did. Say which, or the line
+        # accuses a roll that never happened.
+        lead = ("the board already has" if dry_run else "the roll left")
+        logfn(f"  3b/4 [!] {lead} {len(shape)} LIVE cell(s) as frozen "
+              f"values in {len(boxes)} box(es): {', '.join(boxes)}")
+        for b, a1, rep, v in shape[:10]:
+            logfn(f"        [{b}] {a1} {rep}: {v!r}")
+        if len(shape) > 10:
+            logfn(f"        ...and {len(shape) - 10} more")
+        logfn("        fix: python -m automations.org_sales_board."
+              "delta_formula_repair --apply --verify")
+    else:
+        logfn("  3b/4 [ok] shape intact: the only flat cells are 'Last week'")
+
     # 3b. 'X ORG - Current vs Prior Weeks' summary tables (CARLOS/COLTEN/BEN):
     # shift the static 4-week history down + seed Last Week from this week.
     # MUST run before the daily clear (their 'Sales - This Week' is a live
