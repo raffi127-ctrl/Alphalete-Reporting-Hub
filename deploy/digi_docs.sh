@@ -51,6 +51,15 @@ for _a in "$@"; do
         if [ "$_HR" -lt 6 ] || [ "$_HR" -gt 20 ]; then
             exit 0
         fi
+        # QUIET DAY BACKOFF. A previous tick already read the sheet and found
+        # no chart dated for today. Asking again five minutes later gets the
+        # same answer, so skip until that note is 30 minutes old — a quiet day
+        # goes from 168 sheet reads to 28. `find -mmin` keeps it in shell, so a
+        # skipped tick costs nothing at all.
+        _QUIET="output/logs/.digi-docs-quiet-$(date +%Y-%m-%d)"
+        if [ -n "$(find "$_QUIET" -mmin -30 2>/dev/null)" ]; then
+            exit 0
+        fi
     fi
 done
 mkdir -p output/logs

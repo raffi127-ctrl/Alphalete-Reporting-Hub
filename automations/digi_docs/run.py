@@ -133,6 +133,34 @@ def _flag_terminated(people) -> None:
         pass
 
 
+def quiet_marker_path() -> str:
+    """The file the wrapper checks before starting Python at all."""
+    import datetime as _dt
+    return f"output/logs/.digi-docs-quiet-{_dt.date.today().isoformat()}"
+
+
+def _mark_quiet_day(quiet: bool) -> None:
+    """Leave (or clear) the note that says there was no work a moment ago.
+
+    Touched fresh each time so the wrapper's age check restarts: the marker
+    means "no chart was dated today as of this timestamp", never "no work
+    today". A chart added at 10am has to be found, and the alternative — a
+    latch set at 6am — means nobody gets their documents and the first anyone
+    hears of it is the next morning.
+    """
+    import os
+    path = quiet_marker_path()
+    try:
+        if quiet:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write("no chart dated today\n")
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:                                       # noqa: BLE001
+        pass    # a missing marker only costs the next tick a sheet read
+
+
 def _refuse(refused, line, dry):
     """Record a failure AND alert on it immediately.
 
@@ -189,7 +217,9 @@ def _phases(args) -> int:
         print(f"charts dated today: {len(send)} of {before} on the tab")
         if not send:
             print("no chart is dated for today — nothing to do")
+            _mark_quiet_day(True)
             return 0
+        _mark_quiet_day(False)
 
     # The ADD pass takes everyone starting today, due or not: somebody starting
     # at 1pm still has to exist in OwnerVille by the time their 12:30 send comes
