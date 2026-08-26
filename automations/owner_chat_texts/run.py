@@ -70,14 +70,28 @@ def _marker(key: str, day: dt.date) -> Path:
 
 
 def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
-               dry_run: bool, out: dict) -> None:
-    """Send one captioned image to its groups; record per-group results."""
+               dry_run: bool, out: dict, resend: bool = False) -> None:
+    """Send one captioned image to its groups; record per-group results.
+
+    `resend` deliberately ignores today's marker. Only for the case it was
+    written for (Megan 2026-08-26): the boards we already texted were built on
+    Tableau data that hadn't finished loading, so the owners are holding numbers
+    that are simply wrong — NDS Tuesday went out at 744 and settled at 1,075.
+    A second text is a duplicate to every owner in the chat, so it has to say
+    why it exists; the caption is stamped rather than repeated verbatim."""
     from automations.b2b_dispositions import text_post as tp
     m = _marker(key, day)
-    if m.exists() and not dry_run:
+    if m.exists() and not dry_run and not resend:
         out["skipped"].append("%s (already sent %s)" % (key,
                               m.read_text().strip()[:19]))
         return
+    if resend and m.exists():
+        caption = ("UPDATED — " + caption
+                   + "\nTableau had not finished loading yesterday when the "
+                     "first version went out this morning. These are the "
+                     "settled numbers; replace the earlier ones.")
+        out["skipped"].append("%s (RESEND over %s)" % (key,
+                              m.read_text().strip()[:19]))
     ok = True
     for group in groups:
         try:
@@ -95,7 +109,8 @@ def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
 
 
 def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
-        dry_run: bool = True, force: bool = False) -> dict:
+        dry_run: bool = True, force: bool = False,
+        resend: bool = False) -> dict:
     day = day or _today()
     out_dir = cfg.OUTPUT_DIR / day.isoformat()
     out = {"day": day.isoformat(), "dry_run": dry_run,
@@ -124,7 +139,8 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                 pdf = pdf_build.build(found, out_dir, day)
                 _send_item("trackers_pdf",
                            cfg.trackers_pdf_caption(day, missing), pdf,
-                           cfg.TRACKER_GROUPS, day, dry_run, out)
+                           cfg.TRACKER_GROUPS, day, dry_run, out,
+                           resend=resend)
         except Exception as e:  # noqa: BLE001 — trackers down must not block the board
             out["errors"].append("trackers: %s: %s" % (type(e).__name__,
                                                        str(e)[:240]))
@@ -151,7 +167,8 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                 from automations.owner_chat_texts.board_shot import capture_wow_board
                 png = capture_wow_board(out_dir)
                 _send_item("wow_board", cfg.board_caption(day), png,
-                           cfg.BOARD_GROUPS, day, dry_run, out)
+                           cfg.BOARD_GROUPS, day, dry_run, out,
+                           resend=resend)
             except Exception as e:  # noqa: BLE001
                 out["errors"].append("board: %s: %s" % (type(e).__name__,
                                                         str(e)[:240]))
@@ -180,6 +197,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", choices=["trackers", "board"], default=None)
     ap.add_argument("--force", action="store_true",
                     help="skip the board data-completeness gate (testing)")
+    ap.add_argument("--resend", action="store_true",
+                    help="send again even though today's marker says it already "
+                         "went out. For the day the SOURCE was wrong: the owners "
+                         "are holding numbers built on a Tableau extract that "
+                         "hadn't finished loading. The resent caption says so — "
+                         "a second text is a duplicate to every owner in the "
+                         "chat, never a silent one.")
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today Central)")
     args = ap.parse_args(argv)
 
@@ -189,7 +213,8 @@ def main(argv=None) -> int:
         "DRY-RUN (no texts)" if dry else "SEND", day.isoformat(),
         " only=%s" % args.only if args.only else ""), flush=True)
 
-    res = run(args.only, day=day, dry_run=dry, force=args.force)
+    res = run(args.only, day=day, dry_run=dry, force=args.force,
+              resend=args.resend)
     for line in res["sent"]:
         print("  " + line, flush=True)
     for line in res["skipped"]:
