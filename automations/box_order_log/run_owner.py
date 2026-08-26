@@ -416,7 +416,7 @@ def main(argv: Optional[list] = None) -> int:
         png.render(tables, out_png,
                    subtitle=png.SUBTITLE)
         from . import pending as pending_mod, pending_png
-        work = pending_mod.build(sales, today=today)
+        work = pending_mod.build(sales, today=today, skip_yellow=True)
         pending_png.render(work, out_pending)
     except Exception as exc:
         print("✗ build failed: {}".format(exc), file=sys.stderr)

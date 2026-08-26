@@ -102,7 +102,7 @@ def _height(work: Dict) -> int:
     if not work["count"]:
         return h + ROW_H
     for section in work["sections"]:
-        h += BANNER_H + HEADER_H + SECTION_GAP
+        h += (BANNER_H if section.get("title") else 0) + HEADER_H + SECTION_GAP
         if not section["rows"]:
             h += ROW_H
             continue
@@ -124,8 +124,9 @@ def _draw_section(draw, x, y, section, widths, work, fonts) -> int:
     f_band = _font(12 * SCALE, True)
     total_w = sum(widths)
 
-    y = _full_row(draw, x, y, total_w, BANNER_H, BANNER_BG, section["title"],
-                  f_head, color=WHITE, center=True)
+    if section.get("title"):
+        y = _full_row(draw, x, y, total_w, BANNER_H, BANNER_BG,
+                      section["title"], f_head, color=WHITE, center=True)
 
     cx = x
     for col, w in zip(pending.COLUMNS, widths):
@@ -191,8 +192,10 @@ def render(work: Dict, out_path: Path) -> Path:
     y += SUB_H
 
     if not work["count"]:
-        draw.text((PAD, y), "Nothing pending — every deal is accepted or "
-                  "closed.", font=f_cell, fill=MUTED)
+        draw.text((PAD, y), work["sections"][0]["empty_note"]
+                  if len(work["sections"]) == 1
+                  else "Nothing pending — every deal is accepted or closed.",
+                  font=f_cell, fill=MUTED)
     else:
         for section in work["sections"]:
             y = _draw_section(draw, PAD, y, section, widths, work, fonts)
@@ -203,6 +206,11 @@ def render(work: Dict, out_path: Path) -> Path:
 
 
 def build(sales: Sequence, out_path: Path, *,
-          today: Optional[dt.date] = None) -> Path:
-    """Convenience: model + render in one call."""
-    return render(pending.build(sales, today=today), out_path)
+          today: Optional[dt.date] = None, skip_yellow: bool = True) -> Path:
+    """Convenience: model + render in one call.
+
+    Defaults to the yellow-less view because every caller of this is the Slack
+    image; pass skip_yellow=False for a picture of the full tab.
+    """
+    return render(pending.build(sales, today=today, skip_yellow=skip_yellow),
+                  out_path)

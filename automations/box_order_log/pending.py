@@ -112,13 +112,33 @@ def subtitle(count: int, today: dt.date) -> str:
                 today.strftime("%m/%d/%Y")))
 
 
-def build(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
+def subtitle_no_yellow(count: int, today: dt.date) -> str:
+    """Subtitle for the yellow-less view. Says the yellow ones were LEFT OUT
+    rather than just omitting them — otherwise a shorter list reads as deals
+    having gone missing."""
+    return ("Deals still in flight that need something from us, by sales rep. "
+            "{} as of {}. The ones waiting on the supplier (yellow) are not "
+            "shown — they are on the Pending Orders tab of the workbook.".format(
+                "{} order{}".format(count, plural(count)) if count
+                else "none right now",
+                today.strftime("%m/%d/%Y")))
+
+
+def build(sales: Sequence, today: Optional[dt.date] = None, *,
+          skip_yellow: bool = False) -> Dict:
     """The whole worklist, ready to lay out.
 
     Returns {"today", "count", "subtitle", "sections": [section, ...]} where a
     section is {"title", "rows", "reps", "empty_note"}. Both sections are
     always present, even when empty — an empty half is information ("no yellow
     deal is open"), and dropping it would make the image look truncated.
+
+    `skip_yellow` drops the yellow half entirely: one section, no banner (with
+    nothing to separate it from, a bar reading "NOT YELLOW" over a board with
+    no yellow on it is just confusing), and `count` counts only what is shown.
+    That's the SLACK IMAGE (Carlos, 2026-08-26: "can we have it so the
+    screenshot doesn't show the orders in yellow"). The workbook tab keeps both
+    halves — it's the full record, and he asked about the screenshot.
     """
     today = today or dt.date.today()
     pend = [s for s in sales if is_pending(s)]
@@ -126,6 +146,17 @@ def build(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
     not_yellow, yellow = [], []
     for s in pend:
         (yellow if is_yellow(s) else not_yellow).append(s)
+
+    if skip_yellow:
+        return {"today": today, "count": len(not_yellow),
+                "subtitle": subtitle_no_yellow(len(not_yellow), today),
+                "sections": [
+                    {"key": "not_yellow",
+                     "title": None,
+                     "rows": not_yellow,
+                     "reps": by_rep(not_yellow),
+                     "empty_note": "Nothing needs work right now — every open "
+                                   "deal is with the supplier."}]}
 
     # Banners name the COLOR, not who has the ball. They used to say "ours to
     # work" / "waiting on the supplier", which stopped being true on 2026-08-20

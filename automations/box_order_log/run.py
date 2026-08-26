@@ -447,7 +447,7 @@ def main(argv: Optional[list] = None) -> int:
         # that has sat unaccepted for two months is exactly the one Carlos
         # needs to see on the worklist.
         from . import pending as pending_mod, pending_png
-        work = pending_mod.build(sales, today=today)
+        work = pending_mod.build(sales, today=today, skip_yellow=True)
         pending_png.render(work, out_pending)
 
         if verbose:

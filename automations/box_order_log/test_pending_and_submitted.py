@@ -125,6 +125,30 @@ class PendingWorklist(unittest.TestCase):
         self.assertEqual({s.key[0] for s in yellow["rows"]}, {"1", "2", "3"})
         self.assertEqual({s.key[0] for s in not_yellow["rows"]}, {"4", "5"})
 
+    def test_skip_yellow_drops_the_yellow_half_from_the_image(self):
+        """Carlos, 2026-08-26: "can we have it so the screenshot doesn't show
+        the orders in yellow". One section, no banner over it, and the count
+        counts only what is actually drawn — a count of 5 over 2 visible rows
+        would read as three deals having gone missing."""
+        submitted = sale("Ana", clean.SUBMITTED, contract="1")
+        booking = sale("Ana", "Ready For Booking", contract="2")
+        waiting = sale("Ana", "Verification", contract="3",
+                       history=(clean.SUBMITTED, "Verification"))
+        ours = sale("Ana", "Verification", contract="4")
+        incomplete = sale("Ana", "Incomplete", contract="5")
+        sales = [submitted, booking, waiting, ours, incomplete]
+
+        work = pending.build(sales, today=TODAY, skip_yellow=True)
+        self.assertEqual(len(work["sections"]), 1)
+        self.assertIsNone(work["sections"][0]["title"])
+        self.assertEqual({s.key[0] for s in work["sections"][0]["rows"]},
+                         {"4", "5"})
+        self.assertEqual(work["count"], 2)
+        self.assertFalse(any(pending.is_yellow(s)
+                             for s in work["sections"][0]["rows"]))
+        # The workbook tab is untouched — it still carries both halves.
+        self.assertEqual(len(pending.build(sales, today=TODAY)["sections"]), 2)
+
     def test_both_sections_survive_when_one_is_empty(self):
         """An empty half is information, not something to drop — otherwise the
         image just looks truncated."""

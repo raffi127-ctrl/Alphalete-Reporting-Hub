@@ -142,7 +142,7 @@ def run(today: Optional[dt.date] = None, *, post: bool = False,
     # (caption, file) in the order they should land in the thread.
     uploads: List[Tuple[str, Path]] = []
     if pending_image:
-        work = pending.build(sales, today=today)
+        work = pending.build(sales, today=today, skip_yellow=True)
         out = OUTPUT_DIR / "BOX Pending Orders {}.png".format(
             today.strftime("%m-%d-%Y"))
         pending_png.render(work, out)
