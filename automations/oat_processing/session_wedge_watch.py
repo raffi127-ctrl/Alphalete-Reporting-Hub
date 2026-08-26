@@ -56,18 +56,27 @@ HARD_WEDGE_SIGS = [
     "stale cloudflare clearance on office",
     "extractor stalled",
 ]
-# WEAK: consistent with a wedge, but ALSO with ordinary operation. "no next-pager
-# control found" is the loud one — a queue of 1-2 applicants has no next page, so
-# it prints on a perfectly healthy walk. On 2026-08-26 this log carried 252 of
-# these alongside 74 "✅ SENT to AI" lines: the flow was working the whole time.
-# A weak signature therefore only counts when NOTHING in the recent logs shows
-# work getting done. Otherwise the alarm cries wolf, which is how a real alert
-# channel gets tuned out.
+# WEAK: a real failure, but not necessarily a frozen session. Only counts when
+# NOTHING in the recent logs shows work getting done.
 WEAK_WEDGE_SIGS = [
-    "menu click miss",              # oat open_oat menu-click timeout
-    "no rqst token in url",         # oat direct-nav fallback failed
-    "no next-pager control found",  # walk landed on a pager-less page
+    "no rqst token in url",         # oat couldn't even direct-nav to the queue
 ]
+
+# NOT SIGNATURES AT ALL — two lines that were on this list and should never have
+# been. Both print during ORDINARY operation, so they made the alarm cry wolf:
+#
+#   "no next-pager control found"  run.py:321 says it outright — "treating as end
+#       of queue". Every walk that reaches the last applicant logs it. The 8/26 log
+#       had 252 of them next to 74 "✅ SENT to AI" lines.
+#   "menu click miss N/3"          run.py:103 — one attempt of a 3-attempt retry.
+#       A miss that succeeds on the next attempt still logs it.
+#
+# Gating them behind "only if nothing looks healthy" was NOT enough, and this is
+# the lesson: on a quiet evening the queue is empty, so there are no sends to look
+# healthy WITH — the pager line prints, nothing counters it, and the alarm fires.
+# It did exactly that on 2026-08-26 and paged the channel with "both pipelines are
+# stalled" while the flow was fine. A signature that appears on a healthy run is
+# not a signature. Do not re-add these.
 # Kept as the union for any caller that imported the old name.
 WEDGE_SIGS = HARD_WEDGE_SIGS + WEAK_WEDGE_SIGS
 # Signs a recent run processed cleanly (used to CLOSE an open wedge episode).

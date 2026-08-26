@@ -14,9 +14,20 @@ hid the other.
      channel was wired, the alarm would have paged "both pipelines are stalled" on
      a day that sent 74 applicants.
 
-So: a weak signature only counts when nothing shows work getting done, and a hard
-signature always counts. Nothing here touches Slack — assess() is pure log reading
-and the post path is only exercised in dry-run, which builds no client.
+The first fix for (2) was to gate weak signatures behind "only when nothing looks
+healthy". That was NOT enough, and it paged the channel for real the same evening:
+once the queue empties there are no sends to look healthy WITH, so the pager line
+prints with nothing to counter it. The alert claimed both pipelines were stalled
+while the flow was fine.
+
+So the rule is stricter now: a line that appears during ordinary operation is not a
+signature at all, at any gate. "no next-pager control found" (end of queue) and
+"menu click miss N/3" (one attempt of a retry) are gone. What's left is the hard
+pair — always authoritative — plus "no rqst token in url", which only prints when
+the walk genuinely couldn't reach the queue.
+
+Nothing here touches Slack — assess() is pure log reading and the post path is only
+exercised in dry-run, which builds no client.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
@@ -71,14 +82,25 @@ def main() -> int:
     results = []
 
     print("state from the logs:")
-    results.append(_check("busy day with the noisy weak signature → healthy",
+    results.append(_check("busy day with the noisy pager line → healthy",
                           _assess(BUSY_DAY)[0], "healthy"))
+    # THE CASE THAT ACTUALLY PAGED MEGAN (2026-08-26 evening): an empty queue means
+    # no sends, so there is nothing "healthy" to outvote the pager line. Gating it
+    # behind healthy-wins was not enough — it must not be a signature at all.
+    results.append(_check("quiet evening, empty queue, no sends → quiet",
+                          _assess("[oat] walk start\n"
+                                  "[oat] no next-pager control found\n")[0],
+                          "quiet"))
+    results.append(_check("menu miss that retries → quiet",
+                          _assess("[oat] menu click miss 1/3 (TimeoutError)\n")[0],
+                          "quiet"))
     results.append(_check("hard signature → wedged",
                           _assess(FROZEN)[0], "wedged"))
     results.append(_check("froze after a send → wedged (hard signature wins)",
                           _assess(FROZE_MIDWAY)[0], "wedged"))
     results.append(_check("weak signature alone, nothing working → wedged",
-                          _assess("[oat] no next-pager control found\n")[0],
+                          _assess("[oat] no rqst token in URL — cannot direct-nav "
+                                  "to p=604\n")[0],
                           "wedged"))
     results.append(_check("nothing to judge → quiet", _assess(QUIET)[0], "quiet"))
     # The watcher writes its verdict into the same log it reads. That line quotes
