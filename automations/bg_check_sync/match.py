@@ -25,6 +25,8 @@ from automations.bg_check_sync.parse import BGEvent, RANK, norm
 LABEL_COL = 2      # column B holds nothing useful here; names are D/E
 FIRST_COL = 4      # col D (1-indexed) = first name
 LAST_COL = 5       # col E = last name
+EMAIL_COL = 7      # col G = the candidate's own email address
+PHONE_COL = 8      # col H = their phone
 STATUS_COL = 11    # col K = "BG Status : Last Checked"
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
@@ -48,6 +50,16 @@ class Person:
     # surfaced -- decide() compares against a single merged `current`, so the
     # lagging tab is otherwise never caught up and the two silently disagree.
     tab_statuses: list = field(default_factory=list)
+    # Col G. Carried only so the name gate can show a human the one piece of
+    # evidence that settles "is Nikki Valentine the Shuminique Valentine Sterling
+    # ran?" -- her address is Shuminiquevalentine@yahoo.com. Never matched on:
+    # Sterling result emails carry no candidate address to compare it against.
+    email: str = ""
+    # Col H. The strongest link we have to their OwnerVille profile: Nikki
+    # Valentine's two systems hold two different email addresses but the SAME
+    # number, which is what proves the OV profile named "Shuminique Valentine"
+    # is her (2026-08-26).
+    phone: str = ""
 
 
 def _norm_key(first: str, last: str) -> str:
@@ -84,7 +96,10 @@ def roster_from_dated_tab(values: list[list[str]], tab_name: str) -> list[Person
         if _looks_like_header(row):
             continue
         cur = (row[STATUS_COL - 1] if len(row) >= STATUS_COL else "").strip()
-        out.append(Person(first, last, _norm_key(first, last), cur, [(tab_name, i + 1)]))
+        person = Person(first, last, _norm_key(first, last), cur, [(tab_name, i + 1)])
+        person.email = (row[EMAIL_COL - 1] if len(row) >= EMAIL_COL else "").strip()
+        person.phone = (row[PHONE_COL - 1] if len(row) >= PHONE_COL else "").strip()
+        out.append(person)
     return out
 
 
@@ -124,8 +139,13 @@ def roster_blocks_in_window(values: list[list[str]], start, end,
                 last = (row[LAST_COL - 1] if len(row) >= LAST_COL else "").strip()
                 if first and last and not _looks_like_header(row):
                     cur = (row[STATUS_COL - 1] if len(row) >= STATUS_COL else "").strip()
-                    out.append(Person(first, last, _norm_key(first, last), cur,
-                                      [(tab_name, j + 1)]))
+                    person = Person(first, last, _norm_key(first, last), cur,
+                                    [(tab_name, j + 1)])
+                    person.email = (row[EMAIL_COL - 1]
+                                    if len(row) >= EMAIL_COL else "").strip()
+                    person.phone = (row[PHONE_COL - 1]
+                                    if len(row) >= PHONE_COL else "").strip()
+                    out.append(person)
                 j += 1
             i = j
             continue
@@ -153,9 +173,16 @@ def consolidate(people: list[Person]) -> list[Person]:
             # prefer a non-empty current status for display
             if not m.current and p.current:
                 m.current = p.current
+            if not m.email and p.email:
+                m.email = p.email
+            if not m.phone and p.phone:
+                m.phone = p.phone
         else:
-            by_key[p.key] = Person(p.first, p.last, p.key, p.current,
-                                   list(p.locations), list(tab_status))
+            merged = Person(p.first, p.last, p.key, p.current,
+                            list(p.locations), list(tab_status))
+            merged.email = p.email
+            merged.phone = p.phone
+            by_key[p.key] = merged
     return list(by_key.values())
 
 

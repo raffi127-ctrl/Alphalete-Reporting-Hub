@@ -4356,6 +4356,7 @@ def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
                        timeout_s=300, log_name="bg-check-sync-run.log")
     lines = [ln for ln in (out or "").splitlines()
              if ("| roster" in ln or "[writes]" in ln or "[slack" in ln
+                 or "[name-gate]" in ln
                  or "POST new" in ln or "EDIT existing" in ln or "fuzzy-match" in ln
                  or ln.strip() == "=== done ===")]
     return ok, (" · ".join(lines)[:400] or (out or "")[-300:])
