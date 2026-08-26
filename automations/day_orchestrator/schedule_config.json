@@ -8177,7 +8177,8 @@
    "priority": "P3",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 30,
+   "_timeout_note": "60, not 30. This probe runs --send-only against the WHOLE cohort, which deliberately skips the add pass — so every rep not yet in OwnerVille costs a full four-campaign walk with the Show All widen, about two minutes each. On 2026-08-26 ten of twenty-nine were missing and it timed out at 30m having done 21. Monday never pays that: the 8am add pass puts everyone in first, so find_rep hits on the first campaign.",
+   "timeout_minutes": 60,
    "verify": null
   },
   "ad_sales_board": {
