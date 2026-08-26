@@ -110,7 +110,18 @@ def _login(page, email: str, password: str) -> str:
             "cause); nothing was written." % C.CREDS_PATH)
     if "DealerPages/" not in url:
         raise SaraError("logged in but landed somewhere unexpected: %s" % url)
-    return url.split("DealerPages/")[0] + "DealerPages/"
+    # The DEALER ROOT -- everything up to and including the session segment,
+    # e.g. https://www.saraplus.com/e/(S(<session>))/ -- and deliberately NOT
+    # .../DealerPages/. The Reporting Hub is a SIBLING of DealerPages, not a
+    # child of it: the live Analytics menu is
+    #     onclick="window.location.href='../Reports/ReportingHub.aspx'"
+    # and that '..' is the whole story. Building base as ".../DealerPages/"
+    # and appending "Reports/ReportingHub.aspx" gives
+    # .../DealerPages/Reports/ReportingHub.aspx, which SaraPlus serves as
+    # 404.aspx -- and a 404 then presents as a selector timeout on the Service
+    # dropdown, which reads like a changed control rather than a wrong url
+    # (2026-08-26; read off the nav by `run --probe`).
+    return url.split("DealerPages/")[0]
 
 
 def _set_telerik_date(page, field_id: str, day: dt.date) -> None:
@@ -165,6 +176,25 @@ def page_state(page) -> str:
         page.url, title, ", ".join(found) or "NONE of the expected landmarks")
 
 
+def _assert_on_hub(page, base_url: str) -> None:
+    """Fail with the URL, not 30s later with a missing selector.
+
+    SaraPlus answers a bad dealer path with 404.aspx, a real page -- so the
+    navigation "succeeds" and the first thing that notices is whichever control
+    we reach for next. Saying so here turns a puzzling selector timeout into
+    the sentence "we asked for the wrong url"."""
+    try:
+        title = page.title()
+    except Exception:  # noqa: BLE001
+        title = ""
+    if "404" in title or "404.aspx" in page.url:
+        raise SaraError(
+            "%s is a 404 for this dealer (landed on %s). The Reporting Hub sits "
+            "beside DealerPages/, not inside it -- check what the Analytics menu "
+            "points at with `run --probe`."
+            % (base_url + HUB_PATH, page.url))
+
+
 def _select_service(page, label: str) -> None:
     """Pick a value in the Telerik RadComboBox by its visible text."""
     try:
@@ -195,6 +225,7 @@ def _run_report(page, base_url: str, day: dt.date, service: str,
     """Set the day + service, submit, and return the grid's rows as cell text."""
     page.goto(base_url + HUB_PATH, wait_until="networkidle")
     page.wait_for_timeout(2000)
+    _assert_on_hub(page, base_url)
     _set_telerik_date(page, FIELD_START, day)
     _set_telerik_date(page, FIELD_END, day)
     _select_service(page, service)
