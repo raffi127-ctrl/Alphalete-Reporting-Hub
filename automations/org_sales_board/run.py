@@ -257,6 +257,57 @@ def main(argv=None) -> int:
             _sort.apply_sort(ws, dry_run=args.dry_run)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
+            # TRIPWIRE — the delta boxes' per-day 'This week' cells must still
+            # be =SUMIFs over their captainship's daily table. A value pasted
+            # over one keeps showing the number it froze on and every total
+            # still balances, so nothing else on this board can see it: all 602
+            # across the twelve FIBER boxes were frozen literals for a week
+            # (2026-08-26) before Eve caught it by eye. Lives HERE and not in
+            # full_compare because that runs only on demand — `board_compare`
+            # was retired from the scheduler 2026-07-21, so a check wired there
+            # would never fire on its own.
+            #
+            # Report-only: it never gates the fill. But LOUD — through the same
+            # dropped-section alert the other silent holes use, so it is heard
+            # at 4am instead of found a week later. kind='finding': nothing was
+            # dropped, an audit found something. The alert opens ONE thread and
+            # closes itself on the first clean run.
+            try:
+                from automations.org_sales_board import rollover as _rodx
+                _stale = _rodx.check_delta_thisweek_formulas(
+                    ws.get_all_values(), ws=ws)
+                if _stale:
+                    _dboxes = sorted({b for b, _a1, _rp, _v in _stale})
+                    print(f"  [!] {len(_stale)} celda(s) 'This week' por dia en "
+                          f"{len(_dboxes)} caja(s) delta son valores congelados, "
+                          f"no formulas: {', '.join(_dboxes)}", flush=True)
+                    if not args.dry_run:
+                        from automations.shared import section_drop_alert as _sda
+                        from automations.shared import run_manifest as _rmx
+                        _sda.alert(
+                            report_id="org_sales_board",
+                            kind="finding",
+                            failed=[f"{b} — "
+                                    f"{sum(1 for x in _stale if x[0] == b)} celdas"
+                                    for b in _dboxes],
+                            note=("Las celdas 'This week' por dia de esas cajas "
+                                  "delta son valores congelados en vez de =SUMIF: "
+                                  "muestran el numero del dia en que se pisaron y "
+                                  "no levantan ningun dia nuevo. Los totales igual "
+                                  "cierran, por eso no se nota mirando el board."),
+                            remediation=_rmx.make_remediation(
+                                reason="Alguien pego valores encima de los "
+                                       "=SUMIF por dia de esas cajas delta.",
+                                fix="python -m automations.org_sales_board."
+                                    "delta_thisweek_repair --apply --verify"),
+                        )
+                else:
+                    print("  [ok] cajas delta: las celdas 'This week' por dia "
+                          "siguen siendo =SUMIF vivas", flush=True)
+            except Exception as _edx:  # noqa: BLE001 — un chequeo que falla
+                # no puede tumbar el fill que esta vigilando.
+                print(f"  [!] tripwire de cajas delta salteado "
+                      f"({type(_edx).__name__}: {str(_edx)[:80]})", flush=True)
         # Auto match-check vs the live VA tab (Megan 2026-06-03): every daily
         # fill ends by confirming the copy matches the VAs. A real glitch
         # (automation behind / mismatched / missing-row) flags the run.
