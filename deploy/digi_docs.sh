@@ -120,7 +120,12 @@ echo "[$(date)] Digi Docs starting (mode: $MODE, extra args: ${FWD[*]:-none})" >
 # pass publish under the SAME report id, so the card's daily_runs:2 pill shows
 # 1/2 after the morning add and greens once the day's sends are done. A second
 # report id here would auto-register a phantom library card.
-if [ -n "$LIVE" ]; then
+# The ADD pass publishes a running row up front: it happens once a day and
+# takes minutes, so the yellow pill is worth having. The SEND TICK does not —
+# it fires every five minutes and mostly finds nobody due, and a row per firing
+# would bury the card under ~168 of them. It publishes AFTER the run instead,
+# and only if the run actually did something.
+if [ -n "$LIVE" ] && [ "$PHASE" = "--add-only --today" ]; then
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_running('digi_docs','Digi Docs')" >> "$LOG_FILE" 2>&1 || true
 fi
 
@@ -143,7 +148,7 @@ fi
 
 # Publish either way so a blocked run is visible on the Hub instead of leaving
 # the card grey. [[feedback_launchd_reports_must_publish]]
-if [ -n "$LIVE" ]; then
+if [ -n "$LIVE" ] && { [ "$PHASE" = "--add-only --today" ] || [ -f "$LOG_DIR/.digi-docs-did-work" ]; }; then
     if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('digi_docs','Digi Docs','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 fi

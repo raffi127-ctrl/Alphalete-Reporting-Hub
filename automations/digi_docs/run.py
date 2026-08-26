@@ -158,6 +158,32 @@ def _not_live_yet() -> str:
             f"config.GO_LIVE_ON")
 
 
+def did_work_marker_path() -> str:
+    """Touched when a run actually DID something. The wrapper reads it to
+    decide whether this firing is worth a row on the Hub."""
+    return "output/logs/.digi-docs-did-work"
+
+
+def _mark_did_work(did: bool) -> None:
+    """The send pass is a tick: on a start day it fires every five minutes from
+    6am to 8pm, and the great majority of those find nobody due yet. Publishing
+    a Hub row for each would put ~168 rows against this one card in a day and
+    green its two-pass pill within the first ten minutes, which makes the card
+    say nothing at all. So the wrapper only publishes when this marker says the
+    run added somebody, sent somebody, or has something to report."""
+    import os
+    path = did_work_marker_path()
+    try:
+        if did:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write("1")
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:                                       # noqa: BLE001
+        pass
+
+
 def quiet_marker_path() -> str:
     """The file the wrapper checks before starting Python at all."""
     import datetime as _dt
@@ -237,6 +263,7 @@ def _phases(args) -> int:
     if not dry:
         from automations.digi_docs import slack_post as _sp
         _sp.clear_reported()
+        _mark_did_work(False)
 
     # WHICH DAY IS THIS CHART FOR? Not "is it Monday" — that was only ever true
     # by coincidence, because the charts happen to be dated for Mondays (Megan
@@ -403,6 +430,8 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
     `done`. Adding reps is not a send and must not announce itself as one.
     """
     dry = tinted_dry
+    if not dry:
+        _mark_did_work(bool(added or done or refused or fatal))
     tinted = 0
     if do_send:
         from automations.digi_docs import mark, slack_post
