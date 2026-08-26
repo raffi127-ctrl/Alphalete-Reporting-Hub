@@ -46,6 +46,7 @@ so a test post never lands in the real channel.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import os
 import socket
@@ -133,6 +134,45 @@ def _reusable(out_dir: Path, selected: list, today: dt.date) -> list | None:
             return None
         out.append((spec, png))
     return out
+
+
+@contextlib.contextmanager
+def _org_slack_token(org: str, label: str):
+    """Act as the workspace that OWNS this org's channel, then restore.
+
+    trang's channel lives in the FRESH SUCCESS Slack, not ours, so anything that
+    touches it — posting a board OR editing today's header — has to use that
+    workspace's own token. smp._client() builds a fresh client from
+    SLACK_USER_TOKEN on every call, so setting the env var here is enough.
+
+    Yields "" when the org is good to go, or the reason it can't be reached from
+    this machine. NEVER falls back to the AO token: it cannot see another
+    workspace's channel, and Slack answers a non-member with `channel_not_found`
+    — which reads as "Lucy got un-invited from one of our private channels" and
+    is exactly the alert nobody could act on 8/19 and 8/23.
+    [[project_trang_fresh_success]]"""
+    saved, routed, missing = os.environ.get("SLACK_USER_TOKEN"), False, ""
+    try:
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+        tok_file = CROSS_WS_TOKEN_FILES.get(org)
+    except Exception:                                 # noqa: BLE001
+        tok_file = None
+    if tok_file:
+        tok_path = Path.home() / ".config" / "recruiting-report" / tok_file
+        if tok_path.exists():
+            os.environ["SLACK_USER_TOKEN"] = tok_path.read_text(
+                encoding="utf-8-sig").strip()
+            routed = True
+        else:
+            missing = _cross_ws_token_missing(org, label, tok_file)
+    try:
+        yield missing
+    finally:
+        if routed:
+            if saved is None:
+                os.environ.pop("SLACK_USER_TOKEN", None)
+            else:
+                os.environ["SLACK_USER_TOKEN"] = saved
 
 
 def _select_orgs(orgs: str) -> list:
@@ -604,8 +644,14 @@ def main(argv=None) -> int:
     if args.notice:
         bad = []
         for org in orgs:
-            res = sp.annotate_today(pages_mod.PAGES, today, org=org,
-                                    note=args.notice, dry_run=args.dry_run)
+            with _org_slack_token(org, sp.ORG_LABEL[org]) as missing_tok:
+                if missing_tok:
+                    print(f"  [{org}] SKIPPED — {missing_tok}", flush=True)
+                    bad.append({"channel": sp.ORG_LABEL[org],
+                                "status": f"SKIPPED — {missing_tok}"})
+                    continue
+                res = sp.annotate_today(pages_mod.PAGES, today, org=org,
+                                        note=args.notice, dry_run=args.dry_run)
             if res.get("dry_run"):
                 # Worst case on purpose: a preview does no Slack READ either, so
                 # it can't know which late boards already landed — every late

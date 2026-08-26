@@ -65,5 +65,63 @@ class CrossWsTokenMissingTest(unittest.TestCase):
                 "trang", "#freshsuccess-all-leaders", Path(fh.name).name))
 
 
+class OrgSlackTokenRoutingTest(unittest.TestCase):
+    """`_org_slack_token` — the same routing, now shared by anything that touches
+    a channel. Added 2026-08-26: the tracker header NOTICE went out through the
+    AO token for every org, so trang came back `channel_not_found` — the precise
+    misread the preflight above exists to prevent, reintroduced by a second code
+    path that edits the same channels."""
+
+    def test_a_normal_org_is_left_on_the_default_token(self):
+        import os
+        os.environ["SLACK_USER_TOKEN"] = "sentinel-ao"
+        self.addCleanup(os.environ.pop, "SLACK_USER_TOKEN", None)
+        with run._org_slack_token("alphalete", "#alphalete-sales") as missing:
+            self.assertEqual("", missing)
+            self.assertEqual("sentinel-ao", os.environ["SLACK_USER_TOKEN"])
+
+    def test_a_cross_ws_org_with_no_token_file_yields_the_reason(self):
+        """And yields it instead of silently leaving the AO token in place —
+        posting/editing with that token is what produced the unreadable alert."""
+        import os
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+        if "trang" not in CROSS_WS_TOKEN_FILES:
+            self.skipTest("trang is no longer a cross-workspace org")
+        cfg = Path.home() / ".config" / "recruiting-report"
+        if (cfg / CROSS_WS_TOKEN_FILES["trang"]).exists():
+            self.skipTest("this machine HAS the FRESH SUCCESS token")
+        os.environ["SLACK_USER_TOKEN"] = "sentinel-ao"
+        self.addCleanup(os.environ.pop, "SLACK_USER_TOKEN", None)
+        with run._org_slack_token("trang", "#freshsuccess-all-leaders") as why:
+            self.assertTrue(why, "a missing cross-ws token must be reported")
+            self.assertEqual("sentinel-ao", os.environ["SLACK_USER_TOKEN"])
+
+    def test_the_token_is_restored_even_when_the_body_raises(self):
+        """One org's failure must not leave the next org posting as the wrong
+        workspace."""
+        import os
+        import tempfile
+        os.environ["SLACK_USER_TOKEN"] = "sentinel-ao"
+        self.addCleanup(os.environ.pop, "SLACK_USER_TOKEN", None)
+        cfg = Path.home() / ".config" / "recruiting-report"
+        cfg.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=cfg, prefix="test-token-",
+                                         suffix=".tmp", mode="w") as fh:
+            fh.write("other-workspace-token")
+            fh.flush()
+            from automations.office_metrics import offices as _off
+            real = dict(_off.CROSS_WS_TOKEN_FILES)
+            _off.CROSS_WS_TOKEN_FILES["_t"] = Path(fh.name).name
+            self.addCleanup(lambda: (_off.CROSS_WS_TOKEN_FILES.clear(),
+                                     _off.CROSS_WS_TOKEN_FILES.update(real)))
+            with self.assertRaises(RuntimeError):
+                with run._org_slack_token("_t", "#test") as why:
+                    self.assertEqual("", why)
+                    self.assertEqual("other-workspace-token",
+                                     os.environ["SLACK_USER_TOKEN"])
+                    raise RuntimeError("boom")
+        self.assertEqual("sentinel-ao", os.environ["SLACK_USER_TOKEN"])
+
+
 if __name__ == "__main__":
     unittest.main()
