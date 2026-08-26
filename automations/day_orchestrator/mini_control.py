@@ -2861,6 +2861,16 @@ _CRED_FILES = {
     # --write), then pushed to Lucy 1, the machine whose Messages sends.
     "new-start-leader-phones":
         lambda: Path.home() / ".config" / "recruiting-report" / "new-start-leader-phones.json",
+    # Drive token (alphaletereporting, drive.file scope) that BOTH review gates
+    # upload their approval PDF with. It was born on Lucy 1 for
+    # fiber_activations and stayed there; when captainship_drafts +
+    # captainship_drafts_review moved to Lucy 3 on 2026-08-25 the code followed
+    # and the token did not, so 8/26's post died on
+    # `RuntimeError: No Drive token at /Users/lucy3/...` AFTER printing a
+    # perfectly good 21 MB PDF. drive.file only reaches files this app created,
+    # so a second machine holding it widens nothing.
+    "drive-token":
+        lambda: Path.home() / ".config" / "recruiting-report" / "drive-token.json",
 }
 
 
