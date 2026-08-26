@@ -230,3 +230,21 @@ QUIZ_ROWS_REFERENCE_ONLY = (
 
 # Where the by-hand leftovers get posted, same room as its two siblings.
 SLACK_CHANNEL = "#11280-alphalete-marketing-inc-rafael-hidalgo"
+
+# Who gets @-tagged when somebody could NOT be sent (Megan 2026-08-26: "so they
+# get on it asap"). Onboarding owns the fix, and a name sitting unread in a busy
+# channel is the same as no alert -- these people have to actually get pinged.
+#
+# Tagged ONLY when there is something to act on: a refusal, or a run that
+# stopped early. A clean send tags nobody, or the mention stops meaning
+# anything by the third week.
+#
+# IDs, not handles: a display name change silently breaks an @handle, and all
+# three of these were confirmed as members of the channel above on 2026-08-26
+# rather than matched on a name. Tiff is Tiffani Brown -- the workspace has six
+# Tiffanys and she is the only one in this room, display name "tiff".
+ESCALATE_ON_FAILURE = (
+    ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez  (@machadopaola2020)
+    ("Tiff", "U0B9924FHCL"),       # Tiffani Brown      (@tiffanibrown8)
+    ("Aimee", "U0APVP29QSD"),      # Aimee Garibay      (@aimeegaribaygutierrez)
+)

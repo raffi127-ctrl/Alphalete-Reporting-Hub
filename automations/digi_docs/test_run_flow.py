@@ -233,5 +233,42 @@ class DueNowWindow(unittest.TestCase):
             [self._cand("")], now=dt.datetime(2026, 8, 31, 23, 0))
         self.assertEqual((len(due), len(not_yet), len(no_time)), (0, 0, 1))
 
+
+class TagsOnlyWhenSomeoneMustAct(unittest.TestCase):
+    """Alisson / Tiff / Aimee get @-tagged so a failure gets picked up fast
+    (Megan 2026-08-26). The risk is the opposite one: tag them on every clean
+    Monday and the mention stops meaning anything by the third week."""
+
+    def _body(self, *a, **kw):
+        import io
+        import contextlib
+        from automations.digi_docs import slack_post
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            slack_post.post(*a, dry_run=True, **kw)
+        return buf.getvalue()
+
+    def test_clean_run_tags_nobody(self):
+        self.assertNotIn("<@", self._body(6, [], []))
+
+    def test_a_refusal_tags_all_three(self):
+        from automations.digi_docs import config
+        body = self._body(5, ["Jose Laureano: not found in OwnerVille"], [])
+        for name, uid in config.ESCALATE_ON_FAILURE:
+            self.assertIn(f"<@{uid}>", body, f"{name} was not tagged")
+
+    def test_a_stopped_run_tags_all_three(self):
+        from automations.digi_docs import config
+        body = self._body(0, [], [], fatal="RuntimeError: session did not open")
+        for _name, uid in config.ESCALATE_ON_FAILURE:
+            self.assertIn(f"<@{uid}>", body)
+
+    def test_tagged_by_id_never_by_handle(self):
+        """A display-name change turns an @handle into plain text."""
+        from automations.digi_docs import config
+        for name, uid in config.ESCALATE_ON_FAILURE:
+            self.assertTrue(uid.startswith("U"), f"{name}: {uid!r} isn't a user id")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

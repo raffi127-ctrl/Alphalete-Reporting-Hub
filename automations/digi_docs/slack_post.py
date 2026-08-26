@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from typing import List, Tuple
 
+from automations.digi_docs import config
+
 # #11280-alphalete-marketing-inc-rafael-hidalgo — confirmed by Megan
 # 2026-08-25, not just inherited from blueink_docs because it sits next
 # to it. Same room as the other two new-start steps.
@@ -45,8 +47,13 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
                  f">> BG & drug test checked"]
     if refused:
         lines.append("")
-        lines.append(f"*Needs doing by hand ({len(refused)}):*")
+        lines.append(f"*Needs doing by hand ({len(refused)}):* {_tags()}")
         lines += [f"• {r}" for r in refused]
+    elif fatal:
+        # A run that stopped early has no per-person list, but somebody still
+        # has to pick it up -- that is the whole point of tagging.
+        lines.append("")
+        lines.append(_tags())
     # No separate attestation line: the headline above already says the boxes
     # were ticked. The NAMES still matter -- the drug-test box asserts a
     # completed review to AT&T, not a status -- so they stay in the run log,
@@ -62,3 +69,13 @@ def post(sent: int, refused: List[str], attested: List[Tuple],
     parent = smp.ensure_named_thread(HEADER, channel_id=CHANNEL)
     smp.post_reply_text_only(body, thread_ts=parent, channel_id=CHANNEL)
     return True
+
+
+def _tags() -> str:
+    """The @-mentions for whoever has to act, or "" if nobody is configured.
+
+    By ID (`<@U...>`), never by @handle: a display-name change silently turns an
+    @handle into plain text, and an alert nobody is pinged by is the same as no
+    alert at all.
+    """
+    return " ".join(f"<@{uid}>" for _name, uid in config.ESCALATE_ON_FAILURE)
