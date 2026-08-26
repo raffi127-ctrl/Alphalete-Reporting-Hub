@@ -179,6 +179,34 @@ def process_one(data: bytes, name: str) -> Path:
     return path
 
 
+# Our own posts, recognised WITHOUT trusting a single API call. The 5-min
+# tick spent 2026-08-25 asking itself "who is this?" about every headshot it
+# had already made: the only guard was `user == auth_test().user_id`, and
+# auth_test() sits in a bare try/except — one failed call set `me` to None
+# and the guard quietly became a no-op. A finished headshot is an image
+# reply like any other, so the loop fed on its own output. Now ANY of these
+# marks a message as ours, and no single failure can open the loop again.
+_MAX_ASKS_PER_RUN = 3
+_OURS_MARKERS = ("— headshot ready", "-- headshot ready", "headshot ready")
+
+
+def _is_our_post(m: dict, me: str | None) -> bool:
+    if m.get("bot_id"):                       # posted by an app (us)
+        return True
+    if m.get("subtype") == "bot_message":
+        return True
+    if me and m.get("user") == me:
+        return True
+    text = (m.get("text") or "").lower()
+    if any(k in text for k in _OURS_MARKERS):
+        return True
+    # Our own output files are always "<Name> - Headshot.png".
+    for f in (m.get("files") or []):
+        if str(f.get("name", "")).lower().endswith(" - headshot.png"):
+            return True
+    return False
+
+
 # ---- OwnerVille upload (Phase 2) ---------------------------------------------
 def _ov_upload_note(name: str, photo, act: dict) -> str:
     """Upload to the rep's OV profile; return the line to append to the
@@ -281,6 +309,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
 
     state = _load_state()
     actions: list[dict] = []
+    asked_this_run = 0
 
     for anchor in anchors:
         replies = cl.conversations_replies(
@@ -288,7 +317,7 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
         for m in sorted(replies, key=lambda x: x.get("ts", "")):
             if m.get("ts") == anchor["ts"]:
                 continue
-            if me and m.get("user") == me:
+            if _is_our_post(m, me):
                 continue
             imgs = _image_files(m)
             if not imgs:
@@ -300,9 +329,16 @@ def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
 
             name = name_from_caption(m.get("text", ""))
             if not name:
+                # Hard cap: however wrong we are about WHAT needs a name, a
+                # single run can never storm the thread again (2026-08-25).
+                if asked_this_run >= _MAX_ASKS_PER_RUN:
+                    print(f"  ask cap reached ({_MAX_ASKS_PER_RUN}) — "
+                          f"skipping the rest this run")
+                    continue
                 # Ask once; the reply retries every tick, so an edited reply
                 # gets picked up without re-asking.
                 if not st.get("asked"):
+                    asked_this_run += 1
                     actions.append({"ts": ts, "action": "ask_name"})
                     if not dry_run:
                         try:
@@ -397,7 +433,7 @@ def diag(channel: str | None = None) -> int:
             why = []
             if m.get("subtype"):
                 why.append(f"subtype={m['subtype']}")
-            if me and m.get("user") == me:
+            if _is_our_post(m, me):
                 why.append("own message")
             if not imgs:
                 why.append(f"no image (files={len(m.get('files') or [])})")
