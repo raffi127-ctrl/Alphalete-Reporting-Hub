@@ -180,6 +180,27 @@
   }
  },
  "reports": {
+  "close_stranded_incidents": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun close_stranded_incidents` can run `incident_thread --close-stranded` ON THE MINI. It finishes the incident parents whose white check landed but whose text still reads `open`: resolve() posts the reply, then edits the parent, and chat.update only touches your OWN messages -- so an incident opened by one machine and fixed from another keeps a parent that says `open` forever. Six were stranded on 2026-08-26 (four Lucy's, two Megan's laptop). It ONLY touches a parent that already carries the white check, so it can never close a real open problem, and it can only edit posts the machine it runs on wrote -- which is why it has to run on BOTH boxes: the laptop CLI for the laptop's, this entry for Lucy's.",
+   "display_name": "Close stranded incident parents (#claudecorrections)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.shared.incident_thread"
+   ],
+   "base_args": [
+    "--close-stranded"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 5,
+   "verify": null
+  },
   "install_incident_triage_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_incident_triage_agent` can install the com.alphalete.incident-triage LaunchAgent (8:15am daily, deploy/incident_triage.sh) on the mini. That pass SORTS the open incidents in #claudecorrections-and-requests and reacts: red circle = needs Megan or Eve personally, :pending: = Lucy is still retrying it, purple = waiting on a source. It NEVER re-runs a report and NEVER edits code, so the worst a bad fire can do is put one wrong emoji on a post. Mini only: Slack lets you remove your OWN reaction and nobody else's, so a circle added under a person's token could never be taken off again (same rule as incident_working). 8:15 is after the flow's main passes and the 7:30 checkpoint email, and well before the noon backstop -- triaging mid-flow would grade reports the orchestrator is still actively retrying.",
