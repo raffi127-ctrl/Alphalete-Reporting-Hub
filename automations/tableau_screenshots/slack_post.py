@@ -242,6 +242,22 @@ def _legacy_title(today: dt.date) -> str:
 
 LATE_NOTE = "_(data lands ~7am — image posts then)_"
 
+# A board held because its TABLEAU EXTRACT hasn't refreshed yet -- deliberately
+# NOT the LATE_NOTE wording above. "~7am" is a promise we can only keep for Box,
+# whose data genuinely lands then; a stale extract lands when Tableau lands, and
+# a note that names a time the run can't hold is how a channel learns to ignore
+# the note. Megan 2026-08-26: "let them know updated ones will be posted when
+# it's updated."
+STALE_LATE_NOTE = ("_(Tableau hasn't updated this one yet — the updated board "
+                   "posts here as soon as it does)_")
+
+# The one-line heads-up that goes under the thread title, in every channel, when
+# boards are held for a behind Tableau. Says the two things an office actually
+# needs: what they're looking at, and that nobody has to chase it.
+STALE_NOTICE = ("Tableau is running behind — the boards below are waiting on it. "
+                "The updated ones get posted right here as soon as Tableau "
+                "refreshes; nothing to chase.")
+
 
 UPDATED_TAG = "*UPDATED*"
 
@@ -270,9 +286,16 @@ def header_text(pages: list, today: dt.date, pending_late=(), note: str = "",
     if note:
         lines.append(f"_{note}_")
     pending = set(pending_late or ())
+    # Two different reasons a board can be pending, two different notes. Box is
+    # late by schedule (LATE_NOTE, "~7am"); a board marked late at RUNTIME is one
+    # the freshness gate held because Tableau is behind, and there is no honest
+    # time to give it (STALE_LATE_NOTE).
+    from automations.tableau_screenshots import pages as _pages_mod
+    stale = set(_pages_mod.runtime_late_ids())
     lines.append("")
     lines += [f":{p['react']}: {p['title']}"
-              + (f"  {LATE_NOTE}" if p["id"] in pending else "")
+              + (f"  {STALE_LATE_NOTE if p['id'] in stale else LATE_NOTE}"
+                 if p["id"] in pending else "")
               for p in pages]
     return "\n".join(lines)
 
@@ -808,6 +831,90 @@ def retitle_today(pages: list, today: dt.date | None = None,
             out.append({"channel": channel,
                         "status": f"FAILED {type(e).__name__}: {str(e)[:80]}"})
     return {"org": org, "results": out}
+
+
+def _parent_text(client, channel: str, ts: str) -> str:
+    """The live text of one message, or "" if it can't be read. Used to carry
+    forward what the header already says (the *UPDATED* tag) instead of assuming."""
+    try:
+        resp = _read_with_retry(client.conversations_history, channel,
+                                "conversations.history", channel=channel,
+                                latest=ts, oldest=ts, inclusive=True, limit=1)
+        msgs = resp.get("messages", [])
+        return (msgs[0].get("text") or "") if msgs else ""
+    except Exception:                       # noqa: BLE001 — a note is not worth a crash
+        return ""
+
+
+def annotate_today(pages: list, today: dt.date | None = None,
+                   *, org: str = DEFAULT_ORG, note: str = STALE_NOTICE,
+                   dry_run: bool = False) -> dict:
+    """Put ONE italic heads-up line under today's already-posted thread title, in
+    every channel this org posts into. Nothing is captured, posted or deleted —
+    the parent is edited in place.
+
+    Megan 2026-08-26, the morning Tableau was behind: "can we post in every
+    channel letting them know updated ones will be posted when it's updated."
+    A line edited into the header beats a new message: the offices are already
+    looking at that thread all morning, and a separate post would leave two
+    places to check and two things to scroll past.
+
+    The board lines are re-rendered, so a board that still isn't in the thread
+    keeps its "still coming" note — and gets the Tableau wording rather than the
+    "~7am" one if the freshness gate held it (STALE_LATE_NOTE). Only a LATE board
+    is ever annotated as still coming, exactly as in retitle_today: a board that
+    merely failed to capture must not be promised.
+
+    An *UPDATED* tag already on the header is read back off the live parent and
+    carried forward, never assumed — dropping it would make a corrected thread
+    read like the morning's wrong one.
+
+    No thread today → reported, never created. This annotates what already went
+    out; it is not a way to put a tracker thread with no trackers into a channel."""
+    today = today or dt.date.today()
+    from automations.tableau_screenshots import pages as _pages_mod
+    _, pages_org, _wanted = select_for_org([], pages, org)
+
+    if dry_run:
+        preview_pending = [p["id"] for p in pages_org if _pages_mod.is_late(p)]
+        return {"org": org, "dry_run": True, "note": note,
+                "channels": list(channels_for(org)),
+                "header": header_text(pages_org, today, preview_pending, note)}
+
+    client = smp._client()
+    out = []
+    for channel in channels_for(org):
+        try:
+            ts, _is_legacy = find_thread_ts(client, channel, today)
+        except DedupReadUnavailable as e:    # one unreadable channel, not a crash
+            out.append({"channel": channel,
+                        "status": f"SKIPPED — {e.method} failed ({e.err})"})
+            continue
+        if not ts:
+            out.append({"channel": channel, "status": "no thread today"})
+            continue
+        try:
+            done = posted_ids(client, channel, ts, pages_org, today)
+            pending = [p["id"] for p in pages_org
+                       if _pages_mod.is_late(p) and p["id"] not in done]
+            updated = UPDATED_TAG in _parent_text(client, channel, ts)
+            client.chat_update(
+                channel=channel, ts=ts,
+                text=header_text(pages_org, today, pending, note, updated))
+            out.append({"channel": channel, "status": "annotated", "ts": ts,
+                        "pending": pending})
+        except Exception as e:               # noqa: BLE001 — one channel, not the run
+            # _slack_err, not str(e)[:80] — the SlackApiError repr buries the one
+            # word that says which fix is needed past any sane truncation (the
+            # 2026-08-13 lesson). The code that bites here is cant_update_message:
+            # a token can only edit messages IT posted, and the tracker threads
+            # are posted by Lucy. Run from a laptop, every channel fails that way.
+            code = _slack_err(e)
+            if "cant_update_message" in code:
+                code += (" — this machine's token didn't post that thread; run "
+                         "the notice on the machine that posts the trackers")
+            out.append({"channel": channel, "status": f"FAILED {code}"})
+    return {"org": org, "note": note, "results": out}
 
 
 def post_all(captures: list, pages: list, today: dt.date | None = None,

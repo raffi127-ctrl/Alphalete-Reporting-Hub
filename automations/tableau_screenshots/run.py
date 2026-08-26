@@ -510,6 +510,16 @@ def main(argv=None) -> int:
     ap.add_argument("--header-note", default=None,
                     help="One italic line under the thread title (e.g. why a "
                          "second thread exists). Used with --new-thread.")
+    ap.add_argument("--notice", nargs="?", const=sp.STALE_NOTICE, default=None,
+                    metavar="TEXT",
+                    help="Tell every channel, in one line, that Tableau is "
+                         "behind — then stop. No browser, no capture, no new "
+                         "message: today's already-posted thread header gets an "
+                         "italic heads-up line under the title, in every channel "
+                         "of every org. Bare --notice uses the standard wording "
+                         "(\"the updated ones get posted right here as soon as "
+                         "Tableau refreshes\"); pass your own text to override. "
+                         "Pair with --dry-run to see the exact header first.")
     ap.add_argument("--text-trackers", action="store_true",
                     help="After a successful post, queue the B2B AT&T and B2B Box "
                          "boards to be TEXTED to their iMessage groups on Lucy 2 "
@@ -549,15 +559,25 @@ def main(argv=None) -> int:
     held: dict = {}
     if args.retitle_only or args.inspect or args.no_freshness_gate:
         pass
-    elif args.late_only:
+    elif args.late_only or args.notice:
         from automations.tableau_screenshots import freshness as _fr
         held = _fr.read_held(today)
         if held:
             pages_mod.mark_late(held.keys())
-            print(f"  ↺ catch-up also carries {len(held)} board(s) this morning "
+            what = ("this note re-renders the header for"
+                    if args.notice else "catch-up also carries")
+            print(f"  ↺ {what} {len(held)} board(s) this morning "
                   f"held for stale data: {', '.join(held)}", flush=True)
     elif not args.only:
         held = _hold_stale_boards(today, dry_run=args.dry_run)
+
+    # The thread's own heads-up line, when the gate is HOLDING boards this run:
+    # every channel's header says Tableau is behind and that the updated boards
+    # land here on their own (Megan 2026-08-26). Only while they're held — the
+    # ~7am catch-up posts them with note="", which is what clears the line from
+    # the header again, so a complete thread never keeps advertising a delay.
+    auto_note = "" if (args.late_only or args.notice) else \
+        (sp.STALE_NOTICE if held else "")
 
     selected = _select(args.only, late_only=args.late_only,
                        include_late=args.include_late)
@@ -575,6 +595,34 @@ def main(argv=None) -> int:
           f"{', '.join(sp.ORG_LABEL[o] for o in orgs)}, "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "
           f"out={out_dir}", flush=True)
+
+    # Heads-up line into today's existing thread, every channel — no browser, no
+    # capture, no new message. Megan 2026-08-26, the morning Tableau was behind:
+    # "can we post in every channel letting them know updated ones will be posted
+    # when it's updated." Editing the header they're already watching beats a
+    # second post: one place to look, and it disappears on tomorrow's thread.
+    if args.notice:
+        bad = []
+        for org in orgs:
+            res = sp.annotate_today(pages_mod.PAGES, today, org=org,
+                                    note=args.notice, dry_run=args.dry_run)
+            if res.get("dry_run"):
+                # Worst case on purpose: a preview does no Slack READ either, so
+                # it can't know which late boards already landed — every late
+                # board is shown as still pending. The live run reads the thread.
+                print(f"  [{org}] DRY-RUN → {', '.join(res['channels'])} "
+                      f"(late-board notes shown worst-case)", flush=True)
+                for line in res["header"].splitlines():
+                    print(f"      {line}", flush=True)
+                continue
+            for r in res["results"]:
+                print(f"  [{org}] {r['channel']}: {r['status']}", flush=True)
+            bad += [r for r in res["results"]
+                    if str(r["status"]).startswith(("FAILED", "SKIPPED"))]
+        print(f"\n{'⚠' if bad else '✓'} notice "
+              f"{'previewed' if args.dry_run else 'posted'} to "
+              f"{len(orgs)} org(s)", flush=True)
+        return 1 if bad else 0
 
     # Header-only rename of today's existing thread — no browser, no capture, no
     # new messages. Runs before anything else touches Tableau.
@@ -770,7 +818,7 @@ def main(argv=None) -> int:
             result = sp.post_all(captures, post_pages, today, dry_run=True,
                                  replace=args.replace, org=org,
                                  new_thread=args.new_thread,
-                                 note=args.header_note or "",
+                                 note=args.header_note or auto_note,
                                  updated=args.updated)
             print(f"\n  [{org}] would post to {', '.join(result['channels'])} as "
                   f"{sp.header_title(today)}", flush=True)
@@ -846,7 +894,7 @@ def main(argv=None) -> int:
                 result = sp.post_all(captures, post_pages, today,
                                      replace=args.replace, org=org,
                                      new_thread=args.new_thread,
-                                     note=args.header_note or "",
+                                     note=args.header_note or auto_note,
                                      updated=args.updated)
             except Exception as e:                    # noqa: BLE001
                 result = {"ok": False, "channels": [],
