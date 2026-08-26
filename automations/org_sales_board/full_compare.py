@@ -805,6 +805,67 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ delta totals self-check skipped ({str(e)[:60]})")
 
+    # The LIVE half of the same box. The cells the whole box is derived from are
+    # =SUMIFs over the captainship's daily table; a value pasted over one keeps
+    # showing the number it froze on and every total still balances, so no
+    # arithmetic check can see it. All 602 of them across the 12 fiber boxes were
+    # literals for a week (2026-08-26) before Eve caught it by eye. This is a
+    # SHAPE check — it needs the formula text, so it reads the delta span only.
+    logfn("  --- DELTA BOXES, PER-DAY 'THIS WEEK' FORMULAS (report-only) ---")
+    try:
+        _cW = _retry(lambda: sh.worksheet(SANDBOX_TAB))
+        _dt = rollover.check_delta_thisweek_formulas(cS, ws=_cW)
+        if _dt:
+            _boxes = sorted({_b for _b, _a1, _rep, _v in _dt})
+            logfn(f"  ⚠ {len(_dt)} per-day 'This week' cell(s) across "
+                  f"{len(_boxes)} box(es) are NOT formulas — they are frozen "
+                  f"values and will never pick up a new day:")
+            for _b, _a1, _rep, _v in _dt[:20]:
+                logfn(f"      [{_b}] {_a1} {_rep}: {_v!r}")
+            if len(_dt) > 20:
+                logfn(f"      …and {len(_dt) - 20} more")
+            logfn(f"      boxes: {', '.join(_boxes[:12])}")
+            logfn("      fix: python -m automations.org_sales_board."
+                  "delta_thisweek_repair --apply --verify")
+        else:
+            logfn("  ✅ every delta box's per-day 'This week' cell is still "
+                  "a live =SUMIF.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ delta this-week shape check skipped ({str(e)[:60]})")
+
+    # The FROZEN half. Each rep's seven per-day 'Last week' cells were written
+    # once by the Tuesday roll and nothing recomputes them, so the box cannot
+    # audit itself. Their sum is the same closed week the captainship
+    # leaderboard froze independently in col D — two freezes of one number.
+    logfn("  --- DELTA BOXES, PER-DAY 'LAST WEEK' vs LEADERBOARD (report-only) ---")
+    try:
+        _dw = rollover.check_delta_lastweek_vs_leaderboard(cS)
+        _missing = [x for x in _dw if x[3] is None]
+        _off = [x for x in _dw if x[3] is not None]
+        if _off or _missing:
+            if _off:
+                logfn(f"  ⚠ {len(_off)} rep(s) whose 7 'Last week' days do "
+                      f"NOT add up to their frozen week on the leaderboard:")
+                for _b, _rep, _a1, _wk, _lb in _off[:20]:
+                    logfn(f"      [{_b}] {_rep}: days sum {_wk:g}, "
+                          f"leaderboard {_a1} says {_lb:g} "
+                          f"(off by {_wk - _lb:+g})")
+                if len(_off) > 20:
+                    logfn(f"      …and {len(_off) - 20} more")
+                logfn("      ONE rep is usually a roster change mid-week. The "
+                      "whole box drifting together means a Tuesday freeze went "
+                      "wrong — compare against backup_pre_rollover.")
+            if _missing:
+                logfn(f"  ⚠ {len(_missing)} rep(s) in a delta box with no "
+                      f"row on their own leaderboard:")
+                for _b, _rep, _a1, _wk, _lb in _missing[:10]:
+                    logfn(f"      [{_b}] {_rep}")
+        else:
+            logfn("  ✅ every rep's 7 'Last week' days match the week their "
+                  "leaderboard froze.")
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ delta last-week cross-check skipped ({str(e)[:60]})")
+
     # Captainship leaderboard TOTALS rows — is each one's frozen history still
     # under the right week header? REPORT-ONLY. The totals line was excluded
     # from the rollover's shift (CaptainAnchor.leaderboard stops AT it), so it

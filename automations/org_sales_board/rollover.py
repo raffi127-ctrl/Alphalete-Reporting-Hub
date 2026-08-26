@@ -36,7 +36,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 def a1col(c: int) -> str:          # 1-based col -> letter(s)
@@ -1153,6 +1153,179 @@ def check_delta_totals_lastweek(grid: List[List[str]]) -> List[tuple]:
             s = sum(_num(_c(grid, r, lw - 1)) or 0 for r in rows)
             if s != got:
                 bad.append((title, a1col(lw), s, got))
+    return bad
+
+
+def check_delta_thisweek_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
+    """Tripwire: every per-day 'This week' cell on every delta box must still be
+    a FORMULA. Returns [(box_title, a1_cell, rep_name, what_is_there)].
+
+    THE DEFECT IT WATCHES. Those cells are `=SUMIF` over the captainship's daily
+    table; the row's 'Total this week' and the box's totals row are both derived
+    from them. Paste a value over one and NOTHING looks wrong — it shows a
+    number, correct for the day it was frozen on, and every total still adds up.
+    It simply stops moving. On 2026-08-26 all 602 of them across the twelve FIBER
+    boxes were literals frozen at the Tuesday-morning state (Monday's real number
+    in the first day column, 0 in the other six), so Monday read perfectly and no
+    day after it ever landed. It went a week before Eve spotted it by hand, and
+    no existing check could see it: `check_delta_totals_lastweek` looks at the
+    totals row, which was intact, and the copy-vs-VA passes gate on values, which
+    were plausible.
+
+    WHY THIS ONE NEEDS THE FORMULA TEXT. Its siblings are arithmetic invariants
+    and read the same VALUES grid the compare already has. This defect has no
+    arithmetic signature — a frozen literal and a live formula are the same
+    number on the day it froze — so it is a SHAPE check and needs a formula-
+    rendered read. Pass `ws` and it fetches ONLY the delta span (the rows and
+    columns the boxes actually occupy), not the whole 2100-row tab. Without `ws`
+    it returns [] rather than guessing.
+
+    NOT EVERY LITERAL IS A CLOBBER. A few rows are hand-filled BY DESIGN: the
+    cross-cutting boxes carry people who have no daily row anywhere on the board
+    (Jacob Morgan and Jonathan Franco in TRANG'S ORG), so there is no range to
+    SUMIF over and their numbers are keyed in daily off Tableau's Product Sales
+    Summary (Eve 2026-08-26). Writing a formula there would not just be wrong,
+    it would overwrite what somebody typed that morning. The rule that separates
+    the two is the rep, not the cell: a literal for a rep who DOES have a daily
+    row is a clobbered formula; a literal for a rep who appears nowhere else in
+    col B is the manual fill. Only the first kind is returned — the second is
+    reported by `manual_fill_rows()` if you want to see it.
+
+    Fix: python -m automations.org_sales_board.delta_thisweek_repair --apply
+    """
+    if ws is None:
+        return []
+    tables = find_delta_tables(grid)
+    tables = [t for t in tables if t["data_rows"] and t["this_cols"]]
+    if not tables:
+        return []
+    r0 = min(t["data_rows"][0] for t in tables)
+    r1 = max(t["data_rows"][-1] for t in tables)
+    c0 = min(min(t["this_cols"]) for t in tables)
+    c1 = max(max(t["this_cols"]) for t in tables)
+    span = f"{a1col(c0)}{r0}:{a1col(c1)}{r1}"
+    block = ws.get(span, value_render_option="FORMULA") or []
+
+    def _f(r: int, c: int) -> str:
+        row = block[r - r0] if 0 <= r - r0 < len(block) else []
+        i = c - c0
+        return str(row[i]).strip() if 0 <= i < len(row) else ""
+
+    manual = {rep for _t, rep in manual_fill_rows(grid)}
+    bad: List[tuple] = []
+    for t in tables:
+        hdr = t["header_row"] - 1
+        title = next((_cell(grid, rr, 1) or _cell(grid, rr, 0)
+                      for rr in range(hdr - 1, max(-1, hdr - 4), -1)
+                      if _cell(grid, rr, 1) or _cell(grid, rr, 0)), "?")
+        for r in t["data_rows"]:
+            rep = _cell(grid, r - 1, 1)
+            if rep.strip().lower() in manual:
+                continue                 # hand-filled by design, not a clobber
+            for c in t["this_cols"]:
+                v = _f(r, c)
+                if not v.startswith("="):
+                    bad.append((title, f"{a1col(c)}{r}", rep, v))
+    return bad
+
+
+def manual_fill_rows(grid: List[List[str]]) -> List[tuple]:
+    """The delta-box rows that are keyed in by hand: [(box_title, rep_lower)].
+
+    A rep whose ONLY appearance in col B of the whole tab is their delta row has
+    no daily table to sum, so their per-day cells are literals somebody types in
+    each morning off Tableau's Product Sales Summary. Derived, not listed: add
+    such a person to a cross-cutting box tomorrow and this follows, and give one
+    of them a real daily row and they stop being manual — the same day, with no
+    code edit.
+
+    Worth knowing that these rows exist: the box's totals row sums them, so a
+    day nobody keys them in is a total that reads low, silently."""
+    seen: Dict[str, int] = {}
+    for row in grid:
+        b = str(row[1]).strip().lower() if len(row) > 1 else ""
+        if b:
+            seen[b] = seen.get(b, 0) + 1
+    out: List[tuple] = []
+    for t in find_delta_tables(grid):
+        hdr = t["header_row"] - 1
+        title = next((_cell(grid, rr, 1) or _cell(grid, rr, 0)
+                      for rr in range(hdr - 1, max(-1, hdr - 4), -1)
+                      if _cell(grid, rr, 1) or _cell(grid, rr, 0)), "?")
+        for r in t["data_rows"]:
+            rep = _cell(grid, r - 1, 1)
+            if rep and seen.get(rep.strip().lower(), 0) <= 1:
+                out.append((title, rep.strip().lower()))
+    return out
+
+
+def check_delta_lastweek_vs_leaderboard(grid: List[List[str]]) -> List[tuple]:
+    """Tripwire: a rep's seven per-day 'Last week' cells must add up to what that
+    rep actually did the week the board just closed. Returns
+    [(box_title, rep, a1_of_leaderboard_cell, sum_of_seven_days, leaderboard)].
+
+    THE INDEPENDENT SOURCE. The per-day 'Last week' cells are frozen literals —
+    `plan_delta_rollover` writes each 'This week' VALUE into them every Tuesday
+    and nothing recomputes them afterwards, so nothing inside the box can catch a
+    bad freeze. But the same rep's closed week is ALSO frozen, separately, in
+    their captainship leaderboard's first history column (col D — col C is the
+    live week). Two independent freezes of one number: if they disagree, one of
+    the two rolls went wrong.
+
+    This is the 'Last week' half of `check_delta_thisweek_formulas`, and the two
+    together cover the box: shape on the live side, arithmetic on the frozen one.
+    `check_delta_totals_lastweek` is the third — it checks the totals ROW against
+    the rep rows; this checks the rep rows against the world outside the box.
+
+    Boxes are matched to leaderboards the way `delta_thisweek_repair` does it (a
+    fiber captain owns two of each, paired in tab order). A box no captainship
+    claims, or one whose counts do not line up, is skipped rather than guessed
+    at, and a rep missing from the leaderboard is reported with a blank cell ref.
+    """
+    from automations.org_sales_board import captainship as cap
+    from automations.new_owners import cap_insert as ci
+
+    CLOSED_COL = 4                        # col D: the week just frozen
+
+    by_cap = {}
+    for title, _prog in cap.discover_captainships(grid):
+        try:
+            boxes = cap.find_captainship_boxes(grid, title)
+        except Exception:                 # noqa: BLE001 — a malformed block
+            continue
+        for _variant, anchor in boxes:
+            if anchor.leaderboard:
+                by_cap.setdefault(cap._cap_key(title), []).append(anchor)
+
+    deltas = {}
+    for t in find_delta_tables(grid):
+        title = ci._delta_captain(grid, t["header_row"])
+        if title:
+            deltas.setdefault(cap._cap_key(title), []).append((t, title))
+
+    bad: List[tuple] = []
+    for key, anchors in by_cap.items():
+        ds = deltas.get(key, [])
+        if len(ds) != len(anchors):
+            continue                      # unpaired: delta_thisweek_repair reports it
+        for anchor, (t, title) in zip(anchors, ds):
+            if not t["data_rows"] or not t["this_cols"]:
+                continue
+            lb = {n.strip().lower(): r for r, n in anchor.leaderboard}
+            lw_cols = [c + 1 for c in sorted(t["this_cols"])]
+            for r in t["data_rows"]:
+                rep = _cell(grid, r - 1, 1)
+                lrow = lb.get(rep.strip().lower())
+                if lrow is None:
+                    bad.append((title, rep, "", None, None))
+                    continue
+                week = sum(_num(_cell(grid, r - 1, c - 1)) or 0 for c in lw_cols)
+                board = _num(_cell(grid, lrow - 1, CLOSED_COL - 1))
+                if board is None:
+                    continue
+                if abs(week - board) >= 0.001:
+                    bad.append((title, rep, f"{a1col(CLOSED_COL)}{lrow}",
+                                week, board))
     return bad
 
 
