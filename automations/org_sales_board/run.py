@@ -257,6 +257,25 @@ def main(argv=None) -> int:
             _sort.apply_sort(ws, dry_run=args.dry_run)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
+            # The delta-box rows with NO daily table to sum. A cross-cutting
+            # box (TRANG'S ORG) carries people who have no row anywhere else
+            # on the board — Jacob Morgan is a rep under an owner, not an ICD
+            # — so their per-day cells are plain numbers somebody typed in off
+            # Tableau's PRODUCT SALES SUMMARY. Every morning. A daily manual
+            # step nobody is paged about is one that eventually doesn't
+            # happen, and it fails silently: the row reads 0, the totals row
+            # sums it happily, and the org total is short with nothing saying
+            # so (Eve 2026-08-26: "no te voy a recordar todos los días").
+            #
+            # Costs one extra crosstab download. Wrapped: a fill that cannot
+            # reach Tableau must not take down the board fill it rides on —
+            # the row simply keeps yesterday's number and says so in the log.
+            try:
+                from automations.org_sales_board import delta_manual_fill as _dmf
+                _dmf.apply_manual_fill(ws, dry_run=args.dry_run)
+            except Exception as _edm:  # noqa: BLE001
+                print(f"  [!] relleno manual de cajas delta salteado "
+                      f"({type(_edm).__name__}: {str(_edm)[:90]})", flush=True)
             # TRIPWIRE — the delta boxes' per-day 'This week' cells must still
             # be =SUMIFs over their captainship's daily table. A value pasted
             # over one keeps showing the number it froze on and every total
