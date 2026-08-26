@@ -24,6 +24,8 @@ Actions:
                         machine-only code back into the repo.
   git_stash [label]     park uncommitted TRACKED edits so a blocked update can
                         run. Recoverable (git stash pop); never discards.
+  purge_login_test_profile   delete the leftover .ov_login_test scratch Chrome
+                        profile (the one thing git_stash/git_recover won't touch)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
   set_doubleentry_creds <user> <pass>   install the doubleentry.com financial
                         login into ownerville-creds.json + verify it by signing
@@ -187,6 +189,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # here BECAUSE only the mini is Lucy, so they must not eat
                     # the report budget.
                     "incident_resolve", "incident_working", "incident_unmark",
+                    "incident_triage",
                     "find_group"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
@@ -2519,6 +2522,46 @@ def _action_git_diff(args: str) -> tuple[bool, str]:
                   "\n· full: lucy logtail git-diff")
 
 
+def _action_purge_login_test_profile(args: str) -> tuple[bool, str]:
+    """Delete the throwaway ownerville login-test profile from THIS runner.
+
+    `tableau_patchright --ownerville-form-login` mints a scratch Chrome profile at
+    automations/uploaded/.ov_login_test to test whether OV's Cloudflare auto-
+    passes, and leaves it behind. On 2026-08-26 that leftover was the sole reason
+    Lucy 1 reported "locally modified: 1" — 661 untracked profile files carrying a
+    live OV login attempt, in a PUBLIC repo, one `git add .` from being published.
+    Gitignored now, but the bytes still want clearing, and nothing else here can:
+    git_stash skips untracked paths and git_recover deliberately runs no
+    `git clean`.
+
+    Scoped ON PURPOSE — the path is hardcoded and takes no argument, so this can
+    never become a general remote `rm`. Safe: the flag rebuilds the profile on
+    demand and no report reads it. Refuses while a patchright login test is
+    running so it cannot delete the profile out from under one.
+    """
+    import shutil
+
+    target = REPO_ROOT / "automations" / "uploaded" / ".ov_login_test"
+    alive = subprocess.run(
+        ["pgrep", "-f", "tableau_patchright"],
+        capture_output=True, text=True).stdout.strip()
+    if alive:
+        return False, ("a tableau_patchright run is active (pid %s) — not "
+                       "deleting the login-test profile under it"
+                       % alive.replace("\n", ","))
+    if not target.exists():
+        return True, "no .ov_login_test profile present — nothing to purge"
+    n = sum(1 for p in target.rglob("*") if p.is_file())
+    size = sum(p.stat().st_size for p in target.rglob("*") if p.is_file())
+    try:
+        shutil.rmtree(target)
+    except Exception as e:  # noqa: BLE001
+        return False, "purge failed: %s: %s" % (type(e).__name__, str(e)[:160])
+    return True, ("removed %s (%d file(s), %.1f MB). Gitignored as of 2026-08-26, "
+                  "so a re-test won't dirty the tree again."
+                  % (target.name, n, size / 1_048_576))
+
+
 def _action_git_stash(args: str) -> tuple[bool, str]:
     """Park uncommitted TRACKED changes so a blocked `update` can proceed.
 
@@ -4213,6 +4256,43 @@ def _action_incident_working(args: str) -> tuple[bool, str]:
     return True, f"{key} marked :pending: — someone is on it"
 
 
+def _action_incident_triage(args: str) -> tuple[bool, str]:
+    """Sort every OPEN incident into needs-you / Lucy / waiting, and put the one
+    matching reaction on each post.
+
+      incident_triage [--dry-run]
+
+    WHY FROM THE MINI: same reason as incident_working — Slack only lets you
+    remove your OWN reaction, so a circle added under a person's token can never
+    be taken off when the state changes. Every mark in that channel is Lucy's or
+    it is permanent.
+
+    Read-only apart from the reactions and one line per state change: it never
+    re-runs a report and never edits code."""
+    dry = "--dry-run" in (args or "")
+    try:
+        from automations.shared import incident_triage as tri
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_triage "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    # Same staleness hole as incident_working: the poller is long-lived and the
+    # channel history is cached per process, so an incident another machine
+    # opened after boot would be invisible to the scan.
+    inc._forget_history(inc.CHANNEL)
+    try:
+        out = tri.run(dry_run=dry)
+    except Exception as e:  # noqa: BLE001
+        return False, f"triage failed ({type(e).__name__}: {str(e)[:100]})"
+    if not out:
+        return False, "triage did not run (not Lucy on this machine?)"
+    need = out.get(tri.NEEDS_YOU) or []
+    msg = "{} need you{} | {} with Lucy | {} waiting".format(
+        len(need), (": " + ", ".join(need[:3])) if need else "",
+        len(out.get(tri.LUCY) or []), len(out.get(tri.WAITING) or []))
+    return True, ("DRY-RUN " + msg) if dry else msg
+
+
 def _action_incident_unmark(args: str) -> tuple[bool, str]:
     """Take the :pending: / waiting mark back OFF an incident post — nobody is
     on it after all.
@@ -5549,6 +5629,7 @@ ACTIONS = {
     "git_diff": _action_git_diff,
     "git_stash": _action_git_stash,
     "git_recover": _action_git_recover,
+    "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
     "set_appstream_creds": _action_set_appstream_creds,
@@ -5584,6 +5665,7 @@ ACTIONS = {
     "post_note": _action_post_note,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
+    "incident_triage": _action_incident_triage,
     "incident_unmark": _action_incident_unmark,
     "install_enrollment_pending": _action_install_enrollment_pending,
     "git_push_setup": _action_git_push_setup,
@@ -6069,6 +6151,8 @@ def print_help() -> None:
         "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
         "  lucy git_diff [path]      what this machine's uncommitted edits SAY\n"
         "  lucy git_stash            park uncommitted edits so update can run\n"
+        "  lucy purge_login_test_profile\n"
+        "                            delete the leftover .ov_login_test profile\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
