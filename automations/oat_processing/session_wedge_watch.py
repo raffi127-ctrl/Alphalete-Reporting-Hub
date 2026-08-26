@@ -27,7 +27,20 @@ import re
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 LOG_DIR = REPO_ROOT / "output" / "logs"
 STATE = REPO_ROOT / "output" / ".oat_session_wedge_state"
+# #claudecorrections-and-requests, the same id every other alert uses
+# (incident_thread.CHANNEL). This USED to come only from the sidecar cache below,
+# which is gitignored and was never written on Lucy 2 — so from the day it shipped
+# this alarm printed "NO CHANNEL — would post:" and went nowhere. On 2026-08-26 it
+# did that 252 times in one day while the batch stage sat wedged (Megan). A siren
+# nobody can hear is worse than no siren: it reads as quiet.
+CHANNEL = "C0BK5PRG259"
+# Still honoured when present, so a machine that resolves the channel by name (the
+# orchestrator's notify.py writes this sidecar) can override the constant.
 CHANNEL_CACHE = REPO_ROOT / "output" / ".corrections_channel_id"
+# One thread per wedge episode, the convention this channel runs on: repeats reply
+# under the open post instead of adding a near-identical message, and the ✅ goes on
+# automatically when a healthy walk is seen.
+INCIDENT_KEY = "failure-oat-session-wedge"
 
 # Only consider logs touched in the last window — an old stalled run isn't a live
 # wedge. Long enough to span the 5-min OAT cadence + a resume_pushing cycle.
@@ -37,13 +50,26 @@ RE_ALERT_HOURS = 3
 
 # The exact signatures both reports already log when the office-11580 session is
 # wedged on Cloudflare (see resume_pushing.run.ExtractionStalled + oat open_oat).
-WEDGE_SIGS = [
+# HARD: only ever printed when the session really is frozen. These stand on their
+# own — if one shows up, the run is stuck no matter what else the log says.
+HARD_WEDGE_SIGS = [
     "stale cloudflare clearance on office",
     "extractor stalled",
+]
+# WEAK: consistent with a wedge, but ALSO with ordinary operation. "no next-pager
+# control found" is the loud one — a queue of 1-2 applicants has no next page, so
+# it prints on a perfectly healthy walk. On 2026-08-26 this log carried 252 of
+# these alongside 74 "✅ SENT to AI" lines: the flow was working the whole time.
+# A weak signature therefore only counts when NOTHING in the recent logs shows
+# work getting done. Otherwise the alarm cries wolf, which is how a real alert
+# channel gets tuned out.
+WEAK_WEDGE_SIGS = [
     "menu click miss",              # oat open_oat menu-click timeout
     "no rqst token in url",         # oat direct-nav fallback failed
     "no next-pager control found",  # walk landed on a pager-less page
 ]
+# Kept as the union for any caller that imported the old name.
+WEDGE_SIGS = HARD_WEDGE_SIGS + WEAK_WEDGE_SIGS
 # Signs a recent run processed cleanly (used to CLOSE an open wedge episode).
 HEALTHY_SIGS = [
     "✅ sent to ai",
@@ -79,10 +105,19 @@ def _recent_logs() -> list[pathlib.Path]:
 
 
 def _tail(p: pathlib.Path, n: int = 400) -> str:
+    """The last n lines, lowercased, MINUS this watcher's own output.
+
+    The watcher runs from the same wrapper that writes this log, and it prints its
+    verdict INTO it: `[wedge-watch] state=wedged evidence='no next-pager control
+    found'`. That line contains the very signature it matches on, so once the alarm
+    fired it kept re-detecting its own echo — the wedge could never clear, because
+    the evidence was a line the watcher wrote itself. Drop those lines before
+    matching and it only ever judges what the REPORT logged."""
     try:
-        return "\n".join(p.read_text(errors="ignore").splitlines()[-n:]).lower()
+        lines = p.read_text(errors="ignore").splitlines()[-n:]
     except OSError:
         return ""
+    return "\n".join(l for l in lines if "[wedge-watch]" not in l).lower()
 
 
 def _match(text: str, sigs) -> str | None:
@@ -102,24 +137,31 @@ def assess() -> tuple[str, str, str]:
     logs = _recent_logs()
     if not logs:
         return "quiet", "", ""
-    wedge_hit = ("", "")
+    hard_hit = ("", "")
+    weak_hit = ("", "")
     healthy_hit = ("", "")
     for p in sorted(logs, key=lambda x: x.stat().st_mtime, reverse=True):
         text = _tail(p)
-        w = _match(text, WEDGE_SIGS)
-        if w and not wedge_hit[0]:
-            wedge_hit = (w, p.name)
+        hard = _match(text, HARD_WEDGE_SIGS)
+        if hard and not hard_hit[0]:
+            hard_hit = (hard, p.name)
+        weak = _match(text, WEAK_WEDGE_SIGS)
+        if weak and not weak_hit[0]:
+            weak_hit = (weak, p.name)
         h = _match(text, HEALTHY_SIGS)
         if h and not healthy_hit[0]:
             healthy_hit = (h, p.name)
-    # A healthy signal from the NEWEST activity closes the episode even if an
-    # older tail line still shows a past wedge.
-    if healthy_hit[0] and not wedge_hit[0]:
-        return "healthy", healthy_hit[0], healthy_hit[1]
-    if wedge_hit[0]:
-        return "wedged", wedge_hit[0], wedge_hit[1]
+    # A hard signature is authoritative — the session is frozen even if an older
+    # line in the same tail shows a send that landed before it froze.
+    if hard_hit[0]:
+        return "wedged", hard_hit[0], hard_hit[1]
+    # Work is visibly getting done, so whatever the weak signature meant, it isn't
+    # "nothing can run". Healthy WINS over weak — this is the check that keeps the
+    # alarm off a normal day (see WEAK_WEDGE_SIGS).
     if healthy_hit[0]:
         return "healthy", healthy_hit[0], healthy_hit[1]
+    if weak_hit[0]:
+        return "wedged", weak_hit[0], weak_hit[1]
     return "quiet", "", ""
 
 
@@ -137,20 +179,51 @@ def _save_state(d: dict) -> None:
         pass
 
 
-def _post(title: str, body_lines: list[str], dry_run: bool) -> bool:
-    ch = ""
+def _channel() -> str:
+    """The sidecar wins when a machine has resolved the channel by name; otherwise
+    the constant. Never empty — an unresolvable channel used to silence the alarm."""
     try:
-        ch = CHANNEL_CACHE.read_text().strip()
+        cached = CHANNEL_CACHE.read_text().strip()
+        if cached:
+            return cached
     except OSError:
         pass
+    return CHANNEL
+
+
+def _post(title: str, body_lines: list[str], dry_run: bool) -> bool:
+    """Open (or follow up in) the wedge incident thread in #claudecorrections.
+
+    Channel gets ONE emoji-free line, the detail goes in the thread — the standing
+    format for this channel (Megan 2026-08-18); incident_thread does that split.
+    Falls back to a plain threaded post if the incident helper is unavailable, so a
+    wedge is never swallowed just because the thread bookkeeping failed."""
     text = "\n".join([title] + body_lines)
-    if dry_run or not ch:
-        print(f"[wedge-watch] {'DRY-RUN' if dry_run else 'NO CHANNEL'} — would post:\n{text}\n")
-        return bool(dry_run)
+    if dry_run:
+        print(f"[wedge-watch] DRY-RUN — would post to {_channel()}:\n{text}\n")
+        return True
+    ch = _channel()
     try:
         from automations.shared.slack_metrics_post import _client
-        _client().chat_postMessage(channel=ch, text=text,
-                                   unfurl_links=False, unfurl_media=False)
+        client = _client()
+    except Exception as e:  # noqa: BLE001
+        print(f"[wedge-watch] no Slack client: {type(e).__name__}: {e}")
+        return False
+    try:
+        from automations.shared import incident_thread as _inc
+        posted = _inc.open_or_followup(
+            key=INCIDENT_KEY, title=title, body=body_lines,
+            channel_line="*Applicant Push* — office 11580 session wedged on Lucy 2",
+            channel=ch, client=client)
+        if posted:
+            return True
+        print("[wedge-watch] incident thread declined — posting standalone")
+    except Exception as e:  # noqa: BLE001
+        print(f"[wedge-watch] incident thread unavailable "
+              f"({type(e).__name__}: {str(e)[:80]}) — posting standalone")
+    try:
+        client.chat_postMessage(channel=ch, text=text,
+                                unfurl_links=False, unfurl_media=False)
         return True
     except Exception as e:  # noqa: BLE001
         print(f"[wedge-watch] post failed: {type(e).__name__}: {e}")
@@ -197,9 +270,25 @@ def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
 
     if state == "healthy":
         if st.get("alerted_at"):
-            _post(":white_check_mark: *Office 11580 session recovered — Lucy 2*",
-                  ["A healthy run just processed cleanly — the wedge is cleared and "
-                   "the queue is draining again."], dry_run)
+            # Close the THREAD (✅ on the parent) rather than posting a loose
+            # all-clear the channel has to match up with the alert by eye. Free
+            # when nothing is open, and never raises.
+            closed = False
+            try:
+                from automations.shared import incident_thread as _inc
+                closed = _inc.resolve_if_open(
+                    INCIDENT_KEY,
+                    what="*Applicant Push* — the office 11580 session",
+                    detail="A healthy walk just processed cleanly; the queue is "
+                           "draining again.",
+                    channel=_channel(), dry_run=dry_run)
+            except Exception as e:  # noqa: BLE001
+                print(f"[wedge-watch] couldn't close the thread "
+                      f"({type(e).__name__}: {str(e)[:80]})")
+            if not closed:
+                _post("Office 11580 session recovered — Lucy 2",
+                      ["A healthy run just processed cleanly — the wedge is cleared "
+                       "and the queue is draining again."], dry_run)
             print("[wedge-watch] episode closed (all-clear posted)")
         _save_state({})
         return 0
