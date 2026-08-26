@@ -330,18 +330,24 @@ def probe(*, headless: bool = True, log=print) -> Dict:
             # What can this login actually REACH? Dumped from the landing page,
             # because "the hub 404s" and "this account has no reporting module"
             # look identical from the hub's side and need opposite fixes.
+            # EVERY link, unfiltered. The first version of this kept only
+            # hrefs containing ".aspx" and then grepped them for "report" --
+            # and reported "NONE", which I read as "this login has no
+            # reporting". It has: the menu is called ANALYTICS (Megan's
+            # screenshot, 2026-08-26). A keyword search only ever finds the
+            # word you guessed. Dump the nav and read it.
             links = page.evaluate(
-                r"""() => Array.from(document.querySelectorAll('a[href]'))
-                       .map(a => ((a.textContent || '').trim().replace(/\s+/g, ' ')
-                                  + ' -> ' + a.getAttribute('href')))
-                       .filter(t => /\.aspx/i.test(t))""")
+                r"""() => Array.from(document.querySelectorAll('a'))
+                       .map(a => ({
+                              text: (a.textContent || '').trim().replace(/\s+/g, ' '),
+                              href: a.getAttribute('href') || '',
+                              onclick: (a.getAttribute('onclick') || '').slice(0, 120)}))
+                       .filter(o => o.text || o.href)""")
             out["links"] = links
-            log("--- %d .aspx links on the landing page ---" % len(links))
-            for t in links[:40]:
-                log("   " + t[:150])
-            reporting = [t for t in links if "report" in t.lower()]
-            log("links mentioning 'report': %s"
-                % (", ".join(reporting[:10]) if reporting else "NONE"))
+            log("--- %d links on the landing page (ALL of them) ---" % len(links))
+            for o in links[:60]:
+                log("   %-28s -> %s%s" % (o["text"][:28], o["href"][:90],
+                                          ("  onclick=" + o["onclick"]) if o["onclick"] else ""))
 
             page.goto(base + HUB_PATH, wait_until="networkidle")
             page.wait_for_timeout(3000)
