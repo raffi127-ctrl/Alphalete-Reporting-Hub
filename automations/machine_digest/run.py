@@ -652,6 +652,43 @@ def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
     return closed
 
 
+def _close_silent_job_incidents(cfg, job_ids, dry_run: bool, ts: str) -> int:
+    """Close the incident thread of a silent job whose heartbeat is current.
+
+    _close_recovered_incidents can't do this one: it decides "recovered" from a
+    clean Activity row, and the entire point of these jobs is that they never
+    write one. Same incident key (`standalone-<id>`), same wording, so the thread
+    behaves exactly like every other alert in the channel."""
+    from automations.day_orchestrator import notify
+    try:
+        from automations.shared import incident_thread as inc
+        from automations.shared import silent_job_watch as _sjw
+        ch = notify._corrections_channel(cfg)
+        open_keys = set(inc.open_keys()) if ch else set()
+    except Exception as e:  # noqa: BLE001
+        print(f"[{ts}] watch: incident index unreadable: {e}", flush=True)
+        return 0
+    closed = 0
+    for jid in job_ids:
+        key = f"standalone-{jid}"
+        if key not in open_keys:
+            continue
+        name = (_sjw.JOBS.get(jid) or {}).get("name", jid)
+        lines = [
+            f":white_check_mark: *{name}* — RESOLVED. It is checking in on "
+            "schedule again, so this is closed.",
+            "_If it stops again it'll open a fresh post, not revive this one._",
+        ]
+        try:
+            if inc.resolve(key=key, lines=lines, channel=ch, dry_run=dry_run):
+                closed += 1
+                print(f"[{ts}] watch: closed incident {key} — heartbeat current",
+                      flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[{ts}] watch: incident close failed for {key}: {e}", flush=True)
+    return closed
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -751,6 +788,34 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
             print(f"[{ts}] watch: didn't-run alert failed for {cid}: "
                   f"{type(e).__name__}: {e}", flush=True)
 
+    # 2b) SILENT JOBS — the handful that publish nothing on purpose, so steps 1
+    #    and 2 are structurally blind to them (no Activity row means no error to
+    #    read and no history to expect). They stamp a heartbeat instead; this
+    #    asks whether it is current. Alerts as MISSED through the same path, so
+    #    it dedupes with `already` and closes itself in step 4 like anything else.
+    #    See shared/silent_job_watch.py for why these jobs cannot simply publish.
+    try:
+        from automations.shared import silent_job_watch as _sjw
+        _beats = _sjw.read_beats()
+        for _job in _sjw.overdue(now, _beats):
+            _jid = _job["job_id"]
+            if _jid in skip or _jid in already or _jid in newly:
+                continue
+            notify.send_standalone_alert(
+                cfg, name=_job["name"], report_id=_jid, kind="MISSED",
+                status=_job["why"],
+                when="last check-in %s" % (
+                    _job["last_seen"].strftime("%a %H:%M")
+                    if _job["last_seen"] else "never"),
+                day=day_human, machine_label=_job["machine"], dry_run=dry_run)
+            newly.add(_jid)
+            posted += 1
+        _healthy_jobs = set(_sjw.healthy(now, _beats))
+    except Exception as e:  # noqa: BLE001 — a blind spot is bad, a crash is worse
+        print(f"[{ts}] watch: silent-job check failed: {type(e).__name__}: {e}",
+              flush=True)
+        _healthy_jobs = set()
+
     # 3) STUCK — a standalone report opened a live 'running' pill (publish_running)
     #    and never closed it: the run crashed, was killed, or hung between open and
     #    close. Nothing else catches this — _classify('started')=='running' so step
@@ -788,6 +853,10 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    channel never leaves a fixed problem sitting there looking open (Eve
     #    2026-08-14). Free when nothing is open: open_keys reads a local index.
     _close_recovered_incidents(cfg, reports, dry_run, ts)
+    # A silent job has no Activity row for the step above to read as "clean", so
+    # it closes its own thread the moment its heartbeat is current again.
+    if _healthy_jobs:
+        _close_silent_job_incidents(cfg, _healthy_jobs, dry_run, ts)
 
     if newly and not dry_run:
         _save_alerted(day, already | newly)

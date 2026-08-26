@@ -102,4 +102,14 @@ echo "[$(date)] BOX top-off finished exit=$ST" >> "$LOG_FILE"
 # Tuesdays in particular: the just-rolled week is legitimately empty in Box
 # (Box runs a day behind, so Monday is not published yet) and section_pull's
 # empty_week_expected() returns {} for it. Look in this log, not at an alert.
+#
+# ...but "it FIRED" is not the same claim as "it worked", and only the second
+# one was ever meant to be silent. A heartbeat records that this ran; the
+# 10-minute watcher alerts if no beat lands by 07:15 (Megan 2026-08-26). It is
+# NOT a manifest and NOT an Activity row — it says nothing about the board, so
+# --no-manifest keeps meaning exactly what it means above. Best-effort and
+# swallowed: the beat can never change this script's exit code.
+"$VENV_PY" -m automations.shared.silent_job_watch \
+    --beat org_board_box_repull --exit "$ST" >> "$LOG_FILE" 2>&1 || true
+
 exit 0
