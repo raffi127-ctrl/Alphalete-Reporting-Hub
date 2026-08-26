@@ -60,6 +60,7 @@ AGENT_ROW = "5_Agent"
 AGENT_ROW_INTERNET = "6_Agent"
 
 GRID_TIMEOUT_MS = 90_000
+NAV_TIMEOUT_MS = 60_000
 
 
 class SaraError(RuntimeError):
@@ -223,7 +224,14 @@ def _select_service(page, label: str) -> None:
 def _run_report(page, base_url: str, day: dt.date, service: str,
                 grid: str) -> List[List[str]]:
     """Set the day + service, submit, and return the grid's rows as cell text."""
-    page.goto(base_url + HUB_PATH, wait_until="networkidle")
+    # NOT networkidle. The ReportingHub is a Telerik page that keeps talking --
+    # timers, keep-alives, partial postbacks -- so "no network for 500ms" may
+    # never arrive and the navigation times out at 30s having actually loaded
+    # the page fine (2026-08-26, the failure right after the url was fixed).
+    # domcontentloaded plus an explicit wait for the control we need is both
+    # faster and a truer test: it waits for the THING, not for silence.
+    page.goto(base_url + HUB_PATH, wait_until="domcontentloaded",
+              timeout=NAV_TIMEOUT_MS)
     page.wait_for_timeout(2000)
     _assert_on_hub(page, base_url)
     _set_telerik_date(page, FIELD_START, day)
@@ -380,7 +388,8 @@ def probe(*, headless: bool = True, log=print) -> Dict:
                 log("   %-28s -> %s%s" % (o["text"][:28], o["href"][:90],
                                           ("  onclick=" + o["onclick"]) if o["onclick"] else ""))
 
-            page.goto(base + HUB_PATH, wait_until="networkidle")
+            page.goto(base + HUB_PATH, wait_until="domcontentloaded",
+                      timeout=NAV_TIMEOUT_MS)
             page.wait_for_timeout(3000)
             out["hub_state"] = page_state(page)
             log("ReportingHub: %s" % out["hub_state"])
