@@ -50,6 +50,12 @@ extra day WITHOUT the week-wide blindness of the weekly bar. That is the
 AUTOMATIONPULL-NICHURNVIEW case (Eve 2026-08-24): the Monday Focus run reads it
 before Sunday lands, and the week it reports ended the Saturday that IS there.
 
+And a source can be perfectly healthy and still return the SAME BYTES for a
+week, because the caller pins it to a week that has already closed — see
+WEEK_PINNED_MARKERS. That one loosens the FROZEN bar only; the days-behind bar
+is untouched, because these exports have no date column to judge in the first
+place.
+
 WHAT IS NOT JUDGED
 An export with no parseable date column is returned as "unknown" and never
 alerts — rosters, mappings and reference lists have no data date, and inventing
@@ -625,6 +631,37 @@ def business_needs(today: dt.date,
     return d
 
 
+# --- Views the CALLER pins to a week that already closed ---------------------
+# The fourth shape, and the only one that belongs to the FROZEN bar rather than
+# the days-behind one. The view itself is daily, ordinary and correct. What
+# makes it sit still is the pull: due_diligence walks the last C.WEEKS closing
+# Sundays and pulls DDfullyEXP once per week, with the week in the QUERY STRING
+# (`?Sale Date Week Ending (mon-sun)=YYYY-MM-DD`, opt_phase._week_url). Every
+# one of those weeks is finished, so every one of those exports is finished too.
+#
+# `_view_label` strips the query string on purpose — a person opening the view
+# should get a path they can paste, not a filter. So all eight of the day's
+# pulls collapse into ONE history key and the day's fingerprint is whichever
+# week the loop ended on. That content changes exactly once a week, when the
+# eight-week window rolls on Sunday, and is byte-identical for the six days
+# after it. FROZEN_AFTER_DAYS = 3 turns that into a thread every day from
+# Tuesday to Saturday (Eve 2026-08-25 and again 8/26: "IDENTICAL data 3 days
+# running", then 4 — counted from Sunday 8/23, the roll).
+#
+# ⚠ The marker names the VIEW, never the workbook. PRODUCTSALESSUMMARY4WK is
+# pulled UNFILTERED by ~8 other reports, and a real freeze there has to shout.
+WEEK_PINNED_MARKERS = (
+    "ddfullyexp",
+)
+
+
+def is_week_pinned_source(label: str) -> bool:
+    """Is this view pulled against a week that has already closed, so identical
+    bytes day over day are the correct answer and not a dead feed?"""
+    low = (label or "").lower()
+    return any(m in low for m in WEEK_PINNED_MARKERS)
+
+
 def _fingerprint(path) -> Optional[str]:
     """A stable digest of the export's DATA (header excluded — a column rename
     isn't new data, and a stable header is what makes runs comparable)."""
@@ -774,9 +811,13 @@ def check_export(path,
         if needs is None and sunday_quiet:
             needs = business_needs(today, max_days_behind)
         needs = needs or (today - dt.timedelta(days=max_days_behind))
+        # Deliberately does NOT touch `needs`: a week-pinned view is judged on
+        # whether its CONTENT moves, and only that bar is loosened.
+        week_pinned = is_week_pinned_source(label)
         out["needs"] = needs
         out["weekly"] = weekly
         out["sunday_quiet"] = sunday_quiet
+        out["week_pinned"] = week_pinned
         p = Path(path)
         if not p.exists() or p.stat().st_size == 0:
             out["column"] = "missing or empty export"
@@ -791,7 +832,7 @@ def check_export(path,
                                         today=today,
                                         report=report or _current_report(),
                                         frozen_after=(WEEKLY_FROZEN_AFTER_DAYS
-                                                      if weekly
+                                                      if weekly or week_pinned
                                                       else FROZEN_AFTER_DAYS))
             out["verdict"] = {"frozen": "stale"}.get(
                 unchanged["verdict"], "unknown")
