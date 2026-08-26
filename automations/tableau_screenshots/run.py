@@ -70,11 +70,24 @@ REPORT_ID = "tableau-screenshots"
 # its own pill, its own retry button.
 LATE_REPORT_ID = "tableau-screenshots-box"
 
+# The SETTLE passes (--settle), later in the morning. Same machinery as the Box
+# catch-up — pick up whatever the morning held and post what has since caught up
+# — but its own report id, because sharing LATE_REPORT_ID would overwrite the Box
+# card's manifest and per-channel checklist with a run that was never about Box.
+#
+# WHY IT EXISTS (Megan 2026-08-26): the ~7am catch-up used to be the last attempt
+# of the day, so a board whose data settled at 10am simply never posted. On 8/26
+# NDS and AT&T were still loading at 10:30 — under "report it, don't send it"
+# that means two boards silently missing for a whole day. A held board now gets
+# more chances, spaced out, until its data actually lands.
+SETTLE_REPORT_ID = "tableau-screenshots-settle"
+
 # Per-channel outcome of today's run, read by the Hub card to show its ✅/❌
 # checklist. One card posts to EVERY channel, so the card needs to say which
 # channels actually landed -- a single red/green light would hide a lone failure.
 STATUS_FILE = OUT_DIR / "_posted_today.json"
 LATE_STATUS_FILE = OUT_DIR / "_posted_today_box.json"
+SETTLE_STATUS_FILE = OUT_DIR / "_posted_today_settle.json"
 
 # The 8 boards are COUNTRY-wide -- all three orgs post byte-identical images. So
 # capture ONCE per day and let the other orgs reuse the PNGs: re-driving Tableau
@@ -582,6 +595,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default=None,
                     help="Comma-separated tracker id(s) to run (default: every "
                          "tracker except the late ones — see --late-only).")
+    ap.add_argument("--settle", action="store_true",
+                    help="A later pass for boards the morning HELD: re-check "
+                         "each one and post the ones whose Tableau data has "
+                         "since finished loading. Implies --late-only (same "
+                         "pick-up-what-was-held machinery) but reports under its "
+                         "own id, so it can't overwrite the Box catch-up's card. "
+                         "A no-op when nothing was held.")
     ap.add_argument("--late-only", action="store_true",
                     help="Post ONLY the late tracker(s) — the boards whose data "
                          "isn't current at 4:31am (B2B Box). This is the ~7am "
@@ -689,6 +709,12 @@ def main(argv=None) -> int:
     if args.new_thread and args.retitle_only:
         raise SystemExit("--new-thread and --retitle-only are mutually exclusive.")
 
+    # --settle IS a late-only run (pick up what the morning held); it only
+    # differs in which card it reports under. Set before the freshness gate,
+    # which branches on late_only.
+    if args.settle:
+        args.late_only = True
+
     today = dt.date.today()
     # FRESHNESS GATE — runs BEFORE the selection, because holding a stale board
     # works by marking it late, and _select() reads lateness.
@@ -757,8 +783,12 @@ def main(argv=None) -> int:
     # manifest (else it overwrites the morning run's verify record) and its own
     # per-channel status file (else the morning card's checklist gets rewritten
     # to show one tracker). Same code, same channels, separate accounting.
-    report_id = LATE_REPORT_ID if args.late_only else REPORT_ID
-    status_file = LATE_STATUS_FILE if args.late_only else STATUS_FILE
+    if args.settle:
+        report_id, status_file = SETTLE_REPORT_ID, SETTLE_STATUS_FILE
+    elif args.late_only:
+        report_id, status_file = LATE_REPORT_ID, LATE_STATUS_FILE
+    else:
+        report_id, status_file = REPORT_ID, STATUS_FILE
     print(f"Tableau country trackers -- {len(selected)} view(s) -> {len(orgs)} org(s): "
           f"{', '.join(sp.ORG_LABEL[o] for o in orgs)}, "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "

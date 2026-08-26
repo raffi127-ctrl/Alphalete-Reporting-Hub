@@ -5416,6 +5416,78 @@
    },
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
   },
+  "tableau_screenshots_settle_am": {
+   "order": 24,
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "Later pass for boards the MORNING run held. Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted at all -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note. A clean no-op on the normal day when nothing was held. Own report_id so it cannot overwrite the Box catch-up's manifest or per-channel checklist. NOT a clock for the data: the stability gate decides whether a board is ready; not_before only decides when to ask again.",
+   "display_name": "Tableau Country Trackers — settle (10am)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.tableau_screenshots.run"
+   ],
+   "base_args": [
+    "--settle",
+    "--text-trackers"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "10:00"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tableau-screenshots-settle"
+   }
+  },
+  "tableau_screenshots_settle_pm": {
+   "order": 41,
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "Later pass for boards the MORNING run held. Until 2026-08-26 the ~7am Box catch-up was the last attempt of the day, so a board whose Tableau data settled after it never posted at all -- and under Megan's rule (\"the updated ones are sent and the non updated ones are reported and NOT sent\") that is a board silently missing all day. On 8/26 NDS and AT&T were still loading at 10:30. --settle re-checks ONLY what the morning held, posts whatever has since finished loading, and leaves the rest held with its note. A clean no-op on the normal day when nothing was held. Own report_id so it cannot overwrite the Box catch-up's manifest or per-channel checklist. NOT a clock for the data: the stability gate decides whether a board is ready; not_before only decides when to ask again.",
+   "display_name": "Tableau Country Trackers — settle (1pm)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.tableau_screenshots.run"
+   ],
+   "base_args": [
+    "--settle",
+    "--text-trackers"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "13:00"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tableau-screenshots-settle"
+   }
+  },
   "tableau_preview": {
    "on_scheduler": true,
    "_note": "MANUAL-ONLY preview harness (weekdays [] -> never auto-runs; reachable via lucy rerun). Captures the tracker(s) and DMs them to Megan via --preview-dm, posting NOTHING to the channels — safe for dialing in a crop. (Was briefly set live to re-post the corrected nds/b2b crops 2026-07-05; reverted to DM-only.)",
