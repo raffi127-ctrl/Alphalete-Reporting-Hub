@@ -130,8 +130,34 @@ _NOT_A_REPORT = frozenset({
 })
 
 
+# RETIRED reports: switched off for good, code kept. Distinct from _NOT_A_REPORT
+# (plumbing that was never a report) and from dashboard.PAUSED_REPORTS (stood
+# down, still meant to come back — tracker_mirror, which KEEPS its card and says
+# why). A retired report's card should simply go.
+#
+# Turning a report off does not remove its card, and the card is a row in a
+# shared Sheet that no code deletes. Worse, the row comes BACK: hub_coverage
+# re-cards from two directions — sync() over on_scheduler reports, and
+# sync_launchd_system() over deploy/*.plist — so a retirement has to be visible
+# to both or the delete silently undoes itself. Listing the report here is what
+# both of them read (via is_internal), so one line covers both doors.
+#
+# knocks_access_watch (Megan 2026-08-26). Eve switched it off 2026-08-25: the
+# watcher had classified all 13 Office Access gaps and the rest was somebody
+# else approving requests. Its agent was unloaded the same day and cadence
+# weekdays went to [], so it genuinely stopped running — but on_scheduler stayed
+# true, so hub_coverage kept it in _scheduler_reports() and its card kept
+# advertising "4 AM flow · DUE TODAY" for a job that had not run in a week. The
+# module stays: `lucy rerun knocks_access_watch --find <owner>` is still a
+# useful hand tool, it just isn't a report on anyone's Hub.
+_RETIRED = frozenset({
+    "knocks_access_watch",
+})
+
+
 def is_internal(report_id: str) -> bool:
-    return report_id in _NOT_A_REPORT or bool(_SKIP_RE.match(report_id))
+    return (report_id in _NOT_A_REPORT or report_id in _RETIRED
+            or bool(_SKIP_RE.match(report_id)))
 
 
 # ---------------------------------------------------------------- card inventory

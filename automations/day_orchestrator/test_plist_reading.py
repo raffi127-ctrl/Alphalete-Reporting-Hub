@@ -145,5 +145,47 @@ class NotAReportMeansTheRowDeleteSticks(unittest.TestCase):
                          "deleting these rows would not stick: %s" % offenders)
 
 
+class ARetiredReportLosesItsCardForGood(unittest.TestCase):
+    """Switching a report off never removed its card, and the card came back.
+
+    knocks_access_watch was switched off 2026-08-25 — agent unloaded, cadence
+    weekdays [] — but on_scheduler stayed true, so hub_coverage kept it in
+    _scheduler_reports() and its Report Library row kept advertising "4 AM flow ·
+    DUE TODAY" for a job that had not run in a week. Deleting the row alone would
+    not have held: sync() re-cards from schedule_config and sync_launchd_system()
+    re-cards from deploy/*.plist, so a retirement has to shut BOTH doors."""
+
+    def test_it_is_internal(self):
+        from automations.day_orchestrator.hub_coverage import _RETIRED
+        for rid in _RETIRED:
+            with self.subTest(report=rid):
+                self.assertTrue(hc.is_internal(rid))
+
+    def test_it_is_off_the_scheduler_too(self):
+        """_RETIRED stops the CARD; on_scheduler:false stops the RUN. A report
+        listed here that is still on_scheduler would keep running invisibly —
+        the exact shape of the never-run blind spot, upside down."""
+        import json
+        from automations.day_orchestrator.hub_coverage import _RETIRED, CONFIG_PATH
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))["reports"]
+        still_on = [rid for rid in _RETIRED
+                    if cfg.get(rid, {}).get("on_scheduler")]
+        self.assertEqual(still_on, [],
+                         "retired but still on_scheduler: %s" % still_on)
+
+    def test_neither_door_recreates_the_card(self):
+        from automations.day_orchestrator.hub_coverage import _RETIRED
+        real = hc.existing_card_ids
+        hc.existing_card_ids = lambda: real() - set(_RETIRED)
+        try:
+            back = ([m for m in hc.sync(dry_run=True)
+                     if any(r in m for r in _RETIRED)]
+                    + [m for m in hc.sync_launchd_system(dry_run=True)
+                       if any(r in m for r in _RETIRED)])
+        finally:
+            hc.existing_card_ids = real
+        self.assertEqual(back, [], "a retired card would be recreated: %s" % back)
+
+
 if __name__ == "__main__":
     unittest.main()
