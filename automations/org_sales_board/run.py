@@ -274,7 +274,7 @@ def main(argv=None) -> int:
             # closes itself on the first clean run.
             try:
                 from automations.org_sales_board import rollover as _rodx
-                _stale = _rodx.check_delta_thisweek_formulas(
+                _stale = _rodx.check_delta_live_formulas(
                     ws.get_all_values(), ws=ws)
                 if _stale:
                     _dboxes = sorted({b for b, _a1, _rp, _v in _stale})
@@ -299,7 +299,7 @@ def main(argv=None) -> int:
                                 reason="Alguien pego valores encima de los "
                                        "=SUMIF por dia de esas cajas delta.",
                                 fix="python -m automations.org_sales_board."
-                                    "delta_thisweek_repair --apply --verify"),
+                                    "delta_formula_repair --apply --verify"),
                         )
                 else:
                     print("  [ok] cajas delta: las celdas 'This week' por dia "

@@ -1156,9 +1156,21 @@ def check_delta_totals_lastweek(grid: List[List[str]]) -> List[tuple]:
     return bad
 
 
-def check_delta_thisweek_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
-    """Tripwire: every per-day 'This week' cell on every delta box must still be
-    a FORMULA. Returns [(box_title, a1_cell, rep_name, what_is_there)].
+# Col E: the row's Delta %, '=Iferror((C-D)/D,0)'. Beside 'Total this
+# week' (C) and 'Last week' (D), never inside the per-day triplets.
+DELTA_PCT_COL = 5
+
+
+def check_delta_live_formulas(grid: List[List[str]], ws=None) -> List[tuple]:
+    """Tripwire: every LIVE cell on every delta box must still be a FORMULA —
+    the seven per-day 'This week' =SUMIFs AND the row's Delta % beside them.
+    Returns [(box_title, a1_cell, rep_name, what_is_there)].
+
+    BOTH COLUMNS, because the same event took both. The 2026-08-26 clobber was
+    found and repaired on the 'This week' side first; the Delta column of those
+    same twelve fiber boxes was still frozen hours later — 86 static percentages,
+    84 of them showing a number that no longer matched their own row's C and D.
+    A check that watches one half of a box teaches you the box is fine.
 
     THE DEFECT IT WATCHES. Those cells are `=SUMIF` over the captainship's daily
     table; the row's 'Total this week' and the box's totals row are both derived
@@ -1191,7 +1203,7 @@ def check_delta_thisweek_formulas(grid: List[List[str]], ws=None) -> List[tuple]
     col B is the manual fill. Only the first kind is returned — the second is
     reported by `manual_fill_rows()` if you want to see it.
 
-    Fix: python -m automations.org_sales_board.delta_thisweek_repair --apply
+    Fix: python -m automations.org_sales_board.delta_formula_repair --apply
     """
     if ws is None:
         return []
@@ -1201,7 +1213,9 @@ def check_delta_thisweek_formulas(grid: List[List[str]], ws=None) -> List[tuple]
         return []
     r0 = min(t["data_rows"][0] for t in tables)
     r1 = max(t["data_rows"][-1] for t in tables)
-    c0 = min(min(t["this_cols"]) for t in tables)
+    # from the Delta column (E, beside 'Total this week') out to the last
+    # per-day 'This week' — one read covering both live columns.
+    c0 = min([DELTA_PCT_COL] + [min(t["this_cols"]) for t in tables])
     c1 = max(max(t["this_cols"]) for t in tables)
     span = f"{a1col(c0)}{r0}:{a1col(c1)}{r1}"
     block = ws.get(span, value_render_option="FORMULA") or []
@@ -1220,9 +1234,13 @@ def check_delta_thisweek_formulas(grid: List[List[str]], ws=None) -> List[tuple]
                       if _cell(grid, rr, 1) or _cell(grid, rr, 0)), "?")
         for r in t["data_rows"]:
             rep = _cell(grid, r - 1, 1)
-            if rep.strip().lower() in manual:
-                continue                 # hand-filled by design, not a clobber
-            for c in t["this_cols"]:
+            # A hand-filled rep's PER-DAY cells are literals by design — but
+            # their Delta % is not: it is row-local arithmetic over their own C
+            # and D, so it stays a formula like everybody else's. Skipping the
+            # whole row would have left that one cell unwatched.
+            cols = [DELTA_PCT_COL] if rep.strip().lower() in manual \
+                else list(t["this_cols"]) + [DELTA_PCT_COL]
+            for c in cols:
                 v = _f(r, c)
                 if not v.startswith("="):
                     bad.append((title, f"{a1col(c)}{r}", rep, v))
@@ -1272,12 +1290,12 @@ def check_delta_lastweek_vs_leaderboard(grid: List[List[str]]) -> List[tuple]:
     live week). Two independent freezes of one number: if they disagree, one of
     the two rolls went wrong.
 
-    This is the 'Last week' half of `check_delta_thisweek_formulas`, and the two
+    This is the 'Last week' half of `check_delta_live_formulas`, and the two
     together cover the box: shape on the live side, arithmetic on the frozen one.
     `check_delta_totals_lastweek` is the third — it checks the totals ROW against
     the rep rows; this checks the rep rows against the world outside the box.
 
-    Boxes are matched to leaderboards the way `delta_thisweek_repair` does it (a
+    Boxes are matched to leaderboards the way `delta_formula_repair` does it (a
     fiber captain owns two of each, paired in tab order). A box no captainship
     claims, or one whose counts do not line up, is skipped rather than guessed
     at, and a rep missing from the leaderboard is reported with a blank cell ref.
@@ -1307,7 +1325,7 @@ def check_delta_lastweek_vs_leaderboard(grid: List[List[str]]) -> List[tuple]:
     for key, anchors in by_cap.items():
         ds = deltas.get(key, [])
         if len(ds) != len(anchors):
-            continue                      # unpaired: delta_thisweek_repair reports it
+            continue                      # unpaired: delta_formula_repair reports it
         for anchor, (t, title) in zip(anchors, ds):
             if not t["data_rows"] or not t["this_cols"]:
                 continue

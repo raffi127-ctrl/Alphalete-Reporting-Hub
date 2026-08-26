@@ -814,7 +814,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     logfn("  --- DELTA BOXES, PER-DAY 'THIS WEEK' FORMULAS (report-only) ---")
     try:
         _cW = _retry(lambda: sh.worksheet(SANDBOX_TAB))
-        _dt = rollover.check_delta_thisweek_formulas(cS, ws=_cW)
+        _dt = rollover.check_delta_live_formulas(cS, ws=_cW)
         if _dt:
             _boxes = sorted({_b for _b, _a1, _rep, _v in _dt})
             logfn(f"  ⚠ {len(_dt)} per-day 'This week' cell(s) across "
@@ -826,7 +826,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
                 logfn(f"      …and {len(_dt) - 20} more")
             logfn(f"      boxes: {', '.join(_boxes[:12])}")
             logfn("      fix: python -m automations.org_sales_board."
-                  "delta_thisweek_repair --apply --verify")
+                  "delta_formula_repair --apply --verify")
         else:
             logfn("  ✅ every delta box's per-day 'This week' cell is still "
                   "a live =SUMIF.")

@@ -1,4 +1,5 @@
-"""Rebuild the per-day 'This week' =SUMIF cells on the DELTA boxes.
+"""Rebuild the LIVE formulas on the DELTA boxes: the per-day 'This week'
+=SUMIFs and the Delta % beside them.
 
 WHAT BREAKS
 -----------
@@ -19,7 +20,7 @@ each) had all 602 of these cells as literals, frozen at the Tuesday-morning
 state: Monday's real number in the first day column and 0 in the other six.
 Monday looked perfect, Tuesday never arrived, and 'Total this week' ran short all
 week. No other box was touched and every totals row was fine — which is exactly
-why nobody saw it for a week. `rollover.check_delta_thisweek_formulas` is the
+why nobody saw it for a week. `rollover.check_delta_live_formulas` is the
 tripwire; this is the repair it points at.
 
 THE REPAIR
@@ -45,8 +46,8 @@ derive from and is SKIPPED, not guessed at. Same rule `cap_insert` follows.
 Everything is located by label — captain title, 'Total this week', 'Monday',
 col-B rep name — never by row/column index ([[feedback_no_hardcoded_columns]]).
 
-    python -m automations.org_sales_board.delta_thisweek_repair            # dry-run
-    python -m automations.org_sales_board.delta_thisweek_repair --apply --verify
+    python -m automations.org_sales_board.delta_formula_repair            # dry-run
+    python -m automations.org_sales_board.delta_formula_repair --apply --verify
 
 Applied 2026-08-26: 602 cells across the 12 fiber boxes. Monday agreed with the
 frozen literal on all 86 rep rows and Tuesday came back from 0 to 1,202 units.
@@ -126,6 +127,32 @@ def pair_boxes(grid: List[List[str]]) -> Tuple[List[dict], List[str]]:
                 continue
             pairs.append({"box": box, "delta": d})
     return pairs, problems
+
+
+DELTA_PCT_COL = 5                 # col E — the row's Delta %
+
+
+def plan_delta_pct(grid: List[List[str]], formulas: List[List[str]]
+                   ) -> List[dict]:
+    """[{range, values}] for every Delta % cell that is a frozen value.
+
+    Row-local arithmetic ('=Iferror((C-D)/D,0)'), so unlike the per-day SUMIFs
+    it needs no daily table and applies to EVERY delta box — the cross-cutting
+    ones (RAF SPECIAL TEAM, TRANG'S ORG) included, and to a hand-filled rep's
+    row too: their C and D are typed in, but the percentage between them is
+    still computed. A cell that is already a formula is never rewritten."""
+    updates: List[dict] = []
+    for t in ro.find_delta_tables(grid):
+        rows = list(t["data_rows"])
+        tail = rows[-1] + 1
+        if _cell(grid, tail, 3):                  # label-less totals row
+            rows.append(tail)
+        for r in rows:
+            if _cell(formulas, r, DELTA_PCT_COL).startswith("="):
+                continue
+            updates.append({"range": f"{ro.a1col(DELTA_PCT_COL)}{r}",
+                            "values": [[f"=Iferror((C{r}-D{r})/D{r},0)"]]})
+    return updates
 
 
 def plan(grid: List[List[str]], formulas: List[List[str]],
@@ -223,6 +250,10 @@ def main(argv=None) -> int:
               f"({len(d['t']['data_rows'])} reps) -> diaria {b['d0']}-{b['d1']}")
 
     updates, warn, already = plan(grid, formulas, pairs)
+    pct = plan_delta_pct(grid, formulas)
+    if pct:
+        print(f"  columna Delta: {len(pct)} celda(s) congelada(s) -> formula")
+    updates += pct
     for w in warn:
         print(f"  [!] {w}")
     print(f"  ya correctas: {already} · a reescribir: {len(updates)}")
