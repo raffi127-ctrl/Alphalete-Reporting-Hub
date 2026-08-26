@@ -109,11 +109,11 @@ EXTRACTS = {
     # is now a pager view's own refresh sheet rather than an unrelated summary.
     "tableau:tracker_att": {
         "label": "ATTTRACKER2_1-D2D extract (AT&T Country trackers)",
-        "last_update": {
+        "stable_total": {
             "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                          "ATTTRACKER2_1-D2D/D2D1-PAGERV4?:iid=1"),
-            "sheet": "Last Refresh (2)",
-            "field": "Data Source Sales Date Range",
+            "sheet": "Summary Product by Day",
+            "min_total": 1,
         },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["att_country", "att_country_internet_only"],
@@ -128,11 +128,11 @@ EXTRACTS = {
     # still stops yesterday. The range is what the board actually has.
     "tableau:tracker_nds": {
         "label": "NDS-SNRES-ATT-OOFWorkbook extract (NDS Tracker)",
-        "last_update": {
+        "stable_total": {
             "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                          "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1"),
-            "sheet": "zzz Last Refresh (5)",
-            "field": "Data Source Sales Date Range",
+            "sheet": "New/Port/Air",
+            "min_total": 1,
         },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["nds"],
@@ -140,13 +140,13 @@ EXTRACTS = {
     # Same treatment, against the B2B pager we photograph.
     "tableau:tracker_b2b": {
         "label": "ATTTRACKER-B2B extract (B2B AT&T trackers)",
-        "last_update": {
+        "stable_total": {
             "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                          "ATTTRACKER-B2B/D2D1-PAGERV3/"
                          "87ae0671-15de-4d80-bdc0-702d0946dd1d/"
                          "B2BLeaderRecognition?:iid=1"),
-            "sheet": "Last Refresh (2)",
-            "field": "Data Source Sales Date Range",
+            "sheet": "Summary Product by Day",
+            "min_total": 1,
         },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["b2b_att_country", "b2b_att_country_cru",
@@ -172,6 +172,10 @@ EXTRACTS = {
             # so gating on SFDC would have passed the exact morning that failed.
             "field": "Latest Activities Data Update",
         },
+        # Still the WEAKER check: coverage, not stability. It caught 8/26 (the
+        # workbook said 8/24 outright), but a partially-loaded quantum day would
+        # pass it the way NDS/AT&T passed theirs. Upgrading needs a per-day sheet
+        # off this view — `--discover quantum_fiber` lists the candidates.
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["quantum_fiber"],
     },
@@ -303,6 +307,159 @@ def parse_last_update(text: str, field: str) -> Optional[dt.date]:
     return max(found) if found else None
 
 
+# Two observations of the same day's total, this far apart, both equal = the day
+# has stopped loading. Shorter and a slow trickle reads as "settled" between two
+# samples; much longer and nothing posts before mid-morning.
+STABILITY_GAP_MIN = 20
+
+# Per-day totals seen so far today: {"date": iso, "obs": {extract: [[ts, total]]}}
+STABILITY_FILE = OUT_DIR / "_stability.json"
+
+_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+             "Saturday", "Sunday"]
+
+
+def _num(cell: str) -> Optional[float]:
+    """'1,075' -> 1075.0; '5%', '08/24 - 08/25', '' -> None."""
+    t = (cell or "").strip().replace(",", "")
+    if not t or "%" in t or "/" in t:
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def parse_day_total(text: str, target: dt.date) -> Optional[float]:
+    """The target day's grand total off a per-day crosstab, or None.
+
+    Two real layouts, both live (verified 2026-08-26):
+
+      att / b2b — "Summary Product by Day": the day is a COLUMN.
+        Product Type ... | Mon (08-24) | Tue (08-25) | Total
+        Grand Total      | 1,310       | 1,413
+
+      nds — "New/Port/Air": the day is a ROW, keyed by weekday name.
+        Tuesday | 08/24 - 08/25 | 1,075 | 5% | ...
+
+    Neither sheet carries TODAY (nds leaves Wednesday..Sunday blank), which is
+    what makes this usable as a stability signal — today's live accumulation
+    would otherwise keep the number moving all day and nothing would ever settle."""
+    rows = [r.split("\t") for r in (text or "").splitlines() if r.strip()]
+    if not rows:
+        return None
+    # Layout 1: a header cell naming the target day -> read that column's total.
+    stamp_dash = target.strftime("%m-%d")
+    stamp_slash = target.strftime("%m/%d")
+    for row in rows:
+        col = next((i for i, c in enumerate(row)
+                    if stamp_dash in (c or "") or stamp_slash in (c or "")), None)
+        if col is None:
+            continue
+        for r2 in rows:
+            head = (r2[0] if r2 else "").strip().lower()
+            if head in ("grand total", "total") and len(r2) > col:
+                val = _num(r2[col])
+                if val is not None:
+                    return val
+        break
+    # Layout 2: a row keyed by the target weekday -> its first numeric cell.
+    want = _WEEKDAYS[target.weekday()].lower()
+    for row in rows:
+        if (row[0] if row else "").strip().lower() != want:
+            continue
+        for cell in row[1:]:
+            val = _num(cell)
+            if val is not None:
+                return val
+    return None
+
+
+def _read_stability(today: dt.date) -> Dict[str, list]:
+    try:
+        data = json.loads(STABILITY_FILE.read_text())
+    except Exception:                       # noqa: BLE001 — no file yet is normal
+        return {}
+    if data.get("date") != today.isoformat():
+        return {}                           # yesterday's samples prove nothing
+    return dict(data.get("obs") or {})
+
+
+def _record_observation(today: dt.date, extract_id: str, total: float) -> list:
+    obs = _read_stability(today)
+    series = list(obs.get(extract_id) or [])
+    series.append([dt.datetime.now().isoformat(timespec="seconds"), total])
+    obs[extract_id] = series[-10:]          # a short tail is all the verdict needs
+    try:
+        STABILITY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STABILITY_FILE.write_text(json.dumps(
+            {"date": today.isoformat(), "obs": obs}, indent=2))
+    except Exception:                       # noqa: BLE001 — cache is best-effort
+        pass
+    return series
+
+
+def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
+                        today: dt.date, *, page=None,
+                        log=lambda m: None) -> Tuple[bool, str]:
+    """(fresh, reason) for "has yesterday STOPPED loading?".
+
+    WHY THIS EXISTS (2026-08-26). Every earlier gate asked whether yesterday was
+    PRESENT. It was — partially. The 4:11am boards went out with NDS Tuesday at
+    744 and AT&T Tuesday at 1,118; by 10:30 the same days read 1,075 (+44%) and
+    1,413 (+26%). Both gates passed all morning because a third of a day and a
+    whole day look identical to a max-date test.
+
+    So: sample the day's total, and only call it done when two samples
+    STABILITY_GAP_MIN apart agree. A day still growing is not a day you can post.
+
+    A zero/absent total is never "stable" — otherwise a board whose day never
+    loaded (quantum on 8/26, 0 sales, -100%) would sail through on two matching
+    zeros. Unreadable is never stale: fail open, as everywhere here."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    conf = cfg["stable_total"]
+    out = OUT_DIR / "_freshness" / ("%s_day.csv" % extract_id.replace(":", "_"))
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        path = download_crosstab_patchright(
+            conf["view_url"], conf["sheet"], out, verbose=False, page=page)
+    except Exception as e:                  # noqa: BLE001 — not pullable yet
+        line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+        return True, "day-total sheet not pullable (%s) — not held" % line
+    total = parse_day_total(_read_crosstab_text(Path(path)), target)
+    if total is None:
+        return True, ("could not read %s's total off %r — not held (the sheet's "
+                      "layout may have changed)" % (target.isoformat(),
+                                                    conf["sheet"]))
+    floor = float(conf.get("min_total", 1))
+    if total < floor:
+        return False, ("%s shows %g — the day hasn't loaded yet — extract not "
+                       "refreshed" % (target.isoformat(), total))
+    series = _record_observation(today, extract_id, total)
+    log("%s total for %s = %g (sample %d)"
+        % (conf["sheet"], target.isoformat(), total, len(series)))
+    if len(series) < 2:
+        return False, ("%s = %g, first sample of the day — no proof it has "
+                       "finished loading — extract not refreshed"
+                       % (target.isoformat(), total))
+    (t_prev, v_prev), (t_now, v_now) = series[-2], series[-1]
+    if v_now != v_prev:
+        return False, ("%s grew %g -> %g since %s — still loading — extract not "
+                       "refreshed" % (target.isoformat(), v_prev, v_now,
+                                      str(t_prev)[11:16]))
+    try:
+        gap = (dt.datetime.fromisoformat(t_now)
+               - dt.datetime.fromisoformat(t_prev)).total_seconds() / 60.0
+    except Exception:                       # noqa: BLE001
+        gap = STABILITY_GAP_MIN
+    if gap < STABILITY_GAP_MIN:
+        return False, ("%s = %g unchanged, but only %.0fm apart (need %dm) — "
+                       "extract not refreshed" % (target.isoformat(), v_now, gap,
+                                                  STABILITY_GAP_MIN))
+    return True, ("%s = %g, unchanged for %.0fm — finished loading"
+                  % (target.isoformat(), v_now, gap))
+
+
 def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,
                        page=None, log=lambda m: None) -> Tuple[bool, str]:
     """(fresh, reason) for a workbook that PUBLISHES its own refresh date.
@@ -372,6 +529,13 @@ def check_extract(extract_id: str, today: Optional[dt.date] = None, *,
         if ok and "not held" not in why:
             _record_ready(today, extract_id, why)
         return ok, why
+
+    # "Has yesterday stopped loading?" — NOT cached as READY, because unlike a
+    # coverage date this verdict is a claim about a moment: the day was still
+    # enough to post at 07:10, which says nothing about 04:11.
+    if cfg.get("stable_total"):
+        return _check_stable_total(extract_id, cfg, target, today, page=page,
+                                   log=log)
 
     try:
         from automations.org_sales_board import section_pull as _sp

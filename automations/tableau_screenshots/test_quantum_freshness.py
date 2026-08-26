@@ -172,30 +172,39 @@ class EveryBoardIsGatedTest(unittest.TestCase):
     then pulled successfully. A typo would make the probe error every morning,
     and an always-erroring gate fail-opens, which is no gate at all."""
 
+    # sheet names verified by --discover + a successful pull, per extract.
+    # att/nds/b2b moved to a per-DAY sheet on 2026-08-26 once "is the day there"
+    # proved unable to catch a half-loaded day; quantum still reads coverage.
     EXPECTED = {
-        "tableau:tracker_att": ("D2D1-PAGERV4", "Last Refresh (2)"),
-        "tableau:tracker_nds": ("NDSDailyTracker", "zzz Last Refresh (5)"),
-        "tableau:tracker_b2b": ("D2D1-PAGERV3", "Last Refresh (2)"),
+        "tableau:tracker_att": ("D2D1-PAGERV4", "Summary Product by Day"),
+        "tableau:tracker_nds": ("NDSDailyTracker", "New/Port/Air"),
+        "tableau:tracker_b2b": ("D2D1-PAGERV3", "Summary Product by Day"),
         "tableau:tracker_quantum": ("LumenSalesTracker", "Last Update"),
     }
+
+    @staticmethod
+    def _probe(cfg):
+        """The probe config, whichever kind this extract uses."""
+        return cfg.get("stable_total") or cfg.get("last_update")
 
     def test_all_four_extracts_ask_the_workbook_directly(self):
         for eid, (view, sheet) in self.EXPECTED.items():
             with self.subTest(eid):
-                lu = fr.EXTRACTS[eid].get("last_update")
-                self.assertIsNotNone(lu, "%s still uses a stand-in crosstab" % eid)
-                self.assertIn(view, lu["view_url"])
-                self.assertEqual(sheet, lu["sheet"])
+                probe = self._probe(fr.EXTRACTS[eid])
+                self.assertIsNotNone(probe,
+                                     "%s still uses a stand-in crosstab" % eid)
+                self.assertIn(view, probe["view_url"])
+                self.assertEqual(sheet, probe["sheet"])
 
     def test_the_probe_reads_the_view_the_camera_shoots(self):
         """The old design's second hole: it probed a different view than the one
         it photographed. Each gated board's view must now appear in its probe."""
         from automations.tableau_screenshots import pages as pg
         for eid, cfg in fr.EXTRACTS.items():
-            lu = cfg.get("last_update")
-            if not lu:
+            probe = self._probe(cfg)
+            if not probe:
                 continue
-            probed = lu["view_url"].split("/views/")[1].split("?")[0]
+            probed = probe["view_url"].split("/views/")[1].split("?")[0]
             board_views = [
                 (pg.by_id(b) or {}).get("url", "").split("/views/")[-1].split("?")[0]
                 for b in cfg["boards"]]
