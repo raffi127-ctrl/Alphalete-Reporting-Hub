@@ -129,6 +129,84 @@ class QuantumGateVerdictTest(unittest.TestCase):
         self.assertIn("not held", why)
 
 
+# The real 8/26 line every AT&T/NDS/B2B view publishes — two fields run together
+# with NO separator, which is what makes the segment bounding load-bearing.
+RANGE_LINE = ("Last Server Update: 2026-08-26 08:11 ETData Source Sales Date "
+              "Range: 2024-06-17  -  2026-08-25")
+
+RANGE_FIELD = "Data Source Sales Date Range"
+
+
+class DateRangeFormatTest(unittest.TestCase):
+    """The AT&T / NDS / B2B pagers publish a RANGE in ISO, not a single US date."""
+
+    def test_the_range_end_is_what_counts(self):
+        """Coverage is where the data STOPS — the range start is 2024."""
+        self.assertEqual(dt.date(2026, 8, 25),
+                         fr.parse_last_update(RANGE_LINE, RANGE_FIELD))
+
+    def test_a_neighbouring_field_is_not_borrowed(self):
+        """'Last Server Update' abuts the next label with no separator. Read
+        greedily it returns 8/25 (the range end); it must return 8/26."""
+        self.assertEqual(dt.date(2026, 8, 26),
+                         fr.parse_last_update(RANGE_LINE, "Last Server Update"))
+
+    def test_the_server_stamp_is_not_what_we_gate_on(self):
+        """A refresh can run on schedule and load nothing: on 8/26 the stamp said
+        TODAY while coverage stopped yesterday. Gating on the stamp is a gate
+        that passes every morning by construction."""
+        stamp = fr.parse_last_update(RANGE_LINE, "Last Server Update")
+        coverage = fr.parse_last_update(RANGE_LINE, RANGE_FIELD)
+        self.assertGreater(stamp, coverage)
+        for eid, cfg in fr.EXTRACTS.items():
+            lu = cfg.get("last_update")
+            if lu:
+                self.assertNotIn("Server Update", lu["field"],
+                                 "%s gates on the refresh stamp" % eid)
+
+
+class EveryBoardIsGatedTest(unittest.TestCase):
+    """After 8/26 all four tracker extracts read their OWN view's refresh sheet.
+
+    The sheet names here are not guesses — each was listed by `--discover` and
+    then pulled successfully. A typo would make the probe error every morning,
+    and an always-erroring gate fail-opens, which is no gate at all."""
+
+    EXPECTED = {
+        "tableau:tracker_att": ("D2D1-PAGERV4", "Last Refresh (2)"),
+        "tableau:tracker_nds": ("NDSDailyTracker", "zzz Last Refresh (5)"),
+        "tableau:tracker_b2b": ("D2D1-PAGERV3", "Last Refresh (2)"),
+        "tableau:tracker_quantum": ("LumenSalesTracker", "Last Update"),
+    }
+
+    def test_all_four_extracts_ask_the_workbook_directly(self):
+        for eid, (view, sheet) in self.EXPECTED.items():
+            with self.subTest(eid):
+                lu = fr.EXTRACTS[eid].get("last_update")
+                self.assertIsNotNone(lu, "%s still uses a stand-in crosstab" % eid)
+                self.assertIn(view, lu["view_url"])
+                self.assertEqual(sheet, lu["sheet"])
+
+    def test_the_probe_reads_the_view_the_camera_shoots(self):
+        """The old design's second hole: it probed a different view than the one
+        it photographed. Each gated board's view must now appear in its probe."""
+        from automations.tableau_screenshots import pages as pg
+        for eid, cfg in fr.EXTRACTS.items():
+            lu = cfg.get("last_update")
+            if not lu:
+                continue
+            probed = lu["view_url"].split("/views/")[1].split("?")[0]
+            board_views = [
+                (pg.by_id(b) or {}).get("url", "").split("/views/")[-1].split("?")[0]
+                for b in cfg["boards"]]
+            self.assertTrue(
+                any(v.split("/")[0] == probed.split("/")[0] for v in board_views),
+                "%s probes a workbook none of its boards come from" % eid)
+
+    def test_only_box_and_the_email_board_remain_ungated(self):
+        self.assertEqual({"b2b_box", "vzftr"}, set(fr.UNGATED))
+
+
 class QuantumIsWiredInTest(unittest.TestCase):
 
     def test_quantum_fiber_is_no_longer_listed_as_ungated(self):

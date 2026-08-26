@@ -8,39 +8,50 @@ day_orchestrator.readiness.report_ready() check Tableau SESSION WARMTH and then
 return "all sources ready" — so nothing whatsoever gated the boards on data
 freshness. Whatever Tableau rendered at 4:31 got photographed and posted.
 
-WHAT IT CHECKS. Not the picture — the EXTRACT behind the picture. These boards
-are captured as images (Download → Image), so there is no crosstab in the run to
-inspect. Instead we pull the same daily crosstab the ORG Sales Board already
-pulls off each of those three workbooks and ask the only question that matters:
-does the extract have rows for the latest COMPLETED reporting day? A board whose
-extract stops at the day before that is showing yesterday's numbers.
+WHAT IT CHECKS. Not the picture — the DATA behind the picture. These boards are
+captured as images (Download → Image), so there is no crosstab in the run to
+inspect. We ask each board's own view how far its data reaches, and hold the
+board when that is short of the latest COMPLETED reporting day. A board whose
+data stops the day before that is showing yesterday's numbers.
 
-ONE PROBE PER EXTRACT, NOT PER BOARD. Ten boards sit on three Tableau workbooks;
-an extract refresh is workbook-wide, so three pulls cover eight boards:
+Still a proxy in one respect, and worth knowing: this proves the DATA is current,
+not that the rendered image displays it. A view that silently renders the wrong
+week would still pass. Nothing here reads the PNG.
 
-  tableau:tracker_att   ATTTRACKER2_1-D2D          att_country,
-                                                   att_country_internet_only
-  tableau:tracker_nds   NDS-SNRES-ATT-OOFWorkbook  nds
-  tableau:tracker_b2b   ATTTRACKER-B2B             b2b_att_country,
-                                                   b2b_att_country_cru,
-                                                   b2b_d2d_consolidated,
-                                                   order_tiered_bonus
+ASK THE WORKBOOK, DON'T INFER (rewritten 2026-08-26). Every one of these views
+publishes its own refresh status on a crosstab sheet, and that is what we read:
 
-Each one REUSES a spec that org_sales_board already pulls successfully every
-morning (FIBER_SPEC / NDS_SPEC / B2B_SPEC) — same workbook, proven view URL,
-proven worksheet name, proven parser, week-pin and `:refresh=yes` included. That
-matters: a probe pointed at a guessed worksheet name fails every morning, and a
-gate that always errors is a gate that always fail-opens, i.e. no gate at all.
+  tableau:tracker_att      D2D1-PAGERV4          "Last Refresh (2)"
+  tableau:tracker_nds      NDSDailyTracker       "zzz Last Refresh (5)"
+  tableau:tracker_b2b      D2D1-PAGERV3          "Last Refresh (2)"
+  tableau:tracker_quantum  LumenSalesTracker     "Last Update"
+
+  Last Server Update: 2026-08-26 08:11 ETData Source Sales Date Range: 2024-06-17  -  2026-08-25
+  Last SFDC Object Update: 8/25/2026 | Latest Activities Data Update: 8/24/2026
+
+Gate on the DATA COVERAGE field, never the server-update stamp: a refresh can run
+on schedule and load nothing, and then the stamp says today while the data still
+stops yesterday. Which field that is differs per workbook and is named in the
+config — quantum's two fields differed by exactly the day in question on 8/26,
+and the wrong one would have passed the morning that failed.
+
+WHY THIS REPLACED THE OLD DESIGN. Until 8/26 each extract probed a STAND-IN view
+(FIBER_SPEC / NDS_SPEC / B2B_SPEC — crosstabs org_sales_board already pulled) and
+asked "does any row carry yesterday's date?", on the reasoning that a refresh is
+workbook-wide. Two holes, both real:
+  - it never looked at the view it photographs, so a pager showing the wrong week
+    was invisible to it; and
+  - "yesterday exists" is not "yesterday is finished" — one row satisfies it, so
+    a half-loaded day reads exactly like a complete one.
+The crosstab path below is KEPT for a future board whose workbook publishes no
+such sheet; nothing uses it today.
 
 NOT GATED, on purpose:
-  quantum_fiber  RES-LumenSalesTrackervMZ — nothing else in the repo reads this
-                 workbook, so we have no verified crosstab worksheet name for it.
-                 Wiring a guess would produce a permanently-erroring probe. Run
-                 `python -m automations.tableau_screenshots.freshness --discover
-                 quantum_fiber` on a machine with a warm session to list its real
-                 worksheets, then add it below. Until then it posts as before.
   b2b_box        already gated — `tableau:box_daily` on the ~7am catch-up.
   vzftr          email-sourced (an .xlsx), gated by run.py's _gate_email_sources.
+
+Run `--discover <board_id>` to list a view's real crosstab sheet names before
+assuming a board can't be gated — that is how all four above were found.
 
 FAIL-OPEN, ALWAYS. Megan's standing rule is that a gate must never silently skip
 a report. Past `fallback_hhmm` (06:30 — about two hours of circle-back after the
@@ -90,24 +101,53 @@ DEFAULT_FALLBACK_HHMM = "06:30"
 #               refreshed extract.
 #   boards      pages.py ids covered by this extract.
 EXTRACTS = {
+    # Probed against D2D1-PAGERV4 — the view we photograph — not a stand-in
+    # crosstab elsewhere in the workbook. Its "Last Refresh (2)" sheet reads
+    #   Last Server Update: 2026-08-26 08:11 ETData Source Sales Date Range: 2024-06-17  -  2026-08-25
+    # att_country_internet_only (D2D1-PAGERV2InternetOnly) is a different VIEW on
+    # the same data source, so this one probe still covers both boards — but it
+    # is now a pager view's own refresh sheet rather than an unrelated summary.
     "tableau:tracker_att": {
         "label": "ATTTRACKER2_1-D2D extract (AT&T Country trackers)",
-        "spec": ("automations.org_sales_board.section_pull", "FIBER_SPEC"),
-        "min_owners": 5,
+        "last_update": {
+            "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                         "ATTTRACKER2_1-D2D/D2D1-PAGERV4?:iid=1"),
+            "sheet": "Last Refresh (2)",
+            "field": "Data Source Sales Date Range",
+        },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["att_country", "att_country_internet_only"],
     },
+    # Probed against the NDS Daily Tracker view ITSELF — the view we photograph —
+    # rather than a stand-in crosstab off the same workbook. Its "zzz Last
+    # Refresh (5)" sheet publishes the data's own coverage:
+    #   Last Server Update: 2026-08-26 07:46 ET
+    #   Data Source Sales Date Range: 2024-06-17  -  2026-08-25
+    # Gate on the RANGE END, not the server-update stamp: a refresh can run on
+    # schedule and load nothing, and then the stamp says today while the data
+    # still stops yesterday. The range is what the board actually has.
     "tableau:tracker_nds": {
         "label": "NDS-SNRES-ATT-OOFWorkbook extract (NDS Tracker)",
-        "spec": ("automations.org_sales_board.section_pull", "NDS_SPEC"),
-        "min_owners": 3,
+        "last_update": {
+            "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                         "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1"),
+            "sheet": "zzz Last Refresh (5)",
+            "field": "Data Source Sales Date Range",
+        },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["nds"],
     },
+    # Same treatment, against the B2B pager we photograph.
     "tableau:tracker_b2b": {
         "label": "ATTTRACKER-B2B extract (B2B AT&T trackers)",
-        "spec": ("automations.org_sales_board.section_pull", "B2B_SPEC"),
-        "min_owners": 3,
+        "last_update": {
+            "view_url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                         "ATTTRACKER-B2B/D2D1-PAGERV3/"
+                         "87ae0671-15de-4d80-bdc0-702d0946dd1d/"
+                         "B2BLeaderRecognition?:iid=1"),
+            "sheet": "Last Refresh (2)",
+            "field": "Data Source Sales Date Range",
+        },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["b2b_att_country", "b2b_att_country_cru",
                    "b2b_d2d_consolidated", "order_tiered_bonus"],
@@ -204,7 +244,12 @@ def _record_ready(today: dt.date, extract_id: str, reason: str) -> None:
 
 # ---------------- the probe ----------------
 
-_LAST_UPDATE_RE_TMPL = r"{}\s*:\s*(\d{{1,2}}/\d{{1,2}}/\d{{4}})"
+# A date in either shape these sheets use: 8/25/2026 or 2026-08-25.
+_DATE_TOKEN = r"(\d{1,2}/\d{1,2}/\d{4})|(\d{4}-\d{2}-\d{2})"
+# Where one field's value ends: a separator, or the next "Some Label:". NDS runs
+# two fields together with no separator at all ("...07:46 ETData Source Sales
+# Date Range: ..."), so the label pattern is what actually bounds it.
+_NEXT_FIELD = r"\||[A-Z][A-Za-z/ ]{3,40}\s*:"
 
 
 def _read_crosstab_text(path: Path) -> str:
@@ -224,23 +269,38 @@ def _read_crosstab_text(path: Path) -> str:
 
 
 def parse_last_update(text: str, field: str) -> Optional[dt.date]:
-    """The date `field` reports in a "Last Update" sheet, or None.
+    """The LATEST date `field` reports in a "Last Update"-style sheet, or None.
 
-    The sheet is one line naming several dates, e.g.
-      Last SFDC Object Update: 8/25/2026 | Latest Activities Data Update: 8/24/2026
+    Two real shapes, both live:
+      quantum  Last SFDC Object Update: 8/25/2026 | Latest Activities Data Update: 8/24/2026
+      nds      Last Server Update: 2026-08-26 07:46 ETData Source Sales Date Range: 2024-06-17  -  2026-08-25
+
     Which field matters is per-workbook (see the EXTRACTS entry) — they do NOT
-    move together, and on 2026-08-26 the difference between them was exactly the
-    difference between "gate passes" and "gate catches it"."""
+    move together, and on 2026-08-26 the difference between quantum's two fields
+    was exactly the difference between "gate passes" and "gate catches it".
+
+    Reads only that field's OWN segment, bounded by the next label, because the
+    fields sit on one line and a greedy scan would happily return a neighbour's
+    date. Within the segment the MAX token wins, so a range ("2024-06-17 -
+    2026-08-25") yields the end of the range, which is the coverage that matters."""
     import re
-    m = re.search(_LAST_UPDATE_RE_TMPL.format(re.escape(field)), text or "",
-                  re.IGNORECASE)
+    m = re.search(re.escape(field) + r"\s*:", text or "", re.IGNORECASE)
     if not m:
         return None
-    try:
-        mth, day, yr = (int(x) for x in m.group(1).split("/"))
-        return dt.date(yr, mth, day)
-    except (ValueError, TypeError):
-        return None
+    rest = (text or "")[m.end():]
+    nxt = re.search(_NEXT_FIELD, rest)
+    segment = rest[:nxt.start()] if nxt else rest
+    found = []
+    for us, iso in re.findall(_DATE_TOKEN, segment):
+        try:
+            if us:
+                mth, day, yr = (int(x) for x in us.split("/"))
+            else:
+                yr, mth, day = (int(x) for x in iso.split("-"))
+            found.append(dt.date(yr, mth, day))
+        except (ValueError, TypeError):
+            continue                        # an impossible date is not a date
+    return max(found) if found else None
 
 
 def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,
