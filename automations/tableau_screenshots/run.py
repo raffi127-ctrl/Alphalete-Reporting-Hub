@@ -366,6 +366,54 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
               flush=True)
 
 
+def withhold_still_behind(selected: list, still_behind: dict) -> list:
+    """`selected` minus the boards whose Tableau data is still behind.
+
+    Megan 2026-08-26: "the updated ones are sent and the non updated ones are
+    reported in the slack channel and NOT sent." Only the SEND set is trimmed —
+    the caller leaves these boards in post_pages on purpose, so each keeps its
+    header line and its "Tableau hasn't updated this one yet" note. Dropping them
+    from the header too would make a missing board look like a board that was
+    never supposed to be there, which is the failure the note exists to prevent."""
+    behind = set(still_behind or ())
+    for bid in behind:
+        title = (pages_mod.by_id(bid) or {}).get("title") or bid
+        print(f"  ⛔ NOT sending {title} — {still_behind[bid]}; the thread "
+              f"reports it as not updated", flush=True)
+    return [p for p in selected if p["id"] not in behind]
+
+
+def _alert_not_sent(today: dt.date, still_behind: dict, *, dry_run: bool) -> None:
+    """Tell #claudecorrections a board was WITHHELD from the catch-up because its
+    data never caught up — the end-of-the-line version of _alert_held.
+
+    Different message from the morning's on purpose. The morning alert says "held,
+    the ~7am catch-up will post it"; this one says the catch-up came and went and
+    the board is not going out today at all. Threaded under the same incident so a
+    board that is behind for days is one conversation, not one post per run."""
+    lines = [f"*Tableau Country Trackers — {len(still_behind)} board(s) NOT sent* "
+             f"({today.isoformat()})"]
+    for bid, why in still_behind.items():
+        title = (pages_mod.by_id(bid) or {}).get("title") or bid
+        lines.append(f"• {title} — {why}")
+    lines += [
+        "",
+        "These were held this morning and their Tableau data STILL hasn't "
+        "refreshed, so the catch-up did not post them either. Every channel's "
+        "thread lists them as not updated — nothing stale went out.",
+        "They post on their own once Tableau catches up. To force one out as-is:",
+        "`python -m automations.tableau_screenshots.run --only "
+        + ",".join(still_behind) + " --fresh`",
+    ]
+    try:
+        from automations.day_orchestrator import notify
+        notify.post_alert("", lines, tag="tracker-freshness", dry_run=dry_run,
+                          incident="tracker-freshness")
+    except Exception as e:                            # noqa: BLE001
+        print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
+              flush=True)
+
+
 def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
                          *, dry_run: bool) -> None:
     """Queue the B2B AT&T / B2B Box boards for texting on Lucy 2 (Carlos 2026-08-09).
@@ -611,13 +659,12 @@ def main(argv=None) -> int:
                   f"held for stale data: {', '.join(held)}", flush=True)
             if args.late_only:
                 # Re-measure ONLY what this morning held — usually nothing, so
-                # this costs a pull on the rare day it matters. The catch-up
-                # still POSTS them either way (it is the last stop; a late board
-                # beats a missing one), but a board that is STILL behind must not
-                # land with the "Tableau is behind" line wiped off the header.
-                # Otherwise the morning gate just delays the problem: on
-                # 2026-08-26 quantum_fiber was a full day behind at 08:30, so a
-                # 7am catch-up would have posted a 0-sales board looking normal.
+                # this costs a pull on the rare day it matters. What comes back
+                # still behind is NOT posted (see the withhold below): the old
+                # "last stop, a late board beats a missing one" rule is what put
+                # a 0-sales quantum_fiber board in front of 15 channels on
+                # 2026-08-26, three hours after the morning gate held it. A board
+                # nobody has refreshed is not a late board, it is a wrong one.
                 try:
                     still_behind, _v = _fr.stale_boards(list(held), today,
                                                         verbose=True)
@@ -627,8 +674,8 @@ def main(argv=None) -> int:
                     still_behind = dict(held)
                 for bid in still_behind:
                     title = (pages_mod.by_id(bid) or {}).get("title") or bid
-                    print(f"  ⚠ {title} is STILL behind — posting it (last stop) "
-                          f"with the header note kept", flush=True)
+                    print(f"  ⚠ {title} is STILL behind — it will be reported in "
+                          f"the thread, not sent", flush=True)
     elif not args.only:
         held = _hold_stale_boards(today, dry_run=args.dry_run)
 
@@ -773,6 +820,18 @@ def main(argv=None) -> int:
     # this run, so the omitted board isn't listed with a missing image.
     post_pages = [p for p in pages_mod.PAGES if p["id"] not in set(gated_out)]
 
+    # STILL BEHIND -> REPORTED, NOT SENT (Megan 2026-08-26: "the updated ones are
+    # sent and the non updated ones are reported in the slack channel and NOT
+    # sent"). The morning run already withholds what the gate held; this is the
+    # ~7am catch-up's half, which until now posted them regardless as the "last
+    # stop" — so a board nobody had refreshed still reached every channel, just
+    # later. Deliberately NOT removed from post_pages: the board keeps its header
+    # line and its "Tableau hasn't updated this one yet" note, because being told
+    # a number is missing is the entire point. An explicit --only still wins.
+    if still_behind and not args.only:
+        selected = withhold_still_behind(selected, still_behind)
+        _alert_not_sent(today, still_behind, dry_run=args.dry_run)
+
     # Reuse today's images when another org already captured them — no browser, no
     # Tableau session at all, so elevate/indelible finish in seconds. --fresh (and
     # --full, which changes how the boards are captured) always re-captures.
@@ -852,6 +911,29 @@ def main(argv=None) -> int:
     except Exception as e:
         print(f"  (sheet-write failed: {type(e).__name__}: {str(e)[:120]})",
               flush=True)
+
+    if not captures and still_behind and not failed:
+        # Nothing left to send because everything this run could post is STILL
+        # behind. That is not a failure — it is the gate working — but the
+        # channel must hear it, so update the header in place and post nothing.
+        # Same path --notice uses, so there is one implementation of "tell the
+        # channel without sending a board".
+        print(f"\n⛔ nothing sent: {len(still_behind)} board(s) still behind "
+              f"({', '.join(still_behind)}) — reporting in-channel", flush=True)
+        for org in orgs:
+            with _org_slack_token(org, sp.ORG_LABEL[org]) as missing_tok:
+                if missing_tok:
+                    print(f"  [{org}] SKIPPED — {missing_tok}", flush=True)
+                    continue
+                res = sp.annotate_today(post_pages, today, org=org,
+                                        dry_run=args.dry_run)
+            for r in res.get("results", []):
+                print(f"  [{org}] {r['channel']}: {r['status']}", flush=True)
+        run_manifest.write_manifest(
+            report_id, ok=False, failed=[], kind="tracker", retry_args=[],
+            note="nothing sent — %d board(s) still behind: %s"
+                 % (len(still_behind), ", ".join(still_behind)))
+        return 0
 
     if not captures:
         run_manifest.write_manifest(

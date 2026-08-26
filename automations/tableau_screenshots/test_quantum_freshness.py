@@ -145,5 +145,58 @@ class QuantumIsWiredInTest(unittest.TestCase):
             fr.EXTRACTS["tableau:tracker_quantum"]["last_update"]["field"])
 
 
+class WithholdStillBehindTest(unittest.TestCase):
+    """Megan 2026-08-26: "the updated ones are sent and the non updated ones are
+    reported in the slack channel and NOT sent."
+
+    Before this, the ~7am catch-up posted whatever the morning had held, on the
+    rule that a late board beats a missing one. That rule is right for Box, whose
+    data genuinely lands at 7. It is wrong for a board nobody has refreshed: on
+    8/26 it put a 0-sales quantum_fiber in front of 15 channels three hours after
+    the gate had correctly held it."""
+
+    def setUp(self):
+        from automations.tableau_screenshots import run as _run
+        from automations.tableau_screenshots import pages as pg
+        self.run, self.pg = _run, pg
+
+    def test_a_still_behind_board_is_dropped_from_the_send_set(self):
+        selected = list(self.pg.PAGES)
+        out = self.run.withhold_still_behind(selected, {"quantum_fiber": "behind"})
+        self.assertNotIn("quantum_fiber", [p["id"] for p in out])
+
+    def test_every_other_board_still_goes(self):
+        """The updated ones are SENT — withholding one must not cost the rest."""
+        selected = list(self.pg.PAGES)
+        out = self.run.withhold_still_behind(selected, {"quantum_fiber": "behind"})
+        self.assertEqual(len(selected) - 1, len(out))
+        self.assertIn("b2b_box", [p["id"] for p in out])
+
+    def test_nothing_behind_changes_nothing(self):
+        selected = list(self.pg.PAGES)
+        self.assertEqual([p["id"] for p in selected],
+                         [p["id"] for p in
+                          self.run.withhold_still_behind(selected, {})])
+
+    def test_an_unknown_id_is_harmless(self):
+        selected = list(self.pg.PAGES)
+        out = self.run.withhold_still_behind(selected, {"no_such_board": "behind"})
+        self.assertEqual(len(selected), len(out))
+
+    def test_the_board_is_NOT_dropped_from_the_header(self):
+        """The send set is trimmed; the header list is not. A withheld board has
+        to stay visible with its note — 'reported in the slack channel' is half
+        the instruction, and a silently absent board is the other failure."""
+        from automations.tableau_screenshots import slack_post as sp
+        self.pg.mark_late(["quantum_fiber"])
+        self.addCleanup(self.pg.clear_runtime_late)
+        header = sp.header_text(self.pg.PAGES, dt.date(2026, 8, 26),
+                                pending_late=["quantum_fiber"],
+                                note=sp.STALE_NOTICE)
+        self.assertIn("ATT Quantum Fiber Daily Tracker", header)
+        self.assertIn(sp.STALE_LATE_NOTE, header)
+        self.assertIn(sp.STALE_NOTICE, header)
+
+
 if __name__ == "__main__":
     unittest.main()
