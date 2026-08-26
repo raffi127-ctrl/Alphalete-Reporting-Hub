@@ -149,6 +149,83 @@ _CROP_JS = r"""
 """
 
 
+# Every date-ish label the rendered dashboard shows. Same mechanism the crop
+# probe uses (leaf text inside the viz iframe) — the only place in this pipeline
+# that reads the PICTURE rather than the data behind it.
+_DATE_TEXT_JS = r"""
+() => {
+  const leaves = [...document.querySelectorAll('*')]
+      .filter(e => e.children.length === 0 && (e.textContent||'').trim());
+  return leaves.map(e => e.textContent.trim()).join('\n').slice(0, 300000);
+}
+"""
+
+# What each board renders, filled at capture time: {board_id: [date, ...]}.
+# Read by run.py after the capture loop. Module-level like CROP_DEBUG so the
+# probe stays a side-channel and can never change what gets captured.
+RENDERED_DATES: dict = {}
+
+
+def parse_rendered_dates(text: str, year: int) -> list:
+    """Every day-level date the dashboard displays, as date objects, sorted.
+
+    Three shapes these boards actually render (verified against the 8/26 PNGs):
+      "Mon (08-24)"          att_country, b2b_att_country   -> 08-24
+      "08/24 - 08/25"        nds section headers            -> both
+      "8/30/2026"            quantum's 6-week history       -> full date
+
+    `year` supplies the missing year for the first two — these are current-week
+    boards, so the run's own year is right except across a New Year boundary,
+    where a January board carrying December labels would read as this year. That
+    only ever makes a date look NEWER, i.e. it can miss a stale board, never
+    invent one. Deliberate: a false hold costs 15 channels a real board."""
+    import datetime as _dt
+    import re
+    out = set()
+    for mth, day, yr in re.findall(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", text or ""):
+        try:
+            out.add(_dt.date(int(yr), int(mth), int(day)))
+        except ValueError:
+            pass
+    for mth, day in re.findall(r"(?<!\d)(\d{1,2})[/-](\d{1,2})(?![/-]?\d)",
+                               text or ""):
+        try:
+            out.add(_dt.date(year, int(mth), int(day)))
+        except ValueError:
+            pass                            # 13/45 and friends are not dates
+    return sorted(out)
+
+
+def probe_rendered_dates(page, spec: dict, year: int | None = None,
+                         verbose: bool = True) -> list:
+    """Record the dates the LIVE dashboard is showing. Best-effort, always.
+
+    This reads the rendered viz, so it is the one check that could catch a board
+    whose data is current but whose picture is not — a pager stuck on last week,
+    a half-rendered viz. It only ever RECORDS today; nothing is held on it until
+    we have watched it agree with reality (a false hold suppresses a real board
+    from 15 channels, which is worse than the miss it would prevent)."""
+    import datetime as _dt
+    year = year or _dt.date.today().year
+    try:
+        el = page.query_selector(_IFRAME)
+        frame = el.content_frame() if el else None
+        if frame is None:
+            return []
+        text = frame.evaluate(_DATE_TEXT_JS)
+    except Exception as e:                  # noqa: BLE001 — never touch the capture
+        if verbose:
+            print(f"   date probe failed ({type(e).__name__}) — not recorded",
+                  flush=True)
+        return []
+    dates = parse_rendered_dates(text, year)
+    RENDERED_DATES[spec.get("id", "")] = dates
+    if verbose and dates:
+        print(f"   board shows dates up to {dates[-1].isoformat()} "
+              f"({len(dates)} label(s) read)", flush=True)
+    return dates
+
+
 def _page1_crop_fraction(page, spec: dict, verbose: bool):
     """Fraction (0-1) of the dashboard height where page 2 starts, or None if this
     is a single-page dashboard (marker not found). Scale-invariant, so it maps
@@ -489,6 +566,10 @@ def capture_page(page, spec: dict, out_dir: Path, *,
             if verbose:
                 print(f"   ✓ Download→Image  {out_path.name}  "
                       f"{_dims(out_path)}px  {kb} KB", flush=True)
+            # Side-channel only: record what the rendered board is showing. Runs
+            # AFTER the image is safely on disk, and swallows everything, so the
+            # one check that reads the picture can never cost us the picture.
+            probe_rendered_dates(page, spec, verbose=verbose)
             return out_path
         except Exception as e:
             last = e

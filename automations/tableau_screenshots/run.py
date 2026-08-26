@@ -383,6 +383,60 @@ def withhold_still_behind(selected: list, still_behind: dict) -> list:
     return [p for p in selected if p["id"] not in behind]
 
 
+def _report_rendered_dates(today: dt.date, captures: list, *,
+                           dry_run: bool) -> list:
+    """Compare what each board VISIBLY shows against the day it should cover.
+
+    Every other gate here reads the data behind the picture. This reads the
+    picture — the gap that let quantum_fiber through on 2026-08-26 would have
+    been caught by the data gate too, but a board whose data is current and whose
+    VIEW is stuck on last week is invisible to all of them.
+
+    REPORT ONLY, deliberately. A board is flagged, never held. The rule ("the
+    newest date the board displays is older than the day it should cover") is
+    sound on the four boards read off the 8/26 PNGs, but it has not been watched
+    across a month-end, a Monday rollover, or the six boards nobody has sampled.
+    A false hold costs 15 channels a real board — strictly worse than the miss it
+    would prevent. Flip to holding once the flags have matched reality for a
+    while; the withhold machinery is already there (withhold_still_behind)."""
+    from automations.tableau_screenshots import capture as _cap
+    from automations.tableau_screenshots import freshness as _fr
+    target = _fr.target_day(today)
+    if not target:
+        return []
+    suspect = []
+    for spec, _png in captures:
+        shown = _cap.RENDERED_DATES.get(spec["id"]) or []
+        if not shown:
+            continue                        # read nothing -> say nothing
+        newest = max(shown)
+        if newest < target:
+            suspect.append((spec, newest))
+    if not suspect:
+        return []
+    lines = [f"*Tableau Country Trackers — {len(suspect)} board(s) may be showing "
+             f"an old period* ({today.isoformat()})"]
+    for spec, newest in suspect:
+        lines.append(f"• {spec['title']} — newest date on the board is "
+                     f"{newest.isoformat()}, expected {target.isoformat()}")
+    lines += [
+        "",
+        "These POSTED — this check only watches for now. It reads the rendered "
+        "board, not the data behind it, so it sees a view stuck on the wrong "
+        "week, which every other gate is blind to.",
+        "Worth eyeballing one of them against Tableau; if it's right, the check "
+        "needs tuning, and if it's wrong we should start holding on it.",
+    ]
+    try:
+        from automations.day_orchestrator import notify
+        notify.post_alert("", lines, tag="tracker-rendered-date", dry_run=dry_run,
+                          incident="tracker-rendered-date")
+    except Exception as e:                            # noqa: BLE001
+        print(f"  (rendered-date alert failed: {type(e).__name__}: {str(e)[:120]})",
+              flush=True)
+    return suspect
+
+
 def _alert_not_sent(today: dt.date, still_behind: dict, *, dry_run: bool) -> None:
     """Tell #claudecorrections a board was WITHHELD from the catch-up because its
     data never caught up — the end-of-the-line version of _alert_held.
@@ -874,6 +928,15 @@ def main(argv=None) -> int:
         # Only a COMPLETE capture is worth reusing — stamp it so the next org can.
         if captures and not failed:
             _write_stamp(out_dir, captures, today)
+
+    # What the RENDERED boards are showing vs the day they should cover. Watches
+    # only — see _report_rendered_dates for why nothing is held on it yet.
+    _rendered_suspect = _report_rendered_dates(today, captures,
+                                               dry_run=args.dry_run)
+    for spec, newest in _rendered_suspect:
+        print(f"  ⚠ {spec['title']}: board's newest date is {newest.isoformat()} "
+              f"— expected {today - dt.timedelta(days=1)} or newer (posted "
+              f"anyway; this check is watching, not holding)", flush=True)
 
     # Per-tracker summary (lands in the mini log) + written to the 'Inspect Out'
     # sheet (readable from any machine, since lucy status truncates to 280 chars).
