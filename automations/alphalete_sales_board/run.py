@@ -283,7 +283,21 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true", help="show the browser")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit preview (the default; here for the house flag)")
+    ap.add_argument("--probe", action="store_true",
+                    help="READ-ONLY: log in and dump what the ReportingHub page "
+                         "actually contains (for when a selector goes missing)")
     args = ap.parse_args(argv)
+
+    if args.probe:
+        # Deliberately ahead of the window gate: you diagnose when you can, not
+        # only between 7 and 9:30.
+        try:
+            sara.probe(headless=not args.headed, log=_log)
+        except Exception as e:  # noqa: BLE001
+            _log("PROBE FAILED: %s: %s" % (type(e).__name__, str(e)[:400]))
+            return 1
+        _log("=== done ===")
+        return 0
 
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())

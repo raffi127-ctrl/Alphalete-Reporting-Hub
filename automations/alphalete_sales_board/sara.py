@@ -139,8 +139,42 @@ def _set_telerik_date(page, field_id: str, day: dt.date) -> None:
     )
 
 
+def page_state(page) -> str:
+    """A one-line description of where we actually are. Every "selector not
+    found" failure is really "not on the page you think you are", and the URL
+    plus which landmarks exist is what tells the two apart."""
+    marks = {
+        "service combo": COMBO_INPUT,
+        "start date": "#" + FIELD_START,
+        "submit": SUBMIT,
+        "att grid": GRID_ATT,
+        "login form": "#ctl00_MainContent_txtUserName",
+    }
+    found = []
+    for name, sel in marks.items():
+        try:
+            if page.locator(sel).count():
+                found.append(name)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        title = page.title()
+    except Exception:  # noqa: BLE001
+        title = "?"
+    return "url=%s | title=%r | found: %s" % (
+        page.url, title, ", ".join(found) or "NONE of the expected landmarks")
+
+
 def _select_service(page, label: str) -> None:
     """Pick a value in the Telerik RadComboBox by its visible text."""
+    try:
+        page.wait_for_selector(COMBO_INPUT, timeout=20_000)
+    except Exception as e:  # noqa: BLE001
+        raise SaraError(
+            "the Service dropdown (%s) never appeared, so the page we are on is "
+            "not the Order Dashboard. %s -- run `--probe` to dump the page's "
+            "real controls. (%s)" % (COMBO_INPUT, page_state(page),
+                                     type(e).__name__))
     page.click(COMBO_INPUT)
     page.wait_for_timeout(800)
     picked = page.evaluate(
@@ -266,3 +300,60 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
             ctx.close()
 
     return {"agents": merge_dtv(att, dtv), "records": records, "day": day}
+
+
+def probe(*, headless: bool = True, log=print) -> Dict:
+    """READ-ONLY: log in, open the ReportingHub, and report what is ACTUALLY
+    there -- the landing url, the page title, which expected landmarks exist,
+    and every id/name that looks like a Telerik combo or grid.
+
+    Exists because a bare 'waiting for locator(...)' says only that something
+    is missing, never what is present instead, and the answer is usually that
+    login landed somewhere else entirely (a dealer picker, a T&C page, a
+    session bounce). Clicks nothing, submits nothing, writes nothing.
+    """
+    from patchright.sync_api import sync_playwright
+
+    cr = C.creds()
+    C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    out = {}
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            base = _login(page, cr["email"], cr["password"])
+            out["base_url"] = base
+            log("LOGIN OK -> %s" % base)
+            log("after login: %s" % page_state(page))
+
+            page.goto(base + HUB_PATH, wait_until="networkidle")
+            page.wait_for_timeout(3000)
+            out["hub_state"] = page_state(page)
+            log("ReportingHub: %s" % out["hub_state"])
+
+            controls = page.evaluate(
+                """() => {
+                     const out = {combos: [], grids: [], dates: [], buttons: []};
+                     for (const el of document.querySelectorAll('[id]')) {
+                       const id = el.id;
+                       if (/rcb.*Input$/i.test(id)) out.combos.push(id);
+                       else if (/^ctl00.*rg[A-Za-z_]*_ctl00$/.test(id)) out.grids.push(id);
+                       else if (/rdp.*Date$/i.test(id)) out.dates.push(id);
+                       else if (/btn|Submit/i.test(id) && el.tagName !== 'DIV') out.buttons.push(id);
+                     }
+                     out.title = document.title;
+                     out.frames = document.querySelectorAll('iframe').length;
+                     return out;
+                   }""")
+            out["controls"] = controls
+            for key in ("combos", "dates", "grids", "buttons"):
+                vals = controls.get(key) or []
+                log("%-8s %d: %s" % (key, len(vals), ", ".join(vals[:8]) or "(none)"))
+            log("iframes on page: %s" % controls.get("frames"))
+            if controls.get("frames"):
+                log("NOTE: the dashboard may live inside an IFRAME -- our "
+                    "selectors run against the top document only.")
+        finally:
+            ctx.close()
+    return out
