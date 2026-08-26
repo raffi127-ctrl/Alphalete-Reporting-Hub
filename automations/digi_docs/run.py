@@ -153,7 +153,29 @@ def _phases(args) -> int:
           f"({'DRY RUN' if dry else 'LIVE'})\n")
 
     added, done, refused = [], [], []
-    with ov.session(headless=not dry) as page:
+    # `fatal` is what makes the WORST case the loudest one. Everything below
+    # already survives one rep failing, but a session that won't open, or a
+    # browser that dies mid-batch, threw straight past the Slack post — so the
+    # run where NOBODY got their documents was the one run that told nobody.
+    # Only the Hub card went red. Catch it, and fall through to the write-back
+    # so the channel still hears about it.
+    fatal = ""
+    try:
+        _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
+              do_send=do_send, send=send, dry=dry,
+              added=added, done=done, refused=refused)
+    except Exception as e:                          # noqa: BLE001
+        fatal = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
+        print(f"\n⛔ the run stopped before it finished — {fatal}")
+
+    return _write_back(args, ws, send, added, done, refused, tinted_dry=dry,
+                       do_send=do_send, fatal=fatal)
+
+
+def _work(ov, *, page_ctx, do_add, do_send, send, dry, added, done, refused):
+    """The two phases. Split out only so the caller can wrap the whole thing
+    in one try/except without burying the loops inside it."""
+    with page_ctx as page:
         if do_add:
             print("PHASE: add reps")
             for c in send:
@@ -214,21 +236,24 @@ def _phases(args) -> int:
                         except Exception:           # noqa: BLE001
                             pass
 
-    # Write-back: tint the Digi Docs CELL for whoever actually got their
-    # bundle. Never the name, never the checkbox.
-    #
-    # SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only
-    # --live` -- a phase that deliberately mails nobody and ticks nothing --
-    # would still have posted "*0* new starts sent digi docs" into #11280 off
-    # an empty `done`. Adding reps is not a send and must not announce itself
-    # as one.
+def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
+                do_send, fatal):
+    """Tint the Digi Docs CELL for whoever actually got their bundle, then say
+    so in Slack. Never the name, never the checkbox.
+
+    SEND PHASE ONLY. Both of these ran unconditionally, so `--add-only --live`
+    -- a phase that deliberately mails nobody and ticks nothing -- would still
+    have posted "*0* new starts sent digi docs" into #11280 off an empty
+    `done`. Adding reps is not a send and must not announce itself as one.
+    """
+    dry = tinted_dry
     tinted = 0
     if do_send:
         from automations.digi_docs import mark, slack_post
         sent_names = {n for n, _m, _t in done}
         tinted = mark.tint(ws, [c for c in send if c.name in sent_names],
                            dry_run=dry)
-        slack_post.post(len(done), refused, done, dry_run=dry)
+        slack_post.post(len(done), refused, done, fatal=fatal, dry_run=dry)
     else:
         print("\n(add phase — no tint, no Slack: nothing was sent)")
 
@@ -242,7 +267,7 @@ def _phases(args) -> int:
     for name, matched, ticked in done:
         as_ = f" (as {matched})" if matched and matched != name else ""
         print(f"  ✓ {name}{as_}: ticked {', '.join(ticked)}")
-    return 0 if not refused else 1
+    return 0 if not (refused or fatal) else 1
 
 
 if __name__ == "__main__":

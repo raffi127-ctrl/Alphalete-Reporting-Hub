@@ -17,13 +17,32 @@ HEADER = "🗂️ Digi Docs"
 
 
 def post(sent: int, refused: List[str], attested: List[Tuple],
-         *, dry_run: bool = True) -> bool:
+         *, fatal: str = "", dry_run: bool = True) -> bool:
+    # NOTHING TO SAY -> SAY NOTHING. Nobody needing documents is a normal quiet
+    # week, not news, and "*0* new starts sent digi docs" is exactly the blank
+    # board that trains people to stop reading the channel. A run that stopped
+    # early is never quiet, so `fatal` counts as something to say even when the
+    # counts are zero.
+    if not (sent or refused or fatal):
+        print("\n(nothing sent and nothing left by hand — no Slack post)")
+        return False
+
     # One line, not three. Everything the run did to a person happens together
     # -- the bundle goes out and the boxes get ticked in the same pass -- so
     # splitting it across a headline and a trailing note just made the reader
     # assemble it themselves (Megan 2026-08-25).
-    lines = [f"*{sent}* new start{'' if sent == 1 else 's'} sent digi docs "
-             f">> BG & drug test checked"]
+    if fatal:
+        # The loudest case, and the one that used to be silent: the run threw
+        # before it reached this post, so the morning where NOBODY got their
+        # documents was the one morning the channel heard nothing. Lead with
+        # it -- the count underneath is what got out before it stopped, not a
+        # result.
+        lines = [f"*Digi Docs stopped before it finished* — {fatal}",
+                 f"*{sent}* sent before it stopped; everyone else was not "
+                 f"attempted. Needs a re-run."]
+    else:
+        lines = [f"*{sent}* new start{'' if sent == 1 else 's'} sent digi docs "
+                 f">> BG & drug test checked"]
     if refused:
         lines.append("")
         lines.append(f"*Needs doing by hand ({len(refused)}):*")
