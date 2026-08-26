@@ -12,6 +12,7 @@ import datetime as dt
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from automations.shared import alert_thread as at
 from automations.shared import incident_thread as inc
@@ -938,6 +939,75 @@ class OnlyLucyMarksItWorked(unittest.TestCase):
         ok, added = self._run("U088E2KJEV8")   # evelyns.sobrino, the Windows box
         self.assertFalse(ok)
         self.assertEqual(added, [], "a mark nobody can remove is worse than none")
+
+
+class CloseStranded(unittest.TestCase):
+    """The parents whose ✅ landed but whose text never got the edit.
+
+    Only the poster can edit a post, so the contract under test is: close what
+    THIS identity wrote, name the rest, and never touch a parent with no ✅.
+    """
+
+    OURS = inc.LUCY_USER_ID      # FakeClient.auth_test authenticates as Lucy
+    THEIRS = "ULAPTOP"
+
+    def setUp(self):
+        self.c = FakeClient()
+        inc._HISTORY_CACHE.clear()
+        self.addCleanup(inc._HISTORY_CACHE.clear)
+
+    def _post(self, key, user, reactions=(), state="open"):
+        for r in reactions:
+            self.c.reactions.append(("1.0", r))
+        return {"ts": "1.0", "user": user,
+                "text": "*{}* — broke\n\n_incident · {} · {} 2026-08-26_".format(
+                    key, key, state),
+                "reactions": [{"name": r} for r in reactions]}
+
+    def _run(self, messages, **kw):
+        with mock.patch.object(inc, "_history", return_value=messages), \
+             mock.patch.object(inc, "_mark_resolved_in_index"):
+            return inc.close_stranded(client=self.c,
+                                      day=dt.date(2026, 8, 26), **kw)
+
+    def test_closes_our_own_checked_post(self):
+        out = self._run([self._post("a", self.OURS, ["white_check_mark"])])
+        self.assertEqual(out["closed"], ["a"])
+        self.assertTrue(self.c.updates, "the parent should have been edited")
+        new = self.c.updates[-1][-1]
+        self.assertIn("RESOLVED", new)
+        self.assertIn("· a · resolved", new)
+
+    def test_names_but_never_edits_another_machines_post(self):
+        out = self._run([self._post("a", self.THEIRS, ["white_check_mark"])])
+        self.assertEqual((out["closed"], out["not_ours"]), ([], ["a"]))
+        self.assertEqual(self.c.updates, [],
+                         "editing someone else's post can only fail")
+
+    def test_a_post_without_the_check_is_a_real_open_problem(self):
+        """No ✅ means the fix never landed. Closing it would erase it."""
+        out = self._run([self._post("a", self.OURS, ["pending"])])
+        self.assertEqual((out["closed"], out["not_ours"]), ([], []))
+        self.assertEqual(self.c.updates, [])
+
+    def test_already_resolved_marker_is_not_rewritten(self):
+        out = self._run([self._post("a", self.OURS, ["white_check_mark"],
+                                    state="resolved")])
+        self.assertEqual(out["closed"], [])
+        self.assertEqual(self.c.updates, [])
+
+    def test_in_progress_marks_come_off_a_closed_post(self):
+        self._run([self._post("a", self.OURS, ["white_check_mark", "pending"])])
+        self.assertNotIn(("1.0", "pending"), self.c.reactions,
+                         "a fixed problem must not still read as in progress")
+        self.assertIn(("1.0", "white_check_mark"), self.c.reactions,
+                      "the ✅ is the whole proof — it stays")
+
+    def test_dry_run_touches_nothing(self):
+        out = self._run([self._post("a", self.OURS, ["white_check_mark"])],
+                        dry_run=True)
+        self.assertEqual(out["closed"], ["a"])
+        self.assertEqual(self.c.updates, [])
 
 
 if __name__ == "__main__":  # pragma: no cover

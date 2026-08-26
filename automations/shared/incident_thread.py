@@ -1667,6 +1667,93 @@ def resolve_any(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
     return False
 
 
+def close_stranded(*, channel: str = CHANNEL, client=None,
+                   day: Optional[dt.date] = None, dry_run: bool = False,
+                   max_age_days: int = 30) -> Dict[str, List[str]]:
+    """Finish the parents whose ✅ landed but whose TEXT never got updated.
+
+    WHY THIS KEEPS HAPPENING (Megan 2026-08-26). resolve() posts the reply, then
+    edits the parent — and chat.update only touches your OWN messages. So when a
+    problem is opened by one machine and fixed from another, the reply lands, the
+    ✅ reaction lands, and the marker edit is refused. The thread is genuinely
+    closed; the parent still reads `open` forever. resolve()'s own docstring
+    describes this ("a resolve run from a LAPTOP posts its reply and is then
+    refused the chat.update"), and it already guards against re-announcing such a
+    thread — but nothing ever went back and finished the edit.
+
+    Six posts were sitting in that state on 2026-08-26, four opened by Lucy and
+    two by Megan's laptop. It is not a one-off: any incident opened on one
+    machine and fixed on another lands here.
+
+    THE FIX IS PER-IDENTITY, WHICH IS WHY THIS REPORTS AS WELL AS ACTS. Only the
+    poster can edit a post, so this closes what THIS machine owns and NAMES the
+    rest, so whoever owns them can run the same command. Returns
+    {"closed": [...], "not_ours": [...]} — run it on both machines to finish.
+
+    Narrow on purpose: it only ever touches a parent that ALREADY carries the ✅
+    (or already says RESOLVED). It never posts, never replies, never resolves
+    anything that isn't already resolved — the fix happened days ago; this is
+    only the bookkeeping catching up. Idempotent: _resolved_headline leaves an
+    already-stamped line alone, and a parent whose marker is already `resolved`
+    is not returned by the scan at all.
+    """
+    day = day or dt.date.today()
+    out: Dict[str, List[str]] = {"closed": [], "not_ours": []}
+    try:
+        client = client or _client()
+        me = whoami(client)
+    except Exception as e:  # noqa: BLE001
+        print("  - close_stranded: no Slack client ({}: {})".format(
+            type(e).__name__, str(e)[:60]))
+        return out
+
+    for m in _history(client, channel):
+        text = m.get("text") or ""
+        mark = _MARK_RE.search(text)
+        if not mark or mark.group("state") != "open":
+            continue
+        reactions = [r.get("name") for r in (m.get("reactions") or [])]
+        # The ✅ is the proof the fix landed. Without it this is just an open
+        # incident, and closing it would erase a real problem from the board.
+        if DONE_REACTION not in reactions and "RESOLVED" not in text.upper():
+            continue
+        if _days_open(mark.group("date"), day) > max_age_days:
+            continue
+        key, ts = mark.group("key"), m.get("ts") or ""
+        if (m.get("user") or "") != me:
+            out["not_ours"].append(key)
+            print("  {} ({}) — posted by {}, not this machine. Run this there."
+                  .format(key, ts, m.get("user") or "?"))
+            continue
+        if dry_run:
+            print("  DRY-RUN — would close {} ({})".format(key, ts))
+            out["closed"].append(key)
+            continue
+        new_text = "{}\n\n{}".format(
+            _MARK_RE.sub("", _resolved_headline(text, day)).rstrip(),
+            marker(mark.group("key"), "resolved", day))
+        try:
+            client.chat_update(channel=channel, ts=ts, text=new_text)
+        except Exception as e:  # noqa: BLE001 — the reaction already says done
+            print("  - {}: parent edit refused ({}: {})".format(
+                key, type(e).__name__, str(e)[:60]))
+            continue
+        # A fixed problem must not still read as work in progress.
+        for r in (WORKING_REACTION, WAITING_REACTION, NEEDS_HUMAN_REACTION):
+            if r in reactions:
+                _react(client, channel, ts, r, remove=True)
+        _mark_resolved_in_index(key, ts=ts, channel=channel)
+        out["closed"].append(key)
+        print("  {} ({}) — closed".format(key, ts))
+
+    print("[incident] close-stranded: {} closed, {} belong to another machine"
+          .format(len(out["closed"]), len(out["not_ours"])))
+    if out["not_ours"]:
+        print("  run `lucy incident_close_stranded` (or this CLI on that box) "
+              "to finish: {}".format(", ".join(sorted(set(out["not_ours"])))))
+    return out
+
+
 def close(key: str) -> None:
     """Forget an incident WITHOUT posting (e.g. it aged out of relevance)."""
     _mark_resolved_in_index(key)
@@ -1692,6 +1779,10 @@ def main(argv=None) -> int:
                     help="close whatever failure thread a report left open "
                          "(failure-/standalone-/drop-, its siblings included) — "
                          "for when a MANUAL fix, not a re-run, cleared it")
+    ap.add_argument("--close-stranded", action="store_true",
+                    help="finish the parents whose ✅ landed but whose text "
+                         "still says `open` — run it on EVERY machine, each one "
+                         "can only edit its own posts")
     ap.add_argument("--note", default="", help="one line to add to --resolve")
     ap.add_argument("--channel", default=CHANNEL)
     ap.add_argument("--dry-run", action="store_true")
@@ -1702,6 +1793,11 @@ def main(argv=None) -> int:
     # name AND the parent could never be re-badged. Rather than half-do it, hand
     # the job to the mini, which is Lucy — the queue is serial, so it runs in
     # order behind whatever else is pending.
+    # --close-stranded is DELIBERATELY not in this list. Everything else here is
+    # handed to the mini because only Lucy may speak in the channel; that one
+    # edits posts THIS machine wrote, and Slack lets nobody else edit them. Hand
+    # it to the mini and the laptop's own stranded posts are never finished —
+    # which is exactly the state it exists to clear. Run it on both boxes.
     if (a.working or a.unmark or a.resolve
             or a.resolve_report) and not (a.dry_run or is_lucy()):
         act, arg = (("incident_working", a.working) if a.working else
@@ -1737,6 +1833,9 @@ def main(argv=None) -> int:
                           dry_run=a.dry_run)
         print("marked" if ok else "nothing open for that key/report")
         return 0 if ok else 1
+    if a.close_stranded:
+        out = close_stranded(channel=a.channel, dry_run=a.dry_run)
+        return 0 if (out["closed"] or not out["not_ours"]) else 1
     if a.unmark:
         ok = mark_not_working(a.unmark, channel=a.channel, dry_run=a.dry_run)
         print("cleared" if ok else "no post found for that key/report")
