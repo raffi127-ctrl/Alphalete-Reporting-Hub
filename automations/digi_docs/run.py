@@ -133,6 +133,31 @@ def _flag_terminated(people) -> None:
         pass
 
 
+def _not_live_yet() -> str:
+    """The reason this may not send yet, or "" once the date has passed.
+
+    Downgrades a --live run to a dry one rather than failing it: the run still
+    reads the tab, still says exactly who it WOULD have sent to, and still
+    exits 0. A hard failure here would light the Hub card red every day until
+    Monday and teach everyone to ignore it.
+    """
+    import datetime as _dt
+    on = getattr(config, "GO_LIVE_ON", "")
+    if not on:
+        return ""
+    try:
+        go = _dt.date.fromisoformat(on)
+    except ValueError:
+        return ""
+    today = _dt.date.today()
+    if today >= go:
+        return ""
+    days = (go - today).days
+    return (f"Digi Docs is not live until {go:%A %-d %B} "
+            f"({days} day{'' if days == 1 else 's'} away) — "
+            f"config.GO_LIVE_ON")
+
+
 def quiet_marker_path() -> str:
     """The file the wrapper checks before starting Python at all."""
     import datetime as _dt
@@ -203,6 +228,12 @@ def _phases(args) -> int:
         print(f"--only {send[0].name}")
     _flag_terminated(send)
     dry = not args.live
+    if not dry:
+        blocked = _not_live_yet()
+        if blocked:
+            print(f"\n⛔ {blocked}")
+            print("   Running as a DRY RUN instead — nothing will be sent.")
+            dry = True
     if not dry:
         from automations.digi_docs import slack_post as _sp
         _sp.clear_reported()

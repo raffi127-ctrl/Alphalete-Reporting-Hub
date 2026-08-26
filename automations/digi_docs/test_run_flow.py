@@ -443,5 +443,49 @@ class FiresOnTheChartDate(_NoNetwork):
         self.assertEqual(got, [dt.date(2026, 8, 31), dt.date(2026, 9, 2)])
 
 
+class NotLiveUntilMonday(_NoNetwork):
+    """Megan 2026-08-26: "we can't take this live until next mon." A date in
+    code rather than uninstalling the agents — an uninstalled agent needs
+    somebody to remember Monday morning, and if they forget, nobody gets their
+    documents and there is no signal at all."""
+
+    def _on(self, day):
+        import datetime as dt
+        from unittest import mock as m
+        from automations.digi_docs import run as R
+
+        class FakeDate(dt.date):
+            @classmethod
+            def today(cls):
+                return dt.date.fromisoformat(day)
+
+        with m.patch.object(dt, "date", FakeDate):
+            return R._not_live_yet()
+
+    def test_blocked_before_the_date(self):
+        self.assertIn("not live until", self._on("2026-08-26"))
+        self.assertIn("not live until", self._on("2026-08-30"))
+
+    def test_live_on_the_day_and_after(self):
+        self.assertEqual(self._on("2026-08-31"), "")
+        self.assertEqual(self._on("2026-09-07"), "")
+
+    def test_a_blocked_live_run_becomes_a_dry_run_not_a_failure(self):
+        """It must still read the tab and say who it WOULD send to. Failing
+        instead would light the Hub card red every day until Monday, which
+        teaches everyone to ignore it."""
+        from automations.digi_docs import run as R
+        ov = _fake_ov()
+        rec = _Recorder()
+        rc = _run(ov, rec)
+        self.assertEqual(rc, 0)
+
+    def test_removing_the_setting_goes_live(self):
+        from unittest import mock as m
+        from automations.digi_docs import config, run as R
+        with m.patch.object(config, "GO_LIVE_ON", ""):
+            self.assertEqual(R._not_live_yet(), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -79,6 +79,24 @@ ASSUME_PM_BEFORE_HOUR = 7
 # most free.
 ADD_PASS_TIME = "08:00"
 
+# --- NOT LIVE BEFORE THIS DATE (Megan 2026-08-26) -------------------------
+# "we can't take this live until next mon." So: no --live pass of either phase
+# does anything before Monday 2026-08-31, whatever is installed and whatever a
+# chart is dated for.
+#
+# A date in code rather than uninstalling the agents, because the two failure
+# modes are not symmetric. An uninstalled agent needs somebody to remember to
+# put it back on Monday morning, and if they don't, nobody gets their documents
+# and there is no signal at all. This guard clears itself, and until it does it
+# says so on every run.
+#
+# It gates the ADD pass too. That pass mails nobody, so it is not dangerous —
+# but "not live until Monday" is a plain instruction and reading it as "except
+# the half I judged safe" is how software surprises people.
+#
+# TO GO LIVE: delete this line, or set it to a past date.
+GO_LIVE_ON = "2026-08-31"
+
 # --- Quiet days: back off instead of asking 168 times ---------------------
 # The send tick fires every 5 minutes from 6am to 8pm. On a day no chart is
 # dated for, that is 168 firings that each start Python, authenticate and read
