@@ -68,6 +68,7 @@ HUB_CARD_NAME = "Sales Text Updates"
 FAIL_STREAK = 3                     # ~15 minutes of failures before we speak
 ALERT_COOLDOWN_HOURS = 2
 CORRECTIONS_CHANNEL = "C0BK5PRG259"  # #claudecorrections-and-requests
+INCIDENT_KEY = "alphalete_sales_board"   # incident_thread key = the report id
 FAIL_PATH = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board_fails.json"
 
 
@@ -143,17 +144,23 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
             pass
 
     if should_alert and not dry_run:
+        # Through incident_thread, NOT a bare chat_postMessage. The first
+        # version posted the alert directly, which meant it could never be
+        # closed: the ✅ is put on by the code when the report next runs clean,
+        # and only a post the machinery OPENED can be found again. The 20:00
+        # alert on the first night live sat open with its cause already fixed.
+        # [[project_corrections_slack_channel]]
         try:
-            from automations.shared import slack_metrics_post as smp
-            client = smp._client()
-            parent = ("%s has failed %d passes in a row -- the board is not "
-                      "updating and the chats are getting nothing."
-                      % (HUB_CARD_NAME, streak))
-            resp = client.chat_postMessage(channel=CORRECTIONS_CHANNEL, text=parent)
-            client.chat_postMessage(
-                channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
-                text=("```\n%s\n```\nRe-run once the cause is clear:\n"
-                      "`lucy rerun alphalete_sales_board`" % err[:1500]))
+            from automations.shared import incident_thread
+            incident_thread.open_or_followup(
+                key=INCIDENT_KEY,
+                title="%s has failed %d passes in a row" % (HUB_CARD_NAME, streak),
+                body=["The board is not updating and the chats are getting "
+                      "nothing."],
+                details=["```", err[:1500], "```"],
+                followup=["Re-run once the cause is clear: "
+                          "`lucy rerun alphalete_sales_board --apply --send`"],
+                label=HUB_CARD_NAME)
             data["alerted_at"] = dt.datetime.now().isoformat(timespec="seconds")
         except Exception as e:  # noqa: BLE001 — an alert must never crash the sweep
             _log("alert failed: %s: %s" % (type(e).__name__, str(e)[:120]))
@@ -173,6 +180,17 @@ def _clear_failures() -> None:
     data = _fails()
     if data.get("streak"):
         _log("recovered after %d failed pass(es)" % data["streak"])
+    # Free when nothing is open (a local index read, no Slack call), so it is
+    # safe on every clean sweep -- which is what puts the ✅ on the alert
+    # instead of leaving it open with the cause long fixed.
+    try:
+        from automations.shared import incident_thread
+        incident_thread.resolve_if_open(
+            INCIDENT_KEY, what="*%s*" % HUB_CARD_NAME,
+            detail="The sweep ran clean: the board is filling and the chats "
+                   "are getting the standings again.")
+    except Exception as e:  # noqa: BLE001 — closing must never break the run
+        _log("couldn't close the incident: %s: %s" % (type(e).__name__, str(e)[:120]))
     _write_fails({"streak": 0, "recovered_at": dt.datetime.now().isoformat(timespec="seconds")})
 
 
