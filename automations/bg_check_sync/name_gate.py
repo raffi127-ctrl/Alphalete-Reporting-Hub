@@ -366,14 +366,11 @@ def render_parent(n: int, start_week: Optional[str] = None) -> str:
            f"{n} names don't match their background check"
     if start_week:
         head += f" — starting {start_week}"
-    # SAY WHO CAN ANSWER, UP FRONT. The tags alone read as "FYI" — anybody
-    # could click and think it was handled. Naming them as the approvers is the
-    # difference between a mention and an instruction (Megan 2026-08-26).
-    return (f"*{head}*\n"
-            f"✅ = same person → I'll fix the checklist + OwnerVille\n"
-            f"❌ = different person → I'll leave it alone\n"
-            f"Needs approval from {tags} — reactions from anyone else won't "
-            f"change a name.")
+    # TWO LINES. Every word here is read once per group and then skipped
+    # forever after, so it earns its place or it goes (Megan, three times over:
+    # "this is still too wordy"). What survives: what the two emoji do, and that
+    # it takes one of these four.
+    return f"*{head}*\n✅ same person · ❌ different person — needs one of {tags}"
 
 
 def render_line(p: Proposal) -> str:
@@ -385,24 +382,22 @@ def render_line(p: Proposal) -> str:
     in the parent, and repeating them under every name is what made the first
     version unreadable.
     """
+    # ONE LINE, plus a second ONLY when there is something that changes the
+    # answer. The names ARE the question; everything else was scenery.
+    #   * the email, when it carries the Sterling first name — that settles it
+    #     on sight. When it doesn't, it proved nothing and is left out.
+    #   * the date, ONLY when the timing is odd. Printing "took the check
+    #     Aug 8" under every name says nothing: taking it is what everybody
+    #     does.
     bits = []
-    # THE EMAIL ONLY EARNS ITS LINE WHEN IT PROVES SOMETHING. Shown, it names
-    # the Sterling first name and says it is in there — that answers the
-    # question at a glance. Absent, it proves nothing either way (plenty of
-    # people use an address that looks like neither name), so it is left out
-    # rather than printed for the reader to squint at. Two rounds of Megan on
-    # this: "just listing the email tells us nothing", then "we don't need the
-    # email if it doesn't do anything".
     if p.email and p.corroborated:
         bits.append(f"{p.email} — has \u201c{p.legal_first}\u201d in it")
-    if p.taken_on:
+    if not p.fresh and p.days_before_start is not None and p.taken_on:
         try:
             d = dt.date.fromisoformat(p.taken_on)
-            bits.append(f"took the check {d:%b} {d.day}")
+            bits.append(f"check taken {d:%b} {d.day} — odd timing, worth a look")
         except ValueError:
             pass
-    if not p.fresh and p.days_before_start is not None:
-        bits.append("timing is odd — worth a look")
     detail = "\n" + " · ".join(bits) if bits else ""
     return f"*{p.sheet_name}* → *{p.legal_name}*?{detail}"
 
@@ -662,11 +657,8 @@ def say_still_needs_authorising(entries: list, *, dry_run: bool = True) -> None:
     for entry in entries:
         who = " ".join(f"<@{uid}>" for uid in entry.get("reacted_by", []))
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        # PLAIN ENGLISH. The first version said the reaction "isn't on the list
-        # I act on" — Megan: "no one is going to know what that means." Say who
-        # has to click, and that nothing happens until they do.
-        text = (f"{who} reacted on *{old}* — thanks! Nothing has changed yet: "
-                f"this one needs a ✅ or ❌ from {tags} before I update any name.")
+        text = (f"{who} — *{old}* needs a ✅ or ❌ from {tags} to count, "
+                f"so nothing has changed yet.")
         _reply(cli, entry, text, dry_run)
         if not dry_run:
             entry["nudged_at"] = dt.datetime.now().isoformat(timespec="seconds")
@@ -750,19 +742,17 @@ def confirm(applied: list[dict], rejected: list[dict], *, dry_run: bool = True,
     for entry in applied:
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        text = f"✅ {old} is now *{legal}* on the checklist — OwnerVille gets the same name in this run."
+        text = f"✅ *{old}* is now *{legal}* — checklist and OwnerVille."
         if entry.get("skipped"):
             text += f"\nNot touched: {', '.join(entry['skipped'])}."
         _reply(cli, entry, text, dry_run)
     for entry in rejected:
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        # A ❌ is not just "do nothing" — it means a real background check is
-        # sitting there belonging to nobody on the checklist, which somebody
-        # has to go find. Say that, and say it once.
-        text = (f"❌ Leaving *{old}* as is, won't ask again.\n"
-                f"So *{legal}*'s background check belongs to someone who isn't "
-                f"on the checklist — nobody's BG status is coming from it.")
+        # Still says the thing that matters — that a real check is sitting
+        # there belonging to nobody on the checklist — but in one line.
+        text = (f"❌ *{old}* left as is. *{legal}*'s check isn't anyone on the "
+                f"checklist.")
         _reply(cli, entry, text, dry_run)
 
 

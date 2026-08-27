@@ -196,7 +196,7 @@ class TimingTests(unittest.TestCase):
                       [event("Shuminique", "Valentine", date="2026-08-27")])
         self.assertTrue(out[0].fresh)
         self.assertEqual(out[0].days_before_start, 4)
-        self.assertIn("took the check Aug 27", name_gate.render_line(out[0]))
+        self.assertNotIn("check taken", name_gate.render_line(out[0]))
 
     def test_a_month_out_hire_is_normal_not_stale(self):
         """The link goes out at hire, and a start can be a month or more away."""
@@ -205,21 +205,21 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertTrue(out[0].fresh)
         self.assertEqual(out[0].days_before_start, 38)
-        self.assertNotIn("worth a look", name_gate.render_line(out[0]))
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_older_than_the_hiring_runway_is_called_out(self):
         out = propose([person("Juan", "Garcia")],
                       [event("Robert", "Garcia", date="2026-05-05")])
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].fresh)
-        self.assertIn("worth a look", name_gate.render_line(out[0]))
+        self.assertIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_taken_just_after_they_started_is_normal(self):
         """A link that went out late — ordinary, not suspicious."""
         out = propose([person("Nikki", "Valentine")],
                       [event("Shuminique", "Valentine", date="2026-09-05")])
         self.assertTrue(out[0].fresh)
-        self.assertNotIn("worth a look", name_gate.render_line(out[0]))
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_result_landing_after_they_start_is_kept_and_dated(self):
         """Sterling takes as long as it takes — taken before the start week,
@@ -232,14 +232,14 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].taken_on, "2026-08-27")
         self.assertEqual(out[0].result_on, "2026-09-21")
-        self.assertIn("took the check Aug 27", name_gate.render_line(out[0]))
+        self.assertNotIn("odd timing", name_gate.render_line(out[0]))
 
     def test_a_check_taken_months_after_they_started_is_called_out(self):
         out = propose([person("Nikki", "Valentine")],
                       [event("Shuminique", "Valentine", date="2026-10-20")])
         self.assertEqual(len(out), 1)
         self.assertFalse(out[0].fresh)
-        self.assertIn("worth a look", name_gate.render_line(out[0]))
+        self.assertIn("odd timing", name_gate.render_line(out[0]))
 
     def test_both_signals_outrank_one(self):
         """Two agreeing checks sort above one, and one above none."""
@@ -324,20 +324,20 @@ class AskPlacementTests(unittest.TestCase):
                         [event("Jordan", "Ruiz")])[0]
         line = name_gate.render_line(plain)
         self.assertNotIn("adrianaruiz@icloud.com", line)
-        self.assertIn("took the check", line)
+        self.assertEqual(line, "*Adriana Ruiz* → *Jordan Ruiz*?")
 
     def test_the_parent_carries_the_meanings_and_the_tags(self):
         parent = name_gate.render_parent(2)
-        self.assertIn("✅ = same person", parent)
-        self.assertIn("❌ = different person", parent)
+        self.assertIn("✅ same person", parent)
+        self.assertIn("❌ different person", parent)
         for _name, uid in name_gate.DECIDERS:
             self.assertIn(uid, parent)
 
     def test_the_parent_says_it_needs_their_approval(self):
         """A tag alone reads as FYI — anybody clicks and thinks it's done."""
         parent = name_gate.render_parent(2)
-        self.assertIn("Needs approval from", parent)
-        self.assertIn("won't change a name", parent)
+        self.assertIn("needs one of", parent)
+        self.assertLessEqual(len(parent.splitlines()), 2)
 
     def test_dry_run_posts_nothing_and_records_nothing(self):
         state = {}
