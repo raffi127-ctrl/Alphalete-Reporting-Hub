@@ -88,10 +88,10 @@ CAPTAINSHIP = [
     ("Joey Ramirez",     "23206", "Joey Ramirez"),
     ("Dhyey Patel",      "22767", "Dhyey Patel"),
     # Added 2026-08-26 (Carlos). Tableau owner string: "SABRINA ALICEA
-    # [alisei, inc.]". AppStream office unknown at add time — empty id lets
-    # the hourly funnel discover it from the office switcher the day it
-    # appears (the Jeff/Vincent/Dhyey path).
-    ("Sabrina Alicea",   "",      "Sabrina Alicea"),
+    # [alisei, inc.]". Office 21291 came from the funnel's own switcher
+    # discovery the same evening (28 day-rows backfilled to 8/03 on the
+    # first pull); pinned here so the Indeed source report includes her.
+    ("Sabrina Alicea",   "21291", "Sabrina Alicea"),
 ]
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
