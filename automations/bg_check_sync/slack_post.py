@@ -99,13 +99,20 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str,
     # Flores by eye (2026-08-26) — her row said Passed and 90 days of Sterling
     # mail had no check for her at all. The run has always flagged this; it
     # flagged it into a log file nobody opens.
-    # Say who did it and what is missing (Megan 2026-08-26): "someone marked
-    # passed on OBCL but no sterling email is found with passed result." The
-    # status is per-person because the same section covers Failed and
-    # Unperformable rows too.
-    section("⚠️ Someone marked these on the OBCL — no Sterling email says so",
-            [n for n, _ in (unbacked or [])],
-            suffixes={n: f"marked {st}" for n, st in (unbacked or [])})
+    # Megan's words (2026-08-27). Nearly always these are Passed rows, so the
+    # header says so outright — but the same section catches Failed and
+    # Unperformable, and a header naming the wrong outcome would be worse than a
+    # plainer one, so it only claims "passed" when every row in it says Passed.
+    rows = unbacked or []
+    outcomes = {st for _, st in rows}
+    if outcomes == {parse.PASSED}:
+        unbacked_label = ("⚠️ Someone marked these as passed on the OBCL — "
+                          "no Sterling email says passed though")
+    else:
+        unbacked_label = ("⚠️ Someone marked these on the OBCL — "
+                          "no Sterling email says so")
+    section(unbacked_label, [n for n, _ in rows],
+            suffixes={n: f"marked {st}" for n, st in rows})
     return "\n".join(lines)
 
 

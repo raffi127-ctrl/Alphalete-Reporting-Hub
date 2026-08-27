@@ -14,8 +14,8 @@ class UnbackedSectionTests(unittest.TestCase):
     def test_a_row_with_no_check_behind_it_is_called_out(self):
         body = slack_post.render("9/7/2026", self.PEOPLE, [], "Aug 26, 9:00 PM",
                                  unbacked=[("Cindy Flores", "Passed")])
-        self.assertIn("Someone marked these on the OBCL", body)
-        self.assertIn("no Sterling email says so", body)
+        self.assertIn("Someone marked these as passed on the OBCL", body)
+        self.assertIn("no Sterling email says passed though", body)
         self.assertIn("Cindy Flores — marked Passed", body)
 
     def test_they_still_appear_in_their_own_bucket(self):
@@ -25,6 +25,16 @@ class UnbackedSectionTests(unittest.TestCase):
                                  unbacked=[("Cindy Flores", "Passed")])
         passed = body.split("*✅ Passed")[1]
         self.assertIn("Cindy Flores", passed.split("⚠️")[0])
+
+    def test_a_mixed_bucket_does_not_claim_they_were_passed(self):
+        """The section catches Failed and Unperformable too — a header naming
+        the wrong outcome would be worse than a plainer one."""
+        body = slack_post.render(
+            "9/7/2026", self.PEOPLE, [], "Aug 27, 9:00 AM",
+            unbacked=[("Cindy Flores", "Passed"), ("Ana Diaz", "Unperformable")])
+        self.assertNotIn("as passed on the OBCL", body)
+        self.assertIn("no Sterling email says so", body)
+        self.assertIn("Ana Diaz — marked Unperformable", body)
 
     def test_nothing_unbacked_means_no_section(self):
         body = slack_post.render("9/7/2026", self.PEOPLE, [], "Aug 26, 9:00 PM",
