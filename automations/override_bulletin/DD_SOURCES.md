@@ -228,6 +228,30 @@ WE 8.23.26, the figures this has to reproduce (they are the regression test):
 | Colten | 8 | **17** | 16 under him, adoptions in, + himself |
 | Carlos | 10 | **22** | 21 under him + himself |
 
+### The `Lucy Org Tree` mirror block, and a header that parsed as people
+
+The top block of `Lucy Org Tree` (rows 5-57, "Tree Name / Reports To / Gen / DD
+Sheet Name / Match status") is a hand-kept mirror of the `Org Tree` tab. **Nothing
+in the code reads it** — it is there so a person can see, in one place, who is on
+the tree and whether they have a DD row. It drifts silently for exactly that
+reason. Brought back in step 2026-08-27:
+
+- **Raul Sosa Puerta and Carl Foss** were on the tree under Jairo and missing
+  here entirely; added at the end of the block, both `NO DD ROW`.
+- **Salik Malick** still said `NO DD ROW`. His row exists and is called **Salik
+  Waqar** — the ICD Aliases tab already resolved it, so only this block was
+  stale. Col D now carries the DD spelling.
+- The summary line under the block is recounted and dated.
+
+**And a real trap found on the way.** The Org Tree's first row is
+`Generation | 1 | 2 | 3 | 4`. `_parse_tree` skipped "Generation" (it is in
+`_LEGEND`) but not the column numbers, so `1`, `2`, `3` and `4` parsed as four
+people and built a `1 -> 2 -> 3 -> 4` chain of their own. **No published figure
+was ever wrong** — that chain's root has no parent, so it never sat inside
+anyone's org, and 48 / 17 / 22 are identical before and after. But it was one
+re-ordered row away from adopting a real Gen-1 name onto a header cell. A bare
+number is now never a person.
+
 ### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
 On the bulletin thread, Eve asked whether Jairo could be added. Raf:
 
