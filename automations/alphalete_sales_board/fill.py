@@ -195,3 +195,37 @@ def board_goal(grid) -> Optional[int]:
             except ValueError:
                 return None
     return None
+
+
+def board_only_reps(grid, day, accounted: List[str]) -> List[str]:
+    """Reps whose row carries NUMBERS today that our SaraPlus pull does not
+    account for.
+
+    THE ONE THING A SINGLE-SOURCE FILL CANNOT SEE. While the old system was
+    also writing, a rep we never returned still got filled and nobody noticed.
+    Once we are the only writer, that same rep goes blank all day and the only
+    signal is a person spotting an empty row. So every sweep compares the two:
+    a row with digits today whose rep our scrape did not produce is either
+    somebody's hand entry or a sale reaching the board by a route we do not
+    read -- and both are worth saying out loud.
+
+    Not an error. Hand entries are legitimate and common; this only names them
+    so a PATTERN (the same rep, every day) becomes visible.
+    """
+    cols = day_blocks_for(grid, day)
+    if not cols:
+        return []
+    seen = {B._norm_name(n) for n in accounted}
+    out = []
+    for r in range(B.SUB_ROW + 1, B.last_rep_row(grid) + 1):
+        name = B.cell(grid, r, B.NAME_COL).strip()
+        if not name or B._norm_name(name) in seen:
+            continue
+        if any(B.cell(grid, r, c).strip().isdigit() for c in cols.values()):
+            out.append(name)
+    return out
+
+
+def day_blocks_for(grid, day):
+    """Today's metric columns, or {} if the banner is missing."""
+    return B.day_blocks(grid).get(day.strftime("%A")) or {}

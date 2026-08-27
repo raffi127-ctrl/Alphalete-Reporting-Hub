@@ -228,6 +228,19 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
         for u in updates[:15]:
             _log("    %s -> %r" % (u["range"], u["values"][0][0]))
 
+    # Who is on the board today that our pull can't explain? (See fill.
+    # board_only_reps.) Logged every sweep so a pattern is visible in one grep.
+    accounted = [r["board_name"] for r in rows] + [
+        n for n in names if any(a.get("name") and
+                                calc.match_name(a["name"], [n])[0] == n
+                                for a in agents)]
+    board_only = fill.board_only_reps(grid, day, accounted)
+    if board_only:
+        _log("COVERAGE: %d rep(s) have numbers on the board today that SaraPlus "
+             "did not give us: %s" % (len(board_only), ", ".join(board_only)))
+    else:
+        _log("COVERAGE: every rep with numbers on today's board is one we pulled")
+
     # --- a rep who sold but has no row gets one, now -------------------------
     # Megan 2026-08-26: say in the text that they weren't on the board, that
     # they were added, and that their numbers land next sweep. Next sweep and
