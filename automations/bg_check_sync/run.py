@@ -287,7 +287,13 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
         if ev is None:
             continue
         name = f"{p.first} {p.last}".strip()
-        if name in seen or name in done:
+        legal = f"{name_case.titlecase_name(ev.first)} " \
+                f"{name_case.titlecase_name(ev.last)}".strip()
+        # Settled means "we checked this profile against THIS name". A later
+        # result under a different name is a different question and has to be
+        # asked again — skipping on the name alone would freeze somebody at
+        # whatever we happened to see first.
+        if name in seen or done.get(name) == legal:
             continue
         seen.add(name)
         # Title-case here, not at the write: Sterling shouts some names

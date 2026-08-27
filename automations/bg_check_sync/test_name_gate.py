@@ -114,6 +114,26 @@ class ProposeTests(unittest.TestCase):
         b = propose([person("Nikki", "Coleman")], [event("Shomanique", "Coleman")])
         self.assertEqual(a[0].pid, b[0].pid)
 
+    def test_a_rejection_only_kills_that_pairing_not_the_person(self):
+        """Megan: "if I red x adriana and then she has one come through later
+        she shouldn't be skipped." A ❌ answers one question — this name is not
+        that name — and says nothing about the next result to arrive."""
+        adriana = person("Adriana", "Ruiz", email="adrianaruiz@icloud.com")
+        rejected = propose([adriana], [event("Jordan", "Ruiz")])[0]
+        state = {rejected.pid: {"status": "rejected"}}
+        # her own check lands later, under her real legal name
+        later = propose([adriana], [event("Adriana Marie", "Ruiz Torres")])
+        self.assertEqual(len(later), 1)
+        self.assertNotEqual(later[0].pid, rejected.pid)
+        self.assertEqual(name_gate.unanswered(later, state), later)
+
+    def test_the_same_pairing_is_never_asked_twice(self):
+        adriana = person("Adriana", "Ruiz")
+        first = propose([adriana], [event("Jordan", "Ruiz")])
+        state = {first[0].pid: {"status": "rejected"}}
+        again = propose([adriana], [event("Jordan", "Ruiz")])
+        self.assertEqual(name_gate.unanswered(again, state), [])
+
     def test_unanswered_skips_anything_already_asked(self):
         out = propose([person("Nikki", "Coleman")], [event("Shomanique", "Coleman")])
         state = {out[0].pid: {"status": "pending"}}
