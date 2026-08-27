@@ -129,6 +129,27 @@ SALE_LEVELS = (
 # but Megan keeps it a sale regardless (2026-07-18, reaffirmed 2026-07-22).
 SALE_EXEMPT_STATUSES = ("Incomplete",)
 
+# Sub-statuses that prove a deal REACHED THE SUPPLIER even though no other
+# status survived on it. Carlos, 2026-08-27, on deals whose only row is
+# Rejected / Rejected By Supplier: "I'm not sure why they don't have the other
+# statuses, but if they got all the way to 'rejected by supplier', that means
+# it was a sale at some point."
+#
+# The TPV gate reads the levels a deal passed through, and these rows have
+# exactly one — "Rejected" — so the gate dropped them as never-a-sale. The
+# SUB-status is the only evidence left that the supplier ever saw it.
+#
+# Deliberately just this one. The other rejected-only sub-statuses in the
+# 2026-08-17 pull — Customer Rescinded (12), Residential Rejection (8), Needs
+# Contract Data (4), Rejected by Utility (1), Clean Bill Copy Needed (1) —
+# don't say the supplier ever got it, and Carlos named this one. Add a line
+# here if he rules on the others.
+SUPPLIER_SAW_IT_SUBS = ("rejected by supplier",)
+
+
+def _norm_sub(sub: str) -> str:
+    return " ".join((sub or "").split()).lower()
+
 # ---------------------------------------------------------------------------
 # Priority — DERIVED FROM CARLOS'S OWN HAND-CLEANED TAB, not from the Loom.
 #
@@ -337,6 +358,11 @@ class Sale(NamedTuple):
     history: Tuple[str, ...]     # every level this sale passed through
     secondary: str               # history minus the surfaced level, his format
     is_cancel: bool
+    # Every sub-status seen on the group's rows. level() only folds the
+    # sub-status into Verification levels, so for a Rejected row it is the ONLY
+    # place "Rejected By Supplier" survives — which is what the TPV gate needs
+    # (SUPPLIER_SAW_IT_SUBS). Defaulted so older callers keep working.
+    sub_statuses: Tuple[str, ...] = ()
 
 
 def _decode(path: Path) -> str:
@@ -434,8 +460,15 @@ def _reached_tpv(sale: "Sale") -> bool:
     real sale. Incomplete is exempt (Megan keeps it regardless). Checks the
     whole history so a deal that passed TPV and was later cancelled still
     counts, while a cancel/reject that never got past a signed contract does
-    not."""
+    not.
+
+    "Rejected By Supplier" counts too, on the sub-status alone: the supplier
+    can only reject what it received, so the deal got at least that far even
+    though every other status is missing from the export (Carlos 2026-08-27).
+    """
     if sale.status in SALE_EXEMPT_STATUSES:
+        return True
+    if any(_norm_sub(x) in SUPPLIER_SAW_IT_SUBS for x in sale.sub_statuses):
         return True
     return any(h in SALE_LEVELS for h in sale.history)
 
@@ -523,6 +556,9 @@ def collapse(rows: Iterable[Dict[str, str]]) -> Tuple[List[Sale], Dict[str, int]
             history=history,
             secondary=secondary,
             is_cancel=status == "Cancelled by Broker",
+            sub_statuses=tuple(sorted({
+                (m.get("Contr. Sub-status") or "").strip()
+                for m in members if (m.get("Contr. Sub-status") or "").strip()})),
         ))
         stats["collapsed_rows"] += len(members) - 1
         if not sale_date:
