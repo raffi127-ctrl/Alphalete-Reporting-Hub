@@ -64,11 +64,14 @@ def _publish_outcome(status, headline, details, *, started_at=None, dry_run=Fals
 
 
 def ads_for_week(html):
-    """Merged ad rows for one office-week — the monthly parse, with the
-    "[Action required] New application for" wrapper stripped BEFORE the noise
-    filter sees it (parse.NOISE would junk those rows; they are real
-    applicants). Subjects live in table cells, so a plain text substitution on
-    the HTML reaches exactly them."""
+    """Merged ad rows for one office-week — the monthly parse.
+
+    The "[Action required] New application for" wrapper is stripped BEFORE the
+    noise filter sees it: parse.NOISE would junk those rows and they are real
+    applicants. `parse.load_table` does that per-subject since 2026-08-27, so
+    the substitution here is belt-and-braces — it stays because `rescued_total`
+    is counted off this same HTML, and because a plain text substitution on the
+    HTML reaches the table cells the subjects live in."""
     return parse.ads_for_month(names.WRAPPER.sub("", html))
 
 
@@ -517,9 +520,9 @@ def main(argv=None):
             print("   %-24s %s" % (mgr[:24], d.isoformat()), flush=True)
 
     if rescued_total:
-        print("\n%d '[Action required] New application for …' subjects were kept "
-              "as real ads this run — the MONTHLY Source Report - Indeed still "
-              "junk-filters these." % rescued_total, flush=True)
+        print("\n%d '[Action required] New application for …' subjects were "
+              "unwrapped and counted as real ads this run." % rescued_total,
+              flush=True)
     if failures:
         print("\nFAILED OFFICES (%d) — their weeks were left untouched:" % len(failures),
               flush=True)

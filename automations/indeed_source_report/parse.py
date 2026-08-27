@@ -15,6 +15,23 @@ import pandas as pd
 
 FIELDS = ['apps', 'removed', 'scl', 'b1', 's1', 'b2', 's2', 'tb', 'ts', 'nb', 'ns']
 
+# A REAL applicant, wearing Indeed's forwarded-notification subject: "[Action
+# required] New application for <ad title>". The ad title is right there after
+# the prefix — but NOISE's `action required` rule (written for Indeed's BILLING
+# mail) matched the whole subject and threw the applicant away.
+#
+# ad_sales_board found this 2026-08-26 (37 of Carlos's 375 call-list names in one
+# week wore it) and worked around it by scrubbing the wrapper out of the HTML
+# before calling in here. The MONTHLY report had no such workaround and was
+# silently dropping the same rows — 635 of them in the 2026-08-27 run. So the
+# strip belongs in the parser, where both callers get it.
+#
+# Only this exact prefix comes off. Indeed's genuine billing mail ("[Action
+# required] Update your payment method") does not say "new application for", so
+# it never matches here and NOISE still junks it on the next line.
+WRAPPER = re.compile(r"\[action\s+required\]\s*new\s+application\s+for\s*[:\-]?\s*",
+                     re.I)
+
 NOISE = re.compile(
     r'new message from|new contact form|contact page|feedback|recommend indeed|'
     r'action required|payment|invoice|billing|your .* job in |visibility|appeal|'
@@ -126,6 +143,9 @@ def load_table(html):
             continue                       # subtotal / spacer row
         if not isinstance(inbox, str) or inbox.strip() in ('', '—'):
             continue
+        # Unwrap BEFORE the noise filter — the wrapper is what NOISE trips on,
+        # and the ad title underneath it is the thing we actually want.
+        subj = WRAPPER.sub('', subj)
         if NOISE.search(subj):
             continue
         if not re.search(r'[A-Z]', subj):
