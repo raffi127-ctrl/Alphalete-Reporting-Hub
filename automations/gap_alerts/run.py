@@ -257,6 +257,51 @@ def _pin_campaign(page, rqst: str, campaign_id: str) -> None:
              "campaign" % type(e).__name__)
 
 
+def _pages_for(im, max_aspect: float, overlap: int):
+    """Slice one tall panel into page-sized pieces, top to bottom.
+
+    A panel only gets cut if it is taller than `max_aspect` times its width.
+    Consecutive pieces OVERLAP, so a rep row unlucky enough to land on a page
+    break still appears whole on the next page — the one thing a naive slice
+    gets wrong, and the one that would quietly hide a rep."""
+    if im.height <= im.width * max_aspect:
+        return [im]
+    page_h = int(im.width * max_aspect)
+    step = max(1, page_h - overlap)
+    out, top = [], 0
+    while top < im.height:
+        bottom = min(top + page_h, im.height)
+        out.append(im.crop((0, top, im.width, bottom)))
+        if bottom >= im.height:
+            break
+        top += step
+    return out
+
+
+def to_pdf(panel_paths, out_pdf: Path) -> Path:
+    """Turn the panels into a multi-page PDF, one panel after another.
+
+    WHY A PDF AT ALL: Messages renders a tall narrow image inline as a sliver
+    you cannot read (Raf, 2026-08-27). A PDF opens full-screen and zooms.
+    WHY SLICED: a single 700x2900 page would open zoomed-to-fit and be just as
+    unreadable — it would only move the squinting from Messages into Preview.
+    """
+    from PIL import Image
+    pages = []
+    for p in panel_paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        im = Image.open(p).convert("RGB")
+        pages += _pages_for(im, C.PDF_MAX_ASPECT, C.PDF_SLICE_OVERLAP_PX)
+    if not pages:
+        raise RuntimeError("no panels to put in the PDF")
+    out_pdf.parent.mkdir(parents=True, exist_ok=True)
+    pages[0].save(out_pdf, "PDF", resolution=144.0, save_all=True,
+                  append_images=pages[1:])
+    return out_pdf
+
+
 def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
     """Screenshot Today's Activity (p=88) — the rep list with knock badges.
 
@@ -371,6 +416,22 @@ def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
     out = out_dir / ("gaps_%s.png" % cfg["key"])
 
     if activity_png is not None and Path(activity_png).exists():
+        titled_gaps = out_dir / ("gaps_%s_titled.png" % cfg["key"])
+        cap.add_title_header(bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot),
+                             titled_gaps)
+        titled_act = out_dir / ("activity_%s_titled.png" % cfg["key"])
+        cap.add_title_header(Path(activity_png),
+                             "%s%s — %s" % (C.PANEL_TODAYS_ACTIVITY, who, slot),
+                             titled_act)
+        if C.SEND_AS_PDF:
+            try:
+                # Activity first, gaps second — Carlos's order, and the order
+                # Raf saw. Each panel keeps its own header page-to-page.
+                return to_pdf([titled_act, titled_gaps],
+                              out_dir / ("gaps_%s.pdf" % cfg["key"]))
+            except Exception as e:  # noqa: BLE001
+                _log("  PDF build failed (%s) — falling back to the stitched "
+                     "image" % type(e).__name__)
         try:
             return cap.stitch_vertical(
                 [(C.PANEL_TODAYS_ACTIVITY, Path(activity_png)),

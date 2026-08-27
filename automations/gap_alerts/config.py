@@ -81,6 +81,27 @@ PANEL_GAPS = "REPS OVER 15 MIN GAP"
 # against Carlos's ~22.
 VIEWPORT = {"width": 1680, "height": 1600}
 
+# --- delivery format ----------------------------------------------------------
+# Raf 2026-08-27, after the first two-panel card landed: "Can we make it a PDF
+# so it's easier to see please?" Stacking his ~48-rep roster above the gap card
+# made one very tall, very narrow image, which Messages shows inline as an
+# unreadable sliver.
+#
+# Carlos hit the same wall on 8/6 and split his post into TWO pictures — that
+# works at his ~22 reps. Raf's roster is more than twice that, so even a split
+# leaves a sliver; a PDF opens full-screen and zooms, which is what he asked for.
+SEND_AS_PDF = True
+
+# A PDF page taller than this many times its width gets sliced into more pages.
+# The whole point is that a page fits the screen at fit-to-width; one enormous
+# page would just move the squinting from Messages into Preview.
+PDF_MAX_ASPECT = 1.45
+
+# Slices overlap by this many pixels so a rep row cut by a page break still
+# appears whole on the next page. Cheap insurance against the one thing a naive
+# slice gets wrong.
+PDF_SLICE_OVERLAP_PX = 44
+
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
 #     Mon–Fri  1:30pm – 8:30pm
