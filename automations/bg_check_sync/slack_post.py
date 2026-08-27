@@ -99,9 +99,13 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str,
     # Flores by eye (2026-08-26) — her row said Passed and 90 days of Sterling
     # mail had no check for her at all. The run has always flagged this; it
     # flagged it into a log file nobody opens.
-    section("⚠️ On the OBCL but no background check found",
+    # Say who did it and what is missing (Megan 2026-08-26): "someone marked
+    # passed on OBCL but no sterling email is found with passed result." The
+    # status is per-person because the same section covers Failed and
+    # Unperformable rows too.
+    section("⚠️ Someone marked these on the OBCL — no Sterling email says so",
             [n for n, _ in (unbacked or [])],
-            suffixes={n: f"row says {st}" for n, st in (unbacked or [])})
+            suffixes={n: f"marked {st}" for n, st in (unbacked or [])})
     return "\n".join(lines)
 
 
