@@ -2187,7 +2187,28 @@ def run_walk(page, live: bool = False, limit: int = None,
     # queue (no early --max-actions/limit bail), so a partial walk can't post a
     # too-short list. A full walk of a small queue always ends via the no-progress
     # guard well before `limit`, so processed < limit == "walked the whole queue".
-    walked_all = processed < limit
+    # `processed < limit` only rules out the ONE early exit it was written for —
+    # hitting the per-run cap. Every OTHER early exit (the pager control going
+    # missing, the no-progress guard tripping, an error mid-queue) also satisfies
+    # it, so those walks were calling themselves complete and overwriting the
+    # snapshot with only the applicants they happened to reach. On 2026-08-27 that
+    # was routine: 21-in-queue/11-touched, 22/15, 23/15, and Carlos twice at
+    # 13/2 and 13/3. Megan spotted it from the outside — "you have follow up need
+    # for 6 on atef but his inbox is 23, that doesn't line up" — and she was right:
+    # the post was publishing a partial walk as the whole picture, so the to-do
+    # list UNDERSTATED the backlog and the people deeper in the queue were
+    # invisible rather than handled.
+    #
+    # So also require that we actually covered the queue we started with. When the
+    # ATS never gave us a start count (it reads None often) we cannot tell, and we
+    # keep the old behaviour rather than freeze the snapshot for the rest of the
+    # day — a stale list is its own kind of lie.
+    _covered = _start_total is None or processed >= _start_total
+    walked_all = (processed < limit) and _covered
+    if not _covered:
+        _log(f"[oat] PARTIAL walk: touched {processed} of {_start_total} in the "
+             f"queue — keeping the last full snapshot instead of publishing a "
+             f"short list")
     _write_flagged_snapshot(flagged_now, _end_total, today, complete=walked_all)
     # Queue-independent proof of the walk (readable from the Sheet directly).
     # The cache column also carries how many applicants are still owed a blocked-read
