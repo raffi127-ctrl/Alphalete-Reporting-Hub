@@ -3703,6 +3703,98 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "gap-alerts",
+        "name": "Rep Gap Alerts (15-min gaps)",
+        "creator": "Claude",
+        "emoji": "\u23F1\uFE0F",
+        "color": "#B91C1C",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Every 5 minutes of the selling day, texts the "
+            "\u201cReps Over 15 Min Gap\u201d card for Raf\u2019s office into "
+            "the **Alphalete Partners** chat \u2014 who has gone quiet, how "
+            "long, and when they last knocked. Nothing else: no activity "
+            "panel, no Slack, no thread."
+        ),
+        "breakdown": (
+            "WHERE THE NUMBERS COME FROM\n"
+            "**\u2022** v2.ownerville.com \u2192 **Time Tracker (p=510)** "
+            "\u2192 its own JSON feed "
+            "(`report_timeTracker.cfc?method=getTimeTrackingData`), dated to "
+            "TODAY, campaign pinned to **RES AT&T** "
+            "(`invD2DClientId=3`).\n"
+            "**\u2022** A rep is on the card when **minutesSinceLastKnock > "
+            "15** \u2014 the same threshold Carlos\u2019s B2B card has used "
+            "since July, so both offices mean the same thing by "
+            "\u201cinactive\u201d.\n"
+            "**\u2022** The card is REDRAWN from that data, not screenshotted: "
+            "OwnerVille\u2019s live gap widget never renders under the "
+            "automation browser (only a hidden template loads).\n\n"
+            "SORTED BY WHO HAS BEEN DARK LONGEST\n"
+            "Not alphabetically like the B2B card. On a five-minute tick the "
+            "rep who has been quiet two hours is the point of the message, and "
+            "a phone shows the top of a picture.\n\n"
+            "IT WILL NOT TEXT AN EMPTY CARD\n"
+            "Nobody over the threshold is good news, not news \u2014 and a "
+            "\u201cno reps over 15 min gap\u201d picture every five minutes "
+            "is how a room learns to mute the alert that matters.\n\n"
+            "THE DAY\n"
+            "**\u2022** **Mon\u2013Fri 1:30pm \u2013 8:30pm**\n"
+            "**\u2022** **Saturday 10:00am \u2013 5:00pm** \u2014 its own "
+            "START, not just its own end: Saturday is the one day the field is "
+            "out in the morning.\n"
+            "**\u2022** **Sunday** off entirely.\n"
+            "The end matters more than the start: once the field stops "
+            "knocking EVERY rep reads \u201cinactive 90 min ago\u201d and the "
+            "card degenerates into the whole roster.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Because that is the machine iMessage is set up on \u2014 the "
+            "Partners chat exists only in its Messages. The room is resolved "
+            "by NAME on every send, never a stored chat id, so a failure reads "
+            "as \u201cLucy was removed from the chat\u201d. Load is fenced: "
+            "its own browser profile, headless, one JSON call a tick, a pid "
+            "lock so a slow tick is skipped rather than stacked. The Hub pill is "
+            "painted by the first good tick of "
+            "the day, not by all 96."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "gap_alerts",
+        "schedule": {
+            "frequency": "daily",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Tick done \u2014 the gap card is current.",
+            "message_failed": "\u274C Tick failed. `lucy logtail gap-alerts` on Lucy 1 to see why.",
+        },
+        "actions": [
+            {
+                "label": "Preview (texts nobody)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Pulls the Time Tracker, renders the card, and resolves the Alphalete Partners chat so you can see it is still reachable. Sends nothing.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--force"],
+            },
+            {
+                "label": "Text it now",
+                "icon": "\U0001F4E3",
+                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips silently if nobody is over 15 minutes.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--send", "--force"],
+            },
+            {
+                "label": "Show the raw rows",
+                "icon": "\U0001F50E",
+                "help": "READ-ONLY: dumps what the Time Tracker feed returns right now (name, minutes since last knock, last knock time). For when the card looks wrong or comes back empty.",
+                "module": "automations.gap_alerts.run",
+                "args_fn": lambda: ["--probe"],
+            },
+        ],
+    },
+    {
         "id": "terminated-reps",
         "name": "Terminated Reps",
         "creator": "Eve & Claude",

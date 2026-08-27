@@ -302,6 +302,10 @@ _HUB_CARD = {
     "owner_chat_texts_trackers": "owner-chat-texts",
     "owner_chat_texts_board": "owner-chat-texts",
     "owner_chat_texts": "owner-chat-texts",
+    # gap_alerts self-reports via hub_activity under the card id, but a `lucy
+    # rerun gap_alerts` publishes under the SCHEDULE id — both have to land on
+    # the one card or the Hub grows a hyphen/underscore twin.
+    "gap_alerts": "gap-alerts",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 

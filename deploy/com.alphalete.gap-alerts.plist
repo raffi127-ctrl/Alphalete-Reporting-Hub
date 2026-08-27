@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.gap-alerts</string>
+
+    <!-- Path is the laptop's; on Lucy 1, regenerate with the install path.
+         /bin/bash on a wrapper is deliberate: that is the executable identity
+         macOS granted "control Messages" to on Lucy 1 (the day-orchestrator
+         plist has the same shape, and owner_chat_texts sends images through
+         it). A plist that ran .venv/bin/python directly would be a NEW
+         identity and would block on an unattended consent dialog. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/gap_alerts_5min.sh</string>
+        <string>--send</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 5 minutes. The wrapper exits immediately outside Mon-Fri 1:30-8:30pm / Sat 10am-5pm,
+         so the off-hours ticks cost nothing. StartInterval, not
+         StartCalendarInterval: ~100 calendar entries would be unreadable, and a
+         missed tick matters far less than a tick that fires at the wrong hour
+         after a TZ cache drift. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/gap-alerts.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/gap-alerts.launchd.err.log</string>
+</dict>
+</plist>
