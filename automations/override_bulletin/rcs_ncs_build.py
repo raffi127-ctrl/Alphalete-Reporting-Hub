@@ -61,8 +61,13 @@ def _css():
     text-transform:uppercase; }}
   .ss {{ color:#9a958a; letter-spacing:3px; font-size:11px; text-transform:uppercase;
     margin-top:3px; }}
-  .row {{ display:flex; gap:14px; justify-content:center; }}
-  .card {{ position:relative; flex:1; min-width:0;
+  /* A row sizes itself to however many cards it holds. The rings are SVG with a
+     viewBox, so letting them scale keeps the numbers inside crisp — the RC row
+     went from four cards to five on 2026-08-27 and a fixed 66px ring pushed the
+     last card off the page. align-items:stretch keeps the cards level when one
+     name wraps to two lines. */
+  .row {{ display:flex; gap:14px; justify-content:center; align-items:stretch; }}
+  .card {{ position:relative; flex:1 1 0; min-width:0;
     background:linear-gradient(180deg,#171512,#0f0e0c); border:1px solid #2c2721;
     border-radius:14px; padding:16px 8px 14px; text-align:center; }}
   .rk {{ position:absolute; top:10px; left:12px; color:{GOLD}; font-size:13px;
@@ -71,10 +76,14 @@ def _css():
     border:2px solid {GOLD}; }}
   .card .ph {{ width:82px; height:82px; border-radius:50%; border:2px solid {GOLD};
     background:#0d0c0b; margin:0 auto; }}
+  /* Fixed height, so a two-line name does not push its card's rings below the
+     others'. Two lines at this size is the most any name on the board runs to. */
   .nm {{ font-size:15px; font-weight:bold; letter-spacing:1px; text-transform:uppercase;
-    color:{GOLD_LT}; margin:8px 0 10px; }}
+    color:{GOLD_LT}; margin:8px 0 10px; min-height:38px;
+    display:flex; align-items:center; justify-content:center; }}
   .rings {{ display:flex; justify-content:space-around; gap:1px; }}
-  .m {{ flex:1; }}
+  .m {{ flex:1; min-width:0; }}
+  .m svg {{ width:100%; height:auto; max-width:66px; display:block; margin:0 auto; }}
   .ml {{ font-size:10.5px; color:#cfc9bc; letter-spacing:1px; margin-top:2px;
     text-transform:uppercase; }}
   .mg {{ font-size:9.5px; color:#8d887e; }}
