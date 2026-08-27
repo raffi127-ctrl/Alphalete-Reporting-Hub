@@ -548,11 +548,12 @@ class SettledLineTests(unittest.TestCase):
         sent = self._capture([], [dict(self.ENTRY)])
         self.assertEqual(len(sent), 1)
         self.assertIn("~Adriana Ruiz → Jordan Ruiz~", sent[0][1])
+        self.assertIn("no Jordan Ruiz on the OBCL to match to", sent[0][1])
         self.assertTrue(sent[0][1].startswith("❌"))
 
     def test_an_approved_question_says_what_was_fixed(self):
         sent = self._capture([dict(self.ENTRY)], [])
-        self.assertIn("checklist and in OwnerVille", sent[0][1])
+        self.assertIn("updated on the OBCL and in OwnerVille", sent[0][1])
         self.assertTrue(sent[0][1].startswith("✅"))
 
     def test_the_backlog_is_struck_once_and_remembered(self):

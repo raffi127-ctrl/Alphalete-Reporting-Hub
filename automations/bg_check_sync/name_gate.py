@@ -754,10 +754,12 @@ def mark_settled(applied: list, rejected: list, *, dry_run: bool = True) -> None
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
         if outcome == "yes":
-            text = f"✅ ~{old} → {legal}~ — fixed on the checklist and in OwnerVille"
+            text = f"✅ ~{old} → {legal}~ — updated on the OBCL and in OwnerVille"
         else:
-            text = (f"❌ ~{old} → {legal}~ — different people; {legal}'s check "
-                    f"isn't anyone on the checklist")
+            # Say the fact somebody can act on, in their words (Megan
+            # 2026-08-26): the Sterling name has no row. "Different people" was
+            # the finding; THIS is the consequence.
+            text = f"❌ ~{old} → {legal}~ — no {legal} on the OBCL to match to"
         if dry_run:
             print(f"[name-gate] (dry-run) would strike through {old}:\n  {text}")
             continue
