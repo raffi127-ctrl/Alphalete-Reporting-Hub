@@ -2934,6 +2934,32 @@ _CRED_FILES = {
     # so a second machine holding it widens nothing.
     "drive-token":
         lambda: Path.home() / ".config" / "recruiting-report" / "drive-token.json",
+    # --- Slack / Skool email (slack_skool_email) ---------------------------
+    # Three files, all born on the LAPTOP because each needs a human at a
+    # browser once, and all needed on Lucy 1, where the Monday 8am agent runs.
+    #
+    # The Slack session is the interesting one: it is what lets the run READ
+    # the current invite link out of Slack every Monday instead of somebody
+    # pasting it. Slack caps invite links at 30 days with no API, so fetching
+    # is the only way this report is ever hands-off -- and the fetch needs a
+    # signed-in session on the machine that sends. Seeding it means signing in
+    # by hand, so it is seeded wherever Megan happens to be and pushed here.
+    # Gitignored (live session cookies, PUBLIC repo), so `lucy update` will
+    # never carry it.
+    "slack-skool-session":
+        lambda: REPO_ROOT / "automations" / "slack_skool_email"
+                / ".slack_storage_state.json",
+    # The Skool join link (stable) and an optional manual Slack-link override
+    # for a week when Slack changes its markup.
+    "slack-skool-creds":
+        lambda: REPO_ROOT / "slack-skool-creds.json",
+    # Reception's OWN Gmail token -- a 4th Google identity. Gmail sends from
+    # whichever mailbox authorized the token, and this email must come from
+    # reception, the address new starts already reply to. Authorized on a
+    # machine with a browser, then pushed to the sender.
+    "gmail-token-alphaletereception":
+        lambda: Path.home() / ".config" / "recruiting-report"
+                / "gmail-token-alphaletereception.json",
 }
 
 

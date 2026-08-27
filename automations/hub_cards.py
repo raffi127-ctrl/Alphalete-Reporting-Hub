@@ -4900,6 +4900,102 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "slack-skool-email",
+        "name": "Slack / Skool Email",
+        "creator": "Megan",
+        "emoji": "\U0001F4E7",
+        "color": "#0EA5E9",
+        # \U0001F3AF Recruiting, beside blueink-docs and headshot-bot: same
+        # workbook, same weekly new-start cohort, same Slack room.
+        "category": "\U0001F3AF Recruiting",
+        "description": (
+            "Emails this week's new starts their Slack and Skool join links "
+            "the morning of orientation, BCC, from "
+            "alphaletereception@gmail.com."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every **Monday 8:00am** it reads the newest dated "
+            "**`D2D OBCL <m.d>`** tab \u2014 every **chart** on it, and "
+            "Monday's has two \u2014 takes the **Email** column, and sends "
+            "ONE email from **alphaletereception@gmail.com** with everybody "
+            "in **BCC**. The message tells them to install **Slack**, "
+            "**Skool** and **Telemapper 3.0** before they walk in, and that "
+            "their **Blueink** packet is coming separately.\n\n"
+            "This replaces the job reception did by hand every Monday: open "
+            "the checklist, copy the email column, paste it into BCC, paste "
+            "last week's message, swap in a fresh Slack invite link, send.\n\n"
+            "WHO DOESN'T GET IT\n"
+            "The same people Blue Ink skips, read from the same place \u2014 "
+            "anyone whose **Final Status** says they quit, failed, were "
+            "terminated, no-showed or rescheduled; a failed or adverse-action "
+            "**BG Status**; a declined **Friday Confirmation**; or no usable "
+            "email on the sheet. Someone who isn't starting shouldn't be told "
+            "*see you at orientation today*.\n\n"
+            "THE TWO LINKS\n"
+            "**\u2022** **Skool** \u2014 the same link every week.\n"
+            "**\u2022** **Slack** \u2014 changes whenever the workspace "
+            "invite link is reset or expires. It lives in a gitignored "
+            "`slack-skool-creds.json`, never in the repo: the repo is PUBLIC "
+            "and an invite link in it would let a stranger join the "
+            "workspace.\n\n"
+            "WHAT IT WILL NOT DO\n"
+            "**\u2022** Send with a missing, wrong-service or stale link "
+            "\u2014 it refuses and says which.\n"
+            "**\u2022** Send twice in a day. It checks reception's own Sent "
+            "mail first, so a hand-send at 7:50 stops the 8:00 run.\n"
+            "**\u2022** Send from the wrong mailbox \u2014 it verifies the "
+            "token really is reception's before mailing anyone.\n"
+            "**\u2022** Mail an empty cohort.\n\n"
+            "WHY THERE'S NO BLUEINK LINK IN IT\n"
+            "A Blueink signing URL is bound to ONE signer's packet, so a link "
+            "that worked for everybody would let anyone sign as anyone. The "
+            "Slack and Skool links are identical for all recipients \u2014 "
+            "that is what makes a single BCC send legitimate."),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=1430069873#gid=1430069873"),
+        "assignees": ["Lucy 1"],
+        # Its own Monday launchd timer, so it self-reports rather than sitting
+        # in the due-today tallies -- same shape as blueink-docs.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "8:00 AM",
+            "time_label": "Raf's Office \u00b7 8:00am CST",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Slack + Skool links emailed to this week's new starts, summary posted to #11280.",
+            "message_failed": "\u274C Run failed \u2014 nothing was sent. Most often the Slack invite link has expired or is missing from slack-skool-creds.json on Lucy 1; the run says which.",
+        },
+        "actions": [
+            {
+                "label": "Preview",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Show who WOULD get it, who wouldn't and why, and the exact message. Sends nothing.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Make A Draft",
+                "icon": "\U0001F4DD",
+                "help": "Sends nothing. Puts the finished email in reception's Gmail Drafts so a person can read it and press send.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--draft"],
+            },
+            {
+                "label": "Send Now",
+                "icon": "\u25B6",
+                "help": "Email this week's new starts for real, then post the summary to Slack. Cannot be undone.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--send", "--slack"],
+            },
+        ],
+    },
+    {
         "id": "blueink-docs",
         "name": "Blue Ink New Start Docs",
         "creator": "Megan",
