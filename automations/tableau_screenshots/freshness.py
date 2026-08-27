@@ -59,8 +59,21 @@ a report. Past `fallback_hhmm` (06:30 — about two hours of circle-back after t
 The belt-and-braces half of the guard lives in run.py: a board whose extract is
 still stale when the run proceeds is HELD OUT of the thread and flagged, rather
 than posted as though it were fresh (Megan's "fill-but-flag" / "flag unfilled
-cells" rules). A held board is listed in the header as still coming and the ~7am
-catch-up picks it up — the exact treatment Box already gets.
+cells" rules). A held board is listed in the header as still coming and the next
+later pass picks it up — the exact treatment Box already gets. WHICH pass that is
+depends on the hour, and run._held_handoff_note reads it off the schedule rather
+than promising a fixed "~7am": the 21:03 alert below named a catch-up that had
+finished fourteen hours earlier, which reads to a channel as "handled".
+
+SAMPLES ARE THE DAY'S, NOT THE MACHINE'S (2026-08-26 evening). The stability
+check below needs two readings ten minutes apart, and they are shared across
+runners through `stability_store` (a tab on the Mini Control workbook) as well as
+the local file. Keeping them local meant every run on a machine that hadn't
+sampled today opened with amnesia: the 21:03 onboarding run for
+#alisei-b2b-sales, on Lucy 1 while the morning batch had been on Lucy 3, held 5
+of 9 boards as "first sample of the day" — at nine at night, over data that
+settled at 10:30 that morning. An unreachable sheet just means fewer samples,
+which is the strict side, so the sharing can never post a board it shouldn't.
 
 Verdict cache: READY verdicts only, same-day, so the orchestrator's 4:31 probe
 and run.py's own check moments later cost ONE Tableau pull, not two. NOT-ready is
@@ -321,7 +334,16 @@ def parse_last_update(text: str, field: str) -> Optional[dt.date]:
 STABILITY_GAP_MIN = 10
 
 # Per-day totals seen so far today: {"date": iso, "obs": {extract: [[ts, total]]}}
+# THIS MACHINE's copy. The samples that decide the verdict are these MERGED with
+# every other runner's (stability_store) — see _read_stability.
 STABILITY_FILE = OUT_DIR / "_stability.json"
+
+# Also read/write today's samples to the shared Mini Control tab, so a run on any
+# machine sees the history of every other one. Off = local file only, which is
+# what shipped on 8/26 and what held five boards off #alisei-b2b-sales' first
+# thread at 21:03 because the morning run had been on a different Lucy. Tests
+# flip this; ops can use TRACKER_STABILITY_SHARED_OFF=1.
+SHARED_SAMPLES = True
 
 _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
              "Saturday", "Sunday"]
@@ -383,7 +405,8 @@ def parse_day_total(text: str, target: dt.date) -> Optional[float]:
     return None
 
 
-def _read_stability(today: dt.date) -> Dict[str, list]:
+def _read_local_stability(today: dt.date) -> Dict[str, list]:
+    """Just this machine's file."""
     try:
         data = json.loads(STABILITY_FILE.read_text())
     except Exception:                       # noqa: BLE001 — no file yet is normal
@@ -393,18 +416,46 @@ def _read_stability(today: dt.date) -> Dict[str, list]:
     return dict(data.get("obs") or {})
 
 
+def _read_stability(today: dt.date) -> Dict[str, list]:
+    """Today's samples from EVERY runner: this machine's file merged with the
+    shared tab. A run on a machine that hasn't sampled today is the normal case,
+    not the exception — an onboarding, a one-off, a report that moved Lucys — and
+    on its own history it can only ever conclude "first sample of the day"."""
+    local = _read_local_stability(today)
+    if not SHARED_SAMPLES:
+        return local
+    try:
+        from automations.tableau_screenshots import stability_store as _store
+        return _store.merge(local, _store.read_today(today))
+    except Exception:                       # noqa: BLE001 — shared read is a bonus
+        return local
+
+
 def _record_observation(today: dt.date, extract_id: str, total: float) -> list:
-    obs = _read_stability(today)
-    series = list(obs.get(extract_id) or [])
-    series.append([dt.datetime.now().isoformat(timespec="seconds"), total])
-    obs[extract_id] = series[-10:]          # a short tail is all the verdict needs
+    """Record this reading in both stores; return the merged series for the
+    verdict, oldest first."""
+    at = dt.datetime.now().isoformat(timespec="seconds")
+    local = _read_local_stability(today)
+    series = list(local.get(extract_id) or [])
+    series.append([at, total])
+    local[extract_id] = series[-10:]        # a short tail is all the verdict needs
     try:
         STABILITY_FILE.parent.mkdir(parents=True, exist_ok=True)
         STABILITY_FILE.write_text(json.dumps(
-            {"date": today.isoformat(), "obs": obs}, indent=2))
+            {"date": today.isoformat(), "obs": local}, indent=2))
     except Exception:                       # noqa: BLE001 — cache is best-effort
         pass
-    return series
+    if SHARED_SAMPLES:
+        try:
+            from automations.tableau_screenshots import stability_store as _store
+            _store.record(today, extract_id, at, total)
+        except Exception:                   # noqa: BLE001 — publishing is a bonus
+            pass
+    # Re-read through the merged view: the local file already holds the sample we
+    # just wrote, so this returns the day's full history either way — with every
+    # other machine's readings when the shared tab is reachable, without them
+    # when it isn't.
+    return _read_stability(today).get(extract_id) or series
 
 
 def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
@@ -444,28 +495,48 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
         return False, ("%s shows %g — the day hasn't loaded yet — extract not "
                        "refreshed" % (target.isoformat(), total))
     series = _record_observation(today, extract_id, total)
-    log("%s total for %s = %g (sample %d)"
+    log("%s total for %s = %g (sample %d of today, all machines)"
         % (conf["sheet"], target.isoformat(), total, len(series)))
     if len(series) < 2:
         return False, ("%s = %g, first sample of the day — no proof it has "
                        "finished loading — extract not refreshed"
                        % (target.isoformat(), total))
-    (t_prev, v_prev), (t_now, v_now) = series[-2], series[-1]
-    if v_now != v_prev:
+    # HOW LONG HAS IT READ THIS? Walk back while the value is unchanged; the
+    # earliest sample in that run is when the number stopped moving. Deliberately
+    # NOT "compare the last two": with samples merged across machines the last
+    # two can be seconds apart (two runners probing at once) while a sample from
+    # this morning already proves the day settled hours ago. The old pairwise
+    # test threw that proof away and reported "only 0m apart".
+    t_now, v_now = series[-1]
+    since = t_now
+    differing = None                        # newest sample that read something else
+    for at, val in reversed(series[:-1]):
+        if val != v_now:
+            differing = (at, val)
+            break
+        since = at
+    age = _minutes_between(since, t_now)
+    if age >= STABILITY_GAP_MIN:
+        return True, ("%s = %g, unchanged for %.0fm — finished loading"
+                      % (target.isoformat(), v_now, age))
+    if differing:
         return False, ("%s grew %g -> %g since %s — still loading — extract not "
-                       "refreshed" % (target.isoformat(), v_prev, v_now,
-                                      str(t_prev)[11:16]))
+                       "refreshed" % (target.isoformat(), differing[1], v_now,
+                                      str(differing[0])[11:16]))
+    return False, ("%s = %g unchanged, but only %.0fm apart (need %dm) — "
+                   "extract not refreshed" % (target.isoformat(), v_now, age,
+                                              STABILITY_GAP_MIN))
+
+
+def _minutes_between(earlier_iso: str, later_iso: str) -> float:
+    """Minutes between two sample stamps. An unreadable stamp counts as a FULL
+    gap: the samples are real readings either way, and the alternative — treating
+    a parse slip as "0 minutes apart" — holds a board over a formatting bug."""
     try:
-        gap = (dt.datetime.fromisoformat(t_now)
-               - dt.datetime.fromisoformat(t_prev)).total_seconds() / 60.0
+        return (dt.datetime.fromisoformat(later_iso)
+                - dt.datetime.fromisoformat(earlier_iso)).total_seconds() / 60.0
     except Exception:                       # noqa: BLE001
-        gap = STABILITY_GAP_MIN
-    if gap < STABILITY_GAP_MIN:
-        return False, ("%s = %g unchanged, but only %.0fm apart (need %dm) — "
-                       "extract not refreshed" % (target.isoformat(), v_now, gap,
-                                                  STABILITY_GAP_MIN))
-    return True, ("%s = %g, unchanged for %.0fm — finished loading"
-                  % (target.isoformat(), v_now, gap))
+        return float(STABILITY_GAP_MIN)
 
 
 def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,

@@ -167,5 +167,55 @@ class AnnotateTodayTest(unittest.TestCase):
         self.assertNotIn(sp.STALE_NOTICE, c.updates[0][2])
 
 
+class HeldHandoffNoteTest(unittest.TestCase):
+    """The corrections alert must name a pass that has not already gone.
+
+    WHAT HAPPENED (2026-08-26, 21:06). The alert carried the fixed sentence "the
+    ~7am catch-up posts it once its extract lands" — posted at nine at night by
+    the #alisei-b2b-sales onboarding run, about a catch-up that had finished
+    fourteen hours earlier and would not run again that day. Five boards read as
+    on their way; nothing was coming for them. Naming a dead pass is worse than
+    naming none, because it reads as handled.
+    """
+
+    # NOT named `run` — that is TestCase.run, and shadowing it makes unittest
+    # try to call the module.
+    from automations.tableau_screenshots import run as tracker_run
+    TODAY = dt.date(2026, 8, 26)            # a Wednesday
+
+    def _note(self, hhmm: str) -> str:
+        h, m = (int(x) for x in hhmm.split(":"))
+        return self.tracker_run._held_handoff_note(
+            self.TODAY, dt.datetime.combine(self.TODAY, dt.time(h, m)))
+
+    def test_the_morning_run_names_the_next_pass(self):
+        note = self._note("04:31")
+        self.assertIn("picks it up", note)
+        self.assertIn("08:00", note)
+
+    def test_a_late_morning_run_skips_the_passes_already_gone(self):
+        note = self._note("11:00")
+        self.assertIn("13:00", note)
+        self.assertNotIn("08:00", note)
+        self.assertNotIn("10:00", note)
+
+    def test_after_the_last_pass_it_says_nobody_is_coming(self):
+        """The alisei case: 21:03, every pass done, no automatic retry left."""
+        note = self._note("21:03")
+        self.assertIn("NO automatic pass is left today", note)
+        self.assertNotIn("picks it up", note)
+
+    def test_the_passes_come_from_the_schedule_not_from_this_file(self):
+        """Move a settle pass and the channel is told the new time — the two
+        drifting apart is the whole bug."""
+        passes = self.tracker_run._catch_up_passes(self.TODAY)
+        self.assertTrue(passes, "no later tracker passes found in the schedule")
+        self.assertEqual(passes, sorted(passes), "must be earliest-first")
+        import inspect
+        src = inspect.getsource(self.tracker_run._held_handoff_note)
+        for hhmm in ("08:00", "10:00", "13:00"):
+            self.assertNotIn(hhmm, src, "hardcoded a time the schedule owns")
+
+
 if __name__ == "__main__":
     unittest.main()

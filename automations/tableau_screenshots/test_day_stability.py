@@ -88,6 +88,11 @@ class StableTotalVerdictTest(unittest.TestCase):
         self._real_file = fr.STABILITY_FILE
         fr.STABILITY_FILE = tmp / "_stability.json"
         self.addCleanup(setattr, fr, "STABILITY_FILE", self._real_file)
+        # Local samples only: these cases are about the VERDICT, and a unit test
+        # must never reach the shared Mini Control tab. The cross-machine merge
+        # has its own class below.
+        fr.SHARED_SAMPLES = False
+        self.addCleanup(setattr, fr, "SHARED_SAMPLES", True)
         self._stub(NDS_SHEET)
 
     def _stub(self, text: str):
@@ -192,6 +197,118 @@ class StabilityGapTest(unittest.TestCase):
     def test_the_gap_is_long_enough_to_mean_something(self):
         """Two readings seconds apart prove nothing about a load in progress."""
         self.assertGreaterEqual(fr.STABILITY_GAP_MIN, 5)
+
+
+class SharedSamplesTest(unittest.TestCase):
+    """The samples are the whole day's, from every machine — not this one's.
+
+    WHAT HAPPENED (2026-08-26, 21:03). The onboarding run for #alisei-b2b-sales
+    ran on Lucy 1; the morning batch had run on Lucy 3. `_stability.json` lives
+    under gitignored output/, so Lucy 1 opened with an empty history and held 5
+    of 9 boards off a brand-new office's first thread — reporting "first sample
+    of the day" at nine at night, about data that settled at 10:30 that morning
+    (NDS 1,075, the very number it had just read).
+    """
+
+    EXTRACT = "tableau:tracker_nds"
+
+    def setUp(self):
+        tmp = Path(tempfile.mkdtemp())
+        self._real_file = fr.STABILITY_FILE
+        fr.STABILITY_FILE = tmp / "_stability.json"
+        self.addCleanup(setattr, fr, "STABILITY_FILE", self._real_file)
+        from automations.tableau_screenshots import stability_store as ss
+        self.ss = ss
+        # Stub the sheet: read_today serves what another machine "wrote", record
+        # collects. No network, no credentials, no Mini Control workbook.
+        self.shared = {}
+        self.written = []
+        real_read, real_record = ss.read_today, ss.record
+        ss.read_today = lambda day: dict(self.shared)
+        ss.record = lambda day, e, at, total: (
+            self.written.append((e, at, total)),
+            self.shared.setdefault(e, []).append([at, float(total)]))
+        self.addCleanup(setattr, ss, "read_today", real_read)
+        self.addCleanup(setattr, ss, "record", real_record)
+        from automations.shared import tableau_patchright as tp
+        csv = Path(tempfile.mkdtemp()) / "day.csv"
+        csv.write_bytes(NDS_SHEET.encode("utf-16"))
+        real_dl = tp.download_crosstab_patchright
+        tp.download_crosstab_patchright = lambda *a, **k: csv
+        self.addCleanup(setattr, tp, "download_crosstab_patchright", real_dl)
+
+    def _check(self):
+        return fr._check_stable_total(self.EXTRACT, fr.EXTRACTS[self.EXTRACT],
+                                      TUE, WED)
+
+    def test_another_machines_morning_sample_settles_this_run(self):
+        """Lucy 3 sampled at 04:31; Lucy 1's evening run must see it."""
+        self.shared[self.EXTRACT] = [["2026-08-26T04:31:00", 1075]]
+        ok, why = self._check()
+        self.assertTrue(ok, why)
+        self.assertIn("finished loading", why)
+
+    def test_a_growing_day_is_still_held_across_machines(self):
+        """Sharing must not make the gate softer — 744 then 1,075 is loading."""
+        self.shared[self.EXTRACT] = [["2026-08-26T04:31:00", 744]]
+        ok, why = self._check()
+        self.assertFalse(ok)
+        self.assertIn("grew", why)
+
+    def test_this_runs_sample_is_published_for_the_next_machine(self):
+        self._check()
+        self.assertEqual(1, len(self.written))
+        self.assertEqual(self.EXTRACT, self.written[0][0])
+        self.assertEqual(1075.0, self.written[0][2])
+
+    def test_our_own_sample_is_not_double_counted(self):
+        """We write to BOTH stores, so the shared read hands our own sample back.
+        Counted twice it becomes 'two samples', and one reading of one moment
+        would pass itself off as proof the number stopped moving."""
+        ok, why = self._check()
+        self.assertFalse(ok, why)
+        self.assertIn("first sample", why)
+
+    def test_an_unreachable_sheet_falls_back_to_local(self):
+        """Best-effort: no shared history is the old behaviour, never a crash."""
+        def boom(day):
+            raise RuntimeError("no network")
+        self.ss.read_today = boom
+        ok, why = self._check()
+        self.assertFalse(ok)
+        self.assertIn("first sample", why)
+
+    def test_bunched_samples_do_not_erase_an_older_proof(self):
+        """Two machines probing at once are seconds apart. The verdict asks how
+        long the number has READ THIS, not how far apart the last two rows are —
+        the pairwise test called this 'only 0m apart' and held the board."""
+        now = dt.datetime.now()
+        self.shared[self.EXTRACT] = [
+            ["2026-08-26T04:31:00", 1075],
+            [(now - dt.timedelta(seconds=20)).isoformat(timespec="seconds"), 1075],
+        ]
+        ok, why = self._check()
+        self.assertTrue(ok, why)
+        self.assertIn("finished loading", why)
+
+
+class MergeTest(unittest.TestCase):
+
+    def test_duplicates_collapse(self):
+        from automations.tableau_screenshots import stability_store as ss
+        one = {"e": [["2026-08-26T04:31:00", 1075]]}
+        self.assertEqual(1, len(ss.merge(one, one)["e"]))
+
+    def test_result_is_oldest_first(self):
+        from automations.tableau_screenshots import stability_store as ss
+        got = ss.merge({"e": [["2026-08-26T10:30:00", 2]]},
+                       {"e": [["2026-08-26T04:31:00", 1]]})
+        self.assertEqual([1.0, 2.0], [v for _, v in got["e"]])
+
+    def test_no_shared_history_is_just_the_local_series(self):
+        from automations.tableau_screenshots import stability_store as ss
+        local = {"e": [["2026-08-26T04:31:00", 1075]]}
+        self.assertEqual(local, ss.merge(local, None))
 
 
 class WiredUpTest(unittest.TestCase):
