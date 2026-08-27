@@ -12,8 +12,8 @@ Sales Board mirror in this same workbook:
   row 1  dark-grey control strip: VIEWING ▸ manager · GROUP ▸ Org/Captainship
   row 2  navy title banner: AD SALES BOARD
   row 3  blue WE strip: week picker in the cream cell + computed week label
-  row 4  navy bordered header: # | AD | Pull | Names | Wed..Tue | Account |
-         City | Names (week)
+  row 4  navy bordered header: # | AD | Account | City | Pull | Names |
+         Mon..Sun (real dates)
   row 5+ bordered grid, spilled by one FILTER at B5; day cells = how many
          names that ad got THAT DAY; TOTAL row grey, unmatched row amber.
 
@@ -41,11 +41,11 @@ CAPTION = {"red": 0.8, "green": 0.8, "blue": 0.8}
 BORDER = {"red": 0.7176471, "green": 0.7176471, "blue": 0.7176471}
 
 D = sheet.DATA_TAB
-# Spill: AD, Pull, # Names, the 7 day counts, Account, City. The full name
-# list stays on the data tab (col J) but is deliberately NOT shown — Carlos
-# 2026-08-26: "i dont need all the names on the right."
-B5 = ("=IFNA(FILTER({'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,"
-      "'%(d)s'!$L$2:$R,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F},"
+# Spill: AD, Account, City on the LEFT (Carlos), then Pull, # Names, and the
+# 7 day counts Mon..Sun. The full name list stays on the data tab (col J) but
+# is deliberately NOT shown — "i dont need all the names on the right."
+B5 = ("=IFNA(FILTER({'%(d)s'!$E$2:$E,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,"
+      "'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,'%(d)s'!$L$2:$R},"
       "('%(d)s'!$A$2:$A=$B$1)*('%(d)s'!$B$2:$B=$B$3)))" % {"d": D})
 A5 = ('=ARRAYFORMULA(IF(($B$5:$B$600="")+($B$5:$B$600="TOTAL"),"",'
       'ROW($B$5:$B$600)-4))')
@@ -53,10 +53,10 @@ A5 = ('=ARRAYFORMULA(IF(($B$5:$B$600="")+($B$5:$B$600="TOTAL"),"",'
 # formula reads one cell instead of re-running the MATCH seven times.
 AB1 = ("=IFERROR(DATEVALUE(INDEX($K$2:$K,MATCH('%s'!$B$3,$B$2:$B,0))),\"\")"
        % sheet.VIEW_TAB)
-WEEK_LABEL = ("=IF('%(d)s'!$AB$1=\"\",\"\",\" Week of \"&TEXT('%(d)s'!$AB$1,"
-              "\"mmm d\")&\" – \"&TEXT('%(d)s'!$AB$1+6,\"mmm d\"))" % {"d": D})
-DAY_FALLBACK = ["Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-                "Monday", "Tuesday"]
+WEEK_LABEL = ("=IF('%(d)s'!$AB$1=\"\",\"\",\" Week Ending \"&TEXT("
+              "'%(d)s'!$AB$1+6,\"m/d\"))" % {"d": D})
+DAY_FALLBACK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+                "Saturday", "Sunday"]
 
 
 def day_header(i):
@@ -173,17 +173,16 @@ def main(argv=None):
 
     # --- values --------------------------------------------------------------
     from . import weeks as _wk
-    prev_label = _wk.windows_back(2)[1][0]      # the completed week
+    cur_label = _wk.windows_back(1)[0][0]       # the current week (Mon-Sun)
     sheet.put_values(sess, sheet.view_range("A1"),
                      [["VIEWING ▶", "Carlos Hidalgo", "GROUP ▶", "Org",
                        CAPTION_TEXT]])
     sheet.put_values(sess, sheet.view_range("A2"), [["AD SALES BOARD"]])
-    sheet.put_values(sess, sheet.view_range("A3"), [["WE", prev_label]])
+    sheet.put_values(sess, sheet.view_range("A3"), [["WE", cur_label]])
     _uf(sess, sheet.view_range("C3"), [[WEEK_LABEL]])
     sheet.put_values(sess, sheet.view_range("A4"),
-                     [["#", "AD", "Pull", "Names"]])
-    _uf(sess, sheet.view_range("E4"), [[day_header(i) for i in range(7)]])
-    sheet.put_values(sess, sheet.view_range("L4"), [["Account", "City"]])
+                     [["#", "AD", "Account", "City", "Pull", "Names"]])
+    _uf(sess, sheet.view_range("G4"), [[day_header(i) for i in range(7)]])
     _uf(sess, sheet.view_range("A5"), [[A5]])
     _uf(sess, sheet.view_range("B5"), [[B5]])
 
@@ -274,7 +273,7 @@ def main(argv=None):
                 "textFormat": arial(foregroundColor={"red": 0.45, "green": 0.45,
                                                      "blue": 0.45})}},
             "userEnteredFormat.textFormat"),
-        fmt(4, 2, 320, 11, {"userEnteredFormat": {
+        fmt(4, 4, 320, 13, {"userEnteredFormat": {
                 "numberFormat": {"type": "NUMBER", "pattern": "0"}}},
             "userEnteredFormat.numberFormat"),
         # borders over the whole board grid
@@ -287,10 +286,9 @@ def main(argv=None):
             "right": {"style": "SOLID", "color": BORDER},
             "innerHorizontal": {"style": "SOLID", "color": BORDER},
             "innerVertical": {"style": "SOLID", "color": BORDER}}},
-        # column widths
-        width(0, 1, 34), width(1, 2, 290), width(2, 3, 64), width(3, 4, 64),
-        width(4, 11, 86), width(11, 12, 170), width(12, 13, 130),
-        width(13, 14, 40),
+        # column widths: # | AD | Account | City | Pull | Names | Mon..Sun
+        width(0, 1, 34), width(1, 2, 290), width(2, 3, 170), width(3, 4, 130),
+        width(4, 5, 64), width(5, 6, 64), width(6, 13, 86), width(13, 14, 40),
         # breathing room: taller header + airier data rows
         {"updateDimensionProperties": {
             "range": {"sheetId": view_id, "dimension": "ROWS",

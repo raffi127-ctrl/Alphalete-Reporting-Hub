@@ -1,32 +1,33 @@
-"""Ad-week windows: Wednesday through Tuesday.
+"""Ad-week windows: Monday through Sunday.
 
-The whole point of the Ad Sales Board is the Wednesday-morning look-back, so a
-"week" here is anchored on Wednesday and ends the following Tuesday — on
-Wednesday morning the just-finished week is complete, not three days stale the
-way a Sun-Sat or Mon-Sun week would be.
+Started life as Wednesday→Tuesday (built for the Wednesday-morning look-back),
+changed the same evening on Carlos's call — "weeks are monday - sunday" — to
+match every other board in the fleet (the sales boards' WE convention is the
+Sunday the week ends on).
 
 The week LABEL (what the picker shows and what the data tab stores in column B)
-is a join key across runs — never change its format without rewriting every
-existing row on 'Ad Sales Data' to match, or old weeks silently vanish from the
-picker's view.
+is a join key across runs — never change its format OR the anchor day without
+rewriting every existing row on 'Ad Sales Data' to match, or old weeks silently
+vanish from the picker's view. The Wed→Tue → Mon→Sun switch did exactly that
+rewrite (full-year re-backfill, 2026-08-26 night).
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
 import datetime as dt
 
-WEDNESDAY = 2  # datetime.weekday(): Mon=0 .. Sun=6
+MONDAY = 0  # datetime.weekday(): Mon=0 .. Sun=6
 
 
 def anchor_for(day):
-    """The Wednesday that starts the ad-week containing `day`."""
-    return day - dt.timedelta(days=(day.weekday() - WEDNESDAY) % 7)
+    """The Monday that starts the ad-week containing `day`."""
+    return day - dt.timedelta(days=(day.weekday() - MONDAY) % 7)
 
 
 def window(anchor):
     """(label, start_date, end_date) for the ad-week starting at `anchor`.
 
-    Labels: "Aug 19 – 25, 2026" within a month, "Aug 26 – Sep 1, 2026" across
-    months, "Dec 30, 2026 – Jan 5, 2027" across years. The dash is an en dash
+    Labels: "Aug 24 – 30, 2026" within a month, "Aug 31 – Sep 6, 2026" across
+    months, "Dec 29, 2025 – Jan 4, 2026" across years. The dash is an en dash
     with spaces, which also keeps Sheets from ever reading the label as a date
     (the monthly dashboard's "July 2026" coercion trap does not exist here).
     """

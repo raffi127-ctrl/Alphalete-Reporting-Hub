@@ -6,15 +6,15 @@
   python -m automations.ad_sales_board.run --weeks 4    # backfill: current + 3 back
   python -m automations.ad_sales_board.run --anchor 08-12-2026   # one explicit week
 
-An ad-week runs WEDNESDAY → TUESDAY (see weeks.py). Each run re-pulls its
-target weeks from AppStream's Source Report (p=702) per office, joins the
-applicant names from the Call List import, and rewrites ONLY the
-(manager, week) pairs it actually pulled — everything older stays frozen
+An ad-week runs MONDAY → SUNDAY (see weeks.py — the fleet's WE convention).
+Each run re-pulls its target weeks from AppStream's Source Report (p=702) per
+office, joins the applicant names from the Call List import, and rewrites ONLY
+the (manager, week) pairs it actually pulled — everything older stays frozen
 exactly as it was last written, same freeze rule as the monthly dashboard.
 
-On Wednesdays a live default run also flips the visible tab's week picker (C2)
-to the week that just finished, so the morning look-back opens on the right
-week without anyone touching the dropdown.
+A live default run also stamps the visible tab's week picker (B3) to the
+current week each morning, sales-board style — Monday it rolls onto the new
+week by itself.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
@@ -74,7 +74,7 @@ def ads_for_week(html):
 
 def rows_for(manager, label, week_start, ads, name_rows):
     """The data-tab rows for one (manager, week): one row per ad (Pull, its
-    names, and columns L..R = names per DAY, Wednesday..Tuesday), an
+    names, and columns L..R = names per DAY, Monday..Sunday), an
     unmatched-names row when the join couldn't place someone, and a TOTAL row
     last (its label sits in the Ad Title column — that is the board's first
     visible column). A manager with NO name feed at all (the captainship-only
@@ -131,6 +131,10 @@ def main(argv=None):
                     help="how many ad-weeks back from today, current included (default 2)")
     ap.add_argument("--anchor", action="append",
                     help="explicit week anchor(s) mm-dd-yyyy (any day in the week works)")
+    ap.add_argument("--reset", action="store_true",
+                    help="drop ALL existing data rows before writing — only for "
+                         "week-definition migrations (e.g. the Wed→Mon switch); "
+                         "every kept week must be re-pulled afterwards")
     ap.add_argument("--headed", action="store_true")
     a = ap.parse_args(argv)
     run_started = dt.datetime.now()
@@ -213,7 +217,11 @@ def main(argv=None):
         return 1
 
     # Freeze rule: rewrite only the (manager, week) pairs this run pulled.
-    existing = sheet.get_values(sess, sheet.data_range("A2:R20000"))
+    if a.reset:
+        print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
+        existing = []
+    else:
+        existing = sheet.get_values(sess, sheet.data_range("A2:R20000"))
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
@@ -251,12 +259,14 @@ def main(argv=None):
                            week_labels[i] if i < len(week_labels) else ""]
                           for i in range(max(len(managers), len(week_labels)))])
         print("[ad_sales_board] wrote %d rows" % len(new), flush=True)
-        # Wednesday morning, default windows: open the board on the week that
-        # just finished. Backfills and office-limited runs leave the picker be.
-        if today.weekday() == weeks.WEDNESDAY and not a.office and not a.anchor:
-            done = weeks.window(weeks.anchor_for(today) - dt.timedelta(days=7))[0]
+        # Stamp the week picker to the CURRENT week every morning — the same
+        # convention as the sales boards (the captainship job advances their
+        # pickers daily). Monday it naturally rolls onto the new week; a manual
+        # pick lasts until the next morning's run. Backfills and
+        # office-limited runs leave the picker be.
+        if not a.office and not a.anchor:
             try:
-                _advance_week_picker(sess, done)
+                _advance_week_picker(sess, wins[0][0])
             except Exception as e:  # noqa: BLE001 — cosmetic, never fails the run
                 print("  (week picker not advanced: %s)" % str(e)[:120], flush=True)
 
