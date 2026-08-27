@@ -391,18 +391,23 @@ def write_sheet(tab: str, header, rows, meta: str) -> None:
 # so Playwright waits forever for a stable box that never arrives. We therefore
 # read each control's href+onclick in JS and DRIVE IT IN JS, which runs the same
 # handler the page would and skips the actionability wait entirely.
+# CRACKED 2026-08-27 (probe + live run on the mini): each row's Restore is an
+# <a class="restore-applicant"> anchor — jQuery-bound, NO href/onclick — inside
+# form frmRmvAppPE. One JS click per anchor restores that row (anchors 42 -> 0,
+# verified by an empty re-filter). THE TRAP that burned the first two passes:
+# matching /restore/i on TEXT grabs the hidden #reportDataXL input first (its
+# report-export blob contains the word "restore"), so the click hit a hidden
+# input and nothing happened. Match the class, never the text.
 _RESTORE_JS = """
-() => Array.from(document.querySelectorAll('a, input, button'))
-  .map((e, i) => ({ e, i }))
-  .filter(({e}) => /restore/i.test(
-      (e.innerText || e.value || e.title || '').trim()))
-  .map(({e}) => ({
+() => Array.from(document.querySelectorAll('a.restore-applicant'))
+  .map(e => ({
       tag: e.tagName,
       href: e.getAttribute('href') || '',
       onclick: (e.getAttribute('onclick') || '').slice(0, 160),
-      text: (e.innerText || e.value || '').trim().slice(0, 20),
+      text: (e.innerText || '').trim().slice(0, 20),
       row: (e.closest('tr') || {}).rowIndex,
-      name: ((e.closest('tr') || {cells: []}).cells[0] || {}).innerText || '' }))
+      name: (((e.closest('tr') || {cells: []}).cells[0] || {}).innerText
+             || '').trim().slice(0, 40) }))
 """
 
 
@@ -421,9 +426,7 @@ def _click_restore_js(page) -> bool:
     left — which is how the loop knows it is finished."""
     try:
         return bool(page.evaluate(
-            """() => { const el = Array.from(
-                 document.querySelectorAll('a, input, button')).find(e =>
-                 /restore/i.test((e.innerText || e.value || e.title || '').trim()));
+            """() => { const el = document.querySelector('a.restore-applicant');
                if (!el) return false;
                el.scrollIntoView({block: 'center'});
                el.click();
