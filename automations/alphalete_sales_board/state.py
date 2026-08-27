@@ -56,7 +56,7 @@ def prune(data: Dict, keep: int = KEEP_DAYS) -> Dict:
     days = sorted(k for k in data if not k.startswith("_"))
     for k in days[-keep:]:
         out[k] = data[k]
-    for section in ("_records", "_lvl1_sent"):
+    for section in ("_records", "_lvl1_sent", "_added"):
         sub = data.get(section) or {}
         keys = sorted(sub)[-keep:]
         if keys:
@@ -116,4 +116,35 @@ def lvl1_sent(data: Dict, day: dt.date) -> bool:
 
 def mark_lvl1_sent(data: Dict, day: dt.date) -> Dict:
     data.setdefault("_lvl1_sent", {})[day.isoformat()] = True
+    return data
+
+
+# --- rows this code added, so a wrong one can be taken back -----------------
+def record_added(data: Dict, day: dt.date, sara_name: str, board_name: str,
+                 row: int) -> Dict:
+    """Remember that WE created this roster row. Only rows recorded here are
+    ever eligible for removal -- a row a person typed is never ours to clear."""
+    data.setdefault("_added", {}).setdefault(day.isoformat(), {})[
+        sara_name.strip().upper()] = {"board_name": board_name, "row": row}
+    return data
+
+
+def added_row(data: Dict, sara_name: str) -> Optional[Dict]:
+    """{'board_name','row','day'} if we added a row for this SaraPlus name in
+    the last few days, else None. Looked up across days because an alias is
+    usually confirmed the morning after the row appeared."""
+    key = sara_name.strip().upper()
+    for day_key in sorted((data.get("_added") or {}), reverse=True):
+        hit = (data["_added"][day_key] or {}).get(key)
+        if hit:
+            out = dict(hit)
+            out["day"] = day_key
+            return out
+    return None
+
+
+def forget_added(data: Dict, sara_name: str) -> Dict:
+    key = sara_name.strip().upper()
+    for day_key in list((data.get("_added") or {})):
+        data["_added"][day_key].pop(key, None)
     return data

@@ -282,12 +282,16 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
                 % (" or ".join(clash[:2]), aliases.TAB))
             _log("  %s: %s" % (item["sara_name"], item["status"]))
             continue
-        row, note = fill.add_rep(ws, grid, name_case.titlecase_name(item["sara_name"]))
+        board_name = name_case.titlecase_name(item["sara_name"])
+        row, note = fill.add_rep(ws, grid, board_name)
         if row is None:
             item["status"] = note
         else:
             item["status"] = "wasn't on the board - added, numbers fill next sweep"
             _log("  added %s to row %d" % (item["sara_name"], row))
+            # Recorded so an alias confirmed later can take the row back if it
+            # turns out they were already on the board under another spelling.
+            S.save(S.record_added(S.load(), day, item["sara_name"], board_name, row))
 
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()

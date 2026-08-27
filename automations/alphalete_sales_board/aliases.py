@@ -31,10 +31,25 @@ HEADERS = ["SaraPlus Name", "Board Name", "Added By", "Note"]
 
 
 def _open_tab(client=None, create: bool = True):
+    """Find the alias tab by its HEADER ROW, not its title.
+
+    Megan renamed it within an hour of it being created, which is exactly what
+    a title-based lookup cannot survive. The two headers are the contract; the
+    tab can be called whatever reads best on the board.
+    [[feedback_no_hardcoded_columns]]
+    """
     from automations.recruiting_report.fill import _client
     book = (client or _client()).open_by_key(C.SPREADSHEET_ID)
+    want = [h.strip().lower() for h in HEADERS[:2]]
     for ws in book.worksheets():
         if ws.title.strip().lower() == TAB.lower():
+            return ws
+    for ws in book.worksheets():                       # renamed? find the shape
+        try:
+            head = [c.strip().lower() for c in ws.row_values(1)[:2]]
+        except Exception:  # noqa: BLE001
+            continue
+        if head == want:
             return ws
     if not create:
         return None

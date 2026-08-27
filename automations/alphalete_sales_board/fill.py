@@ -229,3 +229,57 @@ def board_only_reps(grid, day, accounted: List[str]) -> List[str]:
 def day_blocks_for(grid, day):
     """Today's metric columns, or {} if the banner is missing."""
     return B.day_blocks(grid).get(day.strftime("%A")) or {}
+
+
+def remove_rep(worksheet, grid, row: int, expected_name: str,
+               day) -> Tuple[bool, str]:
+    """Undo a row THIS code added, and say what was on it.
+
+    ONLY for a row we recorded adding (state._added), and only while col C
+    still holds the name we put there. Both guards matter: an alias confirmed
+    the next morning must not clear a row somebody has since typed into, and a
+    re-sorted board means a row number alone proves nothing.
+
+    WHERE THE SALES GO. Today's move themselves: SaraPlus is cumulative, so
+    once the alias exists the next sweep computes the rep's whole day and
+    writes it to the row they really have (Bo's line). Nothing to copy.
+
+    EARLIER DAYS DO NOT. This sweep only ever writes today, so a number sitting
+    on Monday of a duplicate row would simply vanish when the row is cleared.
+    So the WHOLE WEEK is cleared -- leaving them would leave phantom units in
+    the column totals, which SUMIF adds up by column and never looks at the
+    name -- and every day's numbers are RETURNED in the note, so a person can
+    put the older ones on the right row. Silent is the one thing it must not
+    be. (Megan 2026-08-26.)
+    """
+    actual = B.cell(grid, row, B.NAME_COL).strip()
+    if B._norm_name(actual) != B._norm_name(expected_name):
+        return False, ("row %d now reads %r, not %r -- left alone (somebody "
+                       "has edited it)" % (row, actual, expected_name))
+
+    blocks = B.day_blocks(grid)
+    for day_name, cols in blocks.items():
+        for c in cols.values():
+            if B.is_status(B.cell(grid, row, c)):
+                return False, ("row %d carries a roll-call status on %s -- "
+                               "left alone" % (row, day_name))
+
+    carried, updates = [], [{"range": _a1(row, B.NAME_COL), "values": [[""]]}]
+    today_name = day.strftime("%A")
+    for day_name, cols in blocks.items():
+        had = {m: B.cell(grid, row, c).strip()
+               for m, c in cols.items() if B.cell(grid, row, c).strip().isdigit()}
+        if had and day_name != today_name:
+            carried.append("%s: %s" % (day_name,
+                                       ", ".join("%s %s" % (v, m)
+                                                 for m, v in sorted(had.items()))))
+        updates += [{"range": _a1(row, c), "values": [[""]]} for c in cols.values()]
+
+    worksheet.batch_update(updates, value_input_option="USER_ENTERED")
+    note = ("cleared row %d (%s) -- today's numbers land on their real row on "
+            "the next sweep" % (row, actual))
+    if carried:
+        note += (". EARLIER DAYS were on that row and are NOT moved "
+                 "automatically: " + "; ".join(carried)
+                 + " -- put these on their real row by hand")
+    return True, note
