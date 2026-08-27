@@ -237,6 +237,22 @@ else
     --no-manifest \
     --sections "Retail NL,Retail Internet,Retail JE,BOX" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
+
+  # All Campaigns AFTER the top-up, Tue-Sun too (Eve 2026-08-27). The Monday
+  # branch above has re-filled this tab since 2026-08-06; this branch never did,
+  # and that was the bug, not a decision. The tab is WRITTEN, not computed:
+  # all_campaigns_board.run reads the four sections just re-pulled above and
+  # sums them per person. Skipping it here left the tab carrying the pre-catch-up
+  # Retail/Box numbers until the NEXT morning's fill — and since that fill also
+  # runs before the 06:52 Box top-off, yesterday's Box never landed at all.
+  # Measured 2026-08-27: board 2278, tab 2234, the whole 44 missing being Box.
+  # Same flags and same reasoning as the Monday branch: no --enable-rollover
+  # (Tuesday's roll already fired at 05:20), and non-fatal to $ST, because a
+  # stale All Units section is not a failed board pull.
+  if [ "$#" -eq 0 ]; then ACB_ARGS="--apply"; else ACB_ARGS=""; fi
+  echo "[$(date)] re-filling the All Campaigns board (${ACB_ARGS:-dry-run})" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.all_campaigns_board.run $ACB_ARGS >> "$LOG_FILE" 2>&1 || \
+    echo "[$(date)] All Campaigns re-fill exited non-zero — that tab may still be short the sections re-pulled above" >> "$LOG_FILE"
 fi
 
 echo "[$(date)] Board catch-up finished exit=$ST" >> "$LOG_FILE"

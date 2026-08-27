@@ -77,6 +77,13 @@ if pgrep -f "automations.org_sales_board.run" > /dev/null 2>&1; then
     echo "[$(date)] box re-pull SKIPPED — an org_sales_board run is still going"
     exit 0
 fi
+# ...and not while the All Campaigns re-fill below is still going either. That
+# step inserts roster rows and re-ranks three blocks of the same tab; two of
+# them at once is how a rep ends up carrying someone else's campaign.
+if pgrep -f "automations.all_campaigns_board.run" > /dev/null 2>&1; then
+    echo "[$(date)] box re-pull SKIPPED — an all_campaigns_board run is still going"
+    exit 0
+fi
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
@@ -96,6 +103,39 @@ echo "[$(date)] BOX top-off starting (extra args: ${*:-none})" > "$LOG_FILE"
     --step daily --skip-compare --no-manifest --sections "BOX" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] BOX top-off finished exit=$ST" >> "$LOG_FILE"
+
+# CARRY BOX INTO THE ALL CAMPAIGNS TAB (Eve 2026-08-27). The 'All Campaigns Org
+# Sales Board' tab is NOT a formula view of the board — all_campaigns_board.run
+# READS the board's seven campaign sections and WRITES the summed day cells. It
+# runs once, at order 16, right behind the 04:50 fill — i.e. ~90 minutes BEFORE
+# this top-off. So every morning that tab carried the very day-behind Box this
+# script exists to fix, and nothing re-read it until 14:30; Tue-Sun not even
+# then, because board_catchup.sh only re-filled it on Mondays.
+#
+# What it looked like: Carlos at 99 units on 2026-08-27 while the board had him
+# at 60 in B2B + 44 in BOX = 104. Wednesday's Box was simply not on the tab — 0
+# for all four Box reps (Roshan -25, Ryan -12, Carlos -5, Abel -2), exactly the
+# 44-unit gap between the board's 2278 and the tab's 2234. Box also REVISES
+# earlier days when its rolling log re-merges (Carlos's Tuesday went 21 -> 14 in
+# this very pull), so a tab filled before the top-off is wrong in both
+# directions, not merely a day short.
+#
+# This hour specifically, because the 07:25 Org Board Email renders its All
+# Units section LIVE off this tab (screenshot_email.capture_all_units): without
+# this the morning email shipped the pre-Box numbers every single day.
+#
+# NOT --enable-rollover: the roll is the Tuesday 05:20 run's job and has already
+# happened by now. Re-running the fill is idempotent (it rewrites the same
+# completed-day cells) and NON-FATAL to $ST — 75 is this module's ordinary
+# INCOMPLETE, and a stale All Units section must never be reported as a failed
+# Box pull. --apply is what makes it write; a `--dry-run` test of this script
+# must not, and all_campaigns_board.run has no --dry-run flag (dry IS the
+# default), so pass nothing at all in that case.
+if [ "$#" -eq 0 ]; then ACB_ARGS="--apply"; else ACB_ARGS=""; fi
+echo "[$(date)] re-filling the All Campaigns board (${ACB_ARGS:-dry-run})" >> "$LOG_FILE"
+"$VENV_PY" -u -m automations.all_campaigns_board.run $ACB_ARGS >> "$LOG_FILE" 2>&1
+ACB_ST=$?
+echo "[$(date)] All Campaigns re-fill finished exit=$ACB_ST" >> "$LOG_FILE"
 
 # DELIBERATELY SILENT on failure. A late or empty Box is the normal case this
 # script was written to tolerate, and the 07:05 post must go out either way.
