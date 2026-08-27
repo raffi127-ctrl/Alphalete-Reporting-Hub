@@ -420,6 +420,14 @@ def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
         # Why anything above is missing (see _pending in email_build).
         "errors": errors,
     }
+    # Last week's dispositions as an attached PDF, EVERY day (Rafael
+    # 2026-08-27: he compares last week against the day prior). Reads the
+    # PNGs Sunday's run already wrote — no pull, no session, and None when
+    # there are none, so it can only ever add to a report, never hold one up.
+    if "knock_dispo" in {k for _h, k in captain.sections()}:
+        from automations.captainship_drafts import weekly_pdf
+        bundle["weekly_pdf"] = weekly_pdf.build(captain, today, render_dir,
+                                                logfn=logfn)
     # A box that rendered into nothing is a per-slot miss, not a whole-tab
     # failure — say which slot rather than leaving that one section mute.
     for _h, _k in captain.sections_on(today):

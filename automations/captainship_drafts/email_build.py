@@ -363,4 +363,20 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
                               maintype="image", subtype="png", cid=cid)
     html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
                           maintype="image", subtype="png", cid=cid_photo)
+
+    # Last week's Knock Dispositions boards as a real attachment (Rafael
+    # 2026-08-27) — see weekly_pdf. This is add_attachment on the TOP-LEVEL
+    # message, which is the distinction the comment above is about: it wraps
+    # the whole thing in a multipart/mixed and leaves the inline images inside
+    # their own multipart/related, untouched. What broke in 2026-07-27 was
+    # NAMING a part inside that related container, which turned an inline
+    # image into an attachment; a genuine attachment alongside the container
+    # is the shape every mail client expects. It also no longer passes through
+    # a Gmail draft rewrite at all — the send is SMTP with this exact MIME.
+    weekly = bundle.get("weekly_pdf")
+    if weekly:
+        pdf_path, filename = weekly
+        msg.add_attachment(Path(pdf_path).read_bytes(),
+                           maintype="application", subtype="pdf",
+                           filename=filename)
     return msg
