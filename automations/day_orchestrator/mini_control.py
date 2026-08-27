@@ -2600,8 +2600,44 @@ def _action_update(args: str) -> tuple[bool, str]:
     if co.returncode != 0:
         return False, ("couldn't switch to main (uncommitted changes on the "
                        f"current branch?): {(co.stderr or co.stdout).strip()[:150]}")
-    return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only",
-                     "--autostash"], timeout_s=120)
+    ok, out = _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only",
+                        "--autostash"], timeout_s=120)
+    # --autostash CAN LEAVE THE TREE UNMERGED AND STILL EXIT 0. Verified by
+    # reproduction 2026-08-27: a local edit to a file the pull also touches gives
+    # "Applying autostash resulted in conflicts. Your changes are safe in the
+    # stash." on stdout, exit code 0, and `UU <file>` in the tree. The pull did
+    # succeed; only the pop failed, and git does not fail the command for it.
+    #
+    # That is how Lucy 2 lost its 4am batch. `update` at 00:47 answered SUCCESS
+    # while leaving schedule_config.json with conflict markers, so at 04:00:05
+    # registry.load_config() raised JSONDecodeError and the orchestrator ran ZERO
+    # of its ~19 reports. Nothing alerted, because the didn't-run watcher only
+    # notices reports it has seen run — six of the ten due were still being
+    # recovered by hand at 09:30 and three had not run at all.
+    #
+    # deploy/day_orchestrator.sh now restores an unparseable schedule_config.json
+    # from origin at 04:00, which is the right backstop. This is the other half:
+    # the deploy that broke it should say so AT 00:47, not leave a landmine for a
+    # batch four hours later. Nothing is discarded — the edit is in the stash.
+    try:
+        unmerged = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "diff", "--name-only",
+             "--diff-filter=U"],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+    except Exception:  # noqa: BLE001 — the probe must never mask the pull result
+        unmerged = ""
+    if unmerged:
+        files = ", ".join(unmerged.split("\n")[:6])
+        return False, (
+            "PULLED, but the autostash pop CONFLICTED and left the tree "
+            f"unmerged: {files}. This runner is now on new code with a broken "
+            "working copy — anything reading those files will fail (a broken "
+            "schedule_config.json takes out the whole 4am batch). Your local "
+            "edit is NOT lost, it is in the stash: `git checkout --theirs <f> "
+            "&& git add <f>` to take origin's version, or `lucy git_recover "
+            "<f>` to restore it from origin/main; `git stash list` still has "
+            f"the edit. · {out}")
+    return ok, out
 
 
 def _action_git_status(args: str) -> tuple[bool, str]:
