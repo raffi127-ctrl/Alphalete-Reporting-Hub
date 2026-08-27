@@ -533,20 +533,34 @@ def _run(args) -> None:
         try:
             run_ov_pass(ov_targets or [], apply=args.ov_apply,
                         headless=not args.ov_headed,
-                        allow_login=args.ov_login)
+                        allow_login=args.ov_login, only=args.ov_only or "")
         except Exception as e:  # noqa: BLE001
             print(f"[ov-names] pass skipped: "
                   f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
 
 
 def run_ov_pass(targets: list, *, apply: bool, headless: bool,
-                allow_login: bool = False) -> None:
+                allow_login: bool = False, only: str = "") -> None:
     """The OwnerVille half: make each profile say what Sterling ran.
 
     Opt-in (`--ov`) and never part of the plain 3x/day pass — it drives a real
     browser through every campaign on View Progress, which is minutes of work
     and a profile lock the headless status sync has no reason to hold.
     """
+    if only:
+        # Scope a real OwnerVille edit to ONE person. The first time this writes
+        # to anybody's profile it should write to exactly the profile somebody
+        # is standing by to look at — the same reason report fills preview on
+        # one tab before they touch fifty-two.
+        want = only.strip().lower()
+        targets = [t for t in targets if want in t.sheet_name.lower()]
+        if not targets:
+            print(f"[ov-names] --ov-only {only!r} matched nobody this run")
+            return
+        if len(targets) > 1:
+            print(f"[ov-names] --ov-only {only!r} matched "
+                  f"{', '.join(t.sheet_name for t in targets)} — be more specific")
+            return
     if not targets:
         print("[ov-names] nothing to check")
         return
@@ -583,6 +597,9 @@ def main(argv=None) -> int:
     ap.add_argument("--ov", action="store_true",
                     help="also check OwnerVille profiles against Sterling "
                          "(browser; reports only unless --ov-apply)")
+    ap.add_argument("--ov-only",
+                    help="with --ov: check/edit ONE person's OwnerVille profile "
+                         "(match on their checklist name) — the preview switch")
     ap.add_argument("--ov-apply", action="store_true",
                     help="with --ov: actually edit the OwnerVille profile names")
     ap.add_argument("--ov-login", action="store_true",
@@ -593,7 +610,7 @@ def main(argv=None) -> int:
     ap.add_argument("--repost", action="store_true",
                     help="force a fresh repost of the thread (the Friday bump)")
     args = ap.parse_args(argv)
-    if args.ov_apply or args.ov_headed or args.ov_login:
+    if args.ov_apply or args.ov_headed or args.ov_login or args.ov_only:
         args.ov = True
     if args.ov_login:
         args.ov_headed = True      # somebody has to see the box to tick it
