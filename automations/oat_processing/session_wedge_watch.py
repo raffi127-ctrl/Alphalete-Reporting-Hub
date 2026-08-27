@@ -279,13 +279,24 @@ def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
 
     if state == "healthy":
         if st.get("alerted_at"):
-            # Close the THREAD (✅ on the parent) rather than posting a loose
-            # all-clear the channel has to match up with the alert by eye. Free
-            # when nothing is open, and never raises.
+            # Close the THREAD — ✅ on the parent and the marker flipped to
+            # `resolved` — rather than posting a loose all-clear the channel has
+            # to match up with the alert by eye. ensure_closed asks the CHANNEL,
+            # not this machine's incident index, and — the part that actually
+            # bit us — a close it cannot complete is NOT paved over with a
+            # message. On 2026-08-26 the 18:21 episode was closed by hand from a
+            # laptop, so Lucy 2's index still said open at 19:12; resolve()
+            # correctly found the thread already closed and returned False, and
+            # the old fallback below turned that False into a fresh post. It
+            # went out through _post(), which stamps the WEDGE headline and an
+            # `open` marker on whatever it is handed — so the all-clear opened a
+            # brand-new incident reading "office 11580 session wedged" with
+            # "session recovered" 246ms under it and no ✅ on either. Megan: "if
+            # this corrected it should have a green check."
             closed = False
             try:
                 from automations.shared import incident_thread as _inc
-                closed = _inc.resolve_if_open(
+                closed = _inc.ensure_closed(
                     INCIDENT_KEY,
                     what="*Applicant Push* — the office 11580 session",
                     detail="A healthy walk just processed cleanly; the queue is "
@@ -294,11 +305,19 @@ def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
             except Exception as e:  # noqa: BLE001
                 print(f"[wedge-watch] couldn't close the thread "
                       f"({type(e).__name__}: {str(e)[:80]})")
+            # NO FALLBACK POST HERE, ON PURPOSE. The old one replied "session
+            # recovered" with no ✅ and no marker flip, which reads as fixed to a
+            # person and as still-open to every machine — worse than silence,
+            # because it also hid the failure. Losing one all-clear is cheap: we
+            # run again in five minutes. So on failure we KEEP the episode and
+            # retry, and only forget it once the thread really is closed.
             if not closed:
-                _post("Office 11580 session recovered — Lucy 2",
-                      ["A healthy run just processed cleanly — the wedge is cleared "
-                       "and the queue is draining again."], dry_run)
-            print("[wedge-watch] episode closed (all-clear posted)")
+                print("[wedge-watch] couldn't close the incident thread — "
+                      "keeping the episode open, retrying next pass")
+                return 0
+            print("[wedge-watch] episode closed (✅ on the incident thread)")
+            if dry_run:
+                return 0
         _save_state({})
         return 0
 

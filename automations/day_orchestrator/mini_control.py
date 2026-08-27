@@ -189,7 +189,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # here BECAUSE only the mini is Lucy, so they must not eat
                     # the report budget.
                     "incident_resolve", "incident_working", "incident_unmark",
-                    "incident_triage",
+                    "incident_triage", "incident_close_stranded",
                     "find_group"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
@@ -4392,6 +4392,51 @@ def _action_incident_unmark(args: str) -> tuple[bool, str]:
     return True, f"{key}: in-progress mark cleared — nobody is shown on it now"
 
 
+def _action_incident_close_stranded(args: str) -> tuple[bool, str]:
+    """Finish the parent edit on threads that are CLOSED but still read `open`.
+
+      incident_close_stranded [--dry-run]
+
+    WHY IT HAS TO RUN HERE, and why it needed an action at all: chat.update only
+    touches your OWN posts. An incident opened by Lucy and fixed from a laptop
+    gets its reply and its ✅, and the marker edit is REFUSED — the thread is
+    genuinely closed, the parent says `open` forever, and every machine scanning
+    that channel still counts it as open. incident_thread.close_stranded has
+    existed for this since 2026-08-26 and even printed "run
+    `lucy incident_close_stranded`" when it hit posts it didn't own — but that
+    action was never registered, so the one instruction that finishes the job
+    pointed at a command that did not exist. It does now.
+
+    Narrow and idempotent, same as the underlying function: it only touches a
+    parent that ALREADY carries the ✅ (or already says RESOLVED). It never
+    posts, never replies, and never resolves anything that isn't resolved."""
+    dry = "--dry-run" in (args or "")
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    # Same long-lived-poller staleness as the other incident actions: this
+    # process caches channel history for its whole life.
+    inc._forget_history(inc.CHANNEL)
+    try:
+        out = inc.close_stranded(dry_run=dry)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"close_stranded failed ({type(e).__name__}: "
+                       f"{str(e)[:100]})")
+    closed, theirs = out.get("closed") or [], out.get("not_ours") or []
+    what = "would close" if dry else "closed"
+    msg = f"{what} {len(closed)}"
+    if closed:
+        msg += ": " + ", ".join(closed[:6])
+    if theirs:
+        msg += (f" · {len(theirs)} belong to another machine, run it there: "
+                + ", ".join(theirs[:6]))
+    if not closed and not theirs:
+        msg = "nothing stranded — every closed thread's parent already reads resolved"
+    return True, msg
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE: writes col K, posts
     the weekly thread as Lucy, and corrects names to Sterling's spelling on the
@@ -5730,6 +5775,7 @@ ACTIONS = {
     "incident_working": _action_incident_working,
     "incident_triage": _action_incident_triage,
     "incident_unmark": _action_incident_unmark,
+    "incident_close_stranded": _action_incident_close_stranded,
     "install_enrollment_pending": _action_install_enrollment_pending,
     "git_push_setup": _action_git_push_setup,
     "git_push_check": _action_git_push_check,
