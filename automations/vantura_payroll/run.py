@@ -129,6 +129,15 @@ RAW_TARGETS = {
     "J": ("Campaign", ("cl.campaign__c", "campaign__c", "campaign")),
     "K": ("Product", ("cl.product", "product")),
 }
+# OPTIONAL targets (2026-08-27, Carlos: reps get full sale detail). Missing
+# headers here WARN and load blank instead of failing the payroll run — the
+# money columns above stay fail-loud. Category also re-identifies the
+# Lead Disposition lines Tableau now sends with every text field blank.
+RAW_TARGETS_OPT = {
+    "L": ("Commission Type", ("cl.commission type", "commission type")),
+    "M": ("Category", ("cl.category", "category")),
+    "N": ("Tier", ("cl.tier", "tier")),
+}
 # Campaign__c value -> P&L bucket. Anything unmapped fails the reconciliation
 # check rather than silently landing in B2B.
 CAMPAIGN_C = {"B2B-ATT-SBS": "B2B", "B2B-BOX-Energy": "BOX",
@@ -234,6 +243,16 @@ def _map_columns(headers: list[str], log=_log) -> dict[str, int]:
             "Could not map RAW column(s): " + ", ".join(missing) +
             "\nSource headers were: " + " | ".join(headers) +
             "\n-> update RAW_TARGETS aliases to match, then re-run.")
+    # Optional detail columns: warn + load blank rather than block payroll.
+    for col, (name, aliases) in RAW_TARGETS_OPT.items():
+        idx = next((i for i, h in enumerate(low) if h in aliases), None)
+        if idx is None:
+            idx = next((i for i, h in enumerate(low)
+                        if any(a in h for a in aliases)), None)
+        if idx is None:
+            log(f"WARN: optional column {col} ({name}) not in export — loading blank")
+        else:
+            out[col] = idx
     log("column map (RAW <- source header): " +
         ", ".join(f"{c}<-{headers[i]!r}" for c, i in out.items()))
     return out
@@ -314,14 +333,16 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
             " — skipping the load; re-running week-set/P&L/refresh/checks.")
         return first_row, last_row
 
-    out_rows, jk_rows = [], []
+    out_rows, jn_rows = [], []
     for r in data:
         def cell(col):
-            i = cmap[col]
+            i = cmap.get(col)
+            if i is None:  # optional column absent from this export
+                return ""
             return r[i] if i < len(r) else ""
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
-        jk_rows.append([cell("J"), cell("K")])
+        jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
     end = start + len(out_rows) - 1
     log(f"RAW load: {len(out_rows)} rows, week {wnum}, would fill A{start}:H{end}")
     if out_rows:
@@ -333,10 +354,10 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     if raw.row_count < end:
         raw.add_rows(end - raw.row_count + 5)
     raw.update(f"A{start}:H{end}", out_rows, value_input_option="USER_ENTERED")
-    # J/K only — column I is the commission ARRAYFORMULA's spill range and a
+    # J:N only — column I is the commission ARRAYFORMULA's spill range and a
     # literal written anywhere in it kills the whole column.
-    raw.update(f"J{start}:K{end}", jk_rows, value_input_option="USER_ENTERED")
-    log(f"  WROTE RAW A{start}:H{end} and J{start}:K{end}")
+    raw.update(f"J{start}:N{end}", jn_rows, value_input_option="USER_ENTERED")
+    log(f"  WROTE RAW A{start}:H{end} and J{start}:N{end}")
     return (start, end)
 
 
@@ -723,6 +744,72 @@ def _kickoff_dm(week: dt.date, raw_range, summary, checks, *, send: bool, log=_l
         log(f"kickoff DM sent to {uid}")
 
 
+def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
+                 log=_log) -> tuple[int, int]:
+    """Backfill RAW L:N (Commission Type / Category / Tier) for a week that is
+    ALREADY loaded. Aligns export rows to RAW rows positionally, then verifies
+    EVERY row's (rep, amount) matches before writing — any divergence (late
+    Smart Circle posts, a different Tableau slice) fails loud, writes nothing."""
+    from automations.recruiting_report.fill import open_by_key
+    headers, data = _read_export(xlsx, log=log)
+    cmap = _map_columns(headers, log=log)
+    if not all(c in cmap for c in ("L", "M", "N")):
+        raise ValueError("export lacks Commission Type/Category/Tier — nothing to backfill")
+    wnum = _week_num(week)
+
+    # Same grand-total guard as the loader.
+    if data:
+        first = [str(c).strip() for c in data[0]]
+        rep_val = first[cmap["B"]] if cmap["B"] < len(first) else ""
+        if not rep_val or any("total" in c.lower() for c in first):
+            data = data[1:]
+
+    sh = open_by_key(sheet_id)
+    raw = sh.worksheet("RAW")
+    colA = raw.get(f"A2:A{raw.row_count}", value_render_option="UNFORMATTED_VALUE")
+    wk_rows = [i + 2 for i, r in enumerate(colA) if r and str(r[0]) == str(wnum)]
+    if not wk_rows:
+        raise RuntimeError(f"week {wnum} not in RAW — load it first")
+    first_row, last_row = min(wk_rows), max(wk_rows)
+    if wk_rows != list(range(first_row, last_row + 1)):
+        raise RuntimeError(f"week {wnum} rows non-contiguous ({first_row}..{last_row})")
+    if len(data) != len(wk_rows):
+        raise RuntimeError(
+            f"row-count mismatch: export {len(data)} vs RAW {len(wk_rows)} "
+            f"(rows {first_row}-{last_row}) — different slice or late posts; NOT writing.")
+
+    def _money(v) -> float:
+        s = str(v).replace("$", "").replace(",", "").strip()
+        try:
+            return float(s or 0)
+        except ValueError:
+            return 0.0
+
+    got = raw.get(f"B{first_row}:H{last_row}", value_render_option="UNFORMATTED_VALUE")
+    for k, (xr, rr) in enumerate(zip(data, got)):
+        xrep = str(xr[cmap["B"]] if cmap["B"] < len(xr) else "").strip()
+        xamt = _money(xr[cmap["H"]] if cmap["H"] < len(xr) else 0)
+        rrep = str(rr[0] if rr else "").strip()
+        ramt = _money(rr[6] if len(rr) > 6 else 0)
+        if xrep.lower() != rrep.lower() or abs(xamt - ramt) > 0.005:
+            raise RuntimeError(
+                f"row {first_row + k} mismatch: export ({xrep!r}, {xamt}) vs "
+                f"RAW ({rrep!r}, {ramt}) — alignment broken; NOT writing.")
+
+    lmn = [[str(r[cmap[c]] if cmap[c] < len(r) else "").strip()
+            for c in ("L", "M", "N")] for r in data]
+    log(f"enrich: {len(lmn)} rows verified rep+amount vs RAW "
+        f"{first_row}-{last_row}; would write L{first_row}:N{last_row}")
+    from collections import Counter
+    log("  Category counts: " + str(dict(Counter(r[1] or "<blank>" for r in lmn))))
+    if not write:
+        log("  (dry-run: nothing written)")
+        return (first_row, last_row)
+    raw.update(f"L{first_row}:N{last_row}", lmn, value_input_option="RAW")
+    log(f"  WROTE RAW L{first_row}:N{last_row}")
+    return (first_row, last_row)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Vantura weekly payroll prep (Lucy 2).")
     ap.add_argument("--week", help="week ending YYYY-MM-DD (default: computed)")
@@ -732,6 +819,10 @@ def main(argv: list[str] | None = None) -> int:
                       help="compute + pull + PRINT only; no board writes, no Slack (DEFAULT)")
     mode.add_argument("--sandbox", action="store_true", help="write to the test board copy")
     mode.add_argument("--live", action="store_true", help="write to the REAL board")
+    ap.add_argument("--enrich-cols", action="store_true",
+                    help="ONLY backfill RAW L:N (Commission Type/Category/Tier) "
+                         "for an already-loaded week, then exit. Respects "
+                         "--dry-run/--live; verifies row alignment first.")
     args = ap.parse_args(argv)
 
     live = bool(args.live)
@@ -753,6 +844,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         xlsx = Path(args.file) if args.file else _pull_icd_dd_detail(week)
+        if args.enrich_cols:
+            rng = _enrich_cols(xlsx, week, write=write, sheet_id=sheet_id)
+            _log(f"enrich-cols done for rows {rng[0]}-{rng[1]}.")
+            return 0
         raw_range = _load_raw(xlsx, week, write=write, sheet_id=sheet_id)
         _set_week(week, write=write, sheet_id=sheet_id)
         _repoint_pnl(week, raw_range, write=write, sheet_id=sheet_id)
