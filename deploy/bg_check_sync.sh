@@ -29,8 +29,14 @@ export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
 # No args = go live (writes + posts). Any args (e.g. --dry-run) pass straight through.
+#
+# --ov --ov-apply: also make each rep's OwnerVille profile match the name their
+# Sterling check ran under. Added 2026-08-26, once five real edits had been made
+# and verified by hand. It drives a browser, which is why it is spelled out here
+# rather than assumed — profiles already checked are remembered and skipped, so
+# only the first pass after a new hire costs any real time.
 ARGS=("$@")
-[ ${#ARGS[@]} -eq 0 ] && ARGS=(--post --since-days 30)
+[ ${#ARGS[@]} -eq 0 ] && ARGS=(--post --since-days 30 --ov --ov-apply)
 
 LOG_FILE="$LOG_DIR/bg-check-sync-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] bg-check-sync starting (args: ${ARGS[*]})" > "$LOG_FILE"

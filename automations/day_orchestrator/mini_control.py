@@ -4393,15 +4393,21 @@ def _action_incident_unmark(args: str) -> tuple[bool, str]:
 
 
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
-    """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
-    the weekly thread in BOTH recruiting rooms as Lucy). Pass extra args to override,
-    e.g. `--dry-run` (no writes/post) or `--week 7/27/2026`."""
+    """Run bg_check_sync NOW on THIS machine. Default = LIVE: writes col K, posts
+    the weekly thread as Lucy, and corrects names to Sterling's spelling on the
+    checklist AND in OwnerVille. Pass extra args to override, e.g. `--dry-run`
+    (no writes/post), `--week 7/27/2026`, or `--ov-only "Name"` to touch exactly
+    one OwnerVille profile."""
     import shlex
     extra = shlex.split(args) if (args or "").strip() else []
     if not extra:
-        extra = ["--post", "--since-days", "30"]
+        extra = ["--post", "--since-days", "30", "--ov", "--ov-apply"]
+    # The OwnerVille pass drives a browser through the rep table, so a run that
+    # meets several new hires takes minutes rather than seconds. 300s was
+    # generous before that existed and would now be the thing that kills it
+    # half way through.
     ok, out = _run_cmd([sys.executable, "-m", "automations.bg_check_sync.run", *extra],
-                       timeout_s=300, log_name="bg-check-sync-run.log")
+                       timeout_s=900, log_name="bg-check-sync-run.log")
     lines = [ln for ln in (out or "").splitlines()
              if ("| roster" in ln or "[writes]" in ln or "[slack" in ln
                  or "[name-gate]" in ln
