@@ -85,13 +85,25 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
             ok, why2 = fill.remove_rep(ws, grid, added["row"],
                                        added["board_name"], day) if send else (
                 False, "preview: row %s left alone" % added["row"])
-            note = " " + why2
+            note = (" I've cleared the extra row I added for them." if ok
+                    else " (the extra row I added is still there: %s)" % why2)
+            if ok and "EARLIER DAYS" in why2:
+                note += " " + why2[why2.index("EARLIER DAYS"):]
             if ok:
                 data = S.forget_added(data, sara)
                 S.save(data)
-        msg = ("Heard \U0001FAE1 — I'll have %s on the alias list as %s. "
-               "Their sales land on that row from the next sweep.%s"
-               % (board, sara.title(), note))
+        # SPEAK THEIR WORDS BACK, not the database's -- and DO NOT claim
+        # which word is which. The first version said "I'll have Kelvinton
+        # ( BO ) Scarbough (Wk 3) on the alias list as Kelvinton Scarbrough":
+        # two spellings of one man plus internal vocabulary. The second tried
+        # to label the sides and got it BACKWARDS on "Kelvinton=Bo", because
+        # BOTH words live in that board row and no score can separate them.
+        # The direction is not information the room needs: they know who he
+        # is. What they need to know is that it landed and that there is one
+        # row, not two.
+        msg = ("Heard \U0001FAE1 — %s and %s are the same person. Those sales "
+               "land on his existing row from the next sweep, not a new one.%s"
+               % (left, right, note))
         log("  alias from chat: %s -> %s" % (sara, board))
         sent.append(msg)
         N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
