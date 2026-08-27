@@ -30,6 +30,11 @@ def event(first, last, status=parse.PASSED, date="2026-08-27", subject=None):
                    subject=subject or f"Background Check Complete - Score PASS")
 
 
+def match_events(roster, events):
+    from automations.bg_check_sync import match as _match
+    return _match.match_events_to_people(roster, events)
+
+
 def propose(roster, events, matched=None):
     matched = matched if matched is not None else {p.key: [] for p in roster}
     return name_gate.propose(roster, events, matched, MONDAY, WEEK)
@@ -344,6 +349,35 @@ class AskPlacementTests(unittest.TestCase):
         self.assertEqual(
             name_gate.post_proposals([self._proposal()], state, dry_run=True), 0)
         self.assertEqual(state, {})
+
+
+class AddedToTheOBCLTests(unittest.TestCase):
+    """Megan: "they would know to add him to the OBCL and you would need to
+    catch the addition on your next scan."
+
+    A ❌ says a real background check has no row. Somebody adds that row. From
+    then on he is an ordinary new start — matched by name like anyone else, with
+    no memory of the question that was asked about somebody else.
+    """
+
+    def test_the_added_row_matches_his_own_result(self):
+        jordan = person("Jordan", "Ruiz")
+        ev = event("Jordan", "Ruiz", status=parse.PASSED)
+        matched = match_events(([person("Adriana", "Ruiz"), jordan]), [ev])
+        self.assertEqual(matched[jordan.key], [ev])
+
+    def test_and_stops_being_a_question_for_anybody_else(self):
+        adriana = person("Adriana", "Ruiz")
+        jordan = person("Jordan", "Ruiz")
+        ev = event("Jordan", "Ruiz")
+        roster = [adriana, jordan]
+        matched = match_events(roster, [ev])
+        self.assertEqual(propose(roster, [ev], matched), [])
+
+    def test_before_he_is_added_it_is_still_asked(self):
+        adriana = person("Adriana", "Ruiz")
+        ev = event("Jordan", "Ruiz")
+        self.assertEqual(len(propose([adriana], [ev])), 1)
 
 
 class VoteTests(unittest.TestCase):
