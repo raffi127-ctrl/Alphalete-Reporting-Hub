@@ -221,8 +221,37 @@ def _select_service(page, label: str) -> None:
     page.wait_for_timeout(500)
 
 
-def _run_report(page, base_url: str, day: dt.date, service: str,
-                grid: str) -> List[List[str]]:
+def _run_report(page, base_url: str, day: dt.date, service: str, grid: str,
+                attempts: int = 3, log=print) -> List[List[str]]:
+    """One report pass, RETRIED -- SaraPlus is intermittently slow.
+
+    Measured on the first night live: three sweeps died on
+    `wait_for_selector: Timeout 90000ms` and `click: Timeout 30000ms`. The grid
+    simply had not rendered; nothing was wrong with the login or the session.
+
+    A failed sweep posts NOTHING, so a sale then waits ~7 minutes for the next
+    tick. Retrying the pass re-navigates to a fresh hub page and asks again --
+    what a person would do -- and turns most of those into a sweep that lands on
+    time. Only a pass that fails every attempt fails the sweep, which is worth
+    failing on: that means SaraPlus is down, not slow.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return _run_report_once(page, base_url, day, service, grid)
+        except Exception as e:  # noqa: BLE001 — retry ANY per-pass failure
+            if attempt == attempts:
+                raise SaraError("the %r report failed %d times; last error %s: %s"
+                                % (service, attempts, type(e).__name__, str(e)[:200]))
+            log("  %r pass attempt %d/%d failed (%s) — retrying"
+                % (service, attempt, attempts, type(e).__name__))
+            try:
+                page.wait_for_timeout(3000)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _run_report_once(page, base_url: str, day: dt.date, service: str,
+                     grid: str) -> List[List[str]]:
     """Set the day + service, submit, and return the grid's rows as cell text."""
     # NOT networkidle. The ReportingHub is a Telerik page that keeps talking --
     # timers, keep-alives, partial postbacks -- so "no network for 500ms" may
@@ -326,14 +355,14 @@ def scrape(day: Optional[dt.date] = None, *, headless: bool = True,
             base = _login(page, cr["email"], cr["password"])
             log("logged in: %s" % base)
 
-            att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT))
+            att = parse_att(_run_report(page, base, day, "AT&T", GRID_ATT, log=log))
             log("AT&T pass: %d reps" % len(att))
 
-            dtv = parse_dtv(_run_report(page, base, day, "All", GRID_ALL))
+            dtv = parse_dtv(_run_report(page, base, day, "All", GRID_ALL, log=log))
             log("All pass: DTV for %d reps" % len(dtv))
 
             records = parse_records(
-                _run_report(page, base, day, "AT&T Internet", GRID_INTERNET))
+                _run_report(page, base, day, "AT&T Internet", GRID_INTERNET, log=log))
             log("AT&T Internet pass: records for %d reps" % len(records))
         finally:
             ctx.close()
