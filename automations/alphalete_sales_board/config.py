@@ -47,6 +47,12 @@ SPREADSHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
 # to add, which is how a real missing rep stops being noticed. Keyed the way
 # SaraPlus writes them (upper case); the value is the reason, so the next person
 # reading this knows it was a decision and not an oversight.
+# SALES ONLY. This list keeps a person off the BOARD and out of the
+# leaderboard; their credit-check pings in #alphalete-sales still go out, and
+# that is deliberate (Megan 2026-08-26: "his can stay"). It looks like an
+# inconsistency and isn't: a sales manager running credit checks is worth
+# seeing even though he has no row to fill. Don't "tidy" this by wiring
+# EXCLUDE_REPS into the records path.
 EXCLUDE_REPS = {
     "JOSHUA MASCORRO": "sales manager, not on the board roster (Megan 2026-08-26)",
 }
