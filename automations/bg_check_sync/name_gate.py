@@ -68,6 +68,8 @@ DECIDERS = (
     ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez
     ("Tiff", "U0B9924FHCL"),       # Tiffani Brown
     ("Aimee", "U0APVP29QSD"),      # Aimee Garibay
+    ("Aisha", "U083X5ZJWSH"),      # Aisha Ceron — named on the ask, not just
+                                   # counted (Megan 2026-08-26)
 )
 
 # WHOSE REACTION COUNTS — a wider list than the tagged one, on purpose. Megan
@@ -79,7 +81,6 @@ ALSO_DECIDE = (
     ("Raf", "U045Z8N0ZQC"),        # Rafael Hidalgo
     ("JD", "U05094TTPKQ"),         # JD Mascorro — the workspace has two of him;
                                    # this is the one in #11280 (checked 8/26)
-    ("Aisha", "U083X5ZJWSH"),      # Aisha Ceron
 )
 DECIDER_IDS = {uid for _, uid in DECIDERS} | {uid for _, uid in ALSO_DECIDE}
 
