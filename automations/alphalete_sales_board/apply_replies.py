@@ -82,11 +82,24 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
 
         sara, board, why = replies.resolve(left, right, board_names, candidates)
         if not sara:
-            msg = ("I couldn't tell which is which in “%s = %s” — %s"
-                   % (left, right, why))
-            log("  reply unresolved: %s" % why)
-            sent.append(msg)
-            N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
+            # SAY NOTHING unless one side is actually a name we know. A chat is
+            # a place people talk, and a line that merely contains an equals
+            # sign is not addressed to us. On 2026-08-27 "This is what
+            # happened" came back as "I couldn't tell which is which in 'This =
+            # what happened'" in front of the room -- the parser has since been
+            # tightened, but the deeper error was answering at all. Silence is
+            # the right response to something that was never a question.
+            known = (replies._best(left, board_names)[0]
+                     or replies._best(right, board_names)[0]
+                     or replies._best(left, candidates)[0]
+                     or replies._best(right, candidates)[0])
+            log("  reply unresolved (%s): %s"
+                % ("asking" if known else "staying quiet", why))
+            if known:
+                msg = ("I couldn't tell which is which in “%s = %s” — %s"
+                       % (left, right, why))
+                sent.append(msg)
+                N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
             continue
 
         note = ""

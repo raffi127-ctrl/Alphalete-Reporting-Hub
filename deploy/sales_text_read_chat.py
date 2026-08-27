@@ -34,8 +34,8 @@ LIMIT = 60
 # Only lines that look like "a=b" / "a is b" are kept. The rest of a group
 # chat's conversation is none of this script's business and never lands in the
 # file at all.
-PAIR_RE = re.compile(r"^\s*([A-Za-z][\w'.\- ]{0,40}?)\s*(?:={1,2}|\bis\b)\s*"
-                     r"([A-Za-z][\w'.\- ]{0,40}?)\s*[.!]?\s*$", re.I)
+NAME = r"[A-Za-z][\w'.\-]{0,30}(?: [A-Za-z][\w'.\-]{0,30}){0,2}"
+PAIR_RE = re.compile(r"^\s*(" + NAME + r")\s*={1,2}\s*(" + NAME + r")\s*[.!]?\s*$")
 
 
 def main(argv):
