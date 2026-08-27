@@ -157,10 +157,11 @@ def test_players_chats_see_the_sales_not_the_paperwork():
         assert "TOTALS: 5" in text, text                   # identical totals
 
 
-def test_goal_line_is_omitted_when_the_board_has_no_goal():
+def test_no_goal_line_ever():
+    # There is no maintained weekly-goal source; see the note in leaderboard().
     today = {"Jane Doe": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}}
     assert "GOAL" not in N.leaderboard(today, [], 100, goal=None)
-    assert "GOAL FOR THE WEEK: 100/350" in N.leaderboard(today, [], 100, goal=350)
+    assert "GOAL" not in N.leaderboard(today, [], 100, goal=350)
 
 
 def test_hype_tiers():
@@ -188,7 +189,7 @@ def test_leaderboard_matches_the_live_post():
     assert lines[1] == "Rex Ryan 2 (2 Int)", lines[1]
     assert "Upgrades: 1" in text, text
     assert "\U0001F3C6 TOTALS: 6" in text, text       # 4 + 2, upgrades counted
-    assert "GOAL FOR THE WEEK" in N.leaderboard(today, [], 42, goal=350)
+    assert "GOAL" not in N.leaderboard(today, [], 42, goal=350)
 
 
 def test_ties_keep_saraplus_order():

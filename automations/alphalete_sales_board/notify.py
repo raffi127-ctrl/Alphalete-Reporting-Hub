@@ -147,9 +147,15 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     lines.append("DTV: %d" % totals["DTV"])
     lines.append("NL's: %d" % totals["NL"])
     lines.append("%s TOTALS: %d" % (TROPHY, sum(totals[k] for k in COUNTED)))
-    # No goal on the board -> no goal line. Better silent than invented.
-    if week_to_date is not None and goal:
-        lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, goal))
+    # NO GOAL LINE (Megan 2026-08-26, twice). There is no maintained source for
+    # one. The brief's example said 80; the board has a cell literally labelled
+    # "Goal" = 350, which is what I switched to -- and it is an annotation at
+    # the bottom of a WEEK-HISTORY table whose newest row is WE 7/28-8/3, four
+    # weeks stale, with an empty "New Goal" beside it where somebody meant to
+    # replace it. Reading it by label was right; treating it as this week's
+    # target was not. And the live post the field actually reads carries no goal
+    # line at all. `goal` stays in the signature so wiring a real source back in
+    # is one line -- but a number nobody recognises is worse than no number.
     if missing:
         who = ", ".join(short_name(i.get("sara_name", "?")) for i in missing)
         lines.append("")
