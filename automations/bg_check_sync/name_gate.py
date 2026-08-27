@@ -656,9 +656,11 @@ def say_still_needs_authorising(entries: list, *, dry_run: bool = True) -> None:
     for entry in entries:
         who = " ".join(f"<@{uid}>" for uid in entry.get("reacted_by", []))
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        text = (f"{who} reacted on *{old}* — thank you, but that one isn't on "
-                f"the list I act on, so nothing has changed yet.\n"
-                f"Still needs a ✅ or ❌ from {tags}.")
+        # PLAIN ENGLISH. The first version said the reaction "isn't on the list
+        # I act on" — Megan: "no one is going to know what that means." Say who
+        # has to click, and that nothing happens until they do.
+        text = (f"{who} reacted on *{old}* — thanks! Nothing has changed yet: "
+                f"this one needs a ✅ or ❌ from {tags} before I update any name.")
         _reply(cli, entry, text, dry_run)
         if not dry_run:
             entry["nudged_at"] = dt.datetime.now().isoformat(timespec="seconds")
