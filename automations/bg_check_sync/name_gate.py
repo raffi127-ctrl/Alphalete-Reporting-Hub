@@ -935,3 +935,54 @@ def spelling_fixes(roster: list, matched: dict, week: str) -> list[dict]:
             "decided_by": "sterling",
         })
     return out
+
+
+# --- rows nobody's Sterling mail backs, for weeks with no thread yet ---------
+# The weekly roster reply carries these for the current and next week. Every
+# other week has no thread to carry them, so they would sit unseen until that
+# week came around — which for Cindy Flores (9/7, marked Passed, no check in 90
+# days of Sterling mail) was the better part of a fortnight. Megan asked for the
+# same treatment the name questions get: ride the nearest thread now, labelled
+# with the week they actually start.
+
+UNBACKED_KEY = "_unbacked_said"
+
+
+def warn_unbacked(rows: list, state: dict, *, dry_run: bool = True,
+                  channel: Optional[str] = None) -> int:
+    """Post far-week "marked, but no Sterling email" rows into the latest thread.
+
+    rows: [(week, name, status)]. Said ONCE per person per week — the report
+    runs twice a day and the row will keep being unbacked until somebody deals
+    with it, which is not a reason to repeat it until they do.
+    """
+    if not rows:
+        return 0
+    channel = channel or slack_post.CHANNEL_IDS[0]
+    said = state.setdefault(UNBACKED_KEY, {})
+    fresh = [(w, n, st) for w, n, st in rows if f"{w}|{norm(n)}" not in said]
+    if not fresh:
+        return 0
+    lines = ["*⚠️ Someone marked these on the OBCL — no Sterling email says so*"]
+    lines += [f"   •  {n} — marked {st} · starting {w}"
+              for w, n, st in sorted(fresh, key=lambda r: (r[0], r[1]))]
+    text = "\n".join(lines)
+    if dry_run:
+        print(f"[name-gate] (dry-run) would warn about {len(fresh)} unbacked row(s):")
+        print("  " + text.replace("\n", "\n  "))
+        return 0
+    _week, parent_ts = latest_thread(channel)
+    try:
+        cli = _client()
+        if parent_ts:
+            cli.chat_postMessage(channel=channel, thread_ts=parent_ts, text=text)
+        else:
+            cli.chat_postMessage(channel=channel, text=text)
+    except Exception as e:  # noqa: BLE001
+        print(f"[name-gate] couldn't post the unbacked warning: {e}")
+        return 0
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    for w, n, _st in fresh:
+        said[f"{w}|{norm(n)}"] = now
+    print(f"[name-gate] warned about {len(fresh)} unbacked row(s)")
+    return len(fresh)

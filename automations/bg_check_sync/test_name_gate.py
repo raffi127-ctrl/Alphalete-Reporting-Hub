@@ -629,6 +629,50 @@ class SettledLineTests(unittest.TestCase):
         self.assertEqual(name_gate.strike_backlog(state, dry_run=True), 0)
 
 
+class FarWeekUnbackedTests(unittest.TestCase):
+    """Cindy Flores starts 9/7 — no thread for weeks, so her warning rode the
+    nearest one instead of waiting."""
+
+    ROWS = [("9/7/2026", "Cindy Flores", "Passed")]
+
+    def _post(self, rows, state):
+        sent = []
+        class _Cli:
+            def chat_postMessage(self, channel, text, thread_ts=None):
+                sent.append((thread_ts, text))
+                return {"ts": "9.9"}
+        orig_c, orig_t = name_gate._client, name_gate.latest_thread
+        name_gate._client = lambda: _Cli()
+        name_gate.latest_thread = lambda ch: ("8/31/2026", "111.0")
+        try:
+            n = name_gate.warn_unbacked(rows, state, dry_run=False)
+        finally:
+            name_gate._client, name_gate.latest_thread = orig_c, orig_t
+        return n, sent
+
+    def test_it_rides_the_latest_thread_and_names_the_week(self):
+        n, sent = self._post(self.ROWS, {})
+        self.assertEqual(n, 1)
+        self.assertEqual(sent[0][0], "111.0")
+        self.assertIn("Cindy Flores — marked Passed · starting 9/7/2026", sent[0][1])
+
+    def test_it_is_said_once_per_person_per_week(self):
+        state = {}
+        first, _ = self._post(self.ROWS, state)
+        second, sent2 = self._post(self.ROWS, state)
+        self.assertEqual((first, second), (1, 0))
+        self.assertEqual(sent2, [])
+
+    def test_the_same_person_in_a_new_week_is_said_again(self):
+        state = {}
+        self._post(self.ROWS, state)
+        n, _ = self._post([("9/14/2026", "Cindy Flores", "Passed")], state)
+        self.assertEqual(n, 1)
+
+    def test_nothing_to_say_posts_nothing(self):
+        self.assertEqual(name_gate.warn_unbacked([], {}, dry_run=False), 0)
+
+
 class _FakeWS:
     def __init__(self, row_vals):
         self.row_vals = row_vals
