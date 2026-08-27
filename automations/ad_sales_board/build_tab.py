@@ -331,7 +331,7 @@ def main(argv=None):
                 "format": {"backgroundColor": AMBER}}}}},
     ]
     _batch(sess, reqs)
-    print("visible tab dressed as a sales board; week cell seeded to %s" % prev_label)
+    print("visible tab dressed as a sales board; week cell seeded to %s" % cur_label)
     print(json.dumps({"data_sheet_id": data_id, "view_sheet_id": view_id}))
     return 0
 
