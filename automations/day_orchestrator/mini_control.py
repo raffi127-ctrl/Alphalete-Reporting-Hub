@@ -560,6 +560,49 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     if not post:
         return True, f"wired {key} ({kind}) into the working tree — joins the next run"
 
+    # POST ON THE MACHINE THAT OWNS THE REPORT (Megan 2026-08-26). The form's
+    # "Post now" lands on whichever queue the Cloud app enqueues to (Lucy 1),
+    # but a report's day is machine-local in two ways that both silently break
+    # a same-day post from the wrong box:
+    #   • today's tracker PNGs live in that machine's output/ — the run reuses
+    #     them and posts in seconds; elsewhere it re-drives Tableau for the same
+    #     pixels (~7 min), and
+    #   • the freshness gate's stability ledger (_stability.json) is per machine,
+    #     so a first-of-the-day sample can't prove the extract finished loading
+    #     and EVERY gated board is held.
+    # alisei (2026-08-26): trackers moved to Lucy 3 on 8/25, the confirm posted
+    # from Lucy 1 at 21:03, and all three of its boards were held as "first
+    # sample of the day" — while the identical images had gone out to the other
+    # 15 channels at 04:17. Hand the post to the owning machine instead; the
+    # wiring above already ran here, and the target re-applies before it posts.
+    _post_report_id = ("tableau_screenshots" if kind in ("tracker", "trackers")
+                       else f"{key}_metrics")
+    try:
+        _owner = registry.resolve_report(registry.load_config(), _post_report_id)
+        _owner_machine = getattr(_owner, "machine", None) if _owner else None
+    except Exception:  # noqa: BLE001 — routing must never sink the post
+        _owner_machine = None
+    # Compare against _machine_profile(), NOT _this_box(): the poller running
+    # this row reads _control_tab_for(_machine_profile()), so that IS the name
+    # of the queue it lives on. Using the hostname instead could leave a box
+    # whose profile marker is missing handing the row back to the same tab
+    # forever. A machine with no marker is 'Lucy 1' on both sides — consistent.
+    _me = _machine_profile()
+    if _owner_machine and _owner_machine.strip() != _me:
+        try:
+            enqueue("onboard_apply", args, by=f"routed from {_me}",
+                    machine=_owner_machine.strip(), auto=True)
+        except Exception as e:  # noqa: BLE001 — fall through and post here
+            print(f"[onboard_apply] couldn't hand off to {_owner_machine}: "
+                  f"{type(e).__name__}: {str(e)[:120]} — posting locally",
+                  flush=True)
+        else:
+            return True, (f"wired {key} ({kind}) here; posting handed to "
+                          f"{_owner_machine.strip()} (it owns "
+                          f"{_post_report_id} — today's images + freshness "
+                          f"samples live there). Watch "
+                          f"`lucy --machine \"{_owner_machine.strip()}\" status`.")
+
     # Build the post command. Metrics resolves the freshly-written schedule entry
     # so D2D (office_metrics.runner) AND B2B (its own runner) each post exactly as
     # the 4am flow would. Trackers post via the org filter (no per-office entry).
