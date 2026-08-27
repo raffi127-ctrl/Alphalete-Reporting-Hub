@@ -60,6 +60,52 @@ def _recipients(people) -> List[str]:
     return out
 
 
+def _wrong_week(tab_title: str, *, explicit: bool = False, today=None):
+    """A refusal message if this tab isn't THIS week's, or None if it's fine.
+
+    The run always reads the NEWEST dated tab, which is right every week the
+    team builds the new one on time -- and catastrophic the week they don't.
+    On a Monday with no new tab, "newest" is LAST week's, and fifty-two people
+    who started a week ago would each be told "we're excited to have you at
+    orientation today". There is no unsend and no way to explain it away.
+
+    So the tab has to be dated for today. A tab that isn't means the lineup
+    hasn't been built yet, which is a person's job to fix, not something an
+    8am timer should paper over by mailing the wrong cohort.
+
+    Naming a tab with --tab is a human being deliberate, so that bypasses the
+    gate -- loudly.
+    """
+    import datetime as _dt
+    from automations.blueink_docs import roster as bir
+
+    today = today or _dt.date.today()
+    dated = bir._tab_date(tab_title)
+
+    if explicit:
+        if dated and dated != today:
+            print("NOTE: {!r} is dated {} , not today. Sending it because you "
+                  "named it explicitly.".format(tab_title, dated))
+        return None
+
+    if dated is None:
+        return ("Refusing to send: can't read a date out of the tab name {!r}, "
+                "so there's no way to tell whether it's this week's lineup."
+                .format(tab_title))
+    if dated != today:
+        return (
+            "Refusing to send: the newest tab is {!r} (dated {}), but today is "
+            "{}.\n"
+            "  That means this week's lineup hasn't been built yet. Sending "
+            "would email LAST week's\n"
+            "  new starts 'we're excited to have you at orientation today' - "
+            "with no unsend.\n"
+            "  Build the new D2D OBCL tab, then re-run. To send an older tab "
+            "on purpose, name it:\n"
+            "      --tab {!r}".format(tab_title, dated, today, tab_title))
+    return None
+
+
 def _resolve_links(*, live: bool = True, logfn=print):
     """(slack, skool, source, problems).
 
@@ -161,6 +207,12 @@ def _guarded_recipients(tab_name: str):
         return None, None, "", ""
 
     ws, _values, people = _people(tab_name)
+
+    stale = _wrong_week(ws.title, explicit=bool(tab_name))
+    if stale:
+        print(stale)
+        return None, None, "", ""
+
     send_to = _recipients(people)
     if not send_to:
         # Standing rule: never post/send a blank board. An empty cohort is a
@@ -179,10 +231,16 @@ def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int
 
     who = gm.assert_right_mailbox()
 
-    if not force and gm.already_sent_today(config.SUBJECT_SEARCH):
-        print("Already sent from {} today (subject {!r}). Not sending again - "
-              "pass --force if you really mean to.".format(who, config.SUBJECT))
-        return 0
+    if not force:
+        try:
+            if gm.already_sent_today(config.SUBJECT_SEARCH):
+                print("Already sent from {} today (subject {!r}). Not sending "
+                      "again - pass --force if you really mean to."
+                      .format(who, config.SUBJECT))
+                return 0
+        except gm.GuardUnavailable as exc:
+            print(exc)
+            return 1
 
     msg = message.build(send_to, slack_link=slack, skool_link=skool)
     res = gm.send(msg)

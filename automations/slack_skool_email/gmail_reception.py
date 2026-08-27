@@ -23,12 +23,24 @@ then ship it to the runner:
 from __future__ import annotations
 
 import base64
+import json
 from email.message import EmailMessage
 from pathlib import Path
 
 # gmail.compose covers create-draft AND send, so one grant serves both --send
 # and --draft. gmail.send alone could not make the review draft.
-SCOPES = ["https://www.googleapis.com/auth/gmail.compose"]
+#
+# gmail.readonly is here for ONE call: the re-send guard searches this mailbox's
+# Sent mail for today's email. compose alone cannot do it -- messages.list with
+# a `q` returns 403 "insufficient authentication scopes", which on 2026-08-26
+# meant the guard threw and took the whole Monday send down with it. Discovered
+# by running the guard against the real mailbox rather than trusting that the
+# minimal scope was enough.
+#
+# gmail.metadata is not an option: Google does not allow the `q` parameter
+# under it, which is the entire query.
+SCOPES = ["https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.readonly"]
 ACCOUNT = "alphaletereception@gmail.com"
 
 _CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
@@ -68,7 +80,13 @@ def authorize() -> None:
 
     TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
-    print("OK - saved reception Gmail token to {}".format(TOKEN_PATH))
+    # Owner-only: this token can SEND mail as reception. It saved
+    # world-readable on 2026-08-26 because nothing set the mode -- the Blue Ink
+    # storage_state next door has been chmod 600 since it was built, and this
+    # is the same class of secret.
+    TOKEN_PATH.chmod(0o600)
+    print("OK - saved reception Gmail token to {} (owner-only)".format(
+        TOKEN_PATH))
 
 
 def load_credentials():
@@ -82,6 +100,26 @@ def load_credentials():
             "  python -m automations.slack_skool_email.gmail_reception --auth"
             .format(TOKEN_PATH))
 
+    # What the token was ACTUALLY granted has to be read off the file. Passing
+    # SCOPES to from_authorized_user_file sets creds.scopes to what you asked
+    # for, not what Google gave you -- so checking creds.scopes reports success
+    # for a token that will 403 on the first call (2026-08-26).
+    try:
+        granted = set(json.loads(TOKEN_PATH.read_text()).get("scopes") or [])
+    except Exception:
+        granted = set()
+    missing = [sc for sc in SCOPES if sc not in granted]
+    if granted and missing:
+        raise RuntimeError(
+            "The reception Gmail token is missing: {}.\n"
+            "It was authorized before this report needed to read Sent mail "
+            "(that read is the guard that stops the cohort being emailed "
+            "twice). Re-run the one-time authorization at a browser and sign "
+            "in as {} again:\n"
+            "  python -m automations.slack_skool_email.gmail_reception --auth"
+            .format(", ".join(sc.rsplit("/", 1)[-1] for sc in missing),
+                    ACCOUNT))
+
     creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
@@ -92,6 +130,10 @@ def load_credentials():
                 "Reception Gmail token is invalid and can't be refreshed. "
                 "Re-run with --auth.")
     return creds
+
+
+class GuardUnavailable(RuntimeError):
+    """The re-send guard could not run. Not the same as "it hasn't been sent"."""
 
 
 def _service():
@@ -149,8 +191,18 @@ def already_sent_today(search_phrase: str) -> bool:
     """
     q = 'in:sent subject:"{}" newer_than:1d'.format(
         search_phrase.replace('"', ""))
-    res = _service().users().messages().list(
-        userId="me", q=q, maxResults=1).execute()
+    try:
+        res = _service().users().messages().list(
+            userId="me", q=q, maxResults=1).execute()
+    except Exception as exc:
+        # Never let a broken guard become "send anyway". A crash here used to
+        # take the whole run down with a traceback; a refusal says what to do.
+        raise GuardUnavailable(
+            "Couldn't check whether this already went out today ({}). "
+            "Refusing to send rather than risk mailing the cohort twice. "
+            "If the token is missing the readonly scope, re-run:\n"
+            "  python -m automations.slack_skool_email.gmail_reception --auth"
+            .format(str(exc).split("\n")[0][:160]))
     return bool(res.get("messages"))
 
 

@@ -176,3 +176,47 @@ def test_the_subject_names_the_company():
     assert "Alphalete" in config.SUBJECT
     assert config.SUBJECT == config.SUBJECT.strip()
     assert "!" not in config.SUBJECT and config.SUBJECT != config.SUBJECT.upper()
+
+
+# --- the wrong-week gate ----------------------------------------------------
+
+def test_refuses_a_tab_from_last_week():
+    """The Monday nobody built the new tab. "Newest" is then LAST week's, and
+    52 people who started a week ago get told orientation is today."""
+    monday = dt.date(2026, 8, 31)
+    msg = run._wrong_week("D2D OBCL 8.24", today=monday)
+    assert msg and "Refusing to send" in msg
+    assert "--tab" in msg          # says how to override on purpose
+
+
+def test_accepts_this_weeks_tab():
+    monday = dt.date(2026, 8, 31)
+    assert run._wrong_week("D2D OBCL 8.31", today=monday) is None
+
+
+def test_refuses_a_tab_with_no_readable_date():
+    assert run._wrong_week("D2D OBCL", today=dt.date(2026, 8, 31))
+
+
+def test_an_explicitly_named_tab_is_allowed_through():
+    """--tab is a person being deliberate; the gate warns but doesn't block."""
+    assert run._wrong_week("D2D OBCL 8.24", explicit=True,
+                           today=dt.date(2026, 8, 31)) is None
+
+
+# --- Gmail scopes -----------------------------------------------------------
+
+def test_the_token_asks_for_enough_to_run_the_resend_guard():
+    """gmail.compose alone can send but CANNOT search Sent mail, so the guard
+    403s and takes the whole run down with it (2026-08-26). If someone trims
+    the scopes back to the "minimal" one, this fails instead of Monday."""
+    from automations.slack_skool_email import gmail_reception as gm
+    assert any(s.endswith("/gmail.compose") for s in gm.SCOPES)
+    assert any(s.endswith("/gmail.readonly") for s in gm.SCOPES)
+
+
+def test_a_broken_guard_is_a_refusal_not_a_green_light():
+    """GuardUnavailable must be its own type: "I couldn't check" is not the
+    same answer as "it hasn't been sent"."""
+    from automations.slack_skool_email import gmail_reception as gm
+    assert issubclass(gm.GuardUnavailable, Exception)
