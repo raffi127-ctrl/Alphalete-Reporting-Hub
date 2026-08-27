@@ -214,6 +214,50 @@ class TheHookInRunPy(unittest.TestCase):
         self.assertEqual(with_weekly, {"rafael", "fiber"})
 
 
+class ThePreviewHeaders(unittest.TestCase):
+    """--cc / --subject-prefix tocan SOLO headers: el cuerpo revisado sale
+    igual byte a byte (Eve 2026-08-27, para el sample de Rafael)."""
+
+    def _msg(self):
+        from email.message import EmailMessage
+        m = EmailMessage()
+        m["Subject"] = "Rafael's Captainship Report 8/26"
+        m["To"] = "raf@example.com"
+        m.set_content("body")
+        return m
+
+    def test_cc_lands_on_the_header_smtplib_reads(self):
+        from automations.captainship_drafts import run as R
+        m = self._msg()
+        R._apply_cc(m, "a@x.com, b@y.com")
+        self.assertEqual(m["Cc"], "a@x.com, b@y.com")
+        R._apply_cc(m, "c@z.com")                 # reemplaza, no acumula
+        self.assertEqual(m["Cc"], "c@z.com")
+
+    def test_no_cc_leaves_the_message_untouched(self):
+        from automations.captainship_drafts import run as R
+        m = self._msg()
+        before = bytes(m)
+        R._apply_cc(m, None)
+        R._apply_subject_prefix(m, "")
+        self.assertEqual(bytes(m), before)
+
+    def test_the_prefix_is_idempotent(self):
+        from automations.captainship_drafts import run as R
+        m = self._msg()
+        R._apply_subject_prefix(m, "Sample")
+        self.assertEqual(m["Subject"], "Sample Rafael's Captainship Report 8/26")
+        R._apply_subject_prefix(m, "Sample")      # un reenvío no lo duplica
+        self.assertEqual(m["Subject"], "Sample Rafael's Captainship Report 8/26")
+
+    def test_the_body_is_the_same_after_both(self):
+        from automations.captainship_drafts import run as R
+        m = self._msg()
+        R._apply_cc(m, "a@x.com")
+        R._apply_subject_prefix(m, "Sample")
+        self.assertEqual(m.get_content().strip(), "body")
+
+
 class TheMimeItProduces(unittest.TestCase):
     """El adjunto va en el multipart/mixed de AFUERA; las imágenes inline
     tienen que quedar intactas adentro de su multipart/related — que es lo que

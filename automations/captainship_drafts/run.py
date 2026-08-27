@@ -186,7 +186,37 @@ def _preview_eml(captain: config.Captain, today: dt.date) -> Path:
     return _OUTPUT_DIR / f"captainship_draft_{captain.key}_{today:%Y%m%d}.eml"
 
 
+def _apply_cc(msg, cc) -> None:
+    """Put `cc` on the message (replacing any Cc it already has). No-op when
+    empty, so the normal send is byte-identical to the reviewed file."""
+    if not (cc or "").strip():
+        return
+    if msg["Cc"] is None:
+        msg["Cc"] = cc
+    else:
+        msg.replace_header("Cc", cc)
+
+
+def _apply_subject_prefix(msg, prefix) -> None:
+    """Prepend `prefix` to the Subject — 'Sample' on a preview send, so the
+    copy that lands next to the real morning report is identifiable in the
+    inbox instead of reading as a duplicate (Eve 2026-08-27). Idempotent: a
+    subject that already starts with it is left alone."""
+    text = (prefix or "").strip()
+    if not text:
+        return
+    subject = msg["Subject"] or ""
+    if subject.startswith(text):
+        return
+    new = f"{text} {subject}".strip()
+    if msg["Subject"] is None:
+        msg["Subject"] = new
+    else:
+        msg.replace_header("Subject", new)
+
+
 def _send_reviewed(selected, today: dt.date, *, to_override=None,
+                   cc=None, subject_prefix=None,
                    allow_unreviewed: bool = False,
                    allow_incomplete: bool = False, logfn=print) -> int:
     """Send the .eml files --dry-run already wrote for `today`, untouched.
@@ -302,6 +332,13 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
                 msg["To"] = recipient
             else:
                 msg.replace_header("To", recipient)
+            # Headers only — the BODY is still the byte-identical reviewed
+            # message. Both of these exist for the same job --to does: showing
+            # a real report to a few people before it goes to the list.
+            # smtplib.send_message reads Cc off the header, so a copy needs no
+            # separate envelope handling.
+            _apply_cc(msg, cc)
+            _apply_subject_prefix(msg, subject_prefix)
             n_to = len([a for a in recipient.split(",") if a.strip()])
             logfn(f"  sending {captain.key}: {msg['Subject']!r} -> {n_to} "
                   f"recipient(s)")
@@ -570,6 +607,15 @@ def main(argv=None) -> int:
                     help="With --send: send to ADDR instead of the captains' "
                          "real distribution lists. Use this to test a real "
                          "report on yourself before mailing 145 people.")
+    ap.add_argument("--cc", default=None, metavar="ADDR",
+                    help="Add a Cc (comma-separated) to this send. Headers "
+                         "only — the reviewed body is untouched. For showing "
+                         "a real report to a couple of people alongside "
+                         "--to.")
+    ap.add_argument("--subject-prefix", default=None, metavar="TEXT",
+                    help="Prepend TEXT to the Subject of what goes out, e.g. "
+                         "--subject-prefix Sample, so a preview copy is not "
+                         "read as a duplicate of the morning's report.")
     ap.add_argument("--distro-check", action="store_true",
                     help="Print where each captain's recipients come from "
                          "(their 'Captainship - <Name>' contact group vs the "
@@ -622,6 +668,7 @@ def main(argv=None) -> int:
     if args.send_reviewed:
         # Nothing to capture — this path only mails what's already on disk.
         n = _send_reviewed(selected, today, to_override=args.to,
+                           cc=args.cc, subject_prefix=args.subject_prefix,
                            allow_unreviewed=args.allow_unreviewed,
                            allow_incomplete=args.allow_incomplete)
         if n:
@@ -668,6 +715,8 @@ def main(argv=None) -> int:
             recipient = (args.to or captain.recipients()) if args.send else ""
             if args.send:
                 msg.replace_header("To", recipient)
+                _apply_cc(msg, args.cc)
+                _apply_subject_prefix(msg, args.subject_prefix)
             print(f"  built draft: subj={msg['Subject']!r}, "
                   f"{bundle['_n_imgs']} image(s)")
 

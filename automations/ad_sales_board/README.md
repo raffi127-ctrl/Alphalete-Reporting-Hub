@@ -71,6 +71,33 @@ Applicants column undercounts by that much (37 of Carlos's 375 call-list names
 in the 8/19 week wore the wrapper). Fixing the monthly parser is a deliberate,
 separate decision because it shifts current-month numbers upward.
 
+## The empty-day trap (root cause of the 2026-08-27 gaps)
+
+AppStream sometimes answers a SINGLE-DAY Source Report with a valid table that
+has no data rows. `parse` then yields no ads, nothing raises, and the run exits
+0 — so a day that was never read looks exactly like a day nobody applied on. It
+hit about one office-day in thirty: Jamis lost Thu/Fri/Sat, Aya a Wednesday,
+Jackie a Sunday, each blank across every one of that office's ads. Nothing
+noticed, because nothing checked that a week's seven days add up to its weekly
+total.
+
+Three defences, and the third is the one that would have caught it on day one:
+
+1. `pull_day()` re-submits an empty day once before believing it. A day that
+   still will not read is left **blank, never zero** — blank means "not read",
+   zero would mean "read, nobody applied", and writing zeros would make the gap
+   permanent and invisible.
+2. **The heal pass.** Any week whose day counts fall short of its weekly total
+   gets exactly its missing days re-pulled next run (`--heal-days`, default
+   14). The reconciliation identity is what makes it terminate: a week that
+   already adds up is never re-pulled, so genuine zero-days cost nothing. The
+   board repairs itself instead of waiting to be noticed.
+3. Every run **reconciles each finished week it wrote** (day counts vs weekly
+   total) and prints what does not add up, plus any day it could not read.
+
+Do not "fix" a short week by hand — let the heal pass do it, and if it cannot,
+that is a real signal worth reading.
+
 ## Running it
 
     python -m automations.ad_sales_board.run              # current + previous ad-week
