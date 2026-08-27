@@ -274,6 +274,10 @@ _HUB_CARD = {
     # applicant_push: the unified batch + OAT-leftovers push (office 11580) that
     # supersedes resume_pushing + oat_processing on one warm CDP session.
     "applicant_push": "applicant-push",
+    # Same flow, second office (Atef, 23467 — added 2026-08-26). ONE launchd job
+    # alternates the two offices tick by tick, but each publishes to its OWN card
+    # so a wedge on one office never shows the other green (or red).
+    "applicant_push_atef": "applicant-push-atef",
     # applicant_sync_morning: the 4am phase of the SAME card as the 8pm evening
     # phase ("Applicant Tracker Sync", daily_runs 2 — orange after morning,
     # green after evening). Unmapped, resolve_card auto-created a SECOND library

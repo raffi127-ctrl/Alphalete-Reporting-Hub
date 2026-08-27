@@ -51,3 +51,17 @@ NO_PHONE_FLAG_CSV = os.environ.get(
 # large; keep runs short (and mistakes small) by processing a bounded batch.
 # --limit N on the CLI overrides this downward.
 MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
+
+# --- Multi-office namespacing (2026-08-26) --------------------------------- #
+# The push works more than one office now (Carlos 11580, Atef 23467 — see
+# automations/applicant_push/offices.py). Every per-day artefact this module
+# writes is keyed by DATE ALONE — the activity CSV, the flagged snapshot the
+# noon/4pm post reads, the no-number cache, the blocked-read cache — so two
+# offices sharing them would overwrite each other's queue state and post each
+# other's applicants. This suffix is appended to those filenames.
+#
+# EMPTY for 11580 ON PURPOSE: Carlos's files keep their exact existing names, so
+# nothing already in flight (today's caches, today's thread) moves underneath him.
+FILE_SUFFIX = os.environ.get("OAT_FILE_SUFFIX", "")
+# Same reason for the Sheet tab each walk appends its proof row to.
+WALK_DIAG_TAB = os.environ.get("OAT_WALK_DIAG_TAB", "OAT Walk Diag")

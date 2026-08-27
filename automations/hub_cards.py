@@ -5526,12 +5526,14 @@ AUTOMATED_REPORTS = [
     # (its wrapper publishes real success/failed to the Hub), so no forced pill.
     {
         "id": "applicant-push",
-        "name": "Applicant Push (Q 5 Min)",
+        # ~10 min, not 5, since 2026-08-26: the one q5min job now alternates
+        # Carlos's office and Atef's, one office per pass.
+        "name": "Applicant Push (Q 10 Min)",
         "creator": "Carlos",
         "emoji": "📲",
         "color": "#F59E0B",
         "category": "📲 Ops",
-        "description": "Carlos's ApplicantStream office (11580) applicant push, all in one (Resume Pushing + OAT merged): every 5 minutes it works the leftover applicant queue — sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants — and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
+        "description": "Carlos's ApplicantStream office (11580) applicant push, all in one (Resume Pushing + OAT merged): every ~10 minutes it works the leftover applicant queue — sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants — and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
         "breakdown": (
             "WHAT IT DOES\n"
             "One warm browser session for **Carlos's office (11580)** works the "
@@ -5554,7 +5556,11 @@ AUTOMATED_REPORTS = [
             "— **grouped by account**, with **how many days** each has been "
             "sitting (🚨 at 2+ days).\n\n"
             "WHEN IT RUNS\n"
-            "**Every 5 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2**.\n\n"
+            "**Every ~10 minutes, 7 AM–10 PM Central, every day**, on "
+            "**Lucy 2**. The job wakes every 5 minutes and works **one office "
+            "per pass** — Carlos, then Atef (office 23467, added 2026-08-26), "
+            "then Carlos — so each office gets its own clean browser session "
+            "and neither can stall the other.\n\n"
             "HOW IT RUNS\n"
             "Drives a **real Google Chrome** on a copy of **Lucy 2's** everyday "
             "browser profile. It signs in with the **shared 'Raf – Captain' "
@@ -5607,6 +5613,92 @@ AUTOMATED_REPORTS = [
                 "help": "Preview pass — walks Carlos's queue and prints what it WOULD do. Nothing is sent, removed or re-texted; the live pass is the every-5-minutes agent.",
                 "module": "automations.applicant_push.run",
                 "args_fn": lambda: [],
+            },
+        ],
+    },
+    # ── Applicant Push — Atef's office (23467) ────────────────────────────
+    # The SAME module and flow as the card above, pointed at a second office
+    # (--office 23467). Carlos asked 2026-08-26 for Atef's resumes to be pushed
+    # on the same schedule as his. There is NO second LaunchAgent: the one q5min
+    # job alternates offices tick by tick, so each office gets a pass every
+    # ~10 min. Separate card so a wedge on one office never shows the other green.
+    {
+        "id": "applicant-push-atef",
+        "name": "Applicant Push — Atef (Q 10 Min)",
+        "creator": "Carlos",
+        "emoji": "📲",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Atef's ApplicantStream office (23467, Domin8 Acquisitions) applicant push — the same flow as Carlos's, on the same schedule: it works the leftover applicant queue, sends the ones with a phone to the AI call list, removes duplicates, re-texts quiet applicants, and at noon & 4 PM posts a Slack to-do of who still needs a number pulled from Indeed.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "One warm browser session for **Atef's office (23467 — Domin8 "
+            "Acquisitions)** works the **One-App-at-a-time** leftover queue on "
+            "every pass:\n"
+            "**•** Fresh applicants **with a phone** → **sent to the AI call "
+            "list**.\n"
+            "**•** Duplicates / past-interviews / already-sent → **removed**.\n"
+            "**•** Quiet applicants (>1 week) whose text thread is still visible → "
+            "**re-texted** the FOR LUCY message, then removed.\n"
+            "**•** **No number on file** → it opens their resume to read one; if "
+            "it can't (Indeed blocks it), they're **flagged for a human to pull "
+            "the number from Indeed by hand** — each resume is read once, never "
+            "reopened.\n"
+            "**•** Quiet applicants whose thread is **too old to see** → flagged "
+            "for a **manual text**.\n\n"
+            "TWICE-A-DAY SLACK POST\n"
+            "At **noon and 4 PM** it posts to **Atef's own recruiting channel** "
+            "(#23467-domin8-acquisitions-inc-atef-choudhury, one thread per day) "
+            "the to-do list of who still needs a hand — **who needs a number "
+            "pulled from Indeed** and **who needs a manual text** — **grouped by "
+            "account**, with **how many days** each has been sitting (🚨 at 2+ "
+            "days). Atef's names never go to Carlos's channel.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every ~10 minutes, 7 AM–10 PM Central, every day**, on **Lucy 2** "
+            "— the same every-5-minutes job that runs Carlos's office, taking "
+            "**one office per pass** (Carlos, then Atef, then Carlos…). Carlos's "
+            "office is unaffected: it keeps its own browser profile, its own "
+            "files and its own card.\n\n"
+            "HOW IT RUNS\n"
+            "Drives a **real Google Chrome** on a copy of **Lucy 2's** everyday "
+            "browser profile. It signs in with the **shared 'Raf – Captain' "
+            "ApplicantStream login** (the same master session the rest of the "
+            "fleet uses — **no new login was needed for Atef**) and then "
+            "**switches into office 23467**, so everything it does happens inside "
+            "Atef's office and only there.\n"
+            "Sends, removes and re-texts are **irreversible**. The batch "
+            "resume-extract half is **on hold** — Indeed blocks the automated "
+            "resume pulls, so those numbers go on the twice-daily to-do list for "
+            "a human instead."
+        ),
+        # No Google Sheet — ApplicantStream action bot only.
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "applicant_push_atef",
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "7am–10pm CST",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Applicant Push (Atef) complete — the leftovers queue was worked (sent to the AI call list, removed, re-texted).",
+            "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or Cloudflare on office 23467), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run",
+                "icon": "▶",
+                # Same as Carlos's card: NO args beyond the office, and
+                # applicant_push.run defaults to dry-run — a safe PREVIEW, not a
+                # live pass. The live pass is the every-5-minutes agent.
+                "primary": True,
+                "help": "Preview pass — walks Atef's queue and prints what it WOULD do. Nothing is sent, removed or re-texted; the live pass is the scheduled agent.",
+                "module": "automations.applicant_push.run",
+                "args_fn": lambda: ["--office", "23467"],
             },
         ],
     },
