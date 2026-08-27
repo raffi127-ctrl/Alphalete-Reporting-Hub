@@ -253,6 +253,58 @@ def _click_removed_apps_button(page) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Restore-mechanism probe (--debug)
+# --------------------------------------------------------------------------- #
+def probe_restore_mechanism(page) -> None:
+    """Print EXACTLY how a restore works on this page: every control whose
+    value/text/title mentions 'restore' (with name/id/type/form/row), every form's
+    action, and every inline-script snippet around the word 'restore' — the
+    ColdFusion pages do their work in a page-local JS function, and calling THAT
+    is far more robust than clicking at its UI."""
+    try:
+        ctrls = page.evaluate(
+            """() => Array.from(document.querySelectorAll('a, input, button'))
+              .filter(e => /restore/i.test(
+                  (e.innerText || e.value || e.title || '').trim()))
+              .map(e => ({ tag: e.tagName, type: e.type || '',
+                  name: e.name || '', id: e.id || '',
+                  value: (e.value || '').slice(0, 30),
+                  cls: (e.className || '').slice(0, 40),
+                  onclick: (e.getAttribute('onclick') || '').slice(0, 200),
+                  form: e.form ? (e.form.name || e.form.id ||
+                                  (e.form.action || '').slice(-60)) : '',
+                  row: (e.closest('tr') || {}).rowIndex }))""")
+        _log(f"[probe] {len(ctrls)} restore control(s)")
+        for c in ctrls[:6]:
+            _log("[probe] ctrl " + " | ".join(
+                f"{k}={c[k]!r}" for k in
+                ("tag", "type", "name", "id", "value", "cls", "onclick",
+                 "form", "row")))
+    except Exception as e:  # noqa: BLE001
+        _log(f"[probe] ctrl read err: {e}")
+    try:
+        forms = page.evaluate(
+            """() => Array.from(document.forms).map(f => ({
+                name: f.name || '', id: f.id || '',
+                action: (f.action || '').slice(-80), method: f.method }))""")
+        for f in forms:
+            _log(f"[probe] form {f}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"[probe] forms err: {e}")
+    try:
+        hits = page.evaluate(
+            """() => { const txt = Array.from(document.scripts)
+                  .map(s => s.textContent || '').join('\n');
+               return (txt.match(/.{0,80}restore.{0,220}/gi) || [])
+                  .slice(0, 12); }""")
+        _log(f"[probe] {len(hits)} script mention(s) of 'restore'")
+        for h in hits:
+            _log("[probe] js: " + " ".join(h.split())[:300])
+    except Exception as e:  # noqa: BLE001
+        _log(f"[probe] scripts err: {e}")
+
+
+# --------------------------------------------------------------------------- #
 # The results table
 # --------------------------------------------------------------------------- #
 # The columns Carlos asked to capture. Matched against the real header text by
@@ -474,6 +526,8 @@ def run(office: str, start: str, end: str = "", live: bool = False,
         if debug:
             dump_page(page, " after-filter")
 
+        if debug:
+            probe_restore_mechanism(page)
         header, rows = scrape_rows(page)
         stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         write_sheet(tab, header, rows,
