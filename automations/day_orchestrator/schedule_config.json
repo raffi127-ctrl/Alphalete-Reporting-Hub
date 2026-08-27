@@ -4077,6 +4077,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "restore_removed": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "standalone_watch": false,
+      "_off_scheduler_note": "UTILITY, not a report: reads the classic 'Applicants -> Removed Apps at Processing' list for one office + date range and, with --live, clicks Restore on every row. Built 2026-08-27 for Carlos's question 'are applicants being removed instead of worked?' - restore a day's removals, then let applicant_push walk them and read the per-applicant outcome out of output/oat-activity-<date>-<office>.csv. DRY-RUN BY DEFAULT (scrapes the table to the 'Removed Apps <office>' Sheet tab and clicks nothing); --live restores. Restore is the SAFE direction of the pair - it puts an applicant BACK in the queue for the push to re-decide, and deletes nothing. cadence.weekdays [] = the 4am orchestrator never runs it; standalone_watch false so the missed-run watcher never expects it. source_type 'appstream' so rerun runs the chrome-guard first. Usage: lucy rerun restore_removed --office 23467 --start 08-24-2026 [--live]",
+      "display_name": "Removed Apps \u2014 read / restore",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.oat_processing.restore_removed"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60
+    },
     "install_applicant_push_agent": {
       "on_scheduler": true,
       "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_applicant_push_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.applicant-push on Lucy 2 \u2014 the UNIFIED batch + OAT-leftovers push, every 10 min 7am-10pm CST daily on one warm CDP session. CUTOVER: after this installs, disable the two old agents (disable_resume_pushing_agent + disable_oat_processing_agent) so nothing double-runs. LIVE (send/remove/re-text are IRREVERSIBLE) \u2014 dry-run first: `bash deploy/applicant_push.sh --dry-run`. install_agent auto-registers the Hub card via hub_coverage. Re-runnable any time.",
