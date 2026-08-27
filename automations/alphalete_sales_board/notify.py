@@ -108,8 +108,10 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
         m = item.get("metrics") or {}
         parts = ["%d %s" % (int(m[k]), METRIC_LABEL[k])
                  for k in ("Int", "Int Up", "DTV", "NL") if int(m.get(k, 0))]
-        lines.append(":warning: %s %d (%s) - NOT ON THE BOARD"
-                     % (item.get("sara_name", "?"), rep_total(m), ", ".join(parts)))
+        status = item.get("status") or "NOT ON THE BOARD"
+        lines.append(":warning: %s %d (%s) - %s"
+                     % (item.get("sara_name", "?"), rep_total(m),
+                        ", ".join(parts), status))
 
     counted = rows + [(i.get("sara_name", "?"), i.get("metrics") or {})
                       for i in missing]
@@ -124,13 +126,11 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     if week_to_date is not None:
         lines.append("GOAL FOR THE WEEK: %d/%d" % (week_to_date, C.WEEKLY_GOAL))
     if missing:
-        names = ", ".join(str(i.get("sara_name", "?")) for i in missing)
+        who = ", ".join(str(i.get("sara_name", "?")) for i in missing)
         lines.append("")
-        lines.append(":warning: %s %s sales in SaraPlus but no row on this "
-                     "week's board - the counts above include %s, the board "
-                     "does not." % (names,
-                                    "has" if len(missing) == 1 else "have",
-                                    "them" if len(missing) > 1 else "them"))
+        lines.append(":warning: %s sold today with no row on this week's board. "
+                     "The counts above include %s; the board does not until "
+                     "those rows fill." % (who, "them"))
     return "\n".join(lines)
 
 

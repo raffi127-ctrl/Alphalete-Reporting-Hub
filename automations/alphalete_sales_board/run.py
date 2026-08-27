@@ -61,6 +61,7 @@ from automations.alphalete_sales_board import calc, config as C, fill
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
 from automations.rep_sales_fill import board as B
+from automations.shared import name_case
 
 HUB_CARD_ID = "alphalete-sales-board"
 HUB_CARD_NAME = "Alphalete Sales Board (SaraPlus sweep)"
@@ -222,6 +223,29 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
         _log("%d cell(s) would change (preview)" % len(updates))
         for u in updates[:15]:
             _log("    %s -> %r" % (u["range"], u["values"][0][0]))
+
+    # --- a rep who sold but has no row gets one, now -------------------------
+    # Megan 2026-08-26: say in the text that they weren't on the board, that
+    # they were added, and that their numbers land next sweep. Next sweep and
+    # not this one because the row has to exist before plan() can find it, and
+    # re-reading the whole tab to fill one rep would double every sweep's Sheets
+    # work for a case that happens a few times a week.
+    for item in missing:
+        if not apply_writes:
+            item["status"] = "would be added"
+            continue
+        clash = fill.near_matches(item["sara_name"], names)
+        if clash:
+            item["status"] = ("NOT added - could be %s already on the board"
+                              % " or ".join(clash[:2]))
+            _log("  %s: %s" % (item["sara_name"], item["status"]))
+            continue
+        row, note = fill.add_rep(ws, grid, name_case.titlecase_name(item["sara_name"]))
+        if row is None:
+            item["status"] = note
+        else:
+            item["status"] = "wasn't on the board - added, numbers fill next sweep"
+            _log("  added %s to row %d" % (item["sara_name"], row))
 
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()

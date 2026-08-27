@@ -92,6 +92,37 @@ def test_names_below_totals_are_not_the_roster():
     assert names == ["Jane Doe"], names
 
 
+def test_free_roster_row_finds_the_prebuilt_blank():
+    grid = _grid([_row("Jane Doe"), _row(""), _row("Rex Ryan")])
+    assert fill.free_roster_row(grid) == 5, fill.free_roster_row(grid)
+
+
+def test_no_blank_row_refuses_rather_than_appending_below_totals():
+    # The TOTALS row is =SUMIF($CG$4:$CG$79,...) — a name below 79 is silently
+    # left out of every total, which is why this must never "just append".
+    class FakeWS:
+        title = "Sales Board WE 8.30"
+        def update_acell(self, *a):
+            raise AssertionError("must not write when the roster is full")
+    grid = _grid([_row("Jane Doe")])          # no blank rows
+    row, note = fill.add_rep(FakeWS(), grid, "New Person")
+    assert row is None, row
+    assert "INSERTED" in note and "every total" in note, note
+
+
+def test_near_matches_blocks_a_probable_duplicate():
+    board = ["Michael Ortiz", "Jane Doe"]
+    assert fill.near_matches("MIKE ORTIZ", board) == ["Michael Ortiz"], \
+        fill.near_matches("MIKE ORTIZ", board)
+    assert fill.near_matches("Michal Ortiz", board), "a typo must be caught too"
+
+
+def test_near_matches_allows_a_genuinely_new_person():
+    board = ["Michael Ortiz", "Jane Doe"]
+    assert fill.near_matches("ANTONIO DAVIS", board) == [], \
+        fill.near_matches("ANTONIO DAVIS", board)
+
+
 def test_tab_title_is_the_weeks_sunday():
     assert fill.tab_title(MONDAY) == "Sales Board WE 8.30"
     assert fill.tab_title(dt.date(2026, 8, 30)) == "Sales Board WE 8.30"
