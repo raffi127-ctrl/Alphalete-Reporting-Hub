@@ -72,19 +72,33 @@ def ads_for_week(html):
     return parse.ads_for_month(names.WRAPPER.sub("", html))
 
 
-def rows_for(manager, label, week_start, ads, name_rows):
+def ad_key(inbox, title, city, agnostic):
+    """Stable identity for one merged ad row, used to carry the accumulated
+    received-per-day counts (T..Z) across rewrites: the weekly refresh
+    regenerates every row, but a finished day's count can only come from the
+    one-day pull that captured it. City-agnostic managers merge cities, so
+    their key skips the (joined, order-sensitive) city string."""
+    k = (inbox, parse.base_role(title).lower())
+    return k if agnostic else k + (str(city).lower(),)
+
+
+def rows_for(manager, label, week_start, ads, name_rows, day_recv):
     """The data-tab rows for one (manager, week): a WEEK ENDING band row first
     (the visible board is one stacked scroll of all weeks — the band is each
-    block's blue divider), then one row per ad (Pull, its names, columns L..R =
-    names per DAY Monday..Sunday, and S = the ad's rank in its week), an
+    block's blue divider), then one row per ad (Pull, its names, L..R = names
+    sent to call list per DAY, S = the ad's rank in its week, and T..Z =
+    emails RECEIVED per day Monday..Sunday from the one-day pulls), an
     unmatched-names row when the join couldn't place someone, and a TOTAL row
     last (label in the Ad Title column — the board's first visible column).
     A manager with NO name feed at all (the captainship-only offices) gets
-    blank name/day cells, not zeros — blank means "no feed", zero means "an ad
-    that produced nobody"."""
+    blank name cells, not zeros — blank means "no feed"; same idea for T..Z:
+    blank means "that day was never pulled", zero means "pulled, nobody came".
+
+    `day_recv` maps ad_key -> 7-slot list (int or "") of received counts."""
     iso = week_start.isoformat()
+    agnostic = manager in CITY_AGNOSTIC
     names_for, days_for, unmatched, unmatched_days = names.attach(
-        ads, name_rows, manager in CITY_AGNOSTIC, week_start)
+        ads, name_rows, agnostic, week_start)
     fed = bool(name_rows)
 
     def day_cells(counts):
@@ -96,28 +110,34 @@ def rows_for(manager, label, week_start, ads, name_rows):
     sunday = week_start + dt.timedelta(days=6)
     out = [[manager, label, "", "", "WEEK ENDING %s — %s"
             % (sunday.strftime("%-m/%-d"), label),
-            "", "", "", "", "", iso] + [""] * 8]
+            "", "", "", "", "", iso] + [""] * 15]
     tot = parse.blank()
     for g in ads:
         for f in parse.FIELDS:
             tot[f] += g["rec"][f]
     tot_days = [0] * 7
+    tot_recv = [""] * 7
     for rank, g in enumerate(ads, 1):
         got = names_for.get(id(g), [])
         days = days_for.get(id(g), [0] * 7)
         tot_days = [a + b for a, b in zip(tot_days, days)]
+        recv = day_recv.get(ad_key(g["inbox"], g["title"], g["city"], agnostic),
+                            [""] * 7)
+        tot_recv = [(a if a != "" else 0) + b if b != "" else a
+                    for a, b in zip(tot_recv, recv)]
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
                     g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
-                   + day_cells(days) + [rank])
+                   + day_cells(days) + [rank] + list(recv))
     if unmatched:
         tot_days = [a + b for a, b in zip(tot_days, unmatched_days)]
         out.append([manager, label, "—", "", "— names with no matching ad —",
                     "", "", "", len(unmatched), ", ".join(unmatched), iso]
-                   + day_cells(unmatched_days) + [""])
+                   + day_cells(unmatched_days) + [""] * 8)
     n_names = sum(len(v) for v in names_for.values()) + len(unmatched)
     out.append([manager, label, "", "", "TOTAL", "", tot["apps"], tot["scl"],
-                n_names if fed else "", "", iso] + day_cells(tot_days) + [""])
+                n_names if fed else "", "", iso] + day_cells(tot_days) + [""]
+               + tot_recv)
     return out
 
 
@@ -129,6 +149,9 @@ def main(argv=None):
                     help="how many ad-weeks back from today, current included (default 2)")
     ap.add_argument("--anchor", action="append",
                     help="explicit week anchor(s) mm-dd-yyyy (any day in the week works)")
+    ap.add_argument("--day", action="append",
+                    help="one-day received pull(s) mm-dd-yyyy (fills that day's "
+                         "T..Z slot; default: yesterday, unless --anchor is used)")
     ap.add_argument("--reset", action="store_true",
                     help="drop ALL existing data rows before writing — only for "
                          "week-definition migrations (e.g. the Wed→Mon switch); "
@@ -143,9 +166,29 @@ def main(argv=None):
             dt.datetime.strptime(x, "%m-%d-%Y").date())) for x in a.anchor]
     else:
         wins = weeks.windows_back(max(1, a.weeks), today)
+
+    # Received-per-day: the Source Report only aggregates a range, so a day's
+    # count exists only if that single day was pulled. The daily run pulls
+    # YESTERDAY (final once the day ended) and the counts accumulate in T..Z;
+    # --day backfills specific days. Every day target's week must be in the
+    # weekly windows, or its rows would never be rewritten.
+    if a.day:
+        day_targets = [dt.datetime.strptime(x, "%m-%d-%Y").date() for x in a.day]
+    elif not a.anchor:
+        day_targets = [today - dt.timedelta(days=1)]
+    else:
+        day_targets = []
+    have = {s for _l, s, _e in wins}
+    for d in day_targets:
+        anc = weeks.anchor_for(d)
+        if anc not in have:
+            wins.append(weeks.window(anc))
+            have.add(anc)
     targets = [(o, n) for o, n in OFFICES if not a.office or o in a.office]
-    print("[ad_sales_board] weeks: %s — %d offices"
-          % (", ".join(w[0] for w in wins), len(targets)), flush=True)
+    print("[ad_sales_board] weeks: %s — days: %s — %d offices"
+          % (", ".join(w[0] for w in wins),
+             ", ".join(d.isoformat() for d in day_targets) or "none",
+             len(targets)), flush=True)
 
     # Preflight, same reason as the monthly job: prove the write BEFORE a long
     # browser pull, or a permission fault wastes the whole pass.
@@ -174,6 +217,24 @@ def main(argv=None):
     call_rows = names.load_call_list(sess, sheet.API)
     print("[ad_sales_board] call-list rows loaded: %d" % len(call_rows), flush=True)
 
+    # Existing rows are read BEFORE the browser opens: rewriting a week must
+    # CARRY OVER its accumulated received-per-day cells (T..Z) — those came
+    # from one-day pulls on days now gone, and cannot be re-derived.
+    if a.reset:
+        print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
+        existing = []
+    else:
+        existing = sheet.get_values(sess, sheet.data_range("A2:Z20000"))
+    carry = {}   # (manager, label) -> {ad_key: [7 recv slots]}
+    for r in existing:
+        r = list(r) + [""] * (26 - len(r))
+        if not r[0] or not r[1] or r[4] == "TOTAL" or r[2] == "—" \
+                or str(r[4]).startswith("WEEK ENDING"):
+            continue
+        slots = [_int_or_blank(v) for v in r[19:26]]
+        carry.setdefault((r[0], r[1]), {})[
+            ad_key(r[3], r[4], r[5], r[0] in CITY_AGNOSTIC)] = slots
+
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
     rescued_total = 0
@@ -183,16 +244,43 @@ def main(argv=None):
         for oid, name in targets:
             try:
                 fetch.select_office(page, tok, oid)
+                agnostic = name in CITY_AGNOSTIC
+                weekly = []
                 for label, start, end in wins:
                     html, _owner, nrows = fetch.source_report(
                         page, tok, weeks.fmt_mdY(start), weeks.fmt_mdY(end))
                     rescued = len(names.WRAPPER.findall(html))
                     rescued_total += rescued
                     ads, _flags = ads_for_week(html)
-                    if name in CITY_AGNOSTIC:
+                    if agnostic:
                         ads = parse.merge_across_cities(ads)
-                    wk_names = names.in_window(call_rows, name, start, end)
-                    fresh[(name, label)] = rows_for(name, label, start, ads, wk_names)
+                    weekly.append((label, start, ads, nrows, rescued))
+                # One-day pulls: a finished day's received count per ad.
+                day_new = {}   # label -> {ad_key: {slot: count}}
+                for d in day_targets:
+                    anc = weeks.anchor_for(d)
+                    dlabel = weeks.window(anc)[0]
+                    dhtml, _o, _n = fetch.source_report(
+                        page, tok, weeks.fmt_mdY(d), weeks.fmt_mdY(d))
+                    dads, _f = ads_for_week(dhtml)
+                    if agnostic:
+                        dads = parse.merge_across_cities(dads)
+                    slot = (d - anc).days
+                    for g in dads:
+                        if g["rec"]["apps"]:
+                            day_new.setdefault(dlabel, {}).setdefault(
+                                ad_key(g["inbox"], g["title"], g["city"],
+                                       agnostic), {})[slot] = g["rec"]["apps"]
+                for label, start, ads, nrows, rescued in weekly:
+                    recv = {k: list(v)
+                            for k, v in carry.get((name, label), {}).items()}
+                    for k, slots in day_new.get(label, {}).items():
+                        cur = recv.setdefault(k, [""] * 7)
+                        for slot, n in slots.items():
+                            cur[slot] = n
+                    wk_names = names.in_window(call_rows, name, start, end=start + dt.timedelta(days=6))
+                    fresh[(name, label)] = rows_for(name, label, start, ads,
+                                                    wk_names, recv)
                     print("  OK   %-24s %-22s raw=%-4d ads=%-3d pull=%-5d names=%d%s"
                           % (name[:24], label, nrows, len(ads),
                              sum(g["rec"]["apps"] for g in ads), len(wk_names),
@@ -215,11 +303,7 @@ def main(argv=None):
         return 1
 
     # Freeze rule: rewrite only the (manager, week) pairs this run pulled.
-    if a.reset:
-        print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
-        existing = []
-    else:
-        existing = sheet.get_values(sess, sheet.data_range("A2:S20000"))
+    # `existing` was read before the browser opened (the T..Z carry needed it).
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
@@ -250,7 +334,7 @@ def main(argv=None):
               % (len(new), len(managers), len(week_labels),
                  ", ".join(week_labels[:6])), flush=True)
     else:
-        sheet.clear(sess, sheet.data_range("A2:S20000"))
+        sheet.clear(sess, sheet.data_range("A2:Z20000"))
         sheet.put_values(sess, sheet.data_range("A2"), new)
         sheet.put_values(sess, sheet.data_range("W2"),
                          [[managers[i] if i < len(managers) else "",
@@ -289,15 +373,24 @@ def _desc_iso(iso):
     return "".join(chr(255 - ord(c)) for c in str(iso))
 
 
+def _int_or_blank(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return ""
+
+
 def _numeric_cols(rows):
-    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8), the day
-    counts (L..R = idx 11..17) and the Rank (S = idx 18) on recycled rows,
-    same reason as the monthly job's _numeric: sheet-recycled values come back
-    as strings and text numbers kill numeric formats and future CF."""
+    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8), the two day
+    grids (L..R names = idx 11..17, T..Z received = idx 19..25) and the Rank
+    (S = idx 18) on recycled rows, same reason as the monthly job's _numeric:
+    sheet-recycled values come back as strings and text numbers kill numeric
+    formats and future CF."""
     out = []
     for r in rows:
         rr = list(r)
-        for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18):
+        for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18,
+                  19, 20, 21, 22, 23, 24, 25):
             if i < len(rr) and isinstance(rr[i], str) and rr[i].strip():
                 try:
                     rr[i] = int(float(rr[i]))

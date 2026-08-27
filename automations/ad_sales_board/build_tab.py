@@ -45,16 +45,18 @@ D = sheet.DATA_TAB
 # dropdown (Carlos 2026-08-27: "no dropdown i just have to scroll down"). Each
 # block opens with a blue WEEK ENDING band row the job writes into the data;
 # the rank (#) comes from data col S. Spill columns:
-# rank | Account | City | AD/band | Pull | Names | Mon..Sun day counts.
+# rank | Account | City | AD/band | Pull | Mon..Sun RECEIVED per day |
+# To Call List (weekly, from the source report).
 A5 = ("=IFNA(FILTER({'%(d)s'!$S$2:$S,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,"
-      "'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$I$2:$I,'%(d)s'!$L$2:$R},"
+      "'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$T$2:$Z,'%(d)s'!$H$2:$H},"
       "'%(d)s'!$A$2:$A=$B$1))" % {"d": D})
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
         "Saturday", "Sunday"]
 
-CAPTION_TEXT = ("names per ad per DAY · Pull = processed emails that week · "
-                "names = sent to call list (org offices; Saturdays missing "
-                "upstream)")
+CAPTION_TEXT = ("day cells = emails RECEIVED per ad per day (tracked from "
+                "Aug 17; older weeks show the weekly Pull only) · Pull = the "
+                "week's received total · To Call List = sent to call list "
+                "that week")
 HINT_TEXT = ("ALL WEEKS — newest at the top, scroll down for history · blue "
              "band = week ending · TOTAL closes each week")
 
@@ -167,7 +169,7 @@ def main(argv=None):
     sheet.put_values(sess, sheet.view_range("A2"), [["AD SALES BOARD"]])
     sheet.put_values(sess, sheet.view_range("A3"), [[HINT_TEXT]])
     sheet.put_values(sess, sheet.view_range("A4"),
-                     [["#", "Account", "City", "AD", "Pull", "Names"] + DAYS])
+                     [["#", "Account", "City", "AD", "Pull"] + DAYS + ["To Call List"]])
     _uf(sess, sheet.view_range("A5"), [[A5]])
 
     # --- dress ---------------------------------------------------------------
