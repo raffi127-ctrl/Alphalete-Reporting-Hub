@@ -4,32 +4,33 @@ never surprise-fail at 4am.
 
 WHY THIS EXISTS
 The recruiting console is authenticated by an `rqst` SSO token (+ ColdFusion
-CFID/CFTOKEN) that carries a FIXED, server-set expiry. The session-holder reloads
-the console every few minutes, which keeps the ColdFusion session from
-*idle*-timing-out — but it CANNOT refresh the rqst token.
+CFID/CFTOKEN). A freshly-minted rqst lives ~2 HOURS — measured three times now
+(2026-08-24: login 20:54 → expiry 22:54, and 21:09 → 23:09; plus a captured
+session on 8/24 18:53 → 20:53). The 24h figure belongs to CFID/CFTOKEN riding
+alongside it. So an EXPIRED stored token is the normal state between runs and is
+NOT by itself a verdict on health.
 
-WHY THE PING USED TO BE UNSATISFIABLE (Eve 2026-08-24). This module said the
-rqst expiry was "~daily" and that only a human-cleared login could mint one.
-Measured, both are off, and together they made the 6pm/3am ping impossible to
-act on:
+HOW THE BATCH ACTUALLY SURVIVES THE NIGHT (Megan 2026-08-27). The session-holder
+carries it, unattended, with no human login:
 
-  • A freshly-minted rqst lives ~2 HOURS, not a day — measured twice on
-    2026-08-24 (login 20:54 → expiry 22:54; login 21:09 → 23:09). The 24h number
-    belongs to CFID/CFTOKEN riding alongside it. The ping demands a token that
-    survives to 4am + SURVIVAL_BUFFER_MIN (~5:30am), so an evening re-seed is
-    already dead ~3h before the batch it was meant to protect. Pushing it to the
-    fleet doesn't extend it either — the same 2h token lands on every runner.
-  • The unattended rcaptain form login DOES still reach the console: verified
-    2026-08-24 from Windows, no human, `--appstream-form-login` landing on
-    #searchMC twice in a row. `appstream_direct_session(allow_form_login=True)`
-    — the default — therefore re-logs-in whenever the stored session is stale,
-    and THAT self-heal is what carries the 4am batch.
+  • its 6-minute reload keeps the ColdFusion session (CFID/CFTOKEN) from
+    idle-timing-out, indefinitely;
+  • when the ~2h rqst lapses, `_warm_appstream` no longer short-circuits on a
+    rendering console (`6665dff`, 8/25) — it falls through to the storage_state
+    re-hop (`?rqst=<TOKEN>&p=701`) off that still-live ColdFusion session and
+    comes back with a FRESH token, which it exports for the reports to reuse.
 
-So the stored token's expiry is not a verdict on health, and neither is any
-belief about the login form. Before waking anyone this watch now PROVES the
-self-heal is broken by driving the very login the reports drive
-(`selfheal_ok()`). A ping means the automation genuinely could not log in — the
-one case where the human re-seed below is the fix.
+Measured on Lucy 1: token minted ~22:03 (expiry 12:03AM), re-minted by ~06:41
+the next morning with nobody touching it; no "NO rqst" lapse in the 31h since
+the 8/25 fix; and the 4am batch ran 47/50 clean (the 3 not-done were clock-gated,
+none AppStream). Ownerville's holder self-heals the same way.
+
+WHAT THIS WATCH MUST NOT DO. Until 2026-08-27 the probe drove the rcaptain FORM
+login (force_form_login=True) and cried "the self-heal is BROKEN" when it
+failed. But `d793ea3` had disabled that form for scheduled runs hours before, so
+no report had taken it since — the watch was failing a route nothing uses and
+waking people nightly while the batch ran fine. `selfheal_ok()` now drives the
+REUSE path the reports drive. A ping means a real report would fail right now.
 
 WHAT EVE DOES (everything but the click):
   • PREDICT  — read the rqst expiry from the stored session (cheap, no network,
@@ -192,34 +193,42 @@ def _reseed_cmd() -> str:
 
 
 def selfheal_ok(verbose: bool = False) -> tuple[bool, str]:
-    """Drive the UNATTENDED rcaptain form login exactly as the 4am reports do,
-    and report whether it reached the office console (#searchMC).
+    """Can a scheduled report open the AppStream console RIGHT NOW? Drives the
+    exact path the 4am reports drive — reuse the stored session, no login form.
 
-    This is the only honest health check for AppStream: the reports don't consume
-    the stored token, they re-mint one. It costs ~40s and a headed browser, so
-    watch() calls it ONLY when the cheap expiry check says "stale" AND it is
-    about to ping a human — at most twice a day.
+    WHY REUSE-ONLY (Megan 2026-08-27: "this is already corrected — I haven't
+    touched it all day"). This used to drive the rcaptain FORM login with
+    force_form_login=True, and reported "the self-heal is BROKEN" when that
+    failed. But `d793ea3` had disabled the form for scheduled runs hours
+    earlier (allow_form_login defaults False), so no report has taken that path
+    since — the probe was failing a route nothing uses and waking people for it,
+    every night, while the 4am batch ran clean.
 
-    Side effect, and the point: a successful probe leaves a fresh session in
-    APPSTREAM_STORAGE_STATE, so on the machine it runs on the probe IS the
-    re-seed. It does NOT push to the other runners — a human still runs
-    --appstream-push-fleet for that, which is why a failure still pings.
+    What actually carries the batch is the session-holder: its 6-minute reload
+    keeps the ColdFusion session (CFID/CFTOKEN, 24h) alive, and when the ~2h
+    rqst lapses `_warm_appstream` falls through to the storage_state re-hop
+    (`?rqst=<TOKEN>&p=701`) and comes back with a fresh token — the behaviour
+    `6665dff` restored on 8/25. Measured on Lucy 1: token minted 22:03 → 12:03AM,
+    then re-minted by 06:41 with nobody touching it, and no lapse warning since
+    8/25 17:34. So the honest question is not "can we log in" — it is "does the
+    session the reports will use authenticate", which is what this now asks.
 
-    'profile busy' counts as healthy — another AppStream report is holding a live
-    session right now, which is proof the login works."""
+    'profile busy' counts as healthy — another AppStream report is holding a
+    live session right now, which is proof the path works."""
     from automations.shared.tableau_patchright import (
         AppStreamBusy, appstream_direct_session)
     try:
-        with appstream_direct_session(force_form_login=True, allow_form_login=True,
-                                      headless=False, verbose=verbose,
+        # allow_form_login/force_form_login left at their defaults (False) ON
+        # PURPOSE: this must fail exactly where a scheduled report would fail.
+        with appstream_direct_session(headless=False, verbose=verbose,
                                       yield_if_busy=True) as page:
             if page.locator("#searchMC").count() > 0:
-                return True, "unattended rcaptain login reached the console"
-            return False, "unattended login did not render #searchMC"
+                return True, "stored session opened the console (same path as the reports)"
+            return False, "stored session did not render #searchMC"
     except AppStreamBusy:
         return True, "profile busy — another AppStream report holds a live session"
     except Exception as e:                                      # noqa: BLE001
-        return False, "unattended login failed: {}: {}".format(
+        return False, "stored session is dead: {}: {}".format(
             type(e).__name__, str(e)[:110])
 
 
@@ -409,18 +418,18 @@ def watch(dry_run: bool = False, probe: bool = True) -> dict:
         healthy = token_ok and export_fresh
         # AppStream only: the expiry check alone cries wolf every night (see the
         # module docstring — a fresh token can't reach 4am, so "stale at 6pm" is
-        # the normal, healthy state). Before pinging, PROVE the self-heal is
-        # broken by driving the same login the reports drive. Success also
-        # re-seeds this machine, so the probe fixes what it checks.
+        # the normal, healthy state, and the holder re-mints one long before the
+        # batch). Before pinging, ask the only question that matters: can a
+        # report open the console RIGHT NOW, on the path a report actually uses?
         if key == "appstream" and not healthy and ping_due and probe:
             probe_ok, why = selfheal_ok()
             if probe_ok:
                 healthy = True
-                stt = {**stt, "reason": "{} self-heal OK — {} (stored token: {})"
+                stt = {**stt, "reason": "{} reachable — {} (stored token: {})"
                                         .format(stt["what"], why, stt["reason"])}
             else:
-                stt = {**stt, "reason": "{} — and the self-heal is BROKEN: {}"
-                                        .format(stt["reason"], why)}
+                stt = {**stt, "reason": "{} — and a report cannot open the "
+                                        "console: {}".format(stt["reason"], why)}
         healthy_all = healthy_all and healthy
         was_ok = state.get(f"last_ok_{key}")
         if healthy:
