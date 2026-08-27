@@ -813,6 +813,40 @@ def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:
     return retracted
 
 
+def _alert_config_unparseable(day: str, err: Exception, *, dry_run: bool, ts: str) -> None:
+    """Say — ONCE a day — that schedule_config can't be read.
+
+    Routed through orchestrator_heartbeat on purpose: it resolves the corrections
+    channel from the id cache / a raw settings read / a literal fallback, none of
+    which need a parsed config. Reaching for notify._corrections_channel(cfg) here
+    would need the very object we just failed to build.
+
+    Best-effort throughout — this runs on the failure path of a watcher, and a
+    watcher that raises while reporting a failure is the bug being fixed."""
+    try:
+        from automations.orchestrator_heartbeat import run as _hb
+        marker = _hb.MARKER_DIR / f"{day}.config-unparseable"
+        if marker.exists():
+            return
+        text = (":rotating_light: *schedule_config.json is unparseable on {}* — {}\n"
+                "`{}: {}`\nThe error watcher cannot run: every skip-list it needs "
+                "comes from that file, so it would alert on every orchestrator "
+                "report at once. The 04:00 batch reads the same file FIRST, so "
+                "tomorrow's run dies here too unless this is cleared.\n"
+                "Fix: `lucy git_recover --machine \"{}\"`."
+                .format(_hb._machine_name(), day, type(err).__name__,
+                        str(err)[:120], _hb._machine_name()))
+        if dry_run:
+            print(f"[{ts}] watch: [dry-run] would alert: {text}", flush=True)
+            return
+        if _hb.post(text):
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(ts)
+    except Exception as e:  # noqa: BLE001
+        print(f"[{ts}] watch: could not raise the config alarm: "
+              f"{type(e).__name__}: {e}", flush=True)
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -821,7 +855,27 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     wrong. No email, ever (Megan 2026-07-25: know all day which reports errored on
     both Lucy 1 and Lucy 2)."""
     from automations.day_orchestrator import notify, registry as _reg
-    cfg = _reg.load_config()
+    # GUARDED since 2026-08-27. This call used to be bare, and that is how the
+    # watcher died alongside the thing it watches: an unmerged schedule_config
+    # (conflict markers, invalid JSON) killed the 04:00 orchestrator AND every
+    # 10-minute pass of this watcher, so a batch that ran ZERO reports went
+    # unreported for 2h45m. Two other load_config calls in this file were already
+    # wrapped; this one was missed.
+    #
+    # We STOP rather than continue with cfg=None on purpose. Every skip-list below
+    # (_orchestrator_ids, _oneshot_utility_ids, _offday_standalone_ids,
+    # _handrun_only_ids) is derived from cfg, so a pass without it would treat
+    # every orchestrator-managed report as a standalone and alert on all of them
+    # at once — a false-alarm storm during an outage, which is precisely when the
+    # channel has to stay readable.
+    try:
+        cfg = _reg.load_config()
+    except Exception as e:  # noqa: BLE001 — a corrupt config must not kill the watcher
+        print(f"[{ts}] watch: schedule_config UNPARSEABLE "
+              f"({type(e).__name__}: {str(e)[:120]}) — skipping this pass.",
+              flush=True)
+        _alert_config_unparseable(day, e, dry_run=dry_run, ts=ts)
+        return 1
     if not notify._corrections_channel(cfg):
         print(f"[{ts}] watch: no corrections channel set — nothing to do.", flush=True)
         return 0
