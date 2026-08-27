@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 import time
 import traceback
@@ -378,6 +379,52 @@ def expected_ids(o: B2BOffice) -> list:
     return [i["id"] for i in expected_items(o)]
 
 
+# --- "has this office ever had data for this section?" -----------------------
+# The discriminator between a NEW office that has nothing yet and a working
+# section that broke. Both render blank; they need opposite handling.
+#
+# Megan 2026-08-17 asked for a blank render to page ("I also should have been
+# alerted"), and that stays true for a section that HAS produced data. But
+# Sabrina (onboarded 2026-08-26) was enrolled in wireless/INT/AIR churn before
+# her office had any, so all three rendered blank, and the same-day cost was:
+# a silent hole in her thread, a 🚨 incident, and the ONE shared b2b-metrics Hub
+# card reading "partial" for Carlos, Atef and Jamis too — every morning, forever,
+# until somebody remembered to go and re-enrol her. Megan 2026-08-27: "if there
+# isn't data yet, it should just say that and then when the data comes in start
+# posting it. We can't remember to go in and check to add all metrics."
+#
+# Lives under output/ (git-ignored, machine-local) — b2b_metrics only ever runs
+# on Lucy 2, so one machine owns it. It is written on every successful post, so
+# a lost file self-heals on the next good day; the only cost of losing it is that
+# a section which breaks THAT SAME day reads as never-having-data and stays quiet
+# once. Deliberately that direction: the alternative (assume everything has had
+# data) would page for every genuinely-new office, which is the bug being fixed.
+_EVER_POSTED = REPO_ROOT / "output" / "b2b_metrics" / "_ever_posted.json"
+
+
+def _load_ever_posted() -> dict:
+    try:
+        return json.loads(_EVER_POSTED.read_text())
+    except Exception:  # noqa: BLE001 — missing/corrupt is "nothing recorded yet"
+        return {}
+
+
+def has_ever_posted(office_key: str, section_id: str) -> bool:
+    return bool(_load_ever_posted().get(office_key, {}).get(section_id))
+
+
+def record_ever_posted(office_key: str, section_id: str, day) -> None:
+    """Best-effort — never let bookkeeping cost a post that already happened."""
+    try:
+        blob = _load_ever_posted()
+        blob.setdefault(office_key, {})[section_id] = (
+            day.isoformat() if hasattr(day, "isoformat") else str(day))
+        _EVER_POSTED.parent.mkdir(parents=True, exist_ok=True)
+        _EVER_POSTED.write_text(json.dumps(blob, indent=2, sort_keys=True))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _out_dir(o: B2BOffice) -> Path:
     d = REPO_ROOT / "output" / "b2b_metrics" / o.key
     d.mkdir(parents=True, exist_ok=True)
@@ -446,6 +493,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     #    half-posted thread), continue-on-failure.
     captured = {}
     deferred = []       # sections held back on ORDERLOG freshness (not failures)
+    no_data = []        # sections this office has never had data for (not failures)
     for item in items:
         try:
             # `today` reaches the capture so --today moves the WEEK too, not
@@ -473,13 +521,25 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             log("  [{}] SKIPPED (wrong week): {}".format(item["id"], wf))
             captured[item["id"]] = None
         except BlankRender as br:
-            # An EMPTY render is a reportable miss now, not a thing we post.
-            # It lands in `missed` -> _write_manifest -> the loud 🚨 in
-            # #claudecorrections-and-requests (Megan 2026-08-17: "I also should
-            # have been alerted"). Deliberately NOT in `deferred`, so the alert
-            # fires straight away rather than waiting on the floor pass.
-            log("  [{}] SKIPPED (blank render): {}".format(item["id"], br))
+            # Two very different things render blank, and they need opposite
+            # handling — see _EVER_POSTED above.
             captured[item["id"]] = None
+            if has_ever_posted(o.key, item["id"]):
+                # This section HAS produced data for this office and now doesn't:
+                # a real regression. Unchanged loud path — a reportable miss that
+                # lands in `missed` -> _write_manifest -> the 🚨 in
+                # #claudecorrections-and-requests (Megan 2026-08-17). Deliberately
+                # NOT deferred, so it pages now, not after the floor pass.
+                log("  [{}] SKIPPED (blank render): {}".format(item["id"], br))
+            else:
+                # Never had data here: the office is new to this section, not
+                # broken. Say so in the thread, don't page, don't drag the shared
+                # Hub card — and keep attempting it every morning, so the day the
+                # data arrives it posts itself with nobody re-enrolling anything.
+                log("  [{}] NO DATA YET (never posted for {}) — {}".format(
+                    item["id"], o.key, br))
+                deferred.append(item["id"])
+                no_data.append(item["id"])
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:
@@ -491,9 +551,13 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         log("")
         log("  DRY-RUN — captured {}/{}: {}".format(
             len(ready), len(items), ", ".join(ready)))
+        if no_data:
+            log("  NO DATA YET (would post a note, not an image): {}".format(
+                ", ".join(no_data)))
         if dm:
             _dm_captures(captured, dm, o, today, log=log)
-        return {"captured": ready, "posted": [], "deferred": deferred}
+        return {"captured": ready, "posted": [], "deferred": deferred,
+                "no_data": no_data}
 
     # 2) post — reuse b2b_quality's thread_state so we join the SAME thread and
     #    survive this channel's no-history-read limitation.
@@ -577,8 +641,39 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             posted.append(item["id"])
             already.append(item["id"])
             bq._save_state(today, chan, ts, already)  # after EACH, crash-safe
+            # From now on a BLANK render of this section for this office is a
+            # REGRESSION, not a new office with nothing yet — so it pages.
+            record_ever_posted(o.key, item["id"], today)
             time.sleep(POST_SETTLE_SEC)               # let Slack finalize this
             log("  [{}] {} posted".format(chan, item["id"]))
+
+        # A section with no data yet gets ONE line rather than a silent gap, so
+        # the thread explains itself to the office reading it. Tracked under a
+        # SEPARATE '<id>__nodata' key: the real section id must stay OUT of
+        # `already`, or the pre-capture dedup would skip it tomorrow and it would
+        # never notice the data arriving — the whole point of this path.
+        for sid in no_data:
+            if chan_items is not None and sid not in chan_items.get(chan, set()):
+                continue
+            note_key = "{}__nodata".format(sid)
+            if note_key in already and not force:
+                continue
+            meta = next((i for i in items if i["id"] == sid), None)
+            if not meta:
+                continue
+            try:
+                client.chat_postMessage(
+                    channel=chan, thread_ts=ts,
+                    text="{} *{}* — no data yet for this office. It will post "
+                         "automatically on the first day there is data; nothing "
+                         "to do.".format(meta["emoji"], meta["title"]))
+            except Exception as e:  # noqa: BLE001 — a note must never sink a run
+                log("  [{}] {} no-data note failed: {}".format(
+                    chan, sid, str(e)[:120]))
+                continue
+            already.append(note_key)
+            bq._save_state(today, chan, ts, already)
+            log("  [{}] {} no-data note posted".format(chan, sid))
         per_chan_posted.append(set(already))
     ts = first_ts
 
@@ -588,11 +683,22 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     # green, some missed -> orange (partial), none present -> red (failed).
     all_present = (set.intersection(*per_chan_posted) if per_chan_posted else set())
     present = [i["id"] for i in items if i["id"] in all_present]
-    missed = [i["id"] for i in items if i["id"] not in all_present]
+    # `no_data` is NOT a miss. An office that has never had data for a section
+    # has nothing to deliver, so counting it would turn the ONE shared
+    # b2b-metrics card "partial" for every office — Carlos, Atef and Jamis went
+    # amber all day on 2026-08-27 because Sabrina, onboarded the night before,
+    # had no churn yet. It still isn't `present` (nothing was posted), so it is
+    # reported on its own and stays out of both buckets.
+    _nd = set(no_data)
+    missed = [i["id"] for i in items
+              if i["id"] not in all_present and i["id"] not in _nd]
     if missed:
         log("  MISSED (not in every thread): {}".format(", ".join(missed)))
+    if no_data:
+        log("  NO DATA YET (noted in thread, not a miss): {}".format(
+            ", ".join(no_data)))
     return {"thread_ts": ts, "posted": posted, "present": present,
-            "missed": missed, "deferred": deferred}
+            "missed": missed, "deferred": deferred, "no_data": no_data}
 
 
 def main(argv=None) -> int:
@@ -768,6 +874,7 @@ def main(argv=None) -> int:
                             else ("partial" if present else "failed"))
             per_office.append({"key": key, "present": present, "missed": missed,
                                "deferred": res.get("deferred") or [],
+                               "no_data": res.get("no_data") or [],
                                "failed": False})
             if args.post:
                 _record_office_status(
