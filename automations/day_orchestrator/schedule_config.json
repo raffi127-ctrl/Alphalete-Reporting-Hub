@@ -8478,7 +8478,30 @@
         "type": "not_configured"
       }
     },
-    "install_alphalete_sales_board_watchdog": {
+    "install_sales_text_reader": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Installs com.alphalete.sales-text-reader on Lucy 1 \u2014 the ONE privileged step of the Sales Text Updates reply loop, split out on purpose. Full Disk Access is granted to a BINARY and macOS applies it to the responsible process; Lucy 1's venv python3.9 is a bash wrapper, so the sweep stayed denied ('authorization denied') even after Python.app was granted, while Terminal read the same file fine. Rather than rewrite the interpreter all ~130 automations share, this agent runs deploy/sales_text_read_chat.py with the granted Python.app DIRECTLY. That script is stdlib-only, reads message text from ONE named chat, keeps only lines shaped like 'a=b', and writes them to a file. No Sheets, no Slack, no sending.",
+   "machine": "Lucy 1",
+   "display_name": "Install Sales Text reply reader (5-min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "sales-text-reader"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "install_alphalete_sales_board_watchdog": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent (StartInterval 1200) on Lucy 1. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
       "machine": "Lucy 1",

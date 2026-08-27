@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.sales-text-reader</string>
+
+    <!-- THE FIRST ARGUMENT IS THE POINT. Full Disk Access is granted to a
+         binary, and macOS applies it to the process it holds responsible. The
+         venv python3.9 is a bash WRAPPER, so a job launched through it is
+         attributed to bash and stays denied. This names the granted Python.app
+         binary directly. The script it runs is stdlib only, so it needs no
+         venv and no packages. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python</string>
+        <string>/Users/megan/1st Claude Folder/deploy/sales_text_read_chat.py</string>
+        <string>Alphalete Partners</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/sales-text-reader.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/sales-text-reader.err.log</string>
+</dict>
+</plist>
