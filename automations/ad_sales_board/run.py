@@ -192,6 +192,10 @@ def main(argv=None):
     ap.add_argument("--day", action="append",
                     help="one-day received pull(s) mm-dd-yyyy (fills that day's "
                          "AC..AI slot; default: yesterday, unless --anchor is used)")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="accept a pull whose weekly total is LOWER than what "
+                         "is stored (normally rejected as a short pull — pass "
+                         "this only when a parser change really did lower it)")
     ap.add_argument("--heal-days", type=int, default=14,
                     help="re-pull any missing day this many days back when a "
                          "week's day counts fall short of its weekly total "
@@ -437,8 +441,34 @@ def main(argv=None):
                          started_at=run_started, dry_run=a.dry_run)
         return 1
 
+    # SHRINK GUARD. Emails only accumulate, so a week's total can never fall.
+    # When a fresh pull comes back SMALLER than what is already stored, the
+    # pull is short — not the truth — and writing it destroys good data:
+    # 2026-08-27, Drew Tepper's finished Aug 17-23 week (746, reconciled
+    # against all seven of its days) was overwritten by a 416 pull, taking his
+    # day counts with it. Keep the stored block and say so.
+    stored_total = {}
+    for r in existing:
+        if len(r) > 10 and r[0] and r[4] == "TOTAL" and isinstance(r[6], (int, float)):
+            stored_total[(r[0], r[1])] = r[6]
+    shrunk = []
+    for key in list(fresh):
+        tr = [r for r in fresh[key] if r[4] == "TOTAL"]
+        was, now = stored_total.get(key), (tr[0][6] if tr else None)
+        if (was and isinstance(now, (int, float)) and now < was
+                and not a.allow_shrink):
+            shrunk.append((key[0], key[1], was, now))
+            del fresh[key]                 # keep what is already on the sheet
+    if shrunk:
+        print("\nSHORT PULLS REJECTED — kept the stored week instead (re-run "
+              "those offices, or pass --allow-shrink if a parser change really "
+              "did lower the counts):", flush=True)
+        for mgr, label, was, now in shrunk:
+            print("   %-24s %-22s stored=%-6d pulled=%-6d" % (mgr[:24], label, was, now),
+                  flush=True)
+
     # Freeze rule: rewrite only the (manager, week) pairs this run pulled.
-    # `existing` was read before the browser opened (the T..Z carry needed it).
+    # `existing` was read before the browser opened (the AC..AI carry needed it).
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
