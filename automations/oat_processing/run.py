@@ -602,6 +602,53 @@ def _xframe(page, selector):
     return None, None
 
 
+def _xframe_wait(page, selector, timeout_s: float = 12.0, poll_ms: int = 400,
+                 on_retry=None):
+    """_xframe, but WAIT for the selector instead of judging it on a single look.
+
+    The SMS template modal renders its list asynchronously, inside a frame. Looking
+    once after a fixed sleep is a race, and it is the race that abandoned 46
+    re-texts on 2026-08-27 ("FOR LUCY Select link not found") — every one of which
+    had ALREADY found the applicant's thread and only needed the template picked.
+    The skew gives it away: 39 of those were Atef's office and 7 Carlos's, and Atef
+    was added to this machine the day before, so every fixed sleep on Lucy 2 became
+    likelier to expire before the render finished.
+
+    `on_retry(n)` runs before each re-poll — used here to re-type the template
+    filter, since the search box itself can enter the DOM after our first look."""
+    import time as _t
+    deadline = _t.monotonic() + timeout_s
+    tries = 0
+    while True:
+        fr, loc = _xframe(page, selector)
+        if loc is not None:
+            return fr, loc, tries
+        if _t.monotonic() >= deadline:
+            return None, None, tries
+        tries += 1
+        if on_retry is not None:
+            try:
+                on_retry(tries)
+            except Exception:  # noqa: BLE001
+                pass
+        page.wait_for_timeout(poll_ms)
+
+
+# The 'Select' control on the FOR LUCY row. Kept broad on purpose: the ATS renders
+# it as a link, but a button/input variant costs nothing to also accept and is one
+# less way for this step to fail silently.
+_SELECT_TEMPLATE_XPATH = (
+    "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]//a[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//button[normalize-space(.)='Select']"
+    " | //tr[contains(.,'FOR LUCY')]//input[@type='button'][contains(@value,'Select')]"
+    " | //tr[contains(.,'FOR LUCY')]//input[@type='submit'][contains(@value,'Select')]"
+)
+
+_TEMPLATE_SEARCH_XPATH = ("xpath=//*[contains(normalize-space(.),'Loading SMS "
+                          "Template')]/following::input[@type='text'][1]")
+
+
 def retext_applicant(page, first, last, phone, role, *, do_send: bool):
     """Send the 'FOR LUCY' re-engagement text to ONE applicant through the Bandwidth
     SMS widget, then report (status, detail). Choreography confirmed with Megan
@@ -710,22 +757,32 @@ def retext_applicant(page, first, last, phone, role, *, do_send: bool):
         return "retext_err", "Load Template button not found"
     lt.click(timeout=4000, no_wait_after=True)
     page.wait_for_timeout(1600)
-    mf, msearch = _xframe(page,
-                          "xpath=//*[contains(normalize-space(.),'Loading SMS "
-                          "Template')]/following::input[@type='text'][1]")
-    if msearch is not None:
+    def _type_filter(_n=0):
+        """Type the template name into the modal's search box. Re-run on every
+        poll: the box can enter the DOM after our first look, and a filter typed
+        into a box that wasn't there yet is why the list stayed unfiltered."""
+        _, _ms = _xframe(page, _TEMPLATE_SEARCH_XPATH)
+        if _ms is None:
+            return
         try:
-            msearch.fill(_TEMPLATE_NAME, timeout=4000)
-            page.wait_for_timeout(800)
-        except Exception as e:  # noqa: BLE001
-            _log(f"    [retext] template search fill failed: {type(e).__name__}")
-    _, sel = _xframe(page,
-                     "xpath=//tr[.//*[normalize-space(.)='FOR LUCY']]"
-                     "//a[normalize-space(.)='Select']"
-                     " | //tr[contains(.,'FOR LUCY')]//a[normalize-space(.)='Select']")
+            if (_ms.input_value() or "").strip().upper() != _TEMPLATE_NAME:
+                _ms.fill(_TEMPLATE_NAME, timeout=2500)
+        except Exception:  # noqa: BLE001
+            pass
+
+    _type_filter()
+    # WAIT for the row rather than looking once after a fixed sleep — see
+    # _xframe_wait. 12s is far past a healthy render (well under a second) and
+    # still cheap against a walk, and it only costs that long on a pick that was
+    # going to be abandoned anyway.
+    _, sel, _tries = _xframe_wait(page, _SELECT_TEMPLATE_XPATH, timeout_s=12.0,
+                                  on_retry=_type_filter)
     if sel is None:
         _close_sms_panel(page)
         return "retext_err", "FOR LUCY Select link not found"
+    if _tries:
+        _log(f"    [retext] template row appeared after {_tries} extra poll(s) "
+             f"— a single look would have abandoned this re-text")
     sel.click(timeout=4000, no_wait_after=True)
     page.wait_for_timeout(1300)
 
