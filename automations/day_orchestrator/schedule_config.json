@@ -8059,7 +8059,9 @@
    "_base_args_note": "Only for a HAND run (`lucy rerun digi_docs`), which is the one case where doing both passes back to back is what you want. The scheduled passes do NOT go through here — they are two launchd jobs running deploy/digi_docs.sh --add and --send-tick, because each person's bundle goes 30 minutes before their own start time.",
    "cadence": {
     "weekdays": [],
-    "_armed_weekdays": [0],
+    "_armed_weekdays": [
+     0
+    ],
     "_time": "07:45",
     "_time_note": "Monday 7:45am, alongside Blue Ink's 7:30 on Lucy 2 -- same cohort, same morning, different machines so they do not contend. The 8:30 headshots job only POSTS a Slack thread, so it is not an OwnerVille collision."
    },
@@ -8072,7 +8074,7 @@
   },
   "disable_digi_docs_monday_agent": {
    "on_scheduler": false,
-   "_note": "RETIRE com.alphalete.digi-docs-monday on Lucy 3. It was installed 2026-08-26 to run `--both --live` at Monday 7:45 \u2014 one batch for the whole cohort \u2014 and Raf changed the requirement the same day: each person's documents go 30 minutes before THEIR start time. Leaving it loaded means Monday sends everyone at 7:45 regardless. Boots it out and renames the plist .disabled so a re-login cannot re-load it. Run this BEFORE installing the add/send pair.",
+   "_note": "RETIRE com.alphalete.digi-docs-monday on Lucy 3. It was installed 2026-08-26 to run `--both --live` at Monday 7:45 — one batch for the whole cohort — and Raf changed the requirement the same day: each person's documents go 30 minutes before THEIR start time. Leaving it loaded means Monday sends everyone at 7:45 regardless. Boots it out and renames the plist .disabled so a re-login cannot re-load it. Run this BEFORE installing the add/send pair.",
    "display_name": "Disable Digi Docs 7:45 agent (superseded by the add/send pair)",
    "source_type": "local",
    "data_sources": [],
@@ -8094,7 +8096,7 @@
   },
   "install_digi_docs_add_agent": {
    "on_scheduler": false,
-   "_note": "Installer for com.alphalete.digi-docs-add on LUCY 3 \u2014 Monday 8:00am, deploy/digi_docs.sh --add -> `run --add-only --live`. THE PASS THAT MAILS NOBODY: it only puts this week's new starts into OwnerVille so they exist before their own send comes round. 8:00 sits in the quiet 8-10 window Megan named (2026-08-26). Idempotent; no committed plist has RunAtLoad, so installing it fires nothing immediately.",
+   "_note": "Installer for com.alphalete.digi-docs-add on LUCY 3 — Monday 8:00am, deploy/digi_docs.sh --add -> `run --add-only --live`. THE PASS THAT MAILS NOBODY: it only puts this week's new starts into OwnerVille so they exist before their own send comes round. 8:00 sits in the quiet 8-10 window Megan named (2026-08-26). Idempotent; no committed plist has RunAtLoad, so installing it fires nothing immediately.",
    "display_name": "Install Digi Docs add agent (Mon 8:00am)",
    "source_type": "local",
    "data_sources": [],
@@ -8116,7 +8118,7 @@
   },
   "install_digi_docs_send_agent": {
    "on_scheduler": false,
-   "_note": "Installer for com.alphalete.digi-docs-send on LUCY 3 \u2014 every 5 minutes, deploy/digi_docs.sh --send-tick -> `run --send-only --due-now --live`. THE PASS THAT MAILS PEOPLE: it sends only those whose Start Time is within the next 30 minutes, which is why it is a tick and not one fixed hour. The wrapper exits before Python unless it is Monday in office hours, and run.py opens no browser when nobody is due, so nearly every firing is free. Install AFTER disable_digi_docs_monday_agent.",
+   "_note": "Installer for com.alphalete.digi-docs-send on LUCY 3 — every 5 minutes, deploy/digi_docs.sh --send-tick -> `run --send-only --due-now --live`. THE PASS THAT MAILS PEOPLE: it sends only those whose Start Time is within the next 30 minutes, which is why it is a tick and not one fixed hour. The wrapper exits before Python unless it is Monday in office hours, and run.py opens no browser when nobody is due, so nearly every firing is free. Install AFTER disable_digi_docs_monday_agent.",
    "display_name": "Install Digi Docs send tick (Mon, every 5 min)",
    "source_type": "local",
    "data_sources": [],
@@ -8268,6 +8270,26 @@
    "verify": {
     "type": "not_configured"
    }
+  },
+  "slack_skool_email_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "READ-ONLY probe for the Slack/Skool email build (Megan 2026-08-26): `lucy --machine 'Lucy 1' rerun slack_skool_email_probe` reads this week's D2D OBCL tab, opens Slack to fetch the current invite link, and prints the finished email. base_args is EMPTY, which is the dry run -- run.py only sends on --send. Appending --send to a rerun would mail the cohort, so don't; the wrong-week gate is the backstop, not the plan. This exists because the three credentials it needs (Slack session, Skool link, reception Gmail token) were all seeded on the laptop and pushed here, and a pushed credential is not a working one until something uses it. weekdays [] so the batch never auto-runs it.",
+   "machine": "Lucy 1",
+   "display_name": "Slack / Skool email probe (dry run)",
+   "source_type": "browser",
+   "data_sources": [],
+   "command": [
+    "automations.slack_skool_email.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 15,
+   "verify": null
   }
  },
  "read_only_standalone": {
