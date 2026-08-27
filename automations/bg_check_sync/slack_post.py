@@ -60,9 +60,11 @@ def _save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def render(week_date: str, people: list, needs_confirm: list, updated_str: str) -> str:
+def render(week_date: str, people: list, needs_confirm: list, updated_str: str,
+           unbacked: list | None = None) -> str:
     """people: list of (name, status). needs_confirm: list of names (report back,
-    no PASS email). Returns the reply body."""
+    no PASS email). unbacked: [(name, status)] whose row claims an outcome no
+    Sterling email backs. Returns the reply body."""
     lines = [f"*BG Status — New Starts (week of {week_date})*",
              f"*{len(people)} scheduled to start*",
              f"_updated {updated_str} · auto by Lucy_"]
@@ -93,6 +95,24 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str) 
     section("🔲 Invited — not taken yet", awaiting)
     section("• Other", list(other), suffixes=other)
     section("📝 Report back — needs PASS/FAIL confirmation", needs_confirm)
+    # A row claiming an outcome nothing in Sterling backs. Megan found Cindy
+    # Flores by eye (2026-08-26) — her row said Passed and 90 days of Sterling
+    # mail had no check for her at all. The run has always flagged this; it
+    # flagged it into a log file nobody opens.
+    # Megan's words (2026-08-27). Nearly always these are Passed rows, so the
+    # header says so outright — but the same section catches Failed and
+    # Unperformable, and a header naming the wrong outcome would be worse than a
+    # plainer one, so it only claims "passed" when every row in it says Passed.
+    rows = unbacked or []
+    outcomes = {st for _, st in rows}
+    if outcomes == {parse.PASSED}:
+        unbacked_label = ("⚠️ Someone marked these as passed on the OBCL — "
+                          "no Sterling email says passed though")
+    else:
+        unbacked_label = ("⚠️ Someone marked these on the OBCL — "
+                          "no Sterling email says so")
+    section(unbacked_label, [n for n, _ in rows],
+            suffixes={n: f"marked {st}" for n, st in rows})
     return "\n".join(lines)
 
 

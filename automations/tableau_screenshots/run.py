@@ -288,7 +288,8 @@ def _gate_email_sources(selected: list) -> tuple:
     return kept, dropped
 
 
-def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
+def _hold_stale_boards(today: dt.date, *, dry_run: bool,
+                       orgs: list | None = None) -> dict:
     """Measure each tracker's Tableau extract and HOLD any board whose extract
     hasn't reached the latest completed reporting day. Returns {board_id: why}.
 
@@ -313,6 +314,21 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
     # email-sourced boards have their own gates.
     candidates = [p["id"] for p in pages_mod.PAGES
                   if not p.get("late") and p.get("source") != "email"]
+    # …and only the ones THIS RUN's channels actually receive. An org-wide run is
+    # every board, so nothing changes there; a single-org run is that channel's
+    # subscription.
+    #
+    # WHY (Megan 2026-08-26): the 21:03 onboarding run for #alisei-b2b-sales —
+    # an office enrolled in exactly THREE boards — probed all nine and told the
+    # corrections channel that five were held, two of which (NDS, Order Tiered
+    # Bonus) that office does not get and would not have been posted either way.
+    # Gating a board nobody in this run subscribes to can only produce a false
+    # alarm, and it spends a Tableau pull to do it [[project_tableau_access_budget]].
+    if orgs:
+        subscribed = set()
+        for org in orgs:
+            subscribed.update(sp.tracker_ids_for(org, pages_mod.PAGES))
+        candidates = [b for b in candidates if b in subscribed]
     print("\n=== FRESHNESS GATE ===", flush=True)
     tgt = fr.target_day(today)
     print(f"  extracts must have data through "
@@ -342,12 +358,68 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool) -> dict:
     fr.write_held(today, held)
     if held:
         pages_mod.mark_late(held.keys())
+        handoff = _held_handoff_note(today, dt.datetime.now())
         for bid, why in held.items():
             title = (pages_mod.by_id(bid) or {}).get("title") or bid
-            print(f"  ⏸ HOLDING {title} — {why}; listed in the header as still "
-                  f"coming, posted by the ~7am catch-up", flush=True)
+            print(f"  ⏸ HOLDING {title} — {why}", flush=True)
+        print(f"  {handoff}", flush=True)
         _alert_held(today, held, dry_run=dry_run)
     return held
+
+
+# The passes that pick a held board back up, in the order they fire. Read from
+# schedule_config rather than written here, so moving a settle pass moves what the
+# channel is TOLD — the two drifting apart is exactly the bug below.
+#
+# Box has no not_before (it is data-gated, not clock-gated); its readiness probe
+# fail-open floor is 08:00 and it lands ~06:50-08:00, so 08:00 is when it has
+# certainly either run or given up.
+_CATCH_UP_FALLBACK_HHMM = "08:00"
+
+
+def _catch_up_passes(today: dt.date) -> list:
+    """[(HH:MM, display name)] of today's later tracker passes, earliest first.
+
+    Best-effort: an unreadable config just means the note below says less."""
+    try:
+        from automations.day_orchestrator import registry as _reg
+        cfg = _reg.load_config()
+    except Exception:                                 # noqa: BLE001
+        return []
+    out = []
+    for rid, r in (cfg.reports or {}).items():
+        if not rid.startswith("tableau_screenshots"):
+            continue
+        if not any(a in r.base_args for a in ("--late-only", "--settle")):
+            continue
+        if today.weekday() not in (r.weekdays or []):
+            continue
+        out.append((r.not_before or _CATCH_UP_FALLBACK_HHMM, r.display_name))
+    return sorted(out)
+
+
+def _held_handoff_note(today: dt.date, now: dt.datetime) -> str:
+    """What will ACTUALLY pick these boards up, given the time right now.
+
+    WHY THIS IS COMPUTED (Megan 2026-08-26): this sentence used to be the fixed
+    string "the ~7am catch-up posts it once its extract lands". The 21:03
+    onboarding run for #alisei-b2b-sales posted it at nine at night, about a
+    catch-up that had finished fourteen hours earlier and would not run again —
+    so the channel was told a board was on its way that nothing was going to
+    send. A note that names a pass which has already gone is worse than no note:
+    it reads as handled."""
+    later = [(hhmm, name) for hhmm, name in _catch_up_passes(today)
+             if hhmm > now.strftime("%H:%M")]
+    if not later:
+        return ("Held, not posted — and NO automatic pass is left today, so it "
+                "will not post unless someone re-runs it.")
+    hhmm, name = later[0]
+    # Times only for the passes after the next one — the names are long and the
+    # useful fact is "there are more chances, and here is when they stop".
+    rest = (" (then %s)" % ", ".join(t for t, _ in later[1:])) if later[1:] else ""
+    return ("Held, not posted: the board is listed in today's thread header as "
+            "still coming, and *%s* picks it up from %s%s once its extract lands."
+            % (name, hhmm, rest))
 
 
 def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
@@ -361,8 +433,7 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
         lines.append(f"• {title} — {why}")
     lines += [
         "",
-        "Held, not posted: the board is listed in today's thread header as still "
-        "coming and the ~7am catch-up posts it once its extract lands.",
+        _held_handoff_note(today, dt.datetime.now()),
         "Post it by hand once the data is in:",
         "`python -m automations.tableau_screenshots.run --only "
         + ",".join(held) + " --fresh`",
@@ -468,7 +539,10 @@ def _alert_not_sent(today: dt.date, still_behind: dict, *, dry_run: bool) -> Non
         "These were held this morning and their Tableau data STILL hasn't "
         "refreshed, so the catch-up did not post them either. Every channel's "
         "thread lists them as not updated — nothing stale went out.",
-        "They post on their own once Tableau catches up. To force one out as-is:",
+        # Same correction as _held_handoff_note: "they post on their own" was a
+        # flat promise, and after the day's last settle pass nobody is coming.
+        _held_handoff_note(today, dt.datetime.now()),
+        "To force one out as-is:",
         "`python -m automations.tableau_screenshots.run --only "
         + ",".join(still_behind) + " --fresh`",
     ]
@@ -757,7 +831,8 @@ def main(argv=None) -> int:
                     print(f"  ⚠ {title} is STILL behind — it will be reported in "
                           f"the thread, not sent", flush=True)
     elif not args.only:
-        held = _hold_stale_boards(today, dry_run=args.dry_run)
+        held = _hold_stale_boards(today, dry_run=args.dry_run,
+                                  orgs=_select_orgs(args.orgs))
 
     # The thread's own heads-up line: every channel's header says Tableau is
     # behind and that the updated boards land here on their own (Megan

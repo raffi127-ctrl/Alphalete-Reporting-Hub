@@ -277,6 +277,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         todays = [r for r in todays if r.report_id in only]
     todays_by_id = {r.report_id: r for r in todays}
 
+    # A report can't be scheduled after the day ends. The backstop retires
+    # whatever is still non-terminal, so a report whose not_before falls at or
+    # after it is retired MISSED_NOT_READY — "data never ready by noon" — before
+    # its start time ever arrives, every single day, with the alert and the red
+    # card that go with it. Never runs, always complains.
+    #
+    # FOUND (Megan 2026-08-26): tableau_screenshots_settle_pm, not_before 13:00,
+    # against a 12:00 backstop. It had not bitten yet only because Lucy 3 hadn't
+    # pulled the entry when its 4am batch started.
+    #
+    # Extended rather than rejected: the schedule is what Megan set, and the
+    # backstop is a give-up time, not a policy. It moves on the ONE machine that
+    # actually has afternoon work — the honest cost is that a stuck report there
+    # is retired later — and stays at noon everywhere else.
+    backstop_at = _backstop_covering(backstop_at, todays, target)
+
     cache = readiness.ReadinessCache(cfg, dry_run=dry_run, target_date=target,
                                      stale_after_minutes=stale_after,
                                      verbose=True,
@@ -1597,6 +1613,37 @@ def _check_post_watch(ds, target, now):
             # 'pending' -> no change
     except Exception as e:  # noqa: BLE001 — a watch must never sink the batch
         _log(f"  post-watch check failed: {type(e).__name__}: {str(e)[:120]}")
+
+
+# How long after the last report's start time the day may still give up. One
+# hour: long enough for a report to actually run (the settle passes cap at 20
+# minutes) and short enough that a genuinely stuck one is still reported the
+# same early afternoon.
+BACKSTOP_GRACE_MIN = 60
+
+
+def _backstop_covering(backstop_at: dt.datetime, todays, target: dt.date):
+    """`backstop_at`, pushed out far enough that every report scheduled today has
+    had its turn. Unchanged when nothing starts that late — the normal case."""
+    latest, who = None, None
+    for r in todays:
+        if not r.not_before:
+            continue
+        try:
+            start = _parse_hhmm(r.not_before, target)
+        except Exception:                    # noqa: BLE001 — a bad time is not a schedule
+            continue
+        # Its own timeout, not just the flat grace: giving up 60 minutes after a
+        # 3-hour report may start is the same bug one step later.
+        room = max(BACKSTOP_GRACE_MIN, getattr(r, "timeout_minutes", 0) or 0)
+        end = start + dt.timedelta(minutes=room)
+        if latest is None or end > latest:
+            latest, who = end, r
+    if latest is None or latest <= backstop_at:
+        return backstop_at
+    _log(f"backstop moved {backstop_at.time()} -> {latest.time()}: "
+         f"{who.report_id} on this machine does not start until {who.not_before}")
+    return latest
 
 
 def _apply_backstop(ds, stale_after):

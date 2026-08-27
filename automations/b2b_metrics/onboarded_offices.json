@@ -55,5 +55,62 @@
         "header_label": ""
       }
     ]
+  },
+  {
+    "key": "sabrina",
+    "report_id": "sabrina_metrics",
+    "label": "Sabrina's B2B Office",
+    "owner": "Sabrina Alicea",
+    "channel_id": "C0BSJT46P47",
+    "channel_name": "alisei-b2b-sales",
+    "sheet_id": "1tR3Bhp-o0kxq6p39ilhdQck6FPwqlBjVOjIx5LMuiMk",
+    "knocks_office": "Sabrina Alicea",
+    "ov_account": "21291",
+    "owner_office": "Sabrina Alicea Alisei Inc.",
+    "business_name": "Alisei Inc.",
+    "website": "www.aliseitx.com",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "b2b_sales",
+      "b2b_activation",
+      "b2b_churn_wireless",
+      "b2b_churn_int",
+      "b2b_churn_air",
+      "b2b_customer_churn",
+      "b2b_order_log_att"
+    ],
+    "report_order": {
+      "b2b_sales": 1,
+      "b2b_activation": 2,
+      "b2b_churn_wireless": 3,
+      "b2b_churn_int": 4,
+      "b2b_churn_air": 5,
+      "b2b_customer_churn": 6,
+      "b2b_order_log_att": 7
+    },
+    "per_office_views": {},
+    "machine": "Lucy 2",
+    "campaign": "b2b_att",
+    "notes": "",
+    "channel_plans": [
+      {
+        "channel_id": "C0BSJT46P47",
+        "channel_name": "alisei-b2b-sales",
+        "report_keys": [
+          "b2b_sales",
+          "b2b_activation",
+          "b2b_churn_wireless",
+          "b2b_churn_int",
+          "b2b_churn_air",
+          "b2b_customer_churn",
+          "b2b_order_log_att"
+        ],
+        "header_label": ""
+      }
+    ]
   }
 ]

@@ -125,17 +125,22 @@ def push_boards(new_rows, periods):
             continue
         try:
             rng = lambda a1: urllib.parse.quote("'Indeed Ad Data'!%s" % a1, safe="")
-            bs.post("%s/%s/values/%s:clear" % (sheet.API, ssid, rng("A2:U6000")), json={}).raise_for_status()
-            bs.put("%s/%s/values/%s" % (sheet.API, ssid, rng("A2")),
-                   params={"valueInputOption": "RAW"},
-                   json={"majorDimension": "ROWS", "values": rows}).raise_for_status()
+            # Same transient 429/5xx retry as the main workbook — 12 boards back
+            # to back is exactly where a momentary quota answer shows up, and a
+            # skipped board leaves that owner looking at yesterday's numbers.
+            sheet.request(bs, "post",
+                          "%s/%s/values/%s:clear" % (sheet.API, ssid, rng("A2:U6000")),
+                          json={})
+            sheet.request(bs, "put", "%s/%s/values/%s" % (sheet.API, ssid, rng("A2")),
+                          params={"valueInputOption": "RAW"},
+                          json={"majorDimension": "ROWS", "values": rows})
             n = max(len(mgrs), len(periods))
-            bs.put("%s/%s/values/%s" % (sheet.API, ssid, rng("W2")),
-                   params={"valueInputOption": "RAW"},
-                   json={"majorDimension": "ROWS", "values":
-                         [[mgrs[i] if i < len(mgrs) else "",
-                           periods[i] if i < len(periods) else ""] for i in range(n)]}
-                   ).raise_for_status()
+            sheet.request(bs, "put", "%s/%s/values/%s" % (sheet.API, ssid, rng("W2")),
+                          params={"valueInputOption": "RAW"},
+                          json={"majorDimension": "ROWS", "values":
+                                [[mgrs[i] if i < len(mgrs) else "",
+                                  periods[i] if i < len(periods) else ""]
+                                 for i in range(n)]})
             print("  board %s: %d rows" % (ssid[:10], len(rows)), flush=True)
             import time as _t
             _t.sleep(4)                     # 60-writes/min quota headroom
@@ -218,6 +223,31 @@ def main(argv=None):
         try:
             sheet.probe_write(sess)
         except Exception as e:  # noqa: BLE001 — the reason matters more than the trace
+            # A preflight failure has TWO very different causes and they need
+            # two different messages. Google being momentarily unavailable is
+            # not a credential problem, and saying it is sends whoever reads
+            # the channel off re-installing keys that were always fine — which
+            # is exactly what the 2026-08-27 4:00am 503 did.
+            if sheet.is_transient(e):
+                print("[indeed_source_report] ABORT — Google's Sheets API would not "
+                      "answer the preflight write, even after %d tries: %s"
+                      % (sheet._RETRIES, str(e)[:200]), flush=True)
+                print("  This is Google-side, not a credential problem. Nothing was "
+                      "pulled and nothing was changed; the next scheduled pass "
+                      "re-pulls the whole month anyway.", flush=True)
+                _publish_outcome(
+                    "failed",
+                    "🗂️ *Indeed Source Report ABORTED — Google Sheets would not "
+                    "answer*",
+                    ["• Preflight write got `%s` after %d retries, before anything "
+                     "was pulled." % (str(e)[:160], sheet._RETRIES),
+                     "• Google-side blip, *not* a credential problem — nothing on "
+                     "this machine needs fixing.",
+                     "• Nothing was pulled and nothing was changed. The next "
+                     "scheduled pass (12:00 / 5:00pm) re-pulls the whole month, so "
+                     "this heals itself; re-run it from the Hub to catch up sooner."],
+                    started_at=run_started, dry_run=a.dry_run)
+                return 3
             print("[indeed_source_report] ABORT — cannot write the workbook as this "
                   "machine's identity: %s" % str(e)[:200], flush=True)
             print("  fix: install the applicant_tracker service-account key here "

@@ -734,26 +734,76 @@ def record_rejections(rejected: list[dict], state: dict, *, dry_run: bool = True
         }}
 
 
-def confirm(applied: list[dict], rejected: list[dict], *, dry_run: bool = True,
-            channel: Optional[str] = None) -> None:
-    """Reply in each thread with what actually happened — including the
-    OwnerVille edit we cannot make ourselves yet."""
+# Bump when the settled-line wording changes: strike_backlog rewrites anything
+# stamped with an older number. Without it the first strike wins forever, and a
+# question answered ten minutes before a copy fix keeps the old words for good
+# (which is exactly what happened to Adriana Ruiz on 2026-08-26).
+STRUCK_VERSION = 2
+
+
+def mark_settled(applied: list, rejected: list, *, dry_run: bool = True) -> None:
+    """Strike through a question once it has been answered.
+
+    Megan 2026-08-26, looking at one open question sitting under an answered
+    one: "luke gets lost in all of that." An answered question that still looks
+    like a question is the noise — not the words in it. So the answer is written
+    ONTO the question and struck through, which leaves exactly one un-struck
+    line in the thread: the one still waiting on somebody.
+
+    This replaces the separate confirmation replies. Those said the same thing
+    one message lower down and doubled the length of the thread to do it.
+    """
     cli = None if dry_run else _client()
-    for entry in applied:
-        legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        text = f"✅ *{old}* is now *{legal}* — checklist and OwnerVille."
-        if entry.get("skipped"):
-            text += f"\nNot touched: {', '.join(entry['skipped'])}."
-        _reply(cli, entry, text, dry_run)
-    for entry in rejected:
+    for entry, outcome in ([(e, "yes") for e in applied]
+                           + [(e, "no") for e in rejected]):
+        if not entry.get("reply_ts"):
+            continue
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        # Still says the thing that matters — that a real check is sitting
-        # there belonging to nobody on the checklist — but in one line.
-        text = (f"❌ *{old}* left as is. *{legal}*'s check isn't anyone on the "
-                f"checklist.")
-        _reply(cli, entry, text, dry_run)
+        if outcome == "yes":
+            text = f"✅ ~{old} → {legal}~ — updated on the OBCL and in OwnerVille"
+        else:
+            # Say the fact somebody can act on, in their words (Megan
+            # 2026-08-26): the Sterling name has no row. "Different people" was
+            # the finding; THIS is the consequence.
+            text = f"❌ ~{old} → {legal}~ — no {legal} on the OBCL to match to"
+        if dry_run:
+            print(f"[name-gate] (dry-run) would strike through {old}:\n  {text}")
+            continue
+        try:
+            cli.chat_update(channel=entry["channel"], ts=entry["reply_ts"],
+                            text=text)
+            entry["struck"] = True
+            entry["struck_v"] = STRUCK_VERSION
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't strike through {old}: {e}")
+
+
+def strike_backlog(state: dict, *, dry_run: bool = True) -> int:
+    """Strike through questions answered before this existed.
+
+    One-time catch-up, and cheap insurance afterwards: a settled question whose
+    line still reads like a question is the thing that buried the open one.
+    """
+    def _stale(e: dict, status: str) -> bool:
+        return (isinstance(e, dict) and e.get("status") == status
+                and e.get("reply_ts")
+                and e.get("struck_v", 0) < STRUCK_VERSION)
+
+    applied = [{**e, "pid": pid} for pid, e in state.items()
+               if _stale(e, "applied")]
+    rejected = [{**e, "pid": pid} for pid, e in state.items()
+                if _stale(e, "rejected")]
+    if not (applied or rejected):
+        return 0
+    mark_settled(applied, rejected, dry_run=dry_run)
+    if not dry_run:
+        for entry in applied + rejected:
+            if entry.get("struck"):
+                stored = state.setdefault(entry["pid"], {})
+                stored["struck"] = True
+                stored["struck_v"] = STRUCK_VERSION
+    return len(applied) + len(rejected)
 
 
 def _reply(cli, entry: dict, text: str, dry_run: bool) -> None:
@@ -885,3 +935,54 @@ def spelling_fixes(roster: list, matched: dict, week: str) -> list[dict]:
             "decided_by": "sterling",
         })
     return out
+
+
+# --- rows nobody's Sterling mail backs, for weeks with no thread yet ---------
+# The weekly roster reply carries these for the current and next week. Every
+# other week has no thread to carry them, so they would sit unseen until that
+# week came around — which for Cindy Flores (9/7, marked Passed, no check in 90
+# days of Sterling mail) was the better part of a fortnight. Megan asked for the
+# same treatment the name questions get: ride the nearest thread now, labelled
+# with the week they actually start.
+
+UNBACKED_KEY = "_unbacked_said"
+
+
+def warn_unbacked(rows: list, state: dict, *, dry_run: bool = True,
+                  channel: Optional[str] = None) -> int:
+    """Post far-week "marked, but no Sterling email" rows into the latest thread.
+
+    rows: [(week, name, status)]. Said ONCE per person per week — the report
+    runs twice a day and the row will keep being unbacked until somebody deals
+    with it, which is not a reason to repeat it until they do.
+    """
+    if not rows:
+        return 0
+    channel = channel or slack_post.CHANNEL_IDS[0]
+    said = state.setdefault(UNBACKED_KEY, {})
+    fresh = [(w, n, st) for w, n, st in rows if f"{w}|{norm(n)}" not in said]
+    if not fresh:
+        return 0
+    lines = ["*⚠️ Someone marked these on the OBCL — no Sterling email says so*"]
+    lines += [f"   •  {n} — marked {st} · starting {w}"
+              for w, n, st in sorted(fresh, key=lambda r: (r[0], r[1]))]
+    text = "\n".join(lines)
+    if dry_run:
+        print(f"[name-gate] (dry-run) would warn about {len(fresh)} unbacked row(s):")
+        print("  " + text.replace("\n", "\n  "))
+        return 0
+    _week, parent_ts = latest_thread(channel)
+    try:
+        cli = _client()
+        if parent_ts:
+            cli.chat_postMessage(channel=channel, thread_ts=parent_ts, text=text)
+        else:
+            cli.chat_postMessage(channel=channel, text=text)
+    except Exception as e:  # noqa: BLE001
+        print(f"[name-gate] couldn't post the unbacked warning: {e}")
+        return 0
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    for w, n, _st in fresh:
+        said[f"{w}|{norm(n)}"] = now
+    print(f"[name-gate] warned about {len(fresh)} unbacked row(s)")
+    return len(fresh)

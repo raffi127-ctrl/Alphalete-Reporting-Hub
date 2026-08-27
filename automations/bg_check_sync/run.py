@@ -166,6 +166,10 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
     """
     try:
         state = name_gate.load_state()
+        # Catch up anything answered before questions started being struck
+        # through, so the only plain line left in a thread is an open one.
+        if name_gate.strike_backlog(state, dry_run=not do_post) and do_post:
+            name_gate.save_state(state)
         approved, rejected, needs_auth = name_gate.collect_decisions(state)
         if needs_auth:
             # Somebody reacted whose vote doesn't count. Say so in the thread —
@@ -181,7 +185,7 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
             return 0
         applied = name_gate.apply_renames(sh, approved, state, dry_run=dry_run)
         name_gate.record_rejections(rejected, state, dry_run=dry_run)
-        name_gate.confirm(applied, rejected, dry_run=not do_post)
+        name_gate.mark_settled(applied, rejected, dry_run=not do_post)
         if not dry_run:
             name_gate.save_state(state)
         for entry in rejected:
@@ -319,7 +323,7 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
 def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
                  ov_targets=None, pending_asks=None, names_from=None,
-                 refresh_asks=False):
+                 refresh_asks=False, far_unbacked=None):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -428,9 +432,22 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     if do_slack:
         hour12 = now.hour % 12 or 12
         updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
-        body = slack_post.render(week, slack_people, needs_confirm, updated_str)
+        # Rows claiming an outcome no Sterling email backs — the same list the
+        # [flags] lines carry, put where somebody will see it.
+        unbacked = [(name, next((st for n, st in slack_people if n == name), ""))
+                    for name, why in flags if "no result email matched" in why]
+        body = slack_post.render(week, slack_people, needs_confirm, updated_str,
+                                 unbacked=unbacked)
         slack_post.post_or_update(week, body, dry_run=not do_post,
                                   repost=repost, today=now.date().isoformat())
+
+    if far_unbacked is not None and not do_slack:
+        # No thread this week to carry them, so hand them up to ride the
+        # nearest one rather than waiting for this week to come around.
+        for name, why in flags:
+            if "no result email matched" in why:
+                status = next((st for n, st in slack_people if n == name), "")
+                far_unbacked.append((week, name, status))
 
     if fuzzy_log:
         uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}
@@ -530,6 +547,7 @@ def _run(args) -> None:
     # With OwnerVille in play, hold the questions back until it has had a chance
     # to answer them itself.
     pending_asks: list = [] if args.ov else None
+    far_unbacked: list = []
     for monday in weeks:
         do_slack = monday in slack_weeks
         # Friday-afternoon repost applies only to the UPCOMING week's thread.
@@ -539,7 +557,15 @@ def _run(args) -> None:
                      repost=repost, now=now, do_slack=do_slack,
                      rolling_vals=rolling_vals, claimed_ids=claimed_ids,
                      ov_targets=ov_targets, pending_asks=pending_asks,
-                     names_from=names_from, refresh_asks=args.refresh_asks)
+                     names_from=names_from, refresh_asks=args.refresh_asks,
+                     far_unbacked=far_unbacked)
+
+    try:
+        state = name_gate.load_state()
+        if name_gate.warn_unbacked(far_unbacked, state, dry_run=not args.post):
+            name_gate.save_state(state)
+    except Exception as e:  # noqa: BLE001
+        print(f"[name-gate] unbacked warning skipped: {e}")
 
     if args.ov:
         try:

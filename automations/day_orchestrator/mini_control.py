@@ -560,6 +560,49 @@ def _action_onboard_apply(args: str) -> tuple[bool, str]:
     if not post:
         return True, f"wired {key} ({kind}) into the working tree — joins the next run"
 
+    # POST ON THE MACHINE THAT OWNS THE REPORT (Megan 2026-08-26). The form's
+    # "Post now" lands on whichever queue the Cloud app enqueues to (Lucy 1),
+    # but a report's day is machine-local in two ways that both silently break
+    # a same-day post from the wrong box:
+    #   • today's tracker PNGs live in that machine's output/ — the run reuses
+    #     them and posts in seconds; elsewhere it re-drives Tableau for the same
+    #     pixels (~7 min), and
+    #   • the freshness gate's stability ledger (_stability.json) is per machine,
+    #     so a first-of-the-day sample can't prove the extract finished loading
+    #     and EVERY gated board is held.
+    # alisei (2026-08-26): trackers moved to Lucy 3 on 8/25, the confirm posted
+    # from Lucy 1 at 21:03, and all three of its boards were held as "first
+    # sample of the day" — while the identical images had gone out to the other
+    # 15 channels at 04:17. Hand the post to the owning machine instead; the
+    # wiring above already ran here, and the target re-applies before it posts.
+    _post_report_id = ("tableau_screenshots" if kind in ("tracker", "trackers")
+                       else f"{key}_metrics")
+    try:
+        _owner = registry.resolve_report(registry.load_config(), _post_report_id)
+        _owner_machine = getattr(_owner, "machine", None) if _owner else None
+    except Exception:  # noqa: BLE001 — routing must never sink the post
+        _owner_machine = None
+    # Compare against _machine_profile(), NOT _this_box(): the poller running
+    # this row reads _control_tab_for(_machine_profile()), so that IS the name
+    # of the queue it lives on. Using the hostname instead could leave a box
+    # whose profile marker is missing handing the row back to the same tab
+    # forever. A machine with no marker is 'Lucy 1' on both sides — consistent.
+    _me = _machine_profile()
+    if _owner_machine and _owner_machine.strip() != _me:
+        try:
+            enqueue("onboard_apply", args, by=f"routed from {_me}",
+                    machine=_owner_machine.strip(), auto=True)
+        except Exception as e:  # noqa: BLE001 — fall through and post here
+            print(f"[onboard_apply] couldn't hand off to {_owner_machine}: "
+                  f"{type(e).__name__}: {str(e)[:120]} — posting locally",
+                  flush=True)
+        else:
+            return True, (f"wired {key} ({kind}) here; posting handed to "
+                          f"{_owner_machine.strip()} (it owns "
+                          f"{_post_report_id} — today's images + freshness "
+                          f"samples live there). Watch "
+                          f"`lucy --machine \"{_owner_machine.strip()}\" status`.")
+
     # Build the post command. Metrics resolves the freshly-written schedule entry
     # so D2D (office_metrics.runner) AND B2B (its own runner) each post exactly as
     # the 4am flow would. Trackers post via the org filter (no per-office entry).
@@ -1231,6 +1274,7 @@ def _action_appstream_promote_alt(args: str) -> tuple[bool, str]:
         os.chmod(path, 0o600)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    _creds_cache_bust()
     return True, (f"primary AppStream creds now {user}"
                   + (f" (was {old})" if old and old != user else "")
                   + " — push the matching session with --appstream-push-primary")
@@ -2887,6 +2931,17 @@ def _action_push_slack_tokens(args: str) -> tuple[bool, str]:
 # path, so a pushed secret can only ever land at a known location (same
 # principle as set_office_slack_token's registered filenames). Extend here as
 # new cred files earn fleet distribution.
+def _creds_cache_bust() -> None:
+    """Drop shared.creds' per-process cache after this action rewrote one of the
+    credential files it reads. The poller is long-lived, so without this every
+    installer's own verify step re-reads the copy loaded at boot."""
+    try:
+        from automations.shared import creds as _creds
+        _creds.reload()
+    except Exception:  # noqa: BLE001 — a cache bust must never fail an install
+        pass
+
+
 _CRED_FILES = {
     "gmail-app-password":
         lambda: Path.home() / ".config" / "recruiting-report" / "gmail-app-password",
@@ -2962,6 +3017,36 @@ _CRED_FILES = {
                 / "gmail-token-alphaletereception.json",
 }
 
+# Of those, the file-keys that are a BAG OF INDEPENDENT CREDENTIALS: one flat
+# JSON object whose keys are separate logins that different machines each hold
+# a different subset of. A push of one of these must MERGE, never replace.
+#
+# Why (2026-08-27): ownerville-creds.json holds four unrelated pairs —
+# ownerville, appstream, doubleentry, saraplus. Lucy 2 pushed its own copy
+# (ownerville + appstream only) onto Lucy 1 on 8/25; set_cred_file wrote the
+# WHOLE file, so Lucy 1 silently lost doubleentry_username/password, and the
+# next Thursday's Financial Report died on `Missing Double Entry credential`
+# five steps into a run that had already downloaded the week's workbooks.
+# Nothing warned: the push reported "installed (157 chars)" and went green.
+# Megan had hand-cancelled the identical push two days earlier for exactly this
+# reason (queue row 8/23 19:30) — a hazard you have to remember is one the code
+# should be enforcing.
+#
+# NOT merged, on purpose:
+#   * a plain-text token file (gmail-app-password, slack-token-freshsuccess) —
+#     nothing to merge, the file IS the value;
+#   * an OAuth token or a live browser session (drive-token,
+#     gmail-token-alphaletereception, slack-skool-session) — one identity that
+#     has to land whole, since half of a refreshed token is worse than none;
+#   * new-start-leader-phones, a people OVERLAY — merging would resurrect a
+#     leader deliberately removed on the laptop.
+_CRED_FILES_MERGE = {
+    "ownerville-creds",
+    "blueink-creds",
+    "saraplus-creds",
+    "slack-skool-creds",
+}
+
 
 def _action_push_cred_file(args: str) -> tuple[bool, str]:
     """Push one whitelisted credential FILE from THIS machine to another
@@ -3025,6 +3110,32 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
     if key not in _CRED_FILES:
         return False, f"unknown file-key '{key}' — known: {', '.join(sorted(_CRED_FILES))}"
     path = _CRED_FILES[key]()
+    # A bag-of-credentials file MERGES: the sender only ever holds the logins it
+    # needs, and the keys it doesn't carry belong to reports that run here and
+    # not there (see _CRED_FILES_MERGE).
+    kept: list[str] = []
+    if key in _CRED_FILES_MERGE:
+        import json as _json
+        try:
+            incoming = _json.loads(content)
+        except Exception as e:  # noqa: BLE001
+            return False, (f"{path.name} is a merge-type credential file and the "
+                           f"pushed payload isn't readable JSON ({str(e)[:80]}) — "
+                           "NOT written, the file here is untouched")
+        if not isinstance(incoming, dict):
+            return False, (f"{path.name} must be a JSON object of credentials, "
+                           f"got {type(incoming).__name__} — NOT written")
+        existing: dict = {}
+        if path.exists():
+            try:
+                existing = _json.loads(path.read_text(encoding="utf-8-sig"))
+            except Exception:  # noqa: BLE001 — unreadable local file: take the push
+                existing = {}
+        if isinstance(existing, dict):
+            kept = [k for k in existing if k not in incoming]
+            merged = dict(existing)
+            merged.update(incoming)
+            content = _json.dumps(merged, indent=2)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
@@ -3035,6 +3146,13 @@ def _action_set_cred_file(args: str) -> tuple[bool, str]:
         os.chmod(path, 0o600)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    _creds_cache_bust()
+    # Name the keys the push did NOT carry: they are the ones a clobber would
+    # have eaten, so seeing them listed is how anybody knows the merge worked.
+    if kept:
+        note += f" · kept {len(kept)} local key(s) the push didn't carry: {', '.join(sorted(kept))}"
+    elif key in _CRED_FILES_MERGE:
+        note += " (merged)"
     return True, f"{path.name} installed ({len(content)} chars, chmod 600){note}"
 
 
@@ -3798,6 +3916,7 @@ def _action_set_doubleentry_creds(args: str) -> tuple[bool, str]:
         os.chmod(path, 0o600)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
+    _creds_cache_bust()
     # Verify with a REAL headless sign-in. This is also the answer to "can this
     # run unattended here at all?" — if Double Entry ever puts a second factor in
     # front of the login, it fails HERE, at install time, instead of silently on
@@ -5321,6 +5440,7 @@ def _action_set_appstream_alt_creds(args: str) -> tuple[bool, str]:
         path.chmod(0o600)
     except OSError:
         pass
+    _creds_cache_bust()
     # Prove it before declaring success — a stored credential that cannot log in
     # is worse than none, because it looks configured.
     ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami",
@@ -5402,6 +5522,7 @@ def _action_set_appstream_creds(args: str) -> tuple[bool, str]:
     try:
         path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
         os.chmod(path, 0o600)
+        _creds_cache_bust()
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't write {path.name}: {str(e).splitlines()[0][:120]}"
     ok, res = _run_cmd([sys.executable, "-m", "automations.shared.appstream_whoami",

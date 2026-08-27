@@ -93,5 +93,18 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "alisei",
+    "label": "alisei-b2b-sales",
+    "owner": "Alisei Inc.",
+    "channel_ids": [
+      "C0BSJT46P47"
+    ],
+    "trackers": [
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated"
+    ]
   }
 ]

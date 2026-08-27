@@ -19,6 +19,17 @@ DEFAULT_MACHINE = "Lucy 1"
 HEADERS = ["Queued At", "Action", "Args", "By", "Status", "Result", "Finished At"]
 
 
+# gspread raises WorksheetNotFound for "no tab by that name" and APIError for
+# everything else (429 rate limits, 403s, transient 5xx). Only the first means
+# "create it". Older gspread versions lack the symbol — fall back to a sentinel
+# that matches nothing, so a missing symbol can never widen the except.
+try:                                     # gspread >= 5
+    from gspread.exceptions import WorksheetNotFound as _WorksheetNotFound
+except Exception:                        # noqa: BLE001
+    class _WorksheetNotFound(Exception):
+        pass
+
+
 def control_tab_for(machine: str | None) -> str:
     """The control tab for a machine — 'Mini Control' for the default (Lucy 1),
     'Mini Control - <machine>' otherwise. Matches mini_control._control_tab_for."""
@@ -35,7 +46,9 @@ def enqueue(gc, action: str, args: str = "", by: str = "Megan",
     ss = gc.open_by_key(CONTROL_SHEET_ID)
     try:
         ws = ss.worksheet(tab)
-    except Exception:                    # noqa: BLE001 — tab absent → create it
+    except _WorksheetNotFound:           # tab absent → create it. NOT a 429:
+        # creating a control tab on a rate limit would hand the form a queue no
+        # poller reads, and the job would sit there forever.
         ws = ss.add_worksheet(title=tab, rows=300, cols=len(HEADERS))
         ws.append_row(HEADERS)
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")

@@ -368,10 +368,24 @@ def main(argv=None) -> int:
     ap.add_argument("--headed", action="store_true", help="show the browser")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit preview (the default; here for the house flag)")
+    ap.add_argument("--probe-grid", action="store_true",
+                    help="READ-ONLY: dump a grid's headers + first rows with "
+                         "column indexes, to check the COL_* mapping")
+    ap.add_argument("--service", default="AT&T Internet",
+                    help="which grid --probe-grid dumps")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: log in and dump what the ReportingHub page "
                          "actually contains (for when a selector goes missing)")
     args = ap.parse_args(argv)
+
+    if args.probe_grid:
+        try:
+            sara.probe_grid(args.service, headless=not args.headed, log=_log)
+        except Exception as e:  # noqa: BLE001
+            _log("PROBE FAILED: %s: %s" % (type(e).__name__, str(e)[:400]))
+            return 1
+        _log("=== done ===")
+        return 0
 
     if args.probe:
         # Deliberately ahead of the window gate: you diagnose when you can, not

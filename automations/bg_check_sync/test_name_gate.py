@@ -30,6 +30,11 @@ def event(first, last, status=parse.PASSED, date="2026-08-27", subject=None):
                    subject=subject or f"Background Check Complete - Score PASS")
 
 
+def match_events(roster, events):
+    from automations.bg_check_sync import match as _match
+    return _match.match_events_to_people(roster, events)
+
+
 def propose(roster, events, matched=None):
     matched = matched if matched is not None else {p.key: [] for p in roster}
     return name_gate.propose(roster, events, matched, MONDAY, WEEK)
@@ -346,6 +351,35 @@ class AskPlacementTests(unittest.TestCase):
         self.assertEqual(state, {})
 
 
+class AddedToTheOBCLTests(unittest.TestCase):
+    """Megan: "they would know to add him to the OBCL and you would need to
+    catch the addition on your next scan."
+
+    A ❌ says a real background check has no row. Somebody adds that row. From
+    then on he is an ordinary new start — matched by name like anyone else, with
+    no memory of the question that was asked about somebody else.
+    """
+
+    def test_the_added_row_matches_his_own_result(self):
+        jordan = person("Jordan", "Ruiz")
+        ev = event("Jordan", "Ruiz", status=parse.PASSED)
+        matched = match_events(([person("Adriana", "Ruiz"), jordan]), [ev])
+        self.assertEqual(matched[jordan.key], [ev])
+
+    def test_and_stops_being_a_question_for_anybody_else(self):
+        adriana = person("Adriana", "Ruiz")
+        jordan = person("Jordan", "Ruiz")
+        ev = event("Jordan", "Ruiz")
+        roster = [adriana, jordan]
+        matched = match_events(roster, [ev])
+        self.assertEqual(propose(roster, [ev], matched), [])
+
+    def test_before_he_is_added_it_is_still_asked(self):
+        adriana = person("Adriana", "Ruiz")
+        ev = event("Jordan", "Ruiz")
+        self.assertEqual(len(propose([adriana], [ev])), 1)
+
+
 class VoteTests(unittest.TestCase):
 
     def test_an_owners_reaction_counts_even_though_they_arent_tagged(self):
@@ -522,6 +556,121 @@ class OutsiderReactionTests(unittest.TestCase):
         approved, rejected, needs = self._collect(
             [{"name": "eyes", "users": ["U0STRANGER"]}])
         self.assertEqual(needs, [])
+
+
+class SettledLineTests(unittest.TestCase):
+    """Megan: "luke gets lost in all of that" — an answered question that still
+    looks like a question is what buries the open one."""
+
+    ENTRY = {"channel": "C1", "reply_ts": "2.0", "sheet_first": "Adriana",
+             "sheet_last": "Ruiz", "legal_first": "Jordan", "legal_last": "Ruiz"}
+
+    def _capture(self, applied, rejected):
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append((ts, text))
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            name_gate.mark_settled(applied, rejected, dry_run=False)
+        finally:
+            name_gate._client = orig
+        return sent
+
+    def test_a_rejected_question_is_struck_through(self):
+        sent = self._capture([], [dict(self.ENTRY)])
+        self.assertEqual(len(sent), 1)
+        self.assertIn("~Adriana Ruiz → Jordan Ruiz~", sent[0][1])
+        self.assertIn("no Jordan Ruiz on the OBCL to match to", sent[0][1])
+        self.assertTrue(sent[0][1].startswith("❌"))
+
+    def test_an_approved_question_says_what_was_fixed(self):
+        sent = self._capture([dict(self.ENTRY)], [])
+        self.assertIn("updated on the OBCL and in OwnerVille", sent[0][1])
+        self.assertTrue(sent[0][1].startswith("✅"))
+
+    def test_the_backlog_is_struck_once_and_remembered(self):
+        state = {"pid1": {**self.ENTRY, "status": "rejected"}}
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append(ts)
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            first = name_gate.strike_backlog(state, dry_run=False)
+            second = name_gate.strike_backlog(state, dry_run=False)
+        finally:
+            name_gate._client = orig
+        self.assertEqual((first, second), (1, 0))
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(state["pid1"]["struck"])
+        self.assertEqual(state["pid1"]["struck_v"], name_gate.STRUCK_VERSION)
+
+    def test_a_wording_change_re_strikes_an_old_one(self):
+        """Adriana was struck ten minutes before the words changed."""
+        state = {"pid1": {**self.ENTRY, "status": "rejected",
+                          "struck": True, "struck_v": 1}}
+        sent = []
+        class _Cli:
+            def chat_update(self, channel, ts, text):
+                sent.append(text)
+        orig = name_gate._client
+        name_gate._client = lambda: _Cli()
+        try:
+            self.assertEqual(name_gate.strike_backlog(state, dry_run=False), 1)
+        finally:
+            name_gate._client = orig
+        self.assertIn("no Jordan Ruiz on the OBCL to match to", sent[0])
+
+    def test_a_pending_question_is_left_alone(self):
+        state = {"pid1": {**self.ENTRY, "status": "pending"}}
+        self.assertEqual(name_gate.strike_backlog(state, dry_run=True), 0)
+
+
+class FarWeekUnbackedTests(unittest.TestCase):
+    """Cindy Flores starts 9/7 — no thread for weeks, so her warning rode the
+    nearest one instead of waiting."""
+
+    ROWS = [("9/7/2026", "Cindy Flores", "Passed")]
+
+    def _post(self, rows, state):
+        sent = []
+        class _Cli:
+            def chat_postMessage(self, channel, text, thread_ts=None):
+                sent.append((thread_ts, text))
+                return {"ts": "9.9"}
+        orig_c, orig_t = name_gate._client, name_gate.latest_thread
+        name_gate._client = lambda: _Cli()
+        name_gate.latest_thread = lambda ch: ("8/31/2026", "111.0")
+        try:
+            n = name_gate.warn_unbacked(rows, state, dry_run=False)
+        finally:
+            name_gate._client, name_gate.latest_thread = orig_c, orig_t
+        return n, sent
+
+    def test_it_rides_the_latest_thread_and_names_the_week(self):
+        n, sent = self._post(self.ROWS, {})
+        self.assertEqual(n, 1)
+        self.assertEqual(sent[0][0], "111.0")
+        self.assertIn("Cindy Flores — marked Passed · starting 9/7/2026", sent[0][1])
+
+    def test_it_is_said_once_per_person_per_week(self):
+        state = {}
+        first, _ = self._post(self.ROWS, state)
+        second, sent2 = self._post(self.ROWS, state)
+        self.assertEqual((first, second), (1, 0))
+        self.assertEqual(sent2, [])
+
+    def test_the_same_person_in_a_new_week_is_said_again(self):
+        state = {}
+        self._post(self.ROWS, state)
+        n, _ = self._post([("9/14/2026", "Cindy Flores", "Passed")], state)
+        self.assertEqual(n, 1)
+
+    def test_nothing_to_say_posts_nothing(self):
+        self.assertEqual(name_gate.warn_unbacked([], {}, dry_run=False), 0)
 
 
 class _FakeWS:

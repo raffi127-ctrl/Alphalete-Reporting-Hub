@@ -12,9 +12,9 @@ office, joins the applicant names from the Call List import, and rewrites ONLY
 the (manager, week) pairs it actually pulled — everything older stays frozen
 exactly as it was last written, same freeze rule as the monthly dashboard.
 
-A live default run also stamps the visible tab's week picker (B3) to the
-current week each morning, sales-board style — Monday it rolls onto the new
-week by itself.
+The visible board is one stacked scroll of every week for the picked manager,
+newest on top — each block opens with a WEEK ENDING band row this job writes
+into the data itself.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
@@ -73,13 +73,15 @@ def ads_for_week(html):
 
 
 def rows_for(manager, label, week_start, ads, name_rows):
-    """The data-tab rows for one (manager, week): one row per ad (Pull, its
-    names, and columns L..R = names per DAY, Monday..Sunday), an
+    """The data-tab rows for one (manager, week): a WEEK ENDING band row first
+    (the visible board is one stacked scroll of all weeks — the band is each
+    block's blue divider), then one row per ad (Pull, its names, columns L..R =
+    names per DAY Monday..Sunday, and S = the ad's rank in its week), an
     unmatched-names row when the join couldn't place someone, and a TOTAL row
-    last (its label sits in the Ad Title column — that is the board's first
-    visible column). A manager with NO name feed at all (the captainship-only
-    offices) gets blank name/day cells, not zeros — blank means "no feed",
-    zero means "an ad that produced nobody"."""
+    last (label in the Ad Title column — the board's first visible column).
+    A manager with NO name feed at all (the captainship-only offices) gets
+    blank name/day cells, not zeros — blank means "no feed", zero means "an ad
+    that produced nobody"."""
     iso = week_start.isoformat()
     names_for, days_for, unmatched, unmatched_days = names.attach(
         ads, name_rows, manager in CITY_AGNOSTIC, week_start)
@@ -91,36 +93,32 @@ def rows_for(manager, label, week_start, ads, name_rows):
         # blank for a zero day — the sales boards leave no-sale days empty
         return [c if c else "" for c in counts]
 
-    out = []
+    sunday = week_start + dt.timedelta(days=6)
+    out = [[manager, label, "", "", "WEEK ENDING %s — %s"
+            % (sunday.strftime("%-m/%-d"), label),
+            "", "", "", "", "", iso] + [""] * 8]
     tot = parse.blank()
     for g in ads:
         for f in parse.FIELDS:
             tot[f] += g["rec"][f]
     tot_days = [0] * 7
-    for g in ads:
+    for rank, g in enumerate(ads, 1):
         got = names_for.get(id(g), [])
         days = days_for.get(id(g), [0] * 7)
         tot_days = [a + b for a, b in zip(tot_days, days)]
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
                     g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
-                   + day_cells(days))
+                   + day_cells(days) + [rank])
     if unmatched:
         tot_days = [a + b for a, b in zip(tot_days, unmatched_days)]
         out.append([manager, label, "—", "", "— names with no matching ad —",
                     "", "", "", len(unmatched), ", ".join(unmatched), iso]
-                   + day_cells(unmatched_days))
+                   + day_cells(unmatched_days) + [""])
     n_names = sum(len(v) for v in names_for.values()) + len(unmatched)
     out.append([manager, label, "", "", "TOTAL", "", tot["apps"], tot["scl"],
-                n_names if fed else "", "", iso] + day_cells(tot_days))
+                n_names if fed else "", "", iso] + day_cells(tot_days) + [""])
     return out
-
-
-def _advance_week_picker(sess, label):
-    """Point the visible tab's week picker (B3, the cream WE cell) at `label`.
-    RAW write, so the cell keeps its plain-text format and lands verbatim."""
-    sheet.put_values(sess, sheet.view_range("B3"), [[label]])
-    print("[ad_sales_board] week picker -> %s" % label, flush=True)
 
 
 def main(argv=None):
@@ -221,7 +219,7 @@ def main(argv=None):
         print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
         existing = []
     else:
-        existing = sheet.get_values(sess, sheet.data_range("A2:R20000"))
+        existing = sheet.get_values(sess, sheet.data_range("A2:S20000"))
     pulled = set(fresh)
     keep = [r for r in existing
             if len(r) > 1 and r[0] and (r[0], r[1]) not in pulled]
@@ -252,23 +250,16 @@ def main(argv=None):
               % (len(new), len(managers), len(week_labels),
                  ", ".join(week_labels[:6])), flush=True)
     else:
-        sheet.clear(sess, sheet.data_range("A2:R20000"))
+        sheet.clear(sess, sheet.data_range("A2:S20000"))
         sheet.put_values(sess, sheet.data_range("A2"), new)
         sheet.put_values(sess, sheet.data_range("W2"),
                          [[managers[i] if i < len(managers) else "",
                            week_labels[i] if i < len(week_labels) else ""]
                           for i in range(max(len(managers), len(week_labels)))])
         print("[ad_sales_board] wrote %d rows" % len(new), flush=True)
-        # Stamp the week picker to the CURRENT week every morning — the same
-        # convention as the sales boards (the captainship job advances their
-        # pickers daily). Monday it naturally rolls onto the new week; a manual
-        # pick lasts until the next morning's run. Backfills and
-        # office-limited runs leave the picker be.
-        if not a.office and not a.anchor:
-            try:
-                _advance_week_picker(sess, wins[0][0])
-            except Exception as e:  # noqa: BLE001 — cosmetic, never fails the run
-                print("  (week picker not advanced: %s)" % str(e)[:120], flush=True)
+        # No week picker to stamp any more: the visible board is one stacked
+        # scroll of every week, newest on top (Carlos 2026-08-27 — "no
+        # dropdown i just have to scroll down").
 
     if rescued_total:
         print("\n%d '[Action required] New application for …' subjects were kept "
@@ -299,14 +290,14 @@ def _desc_iso(iso):
 
 
 def _numeric_cols(rows):
-    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8) and the day
-    counts (L..R = idx 11..17) on recycled rows, same reason as the monthly
-    job's _numeric: sheet-recycled values come back as strings and text numbers
-    kill numeric formats and future CF."""
+    """Re-type Pull / To Call List / # Names (G,H,I = idx 6..8), the day
+    counts (L..R = idx 11..17) and the Rank (S = idx 18) on recycled rows,
+    same reason as the monthly job's _numeric: sheet-recycled values come back
+    as strings and text numbers kill numeric formats and future CF."""
     out = []
     for r in rows:
         rr = list(r)
-        for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17):
+        for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18):
             if i < len(rr) and isinstance(rr[i], str) and rr[i].strip():
                 try:
                     rr[i] = int(float(rr[i]))

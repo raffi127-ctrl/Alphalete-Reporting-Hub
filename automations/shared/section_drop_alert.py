@@ -142,6 +142,28 @@ _KINDS = {
                "re-run RE-POSTS the {what}{s} that already landed.",
         "tail": "The thread is live, but it's short one office.",
     },
+    # The country trackers' own kind (tableau_screenshots writes kind="channel").
+    # Its `failed` list is deliberately MIXED — a channel label that missed the
+    # thread, `tracker:<id>` for a board that didn't capture, `stale:<id>` for a
+    # board the freshness gate HELD — so no single noun fits, and the 'section'
+    # fallback described all three as sections that "did NOT post" of a thread
+    # that is "live but incomplete". On 2026-08-26 that went out over five
+    # `stale:` holds from a one-channel run: the org-wide thread had posted
+    # cleanly at 04:17 in all 15 channels, and the alert read as if it hadn't.
+    # A held board needs NO action (the ~7am catch-up posts it), which is why
+    # the fix line points at the manifest's scoped retry rather than a re-post.
+    "channel": {
+        "what": "piece",
+        "headline": "🚨 *{report_id}* — {n} {what}{s} of today's tracker thread "
+                    "didn't land — {tail}",
+        "tail_headline": "part of it is missing.",
+        "label": "Didn't land",
+        "fix": "re-run `{report_id}` with the manifest's retry args (already "
+               "scoped to what missed) — don't re-post the whole thread.",
+        "tail": "A `stale:` line is a board HELD because its Tableau extract "
+                "hadn't refreshed — the ~7am catch-up posts it, nothing to do. "
+                "A channel or `tracker:` line is a real miss.",
+    },
     "day": {
         "what": "day of sales",
         "headline": "🚨 *{report_id}* dropped {n} {what}{s} this run — {tail}",
