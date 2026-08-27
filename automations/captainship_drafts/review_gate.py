@@ -580,8 +580,7 @@ def post_block(link: str, today: dt.date, block: "config.Block", parent: dict,
     text = (f"*{block.label} — {block.who}* "
             f"({n} report{'s' if n != 1 else ''})\n"
             f"{link}\n"
-            f"{_mentions()} — :white_check_mark: here sends these {n}. "
-            f"The other blocks are separate.\n"
+            f"{_mentions()} — :white_check_mark: here sends these {n}.\n"
             f"`{BLOCK_MARKER} {today:%Y-%m-%d} {block.key}`")
     r = cli.chat_postMessage(channel=_channel(channel), thread_ts=parent["ts"],
                              text=text, unfurl_links=False)
