@@ -5007,65 +5007,87 @@ AUTOMATED_REPORTS = [
         "category": "\U0001F3AF Recruiting",
         "description": (
             "Emails this week's new starts their Slack and Skool join links "
-            "the morning of orientation, BCC, from "
-            "alphaletereception@gmail.com."),
+            "the morning of orientation \u2014 BCC, from "
+            "alphaletereception@gmail.com, with the Slack invite read live "
+            "out of Slack so nobody has to paste it."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Every **Monday 8:00am** it reads the newest dated "
+            "Every **Monday 8:00am** on Lucy 1 it reads the newest dated "
             "**`D2D OBCL <m.d>`** tab \u2014 every **chart** on it, and "
             "Monday's has two \u2014 takes the **Email** column, and sends "
             "ONE email from **alphaletereception@gmail.com** with everybody "
-            "in **BCC**. The message tells them to install **Slack**, "
-            "**Skool** and **Telemapper 3.0** before they walk in, and that "
-            "their **Blueink** packet is coming separately.\n\n"
-            "This replaces the job reception did by hand every Monday: open "
-            "the checklist, copy the email column, paste it into BCC, paste "
-            "last week's message, swap in a fresh Slack invite link, send.\n\n"
+            "in **BCC**. It tells them to install **Slack**, **Skool** and "
+            "**TeleMapper 3**, and that their **Blueink** packet is coming "
+            "separately.\n\n"
+            "This replaces what reception did by hand every Monday: open the "
+            "checklist, copy the email column, paste it into BCC, paste last "
+            "week's message, swap in a fresh Slack invite link, send.\n\n"
+            "THE SLACK LINK IS FETCHED, NOT PASTED\n"
+            "Slack caps an invite link at **30 days and 400 uses** and offers "
+            "no API for one, so a pasted link would be a weekly chore wearing "
+            "an automation's clothes. Instead the run opens Slack as **Lucy**, "
+            "reads the current invite link off the workspace menu, and uses "
+            "it \u2014 the same click a person makes. It **copies**, never "
+            "resets: resetting mints a new link and strands anyone midway "
+            "through joining.\n\n"
             "WHO DOESN'T GET IT\n"
-            "The same people Blue Ink skips, read from the same place \u2014 "
-            "anyone whose **Final Status** says they quit, failed, were "
-            "terminated, no-showed or rescheduled; a failed or adverse-action "
-            "**BG Status**; a declined **Friday Confirmation**; or no usable "
-            "email on the sheet. Someone who isn't starting shouldn't be told "
-            "*see you at orientation today*.\n\n"
-            "THE TWO LINKS\n"
-            "**\u2022** **Skool** \u2014 the same link every week.\n"
-            "**\u2022** **Slack** \u2014 changes whenever the workspace "
-            "invite link is reset or expires. It lives in a gitignored "
-            "`slack-skool-creds.json`, never in the repo: the repo is PUBLIC "
-            "and an invite link in it would let a stranger join the "
-            "workspace.\n\n"
-            "WHAT IT WILL NOT DO\n"
-            "**\u2022** Send with a missing, wrong-service or stale link "
-            "\u2014 it refuses and says which.\n"
-            "**\u2022** Send twice in a day. It checks reception's own Sent "
-            "mail first, so a hand-send at 7:50 stops the 8:00 run.\n"
+            "Exactly who **Blue Ink** skips, read from the same module rather "
+            "than a second copy of the rule \u2014 anyone whose **Final "
+            "Status** says they quit, failed, were terminated, no-showed or "
+            "rescheduled; a failed or adverse-action **BG Status**; or a "
+            "declined **Friday Confirmation**. Someone who isn't starting "
+            "shouldn't be told *see you at orientation today*.\n\n"
+            "WHAT THE CHANNEL GETS\n"
+            "A one-line post in "
+            "**#11280-alphalete-marketing-inc-rafael-hidalgo**, detail in the "
+            "thread: how many were emailed and off which tab. If anyone was "
+            "**unreachable** \u2014 nobody excluded them, the sheet just has "
+            "no usable address \u2014 they are **named**, with their row, and "
+            "Tiff / Aimee / Alisson are tagged to fix it. A clean week says "
+            "nothing extra and pings nobody.\n\n"
+            "WHAT IT REFUSES TO DO\n"
+            "**\u2022** Send off a tab that isn't dated for **today**. The "
+            "run reads the NEWEST tab, which is right every week the lineup "
+            "gets built and catastrophic the week it doesn't \u2014 *newest* "
+            "would be LAST week's, and people who started a week ago would be "
+            "told orientation is today.\n"
+            "**\u2022** Send with a missing, wrong-service or expiring "
+            "link.\n"
             "**\u2022** Send from the wrong mailbox \u2014 it verifies the "
-            "token really is reception's before mailing anyone.\n"
+            "token really is reception's first.\n"
+            "**\u2022** Send twice in a day. It checks reception's own Sent "
+            "mail, so a hand-send at 7:50 stops the 8:00 run.\n"
             "**\u2022** Mail an empty cohort.\n\n"
             "WHY THERE'S NO BLUEINK LINK IN IT\n"
             "A Blueink signing URL is bound to ONE signer's packet, so a link "
             "that worked for everybody would let anyone sign as anyone. The "
             "Slack and Skool links are identical for all recipients \u2014 "
-            "that is what makes a single BCC send legitimate."),
+            "that is what makes a single BCC send legitimate.\n\n"
+            "NO IMAGES, NO ATTACHMENTS\n"
+            "Fifty-odd BCC recipients from a personal Gmail is already the "
+            "shape spam filters watch, and an unexpected attachment from an "
+            "address they've never seen reads as phishing to the people least "
+            "equipped to tell. The links sit on the words *Slack* and *Skool*; "
+            "the plain-text version spells the URLs out."),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
                       "?gid=1430069873#gid=1430069873"),
         "assignees": ["Lucy 1"],
-        # Its own Monday launchd timer, so it self-reports rather than sitting
-        # in the due-today tallies -- same shape as blueink-docs.
+        # Its own Monday launchd timer (com.alphalete.slack-skool-email,
+        # installed 2026-08-26), so it self-reports rather than sitting in the
+        # due-today tallies -- same shape as blueink-docs.
         "self_scheduled": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
             "time": "8:00 AM",
             "time_label": "Raf's Office \u00b7 8:00am CST",
-            "estimated_minutes": 2,
+            "estimated_minutes": 3,
         },
         "checklist": [],
         "post_run": {
             "message_success": "\u2705 Slack + Skool links emailed to this week's new starts, summary posted to #11280.",
-            "message_failed": "\u274C Run failed \u2014 nothing was sent. Most often the Slack invite link has expired or is missing from slack-skool-creds.json on Lucy 1; the run says which.",
+            "message_failed": "\u274C Run failed \u2014 nothing was sent. Usual causes: this week's D2D OBCL tab hasn't been built yet, or the Slack session on Lucy 1 has expired (re-seed with `slack_invite --login` at that machine). The run says which.",
         },
         "actions": [
             {
@@ -5082,6 +5104,13 @@ AUTOMATED_REPORTS = [
                 "help": "Sends nothing. Puts the finished email in reception's Gmail Drafts so a person can read it and press send.",
                 "module": "automations.slack_skool_email.run",
                 "args_fn": lambda: ["--draft"],
+            },
+            {
+                "label": "Check Gmail + Slack",
+                "icon": "\U0001FA7A",
+                "help": "Preflight. Proves this machine's Gmail token works and is reception's, and that the re-send guard can read Sent mail. Sends nothing.",
+                "module": "automations.slack_skool_email.run",
+                "args_fn": lambda: ["--check-mailbox"],
             },
             {
                 "label": "Send Now",

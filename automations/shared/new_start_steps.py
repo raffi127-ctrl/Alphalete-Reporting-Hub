@@ -241,16 +241,24 @@ STEPS: list = [
         ),
         notes=("Sends from alphaletereception@gmail.com, not "
                "alphaletereporting@ -- new starts already correspond with "
-               "reception and reply to it. That needs its own Gmail token.",
+               "reception and reply to it. That needs its own Gmail token, "
+               "scoped compose AND readonly (the read is the re-send guard).",
                "Skips exactly who Blue Ink skips, by reading the same roster "
                "module: someone who isn't starting shouldn't be told 'see you "
                "at orientation today'.",
-               "The Slack invite link changes; the Skool one doesn't. Both "
-               "live in a gitignored slack-skool-creds.json -- the repo is "
-               "PUBLIC and an invite link in it would let a stranger join the "
-               "workspace.",
+               "The Slack invite link is READ OUT OF SLACK at send time, not "
+               "pasted -- Slack caps invite links at 30 days and 400 uses and "
+               "has no API for them, so fetching weekly is the only way this "
+               "is ever hands-off. It copies the current link, never resets "
+               "one.",
+               "Won't send off a tab that isn't dated for TODAY. The newest "
+               "tab on a Monday nobody built one is LAST week's, and those "
+               "people already started.",
                "Won't send twice in a day: it checks reception's own Sent "
-               "mail, so a hand-send at 7:50 stops the 8:00 run."),
+               "mail, so a hand-send at 7:50 stops the 8:00 run.",
+               "Anyone with no usable email is NAMED in the Slack thread with "
+               "their row -- they are starting and would otherwise arrive "
+               "with nothing installed and no trace of being missed."),
     ),
     # ---- NEXT STEP GOES HERE ----------------------------------------------
     # Add it as one Step(...) row and it picks up its section on the Hub card
