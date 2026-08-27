@@ -62,14 +62,23 @@ STATE_PATH = REPO_ROOT / "output" / "bg_name_gate_state.json"
 APPROVE_EMOJI = "white_check_mark"   # ✅ yes, same person — rename
 REJECT_EMOJI = "x"                   # ❌ no — wrong applicant
 
-# Onboarding owns the sheet, so onboarding answers this. Same three people
-# digi_docs escalates to, same ids, confirmed in this channel 2026-08-26.
+# WHO GETS TAGGED. Onboarding owns the sheet, so onboarding gets the ping —
+# the same three digi_docs escalates to, confirmed in this channel 2026-08-26.
 DECIDERS = (
     ("Alisson", "U0BBG374GE9"),    # Alisson Rodriguez
     ("Tiff", "U0B9924FHCL"),       # Tiffani Brown
     ("Aimee", "U0APVP29QSD"),      # Aimee Garibay
 )
-DECIDER_IDS = {uid for _, uid in DECIDERS}
+
+# WHOSE REACTION COUNTS — a wider list than the tagged one, on purpose. Megan
+# ❌'d the very first question posted and nothing happened, because the owners
+# weren't on this list (2026-08-26). Being tagged is about who should answer;
+# counting is about whose answer is good, and theirs always is.
+ALSO_DECIDE = (
+    ("Megan", "U04G5HJBGFN"),      # Megan Hidalgo
+    ("Raf", "U045Z8N0ZQC"),        # Rafael Hidalgo
+)
+DECIDER_IDS = {uid for _, uid in DECIDERS} | {uid for _, uid in ALSO_DECIDE}
 
 # HOW FAR BACK A RESULT CAN BE AND STILL BE THEIRS (Megan 2026-08-26). The check
 # link goes out the moment somebody is HIRED, and a new start can be scheduled a

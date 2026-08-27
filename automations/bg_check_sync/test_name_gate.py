@@ -321,6 +321,13 @@ class AskPlacementTests(unittest.TestCase):
 
 class VoteTests(unittest.TestCase):
 
+    def test_an_owners_reaction_counts_even_though_they_arent_tagged(self):
+        """Megan ❌'d the first question ever posted and nothing happened."""
+        rx = [{"name": "x", "users": ["U04G5HJBGFN"]}]
+        self.assertEqual(name_gate._voted(rx, name_gate.REJECT_EMOJI),
+                         "U04G5HJBGFN")
+        self.assertNotIn("U04G5HJBGFN", [uid for _, uid in name_gate.DECIDERS])
+
     def test_only_deciders_count(self):
         rx = [{"name": "white_check_mark", "users": ["U0STRANGER"]}]
         self.assertIsNone(name_gate._voted(rx, name_gate.APPROVE_EMOJI))
