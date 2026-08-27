@@ -72,6 +72,43 @@ def ads_for_week(html):
     return parse.ads_for_month(names.WRAPPER.sub("", html))
 
 
+def pull_day(page, tok, d, agnostic):
+    """Received-per-ad for ONE day: (pieces, day total).
+
+    An AppStream day report that comes back with a header but no data rows is
+    indistinguishable from a day on which nobody applied — `parse` simply
+    yields no ads and nothing raises. That silent empty happened to roughly
+    one office-day in thirty on 2026-08-27 (Jamis lost Thu/Fri/Sat, Aya a
+    Wednesday, Jackie a Sunday — whole days blank across every one of their
+    ads), so an empty day is re-submitted once before it is believed. The
+    caller decides what to do with a still-empty day; this never writes zeros
+    over a day it could not read.
+    """
+    for attempt in (1, 2):
+        html, _owner, _n = fetch.source_report(
+            page, tok, weeks.fmt_mdY(d), weeks.fmt_mdY(d))
+        ads, _flags = ads_for_week(html)
+        if agnostic:
+            ads = parse.merge_across_cities(ads)
+        total = sum(g["rec"]["apps"] for g in ads)
+        if total or attempt == 2:
+            return ads, total
+        print("     (%s came back empty — re-submitting once)" % d.isoformat(),
+              flush=True)
+    return [], 0
+
+
+def slot_totals(block):
+    """(per-slot totals, per-slot known?) over one (manager, week) carry block."""
+    tot, known = [0] * 7, [False] * 7
+    for slots in block.values():
+        for i, v in enumerate(slots):
+            if v != "":
+                known[i] = True
+                tot[i] += v
+    return tot, known
+
+
 def ad_key(inbox, title, city, agnostic):
     """Stable identity for one merged ad row, used to carry the accumulated
     received-per-day counts (T..Z) across rewrites: the weekly refresh
@@ -151,7 +188,11 @@ def main(argv=None):
                     help="explicit week anchor(s) mm-dd-yyyy (any day in the week works)")
     ap.add_argument("--day", action="append",
                     help="one-day received pull(s) mm-dd-yyyy (fills that day's "
-                         "T..Z slot; default: yesterday, unless --anchor is used)")
+                         "AC..AI slot; default: yesterday, unless --anchor is used)")
+    ap.add_argument("--heal-days", type=int, default=14,
+                    help="re-pull any missing day this many days back when a "
+                         "week's day counts fall short of its weekly total "
+                         "(0 disables; default 14)")
     ap.add_argument("--reset", action="store_true",
                     help="drop ALL existing data rows before writing — only for "
                          "week-definition migrations (e.g. the Wed→Mon switch); "
@@ -242,6 +283,7 @@ def main(argv=None):
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
     rescued_total = 0
+    empty_days = []               # (manager, date) a day report would not read
     with appstream_direct_session(headless=not a.headed, verbose=False,
                                   allow_form_login=True) as page:
         tok = fetch.token(page)
@@ -259,20 +301,47 @@ def main(argv=None):
                     if agnostic:
                         ads = parse.merge_across_cities(ads)
                     weekly.append((label, start, ads, nrows, rescued))
+                # SELF-HEAL. A week's day counts must add up to its weekly
+                # total; when they fall short, the missing days are days this
+                # office never actually captured (an empty day report, a
+                # failed run, or a week that predates day tracking). Re-pull
+                # exactly those, so the board converges on its own instead of
+                # needing someone to notice and queue a backfill. The
+                # reconciliation identity is what makes this terminate: a week
+                # whose days already add up is never re-pulled, so genuine
+                # zero-days cost nothing.
+                heal = []
+                for label, start, ads, _n, _r in weekly:
+                    if a.heal_days <= 0 or (today - start).days > a.heal_days:
+                        continue
+                    tot, known = slot_totals(carry.get((name, label), {}))
+                    if sum(tot) >= sum(g["rec"]["apps"] for g in ads):
+                        continue                  # already fully accounted for
+                    for i in range(7):
+                        d = start + dt.timedelta(days=i)
+                        if known[i] or d >= today or d in day_targets:
+                            continue              # today is still filling up
+                        heal.append(d)
+                if heal:
+                    print("     [heal] %-22s re-pulling %s"
+                          % (name[:22], ", ".join(d.isoformat() for d in heal)),
+                          flush=True)
+
                 # One-day pulls: a finished day's received count per ad. Kept
                 # as raw pieces — a one-day window can merge/fold cities
                 # differently than the week's (fewer cities visible), so each
                 # piece is matched onto the WEEK's ad rows below, fuzzily,
                 # the same way names.attach does.
                 day_pieces = {}   # label -> [(inbox, base, city, slot, n)]
-                for d in day_targets:
+                for d in sorted(set(day_targets) | set(heal)):
                     anc = weeks.anchor_for(d)
                     dlabel = weeks.window(anc)[0]
-                    dhtml, _o, _n = fetch.source_report(
-                        page, tok, weeks.fmt_mdY(d), weeks.fmt_mdY(d))
-                    dads, _f = ads_for_week(dhtml)
-                    if agnostic:
-                        dads = parse.merge_across_cities(dads)
+                    dads, dtotal = pull_day(page, tok, d, agnostic)
+                    if not dtotal:
+                        # Blank, not zero: a day we could not read must stay
+                        # visibly missing so the heal pass retries it.
+                        empty_days.append((name, d))
+                        continue
                     slot = (d - anc).days
                     for g in dads:
                         if g["rec"]["apps"]:
@@ -384,6 +453,39 @@ def main(argv=None):
         # No week picker to stamp any more: the visible board is one stacked
         # scroll of every week, newest on top (Carlos 2026-08-27 — "no
         # dropdown i just have to scroll down").
+
+    # RECONCILIATION. A finished week's day counts must add up to its weekly
+    # total; anything else means days are missing or double-counted. Checking
+    # it here is the difference between the job telling us and someone
+    # noticing weeks later — which is exactly how the 2026-08-27 gaps were
+    # found (by hand, after the fact).
+    short = []
+    for (mgr, label), rws in fresh.items():
+        tr = [r for r in rws if len(r) > 10 and r[4] == "TOTAL"]
+        if not tr:
+            continue
+        r = list(tr[0]) + [""] * 26
+        start = dt.date.fromisoformat(r[10])
+        if start + dt.timedelta(days=6) >= today:
+            continue                       # week still filling up
+        pull = r[6] if isinstance(r[6], (int, float)) else 0
+        got = sum(v for v in r[19:26] if isinstance(v, (int, float)))
+        if pull and got != pull:
+            short.append((mgr, label, pull, got))
+    if short:
+        print("\nDAY COUNTS DO NOT RECONCILE (finished weeks) — the heal pass "
+              "will retry the missing days on the next run:", flush=True)
+        for mgr, label, pull, got in sorted(short):
+            print("   %-24s %-22s weekly=%-6d days=%-6d diff=%+d"
+                  % (mgr[:24], label, pull, got, got - pull), flush=True)
+    else:
+        print("\nDay counts reconcile against the weekly totals for every "
+              "finished week written.", flush=True)
+    if empty_days:
+        print("\nDay reports that came back EMPTY twice (left blank, not zero; "
+              "the heal pass retries them):", flush=True)
+        for mgr, d in empty_days:
+            print("   %-24s %s" % (mgr[:24], d.isoformat()), flush=True)
 
     if rescued_total:
         print("\n%d '[Action required] New application for …' subjects were kept "
