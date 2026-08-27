@@ -57,7 +57,8 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.alphalete_sales_board import aliases, calc, config as C, fill
+from automations.alphalete_sales_board import (aliases, apply_replies,
+                                               calc, config as C, fill)
 from automations.alphalete_sales_board import notify as N
 from automations.alphalete_sales_board import sara, state as S
 from automations.rep_sales_fill import board as B
@@ -292,6 +293,18 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool, headless: bool = True
             # Recorded so an alias confirmed later can take the row back if it
             # turns out they were already on the board under another spelling.
             S.save(S.record_added(S.load(), day, item["sara_name"], board_name, row))
+
+    # Chat replies ("Bo=Kelvinton"): alias them, take back the row we wrongly
+    # created for them, and answer in the room. Only rows WE recorded adding
+    # are ever cleared (Megan: "if you added it").
+    try:
+        apply_replies.remember_unmatched(day, [m["sara_name"] for m in missing])
+        for line in apply_replies.handle(ws, grid, names,
+                                         [m["sara_name"] for m in missing],
+                                         day, send=send, log=_log):
+            _log("  answered: %s" % line[:120])
+    except Exception as e:  # noqa: BLE001 — a chat reply must never fail a sweep
+        _log("reply handling skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
 
     # --- what is NEW since the last sweep -----------------------------------
     data = S.load()
