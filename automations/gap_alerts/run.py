@@ -483,22 +483,6 @@ def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
             dt.datetime.now().strftime("%m/%d/%Y"))
         page.wait_for_timeout(3500)
 
-        # SHARPNESS. The rep list is narrower than the PDF page, so the viewer
-        # blows it up and soft, blurry text is what Raf actually reads
-        # (Megan 2026-08-27: "can we also sharpen up the images"). The fix is
-        # more source pixels, not upscaling later — nothing recovers detail a
-        # screenshot never captured. CSS zoom re-renders the page's text and
-        # badges at twice the size, so the shot carries twice the detail; the
-        # crop maths is unaffected because _shoot scales by the measured
-        # element box, not by assumed pixels.
-        if C.CAPTURE_ZOOM and C.CAPTURE_ZOOM != 1:
-            try:
-                page.evaluate("(z) => { document.body.style.zoom = z; }",
-                              str(C.CAPTURE_ZOOM))
-                page.wait_for_timeout(1200)
-            except Exception:
-                _log("  zoom not applied — capturing at 1x")
-
         out = out_dir / ("activity_%s.png" % cfg["key"])
         how = cap._shoot(page, out, kind="todays_activity",
                          fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
@@ -575,7 +559,7 @@ def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
     and the knock counts are context."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
-    cap.render_gap_card(reps, bare)
+    cap.render_gap_card(reps, bare, scale=C.CARD_RENDER_SCALE)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
     out = out_dir / ("gaps_%s.png" % cfg["key"])
 
@@ -626,7 +610,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     failures = []
     seen_names = []
     with ownerville_session(headless=headless, verbose=False,
-                            profile_dir=C.PROFILE_DIR) as page:
+                            profile_dir=C.PROFILE_DIR,
+                            device_scale=C.CAPTURE_DEVICE_SCALE) as page:
         # Needed only for the Today's Activity screenshot — a plain shot sees
         # what is in-frame, and Raf's roster is ~48 reps. Best-effort: a
         # persistent context can refuse a resize, and _shoot's crop copes with

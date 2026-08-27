@@ -104,18 +104,25 @@ PDF_MAX_ASPECT = 1.45
 # is severed and nothing needs repeating. Kept at 0 as the record of why.
 PDF_SLICE_OVERLAP_PX = 0
 
-# CSS zoom before the Today's Activity screenshot. 1 = off, and OFF IS CORRECT.
+# Render at N device pixels per CSS pixel, so the screenshot carries N× the
+# detail. The panel is narrower than the PDF page, so a viewer scales it up and
+# 1× text arrives soft — the only real fix is capturing more pixels, since
+# nothing recovers detail a screenshot never took.
 #
-# Tried 2 on 2026-08-27 to sharpen the text and it wrecked the layout: CSS zoom
-# scales the whole page, so the rep-list column got narrow in CSS terms, every
-# name wrapped onto two lines, and the panel came back twice as tall — which
-# then sliced into 29 near-empty pages. Raf's word for it was "mushed".
+# NOT CSS ZOOM, and the difference is the whole lesson of 2026-08-27. Zoom
+# scales the LAYOUT: at zoom=2 the rep column went narrow, every name wrapped
+# onto two lines, the panel came back twice as tall, and it sliced into 29
+# near-empty pages. Raf called it "mushed". device_scale paints the SAME layout
+# with more pixels — nothing reflows, aspect ratios are unchanged, so the page
+# count and the row cuts come out exactly as they do at 1×.
 #
-# The lesson: zoom is not a resolution knob, it is a LAYOUT knob. Sharpening
-# this panel means more device pixels at the SAME layout (a higher
-# device_scale_factor on the browser context), not a bigger CSS page. That has
-# to happen where the context is created, in tableau_patchright.
-CAPTURE_ZOOM = 1
+# Same knob tableau_screenshots has used for crisper Tableau posts.
+CAPTURE_DEVICE_SCALE = 2
+
+# The gap card is drawn by us, not screenshotted, so it has to be drawn bigger
+# to match. A 1× card beside a 2× screenshot on one page width is visibly the
+# softer of the two, and the PDF should read as one document.
+CARD_RENDER_SCALE = 2
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):

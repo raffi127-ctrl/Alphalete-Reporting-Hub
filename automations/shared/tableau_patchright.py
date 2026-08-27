@@ -421,6 +421,17 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     window_size (default 1680x1280, unchanged for existing callers): pass a
     larger size for a higher-resolution Download→Image (tableau_screenshots).
 
+    device_scale (default None = unchanged for every existing caller): render
+    at N device pixels per CSS pixel, so a SCREENSHOT of an ownerville page
+    comes back at N× the detail. The same knob tableau_screenshots already
+    passes for crisper Tableau posts.
+
+    This is NOT the same thing as CSS zoom, and the difference is the whole
+    point: zoom scales the LAYOUT — columns narrow, names wrap, the page grows
+    taller — which is exactly how gap_alerts turned Raf's roster into 29
+    near-empty pages on 2026-08-27. device_scale changes only how many pixels
+    the same layout is painted with, so text gets sharper and nothing reflows.
+
     profile_dir (default None = the shared PROFILE_DIR): give a job its OWN
     profile so it never queues behind the morning batch. Different profiles
     don't block each other — only same-profile runs do. Added for the Owner
@@ -1203,7 +1214,8 @@ def appstream_session(headless: bool = False, verbose: bool = True,
 def ownerville_session(headless: bool = False,
                       verbose: bool = True,
                       allow_form_login: bool = False,
-                      profile_dir=None) -> Iterator[Page]:
+                      profile_dir=None,
+                      device_scale: float | None = None) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
     focus_office_att rep breakdowns). Same login + shared profile +
@@ -1223,7 +1235,8 @@ def ownerville_session(headless: bool = False,
     prof.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, prof, headless=headless,
-                                 label="ownerville_session", verbose=verbose)
+                                 label="ownerville_session", verbose=verbose,
+                                 device_scale=device_scale)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_ownerville_logged_in(page, verbose=verbose,
