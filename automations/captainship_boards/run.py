@@ -207,9 +207,29 @@ def parse_orderlog(path: Path, monday: dt.date, upto: dt.date):
 
 
 # ---------------------------------------------------------------- sheets
-def open_sheet(sheet_id: str):
+def open_sheet(sheet_id: str, what: str = ""):
+    """Open a workbook by id.
+
+    A 403 is re-raised with a SENTENCE. gspread turns Google's 403 into a bare
+    `PermissionError` whose message is the EMPTY STRING, so the run's failure
+    line read `Sabrina Alicea: PermissionError: ` — which names neither the
+    workbook nor the cause and reads like a file-permission problem (the same
+    trap dashboard.py's _sheets_access_message was written for). Adding an
+    owner to config.OWNERS is one line; sharing their board is a separate
+    manual step, and the first morning after 2026-08-26 spent the whole run
+    saying nothing useful about which step was missed. Distinguish it from a
+    typo'd id, which Google answers 404 / SpreadsheetNotFound, not 403."""
     from automations.recruiting_report.fill import _retry, open_by_key
-    return _retry(lambda: open_by_key(sheet_id))
+    try:
+        return _retry(lambda: open_by_key(sheet_id))
+    except PermissionError as e:
+        raise PermissionError(
+            f"{what or 'workbook'} {sheet_id} exists but is NOT SHARED with "
+            f"this machine's Sheets account (403). The id is valid — a wrong "
+            f"id answers 404. Fix: share that workbook as Editor with the "
+            f"account this runner uses (raffi127@gmail.com; check with "
+            f"`lucy sheets_whoami`)."
+        ) from e
 
 
 def values_get(sh, rng: str, render: str = "FORMATTED_VALUE"):
@@ -224,7 +244,7 @@ def values_batch_update(sh, data, raw=True):
 # ---------------------------------------------------------------- sales board
 def update_board(label, board_id, rep_days, monday, upto, write):
     we = C.week_label(monday)
-    sh = open_sheet(board_id)
+    sh = open_sheet(board_id, f"{label}'s sales board")
     wd = values_get(sh, "WeekData!A1:H5000")
     keymap = {row[0]: i + 1 for i, row in enumerate(wd) if row}
     weeks = [r[0] for r in values_get(sh, "WeekData!J1:J60")[1:] if r]
@@ -663,7 +683,7 @@ def main(argv=None) -> int:
         reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
 
     try:
-        master = open_sheet(C.MASTER_ID)
+        master = open_sheet(C.MASTER_ID, "the Captainship Dashboard")
     except Exception as e:  # noqa: BLE001 — dashboard not shared to this
         # machine's Sheets user yet: still update the 11 sales boards, skip
         # the Focus Report sections loudly.
