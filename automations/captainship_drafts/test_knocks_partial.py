@@ -236,6 +236,30 @@ class TotalAppsColumn(unittest.TestCase):
         self.assertEqual(table[0][KD.DAILY_SUMMARY_HEADERS.index("Total Apps")],
                          "")
 
+    def test_average_app_per_rep_divides_by_the_reps_who_knocked(self):
+        """Pedido de Eve (2026-08-27). Mismo divisor que Talk To's per Rep:
+        los reps que trabajaron ese dia, no el roster entero."""
+        summary = KD.daily_summary_row("ICD", self._rows(), 5)
+        self.assertEqual(summary[KD.DAILY_SUMMARY_HEADERS.index(
+            "Average App per Rep")], "2.5")        # 5 / 2 reps
+
+    def test_average_app_per_rep_is_blank_when_total_apps_is(self):
+        """Un ICD sin crosstab no puede mostrar un promedio de 0: leeria como
+        una oficina que no vendio."""
+        at = KD.DAILY_SUMMARY_HEADERS.index("Average App per Rep")
+        self.assertEqual(KD.daily_summary_row("ICD", self._rows(), None)[at],
+                         "")
+        self.assertEqual(KD.daily_summary_row("ICD", [], 4)[at], "")
+
+    def test_average_app_per_rep_on_totals_divides_by_every_rep(self):
+        """La fila TOTALS promedia sobre los reps de TODA la capitania, no el
+        promedio de los promedios."""
+        table, _bgs = KD.daily_summary_table(
+            [("A", {"name": "A"}, self._rows(), 4),
+             ("B", {"name": "B"}, self._rows(), 6)], chan_rows=None)
+        at = KD.DAILY_SUMMARY_HEADERS.index("Average App per Rep")
+        self.assertEqual([r[at] for r in table], ["2.0", "3.0", "2.5"])
+
     def test_the_daily_pull_reads_one_weekday_of_the_weekly_crosstab(self):
         from automations.weekly_knock_dispositions import apps as A
         self.assertEqual(A.day_name(dt.date(2026, 8, 25)), "Tuesday")

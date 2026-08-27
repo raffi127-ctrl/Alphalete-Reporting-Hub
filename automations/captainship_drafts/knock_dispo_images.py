@@ -100,10 +100,17 @@ CAMPAIGN_ID = "3"
 # and as the per-owner board right below this one, so the two never invite the
 # question of which products are in. Blank — never 0 — when the crosstab
 # didn't come down: a zero here reads as an ICD that sold nothing.
+# "Average App per Rep" (Eve, 2026-08-27) sits right after the Total Apps it
+# divides, for the same reason Talk To's per Rep sits after Total Talk To: an
+# ICD row aggregates a whole roster, so the raw app count reads as headcount
+# unless the comparable per-rep figure is next to it. Same divisor as Talk
+# To's per Rep — the reps who WORKED that day, i.e. the rows this board got
+# from ownerville — so the two per-rep columns are read against the same
+# denominator. Blank (never 0) whenever Total Apps is blank.
 DAILY_SUMMARY_HEADERS = [
     "ICD", "Total Leads Knocked", "Total Knocks", "Total Talk To",
-    "Talk To's per Rep", "Total Apps", "Avg First Knock", "Avg Last Knock",
-    "Gaps", "Total Gaps",
+    "Talk To's per Rep", "Total Apps", "Average App per Rep",
+    "Avg First Knock", "Avg Last Knock", "Gaps", "Total Gaps",
 ]
 
 # Chan Park's yesterday rows, cached PER PROCESS keyed by the target date's
@@ -347,6 +354,11 @@ def daily_summary_row(label: str, rows: list,
         (f"{talk_to / len(rows):.1f}" if rows else "0"),
         # None = the PSS crosstab never came down for this ICD; blank says so.
         ("" if apps is None else str(apps)),
+        # Apps per rep — blank when there is nothing to divide (no apps
+        # pulled, or an ICD that didn't knock at all), never a 0 the ICD
+        # didn't earn. Divisor = len(rows), the same reps Talk To's per Rep
+        # divides by.
+        ("" if apps is None or not rows else f"{apps / len(rows):.1f}"),
         _avg_knock(rows, knocks.COL_FIRST_KNOCK),
         _avg_knock(rows, knocks.COL_LAST_KNOCK),
         str(sum(_i(r, knocks.COL_GAPS) for r in rows)),
@@ -403,8 +415,8 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     Returns (table_rows, trailing_bgs) — trailing_bgs colors the trailing
     highlight block for _draw's total_row_bgs, teal row included, so its
     length is also the highlight_last_row count. Pure — offline-testable."""
-    from automations.weekly_knock_dispositions.board import (
-        COMPARE_ROW_BG, THEME_PLUM)
+    from automations.weekly_knock_dispositions.board import COMPARE_ROW_BG
+    from automations.total_knocks.render import THEME_AMBER
     from automations.weekly_knock_dispositions.offices import CHAN as _CHAN
     from automations.focus_office_att.aliases import _norm_name
     def _apps_of(item) -> Optional[int]:
@@ -434,7 +446,9 @@ def daily_summary_table(captured: list, chan_rows: Optional[list] = None,
     covered = len(captured) if n_covered is None else n_covered
     tail.append(daily_summary_row(totals_label(covered, roster_n), all_rows,
                                   tot_apps))
-    bgs.append(THEME_PLUM["header_bg"])
+    # Burnt orange, the SAME totals colour the per-owner daily boards use —
+    # this board is the daily family's summary, not the weekly's.
+    bgs.append(THEME_AMBER["total_bg"])
     return body + tail, bgs
 
 
@@ -443,20 +457,29 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
                          roster_n: Optional[int] = None,
                          n_covered: Optional[int] = None,
                          chan_apps: Optional[int] = None) -> Path:
-    """Draw the daily summary board PNG — plum theme like the weekly
-    captainship summary, so the two summary boards read as siblings above
-    their amber/plum per-owner boards. The trailing block (teal Chan row +
-    plum TOTALS) highlights via total_row_bgs; note _draw only paints
-    total_row_bgs INSIDE the highlighted trailing block, so
-    highlight_last_row must count the teal row too — not just the last row."""
-    from automations.weekly_knock_dispositions.board import THEME_PLUM
+    """Draw the daily summary board PNG — AMBER theme, the same one the
+    per-owner DAILY TOTAL KNOCKS boards right below it use.
+
+    It was plum until 2026-08-27, matched to the weekly captainship summary so
+    the two summaries read as siblings. Eve: that is the confusing pairing, not
+    the helpful one. On Sunday and Monday the weekly boards land in the same
+    email, and colour is what a reader sorts them by at a glance — plum = the
+    WEEK, amber = the DAY. Same reason the per-owner boards carry the
+    "DAILY " title prefix: two boards that look alike invite reading a day's
+    number as the week's.
+
+    The trailing block (teal Chan row + amber TOTALS) highlights via
+    total_row_bgs; note _draw only paints total_row_bgs INSIDE the highlighted
+    trailing block, so highlight_last_row must count the teal row too — not
+    just the last row."""
     from automations.total_knocks import render as knocks_render
+    from automations.total_knocks.render import THEME_AMBER
     table, bgs = daily_summary_table(captured, chan_rows, roster_n,
                                      n_covered, chan_apps)
     date_s = f"{target.strftime('%b')} {target.day}, {target.year}"
     return knocks_render._draw(
         list(DAILY_SUMMARY_HEADERS), table,
-        f"DAILY KNOCKS SUMMARY — {date_s}", THEME_PLUM,
+        f"DAILY KNOCKS SUMMARY — {date_s}", THEME_AMBER,
         Path(out_dir) / f"daily_knocks_summary_{target.isoformat()}.png",
         name_col=0, wrap_headers=True,
         highlight_last_row=len(bgs), total_row_bgs=bgs)
