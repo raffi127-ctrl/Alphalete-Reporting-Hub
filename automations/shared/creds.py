@@ -36,6 +36,22 @@ def _file() -> dict:
         return {}
 
 
+def reload() -> None:
+    """Forget the cached credential files — call this after WRITING one from
+    inside a long-lived process.
+
+    `_file()` is read once per process, which is right for a report run and
+    wrong for the mini's poller: it reads the file at startup and then lives for
+    days. So an installer that writes a credential and immediately verifies it
+    was checking the cached copy, not what it had just written. On 2026-08-27
+    `set_doubleentry_creds` wrote the missing Double Entry login onto Lucy 1 and
+    then reported "SIGN-IN FAILED: Missing Double Entry credential" — the
+    credential was on disk the whole time. Wrong twice over: the row goes red on
+    a good install, and a genuinely bad password would look identical."""
+    _file.cache_clear()
+    _alt_file.cache_clear()
+
+
 def _resolve(key: str, env: str) -> str:
     val = str(_file().get(key) or os.environ.get(env, "")).strip()
     if not val:

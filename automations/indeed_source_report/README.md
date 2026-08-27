@@ -71,6 +71,15 @@ not point at one). It is left alone rather than guessed, and the run prints it.
   account. The fallback only works if the workbook has been shared with that
   service account, so on a machine without the token file, do that first.
 
+Every Sheets call goes through `sheet.request`, which retries a transient
+429 / 500 / 502 / 503 / 504 (and a dropped connection) with backoff, six tries.
+403 and 404 are deliberately NOT retried — a real permission fault should fail on
+the first answer. `sheet.is_transient(exc)` tells the two apart, and the preflight
+abort uses it to pick its message: **"Google would not answer" is a different
+problem from "this machine can't write the workbook"**, and printing the second
+when it was the first is what sent the 2026-08-27 4:00am failure chasing
+credentials that were fine. One 503 in preflight killed that whole pass.
+
 ## Offices
 
 `offices.py` — 28 entries, resolved from AppStream's `#searchMC` picker
