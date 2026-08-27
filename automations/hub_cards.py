@@ -3614,7 +3614,12 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "alphalete-sales-board",
-        "name": "Alphalete Sales Board (SaraPlus sweep)",
+        # Named for what a person SEES it do: it texts the chats. "Alphalete
+        # Sales Board sweep" read like a board fill and nobody could place it
+        # when its alert appeared in #claudecorrections (Megan 2026-08-26).
+        # The card ID is unchanged — it keys the Ops pill CSS and the Hub
+        # Activity rows.
+        "name": "Sales Text Updates",
         "creator": "Claude",
         # Ops, not Metrics: this is an always-on background job (every 5 min,
         # 10:00-21:30) like rc-autoread and sara-plus-issues, not a report that

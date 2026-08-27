@@ -8230,7 +8230,7 @@
    "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. The Alphalete Sales Board sweep runs ITSELF every 5 minutes of the selling day (Mon-Sat 07:00-21:30, machine-local) from the standalone com.alphalete.alphalete-sales-board LaunchAgent (StartInterval 300; deploy/alphalete_sales_board_5min.sh exits in bash outside those hours). Present here so `lucy rerun alphalete_sales_board` works and so a Hub play from ANY machine routes the run to LUCY 1 -- that routing is REQUIRED twice over: the delta state file is per-machine (running it elsewhere would re-announce sales this box already texted), and the two iMessage groups only exist in Lucy 1's Messages. base_args are deliberately EMPTY = preview: a hand rerun shows what would change and sends nothing. The LaunchAgent passes --apply (and --send once Megan clears the two chats).",
    "machine": "Lucy 1",
    "_machine_note": "Lucy 1 on the iMessage constraint, NOT on load -- Lucy 1 carries ~130 of the 4am reports and Lucy 3 is nearly idle after 08:30, so on load alone this belongs on Lucy 3. It cannot go there: `lucy find_group Alphalete --machine \"Lucy 3\"` found no Alphalete chats and the chat.db probe failed, while Lucy 1 has all three plus the 7-person Alphalete Partners chat Megan added alphaletereporting@ to on 2026-08-26. The load is fenced instead -- own Chrome profile under automations/uploaded/, headless, no start before 07:00, pid lock. Sheets identity also lines up: Lucy 1 is raffi127@, which already reads this same workbook for terminated_reps.",
-   "display_name": "Alphalete Sales Board (SaraPlus sweep)",
+   "display_name": "Sales Text Updates",
    "source_type": "local",
    "data_sources": [],
    "command": [
@@ -8252,7 +8252,7 @@
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_alphalete_sales_board_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.alphalete-sales-board LaunchAgent (StartInterval 300) on Lucy 1. Every LaunchAgent in this repo needs one of these: the one agent that had no install_* entry (session-holder) is how Lucy 3 came up fully provisioned in 2026-08 and still ran nothing. install_agent only rewrites and reloads the plist -- it touches no Sheet and no report data. Re-run after any change to the plist.",
    "machine": "Lucy 1",
-   "display_name": "Install Alphalete Sales Board agent (5-min)",
+   "display_name": "Install Sales Text Updates agent (5-min)",
    "source_type": "local",
    "data_sources": [],
    "command": [
@@ -8364,7 +8364,7 @@
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Runs itself every 20 minutes from the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent on Lucy 1. It answers the one question the sweep's own alerting cannot: has the sweep STOPPED? run.py alerts when a sweep runs and FAILS; a sweep that never fires writes no log, publishes no Hub row and posts no incident, and that silence is identical to a quiet evening. Reads the age of today's sweep log and DMs Raf once (2h cooldown) when it exceeds 20 minutes during selling hours. Present here so `lucy rerun alphalete_sales_board_watchdog` can run it by hand; add --dry-run to preview the DM without sending.",
    "machine": "Lucy 1",
-   "display_name": "Alphalete Sales Board watchdog (has the sweep stopped?)",
+   "display_name": "Sales Text Updates watchdog (have the texts stopped?)",
    "source_type": "local",
    "data_sources": [],
    "command": [
@@ -8387,7 +8387,7 @@
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-sales-board-watchdog LaunchAgent (StartInterval 1200) on Lucy 1. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
    "machine": "Lucy 1",
-   "display_name": "Install Alphalete Sales Board watchdog (20-min)",
+   "display_name": "Install Sales Text Updates watchdog (20-min)",
    "source_type": "local",
    "data_sources": [],
    "command": [

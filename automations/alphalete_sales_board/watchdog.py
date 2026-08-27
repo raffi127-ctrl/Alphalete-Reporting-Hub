@@ -89,7 +89,7 @@ def main(argv=None) -> int:
         return 0
 
     age_txt = "never today" if age == float("inf") else "%.0f minutes ago" % age
-    msg = ("<@%s> :warning: *Alphalete Sales Board sweep has gone quiet* — last run "
+    msg = ("<@%s> :warning: *Sales Text Updates has gone quiet* — last run "
            "%s, during selling hours. The board is not updating and the chats "
            "will get nothing. Check the agent is loaded: `lucy rerun "
            "list_agents --machine \"Lucy 1\"`, then `lucy rerun "

@@ -64,7 +64,7 @@ from automations.rep_sales_fill import board as B
 from automations.shared import name_case
 
 HUB_CARD_ID = "alphalete-sales-board"
-HUB_CARD_NAME = "Alphalete Sales Board (SaraPlus sweep)"
+HUB_CARD_NAME = "Sales Text Updates"
 FAIL_STREAK = 3                     # ~15 minutes of failures before we speak
 ALERT_COOLDOWN_HOURS = 2
 CORRECTIONS_CHANNEL = "C0BK5PRG259"  # #claudecorrections-and-requests
@@ -146,8 +146,9 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
         try:
             from automations.shared import slack_metrics_post as smp
             client = smp._client()
-            parent = ("Alphalete Sales Board sweep has failed %d passes in a "
-                      "row -- the board is not updating." % streak)
+            parent = ("%s has failed %d passes in a row -- the board is not "
+                      "updating and the chats are getting nothing."
+                      % (HUB_CARD_NAME, streak))
             resp = client.chat_postMessage(channel=CORRECTIONS_CHANNEL, text=parent)
             client.chat_postMessage(
                 channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
