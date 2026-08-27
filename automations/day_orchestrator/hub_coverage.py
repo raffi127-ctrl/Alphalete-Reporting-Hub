@@ -524,6 +524,10 @@ DEPLOY_DIR = REPO_ROOT / "deploy"
 _INFRA_AGENTS = {
     "day-orchestrator", "orchestrator-schedule-guard", "card-scheduler",
     "session-holder", "keep-awake", "mini-control", "hub-watch",
+    # The read lane is the same poller as mini-control, second process. Same
+    # reason mini-control is here: it is the channel reports are run THROUGH,
+    # not a report, and it publishes nothing a card could show.
+    "mini-control-read",
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",

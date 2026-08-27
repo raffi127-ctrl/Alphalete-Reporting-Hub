@@ -167,6 +167,9 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "restart_orchestrator",
+                    # Installs the read lane. Plumbing, so a cap-hit day — the
+                    # exact day you most want fast reads — can still deploy it.
+                    "install_mini_control_read",
                     "install_enrollment_pending",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
@@ -204,6 +207,31 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 # "queued" for hours. Reading a log should never spend a fix.
 READONLY_ACTIONS = {"logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread"}
+
+# --- lanes --------------------------------------------------------------------
+# The queue is ONE serial worker, so a 2-second read waits behind whatever report
+# is in front of it. On 2026-08-27 a 3-chunk ad_sales_board backfill (22 min each)
+# owned the worker from 09:36; fourteen rows stacked up behind it, including a
+# `text_tracker` queued by tableau_screenshots — real work, an hour late — and
+# every diagnostic Megan tried looked like a dead poller. Reading a log must never
+# wait on a report.
+#
+# So there are two lanes, each its own process, splitting the SAME queue by action:
+#   read — exactly READONLY_ACTIONS. Nothing it runs writes a Sheet, sends a
+#          message, or touches the shared browser profile, so it is safe to run
+#          alongside a report.
+#   main — everything else, unchanged: reruns, plumbing, secrets.
+# The split is disjoint and derived from the action name alone, so the two lanes
+# can never claim the same row — no locking, no leases.
+LANE_MAIN = "main"
+LANE_READ = "read"
+
+
+def _lane_owns(action: str, lane: str) -> bool:
+    """Does `lane` run this action? The two lanes partition every action between
+    them, so exactly one of them owns any given row."""
+    is_read = str(action or "").strip().lower() in READONLY_ACTIONS
+    return is_read if lane == LANE_READ else not is_read
 # Actions whose Args carry a SECRET. The poller blanks the Args cell as soon as
 # the row finishes and never prints it to the log — `lucy status` dumps the whole
 # Args column, so a password left sitting there is a password on screen. Older
@@ -243,6 +271,9 @@ SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
 DEFAULT_TIMEOUT_S = 130 * 60
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd label
+# The read lane is a SECOND launchd job running the same module with --lane read.
+# restart_poller kicks both, so a mini_control fix still deploys in one command.
+MINI_CONTROL_READ_LABEL = "com.alphalete.mini-control-read"
 HUB_WATCH_LABEL = "com.alphalete.hub-watch"          # the Hub change-watcher
 
 # Machine identity — which runner is this? A gitignored `.machine-profile` file
@@ -765,20 +796,29 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
     SIGKILLs the current process, so run it DETACHED after a short delay: this
     action returns first (poll_once writes its result), THEN the poller is
     replaced with fresh code by launchd. start_new_session so the kickstart child
-    isn't in the poller's process group and survives the kill."""
-    label = MINI_CONTROL_LABEL
+    isn't in the poller's process group and survives the kill.
+
+    Kicks BOTH lanes. They are two launchd jobs running this same module, so a
+    restart that reloaded only main would leave the read lane serving stale code
+    indefinitely — and nothing in the queue would show it."""
+    labels = [MINI_CONTROL_LABEL, MINI_CONTROL_READ_LABEL]
+    # `|| true`: the read lane may not be installed yet on a machine that hasn't
+    # run install_mini_control_read. A missing label must not fail the restart of
+    # the lane that IS there.
+    kicks = "; ".join(f"launchctl kickstart -k gui/{os.getuid()}/{l} || true"
+                      for l in labels)
     try:
         subprocess.Popen(
-            ["/bin/sh", "-c",
-             f"sleep 3; launchctl kickstart -k gui/{os.getuid()}/{label}"],
+            ["/bin/sh", "-c", f"sleep 3; {kicks}"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't schedule restart: {str(e)[:140]}"
     global _restart_scheduled_at
     _restart_scheduled_at = time.time()
-    return True, (f"restart scheduled for {label} (~3s) — poller reloads its "
-                  f"code; the rest of the queue is held until it does")
+    return True, (f"restart scheduled for {' + '.join(labels)} (~3s) — both "
+                  f"lanes reload their code; the rest of the queue is held "
+                  f"until they do")
 
 
 def _action_restart_hub(args: str) -> tuple[bool, str]:
@@ -884,6 +924,79 @@ def _action_install_hub_watch(args: str) -> tuple[bool, str]:
     return True, (f"installed {label} · {state} · confirmation email sent · "
                   f"snapshots push={'ok' if p_ok else 'FAIL'} "
                   f"lib={'ok' if l_ok else 'FAIL'}")
+
+
+def _action_install_mini_control_read(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the Mini Control READ LANE on THIS machine.
+
+    The queue is one serial worker, so a `logtail` sits behind whatever report is
+    in front of it. On 2026-08-27 an ad_sales_board backfill (3 chunks, ~22 min
+    each) held it from 09:36 and fourteen rows stacked up behind — a
+    tableau_screenshots `text_tracker` among them, an hour late — while every
+    diagnostic read as a dead poller. This second job runs the same module with
+    lane 'read' and takes ONLY the READONLY_ACTIONS, so a log read answers in
+    seconds no matter what main is doing.
+
+    Safe to run beside a live report: nothing in the read set writes a Sheet,
+    sends a message, or touches the shared browser profile. The lanes split the
+    queue by action name, so they never claim the same row, and each reclaims
+    only its own orphans (a 22-min rerun is NOT an orphan to the read lane).
+
+    Idempotent — re-run to redeploy after a plist change. Run `update` +
+    `restart_poller` first so this action exists in the running poller."""
+    uid = os.getuid()
+    label = MINI_CONTROL_READ_LABEL
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists():
+        return False, (f"missing {src_plist.name} — run `update` first to pull it")
+
+    # 1) plist with THIS machine's repo path (same replace trick as the siblings).
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    # plutil accepts a plist that plistlib refuses (a '--' inside an XML comment
+    # is the one that bit us — 2026-08-25, a phantom Hub card). Both must pass.
+    try:
+        import plistlib
+        with open(dst_plist, "rb") as fh:
+            plistlib.load(fh)
+    except Exception as e:  # noqa: BLE001
+        return False, (f"plutil linted OK but plistlib REFUSES it "
+                       f"({type(e).__name__}) — check for '--' in an XML comment")
+
+    # 2) one live pass before going live, so a broken lane is caught at install
+    #    rather than by a read that silently never answers.
+    ok, out = _run_cmd([sys.executable, "-m",
+                        "automations.day_orchestrator.mini_control",
+                        "--once", "--lane", LANE_READ], timeout_s=180)
+    if not ok:
+        return False, (f"plist OK but a read-lane pass FAILED — NOT going live: "
+                       f"{(out or '')[-160:]}")
+
+    # 3) (re)bootstrap the agent.
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    pr = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    state = next((ln.strip() for ln in (pr.stdout or "").splitlines()
+                  if "state =" in ln), "loaded")
+    return True, (f"installed {label} · {state} · read lane live (20s) · "
+                  f"reads no longer queue behind reruns")
 
 
 def _action_install_lucy2_digest(args: str) -> tuple[bool, str]:
@@ -5916,6 +6029,7 @@ ACTIONS = {
     "restart_poller": _action_restart_poller,
     "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
+    "install_mini_control_read": _action_install_mini_control_read,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
     "install_jiraiya": _action_install_jiraiya,
@@ -6118,7 +6232,7 @@ def _autoruns_today(rows: list[dict]) -> int:
 _ORPHAN_GRACE_MIN = 10
 
 
-def _reclaim_orphans(ws, rows) -> int:
+def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN) -> int:
     """Close rows still marked 'running' that nothing is actually running.
 
     WHY (Megan 2026-08-19): three stale pills in one day —
@@ -6133,6 +6247,13 @@ def _reclaim_orphans(ws, rows) -> int:
     poller launched can still legitimately be 'running'; anything that is was
     left behind by a crash, a kill, a re-exec or a launchd restart.
 
+    THAT INVARIANT IS PER-LANE, and this only reclaims rows its OWN lane runs.
+    The lanes are separate processes: a 22-minute `rerun` is legitimately
+    'running' in the main lane while the read lane polls every 20s, and the read
+    lane must not mistake it for an orphan and mark it dead mid-flight — that is
+    precisely the duplicate-run hazard this function exists to prevent. Since the
+    lane split is by action name, "rows my lane runs" is exact, not a heuristic.
+
     A _ORPHAN_GRACE_MIN cushion on the row's own 'started <ts>' stamp guards the
     one case the invariant does not cover: a second poller process briefly
     overlapping this one. Rows younger than that are left alone, so a live job is
@@ -6144,6 +6265,8 @@ def _reclaim_orphans(ws, rows) -> int:
     for i, row in enumerate(rows):
         if str(row.get("Status", "")).strip().lower() != "running":
             continue
+        if not _lane_owns(str(row.get("Action", "")), lane):
+            continue                      # the other lane's live job — hands off
         started = None
         m = _re.search(r"started\s+(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})",
                        str(row.get("Result", "")))
@@ -6167,15 +6290,19 @@ def _reclaim_orphans(ws, rows) -> int:
 
 
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
-              machine: str | None = None) -> int:
+              machine: str | None = None, lane: str = LANE_MAIN) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
-    number of rows acted on."""
+    number of rows acted on.
+
+    Only rows belonging to `lane` are considered — see _lane_owns. The main lane
+    behaves exactly as it always did except that it now leaves the seven
+    READONLY_ACTIONS to the read lane."""
     ws = _open(sandbox, machine)
     rows = ws.get_all_records()           # list of dicts keyed by header
     # Close anything left 'running' by a previous pass before doing new work, so
     # a stale pill never reads as live (see _reclaim_orphans).
     if not dry_run:
-        _orphans = _reclaim_orphans(ws, rows)
+        _orphans = _reclaim_orphans(ws, rows, lane)
         if _orphans:
             print(f"[mini_control] reclaimed {_orphans} orphaned 'running' row(s)",
                   flush=True)
@@ -6188,6 +6315,12 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         rownum = i + 2                    # +1 header row, +1 for 1-based
         action = str(row.get("Action", "")).strip()
         args = str(row.get("Args", "")).strip()
+        # Not this lane's row. Skip QUIETLY and leave it 'queued' — the other
+        # lane owns it and will pick it up on its own pass. An unknown action
+        # belongs to main (the lane that reports it), so it still gets failed
+        # rather than sitting queued forever.
+        if not _lane_owns(action, lane):
+            continue
         handler = ACTIONS.get(action)
 
         # A restart is landing: leave this row for the process that will have
@@ -6326,10 +6459,11 @@ def _maybe_reconcile_schedules() -> None:
 
 
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
-              machine: str | None = None) -> None:
+              machine: str | None = None, lane: str = LANE_MAIN) -> None:
     mach = _machine_profile(machine)
     tab = SANDBOX_TAB if sandbox else _control_tab_for(mach)
-    print(f"[mini_control] poll loop every {interval_s}s on {tab!r} (machine {mach!r})"
+    print(f"[mini_control] poll loop every {interval_s}s on {tab!r} "
+          f"(machine {mach!r}, lane {lane!r})"
           + (" [DRY-RUN]" if dry_run else ""))
     startup_head = _git_head()
     while True:
@@ -6344,20 +6478,24 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
                   f"reloading poller with fresh code")
             argv = [sys.executable, "-u", "-m",
                     "automations.day_orchestrator.mini_control",
-                    "--loop", "--interval", str(interval_s)]
+                    "--loop", "--interval", str(interval_s),
+                    "--lane", lane]
             if sandbox:
                 argv.append("--sandbox")
             if dry_run:
                 argv.append("--dry-run")
             os.execv(sys.executable, argv)
         try:
-            poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach)
+            poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach, lane=lane)
         except Exception as e:
             print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
         # Drift-immune daily schedule reconcile (no-op except the first poll in the
         # 1-2am window). Kept OUT of the try above so its own guard applies, but it
         # never raises anyway.
-        if not (dry_run or sandbox):
+        # MAIN LANE ONLY: both of these are explicitly once-per-machine (the
+        # AppStream watch's own docstring says a second caller doubles every
+        # ping), and the read lane is a second process on the same machine.
+        if not (dry_run or sandbox) and lane == LANE_MAIN:
             _maybe_reconcile_schedules()
             _maybe_appstream_watch(mach)
         time.sleep(interval_s)
@@ -6512,6 +6650,11 @@ def main(argv=None) -> int:
                     help="print the last N queue rows + their results and exit "
                          "(default 10) — check outcomes without the Sheet")
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
+    ap.add_argument("--lane", default=LANE_MAIN, choices=[LANE_MAIN, LANE_READ],
+                    help="which half of the queue this process runs. 'main' "
+                         "(default) = reruns + plumbing; 'read' = the read-only "
+                         "actions (logtail, git_status, …), which run in their "
+                         "own launchd job so a log read never waits on a report.")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
     ap.add_argument("--machine", default=None,
@@ -6535,9 +6678,11 @@ def main(argv=None) -> int:
                 sandbox=a.sandbox, machine=a.machine)
         return 0
     if a.loop:
-        poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox, machine=a.machine)
+        poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox,
+                  machine=a.machine, lane=a.lane)
         return 0
-    n = poll_once(dry_run=a.dry_run, sandbox=a.sandbox, machine=a.machine)   # default: one pass
+    n = poll_once(dry_run=a.dry_run, sandbox=a.sandbox, machine=a.machine,
+                  lane=a.lane)           # default: one pass
     print(f"[mini_control] acted on {n} row(s)")
     return 0
 

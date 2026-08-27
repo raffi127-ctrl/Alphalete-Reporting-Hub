@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.mini-control-read</string>
+
+    <!-- The READ LANE of the Mini Control queue: the sibling of
+         com.alphalete.mini-control, running the same module in lane "read".
+         It picks up ONLY the read-only actions (logtail, git_status, git_diff,
+         daystate, slack_channel, slack_find, slack_thread) so a 2-second log
+         read never queues behind a 22-minute report — which is exactly what
+         happened on 2026-08-27, when an ad_sales_board backfill held the single
+         worker for over an hour and the queue read as dead.
+
+         The lanes split the queue by action name, so they can never claim the
+         same row, and each only reclaims orphans it owns. Nothing in the read
+         set writes a Sheet, sends a message, or touches the shared browser
+         profile, so it is safe to run while a report is mid-flight.
+
+         Polls faster than main (20s vs 120s) because the whole point is a
+         prompt answer, and a pass is one Sheet read.
+
+         NOTE: on the mini, swap the two paths below from
+         "/Users/megan/1st Claude Folder" to that machine's repo path
+         (e.g. /Users/lucy2/recruiting-report) — same as the sibling plists. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/megan/1st Claude Folder/.venv/bin/python</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>automations.day_orchestrator.mini_control</string>
+        <string>--loop</string>
+        <string>--lane</string>
+        <string>read</string>
+        <string>--interval</string>
+        <string>20</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Start at login and keep it alive (restart if it ever exits/crashes). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Don't hot-loop if it dies fast: wait 30s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control_read.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control_read.err.log</string>
+</dict>
+</plist>
