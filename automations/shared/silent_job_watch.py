@@ -120,6 +120,59 @@ JOBS: Dict[str, dict] = {
     },
 }
 
+# --- the watchdog is itself a silent job --------------------------------------
+# com.alphalete.orchestrator-heartbeat is what notices that the 4am batch never
+# started (Lucy 2, 2026-08-27: a conflicted autostash left schedule_config.json
+# unparseable, the orchestrator died at 04:00:05 having run ZERO of its ~19
+# reports, and nothing said so for four hours). It publishes nothing when it is
+# happy — which is right, but it means an ABSENT watchdog and a healthy morning
+# look identical. Exactly the hole this module exists to close, one level down.
+#
+# ONE KEY PER MACHINE (Megan 2026-08-27). beat() upserts a single row per job_id,
+# so three machines sharing one id would overwrite each other and the tab would
+# show whichever ran last — a green light for the whole fleet as soon as any one
+# of them checked in, hiding the other two. Three ids, three rows, three
+# independent deadlines.
+#
+# TWO PASSES A DAY (04:20 and 06:00, per the plist), so `--status` will normally
+# show the 06:00 one: the row holds the LAST beat, not the first. first_by covers
+# the 04:20 pass, which is the one that matters — 06:00 is already too late to be
+# a warning about a 04:00 batch, it is just a second chance to record the beat.
+for _hb_machine in ("Lucy 1", "Lucy 2", "Lucy 3"):
+    JOBS["orchestrator_heartbeat_%s" % _hb_machine.lower().replace(" ", "_")] = {
+        "name": "Orchestrator heartbeat (%s)" % _hb_machine,
+        "machine": _hb_machine,
+        "first_by": "05:00",       # 04:20 pass + 40 min grace
+        "max_gap_min": None,       # once a morning; first_by covers it
+        "active_until": None,
+        "weekdays": None,          # the batch runs every day, so this does too
+        # Grace: the beat line ships in deploy/orchestrator_heartbeat.sh, which
+        # every machine has to PULL. Armed 8/29 so all three have a full day to
+        # take it and one clean 04:20 cycle to prove it, rather than alerting
+        # tomorrow about a wrapper that simply had not landed yet.
+        "watch_from": "2026-08-29",
+        "means": ("nothing is watching whether %s's 4am batch actually STARTED. "
+                  "Reports are not necessarily broken — but if the batch dies "
+                  "the way it did on 2026-08-27, the morning will look exactly "
+                  "like a healthy one and nobody will be told." % _hb_machine),
+        "fix": ("lucy rerun install_orchestrator_heartbeat_agent --machine "
+                "\"%s\"" % _hb_machine),
+    }
+del _hb_machine
+
+
+def job_id_for_machine(base: str, machine: Optional[str] = None) -> str:
+    """`base` + this machine's profile slug — the per-machine key for a job that
+    runs on more than one runner. Lets ONE wrapper, deployed everywhere, stamp
+    its own machine's row without knowing which box it is on."""
+    if machine is None:
+        try:
+            from automations.shared import hub_identity
+            machine = hub_identity.machine_name()
+        except Exception:  # noqa: BLE001
+            machine = socket.gethostname()
+    return "%s_%s" % (base, str(machine).strip().lower().replace(" ", "_"))
+
 
 # ------------------------------------------------------------------ the sheet
 def _ws(create: bool = False):
@@ -253,6 +306,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="silent_job_watch")
     ap.add_argument("--beat", metavar="JOB_ID",
                     help="record that this job just finished")
+    ap.add_argument("--beat-machine", metavar="BASE_ID",
+                    help="like --beat, but for a job that runs on SEVERAL "
+                         "machines: appends this machine's profile slug, so one "
+                         "wrapper deployed everywhere stamps its own row "
+                         "(orchestrator_heartbeat -> orchestrator_heartbeat_lucy_2)")
     ap.add_argument("--exit", type=int, default=0,
                     help="the job's exit code (non-zero records a failed beat)")
     ap.add_argument("--note", default="")
@@ -262,12 +320,17 @@ def main(argv=None) -> int:
                     help="print every job's last check-in")
     args = ap.parse_args(argv)
 
-    if args.beat:
-        if args.beat not in JOBS:
-            print("unknown job %r — known: %s" % (args.beat, ", ".join(sorted(JOBS))))
+    job_id = args.beat
+    if args.beat_machine:
+        # Resolved HERE, on the machine that ran the job — the wrapper is one
+        # file on three runners and must not carry a hardcoded id.
+        job_id = job_id_for_machine(args.beat_machine)
+    if job_id:
+        if job_id not in JOBS:
+            print("unknown job %r — known: %s" % (job_id, ", ".join(sorted(JOBS))))
             return 1
-        ok = beat(args.beat, ok=(args.exit == 0), note=args.note)
-        print("heartbeat %s for %s" % ("recorded" if ok else "FAILED", args.beat))
+        ok = beat(job_id, ok=(args.exit == 0), note=args.note)
+        print("heartbeat %s for %s" % ("recorded" if ok else "FAILED", job_id))
         return 0                      # never non-zero: the caller must not care
 
     if args.status or args.check:
@@ -277,7 +340,7 @@ def main(argv=None) -> int:
         for jid, spec in sorted(JOBS.items()):
             seen = (beats.get(jid) or {}).get("last_seen")
             flag = ("OVERDUE — %s" % late[jid]["why"]) if jid in late else "ok"
-            print("  %-24s last %-18s %s" % (jid, _fmt_seen(seen), flag))
+            print("  %-30s last %-18s %s" % (jid, _fmt_seen(seen), flag))
         if args.status:
             # A clock time here past the job's first_by is NOT by itself late, and
             # reading it that way costs a morning (Megan 2026-08-27: this column

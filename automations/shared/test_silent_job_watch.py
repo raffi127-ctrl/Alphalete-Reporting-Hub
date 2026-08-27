@@ -17,6 +17,7 @@ only functions that touch the network and neither is exercised here.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import unittest
 
 from automations.shared import silent_job_watch as sjw
@@ -142,15 +143,32 @@ class TheRegistryStaysHonest(unittest.TestCase):
 
     def test_the_wrappers_actually_beat(self):
         """A registry entry with no wrapper calling it is a job we THINK is
-        watched and isn't — worse than not listing it."""
+        watched and isn't — worse than not listing it.
+
+        Two ways a wrapper can stamp a job. `--beat <jid>` names it outright.
+        `--beat-machine <base>` is for one wrapper deployed to several runners:
+        it appends the machine slug at run time, so the id it stamps on the box
+        declared in this job's `machine` field must come back as exactly `jid`.
+        Deriving it from the registry's OWN machine field is what keeps the
+        second form honest — a key whose slug doesn't match the machine it
+        claims to run on still fails here."""
         from pathlib import Path
         deploy = Path(sjw.__file__).resolve().parents[2] / "deploy"
         blob = "\n".join(p.read_text(encoding="utf-8", errors="replace")
                          for p in deploy.glob("*.sh"))
-        for jid in sjw.JOBS:
+        for jid, spec in sjw.JOBS.items():
             with self.subTest(job=jid):
-                self.assertIn("--beat %s" % jid, blob,
-                              f"no deploy wrapper stamps a heartbeat for {jid}")
+                if "--beat %s" % jid in blob:
+                    continue
+                bases = re.findall(r"--beat-machine\s+([A-Za-z0-9_]+)", blob)
+                derived = {sjw.job_id_for_machine(b, spec["machine"])
+                           for b in bases}
+                self.assertIn(
+                    jid, derived,
+                    f"no deploy wrapper stamps a heartbeat for {jid} — no "
+                    f"`--beat {jid}`, and no --beat-machine base in deploy/*.sh "
+                    f"({sorted(bases) or 'none found'}) resolves to it on "
+                    f"{spec['machine']!r}")
 
 
 if __name__ == "__main__":
