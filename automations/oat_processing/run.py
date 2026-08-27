@@ -2098,7 +2098,19 @@ def run_walk(page, live: bool = False, limit: int = None,
         return 2
 
     _start_total = getattr(read_current_applicant(page, today), "_total", None)
-    _log(f"[oat] QUEUE at start: {_start_total} emails")
+    # Log the URL with the pager count. The count comes from the PAGE's own
+    # "<page> of <N> Emails", so it is only ever the total for the view we happen
+    # to be on — and that view carries filters (numDays / matchedOnly / job board
+    # / entered-date) that we never set and do not control. On 2026-08-27 the
+    # walk reported "13 -> 0" for Carlos while his actual inbox held 15, so the
+    # bot's idea of "the queue" and the human's disagree, and until we can SEE the
+    # filter state we cannot tell which is right. Cheap to log, and it is the one
+    # fact that settles it.
+    try:
+        _oat_url = (page.url or "")[-120:]
+    except Exception:  # noqa: BLE001
+        _oat_url = "?"
+    _log(f"[oat] QUEUE at start: {_start_total} emails | view: {_oat_url}")
 
     processed = 0
     actions = 0                 # live mutations (sent/removed) this run
