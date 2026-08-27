@@ -98,7 +98,13 @@ WEEKLY_GOAL = 80
 # 8:00pm, Saturday 4:00pm. The Partners chat gets every sweep that found a sale.
 LVL1_WINDOWS = {0: (20, 0), 1: (20, 0), 2: (20, 0), 3: (20, 0), 4: (20, 0),
                 5: (16, 0)}
-LVL1_WINDOW_MINUTES = 5
+# WIDER THAN THE TICK, ON PURPOSE. The sweep fires every 5 minutes and this
+# window used to be 5 minutes wide, so exactly one tick could land in it -- and
+# a few seconds of launchd drift meant NO tick did and the day's scoreboard
+# never went out. State.lvl1_sent is what stops a double send, not the width of
+# the window, so the window can afford to be generous and the marker does the
+# real work.
+LVL1_WINDOW_MINUTES = 12
 
 # --- the selling day --------------------------------------------------------
 # The sweep is fenced to these hours (machine-local, Lucy 1 is Central). The
