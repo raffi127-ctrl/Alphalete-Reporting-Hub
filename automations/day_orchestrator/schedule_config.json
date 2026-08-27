@@ -8388,7 +8388,7 @@
     },
     "gap_alerts": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 5 minutes of the selling day (Mon-Fri 13:30-20:30, Saturday 10:00-17:00, machine-local -- Saturday has its own START, not just its own end) from the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300; deploy/gap_alerts_5min.sh exits in bash outside those hours). Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
+      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 10 minutes of the selling day (Mon-Fri 13:30-20:30, Saturday 10:00-17:00, machine-local -- Saturday has its own START, not just its own end) from the standalone com.alphalete.gap-alerts LaunchAgent. The agent ticks every 60 SECONDS (StartInterval 60) and deploy/gap_alerts_5min.sh decides which minutes count -- it proceeds only when the minute is a multiple of 10 (or the :01 after), and exits in bash on every other minute and outside those hours. It is that way round because StartInterval counts from when the previous run EXITS, so the old StartInterval 300 stretched to 9-minute gaps whenever a browser launch was slow. The script's filename still says 5min: the installed plist points at that exact path, and the cadence moved to 10 (Raf, 2026-08-27) in code alone. Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
       "machine": "Lucy 1",
       "_machine_note": "Lucy 1 because that is the machine iMessage is set up on (Megan 2026-08-26) -- the 7-person 'Alphalete Partners' chat only exists in Lucy 1's Messages (alphaletereporting@, the account Megan added to the room on 8/26). Same constraint that pins alphalete_sales_board there. Load is fenced instead: own browser profile (automations/uploaded/.browser_profile_gap_alerts), headless, one JSON call per tick, pid lock, and nothing before 13:30 on a weekday -- long after the 4am batch's browser-heavy wave is through.",
       "display_name": "Rep Gap Alerts (15-min gaps -> Partners chat)",
@@ -8411,9 +8411,9 @@
     },
     "install_gap_alerts_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 300) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_gap_alerts_agent --machine \"Lucy 1\"` can install or refresh the standalone com.alphalete.gap-alerts LaunchAgent (StartInterval 60 -- the wrapper, not the plist, sets the 10-minute cadence) on Lucy 1. Every LaunchAgent in this repo needs one of these -- the one agent that had no install_* entry is how a fully-provisioned runner still ran nothing. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
       "machine": "Lucy 1",
-      "display_name": "Install Rep Gap Alerts agent (5-min)",
+      "display_name": "Install Rep Gap Alerts agent (10-min)",
       "source_type": "local",
       "data_sources": [],
       "command": [

@@ -1,4 +1,4 @@
-"""Rep Gap Alerts -- "Reps Over 15 Min Gap", texted every 5 minutes.
+"""Rep Gap Alerts -- "Reps Over 15 Min Gap", texted every 10 minutes.
 
     python -m automations.gap_alerts.run                      # PREVIEW (renders,
                                                               # resolves, sends nothing)
@@ -9,8 +9,9 @@
 WHAT IT IS. Carlos has had this card since July as the bottom panel of the
 hourly B2B Dispositions post. Raf wants the same signal for his office, on its
 own, faster: JUST the gap card, straight into the "Alphalete Partners" iMessage
-group, every five minutes of the selling day (Megan 2026-08-26). No Today's
-Activity panel, no Slack post, no thread.
+group, every ten minutes of the selling day. No Today's Activity panel, no Slack
+post, no thread. (It shipped at five minutes on 2026-08-26; Raf moved it to ten
+the next day -- the cadence lives in config.TICK_MINUTES.)
 
 WHY IT RUNS ON LUCY 1. Because that is where iMessage is set up (Megan). Lucy 1
 is the busiest runner, but the group only exists in ITS Messages -- Megan added
@@ -24,12 +25,12 @@ THE LOAD IS FENCED, the same four ways the sales-board sweep is:
      endpoint, not a screenshot, so there is no rendering to wait on;
   3. it only runs inside the knocking window -- Mon-Fri 1:30pm-8:30pm,
      Saturday 10:00am-5:00pm, Sunday not at all;
-  4. a pid lock, so a slow tick is SKIPPED rather than stacked. At 96 runs a
-     day an overlapping-run bug becomes 192.
+  4. a pid lock, so a slow tick is SKIPPED rather than stacked. At ~48 runs a
+     day an overlapping-run bug becomes 96.
 
 NEVER TEXTS AN EMPTY CARD. If nobody is over the threshold that is good news,
-not news -- and a "no reps over 15 min gap" picture arriving every five minutes
-is how a room learns to mute the alert that matters.
+not news -- and a "no reps over 15 min gap" picture arriving all afternoon is
+how a room learns to mute the alert that matters.
 [[feedback_never_post_blank]]
 
 Python 3.9-safe (Lucy runtime). Cross-platform except the iMessage leg, which
@@ -57,10 +58,10 @@ HUB_CARD_ID = "gap-alerts"
 HUB_CARD_NAME = "Rep Gap Alerts (15-min gaps -> Partners chat)"
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "gap_alerts"
 
-# One alert after this many consecutive failed ticks, then a cooldown. At a
-# five-minute cadence a live outage would otherwise post ~100 incidents before
-# lunch, and three ticks is ~15 minutes -- long enough to be a real outage and
-# short enough that a dead ownerville session is caught the same hour.
+# One alert after this many consecutive failed ticks, then a cooldown. A live
+# outage would otherwise post an incident every tick all afternoon, and three
+# ticks is ~30 minutes -- long enough to be a real outage and short enough that
+# a dead ownerville session is caught the same hour.
 FAIL_STREAK = 3
 ALERT_COOLDOWN_HOURS = 2
 FAIL_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_fails.json"
@@ -82,7 +83,7 @@ def _pid_alive(pid: int) -> bool:
 
 class Lock:
     """Skip this tick if the last one is still going. Waiting would just queue
-    behind the next tick; there is another one in five minutes."""
+    behind the next tick; there is another one in ten minutes."""
 
     def __init__(self, path: Optional[Path] = None):
         self.path = path or C.LOCK_PATH
@@ -154,8 +155,8 @@ def _mark_sent(key: str) -> None:
 
 
 def _publish_hub_once(day: dt.date) -> None:
-    """The first good tick of the day paints the card; the other 95 stay quiet.
-    A green pill 96 times over would say nothing.
+    """The first good tick of the day paints the card; every later tick stays
+    quiet. A green pill repainted all afternoon would say nothing.
     [[feedback_launchd_reports_must_publish]]"""
     data = _state()
     key = day.isoformat()
@@ -297,8 +298,8 @@ def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
 
 def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str) -> Path:
     """The card, with its own title bar. ONE image per tick and no accompanying
-    text: send_to_group would post the caption as a second message, and at 96
-    ticks a day that doubles what the room has to scroll past. The time lives on
+    text: send_to_group would post the caption as a second message, and over a
+    day of ticks that doubles what the room scrolls past. The time lives on
     the card instead, so a reader can tell a fresh one from one that scrolled."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
@@ -378,7 +379,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
 def _terminated_check_once(day: dt.date, names: List[str]) -> None:
     """Flag anyone on the card who is on the 'Terminated ICDs' tab — ONCE a day,
-    not on all 96 ticks. Advisory only: it never fails a tick, and it never
+    not on every tick. Advisory only: it never fails a tick, and it never
     changes what the card says.
     [[feedback_terminated_icd_check]]"""
     names = [n for n in dict.fromkeys(names) if n]

@@ -1,7 +1,13 @@
 #!/bin/bash
 # Rep Gap Alerts — the "Reps Over 15 Min Gap" card, texted to the Alphalete
-# Partners chat every 5 minutes of the selling day, on LUCY 1 via launchd
+# Partners chat every 10 minutes of the selling day, on LUCY 1 via launchd
 # (com.alphalete.gap-alerts).
+#
+# FILENAME SAYS 5min AND THE CADENCE IS 10 (Raf, 2026-08-27 — 5 minutes was too
+# much traffic in the room). The name is deliberately NOT being fixed: the
+# installed plist on Lucy 1 points at this exact path, so renaming would mean
+# reinstalling the agent on that box to change a cadence that is pure code.
+# The number that rules is MINUTE % 10, below.
 #
 #   bash deploy/gap_alerts_5min.sh                # PREVIEW, texts nothing
 #   bash deploy/gap_alerts_5min.sh --send         # live
@@ -10,7 +16,7 @@
 # exists in its Messages (alphaletereporting@). Same reason the sales-board
 # sweep lives there.
 #
-# THE HOUR GATE IS HERE, not only in Python: launchd fires this 288 times a day
+# THE HOUR GATE IS HERE, not only in Python: launchd fires this 1440 times a day
 # and most of those are outside selling hours. Bailing in bash costs a few ms
 # instead of a Python start-up. run.py re-checks the window anyway, so a
 # hand-run can't sneak past it either (use --force for that, on purpose).
@@ -41,7 +47,7 @@ else
     [ "$HOUR" -gt 20 ] && exit 0
 fi
 
-# WALL-CLOCK ANCHOR — this is what makes it every FIVE minutes.
+# WALL-CLOCK ANCHOR — this is what makes it every TEN minutes.
 #
 # launchd's StartInterval counts from when the previous run EXITS, not from when
 # it started, so a plain StartInterval 300 gives a cadence of 5 minutes PLUS
@@ -54,8 +60,8 @@ fi
 # spacing no longer chains off the previous run's length.
 #
 # :00 and :01 both count. launchd's minute tick can slip a few seconds and skip
-# a minute entirely; without the :01 catch-up that would silently turn one 5
-# minute gap into 10. The catch-up is safe precisely because it cannot
+# a minute entirely; without the :01 catch-up that would silently turn one 10
+# minute gap into 20. The catch-up is safe precisely because it cannot
 # double-post — run.py refuses a card inside MIN_SEND_GAP_MINUTES, so if :00
 # already sent, :01 renders nothing and exits.
 #
@@ -64,7 +70,7 @@ fi
 # and has fired calendar jobs two hours off. A cached TZ cannot fool this gate.
 MINUTE=$(date +%M)
 MINUTE=$((10#$MINUTE))
-[ $((MINUTE % 5)) -gt 1 ] && exit 0
+[ $((MINUTE % 10)) -gt 1 ] && exit 0
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"
