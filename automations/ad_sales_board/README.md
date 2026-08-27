@@ -12,26 +12,29 @@ names, Account/City and the week's name list ride alongside.
   mirror: row 1 dark control strip (**B1 manager**, **D1 Org/Captainship**),
   row 2 navy AD SALES BOARD banner, row 3 blue WE strip (**B3 week picker**
   in the cream cell + computed week label), row 4 navy bordered header
-  `# | AD | Pull | Names | Wed..Tue | Account | City` with real dates, rows 5+
+  `# | AD | Account | City | Pull | Names | Mon..Sun` with real dates, rows 5+
   the bordered grid spilled by one FILTER at B5 — everything centered, banner
   merged across the board. The week name LIST is deliberately not shown
   (Carlos 2026-08-26: "i dont need all the names on the right") — it stays on
   the data tab, col J. TOTAL row grey; amber row = names that matched no ad.
   Day headers compute their dates from the picked week via the data tab's AB1
-  helper.
+  helper; the WE strip label reads "Week Ending m/d" (the Sunday).
 * Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
   A..R: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
   # Names, Names, Week Start (ISO — the freeze/sort key), then L..R = names
-  per day (Wed..Tue). TOTAL rows carry the label in the Ad Title column (the
+  per day (Mon..Sun). TOTAL rows carry the label in the Ad Title column (the
   board's first visible column). Blank counts mean "no name feed" (the
   captainship-only offices); zeros mean "an ad that produced nobody".
 
 ## The week
 
-**Wednesday → Tuesday** (`weeks.py`). On Wednesday morning the just-finished
-week is complete — not three days stale like a Sun–Sat week would be — and the
-job flips the B3 picker to it. The week LABEL ("Aug 19 – 25, 2026") is the join
-key across runs; never change its format without rewriting the data tab.
+**Monday → Sunday** (`weeks.py`) — Carlos's call the first evening ("weeks are
+monday - sunday"), matching the fleet's WE convention; the original Wed→Tue cut
+lived for a few hours and its rows were dropped with `run.py --reset` before
+the year was re-pulled on Monday anchors. The job stamps the B3 picker to the
+CURRENT week every morning (sales-board style; Monday it rolls by itself). The
+week LABEL ("Aug 24 – 30, 2026") is the join key across runs; never change its
+format OR anchor day without rewriting the data tab.
 
 ## Where the numbers come from
 
