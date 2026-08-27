@@ -448,3 +448,59 @@ def probe(*, headless: bool = True, log=print) -> Dict:
         finally:
             ctx.close()
     return out
+
+
+def probe_grid(service: str = "AT&T Internet", *, headless: bool = True,
+               log=print) -> Dict:
+    """READ-ONLY: dump one grid's HEADER ROW and first data rows, with column
+    INDEXES, so a column mapping can be checked against the live page instead
+    of against a doc.
+
+    COL_* here were "confirmed on 2026-07-09" by the porting brief -- the same
+    brief that had the ReportingHub path wrong and invented a weekly goal. A
+    number that comes from the wrong column looks perfectly plausible, which is
+    the kind of wrong nobody catches from the output alone.
+
+        python -m automations.alphalete_sales_board.run --probe-grid
+        python -m automations.alphalete_sales_board.run --probe-grid --service "AT&T"
+    """
+    from patchright.sync_api import sync_playwright
+    import datetime as _dt
+
+    grid_for = {"AT&T": GRID_ATT, "All": GRID_ALL, "AT&T Internet": GRID_INTERNET}
+    grid = grid_for.get(service)
+    if not grid:
+        raise SaraError("unknown service %r -- try one of %s"
+                        % (service, ", ".join(grid_for)))
+    cr = C.creds()
+    C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    out = {}
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+        try:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            base = _login(page, cr["email"], cr["password"])
+            rows = _run_report(page, base, _dt.date.today(), service, grid, log=log)
+            headers = page.evaluate(
+                """(sel) => {
+                     const g = document.querySelector(sel);
+                     if (!g) return [];
+                     const head = g.closest('table') || g;
+                     const hr = head.querySelectorAll('thead tr');
+                     const last = hr[hr.length - 1];
+                     return last ? Array.from(last.querySelectorAll('th'))
+                                        .map(th => (th.innerText || '').trim()) : [];
+                   }""", grid)
+            out["headers"] = headers
+            out["rows"] = rows[:4]
+            log("--- %s grid: %d header cell(s) ---" % (service, len(headers)))
+            for i, h in enumerate(headers):
+                log("   [%2d] %s" % (i, h[:40]))
+            log("--- first data rows (index: value) ---")
+            for r in rows[:3]:
+                log("   " + " | ".join("[%d]%s" % (i, (v or "")[:14])
+                                       for i, v in enumerate(r) if (v or "").strip()))
+        finally:
+            ctx.close()
+    return out
