@@ -81,9 +81,16 @@ OWNER_CFG = [
 # b2b_metrics captures every section BEFORE posting any, so churn_tab_image
 # raising "no rep rows on 'LUCY CHURN'" for activation_by_rep took the whole
 # 08:49 rerun down and her thread got nothing, including the four churn boards
-# whose data had just landed. PROMOTE by running `--owner sabrina --dry-run` on
-# Lucy 2, confirming it reconciles, then deleting the key here.
-STAGED: set = {"sabrina"}
+# whose data had just landed.
+#
+# sabrina was promoted 2026-08-27 (Megan), the morning after she was staged:
+# `lucy rerun vantura_churn --owner sabrina --dry-run` on Lucy 2 closed exit 0
+# with her per-rep grid populated and no reconcile mismatch (this module fails
+# loudly on one), which is the gate this set exists to enforce. Promoted rather
+# than left on a daily hand-run because STAGED only skips `--owner both`: her
+# churn tab would be empty again at 04:00 tomorrow, and an empty tab does not
+# cost her two sections, it costs the whole thread.
+STAGED: set = set()
 
 
 def _activation_cfg():
