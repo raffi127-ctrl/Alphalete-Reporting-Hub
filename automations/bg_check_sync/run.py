@@ -185,7 +185,8 @@ def settle_name_gate(sh, *, dry_run: bool, do_post: bool) -> int:
 
 
 def ask_name_gate(roster, events, matched, monday, week, *, dry_run: bool,
-                  do_post: bool, claimed_ids=None, collect=None) -> int:
+                  do_post: bool, claimed_ids=None, collect=None,
+                  refresh: bool = False) -> int:
     """Phase B: anyone left unmatched who looks like a nickname.
 
     With `collect`, the proposals are set aside instead of posted — the OV pass
@@ -195,9 +196,12 @@ def ask_name_gate(roster, events, matched, monday, week, *, dry_run: bool,
     """
     try:
         state = name_gate.load_state()
-        fresh = name_gate.unanswered(
-            name_gate.propose(roster, events, matched, monday, week,
-                              claimed_ids=claimed_ids), state)
+        proposals = name_gate.propose(roster, events, matched, monday, week,
+                                      claimed_ids=claimed_ids)
+        # --refresh-asks: keep the ones already posted, so their wording can be
+        # corrected in place instead of asked again.
+        fresh = (proposals if refresh
+                 else name_gate.unanswered(proposals, state))
         if not fresh:
             return 0
         for p in fresh:
@@ -298,7 +302,8 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
 
 def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
-                 ov_targets=None, pending_asks=None, names_from=None):
+                 ov_targets=None, pending_asks=None, names_from=None,
+                 refresh_asks=False):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -331,7 +336,7 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     if do_names:
         ask_name_gate(roster, events, matched, monday, week,
                       dry_run=dry_run, do_post=do_post, claimed_ids=claimed_ids,
-                      collect=pending_asks)
+                      collect=pending_asks, refresh=refresh_asks)
 
     decisions, slack_people, needs_confirm, flags = [], [], [], []
     for p in sorted(roster, key=lambda x: (x.last.lower(), x.first.lower())):
@@ -518,7 +523,7 @@ def _run(args) -> None:
                      repost=repost, now=now, do_slack=do_slack,
                      rolling_vals=rolling_vals, claimed_ids=claimed_ids,
                      ov_targets=ov_targets, pending_asks=pending_asks,
-                     names_from=names_from)
+                     names_from=names_from, refresh_asks=args.refresh_asks)
 
     if args.ov:
         try:
@@ -591,6 +596,9 @@ def main(argv=None) -> int:
     ap.add_argument("--since-days", type=int, default=30)
     ap.add_argument("--dry-run", action="store_true", help="no sheet writes")
     ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
+    ap.add_argument("--refresh-asks", action="store_true",
+                    help="rewrite questions already posted in Slack (same "
+                         "messages, same reactions) instead of asking again")
     ap.add_argument("--names-from",
                     help="first start-week (M/D/YYYY) to correct names for; "
                          "earlier weeks are left alone (default: next Monday)")

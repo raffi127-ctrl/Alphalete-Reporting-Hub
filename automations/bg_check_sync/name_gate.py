@@ -342,84 +342,46 @@ def _client():
 
 
 def render_parent(n: int, start_week: Optional[str] = None) -> str:
+    """The one message that explains the ask — so no person's line has to.
+
+    Megan 2026-08-26, on the first version: "wayyyy too much wording and super
+    confusing." Everything that is the same for every person lives here and is
+    said once; a person's own line carries only what is different about them.
+    """
     tags = " ".join(f"<@{uid}>" for _, uid in DECIDERS)
-    head = ("A background check name doesn't match the onboarding checklist"
-            if n == 1 else
-            f"{n} background check names don't match the onboarding checklist")
+    head = "Name doesn't match their background check" if n == 1 else \
+           f"{n} names don't match their background check"
     if start_week:
-        head += f" — for the week of {start_week}"
-    return (f"{head} — react on each one below\n"
-            f"✅ = same person, use the Sterling name   ❌ = not the same person\n"
+        head += f" — starting {start_week}"
+    return (f"*{head}*\n"
+            f"✅ = same person → I'll fix the checklist + OwnerVille\n"
+            f"❌ = different person → I'll leave it alone\n"
             f"{tags}")
 
 
-def _timing_line(p: Proposal) -> str:
-    """When they took it, in words, plus whether that timing is ordinary.
+def render_line(p: Proposal) -> str:
+    """One person, two lines: who Sterling ran, and the one fact that helps.
 
-    Ordinary is a wide range: the link goes out at hire and somebody can be
-    hired a month or more before their start week, so most of this range is
-    unremarkable. The line earns its place at the two ends -- a check taken
-    after they already started, or one so old it belongs to an earlier cohort.
+    The checklist name, an arrow, the Sterling name — that IS the question.
+    Underneath it goes their email (the thing that settles most of these at a
+    glance) and when they took the check. Nothing else: the ✅/❌ meanings are
+    in the parent, and repeating them under every name is what made the first
+    version unreadable.
     """
-    if not p.taken_on:
-        return ""
-    try:
-        d = dt.date.fromisoformat(p.taken_on)
-        when = f"{d:%b} {d.day}"
-    except ValueError:
-        when = p.taken_on
-    gap = p.days_before_start
-    if gap is None:
-        rel = ""
-    elif gap > 0:
-        rel = f", {gap} day{'s' if gap != 1 else ''} before their {p.week} start"
-    elif gap == 0:
-        rel = f", the day their {p.week} week started"
-    else:
-        rel = f", {-gap} day{'s' if gap != -1 else ''} AFTER their {p.week} start"
-    if gap is not None and gap < 0 and p.fresh:
-        verdict = "normal — the link went out late"
-    elif p.fresh:
-        verdict = "normal — taken when they were hired"
-    elif gap is not None and gap > NORMAL_RUNWAY_DAYS:
-        verdict = (f"over {NORMAL_RUNWAY_DAYS // 30} months before they start — "
-                   "worth a look")
-    else:
-        verdict = "long after they started — worth a look"
-    line = f"    check taken: {when}{rel} — {verdict}\n"
-    # Sterling takes as long as it takes, so say when the result actually landed
-    # whenever that is a different day from taking it. A rep who started on
-    # Monday and passed three weeks later is an ordinary week here, and the two
-    # dates are what make that readable.
-    if p.result_on and p.result_on != p.taken_on:
+    bits = []
+    if p.email:
+        bits.append(f"{p.email}"
+                    + (" — matches the Sterling name" if p.corroborated else ""))
+    if p.taken_on:
         try:
-            r = dt.date.fromisoformat(p.result_on)
-            line += f"    result came back: {r:%b} {r.day}\n"
+            d = dt.date.fromisoformat(p.taken_on)
+            bits.append(f"took the check {d:%b} {d.day}")
         except ValueError:
             pass
-    return line
-
-
-def render_line(p: Proposal) -> str:
-    """One person, one question. The sheet name first because that is what the
-    reader is looking at on the OBCL, then the two independent checks — does
-    their own email carry the Sterling name, and does the timing of the check
-    fit their start week."""
-    status = f" · checklist says *{p.current}*" if p.current else ""
-    if p.email:
-        hint = ("backs the Sterling name" if p.corroborated
-                else "doesn't show that name")
-        evidence = f"    email on the checklist: {p.email} — {hint}\n"
-    else:
-        evidence = ""
-    return (f"*{p.sheet_name}* on the checklist — Sterling ran the check as "
-            f"*{p.legal_name}*{status}\n"
-            f"{evidence}"
-            f"{_timing_line(p)}"
-            f"    ✅ same person → I'll set the checklist to {p.legal_name} "
-            f"(please fix their OwnerVille profile to match)\n"
-            f"    ❌ not the same person → I'll leave it alone and flag it\n"
-            f"    _week of {p.week} · {p.evidence}_")
+    if not p.fresh and p.days_before_start is not None:
+        bits.append("timing is odd — worth a look")
+    detail = "\n" + " · ".join(bits) if bits else ""
+    return f"*{p.sheet_name}* → *{p.legal_name}*?{detail}"
 
 
 def week_thread(week: str, channel: str) -> Optional[str]:
@@ -436,6 +398,32 @@ def week_thread(week: str, channel: str) -> Optional[str]:
     except Exception:  # noqa: BLE001
         return None
     return (entry or {}).get("parent_ts")
+
+
+def _refresh_group(cli, channel: str, pending: list, group: list, intro: str,
+                   state: dict) -> int:
+    """Rewrite the text of questions already posted, leaving their reactions and
+    their place in the thread alone."""
+    by_pid = {p.pid: p for p in group}
+    done = 0
+    intro_ts = ""
+    for proposal in pending:
+        entry = state.get(proposal.pid) or {}
+        intro_ts = intro_ts or entry.get("intro_ts", "")
+        try:
+            cli.chat_update(channel=channel, ts=entry["reply_ts"],
+                            text=render_line(by_pid[proposal.pid]))
+            done += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't rewrite {proposal.sheet_name}: {e}")
+    if intro_ts:
+        try:
+            cli.chat_update(channel=channel, ts=intro_ts, text=intro)
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't rewrite the intro: {e}")
+    if done:
+        print(f"[name-gate] rewrote {done} question(s) already in the thread")
+    return done
 
 
 def latest_thread(channel: str) -> tuple:
@@ -503,10 +491,21 @@ def post_proposals(proposals: list[Proposal], state: dict, *, dry_run: bool = Tr
             continue
 
         cli = _client()
+        pending = [p for p in group
+                   if (state.get(p.pid) or {}).get("status") == "pending"
+                   and (state.get(p.pid) or {}).get("reply_ts")]
+        if pending:
+            # Already asked. Correct the wording in place — a second copy of the
+            # same question is how a channel ends up with two answers.
+            refreshed = _refresh_group(cli, channel, pending, group, intro, state)
+            posted += refreshed
+            continue
         if parent_ts:
-            cli.chat_postMessage(channel=channel, thread_ts=parent_ts, text=intro)
+            intro_ts = cli.chat_postMessage(
+                channel=channel, thread_ts=parent_ts, text=intro)["ts"]
         else:
             parent_ts = cli.chat_postMessage(channel=channel, text=intro)["ts"]
+            intro_ts = parent_ts
         now = dt.datetime.now().isoformat(timespec="seconds")
         for p in group:
             reply = cli.chat_postMessage(channel=channel, thread_ts=parent_ts,
@@ -521,7 +520,7 @@ def post_proposals(proposals: list[Proposal], state: dict, *, dry_run: bool = Tr
                 "sheet_first": p.sheet_first, "sheet_last": p.sheet_last,
                 "legal_first": p.legal_first, "legal_last": p.legal_last,
                 "key": p.key, "locations": [list(l) for l in p.locations],
-                "evidence": p.evidence,
+                "evidence": p.evidence, "intro_ts": intro_ts,
             }
             posted += 1
     if posted:
