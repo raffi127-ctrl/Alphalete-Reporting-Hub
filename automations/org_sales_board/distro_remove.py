@@ -128,6 +128,14 @@ REMOVALS: dict = {
         # shared/captainship_pins under "Colten". This group is NOT shared with
         # the org board mail, so nothing else changes for him.
         ("Milan Godbolt", "arisesolutions.milan@gmail.com"),
+        # 2026-08-27 (Eve): Marcos Barbosa, same shape as Milan a week earlier
+        # — off Colten's captainship AND out from under Colten's org in the
+        # bulletins (his 'Lucy Org Tree' podium row and his 'Org Tree' node).
+        # Three board rows and four rows on 'Churn - Colten Wright (NDS)' went
+        # the same day; Tableau is pinned in shared/captainship_pins under
+        # "Colten". His card is on NO other live group, so this is the last
+        # report he was getting.
+        ("Marcos Barbosa", "marcosbarbosa.entrepeneur@gmail.com"),
     ],
 }
 

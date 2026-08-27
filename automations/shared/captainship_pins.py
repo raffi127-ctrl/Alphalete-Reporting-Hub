@@ -67,9 +67,17 @@ from typing import Dict, Iterable, Optional
 # sources: the board and the Focus Report tab say "Lizette Ruiz", AppStream and
 # Tableau say "Lizette Ruiz-Conejo" (the churn tab fills under the Tableau
 # spelling, and drop_reps runs AFTER the alias rename in owners_metrics_churn).
+#
+# 2026-08-27 (Eve): Marcos Barbosa comes off Colten's captainship as well —
+# same day he came out from under Colten's org in the bulletins (his 'Lucy Org
+# Tree' podium row and his 'Org Tree' node). His three board rows (leaderboard,
+# daily block, COLTEN CAPTAINSHIP delta box) went the same day and his address
+# left the "Colten's Captainship" distro. Like Milan, Tableau's NDS Captain
+# Teams filter still files him under "Colten's Team", so without this pin the
+# daily roster scan offers him back to Evelyn every morning.
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
-    "Colten": ("Milan Godbolt",),
+    "Colten": ("Milan Godbolt", "Marcos Barbosa"),
     "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
 }
 
