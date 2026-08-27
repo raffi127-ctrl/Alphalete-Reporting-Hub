@@ -116,6 +116,22 @@ def _activation_cfg():
                   "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
                   "CarlosTeamViewExpanded?:iid=1",
                   "Carlos Team View Expanded", "JAMIS GARAY"),
+        # SABRINA (alisei) — onboarded 2026-08-26. Same situation as Jamis: no
+        # Sabrina-scoped ACTIVATIONRATES saved view exists (her onboarding row
+        # has per_office_views {}), so this reuses the same all-team view and
+        # relies on the CODE-side owner filter. Added because a brand-new office
+        # with NO entry here doesn't fail loudly — activation_board_image falls
+        # back to Download->Image, which rendered BLANK on 8/27 and the section
+        # was dropped from her thread with only a warning in the log.
+        # UNVERIFIED until `--dump-rep-grid sabrina` on Lucy 2 confirms the
+        # export's "Owner & Office" really starts with this prefix; if it
+        # matches nothing, parse_rep_rates RAISES rather than posting the whole
+        # team, and the prefix is what needs correcting here.
+        "sabrina": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                    "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                    "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
+                    "CarlosTeamViewExpanded?:iid=1",
+                    "Carlos Team View Expanded", "SABRINA ALICEA"),
     }
 
 
