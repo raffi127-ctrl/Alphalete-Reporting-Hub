@@ -355,13 +355,30 @@ def main(argv=None):
                     # exact (inbox, base, city) first, else (inbox, base)
                     # taken by the biggest Pull; re-pulled days REPLACE the
                     # carried value, split pieces landing on one row SUM.
-                    applied, missed = {}, 0
+                    by_inbox = {}
+                    for g in ads:
+                        by_inbox.setdefault(g["inbox"], []).append(g)
+                    applied, missed, unmatched_keys = {}, 0, []
                     for inbox, base, city, slot, n in day_pieces.get(label, []):
                         cands = [g for g in ads
                                  if g["inbox"] == inbox
                                  and g["base"].lower() == base]
                         if not cands:
+                            # A one-day window merges fewer variants than a
+                            # seven-day one, so the same posting can carry a
+                            # different base role on the day than in the week.
+                            # When the inbox runs exactly ONE ad that week the
+                            # answer is unambiguous, so take it. With several,
+                            # guessing would put real numbers on the wrong ad
+                            # row — a silent wrong beats nothing, so it stays
+                            # dropped and gets named in the log instead.
+                            sole = by_inbox.get(inbox, [])
+                            cands = sole if len(sole) == 1 else []
+                        if not cands:
                             missed += n
+                            if len(unmatched_keys) < 4:
+                                unmatched_keys.append("%s | %s"
+                                                      % (inbox, base[:38]))
                             continue
                         exact = [g for g in cands
                                  if g["city"].lower() == city]
@@ -377,10 +394,14 @@ def main(argv=None):
                     if applied or carried or missed:
                         # Name the manager and the week: a bare "N dropped"
                         # line cannot be traced back to an office, which cost
-                        # an hour on 2026-08-27.
+                        # an hour on 2026-08-27. When pieces are dropped, name
+                        # the inbox+base that would not join too — that is the
+                        # evidence needed to fix the join rather than guess.
                         print("     [recv] %-22s %-22s carried=%d applied=%d "
-                              "dropped=%d" % (name[:22], label, carried,
-                                              len(applied), missed), flush=True)
+                              "dropped=%d%s"
+                              % (name[:22], label, carried, len(applied), missed,
+                                 ("  unmatched: " + "; ".join(unmatched_keys))
+                                 if unmatched_keys else ""), flush=True)
                     wk_names = names.in_window(call_rows, name, start, end=start + dt.timedelta(days=6))
                     fresh[(name, label)] = rows_for(name, label, start, ads,
                                                     wk_names, recv)
