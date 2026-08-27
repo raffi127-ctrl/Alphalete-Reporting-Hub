@@ -78,5 +78,26 @@ check("old logic mis-filed Victor as needing a number",
       old_bucket("flag_retext", "flag_no_phone"), "nophone")
 check("new logic does not", bucket("flag_retext", "flag_no_phone"), "retext")
 
+print("an applicant whose name didn't parse is still listed, never dropped:")
+
+
+def label(first, last, email):
+    """How run.py names an entry for the post."""
+    nm = ("%s %s" % (first, last)).strip()
+    if not nm:
+        nm = (email or "").strip() or "(name unreadable — find them in the queue)"
+    return nm
+
+
+check("normal name", label("Claudia", "Ceniceros", "c@x.com"), "Claudia Ceniceros")
+# The ATS re-renders mid-walk and the read comes back nameless; before the fix
+# these fell through an `if _nm:` guard and vanished from the to-do post.
+check("no name, falls back to the email",
+      label("", "", "conversation-juangarcia-h702i@indeedemail.com"),
+      "conversation-juangarcia-h702i@indeedemail.com")
+check("no name and no email still names them something findable",
+      label("", "", ""), "(name unreadable — find them in the queue)")
+check("never empty, so never silently dropped", bool(label("", "", "")), True)
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)
