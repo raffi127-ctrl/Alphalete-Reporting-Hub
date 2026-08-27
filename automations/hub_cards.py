@@ -5212,7 +5212,7 @@ AUTOMATED_REPORTS = [
         # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
         # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
         "daily_runs": 2,
-        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
+        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, corrects each new start's name to the one Sterling ran their check under — on the checklist AND in their OwnerVille profile — and posts a weekly new-starts status thread to #11280-alphalete-marketing-inc-rafael-hidalgo.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
@@ -5222,6 +5222,25 @@ AUTOMATED_REPORTS = [
             "**#11280-alphalete-marketing-inc-rafael-hidalgo**, grouping everyone into Passed / "
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
             "edited-in-place reply, so the thread never grows).\n\n"
+            "NAMES (added 2026-08-26)\n"
+            "Applicants type their **legal** name into Sterling; the recruiter "
+            "types what they were told onto the checklist. When those differ, "
+            "the result never matches the row and somebody ends up emailing "
+            "activations. So **Sterling's spelling wins** and gets written to "
+            "**both** places:\n"
+            "**•** the checklist (cols D/E), and\n"
+            "**•** their **OwnerVille profile** (Sales Reps → the profile page).\n"
+            "A name confirmed against a real check is **tinted green** on every "
+            "tab that person appears on.\n\n"
+            "WHEN IT ASKS INSTEAD\n"
+            "If the two names share only a surname (“Nikki” vs Shuminique), "
+            "identity is a guess — so it asks. It first checks **OwnerVille**: a "
+            "profile on the same **phone or email** already carrying Sterling's "
+            "name settles it with nobody involved. Only what OV can't prove is "
+            "posted in that week's BG thread for **Alisson / Tiff / Aimee** — "
+            "✅ same person (it fixes both systems on the next pass) or "
+            "❌ different person (it never asks again and flags it). No "
+            "reaction changes nothing.\n\n"
             "WHEN IT RUNS\n"
             "**11:30am / 4pm CST** on the mini. Monday 11:30 starts the "
             "new week's thread.\n\n"
@@ -5229,7 +5248,12 @@ AUTOMATED_REPORTS = [
             "**•** **Passed** only from an explicit “Score PASS” email; "
             "forward-only (never downgrades or overwrites a hand-set status).\n"
             "**•** A **“Passed but no matching email”** flag is usually a name "
-            "mismatch — compound surnames auto-match under `[fuzzy-match]`."
+            "mismatch — compound surnames auto-match under `[fuzzy-match]`.\n"
+            "**•** The OwnerVille form won't save without a **role** and the "
+            "**Over 18** box, so a blank one gets **Entry Level** / ticked — "
+            "never an answer somebody already gave.\n"
+            "**•** Names are corrected from the **next** start week onward; the "
+            "week in flight is left as the team hand-fixed it."
         ),
         # Deep-links to the D2D OBCL tab this run updates.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
@@ -5246,21 +5270,26 @@ AUTOMATED_REPORTS = [
             # Sortable START time; time_label shows the real cadence at a glance.
             "time": "11:30 AM",
             "time_label": "11:30am / 4pm CST",
-            "estimated_minutes": 1,
+            # Was 1 when this only read email. The OwnerVille pass drives a
+            # browser through the rep table for anybody it hasn't checked yet,
+            # so a run that meets a new cohort takes minutes; checked profiles
+            # are remembered and skipped after that.
+            "estimated_minutes": 5,
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ BG statuses synced to both D2D OBCL tabs and the weekly Slack thread updated.",
-            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo.",
+            "message_success": "✅ BG statuses synced to both D2D OBCL tabs, names matched to Sterling (checklist + OwnerVille), and the weekly Slack thread updated.",
+            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #11280-alphalete-marketing-inc-rafael-hidalgo. An OwnerVille session that won't open is reported per rep, never a failed run.",
         },
         "actions": [
             {
                 "label": "Run Now",
                 "icon": "▶",
                 "primary": True,
-                "help": "Re-read the BG emails, update both tabs, and refresh the Slack thread.",
+                "help": "Re-read the BG emails, update both tabs, match names to Sterling (checklist + OwnerVille), and refresh the Slack thread.",
                 "module": "automations.bg_check_sync.run",
-                "args_fn": lambda: ["--post", "--since-days", "30"],
+                "args_fn": lambda: ["--post", "--since-days", "30",
+                                    "--ov", "--ov-apply"],
             },
         ],
     },

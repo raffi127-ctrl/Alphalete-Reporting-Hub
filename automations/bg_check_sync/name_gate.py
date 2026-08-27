@@ -370,8 +370,13 @@ def render_line(p: Proposal) -> str:
     """
     bits = []
     if p.email:
-        bits.append(f"{p.email}"
-                    + (" — matches the Sterling name" if p.corroborated else ""))
+        # SAY WHICH WAY IT CUTS. Megan 2026-08-26: "just listing the email tells
+        # us nothing." The address is only evidence once someone is told what to
+        # look for in it, so name the Sterling first name and say whether it is
+        # in there.
+        verdict = ("has \u201c%s\u201d in it" % p.legal_first if p.corroborated
+                   else "no \u201c%s\u201d in it" % p.legal_first)
+        bits.append(f"{p.email} — {verdict}")
     if p.taken_on:
         try:
             d = dt.date.fromisoformat(p.taken_on)
@@ -407,15 +412,36 @@ def _refresh_group(cli, channel: str, pending: list, group: list, intro: str,
     by_pid = {p.pid: p for p in group}
     done = 0
     intro_ts = ""
+    channel_ts = ""
     for proposal in pending:
         entry = state.get(proposal.pid) or {}
         intro_ts = intro_ts or entry.get("intro_ts", "")
+        channel_ts = channel_ts or entry.get("parent_ts", "")
         try:
             cli.chat_update(channel=channel, ts=entry["reply_ts"],
                             text=render_line(by_pid[proposal.pid]))
             done += 1
         except Exception as e:  # noqa: BLE001
             print(f"[name-gate] couldn't rewrite {proposal.sheet_name}: {e}")
+    if not intro_ts and channel_ts:
+        # Questions asked before intro_ts was recorded still have an intro to
+        # correct. Find it: the last message in the thread, ahead of the first
+        # question, that carries the ✅ legend — that IS the intro, whatever
+        # wording it went up with.
+        first_q = min((state.get(p.pid) or {}).get("reply_ts", "9")
+                      for p in pending)
+        try:
+            for m in cli.conversations_replies(
+                    channel=channel, ts=channel_ts).get("messages", []):
+                if (m.get("ts", "") < first_q
+                        and "same person" in (m.get("text") or "")):
+                    intro_ts = m["ts"]
+        except Exception as e:  # noqa: BLE001
+            print(f"[name-gate] couldn't find the intro to rewrite: {e}")
+        if intro_ts:
+            for p in pending:
+                entry = state.setdefault(p.pid, {})
+                entry["intro_ts"] = intro_ts
     if intro_ts:
         try:
             cli.chat_update(channel=channel, ts=intro_ts, text=intro)
@@ -659,21 +685,19 @@ def confirm(applied: list[dict], rejected: list[dict], *, dry_run: bool = True,
     for entry in applied:
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
-        rows = entry.get("rows_written", 0)
-        text = (f"Done — checklist updated: {old} → *{legal}* ({rows} row(s)).\n"
-                f"Still needs a human: set their *OwnerVille profile* to "
-                f"{legal} so it matches Sterling exactly "
-                f"(Sales Rep → click the name → edit on the profile page).")
+        text = f"✅ {old} is now *{legal}* on the checklist — OwnerVille gets the same name in this run."
         if entry.get("skipped"):
             text += f"\nNot touched: {', '.join(entry['skipped'])}."
         _reply(cli, entry, text, dry_run)
     for entry in rejected:
         old = f"{entry['sheet_first']} {entry['sheet_last']}".strip()
         legal = f"{entry['legal_first']} {entry['legal_last']}".strip()
-        text = (f"Understood — leaving {old} alone and I won't ask again.\n"
-                f"Heads up: that means the Sterling check for *{legal}* belongs to "
-                f"someone who isn't on this week's checklist, so nobody's BG status "
-                f"is being driven by it.")
+        # A ❌ is not just "do nothing" — it means a real background check is
+        # sitting there belonging to nobody on the checklist, which somebody
+        # has to go find. Say that, and say it once.
+        text = (f"❌ Leaving *{old}* as is, won't ask again.\n"
+                f"So *{legal}*'s background check belongs to someone who isn't "
+                f"on the checklist — nobody's BG status is coming from it.")
         _reply(cli, entry, text, dry_run)
 
 
