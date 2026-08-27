@@ -104,7 +104,15 @@ LVL1_WINDOWS = {0: (20, 0), 1: (20, 0), 2: (20, 0), 3: (20, 0), 4: (20, 0),
 # never went out. State.lvl1_sent is what stops a double send, not the width of
 # the window, so the window can afford to be generous and the marker does the
 # real work.
-LVL1_WINDOW_MINUTES = 12
+# 60, not 12. The window is not "when the scoreboard is due" -- it is "how late
+# is still worth sending", and the answer is the whole evening. On the first
+# night the 8pm run sat behind three other sessions' jobs in Lucy 1's queue and
+# would have missed a 12-minute window entirely, sending nothing at all. A
+# scoreboard at 8:20 is worth having; silence is not.
+#
+# Still exactly one send: state.lvl1_sent stamps the day the moment it goes, so
+# a wider window buys more CHANCES to send once, never a second send.
+LVL1_WINDOW_MINUTES = 60
 
 # --- the selling day --------------------------------------------------------
 # The sweep is fenced to these hours (machine-local, Lucy 1 is Central). The
