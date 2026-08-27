@@ -2025,10 +2025,26 @@ def run_walk(page, live: bool = False, limit: int = None,
         if _nm:
             _days = (today - a.applied_date).days if a.applied_date else None
             _entry = {"name": _nm, "account": a.account or "", "days": _days}
-            if outcome == "flag_no_phone" or d.action.value == "flag_no_phone":
-                flagged_now["nophone"].append(_entry)
-            elif outcome == "flag_retext":
+            # OUTCOME first, action only as a fallback. `d.action` is where the
+            # applicant ENTERED the flow; `outcome` is where they ended up, and for
+            # this post only the ending matters — it tells a human what to DO.
+            # Most re-text fallbacks arrive via the no-phone path (no number on
+            # file, we read one off the resume, the ATS then refuses the send
+            # because that number was already contacted, and the SMS thread is too
+            # old for the widget to see). The old `or d.action.value ==
+            # "flag_no_phone"` clause claimed all of them for the no-phone bucket
+            # before the flag_retext branch could be reached, so "need a manual
+            # text" was **0 in all 37 snapshots on 2026-08-27** while the log
+            # recorded 103 re-text fallbacks in that office alone. Those people
+            # were shown to a human as "go pull their number from Indeed" — advice
+            # already carried out, and useless: their number is on file, what they
+            # need is a fresh message. Victor Renteria and Claudia Ceniceros were
+            # both in that state (Megan 8/27).
+            if outcome == "flag_retext":
                 flagged_now["retext"].append(_entry)
+            elif outcome == "flag_no_phone" or (
+                    not outcome and d.action.value == "flag_no_phone"):
+                flagged_now["nophone"].append(_entry)
 
         processed += 1
         # Throttle live mutations (a controlled test uses --max-actions 1).
