@@ -77,6 +77,41 @@ EXTRA_ARGS="$*"
 LOG_FILE="$LOG_DIR/day-orchestrator-$(date +%Y-%m-%d-%H%M%S).log"
 
 echo "[$(date)] day orchestrator starting (args: ${EXTRA_ARGS:-none})" > "$LOG_FILE"
+
+# --- config pre-flight + self-heal -----------------------------------------
+# registry.load_config() is the FIRST thing main() does, so an unparseable
+# schedule_config.json takes out the entire day: 2026-08-27 the autostash pop
+# from a 00:47 `lucy update` left this file unmerged (UU, conflict markers), the
+# 04:00 run died at 04:00:05 having run NOTHING, and `lucy rerun` was dead too
+# (it loads the same config), so it could not even be recovered remotely.
+#
+# The file is a COMMITTED artifact — origin/main is always the truth for it and
+# no runner is supposed to carry local edits to it. So a corrupt copy is always
+# safe to replace from origin, and doing it here turns that outage into a log
+# line. Scoped to this ONE path on purpose: not `git checkout .`, which would
+# discard real work elsewhere in the tree.
+CFG="automations/day_orchestrator/schedule_config.json"
+if ! "$VENV_PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$CFG" >/dev/null 2>&1; then
+  echo "[$(date)] PRE-FLIGHT: $CFG is NOT valid JSON — self-healing from origin/main" >> "$LOG_FILE"
+  git status --short -- "$CFG" >> "$LOG_FILE" 2>&1
+  git fetch origin main --quiet >> "$LOG_FILE" 2>&1 || true
+  # `checkout <tree-ish> -- <path>` rewrites index AND worktree, which is what
+  # clears an unmerged (UU) entry; git_stash cannot touch one and a plain pull
+  # refuses while it exists.
+  git checkout origin/main -- "$CFG" >> "$LOG_FILE" 2>&1 || true
+  if "$VENV_PY" -c "import json,sys; json.load(open(sys.argv[1]))" "$CFG" >/dev/null 2>&1; then
+    echo "[$(date)] PRE-FLIGHT: recovered — $CFG parses again, continuing" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.orchestrator_heartbeat.run --alert-healed \
+        >> "$LOG_FILE" 2>&1 || true
+  else
+    echo "[$(date)] PRE-FLIGHT: STILL broken after restore — aborting before the run" >> "$LOG_FILE"
+    # Exit non-zero WITHOUT running: a batch on a config we can't trust is worse
+    # than no batch. The 04:20 heartbeat sees the missing day_state and pages.
+    echo "[$(date)] day orchestrator finished exit=78" >> "$LOG_FILE"
+    osascript -e "display notification \"Orchestrator config unparseable\" with title \"Reports\" sound name \"Sosumi\"" 2>/dev/null || true
+    exit 78
+  fi
+fi
 "$VENV_PY" -m automations.day_orchestrator.run $EXTRA_ARGS >> "$LOG_FILE" 2>&1
 ST=$?
 echo "[$(date)] day orchestrator finished exit=$ST" >> "$LOG_FILE"

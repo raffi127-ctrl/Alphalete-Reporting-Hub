@@ -4472,6 +4472,27 @@
       "timeout_minutes": 5,
       "verify": null
     },
+    "install_orchestrator_heartbeat_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer. Run it on EVERY machine that carries com.alphalete.day-orchestrator: `lucy rerun install_orchestrator_heartbeat_agent --machine \"Lucy 2\"` (and Lucy 1 / Lucy 3). Bootstraps com.alphalete.orchestrator-heartbeat, which fires 04:20 + 06:00 machine-local and asks ONE question: did the 4am orchestrator write a day_state today? WHY: on 2026-08-27 Lucy 2's orchestrator started at 04:00:04 and was dead by 04:00:05 (JSONDecodeError — a 00:47 `lucy update` autostash pop had left schedule_config.json unmerged), ran ZERO reports, and NOTHING alerted, because every alert in the system is per-report and a report that never runs has nothing to fail. Megan found out ~2h45m later from missing B2B Metrics, and the box passed every liveness check the whole time, which is why the outage kept being misdiagnosed as a re-seed or a wedged poller. The intraday watcher could not have caught it either: machine_digest._run_watch calls registry.load_config() UNGUARDED (so the same bad file kills it) and deliberately skips orchestrator-managed reports. The heartbeat module therefore imports NOTHING from automations.day_orchestrator — there is a unit test pinning that — and resolves the Slack channel from the id cache / a raw config read / a literal fallback, so it still speaks when the config is the broken thing. Safe to install anywhere: it exits quietly on a machine where the orchestrator agent isn't loaded, and it pages at most once a day. on_scheduler:true ONLY so registry.load_config keeps it for rerun; cadence.weekdays [] means the 4am batch NEVER auto-runs it.",
+      "display_name": "Install: Orchestrator Heartbeat LaunchAgent",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "orchestrator-heartbeat"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "knocks_intraday": {
       "hand_run_only": true,
       "on_scheduler": true,

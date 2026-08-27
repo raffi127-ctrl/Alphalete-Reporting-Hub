@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.orchestrator-heartbeat</string>
+
+    <!-- Path is the laptop's; install_agent rewrites it for the runner. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/orchestrator_heartbeat.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 04:20 machine local: the orchestrator starts at 04:00 and writes its
+         day_state within seconds of starting (run.py saves right after
+         load_or_create, BEFORE the first report), so 20 minutes is a wide
+         margin and never a race.
+
+         06:00 is a backstop for the 04:20 pass itself failing (Slack down, the
+         machine waking late). It is safe to fire twice: the module writes a
+         once a day marker under output/.heartbeat and stays quiet on the
+         second pass, so a real outage pages once, not twice. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>4</integer>
+            <key>Minute</key>
+            <integer>20</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>6</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/orchestrator-heartbeat.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/orchestrator-heartbeat.launchd.err.log</string>
+</dict>
+</plist>
