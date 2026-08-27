@@ -1104,6 +1104,48 @@ def _fill_phone_field(page, phone: str) -> bool:
     return ok
 
 
+def _persist_phone(page, phone: str) -> bool:
+    """Write a recovered number onto the applicant's record with 'Save Applicant'.
+
+    WHY: when the ATS refuses the send ("correspondence with this phone number has
+    already occurred"), the number we just read off the resume is never saved, so
+    the record still shows a BLANK phone. Two costs. The next walk sees no phone,
+    re-opens the same resume and repeats the whole thing every ~10 minutes — that
+    is the loop Claudia Ceniceros sat in from 2026-08-21 to 08-27. And the human
+    who has to text these people by hand opens the record to find no number, so
+    they go pull it from Indeed themselves: exactly the work this bot exists to
+    remove. A fresh SMS thread would avoid the manual text entirely, but AppStream
+    cannot start one (Megan 2026-08-27, and she is asking the vendor for a 90-day
+    filter), so the manual text is the real destination and the number must be
+    sitting on the record when the human gets there.
+
+    Only called AFTER the send has been attempted and did not happen, so the 163
+    sends a day that do go straight through are untouched by this. Best-effort:
+    every failure path returns False and is logged, never raised — a number we
+    could not save is the status quo, while an exception here would cost the walk."""
+    try:
+        loc = page.locator("input[name='phone']").first
+        if loc.count() == 0:
+            return False        # not on the record any more — nothing to save onto
+        want = re.sub(r"\D", "", phone or "")
+        if len(want) == 11 and want.startswith("1"):
+            want = want[1:]
+        if len(want) != 10:
+            return False
+        if re.sub(r"\D", "", loc.input_value() or "") != want:
+            # The field lost the value (the ATS re-renders on refusal), so retype
+            # it — by keystroke, for the same reason _fill_phone_field does.
+            if not _fill_phone_field(page, phone):
+                return False
+        if not _click_first(page, ["Save Applicant", "Save applicant"]):
+            return False
+        page.wait_for_timeout(1800)
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"    could not save the number to the record: {type(e).__name__}")
+        return False
+
+
 _NOPHONE_CHECKED = None   # lazily-loaded set of applicant keys already read today
 _NOPHONE_SKIPS = 0        # count of resume re-reads SKIPPED this walk (cache hits)
 _NOPHONE_BLOCKED = None   # lazily-loaded {key: {"n": attempts, "last": iso}} retry state
@@ -1367,7 +1409,20 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
                      f"btns={diag.get('btns')}")
             except Exception as e:  # noqa: BLE001
                 _log(f"    [phones] diag err: {type(e).__name__}")
-            return do_send_ai(page, a, live)
+            _outcome = do_send_ai(page, a, live)
+            # A send that landed needs nothing more; a REMOVED record must not be
+            # re-saved. Everything else leaves the applicant sitting in the queue
+            # with a number we know and the record still showing blank — so put it
+            # on the record, for the next walk and for the human who has to text
+            # them. A navigating click here is nothing new: sends, removes and
+            # re-texts all navigate, and the walk already carries on after them.
+            if _outcome not in ("sent", "sent_override", "removed", "retext_removed"):
+                if _persist_phone(page, phone):
+                    _log(f"    \U0001f4be saved {phone} to the record "
+                         f"(send was refused: {_outcome}) — no re-read next walk, "
+                         f"and the number is there for the manual text: "
+                         f"{a.first_name} {a.last_name}")
+            return _outcome
         if _is_blocked_detail(detail):
             n = _mark_nophone_blocked(key, detail[len(_BLOCKED_PREFIX):])
             if n >= _BLOCKED_MAX_ATTEMPTS:
