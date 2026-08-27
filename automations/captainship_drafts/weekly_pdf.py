@@ -16,9 +16,9 @@ run already wrote under `<render_dir>/knock_dispo_<captain>/…`, so the
 attachment costs no ownerville session — which matters more here than anywhere
 else in this package: the weekly capture impersonates every ICD in single file
 and takes ~2 hours (see knock_dispo_images' module docstring). Re-pulling it
-daily is exactly the job the 2026-08-24 split existed to remove. If the PNGs
-aren't on disk, the email goes out WITHOUT the attachment — never late, never
-blocked.
+daily is exactly the job the 2026-08-24 split existed to remove. If neither the
+PNGs nor an already-printed PDF are on disk, the email goes out WITHOUT the
+attachment — never late, never blocked.
 
 WHICH WEEK. Not `knock_dispo_images.week_window`: that answers "the week this
 morning's run reports on", which from Tuesday to Saturday is the week now IN
@@ -47,6 +47,15 @@ from typing import List, Optional, Tuple
 # Sundays; past that, an attachment is stale enough that its absence is the
 # more honest signal (and the daily boards in the body are unaffected).
 MAX_WEEKS_BACK = 3
+
+# WHERE THE PDF LIVES, and why it is not next to the PNGs it is printed from.
+# config.RENDER_DIR is the OS temp dir ("swept by the OS, never by us" — its own
+# comment). That is fine for an image a run rebuilds every morning, and WRONG
+# for this: Sunday's boards have to still be attachable on Friday, and a sweep
+# on Wednesday would make the attachment vanish mid-week with nothing in any
+# log to explain it. So the printed PDF is kept under output/, and a week whose
+# PNGs are gone is still mailable from the PDF already made for it.
+PDF_DIR = Path(__file__).resolve().parents[2] / "output" / "weekly_dispositions"
 
 # Letter LANDSCAPE at 150 dpi. Landscape because these boards are wide — 17
 # columns on the per-owner ones — and portrait would shrink them to the point
@@ -161,6 +170,13 @@ def attachment_name(captain_display: str, saturday: dt.date) -> str:
     return f"Weekly Knock Dispositions - {who} - {_span(saturday)}.pdf"
 
 
+def pdf_path(captain_key: str, saturday: dt.date) -> Path:
+    """The kept PDF for one captain's week. One file per captain per week, so
+    a rebuild overwrites in place and the folder never grows a copy per day."""
+    return PDF_DIR / (f"weekly_knock_dispositions_{captain_key}_"
+                      f"{saturday.isoformat()}.pdf")
+
+
 def _compose(pages: List[Tuple[str, Path]], out: Path) -> Path:
     """One board per page, scaled to fit a Letter-landscape page and centred on
     white. Scaled DOWN only — a small board is left at its own size rather than
@@ -194,19 +210,28 @@ def build(captain, today: dt.date, render_dir, out_dir=None,
     attachment. Every exception is swallowed for the same reason — an
     attachment must never be the thing that stops a report going out."""
     try:
-        sat, pages = find_week(render_dir, captain.key, today)
-        if not pages:
-            logfn(f"  · no weekly boards on disk for {captain.key} — "
-                  "mailing without the weekly PDF")
-            return None
-        out = Path(out_dir or render_dir) / (
-            f"weekly_knock_dispositions_{captain.key}_{sat.isoformat()}.pdf")
-        _compose(pages, out)
-        name = attachment_name(captain.display_name, sat)
-        logfn(f"  ✓ weekly PDF: {len(pages)} page(s), week ending "
-              f"{sat.isoformat()} → {out.name} "
-              f"({out.stat().st_size // 1024} KB)")
-        return out, name
+        sat = last_report_saturday(today)
+        for _ in range(MAX_WEEKS_BACK):
+            out = (Path(out_dir) / pdf_path(captain.key, sat).name
+                   if out_dir else pdf_path(captain.key, sat))
+            pages = pages_for(render_dir, captain.key, sat)
+            if pages:
+                # PNGs still there: re-print, so a Monday re-pull of the same
+                # week replaces Sunday's file instead of shipping behind it.
+                _compose(pages, out)
+                logfn(f"  ✓ weekly PDF: {len(pages)} page(s), week ending "
+                      f"{sat.isoformat()} → {out.name} "
+                      f"({out.stat().st_size // 1024} KB)")
+                return out, attachment_name(captain.display_name, sat)
+            if out.exists() and out.stat().st_size:
+                # The temp dir was swept; the PDF printed earlier this week is
+                # the same document, so the attachment survives the sweep.
+                logfn(f"  ✓ weekly PDF (kept from an earlier run): {out.name}")
+                return out, attachment_name(captain.display_name, sat)
+            sat -= dt.timedelta(days=7)
+        logfn(f"  · no weekly boards or PDF for {captain.key} in the last "
+              f"{MAX_WEEKS_BACK} week(s) — mailing without the weekly PDF")
+        return None
     except Exception as e:   # noqa: BLE001 — never block a send
         logfn(f"  ⚠ weekly PDF skipped for {captain.key}: "
               f"{type(e).__name__}: {str(e)[:200]}")

@@ -117,6 +117,7 @@ class ThePagesItPrints(unittest.TestCase):
         class Cap:
             key, display_name = "rafael", "Rafael Hidalgo"
         self.assertIsNone(W.build(Cap(), dt.date(2026, 8, 27), self.root,
+                                  out_dir=self.root / "kept",
                                   logfn=lambda *_a: None))
 
     def test_it_writes_one_page_per_board(self):
@@ -127,13 +128,71 @@ class ThePagesItPrints(unittest.TestCase):
             key, display_name = "rafael", "Rafael Hidalgo"
         self._capture(["Captainship Summary", "Chan Park", "Sahil Multani"])
         got = W.build(Cap(), dt.date(2026, 8, 27), self.root,
-                      logfn=lambda *_a: None)
+                      out_dir=self.root / "kept", logfn=lambda *_a: None)
         self.assertIsNotNone(got)
         pdf, name = got
         self.assertEqual(len(PdfReader(str(pdf)).pages), 3)
         self.assertEqual(
             name,
             "Weekly Knock Dispositions - Rafael Hidalgo - Aug 17-22, 2026.pdf")
+
+
+class ItSurvivesTheTempSweep(unittest.TestCase):
+    """RENDER_DIR es el temp del SO. Los PNGs del domingo pueden desaparecer el
+    miércoles; el adjunto NO puede desaparecer con ellos."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.out = self.root / "kept"
+        self.addCleanup(self._tmp.cleanup)
+
+    class Cap:
+        key, display_name = "rafael", "Rafael Hidalgo"
+
+    def _sunday_capture(self, sat=dt.date(2026, 8, 22)):
+        wroot = self.root / "knock_dispo_rafael"
+        p = _png(wroot / "summary"
+                 / f"knock_dispo_summary_{sat.isoformat()}.png")
+        man = self.root / f"knocks_manifest_rafael_{sat.isoformat()}_{sat.isoformat()}.json"
+        man.write_text(json.dumps({
+            "kinds": ["knock_dispo"],
+            "items": {"knock_dispo": [["Captainship Summary", str(p)]]},
+            "errors": {}}), encoding="utf-8")
+        return p
+
+    def test_the_pdf_is_reused_after_the_pngs_are_swept(self):
+        png = self._sunday_capture()
+        first = W.build(self.Cap(), dt.date(2026, 8, 24), self.root,
+                        out_dir=self.out, logfn=lambda *_a: None)
+        self.assertIsNotNone(first)
+        # miércoles: el SO barrió el temp
+        png.unlink()
+        for man in self.root.glob("knocks_manifest_*.json"):
+            man.unlink()
+        later = W.build(self.Cap(), dt.date(2026, 8, 26), self.root,
+                        out_dir=self.out, logfn=lambda *_a: None)
+        self.assertIsNotNone(later)
+        self.assertEqual(later[0], first[0])       # el MISMO archivo
+        self.assertEqual(later[1], first[1])       # y la misma semana en el nombre
+
+    def test_fresh_pngs_win_over_the_kept_pdf(self):
+        """Un re-pull del lunes tiene que PISAR el PDF del domingo, no quedar
+        detrás de él."""
+        self._sunday_capture()
+        got = W.build(self.Cap(), dt.date(2026, 8, 24), self.root,
+                      out_dir=self.out, logfn=lambda *_a: None)
+        before = got[0].stat().st_mtime_ns
+        # el lunes redibuja el board con DOS páginas
+        wroot = self.root / "knock_dispo_rafael"
+        _png(wroot / "chan_park" / "weekly_knock_dispositions_2026-08-22.png")
+        for man in self.root.glob("knocks_manifest_*.json"):
+            man.unlink()                            # cae al glob de disco
+        again = W.build(self.Cap(), dt.date(2026, 8, 24), self.root,
+                        out_dir=self.out, logfn=lambda *_a: None)
+        from automations.shared.pkg import ensure
+        self.assertNotEqual(again[0].stat().st_mtime_ns, before)
+        self.assertEqual(len(ensure("pypdf").PdfReader(str(again[0])).pages), 2)
 
 
 class TheMimeItProduces(unittest.TestCase):
