@@ -27,9 +27,11 @@ without opening anything:
 
 IT ONLY SORTS. IT NEVER FIXES.
 ------------------------------
-This module has no write access to anything but reactions and one thread line.
-It does not edit code, does not re-run reports, does not post to any other
-channel. That is deliberate and it is the whole reason it was safe to build:
+This module has no write access to anything but reactions, one thread line, and
+the marker text on a parent that is ALREADY resolved (see close_stranded below:
+it re-badges "open" to "resolved" on posts that already carry the ✅, and can do
+nothing to a post that doesn't). It does not edit code, does not re-run reports,
+does not post to any other channel. That is deliberate and it is the whole reason it was safe to build:
 these reports publish as Lucy to ~11 Slack channels and to owner iMessage
 chats, so an unattended thing that "fixes" a report and re-publishes it doesn't
 fail quietly — it puts wrong numbers in front of owners under Megan's name. The
@@ -51,6 +53,15 @@ ONE LINE PER STATE CHANGE, NOT PER PASS. The line is posted when an incident
 ENTERS a state and never again while it stays there, so a problem sitting open
 for three days costs the thread three lines at most, not one per triage run.
 State lives in output/state/incident_triage.json, keyed by incident key.
+
+IT ALSO FINISHES STRANDED MARKERS (Megan 2026-08-26). chat.update only touches
+your OWN posts, so an incident opened by Lucy and fixed from a laptop keeps its
+reply and its ✅ while the marker edit is refused — the thread is closed and the
+parent says `open` forever. Triage has always DETECTED that state (it has to, or
+it would grade a fixed post and put a red circle on it) and only ever counted
+it. Now it closes what Lucy owns and names the rest. Bookkeeping only: nothing
+here decides a post is resolved, it just records a resolution that already
+happened.
 """
 from __future__ import annotations
 
@@ -485,8 +496,36 @@ def run(*, day: Optional[dt.date] = None, channel: str = inc.CHANNEL,
     found, fixed, stale, gated = _open_incidents(client, channel, day, st)
     out: Dict[str, List[str]] = {NEEDS_YOU: [], LUCY: [], WAITING: []}
     if fixed:
+        # THESE ARE FINISHED HERE, NOT JUST COUNTED (Megan 2026-08-26). A post
+        # in this state — ✅ on it, marker still `open` — is closed to a person
+        # and open to every machine, so it keeps showing up in scans, keeps
+        # being a candidate for a wrong circle, and keeps this line growing.
+        # Triage has named them since it shipped and nothing ever went back to
+        # finish the edit; six were sitting that way the day it launched.
+        #
+        # This pass is the right owner for it: it already walked the same
+        # history (close_stranded reuses the cached scan), it already runs as
+        # Lucy, and only the POSTER may chat.update — so anything Lucy opened
+        # gets finished here and the rest are named for whoever owns them.
+        # close_stranded is narrow and idempotent: it only ever touches a parent
+        # that ALREADY carries the ✅, and it never posts, replies or resolves.
         print("  ({} already fixed — ✅ on the post, marker text never "
               "updated: {})".format(len(fixed), ", ".join(sorted(set(fixed)))))
+        try:
+            done = inc.close_stranded(channel=channel, client=client,
+                                      dry_run=dry_run)
+            if done.get("closed"):
+                print("    {} marker(s) {}: {}".format(
+                    len(done["closed"]),
+                    "would be finished" if dry_run else "finished",
+                    ", ".join(done["closed"])))
+            if done.get("not_ours"):
+                print("    {} belong to another machine — run `lucy "
+                      "incident_close_stranded` there: {}".format(
+                          len(done["not_ours"]), ", ".join(done["not_ours"])))
+        except Exception as e:  # noqa: BLE001 — bookkeeping never breaks triage
+            print("    - couldn't finish stranded markers ({}: {})".format(
+                type(e).__name__, str(e)[:80]))
     if stale:
         print("  ({} stale marker(s) older than {} days, never rolled over: "
               "{})".format(len(stale), STALE_LIMIT_DAYS,

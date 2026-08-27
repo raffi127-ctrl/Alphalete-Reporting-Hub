@@ -241,5 +241,42 @@ class NoticesNotWork(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
 
+class FinishesStrandedMarkers(unittest.TestCase):
+    """A post with the ✅ and an `open` marker is closed to a person and open to
+    every machine. Triage has always DETECTED that state — it has to, or it
+    would put a red circle on a fixed post — and only ever counted it. It
+    finishes them now (Megan 2026-08-26)."""
+
+    def _run(self, fixed, close_result=None, close_raises=None):
+        close = mock.Mock(side_effect=close_raises) if close_raises else \
+            mock.Mock(return_value=close_result or {"closed": [], "not_ours": []})
+        with mock.patch.object(tri, "_open_incidents",
+                               return_value=([], fixed, [], [])), \
+             mock.patch.object(tri, "_load_state", return_value={}), \
+             mock.patch.object(tri, "_save_state"), \
+             mock.patch.object(tri.inc, "_client", return_value=None), \
+             mock.patch.object(tri.inc, "close_stranded", close):
+            out = tri.run(day=DAY, channel="C1", dry_run=True)
+        return out, close
+
+    def test_a_stranded_marker_gets_finished(self):
+        _, close = self._run(["failure-a"],
+                             {"closed": ["failure-a"], "not_ours": []})
+        self.assertEqual(close.call_count, 1)
+        self.assertTrue(close.call_args.kwargs.get("dry_run"))
+
+    def test_no_stranded_markers_costs_no_extra_scan(self):
+        """The common case is a clean channel — don't pay for a second walk."""
+        _, close = self._run([])
+        self.assertEqual(close.call_count, 0)
+
+    def test_bookkeeping_never_breaks_the_triage_pass(self):
+        """The reactions are the point; finishing a marker is a bonus."""
+        out, close = self._run(["failure-a"],
+                               close_raises=RuntimeError("slack down"))
+        self.assertEqual(close.call_count, 1)
+        self.assertEqual(out, {tri.NEEDS_YOU: [], tri.LUCY: [], tri.WAITING: []})
+
+
 if __name__ == "__main__":
     unittest.main()
