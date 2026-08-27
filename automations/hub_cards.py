@@ -3739,6 +3739,13 @@ AUTOMATED_REPORTS = [
             "Not alphabetically like the B2B card. On a five-minute tick the "
             "rep who has been quiet two hours is the point of the message, and "
             "a phone shows the top of a picture.\n\n"
+            "NEVER TWO CARDS BACK TO BACK\n"
+            "A card is refused if the chat got one less than **4 minutes** ago, "
+            "whoever asked for it. The 5-minute cadence is not the risk \u2014 "
+            "a launchd job fires the moment it is reloaded and again after a "
+            "wake, and the button above runs on top of whatever the schedule is "
+            "already doing. Two near-identical cards two minutes apart is how a "
+            "room learns to stop reading them.\n\n"
             "IT WILL NOT TEXT AN EMPTY CARD\n"
             "Nobody over the threshold is good news, not news \u2014 and a "
             "\u201cno reps over 15 min gap\u201d picture every five minutes "
@@ -3786,7 +3793,7 @@ AUTOMATED_REPORTS = [
             {
                 "label": "Text it now",
                 "icon": "\U0001F4E3",
-                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips silently if nobody is over 15 minutes.",
+                "help": "One tick for real: renders the current gap card and texts it to the Alphalete Partners chat. Skips if nobody is over 15 minutes, or if the chat already got a card in the last 4 minutes.",
                 "module": "automations.gap_alerts.run",
                 "args_fn": lambda: ["--send", "--force"],
             },

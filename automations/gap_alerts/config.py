@@ -92,6 +92,22 @@ SATURDAY = 5
 
 TICK_MINUTES = 5
 
+# A card is REFUSED if this office got one less than this many minutes ago.
+#
+# WHY IT EXISTS. The pid lock stops two ticks OVERLAPPING; it does nothing about
+# two ticks landing back to back, and the room reads two near-identical cards as
+# a broken alert. Three things cause that and none of them are the 5-minute
+# cadence: a launchd StartInterval job fires the moment it is (re)loaded and
+# again after a wake, the Hub's "Text it now" button runs on top of whatever
+# launchd is already doing, and a `lucy rerun` does the same. It happened the
+# first evening this went live (2026-08-26): the agent was installed at 20:09,
+# hand-run at 20:12, and fired on its own at 20:14 — two cards, two minutes
+# apart, in front of everyone.
+#
+# 4, not 5: launchd drift means a legitimate tick can arrive at 4m50s, and a
+# guard that ate real ticks would be worse than the problem.
+MIN_SEND_GAP_MINUTES = 4
+
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "gap_alerts.lock"
 

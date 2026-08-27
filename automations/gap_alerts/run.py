@@ -128,6 +128,31 @@ def _save_state(data: Dict) -> None:
     tmp.replace(C.STATE_PATH)
 
 
+def _sent_too_recently(key: str):
+    """Minutes since this office's last SENT card, or None if that was long
+    enough ago (or never). See config.MIN_SEND_GAP_MINUTES for why."""
+    stamp = (_state().get("_last_sent") or {}).get(key)
+    if not stamp:
+        return None
+    try:
+        age = (dt.datetime.now()
+               - dt.datetime.fromisoformat(stamp)).total_seconds() / 60.0
+    except ValueError:
+        return None
+    # A clock that went backwards (DST, an NTP correction) must not wedge the
+    # alert shut for an hour — treat a negative age as "long enough ago".
+    if age < 0 or age >= C.MIN_SEND_GAP_MINUTES:
+        return None
+    return age
+
+
+def _mark_sent(key: str) -> None:
+    data = _state()
+    data.setdefault("_last_sent", {})[key] = dt.datetime.now().isoformat(
+        timespec="seconds")
+    _save_state(data)
+
+
 def _publish_hub_once(day: dt.date) -> None:
     """The first good tick of the day paints the card; the other 95 stay quiet.
     A green pill 96 times over would say nothing.
@@ -318,6 +343,13 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                                             slot))
                 continue
 
+            recent = _sent_too_recently(cfg["key"])
+            if recent is not None and send:
+                _log("%s: last card went out %.1f min ago — skipping this tick "
+                     "(min gap %d min). The room already has this."
+                     % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
+                continue
+
             seen_names += [str(r.get("name") or "").strip() for r in reps]
             png = render(cfg, reps, out_dir, slot)
             _log("%s: %d rep(s) over %d min -> %s"
@@ -331,6 +363,10 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 _log("  %s -> %r (%s participants)%s"
                      % ("TEXT" if send else "PREVIEW", res.get("resolved_name"),
                         res.get("participants"), "" if send else " — nothing sent"))
+                if send:
+                    # Stamped only after Messages actually took it, so a failed
+                    # send never blocks the next tick from trying again.
+                    _mark_sent(cfg["key"])
             except Exception as e:  # noqa: BLE001
                 failures.append("%s text: %s: %s" % (cfg["key"],
                                                      type(e).__name__,
