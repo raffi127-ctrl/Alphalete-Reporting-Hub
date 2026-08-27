@@ -257,6 +257,60 @@ def _pin_campaign(page, rqst: str, campaign_id: str) -> None:
              "campaign" % type(e).__name__)
 
 
+def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
+    """Screenshot Today's Activity (p=88) — the rep list with knock badges.
+
+    A SCREENSHOT and not a redraw, unlike the gap card: this panel renders fine
+    under patchright (it is the gap WIDGET that does not), so a crop of the real
+    page is both cheaper and always matches what Raf sees when he opens
+    OwnerVille himself.
+
+    Returns the PNG path, or None — a failure here must never cost the gap card,
+    which is the part that pages people.
+    """
+    try:
+        # Navigating WITH the campaign id also re-pins the sticky session
+        # campaign, the same way weekly_knock_dispositions pins it off p=88.
+        url = ("https://v2.ownerville.com/index.cfm?p=%d&rqst=%s"
+               % (C.PAGE_TODAYS_ACTIVITY, rqst))
+        if cfg.get("campaign_id"):
+            url += "&invD2DClientId=%s" % cfg["campaign_id"]
+        page.goto(url, wait_until="networkidle", timeout=45000)
+
+        # THE DATEPICKER PERSISTS A STALE DATE. It holds whatever day the
+        # session last looked at — b2b_dispositions found it stuck three weeks
+        # back — and the rep list quietly follows it. Nothing errors; the
+        # numbers are just the wrong day's. Force today and let the list
+        # refresh before shooting.
+        page.evaluate(
+            "(mdy)=>{ for(const i of document.querySelectorAll('input')){"
+            " if(/date/i.test(i.name||i.id||'')){ i.value=mdy;"
+            " i.dispatchEvent(new Event('input',{bubbles:true}));"
+            " i.dispatchEvent(new Event('change',{bubbles:true})); } } }",
+            dt.datetime.now().strftime("%m/%d/%Y"))
+        page.wait_for_timeout(3500)
+
+        out = out_dir / ("activity_%s.png" % cfg["key"])
+        how = cap._shoot(page, out, kind="todays_activity",
+                         fixed=cap.CROP_TODAYS_ACTIVITY, pad_bottom=36)
+        # THE KNOCK BADGES SIT AT THE RIGHT EDGE OF THIS PANEL, so how we
+        # cropped decides whether they survive. 'box' measures the live element
+        # and keeps the whole row. 'fixed' is the fallback and clips at a hard
+        # 720 image-px, which on a 2x display is only ~360 CSS px — far enough
+        # left to cut the green and grey pills off entirely, leaving a list of
+        # names with no numbers and NO error to say so. Say it loudly instead.
+        if how != "box":
+            _log("  ⚠ today's activity crop fell back to %r — the knock badges "
+                 "sit at the right edge and may be CLIPPED. Check the card." % how)
+        else:
+            _log("  today's activity captured (crop=box)")
+        return out
+    except Exception as e:  # noqa: BLE001
+        _log("  today's activity SKIPPED (%s: %s) — sending the gap card alone"
+             % (type(e).__name__, str(e)[:160]))
+        return None
+
+
 def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
     """Reps over the gap threshold for one office, newest-inactive last.
 
@@ -296,18 +350,39 @@ def gap_rows(page, cfg: Dict, day: dt.date) -> List[Dict]:
     return over
 
 
-def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str) -> Path:
+def render(cfg: Dict, reps: List[Dict], out_dir: Path, slot: str,
+           activity_png=None) -> Path:
     """The card, with its own title bar. ONE image per tick and no accompanying
     text: send_to_group would post the caption as a second message, and over a
     day of ticks that doubles what the room scrolls past. The time lives on
-    the card instead, so a reader can tell a fresh one from one that scrolled."""
+    the card instead, so a reader can tell a fresh one from one that scrolled.
+
+    TWO PANELS since 2026-08-27, in Carlos's order — Today's Activity (every
+    rep and their knock count) on top, the gap card underneath. Raf asked for
+    the knock numbers he had seen on Carlos's post.
+
+    If the activity screenshot failed we fall back to the single titled gap
+    card rather than sending nothing: the gaps are the part that pages people,
+    and the knock counts are context."""
     out_dir.mkdir(parents=True, exist_ok=True)
     bare = out_dir / ("gaps_%s_raw.png" % cfg["key"])
     cap.render_gap_card(reps, bare)
     who = (" — %s" % cfg["label"]) if cfg.get("label") else ""
-    titled = out_dir / ("gaps_%s.png" % cfg["key"])
-    return cap.add_title_header(bare, "%s%s — %s" % (C.CARD_TITLE, who, slot),
-                                titled)
+    out = out_dir / ("gaps_%s.png" % cfg["key"])
+
+    if activity_png is not None and Path(activity_png).exists():
+        try:
+            return cap.stitch_vertical(
+                [(C.PANEL_TODAYS_ACTIVITY, Path(activity_png)),
+                 (C.PANEL_GAPS, bare)],
+                title="%s%s — %s" % (C.CARD_TITLE, who, slot), out_path=out)
+        except Exception as e:  # noqa: BLE001
+            _log("  stitch failed (%s) — gap card only" % type(e).__name__)
+    # Gap-only keeps the OLD title: the room has been reading
+    # "REPS OVER 15 MIN GAP" all along, and a card missing its knocks panel
+    # should not claim to carry knocks.
+    return cap.add_title_header(
+        bare, "%s%s — %s" % (C.PANEL_GAPS, who, slot), out)
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
@@ -328,6 +403,14 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     seen_names = []
     with ownerville_session(headless=headless, verbose=False,
                             profile_dir=C.PROFILE_DIR) as page:
+        # Needed only for the Today's Activity screenshot — a plain shot sees
+        # what is in-frame, and Raf's roster is ~48 reps. Best-effort: a
+        # persistent context can refuse a resize, and _shoot's crop copes with
+        # whatever the real size turns out to be.
+        try:
+            page.set_viewport_size(dict(C.VIEWPORT))
+        except Exception:
+            pass
         for cfg in offices:
             try:
                 reps = gap_rows(page, cfg, day)
@@ -352,7 +435,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 continue
 
             seen_names += [str(r.get("name") or "").strip() for r in reps]
-            png = render(cfg, reps, out_dir, slot)
+            # Captured only after the duplicate guard has let this tick
+            # through — no point screenshotting a roster for a card that is
+            # about to be skipped.
+            activity = capture_activity(page, cfg, cap.capture_rqst(page),
+                                        out_dir)
+            png = render(cfg, reps, out_dir, slot, activity_png=activity)
             _log("%s: %d rep(s) over %d min -> %s"
                  % (cfg["key"], len(reps), C.GAP_THRESHOLD_MIN, png.name))
             try:

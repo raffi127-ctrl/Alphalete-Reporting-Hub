@@ -3727,13 +3727,23 @@ AUTOMATED_REPORTS = [
         "color": "#B91C1C",
         "category": "\U0001F4CA Metrics",
         "description": (
-            "Every 10 minutes of the selling day, texts the "
-            "\u201cReps Over 15 Min Gap\u201d card for Raf\u2019s office into "
-            "the **Alphalete Partners** chat \u2014 who has gone quiet, how "
-            "long, and when they last knocked. Nothing else: no activity "
-            "panel, no Slack, no thread."
+            "Every 10 minutes of the selling day, texts Raf\u2019s office "
+            "card into the **Alphalete Partners** chat: **Today\u2019s "
+            "Activity** (every rep and their knock count) over **Reps Over 15 "
+            "Min Gap** (who has gone quiet, how long, and when they last "
+            "knocked). One image, no Slack, no thread."
         ),
         "breakdown": (
+            "WHAT IS ON THE CARD \u2014 two panels, Carlos\u2019s order\n"
+            "**\u2022** **Today\u2019s Activity** \u2014 every rep and their "
+            "knock count for the day, a crop of OwnerVille\u2019s own "
+            "**p=88** panel. Added 2026-08-27: Raf asked for the knock numbers "
+            "he had seen on Carlos\u2019s post.\n"
+            "**\u2022** **Reps Over 15 Min Gap** \u2014 who has gone quiet, "
+            "how long, and when they last knocked.\n"
+            "If the activity screenshot fails the gap card still goes out "
+            "alone, under its old title \u2014 the gaps are the part that "
+            "pages people, the knock counts are context.\n\n"
             "WHERE THE NUMBERS COME FROM\n"
             "**\u2022** v2.ownerville.com \u2192 **Time Tracker (p=510)** "
             "\u2192 its own JSON feed "

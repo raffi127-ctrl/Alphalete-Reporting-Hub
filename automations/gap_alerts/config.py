@@ -24,6 +24,12 @@ from typing import Dict, List, Optional
 # card is redrawn from the data — see b2b_dispositions.capture.render_gap_card.
 PAGE_TIME_TRACKER = 510
 
+# Today's Activity (p=88): the rep list with each rep's knock-count badge. Raf
+# asked for it 2026-08-27 — "can we actually get that column that Carlos gets
+# that shows total knocks" — so his card now carries the same two panels
+# Carlos's hourly B2B post has, in the same order.
+PAGE_TODAYS_ACTIVITY = 88
+
 # "Over 15 minute gap" is the card's own name for it, and >15 (not >=) is what
 # b2b_dispositions has been sending Carlos since July. Kept identical so the two
 # offices are looking at the same definition of "inactive".
@@ -66,7 +72,14 @@ def office(key: str) -> Optional[Dict]:
 
 
 # --- the card -----------------------------------------------------------------
-CARD_TITLE = "REPS OVER 15 MIN GAP"
+CARD_TITLE = "KNOCKS & GAPS"
+PANEL_TODAYS_ACTIVITY = "TODAY'S ACTIVITY"
+PANEL_GAPS = "REPS OVER 15 MIN GAP"
+
+# The screenshot needs a real viewport; the JSON pull did not. Tall on purpose —
+# a plain screenshot only sees what is in-frame, and Raf's roster is ~48 reps
+# against Carlos's ~22.
+VIEWPORT = {"width": 1680, "height": 1600}
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
