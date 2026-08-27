@@ -39,6 +39,10 @@ from automations.applicant_push import offices
 from automations.oat_processing.run import attach_dialog_accept
 
 BASE = "https://applicantstream.com/index.cfm"
+# Confirmed on Lucy 2, office 23467, 2026-08-27: Applicants -> "Removed Apps at
+# Processing" is index.cfm?p=605 (the menu link carries it). Kept as the fallback
+# for the direct nav; the menu label is still what we look for first.
+PAGE_ID = "605"
 
 # The nav label, as it reads in the Applicants menu.
 PAGE_LABEL_RE = re.compile(r"removed\s+apps?\s+at\s+processing", re.I)
@@ -328,47 +332,99 @@ def write_sheet(tab: str, header, rows, meta: str) -> None:
 # --------------------------------------------------------------------------- #
 # Restore
 # --------------------------------------------------------------------------- #
-def _restore_locators(page):
-    """Every Restore control currently on the page, in row order."""
-    return page.locator(
-        "xpath=//a[contains(translate(normalize-space(.),'RESTO','resto'),"
-        "'restore')] "
-        "| //input[contains(translate(@value,'RESTO','resto'),'restore')] "
-        "| //button[contains(translate(normalize-space(.),'RESTO','resto'),"
-        "'restore')]")
+# The Restore control lives in the last cell of each row. It is NOT reliably
+# click-actionable through Playwright: the first live attempt (2026-08-27) found
+# the anchors but timed out at 12s on .click(), which is the classic
+# ColdFusion-table signature — the cell is zero-height / off-viewport / covered,
+# so Playwright waits forever for a stable box that never arrives. We therefore
+# read each control's href+onclick in JS and DRIVE IT IN JS, which runs the same
+# handler the page would and skips the actionability wait entirely.
+_RESTORE_JS = """
+() => Array.from(document.querySelectorAll('a, input, button'))
+  .map((e, i) => ({ e, i }))
+  .filter(({e}) => /restore/i.test(
+      (e.innerText || e.value || e.title || '').trim()))
+  .map(({e}) => ({
+      tag: e.tagName,
+      href: e.getAttribute('href') || '',
+      onclick: (e.getAttribute('onclick') || '').slice(0, 160),
+      text: (e.innerText || e.value || '').trim().slice(0, 20),
+      row: (e.closest('tr') || {}).rowIndex,
+      name: ((e.closest('tr') || {cells: []}).cells[0] || {}).innerText || '' }))
+"""
+
+
+def _restore_controls(page):
+    """Describe every Restore control on the page (tag / href / onclick / the row's
+    applicant name), in document order."""
+    try:
+        return page.evaluate(_RESTORE_JS) or []
+    except Exception as e:  # noqa: BLE001
+        _log(f"[rm] could not read restore controls: {type(e).__name__}: {e}")
+        return []
+
+
+def _click_restore_js(page) -> bool:
+    """Click the FIRST Restore control via JS. Returns False when there is none
+    left — which is how the loop knows it is finished."""
+    try:
+        return bool(page.evaluate(
+            """() => { const el = Array.from(
+                 document.querySelectorAll('a, input, button')).find(e =>
+                 /restore/i.test((e.innerText || e.value || e.title || '').trim()));
+               if (!el) return false;
+               el.scrollIntoView({block: 'center'});
+               el.click();
+               return true; }"""))
+    except Exception as e:  # noqa: BLE001
+        _log(f"[rm] JS restore click err: {type(e).__name__}: {str(e)[:120]}")
+        return False
 
 
 def restore_all(page, expected: int, limit: int = 0) -> int:
     """Click Restore on every row.
 
-    Re-reads the control list after EACH click: a restore removes that row from
-    the list, so a cached list of handles goes stale immediately and index-based
+    Re-reads the control list after EACH click: a restore takes that row off the
+    list, so a cached list of handles goes stale immediately and index-based
     iteration would skip every other row. Loops until no Restore control is left
     (or the safety bound), which is also the completion proof."""
+    ctrls = _restore_controls(page)
+    _log(f"[rm] {len(ctrls)} Restore control(s) on the page")
+    if ctrls:
+        c = ctrls[0]
+        _log(f"[rm] control shape: tag={c['tag']} href={c['href'][:80]!r} "
+             f"onclick={c['onclick'][:80]!r} row={c['row']} "
+             f"name={(c['name'] or '').strip()[:30]!r}")
+
     done = 0
     bound = (limit or expected or 0) + 5      # +5 for pagination/re-render slack
     for _ in range(max(bound, 1)):
         if limit and done >= limit:
             _log(f"[rm] --limit {limit} reached — stopping")
             break
-        loc = _restore_locators(page)
-        n = loc.count()
-        if n == 0:
+        before = len(_restore_controls(page))
+        if before == 0:
             _log("[rm] no Restore controls left on the page")
             break
+        if not _click_restore_js(page):
+            _log("[rm] restore click found no control — stopping")
+            break
+        page.wait_for_timeout(1200)
         try:
-            loc.first.click(timeout=12000)      # dialogs auto-accept (see main)
-            page.wait_for_timeout(1200)
-            try:
-                page.wait_for_load_state("domcontentloaded", timeout=20000)
-            except Exception:  # noqa: BLE001
-                pass
-            page.wait_for_timeout(1200)
-            done += 1
-            _log(f"[rm] restored {done} (was {n} pending on the page)")
-        except Exception as e:  # noqa: BLE001
-            _log(f"[rm] restore click failed at {done + 1}: "
-                 f"{type(e).__name__}: {str(e)[:120]} — stopping")
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1200)
+        after = len(_restore_controls(page))
+        done += 1
+        _log(f"[rm] restore {done}: controls {before} -> {after}")
+        if after >= before:
+            # The click ran but nothing left the list. Either the restore did not
+            # take, or this page re-renders the full list every time — either way,
+            # grinding the same first row `expected` times would be a lie in the
+            # log, so stop and say so.
+            _log("[rm] WARNING: the list did not shrink after a restore — "
+                 "stopping rather than re-clicking the same row")
             break
     return done
 
@@ -400,7 +456,7 @@ def run(office: str, start: str, end: str = "", live: bool = False,
 
     def _work(page, ctx, net):
         attach_dialog_accept(page)            # AppStream confirms Restore
-        pid = find_removed_page(page)
+        pid = find_removed_page(page) or PAGE_ID
         if not open_removed_page(page, pid):
             _log("[rm][STOP] could not open the Removed-Apps page")
             if debug:
