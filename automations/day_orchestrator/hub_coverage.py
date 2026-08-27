@@ -150,17 +150,19 @@ _NOT_A_REPORT = frozenset({
 # to both or the delete silently undoes itself. Listing the report here is what
 # both of them read (via is_internal), so one line covers both doors.
 #
-# knocks_access_watch (Megan 2026-08-26). Eve switched it off 2026-08-25: the
-# watcher had classified all 13 Office Access gaps and the rest was somebody
-# else approving requests. Its agent was unloaded the same day and cadence
-# weekdays went to [], so it genuinely stopped running — but on_scheduler stayed
-# true, so hub_coverage kept it in _scheduler_reports() and its card kept
-# advertising "4 AM flow · DUE TODAY" for a job that had not run in a week. The
-# module stays: `lucy rerun knocks_access_watch --find <owner>` is still a
-# useful hand tool, it just isn't a report on anyone's Hub.
-_RETIRED = frozenset({
-    "knocks_access_watch",
-})
+# knocks_access_watch was here (Megan 2026-08-26) and came back OUT the same day:
+# Eve reactivated it, on purpose and time-boxed, to catch the two ICDs she is
+# adding to Sahil's captainship (Andre Burton 22041, Brian Tran 23082) before his
+# draft is built. It runs 7 days a week again, so it is NOT retired — and leaving
+# it listed here was the exact inversion this set is meant to prevent: _RETIRED
+# stops the CARD while on_scheduler:true keeps the RUN, i.e. a job running every
+# day with nothing on the Hub to show it ran. Retiring it stays a two-door move,
+# both doors together: add it back here AND set on_scheduler:false (+ cadence
+# weekdays []) when Eve's exit condition lands and those two offices are granted.
+#
+# EMPTY IS THE HONEST STATE. Nothing is retired right now; do not keep a name here
+# "for later" — a name in this set is a promise that the report does not run.
+_RETIRED: frozenset = frozenset()
 
 
 def is_internal(report_id: str) -> bool:
@@ -524,6 +526,10 @@ DEPLOY_DIR = REPO_ROOT / "deploy"
 _INFRA_AGENTS = {
     "day-orchestrator", "orchestrator-schedule-guard", "card-scheduler",
     "session-holder", "keep-awake", "mini-control", "hub-watch",
+    # The read lane is the same poller as mini-control, second process. Same
+    # reason mini-control is here: it is the channel reports are run THROUGH,
+    # not a report, and it publishes nothing a card could show.
+    "mini-control-read",
     "lucy2-digest", "bg-check-watchdog", "harvest-proof-1pm", "board-probe",
     "social-scanner",
     "appstream-morning", "weather-6am", "brand-audit-noon", "recruiting-report",

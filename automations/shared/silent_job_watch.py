@@ -278,6 +278,18 @@ def main(argv=None) -> int:
             seen = (beats.get(jid) or {}).get("last_seen")
             flag = ("OVERDUE — %s" % late[jid]["why"]) if jid in late else "ok"
             print("  %-24s last %-18s %s" % (jid, _fmt_seen(seen), flag))
+        if args.status:
+            # A clock time here past the job's first_by is NOT by itself late, and
+            # reading it that way costs a morning (Megan 2026-08-27: this column
+            # said 07:20 against a 07:15 deadline while the job was in fact fine).
+            # beat() keeps ONE row per job, so a job that fires more than once a
+            # day overwrites its own row and this shows the LAST pass — today's
+            # box re-pull met 07:15 on its 06:52 pass at 06:55, then a slow 06:58
+            # pass stamped 07:20 over it. Use the `ok` / `OVERDUE` flag, which is
+            # what overdue() actually computes: a same-DAY beat clears first_by.
+            print("\n  'last' = most recent beat. A job with several passes a day"
+                  "\n  overwrites its own row, so this can be a later pass than the"
+                  "\n  one that made the deadline — trust the flag, not the clock.")
         if args.check and late:
             print("\n%d job(s) overdue." % len(late))
         return 0

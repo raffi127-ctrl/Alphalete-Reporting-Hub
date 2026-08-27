@@ -51,7 +51,14 @@ def enqueue(gc, action: str, args: str = "", by: str = "Megan",
         # poller reads, and the job would sit there forever.
         ws = ss.add_worksheet(title=tab, rows=300, cols=len(HEADERS))
         ws.append_row(HEADERS)
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    # WITH the UTC offset (mini_control._now_tz does the same). This enqueuer's
+    # whole point is that it runs somewhere else — a Streamlit Cloud app, whose
+    # host clock is UTC — while the poller reading the row is on Central. A bare
+    # local stamp lands five hours ahead of the mini's own day: measured
+    # 2026-08-27, the onboard_apply rows on Lucy 2's tab sat at exactly 5.00h,
+    # which reads as a queued job stamped in the future. astimezone() keeps this
+    # dependency-free (stdlib) and mini_control._parse_ts converts on read.
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
     ws.append_row([now, action, args, by, "queued", "", ""],
                   value_input_option="RAW")
     return tab

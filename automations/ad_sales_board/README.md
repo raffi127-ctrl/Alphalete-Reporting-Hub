@@ -12,17 +12,25 @@ names, Account/City and the week's name list ride alongside.
   picked manager, newest first (Carlos 2026-08-27: "no dropdown i just have to
   scroll down"): row 1 dark control strip (**B1 manager**, **D1
   Org/Captainship** — the only pickers), row 2 navy banner, row 3 a scroll
-  hint, row 4 static navy header `# | Account | City | AD | Pull | Names |
-  Mon..Sun`, rows 5+ one FILTER spill at A5. Every week block opens with a
-  blue **WEEK ENDING m/d** band row (written into the data by the job), ads
-  carry a per-week rank (#), TOTAL closes the block grey, amber row = names
-  that matched no ad. Everything centered; the week name LIST stays on the
-  data tab col J, deliberately not shown.
+  hint, row 4 static navy header `# | Account | City | AD | Pull | Mon..Sun |
+  To Call List`, rows 5+ one FILTER spill at A5. The Mon..Sun cells are
+  **emails RECEIVED per ad per day** (data T..Z, accumulated from one-day
+  pulls — tracked from Aug 17, 2026; older weeks show only the weekly Pull);
+  To Call List (data H) is the source report's weekly sent-to-call-list count,
+  so it covers captainship offices too. Every week block opens with a blue
+  **WEEK ENDING m/d** band row (written into the data by the job), ads carry a
+  per-week rank (#), TOTAL closes the block grey, amber row = names that
+  matched no ad. Everything centered; the week name LIST and the
+  names-sent-per-day grid stay on the data tab (J, L..R), not shown.
 * Hidden tab **Ad Sales Data** — the only thing the job writes. Columns
-  A..S: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
-  # Names, Names, Week Start (ISO — the freeze/sort key), L..R = names per
-  day (Mon..Sun), S = the ad's rank in its week. Each block's first row is
-  the WEEK ENDING band (marker text in the Ad Title column). TOTAL rows carry the label in the Ad Title column (the
+  A..Z: Manager, Week, Account, Inbox, Ad Title, City, Pull, To Call List,
+  # Names, Names, Week Start (ISO — the freeze/sort key), L..R = names sent
+  to call list per day, S = the ad's rank in its week, T..Z = emails RECEIVED
+  per day (accumulated — a rewrite CARRIES them over by stable ad key: inbox +
+  base role [+ city unless city-agnostic]; they cannot be re-derived once the
+  day is gone). Each block's first row is the WEEK ENDING band (marker text in
+  the Ad Title column). The daily run also pulls YESTERDAY as a one-day window
+  per office to fill its T..Z slot; `--day mm-dd-yyyy` backfills days. TOTAL rows carry the label in the Ad Title column (the
   board's first visible column). Blank counts mean "no name feed" (the
   captainship-only offices); zeros mean "an ad that produced nobody".
 

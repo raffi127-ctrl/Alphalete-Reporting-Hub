@@ -147,6 +147,87 @@ Two things deliberately NOT touched, both reported on every run:
   $19,239 / $4,706), which is what a copied column looks like. Worth a
   `week_is_filled`-style gate later.
 
+### OUT 2026-08-27 — Milan Godbolt is off the bulletins for good
+
+Eve, 2026-08-27: *"para los bulletins, hay que no incluir a Milan Godbolt de
+ahora en adelante."* He had already come off Colten's captainship on 08-21
+(`shared/captainship_pins.NOT_ON_TEAM`); the bulletins were left alone on purpose
+until this week. **The removal is entirely on the Sheet — no code decides it**,
+which is why it is written down here.
+
+| Where | Was | Now |
+|---|---|---|
+| `Lucy Org Tree` **row 122**, PODIUM ORG LISTS | `Colten Wright \| Milan Godbolt \| $7,193 \| (no 2026 total) \| Adoption? YES` | RETIRED — B:D and F blanked, leader kept in A, reason in E. Same convention as row 87 |
+| `Lucy Org Tree` **D64**, PODIUM LEADERS | Colten `Expected ICDs` = 14 | 13, or the count check prints "13 listed, bulletin says 14" every week |
+| `Lucy Org Tree` **row 41**, the Org Tree mirror | `NO DD ROW` / `Adoption? YES` | RETIRED note in E, adoption flag cleared |
+| `Org Tree` **C28** (gid 2106936862) | `Milan Godbolt`, a Gen-3 node under Colten | blank — see below |
+
+What it moved on WE 8.23.26, checked before and after:
+
+- **Colten Wright $392,776.15 → $385,583.15** (−$7,193). His 2026 total is
+  unchanged and **stops saying "partial"** — Milan was the one member with no
+  2026 figure, which had been understating nothing but flagging every week.
+- **Tracked Separately drops from 4 rows to 3** (Karrington Moody, Justin Fermin,
+  Marcos Barbosa stay).
+- **ORG. TOTAL DD and Rafael's line do not move.** Rafael is
+  `headline − row_week(Carlos) − row_week(Colten)` and `row_week` counts only
+  members backed by a real DD row; Milan was a MANUAL amount, so he was never in
+  it. The `direct` cross-check and `adopt_gap` are untouched for the same reason.
+- The companion **"Up and Coming RCs and NCs"**: clearing `Org Tree` C28 takes
+  **Colten's First Gen from 9 to 8** and his Total Org down by one. Nobody else's
+  card changes. `dd_search.py` `TARGETS` still names Milan — that is the one-shot
+  diagnostic, not a live report, and it stays as the record of the July question.
+
+### SETTLED 2026-08-27 — how Total Org is counted on the RCs/NCs board
+
+Eve marked the Org Tree up by hand and then checked the rendered card against it
+three times; this is where it landed. Three rules, and the third is the one that
+had been wrong for months.
+
+**1. The leader counts themselves.** "How many people are in Colten's org"
+includes Colten. The tree only holds who is BELOW someone, so the code adds one.
+
+**2. Adoptions count — for their own org, not for the root.** Raf, 2026-03-10:
+*"When adding up total units for 'My org' don't count adoptions that aren't mine,
+only count them for the person receiving the double override."* The adoptions sit
+under Colten, so they are Colten's and Jairo's, and they are **not** Rafael's —
+he is the one they are not "mine" for. Only the root of the tree drops them.
+
+**3. Counting them at all is the other half of Raf's same email.** It has two
+halves that point opposite ways, and which applies depends on what is being
+counted:
+
+| Raf's words | Where it applies |
+|---|---|
+| SCI "does not count adoption headcount or sales" when asked how many reps are in an org | the DD bulletin's MONEY — the ORG. TOTAL DD, `Adoption?`, the organic lines. **Untouched** |
+| "the adoption **will** count towards the qualifications for regional or national consultant" | the **RCs/NCs board** — every ring on it is a metric measured against an RC/NC threshold |
+
+`rcs_ncs_data` had been applying the money half here, subtracting adoptions from
+every org including their own. That understated Colten on every companion that
+has gone out. Worse, the exclusion ran off a hardcoded `ADOPTIONS` set that had
+drifted — it never named **Justin Fermin**, though the tab paints him with the
+legend's Adoptions red and dd_data has flagged him `Adoption? YES` since July.
+There is no hardcoded list any more: `adoptions_on_tab` reads the red fill back
+off the tab, because the tab is what people edit.
+
+**Depth did not change and does not count the leader** — it answers "how many
+owners in depth", not "how big is the org", so it stays `descendants − first
+gen`. First Gen never excluded adoptions, so all three metrics now agree.
+
+**The only thing that still takes anyone out of a count is a WEIGHT**, for one
+case: Cody Cannon sits on the tree twice as `(1/2)`, counting 1 on Carlos's side
+and 0 on Colten's, so the org-wide total holds him once. Eve's markup confirms
+it — her Carlos box includes `Cody Cannon (1/2)`, her Colten circle stops just
+above his second node.
+
+WE 8.23.26, the figures this has to reproduce (they are the regression test):
+
+| | First Gen | Total Org | how the total is built |
+|---|---|---|---|
+| Rafael | 9 | **48** | 50 under him − 3 adoptions + himself |
+| Colten | 8 | **17** | 16 under him, adoptions in, + himself |
+| Carlos | 10 | **22** | 21 under him + himself |
+
 ### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
 On the bulletin thread, Eve asked whether Jairo could be added. Raf:
 

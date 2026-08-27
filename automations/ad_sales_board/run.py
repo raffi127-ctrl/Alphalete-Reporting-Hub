@@ -218,16 +218,20 @@ def main(argv=None):
     print("[ad_sales_board] call-list rows loaded: %d" % len(call_rows), flush=True)
 
     # Existing rows are read BEFORE the browser opens: rewriting a week must
-    # CARRY OVER its accumulated received-per-day cells (T..Z) — those came
-    # from one-day pulls on days now gone, and cannot be re-derived.
+    # CARRY OVER its accumulated received-per-day cells (AC..AI) — those came
+    # from one-day pulls on days now gone, and cannot be re-derived. Rows are
+    # normalized to the internal 26-wide shape (A..S + the 7 recv slots); the
+    # helper columns T..AB in between are never part of a row.
     if a.reset:
         print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
         existing = []
     else:
-        existing = sheet.get_values(sess, sheet.data_range("A2:Z20000"))
+        existing = []
+        for r in sheet.get_values(sess, sheet.data_range("A2:AI20000")):
+            r = list(r) + [""] * (35 - len(r))
+            existing.append(r[:19] + r[28:35])
     carry = {}   # (manager, label) -> {ad_key: [7 recv slots]}
     for r in existing:
-        r = list(r) + [""] * (26 - len(r))
         if not r[0] or not r[1] or r[4] == "TOTAL" or r[2] == "—" \
                 or str(r[4]).startswith("WEEK ENDING"):
             continue
@@ -255,8 +259,12 @@ def main(argv=None):
                     if agnostic:
                         ads = parse.merge_across_cities(ads)
                     weekly.append((label, start, ads, nrows, rescued))
-                # One-day pulls: a finished day's received count per ad.
-                day_new = {}   # label -> {ad_key: {slot: count}}
+                # One-day pulls: a finished day's received count per ad. Kept
+                # as raw pieces — a one-day window can merge/fold cities
+                # differently than the week's (fewer cities visible), so each
+                # piece is matched onto the WEEK's ad rows below, fuzzily,
+                # the same way names.attach does.
+                day_pieces = {}   # label -> [(inbox, base, city, slot, n)]
                 for d in day_targets:
                     anc = weeks.anchor_for(d)
                     dlabel = weeks.window(anc)[0]
@@ -268,16 +276,37 @@ def main(argv=None):
                     slot = (d - anc).days
                     for g in dads:
                         if g["rec"]["apps"]:
-                            day_new.setdefault(dlabel, {}).setdefault(
-                                ad_key(g["inbox"], g["title"], g["city"],
-                                       agnostic), {})[slot] = g["rec"]["apps"]
+                            day_pieces.setdefault(dlabel, []).append(
+                                (g["inbox"], g["base"].lower(),
+                                 g["city"].lower(), slot, g["rec"]["apps"]))
                 for label, start, ads, nrows, rescued in weekly:
                     recv = {k: list(v)
                             for k, v in carry.get((name, label), {}).items()}
-                    for k, slots in day_new.get(label, {}).items():
-                        cur = recv.setdefault(k, [""] * 7)
-                        for slot, n in slots.items():
-                            cur[slot] = n
+                    # map this run's day pieces onto the week's ad rows:
+                    # exact (inbox, base, city) first, else (inbox, base)
+                    # taken by the biggest Pull; re-pulled days REPLACE the
+                    # carried value, split pieces landing on one row SUM.
+                    applied, missed = {}, 0
+                    for inbox, base, city, slot, n in day_pieces.get(label, []):
+                        cands = [g for g in ads
+                                 if g["inbox"] == inbox
+                                 and g["base"].lower() == base]
+                        if not cands:
+                            missed += n
+                            continue
+                        exact = [g for g in cands
+                                 if g["city"].lower() == city]
+                        tgt = (exact[0] if len(exact) == 1
+                               else max(cands, key=lambda g: g["rec"]["apps"]))
+                        k = ad_key(tgt["inbox"], tgt["title"], tgt["city"],
+                                   agnostic)
+                        applied[(k, slot)] = applied.get((k, slot), 0) + n
+                    for (k, slot), n in applied.items():
+                        recv.setdefault(k, [""] * 7)[slot] = n
+                    if missed:
+                        print("     (day pieces with no weekly ad row: %d "
+                              "received dropped for %s)" % (missed, label),
+                              flush=True)
                     wk_names = names.in_window(call_rows, name, start, end=start + dt.timedelta(days=6))
                     fresh[(name, label)] = rows_for(name, label, start, ads,
                                                     wk_names, recv)
@@ -334,8 +363,14 @@ def main(argv=None):
               % (len(new), len(managers), len(week_labels),
                  ", ".join(week_labels[:6])), flush=True)
     else:
-        sheet.clear(sess, sheet.data_range("A2:Z20000"))
-        sheet.put_values(sess, sheet.data_range("A2"), new)
+        # Two ranges on purpose: the helper columns T..AB between them must
+        # never be touched by a row write (see sheet.py).
+        sheet.clear(sess, sheet.data_range("A2:S20000"))
+        sheet.clear(sess, sheet.data_range("AC2:AI20000"))
+        sheet.put_values(sess, sheet.data_range("A2"),
+                         [(list(r) + [""] * 26)[:19] for r in new])
+        sheet.put_values(sess, sheet.data_range("AC2"),
+                         [(list(r) + [""] * 26)[19:26] for r in new])
         sheet.put_values(sess, sheet.data_range("W2"),
                          [[managers[i] if i < len(managers) else "",
                            week_labels[i] if i < len(week_labels) else ""]

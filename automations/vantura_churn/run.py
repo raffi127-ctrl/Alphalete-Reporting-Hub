@@ -44,11 +44,16 @@ ATEF_SHEET_ID = "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30"
 # recorded as the sheet actually spells it.
 JAMIS_SHEET_ID = "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU"
 
+# Sabrina Alicea (Alisei Inc.) — onboarded 2026-08-26. Her board spells the tab
+# 'Lucy Churn', same as Jamis's.
+SABRINA_SHEET_ID = "1tR3Bhp-o0kxq6p39ilhdQck6FPwqlBjVOjIx5LMuiMk"
+
 OWNER_CFG = [
     # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
     ("carlos", "CARLOS HIDALGO", fill.SHEET_ID, fill.TAB_CHURN_CARLOS, True),
     ("atef", "ATEF CHOUDHURY", ATEF_SHEET_ID, "LUCY CHURN", False),
     ("jamis", "JAMIS GARAY", JAMIS_SHEET_ID, "Lucy Churn", False),
+    ("sabrina", "SABRINA ALICEA", SABRINA_SHEET_ID, "Lucy Churn", False),
 ]
 
 # Offices NOT yet in the default `--owner both` daily run. They are fully
@@ -64,13 +69,21 @@ OWNER_CFG = [
 # TO PROMOTE: run `--owner jamis --dry-run` on Lucy 2 (needs Carlos's Tableau
 # session), confirm it reconciles, then delete the key from this set.
 #
-# EMPTY as of 2026-08-01: jamis promoted the same day. He cleared the bar this
-# set exists for — a live `--owner jamis` run on Lucy 2 reconciled against the
-# CHURN RATES dashboard and wrote his board (203/62/11 activations, 24 reps
-# with 0-30 data), and reconcile_reps confirmed the per-rep rows sum to HIS
-# office totals rather than the team's. He's in the nightly `--owner both`
-# batch now. Keep the mechanism — the next office onboarded needs it.
-STAGED: set = set()
+# jamis was promoted 2026-08-01, the same day he was staged: a live
+# `--owner jamis` run on Lucy 2 reconciled against the CHURN RATES dashboard and
+# wrote his board (203/62/11 activations, 24 reps with 0-30 data), and
+# reconcile_reps confirmed the per-rep rows sum to HIS office totals rather than
+# the team's.
+#
+# sabrina (2026-08-27): onboarded 8/26 and staged on arrival — she is the office
+# this mechanism was kept for. Her LUCY CHURN tab was never written because she
+# had no OWNER_CFG row at all, which broke MORE than the two sections it feeds:
+# b2b_metrics captures every section BEFORE posting any, so churn_tab_image
+# raising "no rep rows on 'LUCY CHURN'" for activation_by_rep took the whole
+# 08:49 rerun down and her thread got nothing, including the four churn boards
+# whose data had just landed. PROMOTE by running `--owner sabrina --dry-run` on
+# Lucy 2, confirming it reconciles, then deleting the key here.
+STAGED: set = {"sabrina"}
 
 
 def _activation_cfg():

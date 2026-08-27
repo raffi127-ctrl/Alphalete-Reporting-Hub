@@ -17,10 +17,16 @@ from automations.indeed_source_report.sheet import (  # noqa: F401 — re-export
 DATA_TAB = "Ad Sales Data"
 VIEW_TAB = "Ad Sales Board"
 
+# Data rows live in TWO ranges: A..S, then AC..AI for the received-per-day
+# grid. T..AB are OFF LIMITS to row writes — W/X (manager/week lists), Y/Z
+# (rosters) and AA (the dropdown's active list) live there, and the first cut
+# of received/day at T..Z clobbered exactly those (2026-08-27 morning).
 DATA_HEADERS = ["Manager", "Week", "Account", "Inbox Email", "Ad Title", "City",
                 "Pull", "To Call List", "# Names", "Names", "Week Start",
                 "D1 Mon", "D2 Tue", "D3 Wed", "D4 Thu", "D5 Fri", "D6 Sat",
-                "D7 Sun", "Rank", "R1 Mon", "R2 Tue", "R3 Wed", "R4 Thu", "R5 Fri", "R6 Sat", "R7 Sun"]
+                "D7 Sun", "Rank"]
+RECV_HEADERS = ["R1 Mon", "R2 Tue", "R3 Wed", "R4 Thu", "R5 Fri", "R6 Sat",
+                "R7 Sun"]
 
 
 def data_range(a1):
