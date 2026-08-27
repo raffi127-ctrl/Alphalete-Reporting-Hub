@@ -798,7 +798,7 @@ def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
         return (c("B"), round(_money(r[cmap["H"]] if cmap["H"] < len(r) else 0), 2),
                 c("J"), c("K"), c("G"))
 
-    from collections import defaultdict, Counter
+    from collections import defaultdict
     groups = defaultdict(list)
     for r in data:
         lmn_val = tuple(str(r[cmap[c]] if cmap[c] < len(r) else "").strip()
@@ -813,25 +813,38 @@ def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
                 str(rr[5]).strip().lower())
 
     rkeys = [_rkey(rr) for rr in got]
-    rcount = Counter(rkeys)
-    xcount = Counter({k: len(v) for k, v in groups.items()})
-    diff = [(k, xcount[k], rcount[k]) for k in set(xcount) | set(rcount)
-            if xcount[k] != rcount[k]]
-    if diff:
-        lines = "; ".join(f"{k}: export {a} vs RAW {b}" for k, a, b in diff[:5])
-        raise RuntimeError(
-            f"{len(diff)} row-identity mismatch(es) between export and RAW "
-            f"{first_row}-{last_row} — late posts or a different slice; NOT "
-            f"writing. First: {lines}")
+
+    # Ambiguity is never tolerable: identical-looking rows carrying DIFFERENT
+    # detail cannot be assigned to the right RAW row, so refuse outright.
     ambiguous = [k for k, v in groups.items() if len(set(v)) > 1]
     if ambiguous:
         raise RuntimeError(
             f"{len(ambiguous)} duplicate row-group(s) carry DIFFERENT "
             f"Type/Category/Tier — cannot assign safely: {ambiguous[:3]}")
 
-    lmn = [list(groups[k][0]) for k in rkeys]
-    log(f"enrich: {len(lmn)} rows content-matched vs RAW "
-        f"{first_row}-{last_row}; would write L{first_row}:N{last_row}")
+    # A RAW row with no matching export row gets BLANK detail rather than
+    # blocking the whole backfill: L:N are descriptive only (col I commission
+    # is never touched), and a couple of rows always drift between the
+    # Wednesday load and a later pull (returns re-posting, amount corrections).
+    # A LARGE unmatched share still means the wrong slice -> fail loud.
+    pool = {k: list(v) for k, v in groups.items()}
+    lmn, unmatched = [], []
+    for i, k in enumerate(rkeys):
+        if pool.get(k):
+            lmn.append(list(pool[k].pop()))
+        else:
+            lmn.append(["", "", ""])
+            unmatched.append(first_row + i)
+    limit = max(10, int(len(rkeys) * 0.02))
+    if len(unmatched) > limit:
+        raise RuntimeError(
+            f"{len(unmatched)} of {len(rkeys)} RAW rows have no matching export "
+            f"row (limit {limit}) — wrong slice or a stale export; NOT writing.")
+    if unmatched:
+        log(f"WARN: {len(unmatched)} RAW row(s) unmatched -> blank detail "
+            f"(sheet rows {unmatched[:10]})")
+    log(f"enrich: {len(lmn) - len(unmatched)}/{len(lmn)} rows content-matched "
+        f"vs RAW {first_row}-{last_row}; would write L{first_row}:N{last_row}")
     from collections import Counter
     log("  Category counts: " + str(dict(Counter(r[1] or "<blank>" for r in lmn))))
     if not write:
