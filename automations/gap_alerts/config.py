@@ -117,12 +117,19 @@ PDF_SLICE_OVERLAP_PX = 0
 # count and the row cuts come out exactly as they do at 1×.
 #
 # Same knob tableau_screenshots has used for crisper Tableau posts.
-CAPTURE_DEVICE_SCALE = 2
+#
+# 2 -> 3 on 2026-08-27: at 2x the text was legible but still soft once Raf
+# zoomed in, and zooming in is the whole reason this is a PDF. 3 is 50% more
+# linear resolution. Safe to turn precisely because it is NOT zoom: the layout
+# is identical, so page counts and row cuts do not move. The cost is a bigger
+# screenshot and a slightly longer run — worth watching against
+# MIN_SEND_GAP_MINUTES, which has to stay under (cadence - runtime).
+CAPTURE_DEVICE_SCALE = 3
 
 # The gap card is drawn by us, not screenshotted, so it has to be drawn bigger
 # to match. A 1× card beside a 2× screenshot on one page width is visibly the
 # softer of the two, and the PDF should read as one document.
-CARD_RENDER_SCALE = 2
+CARD_RENDER_SCALE = 3
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
