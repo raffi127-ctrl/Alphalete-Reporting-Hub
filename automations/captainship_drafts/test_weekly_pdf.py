@@ -195,6 +195,25 @@ class ItSurvivesTheTempSweep(unittest.TestCase):
         self.assertEqual(len(ensure("pypdf").PdfReader(str(again[0])).pages), 2)
 
 
+class TheHookInRunPy(unittest.TestCase):
+    """El bundle decide con `captain.sections`, que es una PROPERTY. Llamarla
+    como método pasó los tests y tumbó la corrida real con "'list' object is
+    not callable" — esto lo fija."""
+
+    def test_sections_is_a_property_and_rafael_declares_the_weekly(self):
+        from automations.captainship_drafts import config
+        cap = next(c for c in config.CAPTAINS if c.key == "rafael")
+        self.assertIsInstance(cap.sections, list)
+        self.assertIn("knock_dispo", {k for _h, k in cap.sections})
+
+    def test_only_the_flavors_with_weekly_boards_get_an_attachment(self):
+        """B2B y NDS no tienen board semanal: no les puede colgar un adjunto."""
+        from automations.captainship_drafts import config
+        with_weekly = {c.flavor for c in config.CAPTAINS
+                       if "knock_dispo" in {k for _h, k in c.sections}}
+        self.assertEqual(with_weekly, {"rafael", "fiber"})
+
+
 class TheMimeItProduces(unittest.TestCase):
     """El adjunto va en el multipart/mixed de AFUERA; las imágenes inline
     tienen que quedar intactas adentro de su multipart/related — que es lo que
