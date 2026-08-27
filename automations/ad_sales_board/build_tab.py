@@ -48,7 +48,7 @@ D = sheet.DATA_TAB
 # rank | Account | City | AD/band | Pull | Mon..Sun RECEIVED per day |
 # To Call List (weekly, from the source report).
 A5 = ("=IFNA(FILTER({'%(d)s'!$S$2:$S,'%(d)s'!$C$2:$C,'%(d)s'!$F$2:$F,"
-      "'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$T$2:$Z,'%(d)s'!$H$2:$H},"
+      "'%(d)s'!$E$2:$E,'%(d)s'!$G$2:$G,'%(d)s'!$AC$2:$AI,'%(d)s'!$H$2:$H},"
       "'%(d)s'!$A$2:$A=$B$1))" % {"d": D})
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
         "Saturday", "Sunday"]
@@ -103,7 +103,7 @@ def main(argv=None):
     if sheet.DATA_TAB not in tabs:
         reqs.append({"addSheet": {"properties": {
             "title": sheet.DATA_TAB, "hidden": True,
-            "gridProperties": {"rowCount": 20000, "columnCount": 27}}}})
+            "gridProperties": {"rowCount": 20000, "columnCount": 40}}}})
     if sheet.VIEW_TAB not in tabs:
         after = tabs.get("Source Report - Indeed", {}).get("index")
         props = {"title": sheet.VIEW_TAB,
@@ -128,6 +128,7 @@ def main(argv=None):
     org = [n for n, _o, _w in ORG]
     cap = [n for n, _o, _w in CAPTAINSHIP]
     sheet.put_values(sess, sheet.data_range("A1"), [sheet.DATA_HEADERS])
+    sheet.put_values(sess, sheet.data_range("AC1"), [sheet.RECV_HEADERS])
     sheet.put_values(sess, sheet.data_range("W1"),
                      [["managers", "weeks", "org", "captainship",
                        "active manager list", "picked week start"]])
