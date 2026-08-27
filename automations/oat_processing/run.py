@@ -308,16 +308,41 @@ def advance_to_next(page) -> bool:
         "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]/ancestor::a[1]",
         "xpath=//a[normalize-space(.)='►' or normalize-space(.)='>']",
     ]
-    for xp in candidates:
-        try:
-            loc = page.locator(xp).first
-            if loc.count() == 0:
+    # POLL, don't glance. Every applicant we send / remove / re-text re-renders
+    # this page, and a single count()==0 the instant before the pager comes back
+    # was being read as "the queue has ended". It ended walks with most of the
+    # queue untouched — 8/27: Atef 11 of 21, 15 of 22, 15 of 23; Carlos 2 of 13
+    # and 3 of 13 — and since those walks then called themselves complete, the
+    # to-do post published a short list as the whole backlog (Megan: "you have
+    # follow up need for 6 on atef but his inbox is 23"). 52 walks ended this way
+    # in one day.
+    #
+    # A real end of queue costs this wait ONCE per walk, which is nothing against
+    # a walk that runs minutes; a missed pager costs applicants sitting unseen for
+    # hours. Same lesson as the FOR LUCY template race fixed earlier today: on
+    # this machine, a fixed-instant look at an async re-render is a coin flip, and
+    # it got worse when Atef's office doubled Lucy 2's load.
+    import time as _t
+    _deadline = _t.monotonic() + 6.0
+    _polls = 0
+    while True:
+        for xp in candidates:
+            try:
+                loc = page.locator(xp).first
+                if loc.count() == 0:
+                    continue
+                loc.click(timeout=5000, no_wait_after=True)
+                page.wait_for_timeout(1800)
+                if _polls:
+                    _log(f"[oat] next-pager appeared after {_polls} extra poll(s) "
+                         f"— a single look would have ended this walk early")
+                return True
+            except Exception:  # noqa: BLE001
                 continue
-            loc.click(timeout=5000, no_wait_after=True)
-            page.wait_for_timeout(1800)
-            return True
-        except Exception:  # noqa: BLE001
-            continue
+        if _t.monotonic() >= _deadline:
+            break
+        _polls += 1
+        page.wait_for_timeout(500)
     _log("[oat] no next-pager control found — treating as end of queue")
     return False
 
