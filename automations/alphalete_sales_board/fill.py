@@ -138,30 +138,45 @@ def free_roster_row(grid) -> Optional[int]:
     return None
 
 
-def near_matches(name: str, board_names: List[str], cutoff: float = 0.6) -> List[str]:
-    """Roster names close enough to `name` that adding a row might DUPLICATE a
-    person who is already there under a different spelling.
+def near_matches(name: str, board_names: List[str],
+                 cutoff: float = 0.85) -> List[str]:
+    """Board rows close enough that adding `name` might DUPLICATE somebody.
 
-    This is the guard that makes auto-adding safe. The matcher already tries
-    exact, unique-last-name and containment; what is left is the genuinely
-    ambiguous tail -- a nickname ('MIKE ORTIZ' vs 'Michael Ortiz'), a married
-    name, a typo. Adding a second row for someone who already has one splits
-    their week across two rows, and the totals still foot, so nobody notices.
-    When this returns anything, we do not add -- we say so and let a person
-    decide.
+    DEFAULT TO "NEW PERSON" (Megan 2026-08-27). This started at a 0.6 difflib
+    ratio and refused to add "Aaron Corona" because it scored 0.62 against
+    "Milagros Colon" — coincidental letters ("aron coron" / "agros colon"),
+    two entirely different people. A real rep then sold all day with no row
+    while the chat was told he "could be" somebody else.
+
+    The two mistakes are not symmetrical any more:
+      * refusing wrongly leaves a rep off the board, with nothing anyone can
+        do but notice and act;
+      * adding wrongly makes a duplicate row, which is now recoverable —
+        somebody types "Bo=Kelvinton" and remove_rep takes it back.
+    So the bar to refuse is deliberately high: a shared LAST NAME (Mike vs
+    Michael Ortiz), or near-identical spelling (0.85 — a typo or a missing
+    letter). Anything else is treated as a new person and gets a row.
     """
     import difflib
-    want = B._norm_name(name)
-    if not want:
+    want = _norm_name_raw(name)
+    w = want.split()
+    if not w:
         return []
-    norm = {B._norm_name(b): b for b in board_names}
-    close = difflib.get_close_matches(want, list(norm), n=3, cutoff=cutoff)
-    toks = set(want.split())
-    for n, orig in norm.items():
-        other = set(n.split())
-        if toks & other and n not in close:      # shares a first or last name
-            close.append(n)
-    return [norm[c] for c in close]
+    out = []
+    for b in board_names:
+        n = _norm_name_raw(b)
+        toks = n.split()
+        if not toks:
+            continue
+        same_last = w[-1] == toks[-1]
+        ratio = difflib.SequenceMatcher(None, want, n).ratio()
+        if same_last or ratio >= cutoff:
+            out.append(b)
+    return out
+
+
+def _norm_name_raw(s: str) -> str:
+    return B._norm_name(s)
 
 
 def add_rep(worksheet, grid, name: str) -> Tuple[Optional[int], str]:
