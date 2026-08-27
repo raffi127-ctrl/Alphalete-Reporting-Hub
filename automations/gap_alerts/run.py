@@ -491,12 +491,13 @@ def capture_activity(page, cfg: Dict, rqst: str, out_dir: Path):
         # badges at twice the size, so the shot carries twice the detail; the
         # crop maths is unaffected because _shoot scales by the measured
         # element box, not by assumed pixels.
-        try:
-            page.evaluate("(z) => { document.body.style.zoom = z; }",
-                          str(C.CAPTURE_ZOOM))
-            page.wait_for_timeout(1200)
-        except Exception:
-            _log("  zoom not applied — capturing at 1x")
+        if C.CAPTURE_ZOOM and C.CAPTURE_ZOOM != 1:
+            try:
+                page.evaluate("(z) => { document.body.style.zoom = z; }",
+                              str(C.CAPTURE_ZOOM))
+                page.wait_for_timeout(1200)
+            except Exception:
+                _log("  zoom not applied — capturing at 1x")
 
         out = out_dir / ("activity_%s.png" % cfg["key"])
         how = cap._shoot(page, out, kind="todays_activity",

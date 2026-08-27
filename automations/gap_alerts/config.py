@@ -104,11 +104,18 @@ PDF_MAX_ASPECT = 1.45
 # is severed and nothing needs repeating. Kept at 0 as the record of why.
 PDF_SLICE_OVERLAP_PX = 0
 
-# CSS zoom applied before the Today's Activity screenshot. The panel is narrower
-# than the PDF page, so the viewer scales it up; 2x source pixels is what makes
-# that scaled-up text sharp instead of soft. Nothing recovers detail the
-# screenshot never captured.
-CAPTURE_ZOOM = 2
+# CSS zoom before the Today's Activity screenshot. 1 = off, and OFF IS CORRECT.
+#
+# Tried 2 on 2026-08-27 to sharpen the text and it wrecked the layout: CSS zoom
+# scales the whole page, so the rep-list column got narrow in CSS terms, every
+# name wrapped onto two lines, and the panel came back twice as tall — which
+# then sliced into 29 near-empty pages. Raf's word for it was "mushed".
+#
+# The lesson: zoom is not a resolution knob, it is a LAYOUT knob. Sharpening
+# this panel means more device pixels at the SAME layout (a higher
+# device_scale_factor on the browser context), not a bigger CSS page. That has
+# to happen where the context is created, in tableau_patchright.
+CAPTURE_ZOOM = 1
 
 # --- the selling day (machine-local; Lucy 1 is Central) -----------------------
 # Ticks every 10 minutes inside these windows (Megan 2026-08-26):
