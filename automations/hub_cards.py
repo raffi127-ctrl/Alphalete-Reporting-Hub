@@ -76,6 +76,14 @@ def _office_run_args(base_args, report_id: str):
     return list(base_args)
 
 
+def _latest_times_slot() -> str:
+    """The Times of Sales slot a Hub click means -- the most recent one that
+    has passed. Imported lazily so the Hub can render this card on a machine
+    that has never run the sweep."""
+    from automations.alphalete_sales_board import times_of_sales as _tos
+    return _tos.latest_slot() or "1:00 PM"
+
+
 def _office_metrics_card() -> dict:
     """ONE card for every per-office daily-metrics feed (Megan 2026-07-17 — was
     a card per office, and only Rashad + Aya ever had one, so the five offices
@@ -3716,6 +3724,110 @@ AUTOMATED_REPORTS = [
                 "help": "One full sweep: writes the board AND sends the leaderboard text plus the Slack hype for anything new since the last sweep.",
                 "module": "automations.alphalete_sales_board.run",
                 "args_fn": lambda: ["--apply", "--send", "--force"],
+            },
+        ],
+    },
+    {
+        "id": "times-of-sales",
+        "name": "Times of Sales",
+        "creator": "Claude",
+        # Ops, and a SEPARATE card from "Sales Text Updates" even though the
+        # same 5-minute sweep drives both. They answer different questions and
+        # fail independently: the sweep can be filling the board perfectly
+        # while the Times of Sales tab gets nothing (a renamed tab, a col A
+        # that ran out of dates), and folding it into the sweep's card would
+        # hide exactly that. One card, one thing a person can check.
+        "emoji": "\U0001F551",
+        "color": "#F59E0B",
+        "category": "\U0001F4F2 Ops",
+        "description": (
+            "Every half hour of the selling day, stamps the org's running "
+            "New Internet and Total Units into the 'Times of Sales' tab "
+            "— with the difference against YESTERDAY at that same clock "
+            "time — and texts the same three numbers to Alphalete "
+            "Partners."
+        ),
+        "breakdown": (
+            "WHAT IT IS FOR\n"
+            "Not the total — the board already carries that. The "
+            "**pace**: 12 units at 4pm means something different on a day "
+            "that had 8 at 4pm than on one that had 20. Every column is a "
+            "clock time, so today's row can be read straight across against "
+            "yesterday's.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "**•** No extra login. It is handed the SaraPlus read the "
+            "**Sales Text Updates** sweep already did, so a snapshot costs "
+            "one Sheets read and one Sheets write.\n"
+            "**•** **New Internet** = Internet − Upgrades − "
+            "AIA. **Total Units** = New Internet + DTV + NL. Upgrades are "
+            "deliberately NOT counted, so this Total Units is smaller than "
+            "the leaderboard's TOTALS line, which does count them — two "
+            "different questions, both going to the same chat.\n\n"
+            "WHERE IT WRITES\n"
+            "**•** Workbook **Alphalete SALES BOARD 2025** → tab "
+            "**Times of Sales** → the row whose column A is today "
+            "(*'Thursday, August 27, 26'*) → the three columns under "
+            "that slot's time header. Columns are found by **header**, never "
+            "by position.\n"
+            "**•** **Delta** is today's Total Units minus yesterday's at "
+            "the same slot. Yesterday blank → the Delta cell is left "
+            "blank, never written as 0.\n\n"
+            "THE SLOTS\n"
+            "Mon–Fri **1:00pm–9:00pm**, Saturday "
+            "**12:00pm–6:30pm**, no Sunday. Saturday's noon and 12:30 "
+            "slots are **text only** — the tab has no column for them.\n\n"
+            "MISSED SLOTS ARE BACK-FILLED\n"
+            "If the runner was down, the blank slots before the current one "
+            "are filled with the current totals — knowingly a flat line "
+            "for that afternoon, and knowingly right about what those cells "
+            "are for: tomorrow reads them to say *'yesterday at 2:30'*. A "
+            "blank there would cost tomorrow its comparison too. It stops at "
+            "the first slot that already holds a number, and never back-fills "
+            "a Delta.\n\n"
+            "RUNS ON LUCY 1\n"
+            "Inside the 5-minute sweep, so it inherits its pid lock and its "
+            "Chrome fencing. The slot is claimed BEFORE the scrape — a "
+            "scrape takes 30–60 seconds, and asking the clock afterwards "
+            "would stamp the 4:00 column with numbers read at 3:59. The Hub "
+            "pill is painted by the first good snapshot of the day, not by "
+            "all 34."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/"
+                      "edit#gid=937816178"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "alphalete_sales_board",
+        "schedule": {
+            "frequency": "daily",
+            # Mon-Sat. NOT [] -- an empty list reads as "never scheduled" and
+            # the didn't-run watcher would never notice this card go quiet.
+            "weekdays": [0, 1, 2, 3, 4, 5],
+            "time": "every :00 and :30, 1:00pm-9:00pm (Sat 12:00pm-6:30pm)",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Snapshot done — the slot is stamped on the Times of Sales tab.",
+            "message_failed": "❌ Snapshot failed. `lucy logtail alphalete-sales-board` on Lucy 1 to see why.",
+        },
+        "actions": [
+            {
+                "label": "Preview this slot (no writes)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Reads SaraPlus and prints the cells that WOULD change and the text that WOULD go to Alphalete Partners. Writes nothing, texts nobody.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--force", "--times-slot",
+                                    _latest_times_slot()],
+            },
+            {
+                "label": "Snapshot now + text",
+                "icon": "\U0001F4E3",
+                "help": "Stamps the most recent slot on the Times of Sales tab AND texts it to Alphalete Partners. Use when a slot was missed.",
+                "module": "automations.alphalete_sales_board.run",
+                "args_fn": lambda: ["--apply", "--send", "--force",
+                                    "--times-slot", _latest_times_slot()],
             },
         ],
     },

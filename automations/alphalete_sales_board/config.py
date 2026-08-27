@@ -98,6 +98,14 @@ GROUP_A_TEAM = "Alphalete A-Team Chat"  # the 20-person A-Team chat
 LIVE_GROUPS = [GROUP_PARTNERS]
 END_OF_DAY_GROUPS = [GROUP_LVL1, GROUP_A_TEAM]
 
+# The half-hour Times of Sales snapshot goes to the PARTNERS chat -- the room
+# already carrying the sales texts (Megan 2026-08-27, with a screenshot of that
+# chat). The system this ports sent it to the A-Team chat instead; that was its
+# habit, not a requirement, and splitting the two updates across two rooms would
+# mean the people watching the board fill in are the one group who never see the
+# pace. Same room, so the leaderboard and the snapshot read as one story.
+TIMES_GROUPS = [GROUP_PARTNERS]
+
 WEEKLY_GOAL = 80
 
 # The Lvl 1's chat gets ONE leaderboard a day, at the end of selling: Mon-Fri
