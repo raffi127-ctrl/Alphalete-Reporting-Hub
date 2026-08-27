@@ -42,6 +42,26 @@ def _people(tab_name: str = ""):
     return ws, values, people
 
 
+def _no_email(people):
+    """People who SHOULD have been emailed and couldn't be.
+
+    Deliberately narrower than "wasn't sent". Someone who quit, failed their
+    background check or declined Friday is the report working, and listing
+    fourteen of them every Monday buries the one name that needs a human. What
+    belongs here is only the person nobody decided to exclude -- they are
+    starting on Monday and the sheet just has no usable address for them, so
+    they will turn up having installed nothing and nobody will know why.
+
+    Returns [(name, row, reason)].
+    """
+    out = []
+    for p_ in people:
+        why = (p_.skip_reason or "")
+        if "email" in why.lower():
+            out.append((p_.name, p_.row, why))
+    return out
+
+
 def _recipients(people) -> List[str]:
     """Eligible addresses, de-duplicated, order preserved.
 
@@ -158,9 +178,20 @@ def preview(tab_name: str = "", *, fetch_link: bool = True) -> int:
         if p.eligible:
             print("  - {:28} row {:>3}  {}".format(p.name, p.row, p.email))
 
-    print("\nSKIPPED ({}):".format(len(skipped)))
+    missing = _no_email(people)
+    if missing:
+        print("\nNOT SENT BUT SHOULD HAVE BEEN ({}) - nobody excluded these "
+              "people, the sheet just has no usable address:".format(
+                  len(missing)))
+        for name, row, why in missing:
+            print("  !! {:28} row {:>3}  {}".format(name, row, why))
+
+    print("\nSKIPPED ({}) - correctly, they aren't starting:".format(
+        len(skipped) - len(missing)))
     for p in skipped:
-        print("  - {:28} row {:>3}  {}".format(p.name, p.row, p.skip_reason))
+        if "email" not in (p.skip_reason or "").lower():
+            print("  - {:28} row {:>3}  {}".format(p.name, p.row,
+                                                   p.skip_reason))
 
     # Anyone the parser did NOT turn into a person but who has an email on the
     # tab. Silence is the failure mode that matters: nobody notices the new
@@ -249,7 +280,9 @@ def send(tab_name: str = "", *, force: bool = False, slack: bool = False) -> int
 
     if slack:
         from automations.slack_skool_email import slack_post
-        slack_post.post(ws.title, send_to, dry_run=False)
+        _ws2, _v2, people = _people(ws.title)
+        slack_post.post(ws.title, send_to, problems=_no_email(people),
+                        dry_run=False)
     return 0
 
 

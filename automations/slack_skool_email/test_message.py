@@ -220,3 +220,42 @@ def test_a_broken_guard_is_a_refusal_not_a_green_light():
     same answer as "it hasn't been sent"."""
     from automations.slack_skool_email import gmail_reception as gm
     assert issubclass(gm.GuardUnavailable, Exception)
+
+
+# --- nobody gets dropped silently -------------------------------------------
+
+class _S:
+    def __init__(self, name, row, skip_reason):
+        self.name, self.row, self.skip_reason = name, row, skip_reason
+        self.eligible = not skip_reason
+        self.email = ""
+
+
+def test_only_the_email_failures_are_reported_not_the_correct_skips():
+    """Quit / failed / declined are the report WORKING. Listing fourteen of
+    them every Monday buries the one name that needs a human."""
+    people = [
+        _S("Ana Griffin", 24, "no email on the sheet"),
+        _S("Cal Meza", 41, "email doesn't look valid: cal@@x"),
+        _S("Bo Quit", 30, "Final Status: Quit before Classroom"),
+        _S("Di Declined", 33, "Friday Confirmation: Declined"),
+        _S("Ed Failed", 35, "BG Status: failed"),
+    ]
+    got = run._no_email(people)
+    assert [n for n, _r, _w in got] == ["Ana Griffin", "Cal Meza"]
+
+
+def test_the_slack_thread_names_anyone_who_was_missed():
+    from automations.slack_skool_email import slack_post as sp
+    body = sp.build_thread("D2D OBCL 8.31", ["a@x.com"] * 52,
+                           [("Ana Griffin", 24, "no email on the sheet")])
+    assert "*52*" in body
+    assert "Ana Griffin" in body and "row 24" in body
+    assert "<@U0B9924FHCL>" in body      # tagged so somebody fixes it
+
+
+def test_a_clean_week_says_nothing_extra():
+    from automations.slack_skool_email import slack_post as sp
+    body = sp.build_thread("D2D OBCL 8.31", ["a@x.com"] * 52, [])
+    assert "did NOT get it" not in body
+    assert "<@" not in body              # no pointless ping on a clean run
